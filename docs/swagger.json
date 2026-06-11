@@ -11809,6 +11809,155 @@
                 }
             }
         },
+        "/tenants/{tenantID}/orders/{orderID}/email": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Send an order confirmation to a recipient via email, optionally requiring approved order evidence first",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Email"
+                ],
+                "summary": "Email order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Email details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_email.SendOrderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_email.EmailSentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/orders/{orderID}/pdf": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generate and download a PDF for an order",
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Download order PDF",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "orderID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/orders/{orderID}/pick-list": {
             "get": {
                 "security": [
@@ -15328,6 +15477,155 @@
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/quotes/{quoteID}/email": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Send a quote to a recipient via email, optionally requiring approved quote evidence first",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Email"
+                ],
+                "summary": "Email quote",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Quote ID",
+                        "name": "quoteID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Email details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_email.SendQuoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_email.EmailSentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/{tenantID}/quotes/{quoteID}/pdf": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generate and download a PDF for a quote",
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Quotes"
+                ],
+                "summary": "Download quote PDF",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Quote ID",
+                        "name": "quoteID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "type": "object",
                             "properties": {
@@ -24388,9 +24686,55 @@
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_email.SendOrderRequest": {
+            "type": "object",
+            "properties": {
+                "attach_pdf": {
+                    "type": "boolean"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "recipient_email": {
+                    "type": "string"
+                },
+                "recipient_name": {
+                    "type": "string"
+                },
+                "require_approved_evidence": {
+                    "type": "boolean"
+                },
+                "subject": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_email.SendPaymentReceiptRequest": {
             "type": "object",
             "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "recipient_email": {
+                    "type": "string"
+                },
+                "recipient_name": {
+                    "type": "string"
+                },
+                "require_approved_evidence": {
+                    "type": "boolean"
+                },
+                "subject": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_email.SendQuoteRequest": {
+            "type": "object",
+            "properties": {
+                "attach_pdf": {
+                    "type": "boolean"
+                },
                 "message": {
                     "type": "string"
                 },
@@ -24412,11 +24756,15 @@
             "type": "string",
             "enum": [
                 "INVOICE_SEND",
+                "QUOTE_SEND",
+                "ORDER_CONFIRM",
                 "PAYMENT_RECEIPT",
                 "OVERDUE_REMINDER"
             ],
             "x-enum-varnames": [
                 "TemplateInvoiceSend",
+                "TemplateQuoteSend",
+                "TemplateOrderConfirm",
                 "TemplatePaymentReceipt",
                 "TemplateOverdueReminder"
             ]

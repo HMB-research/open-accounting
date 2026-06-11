@@ -1178,6 +1178,30 @@ class ApiClient {
     );
   }
 
+  async downloadQuotePDF(
+    tenantId: string,
+    quoteId: string,
+    quoteNumber: string,
+  ) {
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/quotes/${quoteId}/pdf`,
+      `quote-${quoteNumber}.pdf`,
+      "Failed to download quote PDF",
+    );
+  }
+
+  async emailQuote(
+    tenantId: string,
+    quoteId: string,
+    data: SendQuoteEmailRequest,
+  ) {
+    return this.request<EmailSentResponse>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/quotes/${quoteId}/email`,
+      data,
+    );
+  }
+
   async acceptQuote(tenantId: string, quoteId: string) {
     return this.request<{ status: string }>(
       "POST",
@@ -1251,6 +1275,30 @@ class ApiClient {
     return this.request<{ status: string }>(
       "POST",
       `/api/v1/tenants/${tenantId}/orders/${orderId}/confirm`,
+    );
+  }
+
+  async downloadOrderPDF(
+    tenantId: string,
+    orderId: string,
+    orderNumber: string,
+  ) {
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/orders/${orderId}/pdf`,
+      `order-${orderNumber}.pdf`,
+      "Failed to download order PDF",
+    );
+  }
+
+  async emailOrder(
+    tenantId: string,
+    orderId: string,
+    data: SendOrderEmailRequest,
+  ) {
+    return this.request<EmailSentResponse>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/orders/${orderId}/email`,
+      data,
     );
   }
 
@@ -4256,6 +4304,8 @@ export interface GenerationResult {
 // Email types
 export type TemplateType =
   | "INVOICE_SEND"
+  | "QUOTE_SEND"
+  | "ORDER_CONFIRM"
   | "PAYMENT_RECEIPT"
   | "OVERDUE_REMINDER";
 export type EmailStatus = "PENDING" | "SENT" | "FAILED";
@@ -4326,11 +4376,30 @@ export interface SendInvoiceEmailRequest {
   attach_pdf: boolean;
 }
 
+export interface SendQuoteEmailRequest {
+  recipient_email: string;
+  recipient_name?: string;
+  subject?: string;
+  message?: string;
+  attach_pdf: boolean;
+  require_approved_evidence?: boolean;
+}
+
+export interface SendOrderEmailRequest {
+  recipient_email: string;
+  recipient_name?: string;
+  subject?: string;
+  message?: string;
+  attach_pdf: boolean;
+  require_approved_evidence?: boolean;
+}
+
 export interface SendPaymentReceiptRequest {
   recipient_email: string;
   recipient_name?: string;
   subject?: string;
   message?: string;
+  require_approved_evidence?: boolean;
 }
 
 export interface EmailSentResponse {

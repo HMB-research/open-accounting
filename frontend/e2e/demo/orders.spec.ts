@@ -183,6 +183,51 @@ test.describe("Orders View", () => {
     const order = await createOrder(page, "Order conversion");
     let row = orderRow(page, order.order_number);
 
+    const orderDownloadPromise = page.waitForEvent("download");
+    await row.getByRole("button", { name: /^PDF$/i }).click();
+    const orderDownload = await orderDownloadPromise;
+    expect(orderDownload.suggestedFilename()).toContain(order.order_number);
+
+    let orderEmailPayload: Record<string, unknown> | undefined;
+    await page.route(
+      (url) => url.pathname.includes(`/orders/${order.id}/email`),
+      async (route) => {
+        orderEmailPayload = route.request().postDataJSON() as Record<
+          string,
+          unknown
+        >;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: true,
+            log_id: "order-email-e2e",
+            message: "Email sent successfully",
+          }),
+        });
+      },
+    );
+
+    await row.getByRole("button", { name: /email|e-post/i }).click();
+    const orderEmailModal = page.getByRole("dialog", {
+      name: /email order|saada tellimus/i,
+    });
+    await expect(orderEmailModal).toBeVisible();
+    await orderEmailModal.locator("#order-email-recipient").fill("order-e2e@example.com");
+    await orderEmailModal.locator("#order-email-name").fill("Order E2E");
+    const emailReloadPromise = waitForOrdersAndContacts(page);
+    await orderEmailModal
+      .getByRole("button", { name: /email|e-post/i })
+      .click();
+    await emailReloadPromise;
+    expect(orderEmailPayload).toMatchObject({
+      recipient_email: "order-e2e@example.com",
+      recipient_name: "Order E2E",
+      attach_pdf: true,
+      require_approved_evidence: false,
+    });
+    await expect(page.getByText(/order email sent|tellimuse e-kiri saadetud/i)).toBeVisible();
+
     const confirmResponsePromise = page.waitForResponse((response) => {
       return (
         response.request().method() === "POST" &&

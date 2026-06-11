@@ -16,7 +16,9 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -395,6 +397,105 @@ func TestGetQuote(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, rr.Code)
 		})
 	}
+}
+
+func TestGetQuotePDF(t *testing.T) {
+	h, repo, tenantRepo := setupQuotesTestHandlers()
+	h.pdfService = pdf.NewService()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+
+	repo.quotes["quote-1"] = &quotes.Quote{
+		ID:          "quote-1",
+		TenantID:    "tenant-1",
+		QuoteNumber: "QT-001",
+		ContactID:   "contact-1",
+		Contact:     &contacts.Contact{Name: "Acme OU", Email: "billing@example.com"},
+		QuoteDate:   time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		Status:      quotes.QuoteStatusDraft,
+		Currency:    "EUR",
+		Subtotal:    decimal.NewFromInt(100),
+		VATAmount:   decimal.NewFromInt(22),
+		Total:       decimal.NewFromInt(122),
+		Lines: []quotes.QuoteLine{
+			{ID: "line-1", Description: "Consulting", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromInt(100), VATRate: decimal.NewFromInt(22), LineTotal: decimal.NewFromInt(122)},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/quotes/quote-1/pdf", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "quoteID": "quote-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.GetQuotePDF(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), `quote-QT-001.pdf`)
+	assert.True(t, bytes.HasPrefix(rr.Body.Bytes(), []byte("%PDF")))
+}
+
+func TestEmailQuoteMarksDraftSent(t *testing.T) {
+	h, repo, tenantRepo := setupQuotesTestHandlers()
+	h.pdfService = pdf.NewService()
+	emailRepo := &emailHandlerRepository{
+		settings:  make(map[string][]byte),
+		templates: make(map[string]email.EmailTemplate),
+		logs:      []email.EmailLog{},
+	}
+	emailRepo.settings["tenant-1"] = []byte(`{
+		"smtp_host":"smtp.example.com",
+		"smtp_port":587,
+		"smtp_username":"user@example.com",
+		"smtp_password":"secret",
+		"smtp_from_email":"billing@example.com",
+		"smtp_from_name":"Billing",
+		"smtp_use_tls":true
+	}`)
+	mailer := &emailHandlerMailer{}
+	h.emailService = email.NewServiceWithRepository(emailRepo, mailer)
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+
+	validUntil := time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC)
+	repo.quotes["quote-1"] = &quotes.Quote{
+		ID:          "quote-1",
+		TenantID:    "tenant-1",
+		QuoteNumber: "QT-001",
+		ContactID:   "contact-1",
+		Contact:     &contacts.Contact{Name: "Acme OU", Email: "billing@example.com"},
+		QuoteDate:   time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		ValidUntil:  &validUntil,
+		Status:      quotes.QuoteStatusDraft,
+		Currency:    "EUR",
+		Subtotal:    decimal.NewFromInt(100),
+		VATAmount:   decimal.NewFromInt(22),
+		Total:       decimal.NewFromInt(122),
+		Lines: []quotes.QuoteLine{
+			{ID: "line-1", Description: "Consulting", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromInt(100), VATRate: decimal.NewFromInt(22), LineTotal: decimal.NewFromInt(122)},
+		},
+	}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/quotes/quote-1/email", email.SendQuoteRequest{
+		RecipientEmail: "billing@example.com",
+		RecipientName:  "Acme",
+		Subject:        "Quote QT-001",
+		Message:        "Please review.",
+		AttachPDF:      true,
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "quoteID": "quote-1"})
+
+	rr := httptest.NewRecorder()
+	h.EmailQuote(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var result email.EmailSentResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	assert.True(t, result.Success)
+	assert.Equal(t, 1, mailer.sentCount)
+	assert.Equal(t, quotes.QuoteStatusSent, repo.quotes["quote-1"].Status)
+	require.NotEmpty(t, emailRepo.logs)
+	assert.Equal(t, string(email.TemplateQuoteSend), emailRepo.logs[0].EmailType)
+	assert.Equal(t, "quote-1", emailRepo.logs[0].RelatedID)
+	assert.Equal(t, email.StatusSent, emailRepo.logs[0].Status)
 }
 
 func TestUpdateQuote(t *testing.T) {

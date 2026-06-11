@@ -10,6 +10,8 @@ type TemplateType string
 
 const (
 	TemplateInvoiceSend     TemplateType = "INVOICE_SEND"
+	TemplateQuoteSend       TemplateType = "QUOTE_SEND"
+	TemplateOrderConfirm    TemplateType = "ORDER_CONFIRM"
 	TemplatePaymentReceipt  TemplateType = "PAYMENT_RECEIPT"
 	TemplateOverdueReminder TemplateType = "OVERDUE_REMINDER"
 )
@@ -93,6 +95,42 @@ type SendInvoiceRequest struct {
 
 // Validate validates the send invoice request
 func (r *SendInvoiceRequest) Validate() error {
+	if r.RecipientEmail == "" {
+		return errors.New("recipient email is required")
+	}
+	return nil
+}
+
+// SendQuoteRequest represents a request to send a quote via email.
+type SendQuoteRequest struct {
+	RecipientEmail          string `json:"recipient_email"`
+	RecipientName           string `json:"recipient_name,omitempty"`
+	Subject                 string `json:"subject,omitempty"`
+	Message                 string `json:"message,omitempty"`
+	AttachPDF               bool   `json:"attach_pdf"`
+	RequireApprovedEvidence bool   `json:"require_approved_evidence,omitempty"`
+}
+
+// Validate validates the send quote request.
+func (r *SendQuoteRequest) Validate() error {
+	if r.RecipientEmail == "" {
+		return errors.New("recipient email is required")
+	}
+	return nil
+}
+
+// SendOrderRequest represents a request to send an order confirmation via email.
+type SendOrderRequest struct {
+	RecipientEmail          string `json:"recipient_email"`
+	RecipientName           string `json:"recipient_name,omitempty"`
+	Subject                 string `json:"subject,omitempty"`
+	Message                 string `json:"message,omitempty"`
+	AttachPDF               bool   `json:"attach_pdf"`
+	RequireApprovedEvidence bool   `json:"require_approved_evidence,omitempty"`
+}
+
+// Validate validates the send order request.
+func (r *SendOrderRequest) Validate() error {
 	if r.RecipientEmail == "" {
 		return errors.New("recipient email is required")
 	}
@@ -200,6 +238,50 @@ func DefaultTemplates() map[TemplateType]EmailTemplate {
 </html>`,
 			IsActive: true,
 		},
+		TemplateQuoteSend: {
+			TemplateType: TemplateQuoteSend,
+			Subject:      "Quote {{.QuoteNumber}} from {{.CompanyName}}",
+			BodyHTML: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+<h2>Quote {{.QuoteNumber}}</h2>
+<p>Dear {{.ContactName}},</p>
+<p>Please find attached quote {{.QuoteNumber}} for {{.TotalAmount}} {{.Currency}}.</p>
+<p><strong>Quote Date:</strong> {{.QuoteDate}}</p>
+{{if .ValidUntil}}<p><strong>Valid Until:</strong> {{.ValidUntil}}</p>{{end}}
+{{if .Message}}
+<p>{{.Message}}</p>
+{{end}}
+<p>Best regards,<br>{{.CompanyName}}</p>
+</div>
+</body>
+</html>`,
+			IsActive: true,
+		},
+		TemplateOrderConfirm: {
+			TemplateType: TemplateOrderConfirm,
+			Subject:      "Order {{.OrderNumber}} confirmation from {{.CompanyName}}",
+			BodyHTML: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+<h2>Order {{.OrderNumber}}</h2>
+<p>Dear {{.ContactName}},</p>
+<p>Please find attached order confirmation {{.OrderNumber}} for {{.TotalAmount}} {{.Currency}}.</p>
+<p><strong>Order Date:</strong> {{.OrderDate}}</p>
+{{if .ExpectedDelivery}}<p><strong>Expected Delivery:</strong> {{.ExpectedDelivery}}</p>{{end}}
+{{if .Message}}
+<p>{{.Message}}</p>
+{{end}}
+<p>Best regards,<br>{{.CompanyName}}</p>
+</div>
+</body>
+</html>`,
+			IsActive: true,
+		},
 		TemplateOverdueReminder: {
 			TemplateType: TemplateOverdueReminder,
 			Subject:      "Overdue Invoice Reminder - {{.InvoiceNumber}}",
@@ -244,6 +326,16 @@ type TemplateData struct {
 	IssueDate     string
 	DaysOverdue   int
 	DaysUntilDue  int // For pre-due reminders
+
+	// Quote fields
+	QuoteNumber string
+	QuoteDate   string
+	ValidUntil  string
+
+	// Order fields
+	OrderNumber      string
+	OrderDate        string
+	ExpectedDelivery string
 
 	// Interest fields (for overdue reminders)
 	InterestRate      string // Daily rate as percentage (e.g., "0.05%")

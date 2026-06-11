@@ -16,8 +16,11 @@ import (
 	"github.com/johnfercher/maroto/v2/pkg/props"
 	"github.com/shopspring/decimal"
 
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -27,6 +30,37 @@ type PDFSettings struct {
 	FooterText   string `json:"footer_text"`
 	BankDetails  string `json:"bank_details"`
 	InvoiceTerms string `json:"invoice_terms"`
+}
+
+type commercialDocumentPDF struct {
+	Title              string
+	NumberLabel        string
+	Number             string
+	Status             string
+	PrimaryDateLabel   string
+	PrimaryDate        string
+	SecondaryDateLabel string
+	SecondaryDate      string
+	ReferenceLabel     string
+	Reference          string
+	RecipientLabel     string
+	Contact            *contacts.Contact
+	Currency           string
+	Subtotal           decimal.Decimal
+	VATAmount          decimal.Decimal
+	Total              decimal.Decimal
+	Notes              string
+	Lines              []commercialDocumentLine
+}
+
+type commercialDocumentLine struct {
+	LineNumber      int
+	Description     string
+	Quantity        decimal.Decimal
+	UnitPrice       decimal.Decimal
+	VATRate         decimal.Decimal
+	DiscountPercent decimal.Decimal
+	LineTotal       decimal.Decimal
 }
 
 // DefaultPDFSettings returns default PDF settings
@@ -106,6 +140,111 @@ func (s *Service) GenerateInvoicePDF(invoice *invoicing.Invoice, t *tenant.Tenan
 	}
 
 	return doc.GetBytes(), nil
+}
+
+// GenerateQuotePDF generates a customer-facing PDF for a sales quote.
+func (s *Service) GenerateQuotePDF(quote *quotes.Quote, t *tenant.Tenant, pdfSettings PDFSettings) ([]byte, error) {
+	doc := commercialDocumentPDF{
+		Title:              "QUOTE",
+		NumberLabel:        "Quote No.",
+		Number:             quote.QuoteNumber,
+		Status:             string(quote.Status),
+		PrimaryDateLabel:   "Quote Date",
+		PrimaryDate:        quote.QuoteDate.Format("02.01.2006"),
+		SecondaryDateLabel: "Valid Until",
+		RecipientLabel:     "Customer:",
+		Contact:            quote.Contact,
+		Currency:           quote.Currency,
+		Subtotal:           quote.Subtotal,
+		VATAmount:          quote.VATAmount,
+		Total:              quote.Total,
+		Notes:              quote.Notes,
+		Lines:              make([]commercialDocumentLine, 0, len(quote.Lines)),
+	}
+	if quote.ValidUntil != nil {
+		doc.SecondaryDate = quote.ValidUntil.Format("02.01.2006")
+	}
+	for _, line := range quote.Lines {
+		doc.Lines = append(doc.Lines, commercialDocumentLine{
+			LineNumber:      line.LineNumber,
+			Description:     line.Description,
+			Quantity:        line.Quantity,
+			UnitPrice:       line.UnitPrice,
+			VATRate:         line.VATRate,
+			DiscountPercent: line.DiscountPercent,
+			LineTotal:       line.LineTotal,
+		})
+	}
+
+	return s.generateCommercialDocumentPDF(doc, t, pdfSettings)
+}
+
+// GenerateOrderPDF generates a customer-facing PDF for a sales order.
+func (s *Service) GenerateOrderPDF(order *orders.Order, t *tenant.Tenant, pdfSettings PDFSettings) ([]byte, error) {
+	doc := commercialDocumentPDF{
+		Title:              "ORDER CONFIRMATION",
+		NumberLabel:        "Order No.",
+		Number:             order.OrderNumber,
+		Status:             string(order.Status),
+		PrimaryDateLabel:   "Order Date",
+		PrimaryDate:        order.OrderDate.Format("02.01.2006"),
+		SecondaryDateLabel: "Expected Delivery",
+		RecipientLabel:     "Customer:",
+		Contact:            order.Contact,
+		Currency:           order.Currency,
+		Subtotal:           order.Subtotal,
+		VATAmount:          order.VATAmount,
+		Total:              order.Total,
+		Notes:              order.Notes,
+		Lines:              make([]commercialDocumentLine, 0, len(order.Lines)),
+	}
+	if order.ExpectedDelivery != nil {
+		doc.SecondaryDate = order.ExpectedDelivery.Format("02.01.2006")
+	}
+	if order.QuoteID != nil && strings.TrimSpace(*order.QuoteID) != "" {
+		doc.ReferenceLabel = "Quote ID"
+		doc.Reference = strings.TrimSpace(*order.QuoteID)
+	}
+	for _, line := range order.Lines {
+		doc.Lines = append(doc.Lines, commercialDocumentLine{
+			LineNumber:      line.LineNumber,
+			Description:     line.Description,
+			Quantity:        line.Quantity,
+			UnitPrice:       line.UnitPrice,
+			VATRate:         line.VATRate,
+			DiscountPercent: line.DiscountPercent,
+			LineTotal:       line.LineTotal,
+		})
+	}
+
+	return s.generateCommercialDocumentPDF(doc, t, pdfSettings)
+}
+
+func (s *Service) generateCommercialDocumentPDF(doc commercialDocumentPDF, t *tenant.Tenant, pdfSettings PDFSettings) ([]byte, error) {
+	cfg := config.NewBuilder().
+		WithPageNumber(props.PageNumber{
+			Pattern: "Page {current} of {total}",
+			Place:   props.RightBottom,
+			Size:    8,
+		}).
+		WithLeftMargin(15).
+		WithTopMargin(15).
+		WithRightMargin(15).
+		Build()
+
+	m := maroto.New(cfg)
+	s.addHeader(m, t)
+	s.addCommercialDocumentTitle(m, doc)
+	s.addCommercialDocumentRecipient(m, doc)
+	s.addCommercialDocumentLineItems(m, doc)
+	s.addCommercialDocumentTotals(m, doc)
+	s.addCommercialDocumentFooter(m, doc, pdfSettings)
+
+	generated, err := m.Generate()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate PDF: %w", err)
+	}
+	return generated.GetBytes(), nil
 }
 
 // GeneratePayslipPDF generates a PDF for an employee payslip.
@@ -651,6 +790,246 @@ func (s *Service) addFooter(m core.Maroto, invoice *invoicing.Invoice, settings 
 	}
 
 	// Footer text
+	if settings.FooterText != "" {
+		m.AddRow(10)
+		m.AddRow(6,
+			col.New(12).Add(
+				text.New(settings.FooterText, props.Text{
+					Size:  10,
+					Style: fontstyle.Italic,
+					Align: align.Center,
+				}),
+			),
+		)
+	}
+}
+
+func (s *Service) addCommercialDocumentTitle(m core.Maroto, doc commercialDocumentPDF) {
+	m.AddRow(12,
+		col.New(6).Add(
+			text.New(doc.Title, props.Text{
+				Size:  20,
+				Style: fontstyle.Bold,
+				Align: align.Left,
+			}),
+		),
+		col.New(6).Add(
+			text.New(fmt.Sprintf("%s %s", doc.NumberLabel, doc.Number), props.Text{
+				Size:  14,
+				Style: fontstyle.Bold,
+				Align: align.Right,
+			}),
+		),
+	)
+
+	m.AddRow(6,
+		col.New(6).Add(
+			text.New(fmt.Sprintf("%s: %s", doc.PrimaryDateLabel, doc.PrimaryDate), props.Text{
+				Size:  9,
+				Align: align.Left,
+			}),
+		),
+		col.New(6).Add(
+			text.New(fmt.Sprintf("Status: %s", doc.Status), props.Text{
+				Size:  9,
+				Align: align.Right,
+			}),
+		),
+	)
+
+	if doc.SecondaryDate != "" {
+		m.AddRow(6,
+			col.New(6).Add(
+				text.New(fmt.Sprintf("%s: %s", doc.SecondaryDateLabel, doc.SecondaryDate), props.Text{
+					Size:  9,
+					Align: align.Left,
+				}),
+			),
+		)
+	}
+
+	if doc.Reference != "" {
+		label := doc.ReferenceLabel
+		if label == "" {
+			label = "Reference"
+		}
+		m.AddRow(6,
+			col.New(6).Add(
+				text.New(fmt.Sprintf("%s: %s", label, doc.Reference), props.Text{
+					Size:  9,
+					Align: align.Left,
+				}),
+			),
+		)
+	}
+
+	m.AddRow(8)
+}
+
+func (s *Service) addCommercialDocumentRecipient(m core.Maroto, doc commercialDocumentPDF) {
+	m.AddRow(6,
+		col.New(12).Add(
+			text.New(doc.RecipientLabel, props.Text{
+				Size:  10,
+				Style: fontstyle.Bold,
+				Align: align.Left,
+			}),
+		),
+	)
+
+	if doc.Contact != nil {
+		c := doc.Contact
+		m.AddRow(5,
+			col.New(12).Add(
+				text.New(c.Name, props.Text{
+					Size:  10,
+					Style: fontstyle.Bold,
+					Align: align.Left,
+				}),
+			),
+		)
+
+		if c.AddressLine1 != "" {
+			m.AddRow(5, col.New(12).Add(text.New(c.AddressLine1, props.Text{Size: 9, Align: align.Left})))
+		}
+		if c.AddressLine2 != "" {
+			m.AddRow(5, col.New(12).Add(text.New(c.AddressLine2, props.Text{Size: 9, Align: align.Left})))
+		}
+
+		cityLine := ""
+		if c.City != "" {
+			cityLine = c.City
+		}
+		if c.PostalCode != "" {
+			if cityLine != "" {
+				cityLine += ", "
+			}
+			cityLine += c.PostalCode
+		}
+		if c.CountryCode != "" {
+			if cityLine != "" {
+				cityLine += ", "
+			}
+			cityLine += c.CountryCode
+		}
+		if cityLine != "" {
+			m.AddRow(5, col.New(12).Add(text.New(cityLine, props.Text{Size: 9, Align: align.Left})))
+		}
+		if c.VATNumber != "" {
+			m.AddRow(5, col.New(12).Add(text.New(fmt.Sprintf("VAT: %s", c.VATNumber), props.Text{Size: 9, Align: align.Left})))
+		}
+		if c.Email != "" {
+			m.AddRow(5, col.New(12).Add(text.New(c.Email, props.Text{Size: 9, Align: align.Left})))
+		}
+	}
+
+	m.AddRow(8)
+}
+
+func (s *Service) addCommercialDocumentLineItems(m core.Maroto, doc commercialDocumentPDF) {
+	headerStyle := props.Text{Size: 9, Style: fontstyle.Bold, Align: align.Left}
+	headerStyleRight := props.Text{Size: 9, Style: fontstyle.Bold, Align: align.Right}
+
+	m.AddRow(7,
+		col.New(1).Add(text.New("#", headerStyle)),
+		col.New(4).Add(text.New("Description", headerStyle)),
+		col.New(1).Add(text.New("Qty", headerStyleRight)),
+		col.New(2).Add(text.New("Unit Price", headerStyleRight)),
+		col.New(1).Add(text.New("VAT %", headerStyleRight)),
+		col.New(1).Add(text.New("Discount", headerStyleRight)),
+		col.New(2).Add(text.New("Total", headerStyleRight)),
+	).WithStyle(&props.Cell{
+		BackgroundColor: &props.Color{Red: 240, Green: 240, Blue: 240},
+		BorderType:      border.Bottom,
+		BorderThickness: 0.5,
+	})
+
+	for i, line := range doc.Lines {
+		cellStyle := props.Text{Size: 9, Align: align.Left}
+		cellStyleRight := props.Text{Size: 9, Align: align.Right}
+		lineNumber := line.LineNumber
+		if lineNumber == 0 {
+			lineNumber = i + 1
+		}
+
+		m.AddRow(6,
+			col.New(1).Add(text.New(fmt.Sprintf("%d", lineNumber), cellStyle)),
+			col.New(4).Add(text.New(truncateText(line.Description, 50), cellStyle)),
+			col.New(1).Add(text.New(formatDecimal(line.Quantity, 2), cellStyleRight)),
+			col.New(2).Add(text.New(formatMoney(line.UnitPrice, doc.Currency), cellStyleRight)),
+			col.New(1).Add(text.New(formatDecimal(line.VATRate, 0)+"%", cellStyleRight)),
+			col.New(1).Add(text.New(formatDiscount(line.DiscountPercent), cellStyleRight)),
+			col.New(2).Add(text.New(formatMoney(line.LineTotal, doc.Currency), cellStyleRight)),
+		).WithStyle(&props.Cell{
+			BorderType:      border.Bottom,
+			BorderThickness: 0.2,
+		})
+	}
+
+	m.AddRow(5)
+}
+
+func (s *Service) addCommercialDocumentTotals(m core.Maroto, doc commercialDocumentPDF) {
+	labelStyle := props.Text{Size: 10, Align: align.Left}
+	totalStyle := props.Text{Size: 10, Align: align.Right}
+	labelBoldStyle := props.Text{Size: 11, Style: fontstyle.Bold, Align: align.Left}
+	totalBoldStyle := props.Text{Size: 11, Style: fontstyle.Bold, Align: align.Right}
+
+	m.AddRow(6,
+		col.New(8),
+		col.New(2).Add(text.New("Subtotal:", labelStyle)),
+		col.New(2).Add(text.New(formatMoney(doc.Subtotal, doc.Currency), totalStyle)),
+	)
+	m.AddRow(6,
+		col.New(8),
+		col.New(2).Add(text.New("VAT:", labelStyle)),
+		col.New(2).Add(text.New(formatMoney(doc.VATAmount, doc.Currency), totalStyle)),
+	)
+	m.AddRow(1,
+		col.New(8),
+		col.New(4).Add(line.New(props.Line{Thickness: 0.5})),
+	)
+	m.AddRow(8,
+		col.New(8),
+		col.New(2).Add(text.New("TOTAL:", labelBoldStyle)),
+		col.New(2).Add(text.New(formatMoney(doc.Total, doc.Currency), totalBoldStyle)),
+	)
+	m.AddRow(10)
+}
+
+func (s *Service) addCommercialDocumentFooter(m core.Maroto, doc commercialDocumentPDF, settings PDFSettings) {
+	if settings.InvoiceTerms != "" {
+		m.AddRow(6,
+			col.New(12).Add(
+				text.New("Terms & Conditions:", props.Text{
+					Size:  10,
+					Style: fontstyle.Bold,
+					Align: align.Left,
+				}),
+			),
+		)
+		m.AddRow(5,
+			col.New(12).Add(text.New(settings.InvoiceTerms, props.Text{Size: 8, Align: align.Left})),
+		)
+		m.AddRow(5)
+	}
+
+	if doc.Notes != "" {
+		m.AddRow(6,
+			col.New(12).Add(
+				text.New("Notes:", props.Text{
+					Size:  10,
+					Style: fontstyle.Bold,
+					Align: align.Left,
+				}),
+			),
+		)
+		m.AddRow(5,
+			col.New(12).Add(text.New(doc.Notes, props.Text{Size: 9, Align: align.Left})),
+		)
+		m.AddRow(5)
+	}
+
 	if settings.FooterText != "" {
 		m.AddRow(10)
 		m.AddRow(6,

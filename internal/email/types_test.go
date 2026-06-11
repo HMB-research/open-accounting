@@ -12,6 +12,8 @@ func TestTemplateTypeConstants(t *testing.T) {
 		expected     string
 	}{
 		{TemplateInvoiceSend, "INVOICE_SEND"},
+		{TemplateQuoteSend, "QUOTE_SEND"},
+		{TemplateOrderConfirm, "ORDER_CONFIRM"},
 		{TemplatePaymentReceipt, "PAYMENT_RECEIPT"},
 		{TemplateOverdueReminder, "OVERDUE_REMINDER"},
 	}
@@ -296,11 +298,86 @@ func TestSendPaymentReceiptRequest_Validate(t *testing.T) {
 	}
 }
 
+func TestSendQuoteRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		request     SendQuoteRequest
+		expectError bool
+	}{
+		{
+			name: "Valid request",
+			request: SendQuoteRequest{
+				RecipientEmail: "customer@example.com",
+				AttachPDF:      true,
+			},
+			expectError: false,
+		},
+		{
+			name: "Missing recipient email",
+			request: SendQuoteRequest{
+				RecipientName: "Customer",
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.request.Validate()
+			if tt.expectError && err == nil {
+				t.Error("Validate() expected error, got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Validate() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestSendOrderRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		request     SendOrderRequest
+		expectError bool
+	}{
+		{
+			name: "Valid request",
+			request: SendOrderRequest{
+				RecipientEmail:          "customer@example.com",
+				AttachPDF:               true,
+				RequireApprovedEvidence: true,
+			},
+			expectError: false,
+		},
+		{
+			name: "Missing recipient email",
+			request: SendOrderRequest{
+				RecipientName: "Customer",
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.request.Validate()
+			if tt.expectError && err == nil {
+				t.Error("Validate() expected error, got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Validate() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestDefaultTemplates(t *testing.T) {
 	templates := DefaultTemplates()
 
 	expectedTypes := []TemplateType{
 		TemplateInvoiceSend,
+		TemplateQuoteSend,
+		TemplateOrderConfirm,
 		TemplatePaymentReceipt,
 		TemplateOverdueReminder,
 	}
@@ -349,6 +426,24 @@ func TestDefaultTemplates_ContainPlaceholders(t *testing.T) {
 	for _, ph := range paymentPlaceholders {
 		if !containsString(paymentTemplate.BodyHTML, ph) {
 			t.Errorf("Payment template missing placeholder: %s", ph)
+		}
+	}
+
+	// Quote template should have quote-specific placeholders
+	quoteTemplate := templates[TemplateQuoteSend]
+	quotePlaceholders := []string{"{{.QuoteNumber}}", "{{.ContactName}}", "{{.TotalAmount}}", "{{.QuoteDate}}", "{{.ValidUntil}}"}
+	for _, ph := range quotePlaceholders {
+		if !containsString(quoteTemplate.BodyHTML, ph) && !containsString(quoteTemplate.Subject, ph) {
+			t.Errorf("Quote template missing placeholder: %s", ph)
+		}
+	}
+
+	// Order template should have order-specific placeholders
+	orderTemplate := templates[TemplateOrderConfirm]
+	orderPlaceholders := []string{"{{.OrderNumber}}", "{{.ContactName}}", "{{.TotalAmount}}", "{{.OrderDate}}", "{{.ExpectedDelivery}}"}
+	for _, ph := range orderPlaceholders {
+		if !containsString(orderTemplate.BodyHTML, ph) && !containsString(orderTemplate.Subject, ph) {
+			t.Errorf("Order template missing placeholder: %s", ph)
 		}
 	}
 
@@ -522,18 +617,24 @@ func TestTestSMTPResponse_JSONSerialization(t *testing.T) {
 
 func TestTemplateData_Fields(t *testing.T) {
 	data := TemplateData{
-		CompanyName:   "Acme Corp",
-		ContactName:   "John Doe",
-		Message:       "Custom message",
-		InvoiceNumber: "INV-2025-001",
-		TotalAmount:   "1000.00",
-		Currency:      "EUR",
-		DueDate:       "2025-02-01",
-		IssueDate:     "2025-01-01",
-		DaysOverdue:   15,
-		Amount:        "500.00",
-		PaymentDate:   "2025-01-15",
-		Reference:     "PAY-001",
+		CompanyName:      "Acme Corp",
+		ContactName:      "John Doe",
+		Message:          "Custom message",
+		InvoiceNumber:    "INV-2025-001",
+		TotalAmount:      "1000.00",
+		Currency:         "EUR",
+		DueDate:          "2025-02-01",
+		IssueDate:        "2025-01-01",
+		DaysOverdue:      15,
+		QuoteNumber:      "QUO-2025-001",
+		QuoteDate:        "2025-01-05",
+		ValidUntil:       "2025-02-05",
+		OrderNumber:      "ORD-2025-001",
+		OrderDate:        "2025-01-06",
+		ExpectedDelivery: "2025-01-20",
+		Amount:           "500.00",
+		PaymentDate:      "2025-01-15",
+		Reference:        "PAY-001",
 	}
 
 	if data.CompanyName != "Acme Corp" {
