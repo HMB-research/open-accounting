@@ -336,3 +336,27 @@ Local focused baseline against the branch API showed `demo/balance-confirmations
 | `demo/balance-confirmations-page.spec.ts` | 1.338s | 1 |
 
 The focused command now reports `5 passed (10.2s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior balance-confirmations shard tail is reduced. The next measured demo E2E candidates are `tax-overview`, `invoices`, and `cash-payments`.
+
+CI run `27319462883` on commit `93dd33d` confirmed the prior balance-confirmations tail was reduced. The four replacement balance-confirmations specs totaled about 40.871s, down from the prior 120.974s single-spec cost. The highest remaining single-spec cost shifted to `demo/invoices.spec.ts` at 114.643s across 10 micro-tests.
+
+## Follow-up: Invoices Workflow Consolidation
+
+Replaced `demo/invoices.spec.ts` with workflow-sized files and moved repeated route/modal helpers into `demo/invoices-utils.ts`:
+
+| New spec | Coverage moved |
+|----------|----------------|
+| `demo/invoices-page.spec.ts` | Heading, new-invoice control, terminal list/empty state, and table header presence |
+| `demo/invoices-modal.spec.ts` | Create-invoice modal open, required fields, inline-contact button presence, and close behavior |
+| `demo/invoices-inline-contact.spec.ts` | Inline contact modal open, contact creation API response, and new contact selection in the invoice form |
+
+The old file repeated auth, tenant setup, route navigation, invoice loading, and modal opening for 10 separate micro-tests. The replacement keeps the same visible workflows while each workflow pays route setup once. Route setup now opens `/invoices` with `waitForNetworkIdle: false`, waits for route-owned controls, and then waits for the route's terminal content state (`table tbody tr`, `.empty-state`, or `.alert-error`).
+
+Local focused baseline against the branch API showed `demo/invoices.spec.ts` at 19.342s of Playwright result time and `11 passed (13.4s)` including auth setup. After workflow consolidation, the same visible behaviors reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/invoices-inline-contact.spec.ts` | 1.740s | 1 |
+| `demo/invoices-modal.spec.ts` | 1.663s | 1 |
+| `demo/invoices-page.spec.ts` | 1.616s | 1 |
+
+The focused command now reports `4 passed (9.0s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior invoices shard tail is reduced. The next measured demo E2E candidates are `tax-overview`, `cost-centers`, and `inventory`.
