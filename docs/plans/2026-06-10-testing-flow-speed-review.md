@@ -1300,3 +1300,58 @@ The next CI artifact should confirm the remote spec-level reduction. Remaining
 measured consolidation targets from run `27341405528` are `tsd`, `payroll`,
 `mobile-navigation`, `settings`, and `journal`; `auth.setup` remains separate
 shared setup overhead.
+
+CI run `27343538734` confirmed the remote reduction on commit
+`8882b7b4eacc9d6f2b8ee6f5a272bb1a984c4247`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/salary-calculator.spec.ts` | 10.461s | 1 | 1 |
+| `demo/payroll.spec.ts` | 61.893s | 5 | 5 |
+| `demo/journal.spec.ts` | 56.340s | 4 | 4 |
+| `demo/tsd.spec.ts` | 51.150s | 5 | 5 |
+| `demo/mobile-navigation.spec.ts` | 48.659s | 4 | 4 |
+
+Compared with run `27341405528`, `demo/salary-calculator.spec.ts` dropped
+from 55.852s across five tests to 10.461s as one workflow test. The next
+route-specific consolidation target is `demo/payroll.spec.ts`.
+
+## 2026-06-11 Payroll Spec Consolidation
+
+CI run `27343538734` measured `demo/payroll.spec.ts` at 61.893s across five
+page-structure tests, making it the largest remaining route-specific demo spec
+in that artifact set.
+
+The old spec repeated authentication, tenant selection, `/payroll` navigation,
+and generic network-idle waiting before five small assertions. It also did not
+verify the seeded payroll runs or payslip drill-down.
+
+The spec now uses one route-owned workflow check that:
+
+- opens `/payroll` once and waits for the year-scoped payroll-runs API response;
+- verifies the page heading, create-run modal, import-history modal, and year
+  filter controls;
+- filters to the seeded 2024 payroll year and asserts the rendered table count
+  and totals from the API response;
+- verifies the payroll tax-rate panel; and
+- opens the payslips modal for the selected run, asserting the payslip API
+  response count and rendered gross, net, and employer-cost amounts.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/payroll.spec.ts --workers=4` | 2 passed in 9.7s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/payroll.spec.ts --workers=4 --repeat-each=5` | 6 passed in 10.4s, including `auth-setup` |
+
+Reporter timing from the repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/payroll.spec.ts` | 9.417s | 5 | 5 |
+| `demo/auth.setup.ts` | 2.721s | 1 | 1 |
+
+The next CI artifact should confirm the remote spec-level reduction. Remaining
+measured consolidation targets from run `27343538734` are `journal`, `tsd`,
+`mobile-navigation`, `env-health-auth`, and `payment-reminders-selection`;
+`auth.setup` remains separate shared setup overhead.
