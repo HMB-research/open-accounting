@@ -494,9 +494,9 @@ Content-Type: application/json
 }
 ```
 
-Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files plus Estonian e-invoice XML bundles. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `e_invoices`, `payments`, `bank_accounts`, `bank_transactions`, `payroll_history`, `leave_balances`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`. CSV files use `csv_content`; `e_invoices` files use `xml_content`. Stock-adjustment validation recognizes optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`.
+Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files plus Estonian e-invoice XML bundles. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `e_invoices`, `payments`, `bank_accounts`, `bank_transactions`, `payroll_history`, `leave_balances`, `tsd_history`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`. CSV files use `csv_content`; `e_invoices` files use `xml_content`. Stock-adjustment validation recognizes optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`.
 
-When the related files are present in the same bundle, the validator also checks references such as commercial documents and e-invoice suppliers to contacts, payments to CSV or XML invoices, payroll/leave rows to employees, products to product categories, stock rows to products and warehouses, cost centers to parent cost centers, product categories to parent categories, and opening balances or journals to accounts.
+When the related files are present in the same bundle, the validator also checks references such as commercial documents and e-invoice suppliers to contacts, payments to CSV or XML invoices, payroll/leave/TSD rows to employees, products to product categories, stock rows to products and warehouses, cost centers to parent cost centers, product categories to parent categories, and opening balances or journals to accounts.
 
 ### List Recent Journal Entries
 
@@ -1342,7 +1342,7 @@ Supported statuses:
 
 If `taxable_income`, `net_salary`, or `total_employer_cost` is omitted, the importer derives it from the supplied gross salary and deduction/tax columns. Existing payroll periods are not overwritten; rows for periods that already have payroll runs are skipped and returned as row errors.
 
-This importer records historical payroll runs and payslips only. It does not import leave balances, tax declaration submission history, accounting journal entries, or incumbent-system audit logs.
+This importer records historical payroll runs and payslips only. Use the leave-balance and TSD history importers for those separate migration records. Accounting journal entries and incumbent-system audit logs remain separate cutover work.
 
 **Response (200 OK):**
 
@@ -1387,6 +1387,42 @@ Employee matching supports the same identifiers as historical payroll import. Ab
   "rows_processed": 1,
   "leave_balances_created": 1,
   "leave_balances_updated": 0,
+  "rows_skipped": 0
+}
+```
+
+### Import Historical TSD
+
+```http
+POST /tenants/{tenantId}/tsd/import-history
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "file_name": "tsd-history.csv",
+  "csv_content": "year,month,status,submitted_at,emta_reference,employee_number,gross_payment,basic_exemption,taxable_amount,income_tax,social_tax,unemployment_insurance_employer,unemployment_insurance_employee,funded_pension\n2025,12,ACCEPTED,2026-01-10,EMTA-2025-12,EMP-001,3200.00,50.00,3150.00,693.00,1056.00,25.60,51.20,64.00\n"
+}
+```
+
+Each CSV row represents one employee row in a historical TSD declaration. Rows are grouped into declarations by `year` + `month`.
+
+Required columns:
+
+- `year`
+- `month`
+- `gross_payment`
+- at least one employee identifier per row
+
+Employee matching supports the same identifiers as historical payroll import. Supported statuses are `DRAFT`, `SUBMITTED`, `ACCEPTED`, and `REJECTED`; status defaults to `DRAFT` when omitted. Existing TSD declaration periods are skipped rather than overwritten. `payment_type` defaults to `10` when omitted, and `gross_salary` is accepted as an alias for `gross_payment`.
+
+**Response (200 OK):**
+
+```json
+{
+  "file_name": "tsd-history.csv",
+  "rows_processed": 1,
+  "declarations_created": 1,
+  "rows_imported": 1,
   "rows_skipped": 0
 }
 ```
@@ -3606,6 +3642,16 @@ Authorization: Bearer <token>
 ```
 
 Returns `text/csv` for review or import tooling.
+
+### Import Historical TSD
+
+```http
+POST /tenants/{tenantId}/tsd/import-history
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Imports incumbent-system TSD declaration history without overwriting existing declaration periods. The CSV payload and response shape are documented in the Payroll section.
 
 ### Mark TSD Submitted
 

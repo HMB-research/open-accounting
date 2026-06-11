@@ -91,6 +91,46 @@ func (h *Handlers) ImportPayrollHistory(w http.ResponseWriter, r *http.Request) 
 	respondJSON(w, http.StatusOK, result)
 }
 
+// ImportTSDHistory imports historical TSD declarations and rows from CSV data.
+// @Summary Import historical TSD declarations
+// @Description Import historical TSD declarations and declaration rows from CSV data
+// @Tags Payroll
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body payroll.ImportTSDHistoryRequest true "CSV import payload"
+// @Success 200 {object} payroll.ImportTSDHistoryResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/tsd/import-history [post]
+func (h *Handlers) ImportTSDHistory(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req payroll.ImportTSDHistoryRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+
+	if req.FileName == "" {
+		req.FileName = "tsd-history.csv"
+	}
+
+	result, err := h.payrollService.ImportTSDHistoryCSV(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // ImportLeaveBalances imports or updates employee leave balances from CSV data.
 // @Summary Import leave balances
 // @Description Import or update employee leave balances from CSV data

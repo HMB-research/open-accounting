@@ -14,6 +14,7 @@ const (
 	KindBankTransactions  FileKind = "bank_transactions"
 	KindPayrollHistory    FileKind = "payroll_history"
 	KindLeaveBalances     FileKind = "leave_balances"
+	KindTSDHistory        FileKind = "tsd_history"
 	KindKMDHistory        FileKind = "kmd_history"
 	KindQuotes            FileKind = "quotes"
 	KindOrders            FileKind = "orders"

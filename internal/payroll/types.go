@@ -353,6 +353,33 @@ type ImportPayrollHistoryRowError struct {
 	Message        string `json:"message"`
 }
 
+// ImportTSDHistoryRequest contains CSV payload for historical TSD declarations.
+// Each CSV row represents one TSD declaration row inside a period.
+type ImportTSDHistoryRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportTSDHistoryResult summarizes a historical TSD declaration import.
+type ImportTSDHistoryResult struct {
+	FileName            string                     `json:"file_name,omitempty"`
+	RowsProcessed       int                        `json:"rows_processed"`
+	DeclarationsCreated int                        `json:"declarations_created"`
+	RowsImported        int                        `json:"rows_imported"`
+	RowsSkipped         int                        `json:"rows_skipped"`
+	Errors              []ImportTSDHistoryRowError `json:"errors,omitempty"`
+}
+
+// ImportTSDHistoryRowError describes a row-level historical TSD import failure.
+type ImportTSDHistoryRowError struct {
+	Row            int    `json:"row"`
+	PeriodYear     int    `json:"period_year,omitempty"`
+	PeriodMonth    int    `json:"period_month,omitempty"`
+	EmployeeName   string `json:"employee_name,omitempty"`
+	EmployeeNumber string `json:"employee_number,omitempty"`
+	Message        string `json:"message"`
+}
+
 // TaxCalculation holds the breakdown of taxes for a salary
 type TaxCalculation struct {
 	GrossSalary    decimal.Decimal `json:"gross_salary"`

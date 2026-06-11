@@ -133,7 +133,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Unemployment insurance | ✅ | ✅ | ✅ | Implemented |
 | Pension contributions | ✅ | ✅ | ✅ | Implemented |
 | Payslip generation | ✅ | ✅ | ✅ | Implemented with calculated payslip records plus generated PDF download through API/CLI |
-| Historical payroll and leave-balance import | ✅ | ✅ | ⚠️ | API/UI/CLI import exists; broader cutover still partial |
+| Historical payroll, TSD, and leave-balance import | ✅ | ✅ | ⚠️ | Payroll and leave API/UI/CLI import exists; TSD history API/CLI import exists; broader cutover still partial |
 | Bulk payroll processing | ✅ | ✅ | ✅ | Implemented via payroll run process API/CLI |
 
 ### 4.3 Tax Declarations
@@ -213,7 +213,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | CSV export | ✅ | ✅ | ✅ | Implemented |
 | Excel export | ✅ | ✅ | ✅ | Implemented for core financial statements, cash flow, aging, balance confirmations, contact statements, sales margin, budget-vs-actual, and cost-center budget reports |
-| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV and XML imports cover setup data, invoices, Estonian e-invoices, expenses, opening balances, employees, finalized payroll history, leave balances, and multiple operational-history files; a migration bundle validator now checks required columns and cross-file references before import, but full incumbent-system migration remains incomplete |
+| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV and XML imports cover setup data, invoices, Estonian e-invoices, expenses, opening balances, employees, finalized payroll history, leave balances, historical TSD declarations, and multiple operational-history files; a migration bundle validator now checks required columns and cross-file references before import, but full incumbent-system migration remains incomplete |
 
 ---
 

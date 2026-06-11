@@ -3913,6 +3913,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 	eInvoicesFile := writeTempCSV(t, "e-invoices.xml", "<E_Invoice><Invoice invoiceId=\"BILL-1\"><InvoiceParties><SellerParty><Name>Supplier</Name></SellerParty><BuyerParty><Name>Buyer</Name></BuyerParty></InvoiceParties><InvoiceInformation><InvoiceNumber>BILL-1</InvoiceNumber><InvoiceDate>2026-03-15</InvoiceDate></InvoiceInformation><InvoiceSumGroup><Currency>EUR</Currency></InvoiceSumGroup><InvoiceItem><InvoiceItemGroup><ItemEntry><Description>Service</Description><ItemDetailInfo><ItemAmount>1</ItemAmount><ItemPrice>100</ItemPrice></ItemDetailInfo><VAT><VATRate>22</VATRate></VAT></ItemEntry></InvoiceItemGroup></InvoiceItem><PaymentInfo><PayDueDate>2026-03-29</PayDueDate></PaymentInfo></Invoice></E_Invoice>")
 	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number\nMain bank,EE471000001020145685\n")
 	bankFile := writeTempCSV(t, "bank.csv", "date,amount,description\n2026-05-31,100,Customer receipt\n")
+	tsdFile := writeTempCSV(t, "tsd.csv", "year,month,employee_number,gross_payment\n2026,5,EMP-1,100\n")
 	kmdFile := writeTempCSV(t, "kmd.csv", "year,month,row_code,tax_base,tax_amount\n2026,5,1,100,22\n")
 	quotesFile := writeTempCSV(t, "quotes.csv", "quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate\nQ-1,2026-05-30,CUST-1,Work,1,100,22\n")
 	ordersFile := writeTempCSV(t, "orders.csv", "order_number,order_date,contact_code,line_description,quantity,unit_price,vat_rate\nSO-1,2026-05-30,CUST-1,Work,1,100,22\n")
@@ -3955,6 +3956,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 				assert.True(t, kinds[cutover.KindBankAccounts])
 				assert.True(t, kinds[cutover.KindBankTransactions])
 				assert.True(t, kinds[cutover.KindEInvoices])
+				assert.True(t, kinds[cutover.KindTSDHistory])
 				assert.True(t, kinds[cutover.KindKMDHistory])
 				assert.True(t, kinds[cutover.KindQuotes])
 				assert.True(t, kinds[cutover.KindOrders])
@@ -4006,6 +4008,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 		"--e-invoices", eInvoicesFile,
 		"--bank-accounts", bankAccountsFile,
 		"--bank-transactions", bankFile,
+		"--tsd-history", tsdFile,
 		"--kmd-history", kmdFile,
 		"--quotes", quotesFile,
 		"--orders", ordersFile,
@@ -20372,6 +20375,7 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	}))
 
 	kmdFile := writeTempCSV(t, "kmd-history.csv", "year,month,row_code,tax_base,tax_amount\n2025,12,1,1000.00,220.00\n")
+	tsdFile := writeTempCSV(t, "tsd-history.csv", "year,month,employee_number,gross_payment,income_tax\n2025,12,EMP-100,3200.00,693.00\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -20452,6 +20456,18 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/csv":
 			w.Header().Set("Content-Type", "text/csv")
 			_, _ = w.Write([]byte("period,total\n2026-03,3200.00\n"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/import-history":
+			w.Header().Set("Content-Type", "application/json")
+			var req payroll.ImportTSDHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "tsd-history.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "3200.00")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":       1,
+				"declarations_created": 1,
+				"rows_imported":        1,
+				"rows_skipped":         0,
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/submit":
 			w.Header().Set("Content-Type", "application/json")
 			var req map[string]string
@@ -20625,6 +20641,11 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	exported, err := os.ReadFile(outputPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(exported), "2026-03")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "import-history", "--file", tsdFile})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Processed 1 rows, created 1 TSD declarations, imported 1 rows, skipped 0 rows")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"tsd", "mark-submitted", "--year", "2026", "--month", "3", "--emta-reference", "EMTA-123"})
@@ -20975,6 +20996,7 @@ func TestCLITSDBranches(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
+	tsdFile := writeTempCSV(t, "tsd-history.csv", "year,month,employee_number,gross_payment\n2025,12,EMP-100,3200.00\n")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
 
@@ -21018,6 +21040,22 @@ func TestCLITSDBranches(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/csv":
 			w.Header().Set("Content-Type", "text/csv")
 			_, _ = w.Write([]byte("period,total\n2026-03,3200.00\n"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/import-history":
+			w.Header().Set("Content-Type", "application/json")
+			var req payroll.ImportTSDHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "tsd-history.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "EMP-100")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"rows_processed":       2,
+				"declarations_created": 1,
+				"rows_imported":        1,
+				"rows_skipped":         1,
+				"errors": []map[string]any{{
+					"row":     2,
+					"message": "duplicate period",
+				}},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/submit":
 			w.Header().Set("Content-Type", "application/json")
 			var req map[string]string
@@ -21071,6 +21109,12 @@ func TestCLITSDBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), "period,total")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"tsd", "import-history", "--file", tsdFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"rows_processed": 2`)
+	assert.Contains(t, stdout.String(), `"rows_skipped": 1`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"tsd", "mark-submitted", "--year", "2026", "--month", "3", "--emta-reference", " EMTA-456 ", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "submitted"`)
@@ -21096,6 +21140,7 @@ func TestCLITSDValidationBranches(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
+	missingFile := filepath.Join(t.TempDir(), "missing.csv")
 	tests := []struct {
 		name string
 		args []string
@@ -21112,6 +21157,9 @@ func TestCLITSDValidationBranches(t *testing.T) {
 		{name: "generate flag parse", args: []string{"generate", "--bad"}, want: "flag provided but not defined"},
 		{name: "export xml missing month", args: []string{"export-xml", "--year", "2026"}, want: "month is required"},
 		{name: "export csv month not positive", args: []string{"export-csv", "--year", "2026", "--month", "0"}, want: "month must be positive"},
+		{name: "import history bad flag", args: []string{"import-history", "--bad"}, want: "flag provided but not defined"},
+		{name: "import history missing file", args: []string{"import-history"}, want: "file is required"},
+		{name: "import history unreadable file", args: []string{"import-history", "--file", missingFile}, want: "read file"},
 		{name: "mark submitted parse month", args: []string{"mark-submitted", "--year", "2026", "--month", "bad"}, want: "parse month"},
 		{name: "mark accepted missing year", args: []string{"mark-accepted", "--month", "3"}, want: "year is required"},
 		{name: "mark rejected month out of range", args: []string{"mark-rejected", "--year", "2026", "--month", "13"}, want: "month must be between 1 and 12"},
@@ -21153,6 +21201,7 @@ func TestCLITSDAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
+	tsdFile := writeTempCSV(t, "tsd-error.csv", "year,month,employee_number,gross_payment\n2026,3,EMP-100,3200.00\n")
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -21160,6 +21209,7 @@ func TestCLITSDAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "get bad flag", args: []string{"tsd", "get", "--bad"}},
 		{name: "export xml bad flag", args: []string{"tsd", "export-xml", "--bad"}},
 		{name: "export csv bad flag", args: []string{"tsd", "export-csv", "--bad"}},
+		{name: "import history bad flag", args: []string{"tsd", "import-history", "--bad"}},
 		{name: "mark submitted bad flag", args: []string{"tsd", "mark-submitted", "--bad"}},
 		{name: "mark accepted bad flag", args: []string{"tsd", "mark-accepted", "--bad"}},
 		{name: "mark rejected bad flag", args: []string{"tsd", "mark-rejected", "--bad"}},
@@ -21181,6 +21231,11 @@ func TestCLITSDAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd":
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3":
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error/tsd":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/import-history":
+			var req payroll.ImportTSDHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "tsd-error.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "EMP-100")
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/xml":
 			assert.Equal(t, "*/*", r.Header.Get("Accept"))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/csv":
@@ -21210,6 +21265,7 @@ func TestCLITSDAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "generate API error", args: []string{"tsd", "generate", "--run-id", " run-error "}},
 		{name: "export xml API error", args: []string{"tsd", "export-xml", "--year", "2026", "--month", "3"}},
 		{name: "export csv API error", args: []string{"tsd", "export-csv", "--year", "2026", "--month", "3"}},
+		{name: "import history API error", args: []string{"tsd", "import-history", "--file", tsdFile}},
 		{name: "mark submitted API error", args: []string{"tsd", "mark-submitted", "--year", "2026", "--month", "3", "--emta-reference", " EMTA-ERR "}},
 		{name: "mark accepted API error", args: []string{"tsd", "mark-accepted", "--year", "2026", "--month", "3"}},
 		{name: "mark rejected API error", args: []string{"tsd", "mark-rejected", "--year", "2026", "--month", "3"}},

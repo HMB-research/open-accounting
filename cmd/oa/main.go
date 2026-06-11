@@ -276,6 +276,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tsd generate              Generate TSD from a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd export-xml            Export TSD XML")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd export-csv            Export TSD CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  tsd import-history        Import historical TSD declarations from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd mark-submitted        Mark a TSD declaration submitted")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd mark-accepted         Mark a TSD declaration accepted")
 	_, _ = fmt.Fprintln(a.stdout, "  tsd mark-rejected         Mark a TSD declaration rejected")
@@ -2011,6 +2012,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
 		payrollHistoryFile := fs.String("payroll-history", "", "Historical payroll CSV file")
 		leaveBalancesFile := fs.String("leave-balances", "", "Leave balances CSV file")
+		tsdHistoryFile := fs.String("tsd-history", "", "TSD history CSV file")
 		kmdHistoryFile := fs.String("kmd-history", "", "KMD history CSV file")
 		quotesFile := fs.String("quotes", "", "Quotes CSV file")
 		ordersFile := fs.String("orders", "", "Orders CSV file")
@@ -2040,6 +2042,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			{kind: cutover.KindBankTransactions, path: *bankTransactionsFile},
 			{kind: cutover.KindPayrollHistory, path: *payrollHistoryFile},
 			{kind: cutover.KindLeaveBalances, path: *leaveBalancesFile},
+			{kind: cutover.KindTSDHistory, path: *tsdHistoryFile},
 			{kind: cutover.KindKMDHistory, path: *kmdHistoryFile},
 			{kind: cutover.KindQuotes, path: *quotesFile},
 			{kind: cutover.KindOrders, path: *ordersFile},
@@ -10372,6 +10375,42 @@ func (a *cliApp) runTSD(ctx context.Context, args []string) error {
 			return err
 		}
 		return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "TSD CSV")
+
+	case "import-history":
+		fs := flag.NewFlagSet("tsd import-history", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		filePath := fs.String("file", "", "CSV file path")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*filePath) == "" {
+			return errors.New("file is required")
+		}
+
+		content, fileName, err := readCSVInput(*filePath)
+		if err != nil {
+			return err
+		}
+		result, err := client.importTSDHistory(ctx, cfg.TenantID, &payroll.ImportTSDHistoryRequest{
+			FileName:   fileName,
+			CSVContent: content,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(
+			a.stdout,
+			"Processed %d rows, created %d TSD declarations, imported %d rows, skipped %d rows\n",
+			result.RowsProcessed,
+			result.DeclarationsCreated,
+			result.RowsImported,
+			result.RowsSkipped,
+		)
+		return nil
 
 	case "mark-submitted":
 		fs := flag.NewFlagSet("tsd mark-submitted", flag.ContinueOnError)

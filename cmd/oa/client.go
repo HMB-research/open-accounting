@@ -2498,6 +2498,14 @@ func (c *apiClient) importPayrollHistory(ctx context.Context, tenantID string, r
 	return &resp, nil
 }
 
+func (c *apiClient) importTSDHistory(ctx context.Context, tenantID string, req *payroll.ImportTSDHistoryRequest) (*payroll.ImportTSDHistoryResult, error) {
+	var resp payroll.ImportTSDHistoryResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "tsd", "import-history"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) importLeaveBalances(ctx context.Context, tenantID string, req *payroll.ImportLeaveBalancesRequest) (*payroll.ImportLeaveBalancesResult, error) {
 	var resp payroll.ImportLeaveBalancesResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "leave-balances", "import"), req, c.apiToken, &resp); err != nil {

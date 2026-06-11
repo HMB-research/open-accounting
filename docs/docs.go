@@ -18477,6 +18477,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/tsd/import-history": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Import historical TSD declarations and declaration rows from CSV data",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payroll"
+                ],
+                "summary": "Import historical TSD declarations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "CSV import payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/tsd/{year}/{month}": {
             "get": {
                 "security": [
@@ -24137,6 +24194,7 @@ const docTemplate = `{
                 "bank_transactions",
                 "payroll_history",
                 "leave_balances",
+                "tsd_history",
                 "kmd_history",
                 "quotes",
                 "orders",
@@ -24162,6 +24220,7 @@ const docTemplate = `{
                 "KindBankTransactions",
                 "KindPayrollHistory",
                 "KindLeaveBalances",
+                "KindTSDHistory",
                 "KindKMDHistory",
                 "KindQuotes",
                 "KindOrders",
@@ -27820,6 +27879,66 @@ const docTemplate = `{
             }
         },
         "github_com_HMB-research_open-accounting_internal_payroll.ImportPayrollHistoryRowError": {
+            "type": "object",
+            "properties": {
+                "employee_name": {
+                    "type": "string"
+                },
+                "employee_number": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "period_month": {
+                    "type": "integer"
+                },
+                "period_year": {
+                    "type": "integer"
+                },
+                "row": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryRequest": {
+            "type": "object",
+            "properties": {
+                "csv_content": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryResult": {
+            "type": "object",
+            "properties": {
+                "declarations_created": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryRowError"
+                    }
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "rows_imported": {
+                    "type": "integer"
+                },
+                "rows_processed": {
+                    "type": "integer"
+                },
+                "rows_skipped": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryRowError": {
             "type": "object",
             "properties": {
                 "employee_name": {

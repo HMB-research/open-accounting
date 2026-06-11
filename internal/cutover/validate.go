@@ -238,6 +238,44 @@ var fileSpecs = map[FileKind]fileSpec{
 			{"absence_type_code", "absence_type", "absence_type_id"},
 		},
 	},
+	KindTSDHistory: {
+		aliases: mergeAliases(employeeReferenceAliases(), map[string]string{
+			"period_year":                     "period_year",
+			"declaration_year":                "period_year",
+			"tsd_year":                        "period_year",
+			"year":                            "period_year",
+			"period_month":                    "period_month",
+			"declaration_month":               "period_month",
+			"tsd_month":                       "period_month",
+			"month":                           "period_month",
+			"declaration_status":              "status",
+			"submitted_at":                    "submitted_at",
+			"submitted_date":                  "submitted_at",
+			"submission_date":                 "submitted_at",
+			"emta_reference":                  "emta_reference",
+			"submission_reference":            "emta_reference",
+			"payment_type":                    "payment_type",
+			"payment_code":                    "payment_type",
+			"gross":                           "gross_payment",
+			"gross_salary":                    "gross_payment",
+			"gross_payment":                   "gross_payment",
+			"basic_exemption_applied":         "basic_exemption",
+			"taxable_income":                  "taxable_amount",
+			"unemployment_insurance_employee": "unemployment_insurance_employee",
+			"unemployment_employee":           "unemployment_insurance_employee",
+			"unemployment_insurance_ee":       "unemployment_insurance_employee",
+			"unemployment_insurance_employer": "unemployment_insurance_employer",
+			"unemployment_employer":           "unemployment_insurance_employer",
+			"unemployment_insurance_er":       "unemployment_insurance_employer",
+			"pension":                         "funded_pension",
+		}),
+		requiredGroups: [][]string{
+			{"period_year"},
+			{"period_month"},
+			{"employee_number", "personal_code", "email", "first_name", "name"},
+			{"gross_payment"},
+		},
+	},
 	KindKMDHistory: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
 			"period_year":        "year",
@@ -758,7 +796,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindPayments:
 			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 				[]string{"invoice_number"})
-		case KindPayrollHistory, KindLeaveBalances:
+		case KindPayrollHistory, KindLeaveBalances, KindTSDHistory:
 			checkEmployeeReference(report, indexes, file, row)
 		case KindOpeningBalances, KindJournalEntries:
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,

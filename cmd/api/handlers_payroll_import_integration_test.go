@@ -94,6 +94,46 @@ func TestImportPayrollHistoryHandlerIntegration(t *testing.T) {
 	require.Equal(t, "PAID", payslips[0].PaymentStatus)
 }
 
+func TestImportTSDHistoryHandlerIntegration(t *testing.T) {
+	h, tenant, claims, _ := setupPayrollIntegrationHandlers(t)
+
+	invokeJSON[payroll.ImportEmployeesResult](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.ImportEmployees(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/employees/import", map[string]any{
+		"file_name": "employees.csv",
+		"csv_content": "employee_number,first_name,last_name,personal_code,email,start_date,employment_type\n" +
+			"EMP-250,Mari,Maasikas,49001010001,mari@example.com,2025-01-15,FULL_TIME\n" +
+			"EMP-251,Juhan,Tamm,49001010002,juhan@example.com,2025-01-15,FULL_TIME\n",
+	}, claims), map[string]string{"tenantID": tenant.ID}))
+
+	result := invokeJSON[payroll.ImportTSDHistoryResult](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.ImportTSDHistory(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/tsd/import-history", map[string]any{
+		"file_name": "tsd-history.csv",
+		"csv_content": "year,month,status,submitted_at,emta_reference,employee_number,gross_payment,basic_exemption,taxable_amount,income_tax,social_tax,unemployment_insurance_employer,unemployment_insurance_employee,funded_pension\n" +
+			"2025,12,ACCEPTED,2026-01-10,EMTA-2025-12,EMP-250,3200.00,50.00,3150.00,693.00,1056.00,25.60,51.20,64.00\n" +
+			"2025,12,ACCEPTED,2026-01-10,EMTA-2025-12,EMP-251,2800.00,40.00,2760.00,607.20,924.00,22.40,44.80,56.00\n",
+	}, claims), map[string]string{"tenantID": tenant.ID}))
+
+	require.Equal(t, 2, result.RowsProcessed)
+	require.Equal(t, 1, result.DeclarationsCreated)
+	require.Equal(t, 2, result.RowsImported)
+	require.Zero(t, result.RowsSkipped)
+
+	tsd := invokeJSON[payroll.TSDDeclaration](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.GetTSD(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/tsd/2025/12", nil, claims), map[string]string{
+		"tenantID": tenant.ID,
+		"year":     "2025",
+		"month":    "12",
+	}))
+
+	require.Equal(t, payroll.TSDAccepted, tsd.Status)
+	require.Equal(t, "EMTA-2025-12", tsd.EMTAReference)
+	require.True(t, tsd.TotalPayments.Equal(decimal.RequireFromString("6000")))
+	require.Len(t, tsd.Rows, 2)
+}
+
 func TestImportLeaveBalancesHandlerIntegration(t *testing.T) {
 	h, tenant, claims, pool := setupPayrollIntegrationHandlers(t)
 

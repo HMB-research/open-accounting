@@ -132,8 +132,9 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Funded Pension (II Pillar)** | Configurable pension contribution rates                                                                                                                                                     |
 | **Payroll Runs**               | Monthly payroll with draft → approved → paid workflow                                                                                                                                       |
 | **Payslips**                   | Detailed breakdown of earnings and deductions                                                                                                                                               |
-| **TSD Declaration**            | Annex 1 generation with XML/CSV export for e-MTA                                                                                                                                            |
+| **TSD Declaration**            | Annex 1 generation with XML/CSV export for e-MTA plus historical TSD CSV import for migration cutovers                                                                                      |
 | **Historical Payroll Import**  | CSV import of finalized prior payroll runs and payslips through API, web UI, and CLI                                                                                                        |
+| **Historical TSD Import**      | CSV import of prior TSD declarations and Annex 1 rows through API and CLI                                                                                                                   |
 | **Leave Balance Import**       | CSV import of employee leave balances for migration cutovers through API, web UI, and CLI                                                                                                   |
 | **Leave Evidence**             | Approved supporting documents can be required before approving documented leave/absence records                                                                                             |
 | **Migration Preflight**        | Non-mutating CSV/XML bundle validation for required columns and cross-file references before cutover imports, including e-invoice XML, expenses, commercial history, inventory, banking, tax, and fixed assets |
@@ -357,8 +358,8 @@ open-accounting/
 - [x] Tenant admin controls for member API-token inspection and revocation
 - [x] Tenant admin security-event visibility for member auth activity
 - [x] Tenant admin suspension/restoration of member tenant access with session revocation and audit events
-- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank accounts, bank transactions, cost centers, cost allocations, product categories/warehouses/products/stock, fixed assets, opening balances, and historical journals
-- [x] Migration bundle validation for cutover imports with API and CLI coverage across e-invoice XML, expenses, commercial history, inventory, banking, tax, and fixed assets
+- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank accounts, bank transactions, cost centers, cost allocations, product categories/warehouses/products/stock, fixed assets, payroll/TSD tax history, opening balances, and historical journals
+- [x] Migration bundle validation for cutover imports with API and CLI coverage across e-invoice XML, expenses, commercial history, inventory, banking, payroll/TSD tax history, and fixed assets
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
