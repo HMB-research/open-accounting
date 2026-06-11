@@ -1231,3 +1231,27 @@ The next CI artifact should confirm the remote spec-level reduction. Remaining
 measured consolidation targets are `mobile-navigation`, `journal`, `payroll`,
 `tsd`, and `salary-calculator`; `auth.setup` should be reviewed separately as
 shared setup overhead rather than route workflow coverage.
+
+CI run `27341106153` confirmed the remote reduction on commit
+`0334c8586b9fab83ce0d0482754edc06113bc266`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/orders.spec.ts` | 13.533s | 1 | 1 |
+| `demo/auth.setup.ts` | 50.997s | 4 | 4 |
+
+Compared with run `27340457120`, `demo/orders.spec.ts` dropped from 51.693s
+across four tests to 13.533s as one workflow test. The remaining highest
+route-specific consolidation targets in run `27341106153` are:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/salary-calculator.spec.ts` | 57.257s | 5 | 5 |
+| `demo/tsd.spec.ts` | 51.569s | 5 | 5 |
+| `demo/payroll.spec.ts` | 51.149s | 5 | 5 |
+| `demo/settings.spec.ts` | 48.248s | 3 | 3 |
+| `demo/mobile-navigation.spec.ts` | 47.002s | 4 | 4 |
+
+`demo/auth.setup.ts` remains a separate shared-overhead target. It should be
+optimized by reducing repeated login and tenant-selection work, not by merging
+route assertions into setup.
