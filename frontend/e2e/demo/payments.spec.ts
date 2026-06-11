@@ -142,13 +142,11 @@ test.describe('Demo Payments - Seed Data Verification', () => {
 		await openPayments(page, testInfo);
 	});
 
-	test('renders the payment ledger shell and loaded state', async ({ page }) => {
+	test('supports ledger shell, allocated payments, filters, and reversals', async ({ page }) => {
 		await expectPaymentsShell(page);
-	});
-
-	test('creates a received payment with an invoice allocation and filters it', async ({ page }) => {
-		const reference = `E2E-PAY-${Date.now()}`;
-		const notes = `Payment allocation workflow ${Date.now()}`;
+		const suffix = Date.now();
+		const reference = `E2E-PAY-${suffix}`;
+		const notes = `Payment allocation workflow ${suffix}`;
 
 		const payment = await recordPayment(page, {
 			type: 'RECEIVED',
@@ -176,30 +174,32 @@ test.describe('Demo Payments - Seed Data Verification', () => {
 
 		await selectTypeFilter(page, 'MADE');
 		await expect(paymentRow(page, payment.payment_number)).toHaveCount(0);
-	});
 
-	test('reverses a payment with an auditable offsetting payment', async ({ page }) => {
-		const reference = `E2E-REV-${Date.now()}`;
-		const reversalReference = `REV-${reference}`;
-		const reversalReason = `Duplicate demo import ${Date.now()}`;
+		await selectTypeFilter(page, '');
 
-		const payment = await recordPayment(page, {
+		const reversalSourceReference = `E2E-REV-${suffix}`;
+		const reversalReference = `REV-${reversalSourceReference}`;
+		const reversalReason = `Duplicate demo import ${suffix}`;
+
+		const reversalSourcePayment = await recordPayment(page, {
 			type: 'RECEIVED',
 			amount: '42.25',
-			reference,
+			reference: reversalSourceReference,
 			notes: 'Payment created for reversal workflow'
 		});
-		expect(payment.payment_type).toBe('RECEIVED');
-		expect(payment.reference).toBe(reference);
+		expect(reversalSourcePayment.payment_type).toBe('RECEIVED');
+		expect(reversalSourcePayment.reference).toBe(reversalSourceReference);
 
-		const originalRow = paymentRow(page, payment.payment_number);
+		const originalRow = paymentRow(page, reversalSourcePayment.payment_number);
 		await expect(originalRow).toBeVisible({ timeout: 10000 });
-		await expect(originalRow).toContainText(reference);
+		await expect(originalRow).toContainText(reversalSourceReference);
 
 		await originalRow.getByRole('button', { name: /^reverse$/i }).click();
 		const reversalDialog = page.getByRole('dialog', { name: /reverse payment/i });
 		await expect(reversalDialog).toBeVisible();
-		await expect(reversalDialog.locator('#reversal-original')).toHaveValue(payment.payment_number);
+		await expect(reversalDialog.locator('#reversal-original')).toHaveValue(
+			reversalSourcePayment.payment_number
+		);
 		await reversalDialog.locator('#reversal-date').fill('2026-06-09');
 		await reversalDialog.locator('#reversal-reason').fill(reversalReason);
 		await reversalDialog.locator('#reversal-reference').fill(reversalReference);
@@ -216,11 +216,11 @@ test.describe('Demo Payments - Seed Data Verification', () => {
 		const reverseResponse = await reverseResponsePromise;
 		expect(reverseResponse.status()).toBe(201);
 		const reversal = (await reverseResponse.json()) as PaymentReversalResponse;
-		expect(reversal.original_payment.id).toBe(payment.id);
+		expect(reversal.original_payment.id).toBe(reversalSourcePayment.id);
 		expect(reversal.original_payment.reversed_by_payment_id).toBe(reversal.reversal_payment.id);
 		expect(reversal.original_payment.reversal_reason).toBe(reversalReason);
 		expect(reversal.reversal_payment.payment_type).toBe('MADE');
-		expect(reversal.reversal_payment.reversal_of_payment_id).toBe(payment.id);
+		expect(reversal.reversal_payment.reversal_of_payment_id).toBe(reversalSourcePayment.id);
 		expect(reversal.reversal_payment.reference).toBe(reversalReference);
 		expect(reversal.reversal_payment.reversal_reason).toBe(reversalReason);
 
