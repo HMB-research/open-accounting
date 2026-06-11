@@ -447,3 +447,32 @@ Removed `demo/all-views.spec.ts` instead of splitting it again. It was a legacy 
 | Desktop and mobile navigation checks | `demo/dashboard.spec.ts`, `demo/mobile-navigation.spec.ts`, and `demo/mobile-layout.spec.ts` |
 
 The only route smoke check that was unique to the legacy file was `/admin/plugins`, so that moved into `demo/plugins-settings.spec.ts` as the route-specific owner. The expected CI outcome is removal of the 85.483s `all-views` timing bucket without reducing user-facing route coverage.
+
+CI run `27325776245` on commit `d8523bd` confirmed the prior tax overview tail was reduced. `demo/tax-overview.spec.ts` reported 12.894s across one test, down from the prior 75.973s across five tests. The highest remaining single-spec costs shifted to:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/cash-payments.spec.ts` | 71.273s | 6 |
+| `auth.spec.ts` | 69.866s | 8 |
+| `demo/plugins-settings.spec.ts` | 69.060s | 6 |
+| `demo/fixed-assets.spec.ts` | 65.213s | 6 |
+| `demo/payments.spec.ts` | 65.062s | 6 |
+
+## Follow-up: Cash Payments Workflow Consolidation
+
+Consolidated `demo/cash-payments.spec.ts` from six repeated route tests into two user workflows:
+
+| Workflow | Coverage |
+|----------|----------|
+| Cash ledger and type filters | Heading, summary cards, new-payment control, type filter options, terminal table/empty state, cash-in create, cash-out create, and received/made/all filter behavior |
+| Cash reversal | Cash receipt create, reversal modal payload, reversal API response links, original reversed state, offsetting cash payment row, and made-filter behavior |
+
+The old file repeated auth, tenant setup, route navigation, payment loading, and contact loading for four structure checks plus two mutation workflows. The replacement keeps the same user-visible assertions while each workflow pays route setup once. Route setup now opens `/payments/cash` with `waitForNetworkIdle: false` and waits for the route-owned payments and contacts API responses.
+
+Local focused baseline against the branch API showed `demo/cash-payments.spec.ts` at 13.417s across 6 tests. After consolidation, the same visible behaviors reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/cash-payments.spec.ts` | 2.416s | 2 |
+
+The focused command now reports `3 passed (10.3s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior cash-payments shard tail is reduced. The next measured demo E2E candidates are `auth.spec.ts`, `plugins-settings`, `fixed-assets`, and `payments`.
