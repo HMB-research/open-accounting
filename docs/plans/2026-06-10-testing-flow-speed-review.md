@@ -631,3 +631,18 @@ After the change, the same focused local command passed with three total tests i
 | `demo/auth.setup.ts` | 2.879s | 1 |
 
 The next measured demo E2E candidates from run `27328276032` are `cash-flow`, `fixed-assets`, `bank-import`, `journal`, `env-onboarding`, and `recurring`.
+
+CI run `27329103415` on commit `2e13d24` confirmed the plugin settings tail was reduced in the required PR gate. `demo/plugins-settings.spec.ts` reported 18.981s across two tests, down from 64.293s across six tests in run `27328276032`.
+
+The highest remaining single-spec costs from run `27329103415` are:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/fixed-assets.spec.ts` | 68.327s | 6 |
+| `demo/journal.spec.ts` | 61.108s | 4 |
+| `demo/env-onboarding.spec.ts` | 60.164s | 5 |
+| `demo/recurring.spec.ts` | 57.860s | 5 |
+| `demo/cash-flow.spec.ts` | 56.657s | 6 |
+| `demo/bank-import.spec.ts` | 55.604s | 5 |
+
+The next measured demo E2E candidates are `fixed-assets`, `journal`, `env-onboarding`, `recurring`, `cash-flow`, and `bank-import`.
