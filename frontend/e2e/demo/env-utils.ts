@@ -15,7 +15,26 @@ const DEMO_TENANT_ID = DEMO_USER.tenantId;
 
 export async function waitForDemoShell(page: Page) {
 	await waitForPageReady(page);
-	await page.locator('nav.navbar, .mobile-menu-btn').first().waitFor({ state: 'visible', timeout: 10000 });
+	await page.getByText(/^Loading\.\.\.$/).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+	await waitForAnyVisible(page, 'nav.navbar, .mobile-menu-btn');
+}
+
+async function waitForAnyVisible(page: Page, selector: string, timeout = 10000) {
+	await expect
+		.poll(
+			async () => {
+				const matches = page.locator(selector);
+				const count = await matches.count();
+				for (let index = 0; index < count; index += 1) {
+					if (await matches.nth(index).isVisible().catch(() => false)) {
+						return true;
+					}
+				}
+				return false;
+			},
+			{ timeout }
+		)
+		.toBe(true);
 }
 
 export async function waitForVisibleContent(page: Page) {
