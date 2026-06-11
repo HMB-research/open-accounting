@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
 )
@@ -64,6 +65,9 @@ func (r *GORMResetRepository) ResetDemoData(ctx context.Context, users []ResetUs
 			return err
 		}
 	}
+	if err := r.cleanPublicDemoPluginFixtures(ctx); err != nil {
+		return err
+	}
 	for _, user := range users {
 		if err := r.cleanPublicDemoRows(ctx, user); err != nil {
 			return err
@@ -83,6 +87,24 @@ func (r *GORMResetRepository) dropTenantSchema(ctx context.Context, conn *pgxpoo
 	}
 	if _, err := conn.Exec(ctx, "DROP SCHEMA IF EXISTS "+quotedSchema+" CASCADE"); err != nil {
 		return fmt.Errorf("drop tenant schema %s: %w", schemaName, err)
+	}
+	return nil
+}
+
+func (r *GORMResetRepository) cleanPublicDemoPluginFixtures(ctx context.Context) error {
+	db := r.db.WithContext(ctx)
+	fixturePluginFilter := db.Table("plugins").
+		Select("id").
+		Where("name = ? OR repository_url = ?", "demo-admin-install", plugin.DemoInstallFixtureRepositoryURL)
+	if err := db.Table("tenant_plugins").
+		Where("plugin_id IN (?)", fixturePluginFilter).
+		Delete(&publicTenantPluginRow{}).Error; err != nil {
+		return fmt.Errorf("clean demo plugin fixture tenant links: %w", err)
+	}
+	if err := db.Table("plugins").
+		Where("name = ? OR repository_url = ?", "demo-admin-install", plugin.DemoInstallFixtureRepositoryURL).
+		Delete(&publicPluginRow{}).Error; err != nil {
+		return fmt.Errorf("clean demo plugin fixture: %w", err)
 	}
 	return nil
 }
@@ -108,3 +130,7 @@ type publicTenantUserRow struct{}
 type publicTenantRow struct{}
 
 type publicUserRow struct{}
+
+type publicTenantPluginRow struct{}
+
+type publicPluginRow struct{}

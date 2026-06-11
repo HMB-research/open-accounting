@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -1604,6 +1605,38 @@ func TestService_InstallPlugin_InvalidURL(t *testing.T) {
 	_, err := service.InstallPlugin(ctx, "invalid-url")
 	if err == nil {
 		t.Error("expected error for invalid URL")
+	}
+}
+
+func TestService_InstallPlugin_DemoFixture(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary is required for plugin install fixture test")
+	}
+
+	ctx := context.Background()
+	t.Setenv("DEMO_MODE", "true")
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, t.TempDir())
+
+	installed, err := service.InstallPlugin(ctx, DemoInstallFixtureRepositoryURL)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if installed.Name != "demo-admin-install" {
+		t.Fatalf("expected demo-admin-install, got %s", installed.Name)
+	}
+	if installed.DisplayName != "Demo Admin Install" {
+		t.Fatalf("expected Demo Admin Install, got %s", installed.DisplayName)
+	}
+	if installed.RepositoryURL != DemoInstallFixtureRepositoryURL {
+		t.Fatalf("expected repository URL %s, got %s", DemoInstallFixtureRepositoryURL, installed.RepositoryURL)
+	}
+	if installed.RepositoryType != RepoGitHub {
+		t.Fatalf("expected GitHub repository type, got %s", installed.RepositoryType)
+	}
+	if installed.State != StateInstalled {
+		t.Fatalf("expected installed state, got %s", installed.State)
 	}
 }
 

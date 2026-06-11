@@ -10,8 +10,22 @@ interface TenantPluginPayload {
 	};
 }
 
+interface PluginPayload {
+	id: string;
+	name: string;
+	display_name: string;
+	repository_url: string;
+	state: string;
+	manifest?: {
+		permissions?: string[];
+	};
+}
+
 const demoPluginName = 'Demo Bank Import';
 const demoPluginSlug = 'demo-bank-import';
+const demoInstallPluginName = 'Demo Admin Install';
+const demoInstallPluginSlug = 'demo-admin-install';
+const demoInstallRepositoryUrl = 'https://github.com/HMB-research/open-accounting-demo-admin-plugin';
 
 function responsePath(responseUrl: string) {
 	return new URL(responseUrl).pathname;
@@ -39,7 +53,7 @@ async function openPluginsPage(page: Page, testInfo: TestInfo): Promise<TenantPl
 	return (await tenantPluginsResponse.json()) as TenantPluginPayload[];
 }
 
-async function openAdminPluginsPage(page: Page, testInfo: TestInfo): Promise<void> {
+async function openAdminPluginsPage(page: Page, testInfo: TestInfo): Promise<PluginPayload[]> {
 	const pluginsLoaded = page.waitForResponse(
 		(response) =>
 			response.request().method() === 'GET' &&
@@ -60,8 +74,9 @@ async function openAdminPluginsPage(page: Page, testInfo: TestInfo): Promise<voi
 	);
 
 	await navigateTo(page, '/admin/plugins', testInfo, { waitForNetworkIdle: false });
-	await Promise.all([pluginsLoaded, registriesLoaded, permissionsLoaded]);
+	const [pluginsResponse] = await Promise.all([pluginsLoaded, registriesLoaded, permissionsLoaded]);
 	await waitForRouteReady(page, 'main h1, main .plugins-grid, main .plugin-card, main .empty-state, main .alert-error');
+	return (await pluginsResponse.json()) as PluginPayload[];
 }
 
 test.describe('Plugins Settings View', () => {
@@ -119,11 +134,54 @@ test.describe('Plugins Settings View', () => {
 		expect(disabledPlugin.status).toBe('disabled');
 		await expect(pluginCard.locator('.badge')).toContainText(/disabled|keelatud/i);
 
-		await openAdminPluginsPage(page, testInfo);
+		const adminPlugins = await openAdminPluginsPage(page, testInfo);
+		expect(
+			adminPlugins.find((plugin) => plugin.repository_url === demoInstallRepositoryUrl),
+			`${demoInstallPluginSlug} should be cleaned by demo reset before install workflow`
+		).toBeFalsy();
 
 		await expect(page.getByRole('heading', { name: /plugin|admin/i }).first()).toBeVisible();
 		await expect(page.locator('main .plugins-grid, main .plugin-card, main .empty-state').first()).toBeVisible();
 		await expect(page.locator('main .plugin-card').filter({ hasText: demoPluginName })).toBeVisible();
 		await expect(page.getByRole('button', { name: /search plugins|install from url/i }).first()).toBeVisible();
+
+		await page.getByRole('button', { name: /install from url/i }).click();
+		const installModal = page.locator('.modal').filter({ hasText: /install plugin/i }).first();
+		await expect(installModal).toBeVisible();
+		await installModal.locator('#installUrl').fill(demoInstallRepositoryUrl);
+
+		const installResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				new URL(response.url()).pathname === '/api/v1/admin/plugins/install'
+		);
+		await installModal.getByRole('button', { name: /install plugin/i }).click();
+		const installResponse = await installResponsePromise;
+		expect(installResponse.status()).toBe(201);
+		const installedPlugin = (await installResponse.json()) as PluginPayload;
+		expect(installedPlugin.name).toBe(demoInstallPluginSlug);
+		expect(installedPlugin.display_name).toBe(demoInstallPluginName);
+		expect(installedPlugin.repository_url).toBe(demoInstallRepositoryUrl);
+		expect(installedPlugin.state).toBe('installed');
+
+		const installedCard = page.locator('main .plugin-card').filter({ hasText: demoInstallPluginName });
+		await expect(installedCard).toBeVisible();
+		await expect(installedCard.locator('.badge')).toContainText(/installed|paigaldatud/i);
+		await expect(installedCard.locator('.permission-badge')).not.toBeVisible();
+		await expect(page.locator('.alert-success')).toContainText(demoInstallPluginName);
+
+		const uninstallResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'DELETE' &&
+				new URL(response.url()).pathname === `/api/v1/admin/plugins/${installedPlugin.id}`
+		);
+		page.once('dialog', async (dialog) => {
+			expect(dialog.type()).toBe('confirm');
+			await dialog.accept();
+		});
+		await installedCard.getByRole('button', { name: /uninstall|eemalda/i }).click();
+		const uninstallResponse = await uninstallResponsePromise;
+		expect(uninstallResponse.status()).toBe(204);
+		await expect(installedCard).toHaveCount(0);
 	});
 });

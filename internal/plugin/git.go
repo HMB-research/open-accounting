@@ -23,6 +23,23 @@ var (
 	gitlabHTTPSRegex = regexp.MustCompile(`^https://gitlab\.com/([^/]+)/([^/]+?)(?:\.git)?/?$`)
 )
 
+const (
+	// DemoInstallFixtureRepositoryURL is an exact demo-mode fixture URL used by
+	// local and CI E2E tests to exercise plugin installation without network IO.
+	DemoInstallFixtureRepositoryURL = "https://github.com/HMB-research/open-accounting-demo-admin-plugin"
+)
+
+const demoInstallFixtureManifest = `name: demo-admin-install
+display_name: Demo Admin Install
+version: 1.0.0
+description: Demo plugin installed from URL during admin workflow verification
+author: HMB Research
+license: MIT
+homepage: https://github.com/HMB-research/open-accounting
+permissions:
+  - banking:read
+`
+
 // parseRepositoryType determines the repository type from the URL
 func parseRepositoryType(repoURL string) (RepositoryType, error) {
 	if githubHTTPSRegex.MatchString(repoURL) {
@@ -79,10 +96,26 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 		return "", fmt.Errorf("refusing to clone: %w", err)
 	}
 
+	cloneURL := repoURL
+	usingDemoFixture := false
+	if shouldUseDemoInstallFixture(repoURL) {
+		var cleanup func()
+		cloneURL, cleanup, err = createDemoInstallFixtureRepository(ctx)
+		if err != nil {
+			return "", err
+		}
+		usingDemoFixture = true
+		defer cleanup()
+	}
+
 	// Clone the repository
 	log.Info().Str("url", repoURL).Str("target", targetDir).Msg("Cloning plugin repository")
 
-	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", repoURL, targetDir)
+	cloneArgs := []string{"clone", "--depth", "1", cloneURL, targetDir}
+	if usingDemoFixture {
+		cloneArgs = append([]string{"-c", "protocol.file.allow=always"}, cloneArgs...)
+	}
+	cmd := exec.CommandContext(ctx, "git", cloneArgs...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 
 	output, err := cmd.CombinedOutput()
@@ -108,6 +141,77 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 	}
 
 	return targetDir, nil
+}
+
+func shouldUseDemoInstallFixture(repoURL string) bool {
+	return os.Getenv("DEMO_MODE") == "true" && repoURL == DemoInstallFixtureRepositoryURL
+}
+
+func createDemoInstallFixtureRepository(ctx context.Context) (string, func(), error) {
+	tempDir, err := os.MkdirTemp("", "open-accounting-demo-plugin-*")
+	if err != nil {
+		return "", nil, fmt.Errorf("create demo plugin fixture: %w", err)
+	}
+
+	cleanup := func() {
+		if cleanErr := os.RemoveAll(tempDir); cleanErr != nil {
+			log.Warn().Err(cleanErr).Str("dir", tempDir).Msg("Failed to clean up demo plugin fixture")
+		}
+	}
+
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0750); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("create demo plugin repository: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "plugin.yaml"), []byte(demoInstallFixtureManifest), 0600); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("write demo plugin manifest: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "LICENSE"), []byte("MIT\n"), 0600); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("write demo plugin license: %w", err)
+	}
+	if err := runDemoInstallFixtureGit(ctx, repoDir, "init", "--quiet"); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := runDemoInstallFixtureGit(ctx, repoDir, "add", "plugin.yaml", "LICENSE"); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := runDemoInstallFixtureGit(
+		ctx,
+		repoDir,
+		"-c",
+		"user.name=Open Accounting Demo",
+		"-c",
+		"user.email=demo@example.com",
+		"-c",
+		"commit.gpgsign=false",
+		"commit",
+		"--quiet",
+		"-m",
+		"Add demo install plugin",
+	); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+
+	cloneURL := (&url.URL{Scheme: "file", Path: repoDir}).String()
+	return cloneURL, cleanup, nil
+}
+
+func runDemoInstallFixtureGit(ctx context.Context, repoDir string, args ...string) error {
+	cmdArgs := append([]string{"-C", repoDir}, args...)
+	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git %s failed: %s: %w", strings.Join(args, " "), string(output), err)
+	}
+	return nil
 }
 
 // updateRepository pulls the latest changes for a plugin
