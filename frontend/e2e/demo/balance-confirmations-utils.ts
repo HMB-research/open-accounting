@@ -1,10 +1,13 @@
-import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { expect, type Locator, type Page, type Response, type TestInfo } from '@playwright/test';
 import { ensureAuthenticated, ensureDemoTenant, navigateTo, waitForRouteReady } from './utils';
 
 const balanceLoadedState = '.summary-card, .empty-state, .alert-error';
 const summaryRequestPattern = /\/api\/v1\/tenants\/[^/]+\/reports\/balance-confirmations\?/;
 const detailRequestPattern =
 	/\/api\/v1\/tenants\/[^/]+\/reports\/balance-confirmations\/[^/?]+\?/;
+const exportFormats = ['csv', 'xlsx', 'pdf'] as const;
+
+type ExportFormat = (typeof exportFormats)[number];
 
 export async function setupBalanceConfirmationsPage(
 	page: Page,
@@ -39,7 +42,7 @@ export async function waitForBalanceDataState(page: Page): Promise<void> {
 	await waitForRouteReady(page, balanceLoadedState, 15000);
 }
 
-export async function generateBalanceSummary(page: Page): Promise<void> {
+export async function generateBalanceSummary(page: Page): Promise<Response | null> {
 	const responsePromise = page
 		.waitForResponse(
 			(response) =>
@@ -49,8 +52,9 @@ export async function generateBalanceSummary(page: Page): Promise<void> {
 		.catch(() => null);
 
 	await generateButton(page).click();
-	await responsePromise;
+	const response = await responsePromise;
 	await waitForBalanceDataState(page);
+	return response;
 }
 
 export function balanceTypeSelect(page: Page): Locator {
@@ -75,6 +79,14 @@ export function balanceTable(page: Page): Locator {
 
 export function balanceModal(page: Page): Locator {
 	return page.locator('[role="dialog"], .modal').first();
+}
+
+export function summaryExportButton(page: Page, format: ExportFormat): Locator {
+	return page.getByTestId(`balance-summary-export-${format}`);
+}
+
+export function detailExportButton(page: Page, format: ExportFormat): Locator {
+	return page.getByTestId(`balance-detail-export-${format}`);
 }
 
 export async function hasVisibleError(page: Page): Promise<boolean> {
@@ -121,4 +133,49 @@ export async function openFirstContactDetailModalIfAvailable(page: Page): Promis
 	await responsePromise;
 	await expect(balanceModal(page)).toBeVisible({ timeout: 5000 });
 	return true;
+}
+
+export async function openContactDetailModal(page: Page, contactName: string): Promise<void> {
+	if (!(await hasBalanceTable(page))) {
+		await expect(balanceTable(page)).toBeVisible();
+	}
+
+	const row = balanceTable(page).locator('tbody tr').filter({ hasText: contactName }).first();
+	await expect(row).toBeVisible({ timeout: 10000 });
+	const responsePromise = page.waitForResponse(
+		(response) =>
+			detailRequestPattern.test(response.url()) && response.request().method() === 'GET',
+		{ timeout: 15000 }
+	);
+
+	await row.getByRole('button').click();
+	const response = await responsePromise;
+	expect(response.status()).toBe(200);
+	await expect(balanceModal(page)).toBeVisible({ timeout: 5000 });
+}
+
+export async function expectExportResponse(
+	page: Page,
+	action: () => Promise<void>,
+	format: ExportFormat,
+	options: { detail?: boolean } = {}
+): Promise<void> {
+	const responsePromise = page.waitForResponse(
+		(response) => {
+			const url = response.url();
+			const matchesRoute = options.detail
+				? detailRequestPattern.test(url)
+				: summaryRequestPattern.test(url);
+			return (
+				matchesRoute &&
+				response.request().method() === 'GET' &&
+				url.includes(`format=${format}`)
+			);
+		},
+		{ timeout: 15000 }
+	);
+
+	await action();
+	const response = await responsePromise;
+	expect(response.status()).toBe(200);
 }

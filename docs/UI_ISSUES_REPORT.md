@@ -706,9 +706,9 @@ Each view is tested for:
 | Criteria     | Status | Notes                                              |
 | ------------ | ------ | -------------------------------------------------- |
 | Page Load    | ✅     | Page renders with "Balance Confirmations" heading  |
-| Data Display | ✅     | Back navigation to reports visible                 |
+| Data Display | ✅     | Tenant receivable summary, contact rows, and detail modal verified |
 | Navigation   | ✅     | Reports link visible                               |
-| CRUD         | ⚠️     | Need tenant + E2E for full verification            |
+| CRUD         | ✅     | Tenant-scoped summary/detail generation and CSV/PDF exports verified through demo E2E |
 | Errors       | ✅     | No errors - shows "Select a tenant from Dashboard" |
 | Responsive   | ⚠️     | Needs manual verification                          |
 
@@ -717,6 +717,10 @@ Each view is tested for:
 - Balance Confirmations interface
 - Back navigation to reports section
 - Tenant selection prerequisite
+- Tenant-scoped receivable summary generation with seeded balances
+- Draft invoices excluded from confirmation balances
+- Contact detail modal with outstanding invoice rows
+- Summary CSV export and detail PDF export actions
 
 **Overall:** ✅ Working
 
@@ -913,6 +917,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-12 | Codex  | Added tenant-backed `/reports/balance-confirmations` demo E2E coverage for seeded balances, draft exclusion, detail modal, and report exports       |
 | 2026-06-11 | Codex  | Added deterministic admin plugin repository install/uninstall coverage with a demo-mode git fixture                                                 |
 | 2026-06-11 | Codex  | Added seeded demo plugin coverage for tenant plugin enable/disable from `/settings/plugins` and visibility from `/admin/plugins`                    |
 | 2026-06-11 | Codex  | Strengthened `/vat-returns` demo E2E coverage for tenant-scoped KMD generation, detail totals, row rendering, and XML export download               |

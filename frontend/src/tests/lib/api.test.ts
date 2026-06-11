@@ -2404,6 +2404,95 @@ describe("API Client - Core Functionality", () => {
       expect(result.total_balance.toString()).toBe("250");
     });
 
+    it("should download balance confirmation summary export", async () => {
+      api.setTokens("valid-token", "refresh-token");
+
+      const blob = new Blob(["Contact,Balance\nAcme,100"], {
+        type: "text/csv",
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => blob,
+      });
+
+      const createObjectURL = vi
+        .spyOn(URL, "createObjectURL")
+        .mockReturnValue("blob:balance-summary");
+      const revokeObjectURL = vi
+        .spyOn(URL, "revokeObjectURL")
+        .mockImplementation(() => {});
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => {});
+
+      await api.downloadBalanceConfirmationSummary(
+        "tenant-123",
+        "RECEIVABLE",
+        "2024-01-31",
+        "csv",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/reports/balance-confirmations?type=RECEIVABLE&as_of_date=2024-01-31&format=csv",
+        ),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Authorization: "Bearer valid-token",
+          }),
+        }),
+      );
+      expect(createObjectURL).toHaveBeenCalledWith(blob);
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:balance-summary");
+    });
+
+    it("should download balance confirmation detail export", async () => {
+      api.setTokens("valid-token", "refresh-token");
+
+      const blob = new Blob(["pdf"], { type: "application/pdf" });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => blob,
+      });
+
+      const createObjectURL = vi
+        .spyOn(URL, "createObjectURL")
+        .mockReturnValue("blob:balance-detail");
+      const revokeObjectURL = vi
+        .spyOn(URL, "revokeObjectURL")
+        .mockImplementation(() => {});
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => {});
+
+      await api.downloadBalanceConfirmation(
+        "tenant-123",
+        "contact-1",
+        "PAYABLE",
+        "2024-01-31",
+        "pdf",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/reports/balance-confirmations/contact-1?type=PAYABLE&as_of_date=2024-01-31&format=pdf",
+        ),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Authorization: "Bearer valid-token",
+          }),
+        }),
+      );
+      expect(createObjectURL).toHaveBeenCalledWith(blob);
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:balance-detail");
+    });
+
     it("should get overdue invoices summary", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

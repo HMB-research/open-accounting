@@ -98,6 +98,32 @@ func TestGORMRepository_ReportQueries(t *testing.T) {
 		t.Fatalf("failed to create sales invoice: %v", err)
 	}
 
+	draftSalesInvoiceID := uuid.New().String()
+	if err := tenantTable("invoices").Create(&models.Invoice{
+		ID:            draftSalesInvoiceID,
+		TenantID:      tenant.ID,
+		InvoiceNumber: "INV-REP-DRAFT",
+		InvoiceType:   models.InvoiceTypeSales,
+		ContactID:     salesContactID,
+		IssueDate:     time.Date(2025, 1, 11, 0, 0, 0, 0, time.UTC),
+		DueDate:       time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC),
+		Currency:      "EUR",
+		ExchangeRate:  models.NewDecimal(decimal.NewFromInt(1)),
+		Subtotal:      models.NewDecimal(decimal.NewFromInt(500)),
+		VATAmount:     models.NewDecimal(decimal.NewFromInt(100)),
+		Total:         models.NewDecimal(decimal.NewFromInt(600)),
+		BaseSubtotal:  models.NewDecimal(decimal.NewFromInt(500)),
+		BaseVATAmount: models.NewDecimal(decimal.NewFromInt(100)),
+		BaseTotal:     models.NewDecimal(decimal.NewFromInt(600)),
+		AmountPaid:    models.DecimalZero(),
+		Status:        models.InvoiceStatusDraft,
+		CreatedBy:     userID,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}).Error; err != nil {
+		t.Fatalf("failed to create draft sales invoice: %v", err)
+	}
+
 	purchaseInvoiceID := uuid.New().String()
 	if err := tenantTable("invoices").Create(&models.Invoice{
 		ID:            purchaseInvoiceID,
@@ -284,6 +310,9 @@ func TestGORMRepository_ReportQueries(t *testing.T) {
 		}
 		if len(invoices) != 1 {
 			t.Fatalf("expected 1 contact invoice, got %d", len(invoices))
+		}
+		if invoices[0].InvoiceNumber == "INV-REP-DRAFT" {
+			t.Fatal("draft invoices must not be included in balance confirmations")
 		}
 		if !invoices[0].OutstandingAmount.Equal(decimal.NewFromInt(100)) {
 			t.Fatalf("expected outstanding amount 100, got %s", invoices[0].OutstandingAmount)

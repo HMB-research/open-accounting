@@ -222,7 +222,7 @@ func (r *GORMRepository) GetOutstandingInvoicesByContact(ctx context.Context, sc
 		Joins("JOIN "+contactsTable+" AS c ON i.contact_id = c.id AND i.tenant_id = c.tenant_id").
 		Where("i.tenant_id = ?", tenantID).
 		Where("i.invoice_type = ?", invoiceType).
-		Where("i.status NOT IN ?", []string{string(models.InvoiceStatusPaid), string(models.InvoiceStatusVoided)}).
+		Where("i.status IN ?", balanceConfirmationInvoiceStatuses()).
 		Where("i.issue_date <= ?", asOfDate).
 		Where("(i.total - i.amount_paid) > 0").
 		Group("c.id, c.name, c.code, c.email").
@@ -271,7 +271,7 @@ func (r *GORMRepository) GetContactInvoices(ctx context.Context, schemaName, ten
 		Where("i.tenant_id = ?", tenantID).
 		Where("i.contact_id = ?", contactID).
 		Where("i.invoice_type = ?", invoiceType).
-		Where("i.status NOT IN ?", []string{string(models.InvoiceStatusPaid), string(models.InvoiceStatusVoided)}).
+		Where("i.status IN ?", balanceConfirmationInvoiceStatuses()).
 		Where("i.issue_date <= ?", asOfDate).
 		Where("(i.total - i.amount_paid) > 0").
 		Order("i.issue_date ASC").
@@ -294,6 +294,14 @@ func (r *GORMRepository) GetContactInvoices(ctx context.Context, schemaName, ten
 		})
 	}
 	return invoices, nil
+}
+
+func balanceConfirmationInvoiceStatuses() []string {
+	return []string{
+		string(models.InvoiceStatusSent),
+		string(models.InvoiceStatusPartiallyPaid),
+		string(models.InvoiceStatusOverdue),
+	}
 }
 
 // GetContact retrieves contact details
