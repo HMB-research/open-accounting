@@ -7,7 +7,8 @@ test.describe('Demo Environment - Dashboard', () => {
 	});
 
 	test('Dashboard displays organization selector', async ({ page }) => {
-		const orgSelector = page.locator('.tenant-selector, [class*="org-selector"], select').first();
+		await waitForVisibleContent(page);
+		const orgSelector = page.locator('main .tenant-selector select').first();
 		await expect(orgSelector).toBeVisible({ timeout: 10000 });
 	});
 
