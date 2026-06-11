@@ -2023,6 +2023,15 @@ func TestService_ListTenantPlugins(t *testing.T) {
 			expectCount: 1,
 			expectErr:   false,
 		},
+		{
+			name: "empty_list_is_non_nil",
+			setupRepo: func() *MockRepository {
+				return NewMockRepository()
+			},
+			tenantID:    tenantID,
+			expectCount: 0,
+			expectErr:   false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2041,6 +2050,9 @@ func TestService_ListTenantPlugins(t *testing.T) {
 
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+			if result == nil {
+				t.Fatal("expected non-nil plugin slice")
 			}
 			if len(result) != tt.expectCount {
 				t.Errorf("expected %d plugins, got %d", tt.expectCount, len(result))

@@ -306,7 +306,14 @@ func (s *Service) DisablePlugin(ctx context.Context, id uuid.UUID) error {
 
 // GetTenantPlugins returns all plugins available to a tenant
 func (s *Service) GetTenantPlugins(ctx context.Context, tenantID uuid.UUID) ([]TenantPlugin, error) {
-	return s.repo.GetTenantPluginsWithAll(ctx, tenantID)
+	plugins, err := s.repo.GetTenantPluginsWithAll(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if plugins == nil {
+		return []TenantPlugin{}, nil
+	}
+	return plugins, nil
 }
 
 // EnableForTenant enables a plugin for a specific tenant

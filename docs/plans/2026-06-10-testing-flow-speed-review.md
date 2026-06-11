@@ -602,3 +602,32 @@ shifted to:
 
 The next measured demo E2E candidates are `fixed-assets`, `recurring`,
 `plugins-settings`, `env-onboarding`, and `employees`.
+
+## Follow-up: Plugin Settings Spec Consolidation
+
+CI run `27328276032` on commit `241a4dc` completed successfully and showed the broad demo E2E shard tail had been reduced enough that smaller repeated-navigation specs were now worth addressing. Uploaded Playwright artifacts showed the highest current demo spec costs as:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/plugins-settings.spec.ts` | 64.293s | 6 |
+| `demo/cash-flow.spec.ts` | 59.681s | 6 |
+| `demo/fixed-assets.spec.ts` | 59.185s | 6 |
+| `demo/bank-import.spec.ts` | 57.338s | 5 |
+| `demo/journal.spec.ts` | 56.229s | 4 |
+| `demo/env-onboarding.spec.ts` | 55.234s | 5 |
+| `demo/recurring.spec.ts` | 54.348s | 5 |
+
+Locally, `demo/plugins-settings.spec.ts` first measured at 29.215s of Playwright result time across six route tests, with the focused command reporting seven total tests including `auth-setup` in 18.1s wall time.
+
+The plugin settings coverage was consolidated from five tenant-route micro-tests into one route-owned workflow assertion, while keeping the admin plugin route check separate. The helpers now wait for the owning API responses and terminal route states instead of treating `.loading` as a successful loaded state.
+
+That stricter readiness check exposed a product/API bug: `GET /api/v1/tenants/{tenantID}/plugins` returned JSON `null` for tenants with no plugin rows. The UI then stayed on `Loading plugins...`. The plugin repository and service now normalize empty tenant plugin lists to `[]`, with service coverage asserting a non-nil empty slice.
+
+After the change, the same focused local command passed with three total tests in 8.4s wall time, and the reporter showed:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/plugins-settings.spec.ts` | 2.496s | 2 |
+| `demo/auth.setup.ts` | 2.879s | 1 |
+
+The next measured demo E2E candidates from run `27328276032` are `cash-flow`, `fixed-assets`, `bank-import`, `journal`, `env-onboarding`, and `recurring`.
