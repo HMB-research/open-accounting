@@ -18158,13 +18158,21 @@ paths:
       - Tax
   /tenants/{tenantID}/tsd:
     get:
-      description: Get all TSD declarations for a tenant
+      description: Get TSD declarations for a tenant, optionally filtered by period
       parameters:
       - description: Tenant ID
         in: path
         name: tenantID
         required: true
         type: string
+      - description: Filter by declaration year
+        in: query
+        name: year
+        type: integer
+      - description: Filter by declaration month
+        in: query
+        name: month
+        type: integer
       produces:
       - application/json
       responses:
@@ -18174,6 +18182,13 @@ paths:
             items:
               $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.TSDDeclaration'
             type: array
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
         "500":
           description: Internal Server Error
           schema:

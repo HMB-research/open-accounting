@@ -121,9 +121,9 @@ func (s *Service) GetTSDRows(ctx context.Context, schemaName, tenantID, declarat
 	return rows, nil
 }
 
-// ListTSD lists all TSD declarations for a tenant
-func (s *Service) ListTSD(ctx context.Context, schemaName, tenantID string) ([]TSDDeclaration, error) {
-	declarations, err := s.repo.ListTSD(ctx, schemaName, tenantID)
+// ListTSD lists TSD declarations for a tenant
+func (s *Service) ListTSD(ctx context.Context, schemaName, tenantID string, filter TSDListFilter) ([]TSDDeclaration, error) {
+	declarations, err := s.repo.ListTSD(ctx, schemaName, tenantID, filter)
 	if err != nil {
 		return nil, fmt.Errorf("list TSD: %w", err)
 	}

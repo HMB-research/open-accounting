@@ -20248,6 +20248,8 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd":
+			assert.Empty(t, r.URL.Query().Get("year"))
+			assert.Empty(t, r.URL.Query().Get("month"))
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode([]map[string]any{{
 				"id":                          "tsd-1",
@@ -20848,6 +20850,8 @@ func TestCLITSDBranches(t *testing.T) {
 
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd":
+			require.Equal(t, "2026", r.URL.Query().Get("year"))
+			require.Equal(t, "3", r.URL.Query().Get("month"))
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode([]map[string]any{
 				cliTSDDeclarationPayload("tsd-1", 2026, 3, "DRAFT"),
@@ -20906,7 +20910,7 @@ func TestCLITSDBranches(t *testing.T) {
 
 	app, stdout, _ := newTestCLIApp()
 
-	err := app.run(context.Background(), []string{"tsd", "list", "--json"})
+	err := app.run(context.Background(), []string{"tsd", "list", "--year", "2026", "--month", "3", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"id": "tsd-1"`)
 	assert.Contains(t, stdout.String(), `"emta_reference": "EMTA-REF"`)
@@ -20969,6 +20973,8 @@ func TestCLITSDValidationBranches(t *testing.T) {
 	}{
 		{name: "unknown subcommand", args: []string{"legacy"}, want: `unknown tsd subcommand "legacy"`},
 		{name: "list flag parse", args: []string{"list", "--bad"}, want: "flag provided but not defined"},
+		{name: "list parse year", args: []string{"list", "--year", "bad"}, want: "parse year"},
+		{name: "list month out of range", args: []string{"list", "--month", "13"}, want: "month must be between 1 and 12"},
 		{name: "get missing year", args: []string{"get", "--month", "3"}, want: "year is required"},
 		{name: "get parse year", args: []string{"get", "--year", "bad", "--month", "3"}, want: "parse year"},
 		{name: "get month out of range", args: []string{"get", "--year", "2026", "--month", "13"}, want: "month must be between 1 and 12"},

@@ -457,14 +457,21 @@ func (r *GORMRepository) GetTSDRows(ctx context.Context, schemaName, tenantID, d
 	return rows, nil
 }
 
-// ListTSD lists all TSD declarations for a tenant.
-func (r *GORMRepository) ListTSD(ctx context.Context, schemaName, tenantID string) ([]TSDDeclaration, error) {
+// ListTSD lists TSD declarations for a tenant.
+func (r *GORMRepository) ListTSD(ctx context.Context, schemaName, tenantID string, filter TSDListFilter) ([]TSDDeclaration, error) {
 	db, err := r.tenantTable(ctx, schemaName, "tsd_declarations")
 	if err != nil {
 		return nil, err
 	}
 	var declarationModels []models.TSDDeclaration
-	if err := db.Where("tenant_id = ?", tenantID).
+	query := db.Where("tenant_id = ?", tenantID)
+	if filter.Year > 0 {
+		query = query.Where("period_year = ?", filter.Year)
+	}
+	if filter.Month > 0 {
+		query = query.Where("period_month = ?", filter.Month)
+	}
+	if err := query.
 		Order("period_year DESC, period_month DESC").
 		Find(&declarationModels).Error; err != nil {
 		return nil, fmt.Errorf("list TSD: %w", err)
