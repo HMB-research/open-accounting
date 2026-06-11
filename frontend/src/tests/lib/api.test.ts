@@ -3355,6 +3355,12 @@ describe("API Client - Core Functionality", () => {
 
       const result = await api.enablePlugin("plugin-1", ["read:invoices"]);
 
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/admin/plugins/plugin-1/enable"),
+        expect.objectContaining({
+          body: JSON.stringify({ granted_permissions: ["read:invoices"] }),
+        }),
+      );
       expect(result.state).toBe("enabled");
     });
 

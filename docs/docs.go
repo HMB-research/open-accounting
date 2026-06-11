@@ -472,12 +472,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "properties": {
-                                "status": {
-                                    "type": "string"
-                                }
-                            }
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_plugin.Plugin"
                         }
                     },
                     "400": {
@@ -534,12 +529,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "properties": {
-                                "status": {
-                                    "type": "string"
-                                }
-                            }
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_plugin.Plugin"
                         }
                     },
                     "400": {
@@ -13940,12 +13930,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "properties": {
-                                "status": {
-                                    "type": "string"
-                                }
-                            }
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_plugin.TenantPlugin"
                         }
                     },
                     "400": {

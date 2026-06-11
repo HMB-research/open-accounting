@@ -47,6 +47,62 @@ VALUES (
     true
 ) ON CONFLICT (tenant_id, user_id) DO NOTHING;
 
+-- Demo Plugin (instance-enabled, tenant-disabled by default)
+INSERT INTO plugins (
+    id,
+    name,
+    display_name,
+    description,
+    version,
+    repository_url,
+    repository_type,
+    author,
+    license,
+    homepage_url,
+    state,
+    granted_permissions,
+    manifest,
+    installed_at,
+    updated_at
+) VALUES (
+    '66000000-0000-0000-0001-000000000001'::uuid,
+    'demo-bank-import',
+    'Demo Bank Import',
+    'Demo plugin for tenant-level plugin management workflows',
+    '1.0.0',
+    'https://github.com/HMB-research/open-accounting-demo-bank-import',
+    'github',
+    'HMB Research',
+    'MIT',
+    'https://github.com/HMB-research/open-accounting',
+    'enabled',
+    ARRAY['banking:read']::text[],
+    '{
+        "name": "demo-bank-import",
+        "display_name": "Demo Bank Import",
+        "version": "1.0.0",
+        "description": "Demo plugin for tenant-level plugin management workflows",
+        "author": "HMB Research",
+        "license": "MIT",
+        "homepage": "https://github.com/HMB-research/open-accounting",
+        "permissions": ["banking:read"]
+    }'::jsonb,
+    now(),
+    now()
+) ON CONFLICT (name) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    description = EXCLUDED.description,
+    version = EXCLUDED.version,
+    repository_url = EXCLUDED.repository_url,
+    repository_type = EXCLUDED.repository_type,
+    author = EXCLUDED.author,
+    license = EXCLUDED.license,
+    homepage_url = EXCLUDED.homepage_url,
+    state = EXCLUDED.state,
+    granted_permissions = EXCLUDED.granted_permissions,
+    manifest = EXCLUDED.manifest,
+    updated_at = now();
+
 -- Create tenant schema with all tables
 SELECT create_tenant_schema('tenant_acme');
 

@@ -819,17 +819,18 @@ Each view is tested for:
 | Criteria     | Status | Notes                                                   |
 | ------------ | ------ | ------------------------------------------------------- |
 | Page Load    | ✅     | Page renders with "Plugin Settings" heading             |
-| Data Display | ✅     | "Manage plugins for your organization" subtitle visible |
+| Data Display | ✅     | Seeded Demo Bank Import card and permission badge render |
 | Navigation   | ✅     | Navigation visible                                      |
-| CRUD         | ⚠️     | Plugin enable/disable needs E2E verification            |
-| Errors       | ✅     | Shows "Loading plugins..." - expected state             |
+| CRUD         | ✅     | Tenant plugin enable/disable verified through demo E2E  |
+| Errors       | ✅     | No errors observed during enable/disable workflow       |
 | Responsive   | ⚠️     | Needs manual verification                               |
 
 **Features Verified:**
 
 - Plugin Settings management interface
-- Plugin list loading state
-- Organization-level plugin management
+- Seeded plugin list rendering
+- Permission badge display
+- Tenant-level plugin enable/disable with confirmation
 
 **Overall:** ✅ Working
 
@@ -867,9 +868,9 @@ Each view is tested for:
 | Criteria     | Status | Notes                                                                     |
 | ------------ | ------ | ------------------------------------------------------------------------- |
 | Page Load    | ✅     | Plugin marketplace renders                                                |
-| Data Display | ✅     | Search, "Install from URL", Installed Plugins (0), Registries (0) visible |
+| Data Display | ✅     | Search, "Install from URL", seeded Demo Bank Import card, registries visible |
 | Navigation   | ✅     | Navigation visible                                                        |
-| CRUD         | ⚠️     | Plugin installation needs E2E verification                                |
+| CRUD         | ⚠️     | Seeded plugin card verified; repository install clone path still needs E2E fixture |
 | Errors       | ✅     | Shows "Loading..." - expected initial state                               |
 | Responsive   | ⚠️     | Needs manual verification                                                 |
 
@@ -878,8 +879,8 @@ Each view is tested for:
 - Plugin Marketplace interface
 - Search functionality ready
 - "Install from URL" option
-- Installed Plugins section (0)
-- Registries section (0)
+- Seeded installed plugin card
+- Registries section
 - Clean loading state
 
 **Overall:** ✅ Working
@@ -911,6 +912,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Added seeded demo plugin coverage for tenant plugin enable/disable from `/settings/plugins` and visibility from `/admin/plugins`                    |
 | 2026-06-11 | Codex  | Strengthened `/vat-returns` demo E2E coverage for tenant-scoped KMD generation, detail totals, row rendering, and XML export download               |
 | 2026-06-11 | Codex  | Added `/banking` demo E2E coverage for bank account creation and imported transaction-to-payment reconciliation                                      |
 | 2026-06-11 | Codex  | Added `/tsd` demo E2E coverage for XML/CSV export and manual submitted status with EMTA reference refresh                                            |

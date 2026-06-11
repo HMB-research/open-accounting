@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/plugin"
+	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 type pluginHandlerRepository struct {
@@ -441,4 +444,122 @@ func TestPluginListHandlersRepositoryErrors(t *testing.T) {
 
 	require.Equal(t, http.StatusInternalServerError, pluginsResp.Code)
 	assert.JSONEq(t, `{"error":"Failed to list plugins"}`, pluginsResp.Body.String())
+}
+
+func TestPluginEnableDisableHandlersReturnUpdatedPlugin(t *testing.T) {
+	h, repo := setupPluginTestHandlers(t)
+
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	pluginID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	repo.plugins[pluginID] = &plugin.Plugin{
+		ID:             pluginID,
+		Name:           "demo-bank-import",
+		DisplayName:    "Demo Bank Import",
+		Description:    "Demo plugin for tenant workflow coverage",
+		Version:        "1.0.0",
+		RepositoryURL:  "https://github.com/HMB-research/open-accounting-demo-bank-import",
+		RepositoryType: plugin.RepoGitHub,
+		State:          plugin.StateInstalled,
+		Manifest: json.RawMessage(`{
+			"name":"demo-bank-import",
+			"display_name":"Demo Bank Import",
+			"version":"1.0.0",
+			"permissions":["banking:read"]
+		}`),
+		InstalledAt: now,
+		UpdatedAt:   now,
+	}
+
+	enableReq := withURLParams(
+		httptest.NewRequest(
+			http.MethodPost,
+			"/admin/plugins/"+pluginID.String()+"/enable",
+			strings.NewReader(`{"granted_permissions":["banking:read"]}`),
+		),
+		map[string]string{"id": pluginID.String()},
+	)
+	enableResp := httptest.NewRecorder()
+	h.EnablePlugin(enableResp, enableReq)
+
+	require.Equal(t, http.StatusOK, enableResp.Code)
+	var enabled plugin.Plugin
+	require.NoError(t, json.NewDecoder(enableResp.Body).Decode(&enabled))
+	assert.Equal(t, pluginID, enabled.ID)
+	assert.Equal(t, plugin.StateEnabled, enabled.State)
+	assert.Equal(t, []string{"banking:read"}, enabled.GrantedPermissions)
+
+	disableReq := withURLParams(
+		httptest.NewRequest(http.MethodPost, "/admin/plugins/"+pluginID.String()+"/disable", nil),
+		map[string]string{"id": pluginID.String()},
+	)
+	disableResp := httptest.NewRecorder()
+	h.DisablePlugin(disableResp, disableReq)
+
+	require.Equal(t, http.StatusOK, disableResp.Code)
+	var disabled plugin.Plugin
+	require.NoError(t, json.NewDecoder(disableResp.Body).Decode(&disabled))
+	assert.Equal(t, pluginID, disabled.ID)
+	assert.Equal(t, plugin.StateDisabled, disabled.State)
+	assert.Empty(t, disabled.GrantedPermissions)
+}
+
+func TestTenantPluginEnableHandlerReturnsUpdatedTenantPlugin(t *testing.T) {
+	h, repo := setupPluginTestHandlers(t)
+
+	tenantID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	pluginID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	userID := "user-1"
+
+	tenantRepo := newMockTenantRepository()
+	tenantRepo.addTestTenant(tenantID.String(), "Demo Tenant", "demo-tenant")
+	tenantRepo.tenantUsers[tenantID.String()] = []tenant.TenantUser{{
+		TenantID: tenantID.String(),
+		UserID:   userID,
+		Role:     tenant.RoleOwner,
+		IsActive: true,
+	}}
+	h.tenantService = tenant.NewServiceWithRepository(tenantRepo)
+
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	repo.plugins[pluginID] = &plugin.Plugin{
+		ID:             pluginID,
+		Name:           "demo-bank-import",
+		DisplayName:    "Demo Bank Import",
+		Description:    "Demo plugin for tenant workflow coverage",
+		Version:        "1.0.0",
+		RepositoryURL:  "https://github.com/HMB-research/open-accounting-demo-bank-import",
+		RepositoryType: plugin.RepoGitHub,
+		State:          plugin.StateEnabled,
+		GrantedPermissions: []string{
+			"banking:read",
+		},
+		Manifest: json.RawMessage(`{
+			"name":"demo-bank-import",
+			"display_name":"Demo Bank Import",
+			"version":"1.0.0",
+			"permissions":["banking:read"]
+		}`),
+		InstalledAt: now,
+		UpdatedAt:   now,
+	}
+
+	req := makeAuthenticatedRequest(
+		http.MethodPost,
+		"/tenants/"+tenantID.String()+"/plugins/"+pluginID.String()+"/enable",
+		map[string]json.RawMessage{"settings": json.RawMessage(`{"account":"1000"}`)},
+		&auth.Claims{UserID: userID, TenantID: tenantID.String(), Role: tenant.RoleOwner},
+	)
+	req = withURLParams(req, map[string]string{"tenantID": tenantID.String(), "pluginID": pluginID.String()})
+	resp := httptest.NewRecorder()
+	h.EnableTenantPlugin(resp, req)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	var enabled plugin.TenantPlugin
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&enabled))
+	assert.Equal(t, tenantID, enabled.TenantID)
+	assert.Equal(t, pluginID, enabled.PluginID)
+	assert.True(t, enabled.IsEnabled)
+	assert.JSONEq(t, `{"account":"1000"}`, string(enabled.Settings))
+	require.NotNil(t, enabled.Plugin)
+	assert.Equal(t, "demo-bank-import", enabled.Plugin.Name)
 }

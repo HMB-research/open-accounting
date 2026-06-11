@@ -1,7 +1,23 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
 
-async function openPluginsPage(page: Page, testInfo: TestInfo): Promise<void> {
+interface TenantPluginPayload {
+	plugin_id: string;
+	is_enabled: boolean;
+	plugin?: {
+		name: string;
+		display_name: string;
+	};
+}
+
+const demoPluginName = 'Demo Bank Import';
+const demoPluginSlug = 'demo-bank-import';
+
+function responsePath(responseUrl: string) {
+	return new URL(responseUrl).pathname;
+}
+
+async function openPluginsPage(page: Page, testInfo: TestInfo): Promise<TenantPluginPayload[]> {
 	const tenantPluginsLoaded = page.waitForResponse((response) => {
 		const url = new URL(response.url());
 		return (
@@ -18,8 +34,9 @@ async function openPluginsPage(page: Page, testInfo: TestInfo): Promise<void> {
 	);
 
 	await navigateTo(page, '/settings/plugins', testInfo, { waitForNetworkIdle: false });
-	await Promise.all([tenantPluginsLoaded, permissionsLoaded]);
+	const [tenantPluginsResponse] = await Promise.all([tenantPluginsLoaded, permissionsLoaded]);
 	await waitForRouteReady(page, 'main h1, main .plugins-list, main .empty-state, main .alert-error');
+	return (await tenantPluginsResponse.json()) as TenantPluginPayload[];
 }
 
 async function openAdminPluginsPage(page: Page, testInfo: TestInfo): Promise<void> {
@@ -48,41 +65,65 @@ async function openAdminPluginsPage(page: Page, testInfo: TestInfo): Promise<voi
 }
 
 test.describe('Plugins Settings View', () => {
-	test('renders tenant plugin settings and loads the admin plugins route', async ({ page }, testInfo) => {
+	test('toggles a tenant plugin and loads the admin plugins route', async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
 
-		await openPluginsPage(page, testInfo);
+		const tenantPlugins = await openPluginsPage(page, testInfo);
 
 		await expect(page.getByRole('heading', { name: /plugin|extension|integration/i }).first()).toBeVisible();
 		await expect(page.locator('.plugins-list, .empty-state, .alert-error').first()).toBeVisible();
 
-		const pluginCards = page.locator('.plugin-card');
-		if ((await pluginCards.count()) === 0) {
-			await expect(page.locator('.empty-state, .alert-error').first()).toBeVisible();
-		} else {
-			await expect(pluginCards.first().locator('.plugin-info')).toBeVisible();
-			await expect(
-				pluginCards.first().getByRole('button', { name: /enable|disable|activate/i }).first()
-			).toBeVisible();
+		const demoPlugin = tenantPlugins.find((plugin) => plugin.plugin?.name === demoPluginSlug);
+		expect(demoPlugin, `${demoPluginSlug} should be seeded for demo plugin workflow coverage`).toBeTruthy();
+		expect(demoPlugin?.is_enabled).toBe(false);
 
-			const permissionsSection = page.locator('.permissions-section').first();
-			if (await permissionsSection.isVisible().catch(() => false)) {
-				await expect(permissionsSection.locator('.permission-badge').first()).toBeVisible();
-			}
+		const pluginCard = page.locator('.plugin-card').filter({ hasText: demoPluginName }).first();
+		await expect(pluginCard).toBeVisible();
+		await expect(pluginCard.locator('.plugin-info')).toContainText(demoPluginName);
+		await expect(pluginCard.locator('.badge')).toContainText(/disabled|keelatud/i);
+		await expect(pluginCard.locator('.permission-badge')).toContainText('banking:read');
 
-			const settingsButton = page.getByRole('button', { name: /setting|configure|config/i }).first();
-			if (await settingsButton.isVisible().catch(() => false)) {
-				await expect(settingsButton).toBeVisible();
-			} else {
-				await expect(pluginCards.first().locator('.plugin-actions')).toBeVisible();
-			}
-		}
+		const enableResponsePromise = page.waitForResponse((response) => {
+			return (
+				response.request().method() === 'POST' &&
+				new RegExp(`/api/v1/tenants/[^/]+/plugins/${demoPlugin!.plugin_id}/enable$`).test(
+					responsePath(response.url())
+				)
+			);
+		});
+		await pluginCard.getByRole('button', { name: /enable|aktiveeri|luba/i }).click();
+		const enableResponse = await enableResponsePromise;
+		expect(enableResponse.ok()).toBeTruthy();
+		const enabledPlugin = (await enableResponse.json()) as TenantPluginPayload;
+		expect(enabledPlugin.plugin_id).toBe(demoPlugin?.plugin_id);
+		expect(enabledPlugin.is_enabled).toBe(true);
+		await expect(pluginCard.locator('.badge')).toContainText(/enabled|lubatud/i);
+
+		const disableResponsePromise = page.waitForResponse((response) => {
+			return (
+				response.request().method() === 'POST' &&
+				new RegExp(`/api/v1/tenants/[^/]+/plugins/${demoPlugin!.plugin_id}/disable$`).test(
+					responsePath(response.url())
+				)
+			);
+		});
+		page.once('dialog', async (dialog) => {
+			expect(dialog.type()).toBe('confirm');
+			await dialog.accept();
+		});
+		await pluginCard.getByRole('button', { name: /disable|keela/i }).click();
+		const disableResponse = await disableResponsePromise;
+		expect(disableResponse.ok()).toBeTruthy();
+		const disabledPlugin = (await disableResponse.json()) as { status: string };
+		expect(disabledPlugin.status).toBe('disabled');
+		await expect(pluginCard.locator('.badge')).toContainText(/disabled|keelatud/i);
 
 		await openAdminPluginsPage(page, testInfo);
 
 		await expect(page.getByRole('heading', { name: /plugin|admin/i }).first()).toBeVisible();
 		await expect(page.locator('main .plugins-grid, main .plugin-card, main .empty-state').first()).toBeVisible();
+		await expect(page.locator('main .plugin-card').filter({ hasText: demoPluginName })).toBeVisible();
 		await expect(page.getByRole('button', { name: /search plugins|install from url/i }).first()).toBeVisible();
 	});
 });
