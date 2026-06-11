@@ -363,7 +363,12 @@ func TestGORMRepository_ReportQueries(t *testing.T) {
 			t.Fatalf("GetContactStatementEntries failed: %v", err)
 		}
 		if len(entries) != 2 {
-			t.Fatalf("expected invoice and payment statement entries, got %d", len(entries))
+			t.Fatalf("expected issued invoice and payment statement entries, got %d: %+v", len(entries), entries)
+		}
+		for _, entry := range entries {
+			if entry.DocumentNumber == "INV-REP-DRAFT" {
+				t.Fatal("draft invoices must not be included in contact statements")
+			}
 		}
 		if entries[0].DocumentType != "INVOICE" || !entries[0].StatementAmount.Equal(decimal.NewFromInt(120)) {
 			t.Fatalf("unexpected invoice statement entry: %+v", entries[0])
