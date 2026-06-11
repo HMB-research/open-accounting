@@ -14,6 +14,7 @@
 	let isLoading = $state(true);
 	let error = $state('');
 	let showCreateAsset = $state(false);
+	let showEditAsset = $state(false);
 	let showDisposeModal = $state(false);
 	let showDepreciationHistory = $state(false);
 	let showDocumentManager = $state(false);
@@ -21,6 +22,7 @@
 	let filterFromDate = $state('');
 	let filterToDate = $state('');
 	let selectedAsset = $state<FixedAsset | null>(null);
+	let editingAsset = $state<FixedAsset | null>(null);
 	let selectedAssetForDocuments = $state<FixedAsset | null>(null);
 	let depreciationHistory = $state<DepreciationEntry[]>([]);
 
@@ -36,6 +38,17 @@
 	let newUsefulLifeMonths = $state(60);
 	let newResidualValue = $state('0');
 	let newDepreciationStartDate = $state('');
+
+	// Edit asset form. Purchase date/cost are intentionally create-only because
+	// the asset update API does not accept those fields.
+	let editName = $state('');
+	let editDescription = $state('');
+	let editCategoryId = $state('');
+	let editSerialNumber = $state('');
+	let editLocation = $state('');
+	let editDepreciationMethod = $state<DepreciationMethod>('STRAIGHT_LINE');
+	let editUsefulLifeMonths = $state(60);
+	let editResidualValue = $state('0');
 
 	// Dispose form
 	let disposeDate = $state(new Date().toISOString().split('T')[0]);
@@ -88,14 +101,14 @@
 				name: newName,
 				description: newDescription || undefined,
 				category_id: newCategoryId || undefined,
-				purchase_date: newPurchaseDate,
+				purchase_date: dateInputToRFC3339(newPurchaseDate),
 				purchase_cost: newPurchaseCost,
 				serial_number: newSerialNumber || undefined,
 				location: newLocation || undefined,
 				depreciation_method: newDepreciationMethod,
 				useful_life_months: newUsefulLifeMonths,
 				residual_value: newResidualValue || '0',
-				depreciation_start_date: newDepreciationStartDate || undefined
+				depreciation_start_date: optionalDateInputToRFC3339(newDepreciationStartDate)
 			});
 			assets = [asset, ...assets];
 			showCreateAsset = false;
@@ -117,6 +130,63 @@
 		newUsefulLifeMonths = 60;
 		newResidualValue = '0';
 		newDepreciationStartDate = '';
+	}
+
+	function closeCreateAsset() {
+		showCreateAsset = false;
+	}
+
+	function openEditAsset(asset: FixedAsset) {
+		editingAsset = asset;
+		editName = asset.name;
+		editDescription = asset.description || '';
+		editCategoryId = asset.category_id || '';
+		editSerialNumber = asset.serial_number || '';
+		editLocation = asset.location || '';
+		editDepreciationMethod = asset.depreciation_method;
+		editUsefulLifeMonths = asset.useful_life_months;
+		editResidualValue = new Decimal(asset.residual_value || 0).toString();
+		showEditAsset = true;
+	}
+
+	function closeEditAsset() {
+		showEditAsset = false;
+		editingAsset = null;
+	}
+
+	function handleBackdropClick(event: MouseEvent, close: () => void) {
+		if (event.target === event.currentTarget) {
+			close();
+		}
+	}
+
+	function handleBackdropKeydown(event: KeyboardEvent, close: () => void) {
+		if (event.key === 'Escape') {
+			close();
+		}
+	}
+
+	async function updateAsset(e: Event) {
+		e.preventDefault();
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId || !editingAsset) return;
+
+		try {
+			const asset = await api.updateAsset(tenantId, editingAsset.id, {
+				name: editName,
+				description: editDescription || undefined,
+				category_id: editCategoryId || undefined,
+				serial_number: editSerialNumber || undefined,
+				location: editLocation || undefined,
+				depreciation_method: editDepreciationMethod,
+				useful_life_months: editUsefulLifeMonths,
+				residual_value: editResidualValue || '0'
+			});
+			assets = assets.map((current) => (current.id === asset.id ? asset : current));
+			closeEditAsset();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update asset';
+		}
 	}
 
 	async function handleFilter() {
@@ -151,6 +221,11 @@
 		disposeNotes = '';
 		syncDisposalAccounts();
 		showDisposeModal = true;
+	}
+
+	function closeDisposeModal() {
+		showDisposeModal = false;
+		selectedAsset = null;
 	}
 
 	function handleDisposeMethodChange() {
@@ -198,7 +273,7 @@
 
 		try {
 			await api.disposeAsset(tenantId, selectedAsset.id, {
-				disposal_date: disposeDate,
+				disposal_date: dateInputToRFC3339(disposeDate),
 				disposal_method: disposeMethod,
 				disposal_proceeds: proceeds.greaterThan(0) ? proceeds.toFixed(2) : undefined,
 				disposal_notes: disposeNotes || undefined,
@@ -226,6 +301,11 @@
 		}
 	}
 
+	function closeDepreciationHistory() {
+		showDepreciationHistory = false;
+		selectedAsset = null;
+	}
+
 	async function recordDepreciation(assetId: string) {
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (!tenantId) return;
@@ -236,8 +316,8 @@
 
 		try {
 			await api.recordDepreciation(tenantId, assetId, {
-				period_start: periodStart,
-				period_end: periodEnd
+				period_start: dateInputToRFC3339(periodStart),
+				period_end: dateInputToRFC3339(periodEnd)
 			});
 			loadData(tenantId);
 		} catch (err) {
@@ -317,6 +397,15 @@
 
 	function accountLabel(account: Account): string {
 		return `${account.code} ${account.name}`;
+	}
+
+	function dateInputToRFC3339(value: string): string {
+		return value.includes('T') ? value : `${value}T00:00:00Z`;
+	}
+
+	function optionalDateInputToRFC3339(value: string): string | undefined {
+		const trimmed = value.trim();
+		return trimmed ? dateInputToRFC3339(trimmed) : undefined;
 	}
 
 	function disposalProceedsAmount(): Decimal {
@@ -422,6 +511,9 @@
 								<td class="amount text-right hide-mobile" data-label={m.assets_bookValue()}>{formatCurrency(asset.book_value)}</td>
 								<td class="actions actions-cell" data-label={m.common_actions()}>
 									{#if asset.status === 'DRAFT'}
+										<button class="btn btn-small" onclick={() => openEditAsset(asset)} title={m.common_edit()}>
+											{m.common_edit()}
+										</button>
 										<button class="btn btn-small btn-success" onclick={() => activateAsset(asset)} title={m.assets_activate()}>
 											{m.assets_activate()}
 										</button>
@@ -429,6 +521,9 @@
 											{m.common_delete()}
 										</button>
 									{:else if asset.status === 'ACTIVE'}
+										<button class="btn btn-small" onclick={() => openEditAsset(asset)} title={m.common_edit()}>
+											{m.common_edit()}
+										</button>
 										<button class="btn btn-small" onclick={() => recordDepreciation(asset.id)} title={m.assets_depreciate()}>
 											{m.assets_depreciate()}
 										</button>
@@ -457,10 +552,13 @@
 </div>
 
 {#if showCreateAsset}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showCreateAsset = false)} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-asset-title" tabindex="-1">
+	<div
+		class="modal-backdrop"
+		onclick={(event) => handleBackdropClick(event, closeCreateAsset)}
+		onkeydown={(event) => handleBackdropKeydown(event, closeCreateAsset)}
+		role="presentation"
+	>
+		<div class="modal card" role="dialog" aria-modal="true" aria-labelledby="create-asset-title" tabindex="-1">
 			<h2 id="create-asset-title">{m.assets_newAsset()}</h2>
 			<form onsubmit={createAsset}>
 				<div class="form-row">
@@ -533,10 +631,83 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => (showCreateAsset = false)}>
+					<button type="button" class="btn btn-secondary" onclick={closeCreateAsset}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.assets_createAsset()}</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+{#if showEditAsset && editingAsset}
+	<div
+		class="modal-backdrop"
+		onclick={(event) => handleBackdropClick(event, closeEditAsset)}
+		onkeydown={(event) => handleBackdropKeydown(event, closeEditAsset)}
+		role="presentation"
+	>
+		<div class="modal card" role="dialog" aria-modal="true" aria-labelledby="edit-asset-title" tabindex="-1">
+			<h2 id="edit-asset-title">{m.common_edit()}: {editingAsset.asset_number}</h2>
+			<form onsubmit={updateAsset}>
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="edit-name">{m.common_name()} *</label>
+						<input class="input" type="text" id="edit-name" bind:value={editName} required />
+					</div>
+					<div class="form-group">
+						<label class="label" for="edit-category">{m.assets_category()}</label>
+						<select class="input" id="edit-category" bind:value={editCategoryId}>
+							<option value="">-</option>
+							{#each categories as category (category.id)}
+								<option value={category.id}>{category.name}</option>
+							{/each}
+						</select>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="edit-description">{m.common_description()}</label>
+					<textarea class="input" id="edit-description" bind:value={editDescription} rows="2"></textarea>
+				</div>
+
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="edit-serial-number">{m.assets_serialNumber()}</label>
+						<input class="input" type="text" id="edit-serial-number" bind:value={editSerialNumber} />
+					</div>
+					<div class="form-group">
+						<label class="label" for="edit-location">{m.assets_location()}</label>
+						<input class="input" type="text" id="edit-location" bind:value={editLocation} />
+					</div>
+				</div>
+
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="edit-depreciation-method">{m.assets_depreciationMethod()}</label>
+						<select class="input" id="edit-depreciation-method" bind:value={editDepreciationMethod}>
+							<option value="STRAIGHT_LINE">{m.assets_methodStraightLine()}</option>
+							<option value="DECLINING_BALANCE">{m.assets_methodDecliningBalance()}</option>
+							<option value="UNITS_OF_PRODUCTION">{m.assets_methodUnitsOfProduction()}</option>
+						</select>
+					</div>
+					<div class="form-group">
+						<label class="label" for="edit-useful-life">{m.assets_usefulLife()}</label>
+						<input class="input" type="number" min="1" id="edit-useful-life" bind:value={editUsefulLifeMonths} />
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="edit-residual-value">{m.assets_residualValue()}</label>
+					<input class="input" type="number" step="0.01" min="0" id="edit-residual-value" bind:value={editResidualValue} />
+				</div>
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={closeEditAsset}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-primary">{m.common_save()}</button>
 				</div>
 			</form>
 		</div>
@@ -553,10 +724,13 @@
 />
 
 {#if showDisposeModal && selectedAsset}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showDisposeModal = false)} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="dispose-asset-title" tabindex="-1">
+	<div
+		class="modal-backdrop"
+		onclick={(event) => handleBackdropClick(event, closeDisposeModal)}
+		onkeydown={(event) => handleBackdropKeydown(event, closeDisposeModal)}
+		role="presentation"
+	>
+		<div class="modal card" role="dialog" aria-modal="true" aria-labelledby="dispose-asset-title" tabindex="-1">
 			<h2 id="dispose-asset-title">{m.assets_dispose()}: {selectedAsset.name}</h2>
 			<form onsubmit={disposeAsset}>
 				<div class="form-row">
@@ -618,7 +792,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => (showDisposeModal = false)}>
+					<button type="button" class="btn btn-secondary" onclick={closeDisposeModal}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-warning">{m.assets_dispose()}</button>
@@ -629,10 +803,13 @@
 {/if}
 
 {#if showDepreciationHistory && selectedAsset}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showDepreciationHistory = false)} role="presentation">
-		<div class="modal card modal-wide" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="depreciation-history-title" tabindex="-1">
+	<div
+		class="modal-backdrop"
+		onclick={(event) => handleBackdropClick(event, closeDepreciationHistory)}
+		onkeydown={(event) => handleBackdropKeydown(event, closeDepreciationHistory)}
+		role="presentation"
+	>
+		<div class="modal card modal-wide" role="dialog" aria-modal="true" aria-labelledby="depreciation-history-title" tabindex="-1">
 			<h2 id="depreciation-history-title">{m.assets_depreciationHistory()}: {selectedAsset.name}</h2>
 
 			<div class="asset-summary">
@@ -680,7 +857,7 @@
 			{/if}
 
 			<div class="modal-actions">
-				<button type="button" class="btn btn-secondary" onclick={() => (showDepreciationHistory = false)}>
+				<button type="button" class="btn btn-secondary" onclick={closeDepreciationHistory}>
 					{m.common_close()}
 				</button>
 			</div>
