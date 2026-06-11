@@ -986,3 +986,36 @@ where backend or CI files changed.
 The next measured speed targets remain spec-level demo E2E consolidation:
 `env-onboarding`, `recurring`, `vat-returns`, `email-settings`, `quotes`,
 `salary-calculator`, `payroll`, `tsd`, and `mobile-navigation`.
+
+## 2026-06-11 Email Settings Spec Consolidation
+
+CI run `27334608216` measured `demo/email-settings.spec.ts` at 53.548s across
+five tests. Each test repeated the same authentication, tenant selection, and
+`/settings/email` navigation before asserting one small part of the SMTP
+settings page.
+
+The spec now uses a single workflow check that:
+
+- waits for the SMTP config, template list, and email log API responses;
+- opens `/settings/email` without the broad `networkidle` wait;
+- verifies the page heading, tabs, SMTP form, SMTP fields, save button, test
+  email input, and send-test button in one route-owned assertion flow.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/email-settings.spec.ts --workers=4` | 2 passed in 8.1s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/email-settings.spec.ts --workers=4 --repeat-each=5` | 6 passed in 9.7s, including `auth-setup` |
+
+Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/auth.setup.ts` | 2.767s | 1 | 1 |
+| `demo/email-settings.spec.ts` | 7.633s | 5 | 5 |
+
+The next CI artifact should confirm the remote spec-level reduction. Remaining
+measured consolidation targets are `env-onboarding`, `recurring`,
+`vat-returns`, `quotes`, `salary-calculator`, `payroll`, `tsd`, and
+`mobile-navigation`.
