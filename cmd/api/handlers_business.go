@@ -3856,7 +3856,7 @@ func parseTSDListFilter(r *http.Request) (payroll.TSDListFilter, error) {
 	if rawYear := strings.TrimSpace(r.URL.Query().Get("year")); rawYear != "" {
 		year, err := strconv.Atoi(rawYear)
 		if err != nil || year <= 0 {
-			return filter, errors.New("Invalid year")
+			return filter, errors.New("invalid year")
 		}
 		filter.Year = year
 	}
@@ -3864,7 +3864,7 @@ func parseTSDListFilter(r *http.Request) (payroll.TSDListFilter, error) {
 	if rawMonth := strings.TrimSpace(r.URL.Query().Get("month")); rawMonth != "" {
 		month, err := strconv.Atoi(rawMonth)
 		if err != nil || month < 1 || month > 12 {
-			return filter, errors.New("Invalid month")
+			return filter, errors.New("invalid month")
 		}
 		filter.Month = month
 	}
