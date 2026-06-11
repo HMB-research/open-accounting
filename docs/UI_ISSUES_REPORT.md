@@ -485,7 +485,7 @@ Each view is tested for:
 | Page Load    | ✅     | Page renders with "Payroll Runs" heading                                    |
 | Data Display | ✅     | "+ New Payroll Run" button, year filter, Estonian tax rates reference table |
 | Navigation   | ✅     | Navigation visible                                                          |
-| CRUD         | ⚠️     | Read verified, need E2E for full CRUD                                       |
+| CRUD         | ✅     | Create, calculate, approve, payslip review, and TSD generation verified through demo E2E |
 | Errors       | ✅     | No errors observed                                                          |
 | Responsive   | ⚠️     | Needs manual verification                                                   |
 
@@ -493,6 +493,10 @@ Each view is tested for:
 
 - Payroll runs list view
 - New payroll run button
+- Payroll run creation with RFC3339 API payment-date payloads
+- Calculate and approve status transitions, including refreshed approved row state
+- Payslip review modal for generated payslips
+- TSD generation redirect and generated declaration verification
 - Year filter (2022-2026)
 - Estonian 2025 tax rates reference:
   - Income Tax 22%
@@ -500,6 +504,11 @@ Each view is tested for:
   - Unemployment Ins. (Employee) 1.6%
   - Unemployment Ins. (Employer) 0.8%
   - Basic Exemption max 700 EUR
+
+**E2E Tests:** 2 focused workflows passed
+
+- Seeded payroll-run filtering and payslip review
+- Create, calculate, approve, payslip review, and TSD generation lifecycle
 
 **Overall:** ✅ Working
 
@@ -885,6 +894,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Added `/payroll` demo E2E lifecycle coverage for create, calculate, approve, payslip review, and generated TSD declaration verification              |
 | 2026-06-11 | Codex  | Added `/employees/absences` demo E2E coverage for leave request lifecycle, balance initialization, balance CSV import, and document-number display   |
 | 2026-06-11 | Codex  | Added employee lifecycle UI and demo E2E coverage for create, edit, deactivate, reactivate, and active-only filtering from `/employees`              |
 | 2026-06-11 | Codex  | Strengthened company settings demo E2E to save and reload persisted tenant profile, invoice, contact, and regional settings from `/settings/company` |
