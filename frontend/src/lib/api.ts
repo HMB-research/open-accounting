@@ -387,6 +387,15 @@ class ApiClient {
       return false;
     }
 
+    const exactDecimalFields = [
+      "reserved_qty",
+      "available_qty",
+      "inventory_value",
+    ];
+    if (exactDecimalFields.includes(normalized)) {
+      return true;
+    }
+
     return [
       "amount",
       "balance",
@@ -1558,6 +1567,37 @@ class ApiClient {
       "POST",
       `/api/v1/tenants/${tenantId}/inventory/transfer`,
       data,
+    );
+  }
+
+  async reserveStock(tenantId: string, data: StockReservationRequest) {
+    return this.request<StockLevel>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/inventory/reserve`,
+      data,
+    );
+  }
+
+  async releaseStock(tenantId: string, data: StockReservationRequest) {
+    return this.request<StockLevel>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/inventory/release`,
+      data,
+    );
+  }
+
+  async getInventoryValuation(
+    tenantId: string,
+    options: InventoryValuationOptions = {},
+  ) {
+    const params = new URLSearchParams();
+    if (options.warehouse_id) params.set("warehouse_id", options.warehouse_id);
+    if (options.method) params.set("method", options.method);
+    const query = params.toString() ? `?${params.toString()}` : "";
+
+    return this.request<InventoryValuationReport>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/inventory/valuation${query}`,
     );
   }
 
@@ -3982,6 +4022,49 @@ export interface TransferStockRequest {
   to_warehouse_id: string;
   quantity: string;
   notes?: string;
+}
+
+export interface StockReservationRequest {
+  product_id: string;
+  warehouse_id: string;
+  quantity: string;
+  reason?: string;
+}
+
+export type InventoryValuationMethod =
+  | "standard-cost"
+  | "weighted-average"
+  | "fifo";
+
+export interface InventoryValuationOptions {
+  warehouse_id?: string;
+  method?: InventoryValuationMethod;
+}
+
+export interface InventoryValuationLine {
+  product_id: string;
+  product_code: string;
+  product_name: string;
+  warehouse_id?: string;
+  warehouse_code?: string;
+  warehouse_name?: string;
+  quantity: Decimal;
+  reserved_qty: Decimal;
+  available_qty: Decimal;
+  unit_cost: Decimal;
+  inventory_value: Decimal;
+}
+
+export interface InventoryValuationReport {
+  tenant_id: string;
+  warehouse_id?: string;
+  valuation_method: string;
+  lines: InventoryValuationLine[];
+  total_quantity: Decimal;
+  total_reserved: Decimal;
+  total_available: Decimal;
+  total_value: Decimal;
+  generated_at: string;
 }
 
 export interface ProductFilter {

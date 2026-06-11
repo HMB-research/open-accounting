@@ -1,6 +1,6 @@
 # UI Views Issues Report
 
-> Last Updated: 2026-06-11
+> Last Updated: 2026-06-12
 > Original full UI sweep: 2026-01-12 against the Railway Demo Environment
 > Current capability source of truth: [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md)
 >
@@ -396,11 +396,11 @@ Each view is tested for:
 | Page Load    | ✅     | Loads correctly                                           |
 | Data Display | ✅     | Shows seeded products, warehouses, and product categories |
 | Navigation   | ✅     | Product, warehouse, and category tabs verified            |
-| CRUD         | ✅     | Product create and delete verified through demo E2E       |
+| CRUD         | ✅     | Product create/delete, stock adjustment, transfer, reserve/release, stock levels, and valuation verified through demo E2E |
 | Errors       | ✅     | No errors observed                                        |
 | Responsive   | ⚠️     | Needs manual verification                                 |
 
-**E2E Tests:** 7/7 passed
+**E2E Tests:** 8/8 passed
 
 - Displays seeded products and inventory controls
 - Filters products by search, type, and category
@@ -408,13 +408,14 @@ Each view is tested for:
 - Creates and deletes a product through the UI
 - Transfers stock between warehouses and records a movement
 - Records and displays stock lot metadata
+- Displays per-warehouse stock levels, reserves stock, releases reserved stock, and refreshes warehouse-filtered weighted-average valuation
 
 **Known Limitations (not bugs):**
 
-- The current UI exposes product create/delete, stock transfer, stock adjustment, and movement review workflows; inline edit controls are not present.
+- The current UI exposes product create/delete, stock transfer, stock adjustment, stock-level review, reserve/release, valuation, and movement review workflows; inline product edit controls are not present.
 - Backend/API/CLI support now exists for warehouses, stock levels, signed stock adjustments, transfers, reservations, imports, valuation, and movement metadata; this view is no longer classified as missing stock or warehouse management.
 
-**Overall:** ✅ Working (basic functionality; advanced workflow E2E refresh needed)
+**Overall:** ✅ Working
 
 ---
 
@@ -917,6 +918,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-12 | Codex  | Added `/inventory` UI controls and demo E2E coverage for stock levels, reserve/release, and warehouse-filtered weighted-average valuation            |
 | 2026-06-12 | Codex  | Added tenant-backed `/reports/balance-confirmations` demo E2E coverage for seeded balances, draft exclusion, detail modal, and report exports       |
 | 2026-06-11 | Codex  | Added deterministic admin plugin repository install/uninstall coverage with a demo-mode git fixture                                                 |
 | 2026-06-11 | Codex  | Added seeded demo plugin coverage for tenant plugin enable/disable from `/settings/plugins` and visibility from `/admin/plugins`                    |
