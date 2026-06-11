@@ -6,28 +6,23 @@ test.describe('Demo Payment Reminders - Modal', () => {
 		await setupPaymentRemindersPage(page, testInfo);
 	});
 
-	test('opens send modal when clicking send button', async ({ page }) => {
-		if (await openFirstSendModalIfAvailable(page)) {
-			const modalContent = await page.locator('.modal').textContent();
-			expect(modalContent).toMatch(/send|saada|reminder|meeldetuletus/i);
+	test('opens send modal, edits the message, and closes it', async ({ page }) => {
+		if (!(await openFirstSendModalIfAvailable(page))) {
+			return;
 		}
-	});
 
-	test('modal can be closed', async ({ page }) => {
-		if (await openFirstSendModalIfAvailable(page)) {
-			const closeBtn = page.locator('.btn-close');
-			await expect(closeBtn).toBeVisible();
-			await closeBtn.click();
-			await expect(page.locator('.modal')).not.toBeVisible();
-		}
-	});
+		const modal = page.locator('.modal');
+		const modalContent = await modal.textContent();
+		expect(modalContent).toMatch(/send|saada|reminder|meeldetuletus/i);
 
-	test('modal has custom message field', async ({ page }) => {
-		if (await openFirstSendModalIfAvailable(page)) {
-			const textarea = page.locator('.modal textarea');
-			await expect(textarea).toBeVisible();
-			await textarea.fill('Test message');
-			await expect(textarea).toHaveValue('Test message');
-		}
+		const textarea = modal.locator('textarea');
+		await expect(textarea).toBeVisible();
+		await textarea.fill('Test message');
+		await expect(textarea).toHaveValue('Test message');
+
+		const closeBtn = page.locator('.btn-close');
+		await expect(closeBtn).toBeVisible();
+		await closeBtn.click();
+		await expect(modal).not.toBeVisible();
 	});
 });
