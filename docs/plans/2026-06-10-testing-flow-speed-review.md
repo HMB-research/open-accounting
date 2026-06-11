@@ -721,3 +721,54 @@ candidates are now:
 | `demo/quotes.spec.ts` | 59.496s | 4 | 4 |
 | `demo/journal.spec.ts` | 58.062s | 4 | 4 |
 | `demo/payroll.spec.ts` | 55.227s | 5 | 5 |
+
+CI run `27330447206` on commit `b28d354` confirmed the follow-up docs-only
+state and kept the required PR gate green. The highest remaining measured demo
+E2E candidates were now smaller repeated-navigation specs:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/cash-flow.spec.ts` | 63.060s | 6 | 6 |
+| `demo/recurring.spec.ts` | 59.651s | 5 | 5 |
+| `demo/quotes.spec.ts` | 57.714s | 4 | 4 |
+| `demo/tsd.spec.ts` | 56.873s | 5 | 5 |
+| `demo/fixed-assets.spec.ts` | 56.597s | 6 | 6 |
+| `demo/salary-calculator.spec.ts` | 53.278s | 5 | 5 |
+| `demo/vat-returns.spec.ts` | 51.931s | 6 | 6 |
+| `demo/env-onboarding.spec.ts` | 51.701s | 5 | 5 |
+| `demo/payroll.spec.ts` | 51.608s | 5 | 5 |
+
+## Follow-up: Cash Flow Spec Consolidation
+
+Consolidated `demo/cash-flow.spec.ts` from six repeated page-structure tests
+into two workflow checks:
+
+| Workflow | Coverage |
+|----------|----------|
+| Report controls and loaded statement | Heading, start/end date inputs, generate button, back link, report container, operating/investing/financing sections, and cash summary labels |
+| Regenerate changed period | Date range edits, cash-flow API response parameters, response body dates, and rendered report period |
+
+The route helper now opens `/reports/cash-flow` with `waitForNetworkIdle: false`,
+then waits for the route-owned cash-flow statement API response and
+terminal report UI. This keeps coverage tied to the actual report load instead
+of repeatedly navigating to the same page and polling for generic loading text.
+
+Local focused baseline against the branch API showed:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/cash-flow.spec.ts` | 10.245s | 6 |
+
+The baseline focused command reported `7 passed (11.5s)` including the shared
+`auth-setup` dependency. After consolidation, the same coverage reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/cash-flow.spec.ts` | 1.710s | 2 |
+
+The focused command reported `3 passed (9.3s)` including the shared
+`auth-setup` dependency. The next CI Playwright artifact should confirm whether
+the prior cash-flow shard tail is reduced. The next measured demo E2E
+candidates from run `27330447206` are `recurring`, `quotes`, `tsd`,
+`fixed-assets`, `salary-calculator`, `vat-returns`, `env-onboarding`, and
+`payroll`.
