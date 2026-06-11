@@ -136,12 +136,14 @@ test.describe('Cash Payments View', () => {
 		await openCashPayments(page, testInfo);
 	});
 
-	test('renders the cash ledger, records cash movements, and filters by type', async ({ page }) => {
+	test('renders, filters, and reverses auditable cash movements', async ({ page }) => {
 		await expectCashPaymentsShell(page);
 
 		const suffix = Date.now();
 		const cashInReference = `E2E-CASH-IN-${suffix}`;
 		const cashOutReference = `E2E-CASH-OUT-${suffix}`;
+		const reversalReference = `REV-${cashInReference}`;
+		const reversalReason = `Cash receipt correction ${suffix}`;
 
 		const cashIn = await recordCashPayment(page, {
 			type: 'RECEIVED',
@@ -188,26 +190,10 @@ test.describe('Cash Payments View', () => {
 		await selectTypeFilter(page, '');
 		await expect(cashPaymentRow(page, cashIn.payment_number)).toBeVisible({ timeout: 10000 });
 		await expect(cashPaymentRow(page, cashOut.payment_number)).toBeVisible({ timeout: 10000 });
-	});
-
-	test('reverses a cash payment with an auditable offsetting cash payment', async ({ page }) => {
-		const suffix = Date.now();
-		const reference = `E2E-CASH-REV-${suffix}`;
-		const reversalReference = `REV-${reference}`;
-		const reversalReason = `Cash receipt correction ${suffix}`;
-
-		const cashIn = await recordCashPayment(page, {
-			type: 'RECEIVED',
-			amount: '31.20',
-			reference,
-			notes: `Cash payment created for reversal ${suffix}`
-		});
-		expect(cashIn.payment_type).toBe('RECEIVED');
-		expect(cashIn.payment_method).toBe('CASH');
 
 		const originalRow = cashPaymentRow(page, cashIn.payment_number);
 		await expect(originalRow).toBeVisible({ timeout: 10000 });
-		await expect(originalRow).toContainText(reference);
+		await expect(originalRow).toContainText(cashInReference);
 
 		await originalRow.getByRole('button', { name: /^reverse$/i }).click();
 		const reversalDialog = page.getByRole('dialog', { name: /reverse payment/i });
@@ -247,9 +233,10 @@ test.describe('Cash Payments View', () => {
 		await expect(reversalRow).toContainText(/reversal/i);
 		await expect(reversalRow).toContainText(reversalReference);
 		await expect(reversalRow).toContainText(/made/i);
-		await expect(reversalRow).toContainText(/31[,.]20/);
+		await expect(reversalRow).toContainText(/42[,.]35/);
 
 		await selectTypeFilter(page, 'MADE');
+		await expect(cashPaymentRow(page, cashOut.payment_number)).toBeVisible({ timeout: 10000 });
 		await expect(cashPaymentRow(page, reversal.reversal_payment.payment_number)).toBeVisible({
 			timeout: 10000
 		});
