@@ -1,6 +1,6 @@
 # UI Views Issues Report
 
-> Last Updated: 2026-06-10
+> Last Updated: 2026-06-11
 > Original full UI sweep: 2026-01-12 against the Railway Demo Environment
 > Current capability source of truth: [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md)
 >
@@ -131,7 +131,7 @@ Each view is tested for:
 | Errors       | ✅     | No errors observed                                                            |
 | Responsive   | ⚠️     | Needs manual verification                                                     |
 
-**E2E Tests:** 2/2 passed
+**E2E Tests:** 1 consolidated workflow passed
 
 - Displays seeded accounts with workflow controls
 - Creates, edits, and deactivates a custom account
@@ -329,7 +329,7 @@ Each view is tested for:
 | Errors       | ✅     | No errors observed                             |
 | Responsive   | ⚠️     | Needs manual verification                      |
 
-**E2E Tests:** 6/6 passed
+**E2E Tests:** 1 consolidated shell/filter/reversal workflow plus payment creation coverage passed
 
 - Displays cash payments page with correct structure
 - Shows summary cards or empty state
@@ -873,6 +873,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Updated current-state evidence for PR #62 CI run `27364049917`, 100% CLI coverage, and consolidated accounts/cash-payments demo E2E workflows       |
 | 2026-06-10 | Codex  | Strengthened mobile demo E2E coverage for the mobile drawer, nested route navigation, and core-route horizontal overflow checks                     |
 | 2026-06-08 | Codex  | Replaced soft `/inventory` checks with product, warehouse, category, filter, create/delete, transfer, and stock lot metadata E2E coverage           |
 | 2026-06-08 | Codex  | Replaced soft `/banking/import` checks with real LHV CSV preview/import E2E coverage and updated the UI audit evidence                              |
