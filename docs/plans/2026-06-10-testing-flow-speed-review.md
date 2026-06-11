@@ -408,3 +408,18 @@ Local focused baseline against the branch API showed `demo/inventory.spec.ts` at
 | `demo/inventory-page.spec.ts` | 2.602s | 1 |
 
 The focused command now reports `5 passed (10.3s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether inventory retries are gone and whether the next measured demo E2E candidates remain `fixed-assets`, `all-views`, `tax-overview`, and `cash-payments`.
+
+CI run `27324630474` on commit `3bef124` confirmed the inventory retries were removed. The four replacement inventory specs totaled about 60.194s in CI, all with one attempt each, down from the prior `demo/inventory.spec.ts` at 99.776s across 6 tests and 9 attempts. The highest remaining demo E2E cost shifted to the legacy `demo/all-views.spec.ts` at 85.483s across 24 route-smoke micro-tests, followed by `demo/cash-payments.spec.ts` at 82.270s and `demo/fixed-assets.spec.ts` at 78.980s.
+
+## Follow-up: Legacy All Views Removal
+
+Removed `demo/all-views.spec.ts` instead of splitting it again. It was a legacy broad smoke file whose 24 tests duplicated newer route-owned coverage:
+
+| Former `all-views` area | Current owner |
+|-------------------------|---------------|
+| Landing and login render/auth checks | `demo/env-health-auth.spec.ts` and root `auth.spec.ts` |
+| Dashboard, accounts, journal, invoices, payments, recurring, contacts, reports, employees, payroll, TSD, and banking route-load checks | `demo/data-verification-*.spec.ts` plus route-specific workflow specs |
+| Banking import, tax, settings, company settings, email settings, and plugin settings | `demo/bank-import.spec.ts`, `demo/tax-overview.spec.ts`, `demo/settings.spec.ts`, `demo/email-settings.spec.ts`, and `demo/plugins-settings.spec.ts` |
+| Desktop and mobile navigation checks | `demo/dashboard.spec.ts`, `demo/mobile-navigation.spec.ts`, and `demo/mobile-layout.spec.ts` |
+
+The only route smoke check that was unique to the legacy file was `/admin/plugins`, so that moved into `demo/plugins-settings.spec.ts` as the route-specific owner. The expected CI outcome is removal of the 85.483s `all-views` timing bucket without reducing user-facing route coverage.
