@@ -1298,6 +1298,7 @@ Content-Type: application/json
 {
   "gross_salary": "3200.00",
   "apply_basic_exemption": true,
+  "basic_exemption_amount": "700.00",
   "funded_pension_rate": "0.02"
 }
 ```

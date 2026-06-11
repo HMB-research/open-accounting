@@ -2771,10 +2771,25 @@ describe("API Client - Core Functionality", () => {
       const result = await api.calculateTaxPreview(
         "tenant-123",
         "5000",
+        true,
         "654",
         "2",
       );
 
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/payroll/tax-preview",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            gross_salary: "5000",
+            apply_basic_exemption: true,
+            basic_exemption_amount: "654",
+            funded_pension_rate: "2",
+          }),
+        }),
+      );
       expect(result).toBeDefined();
     });
 

@@ -1255,3 +1255,48 @@ route-specific consolidation targets in run `27341106153` are:
 `demo/auth.setup.ts` remains a separate shared-overhead target. It should be
 optimized by reducing repeated login and tenant-selection work, not by merging
 route assertions into setup.
+
+## 2026-06-11 Salary Calculator Spec Consolidation
+
+CI run `27341405528` measured `demo/salary-calculator.spec.ts` at 55.852s
+across five page-structure tests, making it the largest remaining
+route-specific demo spec in that artifact set.
+
+The old spec repeated authentication, tenant selection, `/payroll/calculator`
+navigation, and generic loading checks before five small assertions. It also
+never verified the calculated result, which hid an API contract bug: the
+frontend calculator sent `basic_exemption`, while the backend tax-preview
+handler only read `apply_basic_exemption`. A checked basic exemption amount
+could therefore render as zero applied exemption.
+
+The stage fixes that contract and consolidates the E2E coverage into one
+route-owned workflow check:
+
+- the backend tax-preview handler keeps `apply_basic_exemption` compatibility
+  and now accepts a requested basic exemption amount;
+- the frontend API client sends `apply_basic_exemption` and
+  `basic_exemption_amount`;
+- the calculator route keeps its amount input and now sends the amount through
+  the documented API contract;
+- the demo E2E opens the route once, asserts the controls, changes salary,
+  exemption, and pension rate, verifies the tax-preview API response, and
+  verifies the rendered net salary and exemption values.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/salary-calculator.spec.ts --workers=4` | 2 passed in 9.2s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/salary-calculator.spec.ts --workers=4 --repeat-each=5` | 6 passed in 11.6s, including `auth-setup` |
+
+Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/salary-calculator.spec.ts` | 11.633s | 5 | 5 |
+| `demo/auth.setup.ts` | 2.971s | 1 | 1 |
+
+The next CI artifact should confirm the remote spec-level reduction. Remaining
+measured consolidation targets from run `27341405528` are `tsd`, `payroll`,
+`mobile-navigation`, `settings`, and `journal`; `auth.setup` remains separate
+shared setup overhead.
