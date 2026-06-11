@@ -2402,11 +2402,14 @@ Content-Type: application/json
   "from_warehouse_id": "uuid",
   "to_warehouse_id": "uuid",
   "quantity": "3",
+  "lot_number": "LOT-2026-01",
+  "serial_number": "SN-001",
+  "expiry_date": "2027-01-31",
   "notes": "Move to branch"
 }
 ```
 
-Transfers require a positive quantity and enough available stock in the source warehouse. Successful transfers create an outbound movement for the source warehouse, an inbound movement for the destination warehouse, and update both warehouse stock levels without changing total product stock.
+Transfers require a positive quantity and enough available stock in the source warehouse. `lot_number`, `serial_number`, and `expiry_date` are optional movement metadata fields; `expiry_date` must use `YYYY-MM-DD`. Successful transfers create an outbound movement for the source warehouse, an inbound movement for the destination warehouse, copy any lot metadata to both movements, and update both warehouse stock levels without changing total product stock.
 
 ```http
 POST /tenants/{tenantId}/inventory/reserve

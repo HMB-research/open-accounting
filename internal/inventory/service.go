@@ -857,9 +857,13 @@ func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, 
 }
 
 func normalizeMovementTrackingMetadata(req *AdjustStockRequest) (string, string, string, error) {
-	lotNumber := strings.TrimSpace(req.LotNumber)
-	serialNumber := strings.TrimSpace(req.SerialNumber)
-	expiryDate := strings.TrimSpace(req.ExpiryDate)
+	return normalizeMovementTrackingMetadataValues(req.LotNumber, req.SerialNumber, req.ExpiryDate)
+}
+
+func normalizeMovementTrackingMetadataValues(lotNumberValue, serialNumberValue, expiryDateValue string) (string, string, string, error) {
+	lotNumber := strings.TrimSpace(lotNumberValue)
+	serialNumber := strings.TrimSpace(serialNumberValue)
+	expiryDate := strings.TrimSpace(expiryDateValue)
 	if expiryDate != "" {
 		if _, err := time.Parse("2006-01-02", expiryDate); err != nil {
 			return "", "", "", fmt.Errorf("expiry_date must use YYYY-MM-DD")
@@ -880,6 +884,10 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 	}
 	if req.FromWarehouseID == req.ToWarehouseID {
 		return fmt.Errorf("source and destination warehouses must differ")
+	}
+	lotNumber, serialNumber, expiryDate, err := normalizeMovementTrackingMetadataValues(req.LotNumber, req.SerialNumber, req.ExpiryDate)
+	if err != nil {
+		return err
 	}
 	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, req.ProductID); err != nil {
 		return fmt.Errorf("get product: %w", err)
@@ -912,6 +920,9 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 		Quantity:      quantity,
 		UnitCost:      decimal.Zero,
 		TotalCost:     decimal.Zero,
+		LotNumber:     lotNumber,
+		SerialNumber:  serialNumber,
+		ExpiryDate:    expiryDate,
 		Reference:     "Transfer to " + req.ToWarehouseID,
 		ToWarehouseID: req.ToWarehouseID,
 		Notes:         req.Notes,
@@ -933,6 +944,9 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 		Quantity:     quantity,
 		UnitCost:     decimal.Zero,
 		TotalCost:    decimal.Zero,
+		LotNumber:    lotNumber,
+		SerialNumber: serialNumber,
+		ExpiryDate:   expiryDate,
 		Reference:    "Transfer from " + req.FromWarehouseID,
 		Notes:        req.Notes,
 		MovementDate: time.Now(),

@@ -1355,6 +1355,9 @@ func TestService_TransferStock(t *testing.T) {
 		FromWarehouseID: "wh-1",
 		ToWarehouseID:   "wh-2",
 		Quantity:        "25",
+		LotNumber:       " LOT-2026-01 ",
+		SerialNumber:    " SN-001 ",
+		ExpiryDate:      " 2027-01-31 ",
 		Notes:           "Transfer between warehouses",
 		UserID:          "user-1",
 	}
@@ -1367,6 +1370,11 @@ func TestService_TransferStock(t *testing.T) {
 	assert.Len(t, movements, 2) // OUT and IN movements
 	assert.Equal(t, MovementTypeOut, movements[0].MovementType)
 	assert.Equal(t, MovementTypeIn, movements[1].MovementType)
+	for _, movement := range movements {
+		assert.Equal(t, "LOT-2026-01", movement.LotNumber)
+		assert.Equal(t, "SN-001", movement.SerialNumber)
+		assert.Equal(t, "2027-01-31", movement.ExpiryDate)
+	}
 
 	sourceLevel := ts.repo.StockLevels["p1-wh-1"]
 	require.NotNil(t, sourceLevel)
@@ -1559,6 +1567,22 @@ func TestService_TransferStock_InsufficientSourceStock(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "insufficient available stock")
 	assert.Empty(t, ts.repo.Movements["p1"])
+}
+
+func TestService_TransferStock_InvalidExpiryDate(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	err := ts.svc.TransferStock(ctx, "tenant-1", "test_schema", &TransferStockRequest{
+		ProductID:       "p1",
+		FromWarehouseID: "wh-1",
+		ToWarehouseID:   "wh-2",
+		Quantity:        "5",
+		ExpiryDate:      "2027/01/31",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expiry_date must use YYYY-MM-DD")
 }
 
 func TestService_TransferStock_InvalidQuantity(t *testing.T) {

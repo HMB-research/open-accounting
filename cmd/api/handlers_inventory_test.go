@@ -1086,6 +1086,9 @@ func TestTransferStock(t *testing.T) {
 		"from_warehouse_id": "wh-1",
 		"to_warehouse_id":   "wh-2",
 		"quantity":          "4",
+		"lot_number":        "LOT-2026-01",
+		"serial_number":     "SN-001",
+		"expiry_date":       "2027-01-31",
 		"notes":             "rebalance stock",
 	}
 	req := newInventoryJSONRequest(t, http.MethodPost, "/tenants/tenant-1/inventory/transfer", body, map[string]string{"tenantID": "tenant-1"})
@@ -1102,6 +1105,11 @@ func TestTransferStock(t *testing.T) {
 	require.Len(t, repo.movements["prod-1"], 2)
 	assert.Equal(t, inventory.MovementTypeOut, repo.movements["prod-1"][0].MovementType)
 	assert.Equal(t, inventory.MovementTypeIn, repo.movements["prod-1"][1].MovementType)
+	for _, movement := range repo.movements["prod-1"] {
+		assert.Equal(t, "LOT-2026-01", movement.LotNumber)
+		assert.Equal(t, "SN-001", movement.SerialNumber)
+		assert.Equal(t, "2027-01-31", movement.ExpiryDate)
+	}
 }
 
 func TestGetInventoryValuation(t *testing.T) {

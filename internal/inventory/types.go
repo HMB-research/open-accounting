@@ -381,6 +381,9 @@ type TransferStockRequest struct {
 	FromWarehouseID string `json:"from_warehouse_id"`
 	ToWarehouseID   string `json:"to_warehouse_id"`
 	Quantity        string `json:"quantity"`
+	LotNumber       string `json:"lot_number,omitempty"`
+	SerialNumber    string `json:"serial_number,omitempty"`
+	ExpiryDate      string `json:"expiry_date,omitempty"`
 	Notes           string `json:"notes,omitempty"`
 	UserID          string `json:"-"`
 }
