@@ -763,7 +763,7 @@ Each view is tested for:
 | Page Load    | ✅     | Page renders with "Email Settings" heading              |
 | Data Display | ✅     | Loading state visible (expected for client-side render) |
 | Navigation   | ✅     | Back navigation to dashboard visible                    |
-| CRUD         | ⚠️     | SMTP configuration needs E2E verification               |
+| CRUD         | ✅     | SMTP configuration save and reload verified through demo E2E |
 | Errors       | ✅     | No errors observed                                      |
 | Responsive   | ⚠️     | Needs manual verification                               |
 
@@ -772,6 +772,7 @@ Each view is tested for:
 - Email Settings interface
 - SMTP configuration form loading
 - Navigation structure
+- SMTP settings save and persisted reload
 
 **Overall:** ✅ Working
 
@@ -873,7 +874,8 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-06-11 | Codex  | Updated current-state evidence for PR #62 CI run `27364049917`, 100% CLI coverage, and consolidated accounts/cash-payments demo E2E workflows       |
+| 2026-06-11 | Codex  | Added demo E2E coverage for saving and reloading SMTP configuration from `/settings/email`                                                          |
+| 2026-06-11 | Codex  | Updated current-state evidence for PR #62 CI run `27364700539`, 100% CLI coverage, and consolidated accounts/cash-payments demo E2E workflows       |
 | 2026-06-10 | Codex  | Strengthened mobile demo E2E coverage for the mobile drawer, nested route navigation, and core-route horizontal overflow checks                     |
 | 2026-06-08 | Codex  | Replaced soft `/inventory` checks with product, warehouse, category, filter, create/delete, transfer, and stock lot metadata E2E coverage           |
 | 2026-06-08 | Codex  | Replaced soft `/banking/import` checks with real LHV CSV preview/import E2E coverage and updated the UI audit evidence                              |
