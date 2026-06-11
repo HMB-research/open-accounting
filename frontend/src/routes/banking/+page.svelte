@@ -36,8 +36,7 @@
 		name: '',
 		account_number: '',
 		bank_name: '',
-		currency: 'EUR',
-		opening_balance: '0'
+		currency: 'EUR'
 	});
 
 	// Filter state
@@ -120,7 +119,7 @@
 			bankAccounts = [...bankAccounts, account];
 			selectedAccount = account;
 			showAddAccountModal = false;
-			newAccount = { name: '', account_number: '', bank_name: '', currency: 'EUR', opening_balance: '0' };
+			newAccount = { name: '', account_number: '', bank_name: '', currency: 'EUR' };
 		} catch (e) {
 			alert(e instanceof Error ? e.message : m.banking_failedToCreate());
 		}
@@ -274,13 +273,13 @@
 					bind:value={selectedAccount}
 					class="border border-gray-300 rounded-lg px-3 py-2 min-w-[200px]"
 				>
-					{#each bankAccounts as account}
+					{#each bankAccounts as account (account.id)}
 						<option value={account}>{account.name} ({account.account_number})</option>
 					{/each}
 				</select>
 				{#if selectedAccount}
 					<div class="ml-auto flex items-center gap-4">
-						<span class="text-gray-600">{m.banking_balance()} <strong class="text-gray-900">{selectedAccount.currency} {formatAmount(selectedAccount.current_balance)}</strong></span>
+						<span class="text-gray-600">{m.banking_balance()} <strong class="text-gray-900">{selectedAccount.currency} {formatAmount(selectedAccount.balance ?? 0)}</strong></span>
 						<button onclick={autoMatch} class="px-3 py-1 text-sm bg-purple-100 text-purple-700 rounded hover:bg-purple-200">
 							{m.banking_autoMatch()}
 						</button>
@@ -334,7 +333,7 @@
 						</tr>
 					</thead>
 					<tbody class="bg-white divide-y divide-gray-200">
-						{#each filteredTransactions as transaction}
+						{#each filteredTransactions as transaction (transaction.id)}
 							<tr class="hover:bg-gray-50">
 								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
 									{formatDate(transaction.transaction_date)}
@@ -425,10 +424,6 @@
 								<option value="GBP">GBP</option>
 							</select>
 						</div>
-						<div>
-							<label for="new-opening-balance" class="block text-sm font-medium text-gray-700 mb-1">{m.banking_openingBalance()}</label>
-							<input id="new-opening-balance" type="text" bind:value={newAccount.opening_balance} class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="0.00" />
-						</div>
 					</div>
 				</div>
 				<div class="mt-6 flex justify-end gap-2">
@@ -482,7 +477,7 @@
 			{:else}
 				<h3 class="font-medium mb-2">{m.banking_suggestedMatches()}</h3>
 				<div class="space-y-2 max-h-80 overflow-y-auto">
-					{#each matchSuggestions as suggestion}
+					{#each matchSuggestions as suggestion (suggestion.payment_id)}
 						<div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 flex justify-between items-center">
 							<div>
 								<div class="font-medium">{suggestion.payment_number}</div>

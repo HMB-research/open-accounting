@@ -1,5 +1,12 @@
 import { test, expect, type Page, type Response, type TestInfo } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
+import {
+	DEMO_API_URL,
+	ensureAuthenticated,
+	getDemoCredentials,
+	navigateTo,
+	ensureDemoTenant,
+	waitForRouteReady
+} from './utils';
 
 const MAIN_DEMO_BANK_ACCOUNT = 'EE123456789012345678';
 
@@ -46,12 +53,71 @@ function isBankTransactionsResponse(response: Response): boolean {
 	);
 }
 
+function isCreatePaymentFromTransactionResponse(response: Response, transactionId: string): boolean {
+	return (
+		response.request().method() === 'POST' &&
+		response.status() === 200 &&
+		new RegExp(`/api/v1/tenants/[^/]+/bank-transactions/${transactionId}/create-payment$`).test(
+			responsePath(response)
+		)
+	);
+}
+
 function isBankImportResponse(response: Response): boolean {
 	return (
 		response.request().method() === 'POST' &&
 		response.status() === 200 &&
 		/\/api\/v1\/tenants\/[^/]+\/bank-accounts\/[^/]+\/import$/.test(responsePath(response))
 	);
+}
+
+interface BankTransactionResponse {
+	id: string;
+	description: string;
+	status: 'UNMATCHED' | 'MATCHED' | 'RECONCILED';
+	matched_payment_id?: string;
+}
+
+interface BankAccountResponse {
+	id: string;
+	account_number: string;
+}
+
+async function demoApiRequest<T>(page: Page, path: string): Promise<{ status: number; body: T }> {
+	return page.evaluate(
+		async ({ apiUrl, requestPath }) => {
+			const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+			if (!token) throw new Error('Missing demo access token');
+
+			const response = await fetch(`${apiUrl}${requestPath}`, {
+				headers: {
+					Authorization: `Bearer ${token}`
+				}
+			});
+			const text = await response.text();
+			return {
+				status: response.status,
+				body: text ? JSON.parse(text) : null
+			};
+		},
+		{ apiUrl: DEMO_API_URL, requestPath: path }
+	) as Promise<{ status: number; body: T }>;
+}
+
+async function fetchMainAccountTransactions(page: Page, testInfo: TestInfo): Promise<BankTransactionResponse[]> {
+	const tenantId = getDemoCredentials(testInfo).tenantId;
+	const accounts = await demoApiRequest<BankAccountResponse[]>(page, `/api/v1/tenants/${tenantId}/bank-accounts`);
+	expect(accounts.status).toBe(200);
+
+	const mainAccount = accounts.body.find((account) => account.account_number === MAIN_DEMO_BANK_ACCOUNT);
+	expect(mainAccount, `Expected seeded bank account ${MAIN_DEMO_BANK_ACCOUNT}`).toBeTruthy();
+
+	const transactions = await demoApiRequest<BankTransactionResponse[]>(
+		page,
+		`/api/v1/tenants/${tenantId}/bank-accounts/${mainAccount!.id}/transactions`
+	);
+	expect(transactions.status).toBe(200);
+	return transactions.body;
 }
 
 async function openBankImport(page: Page, testInfo: TestInfo) {
@@ -65,13 +131,14 @@ async function openBankImport(page: Page, testInfo: TestInfo) {
 	await expect(page.getByText('Select a CSV file to preview')).toBeVisible();
 }
 
-async function openBankingLedger(page: Page, testInfo: TestInfo) {
+async function openBankingLedger(page: Page, testInfo: TestInfo): Promise<BankTransactionResponse[]> {
 	const bankAccountsResponse = page.waitForResponse(isTenantBankAccountsResponse);
 	const transactionsResponse = page.waitForResponse(isBankTransactionsResponse);
 	await navigateTo(page, '/banking', testInfo, { waitForNetworkIdle: false });
 	await bankAccountsResponse;
 	await transactionsResponse;
 	await waitForRouteReady(page, '.max-w-7xl h1, .max-w-7xl table, .max-w-7xl .empty-state, .max-w-7xl .bg-red-50');
+	return fetchMainAccountTransactions(page, testInfo);
 }
 
 async function uploadLHVStatement(page: Page, testInfo: TestInfo): Promise<{ description: string; displayAmount: string }> {
@@ -143,12 +210,35 @@ test.describe('Bank Import View', () => {
 		expect(importResult.transactions_imported).toBe(1);
 		expect(importResult.duplicates_skipped).toBe(0);
 
-		await openBankingLedger(page, testInfo);
+		const transactions = await openBankingLedger(page, testInfo);
+		const importedTransaction = transactions.find((transaction) => transaction.description === description);
+		expect(importedTransaction?.status).toBe('UNMATCHED');
 
 		const importedRow = page.getByRole('row', { name: new RegExp(description) });
 		await expect(importedRow).toBeVisible({ timeout: 15000 });
 		await expect(importedRow).toContainText('E2E Import Client');
 		await expect(importedRow).toContainText(displayAmount);
 		await expect(importedRow).toContainText(/Unmatched|Sobitamata/i);
+
+		const createPaymentResponsePromise = page.waitForResponse((response) =>
+			isCreatePaymentFromTransactionResponse(response, importedTransaction!.id)
+		);
+		const refreshedTransactionsPromise = page.waitForResponse(isBankTransactionsResponse);
+		await importedRow.getByRole('button', { name: /create payment|loo makse/i }).click();
+
+		const createPaymentResponse = await createPaymentResponsePromise;
+		expect(createPaymentResponse.ok()).toBeTruthy();
+		const createPaymentResult = (await createPaymentResponse.json()) as { payment_id: string };
+		expect(createPaymentResult.payment_id).toMatch(/[0-9a-f-]{36}/i);
+
+		await refreshedTransactionsPromise;
+		const refreshedTransactions = await fetchMainAccountTransactions(page, testInfo);
+		const matchedTransaction = refreshedTransactions.find((transaction) => transaction.description === description);
+		expect(matchedTransaction?.status).toBe('MATCHED');
+		expect(matchedTransaction?.matched_payment_id).toBe(createPaymentResult.payment_id);
+
+		await expect(importedRow).toContainText(/Matched|Sobitatud/i);
+		await expect(importedRow.getByRole('button', { name: /create payment|loo makse/i })).toHaveCount(0);
+		await expect(importedRow.getByRole('button', { name: /unmatch|tühista sobitus/i })).toBeVisible();
 	});
 });
