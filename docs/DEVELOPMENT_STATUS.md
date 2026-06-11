@@ -15,7 +15,7 @@
 
 ## Verified Engineering Baseline
 
-Full local baseline last completed on 2026-06-08. On 2026-06-11, the current branch was revalidated locally for focused CLI coverage, documentation, and recent frontend stage gates; PR #62 CI run `27364700539` at commit `2d55632` revalidated lint, backend tests, integration shards, frontend lint/check/test/build, smoke E2E, build, and all four seeded demo E2E shards:
+Full local baseline last completed on 2026-06-08. On 2026-06-11, the current branch was revalidated locally for focused CLI coverage, documentation, focused fixed-assets demo E2E, and recent frontend stage gates; PR #62 CI run `27365326654` at commit `4e608bb` revalidated lint, backend tests, integration shards, frontend lint/check/test/build, smoke E2E, build, and all four seeded demo E2E shards:
 
 - `make test-backend-coverage` passes without requiring PostgreSQL and enforces `cmd/oa` at 100.0% statement coverage from the same backend coverage profile
 - `make test-cli-coverage` passes as the focused CLI-only coverage gate
@@ -26,6 +26,7 @@ Full local baseline last completed on 2026-06-08. On 2026-06-11, the current bra
 - `cd frontend && bun run check:prepared` passes with 0 errors and 0 warnings
 - `cd frontend && bun run test:prepared` passes with 30 files and 546 tests
 - `cd frontend && bun run build:prepared` passes, with the existing large-chunk warning
+- `cd frontend && BASE_URL=http://localhost:5174 PUBLIC_API_URL=http://localhost:18080 DEMO_RESET_SECRET=test-demo-secret bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/fixed-assets.spec.ts --workers=1` passes with auth setup plus 2 fixed-assets workflows
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment with 8 passed
 - `cd frontend && bun run test:e2e` passes against a fresh locally seeded demo environment with 260 passed and 12 intentionally skipped reset tests under `CI=true`
 - Frontend lint is now blocking in CI

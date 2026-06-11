@@ -376,17 +376,14 @@ Each view is tested for:
 | Page Load    | ✅     | Loads correctly                                |
 | Data Display | ✅     | Shows fixed assets with table/list             |
 | Navigation   | ✅     | New Asset button visible, filters work         |
-| CRUD         | ⚠️     | Read verified, Create/Update/Delete not tested |
+| CRUD         | ✅     | Draft asset create, update, and delete verified through demo E2E |
 | Errors       | ✅     | No errors observed                             |
 | Responsive   | ⚠️     | Needs manual verification                      |
 
-**E2E Tests:** 5/5 passed
+**E2E Tests:** 2 focused workflows passed
 
-- Displays assets page with correct structure
-- Shows asset categories
-- Shows depreciation information
-- New Asset button visible
-- Filter options work
+- Displays seeded asset details and filters by status
+- Creates a draft asset with category/depreciation details, edits the updateable asset fields, and deletes the draft asset through the UI
 
 **Overall:** ✅ Working
 
@@ -874,6 +871,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Added fixed-asset UI edit workflow and demo E2E coverage for creating, editing, and deleting a draft asset from `/assets`                            |
 | 2026-06-11 | Codex  | Added demo E2E coverage for saving and reloading SMTP configuration from `/settings/email`                                                          |
 | 2026-06-11 | Codex  | Updated current-state evidence for PR #62 CI run `27364700539`, 100% CLI coverage, and consolidated accounts/cash-payments demo E2E workflows       |
 | 2026-06-10 | Codex  | Strengthened mobile demo E2E coverage for the mobile drawer, nested route navigation, and core-route horizontal overflow checks                     |

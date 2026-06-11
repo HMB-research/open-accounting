@@ -1365,7 +1365,7 @@ class ApiClient {
   ) {
     return this.request<DepreciationEntry>(
       "POST",
-      `/api/v1/tenants/${tenantId}/assets/${assetId}/depreciate`,
+      `/api/v1/tenants/${tenantId}/assets/${assetId}/depreciation`,
       data,
     );
   }
