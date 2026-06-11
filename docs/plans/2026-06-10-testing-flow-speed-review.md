@@ -701,3 +701,23 @@ The focused command reported `3 passed (8.8s)` including the shared
 the prior bank-import shard tail and retry are gone. The next measured demo E2E
 candidates from run `27329365124` are `fixed-assets`, `journal`,
 `env-onboarding`, `recurring`, `tsd`, `payroll`, and `quotes`.
+
+CI run `27330165993` on commit `5fec7fe` confirmed the bank import change in
+the required PR gate:
+
+| Spec | Before | After |
+|------|--------|-------|
+| `demo/bank-import.spec.ts` | 84.114s, 5 tests, 6 attempts | 29.611s, 2 tests, 2 attempts |
+
+The import retry is gone in this run. The highest remaining measured demo E2E
+candidates are now:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/recurring.spec.ts` | 61.758s | 5 | 5 |
+| `demo/fixed-assets.spec.ts` | 61.669s | 6 | 6 |
+| `demo/cash-flow.spec.ts` | 61.066s | 6 | 6 |
+| `demo/tsd.spec.ts` | 59.630s | 5 | 5 |
+| `demo/quotes.spec.ts` | 59.496s | 4 | 4 |
+| `demo/journal.spec.ts` | 58.062s | 4 | 4 |
+| `demo/payroll.spec.ts` | 55.227s | 5 | 5 |
