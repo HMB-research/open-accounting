@@ -2319,6 +2319,18 @@ Authorization: Bearer <token>
 
 Returns tracked `GOODS` stock valuation. `method` accepts `standard-cost` (default, using each product `purchase_price`), `weighted-average` (using costed inbound stock movements), or `fifo` (valuing current quantity from newest remaining inbound layers). Costed methods fall back to purchase price when no usable movement costs exist. The response includes product and warehouse labels, on-hand/reserved/available quantities, line value, and report totals.
 
+### Inventory Lot Report
+
+```http
+GET /tenants/{tenantId}/inventory/lots
+GET /tenants/{tenantId}/inventory/lots?product_id={productId}
+GET /tenants/{tenantId}/inventory/lots?warehouse_id={warehouseId}
+GET /tenants/{tenantId}/inventory/lots?include_empty=true
+Authorization: Bearer <token>
+```
+
+Returns tracked `GOODS` stock grouped by product, warehouse, lot number, serial number, and expiry date from inventory movement metadata. The report includes weighted unit cost per lot position, inventory value, last movement date, and report totals. By default only positive on-hand positions are returned; `include_empty=true` includes zero or negative positions for exhausted or corrective lots.
+
 ### Warehouses
 
 ```http

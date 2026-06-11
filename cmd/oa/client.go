@@ -2061,6 +2061,25 @@ func (c *apiClient) getInventoryValuation(ctx context.Context, tenantID, warehou
 	return &resp, nil
 }
 
+func (c *apiClient) getInventoryLotReport(ctx context.Context, tenantID, productID, warehouseID string, includeEmpty bool) (*inventory.InventoryLotReport, error) {
+	values := url.Values{}
+	if strings.TrimSpace(productID) != "" {
+		values.Set("product_id", strings.TrimSpace(productID))
+	}
+	if strings.TrimSpace(warehouseID) != "" {
+		values.Set("warehouse_id", strings.TrimSpace(warehouseID))
+	}
+	if includeEmpty {
+		values.Set("include_empty", "true")
+	}
+
+	var resp inventory.InventoryLotReport
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "inventory", "lots"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listWarehouses(ctx context.Context, tenantID string, activeOnly bool) ([]inventory.Warehouse, error) {
 	values := url.Values{}
 	if activeOnly {

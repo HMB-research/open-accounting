@@ -283,6 +283,10 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 	printInventoryValuation(&buf, nil)
 	assert.Empty(t, buf.String())
 
+	buf.Reset()
+	printInventoryLotReport(&buf, nil)
+	assert.Empty(t, buf.String())
+
 	budgetAmount := decimal.NewFromInt(100)
 	totalSpent := decimal.NewFromInt(75)
 	budgetUsed := decimal.NewFromInt(75)
@@ -1809,6 +1813,32 @@ func TestPrintInventoryOutputs(t *testing.T) {
 		TotalValue:     decimal.NewFromInt(126),
 		GeneratedAt:    now,
 	}
+	lotReport := inventory.InventoryLotReport{
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		IncludeEmpty: true,
+		Lines: []inventory.InventoryLotLine{
+			{
+				ProductID:        "prod-1",
+				ProductCode:      "PRD-001",
+				ProductName:      "Widget",
+				WarehouseID:      "wh-1",
+				WarehouseCode:    "MAIN",
+				WarehouseName:    "Main warehouse",
+				LotNumber:        "LOT-2026-01",
+				SerialNumber:     "SN-001",
+				ExpiryDate:       "2027-01-31",
+				Quantity:         decimal.NewFromInt(7),
+				UnitCost:         decimal.NewFromInt(10),
+				InventoryValue:   decimal.NewFromInt(70),
+				LastMovementDate: now,
+			},
+		},
+		TotalQuantity: decimal.NewFromInt(7),
+		TotalValue:    decimal.NewFromInt(70),
+		GeneratedAt:   now,
+	}
 
 	var categoriesBuf bytes.Buffer
 	printProductCategoriesTable(&categoriesBuf, []inventory.ProductCategory{category})
@@ -1866,6 +1896,23 @@ func TestPrintInventoryOutputs(t *testing.T) {
 	assert.Equal(t, "WH", inventoryValuationWarehouseLabel(inventory.InventoryValuationLine{WarehouseCode: "WH", WarehouseID: "wh-2"}))
 	assert.Equal(t, "Warehouse name", inventoryValuationWarehouseLabel(inventory.InventoryValuationLine{WarehouseName: "Warehouse name", WarehouseID: "wh-3"}))
 	assert.Equal(t, "wh-4", inventoryValuationWarehouseLabel(inventory.InventoryValuationLine{WarehouseID: "wh-4"}))
+
+	var lotReportBuf bytes.Buffer
+	printInventoryLotReport(&lotReportBuf, &lotReport)
+	assert.Contains(t, lotReportBuf.String(), "Inventory lots")
+	assert.Contains(t, lotReportBuf.String(), "Including empty positions")
+	assert.Contains(t, lotReportBuf.String(), "PRD-001 Widget")
+	assert.Contains(t, lotReportBuf.String(), "MAIN Main warehouse")
+	assert.Contains(t, lotReportBuf.String(), "LOT-2026-01")
+	assert.Contains(t, lotReportBuf.String(), "SN-001")
+	assert.Contains(t, lotReportBuf.String(), "70")
+
+	assert.Equal(t, "CODE", inventoryLotProductLabel(inventory.InventoryLotLine{ProductCode: "CODE", ProductID: "prod-2"}))
+	assert.Equal(t, "Product name", inventoryLotProductLabel(inventory.InventoryLotLine{ProductName: "Product name", ProductID: "prod-3"}))
+	assert.Equal(t, "prod-4", inventoryLotProductLabel(inventory.InventoryLotLine{ProductID: "prod-4"}))
+	assert.Equal(t, "WH", inventoryLotWarehouseLabel(inventory.InventoryLotLine{WarehouseCode: "WH", WarehouseID: "wh-2"}))
+	assert.Equal(t, "Warehouse name", inventoryLotWarehouseLabel(inventory.InventoryLotLine{WarehouseName: "Warehouse name", WarehouseID: "wh-3"}))
+	assert.Equal(t, "wh-4", inventoryLotWarehouseLabel(inventory.InventoryLotLine{WarehouseID: "wh-4"}))
 }
 
 func TestPrintCostCenterOutputs(t *testing.T) {

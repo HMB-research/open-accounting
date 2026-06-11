@@ -437,6 +437,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  inventory products stock-levels  List product stock levels")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory products movements  List product stock movements")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory valuation       Show inventory valuation")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory lots            Show lot and serial stock report")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses list List warehouses")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses create  Create a warehouse")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses import  Import warehouses from CSV")
@@ -7302,6 +7303,26 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, report)
 		}
 		printInventoryValuation(a.stdout, report)
+		return nil
+	case "lots":
+		fs := flag.NewFlagSet("inventory lots", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("product-id", "", "Product id")
+		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
+		includeEmpty := fs.Bool("include-empty", false, "Include zero or negative lot positions")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		report, err := client.getInventoryLotReport(ctx, cfg.TenantID, strings.TrimSpace(*productID), strings.TrimSpace(*warehouseID), *includeEmpty)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printInventoryLotReport(a.stdout, report)
 		return nil
 	case "adjust":
 		fs := flag.NewFlagSet("inventory adjust", flag.ContinueOnError)
