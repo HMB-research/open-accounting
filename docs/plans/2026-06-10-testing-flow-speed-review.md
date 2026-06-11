@@ -360,3 +360,25 @@ Local focused baseline against the branch API showed `demo/invoices.spec.ts` at 
 | `demo/invoices-page.spec.ts` | 1.616s | 1 |
 
 The focused command now reports `4 passed (9.0s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior invoices shard tail is reduced. The next measured demo E2E candidates are `tax-overview`, `cost-centers`, and `inventory`.
+
+CI run `27321518687` on commit `0aa4b4b` confirmed the prior invoices tail was reduced. The three replacement invoice specs totaled about 44.783s, down from the prior 114.643s single-spec cost. The highest remaining single-spec cost shifted to `demo/cost-centers.spec.ts` at 86.009s across 7 micro-tests.
+
+## Follow-up: Cost Centers Workflow Consolidation
+
+Replaced `demo/cost-centers.spec.ts` with workflow-sized files and moved repeated route/modal helpers into `demo/cost-centers-utils.ts`:
+
+| New spec | Coverage moved |
+|----------|----------------|
+| `demo/cost-centers-page.spec.ts` | Heading, add button, terminal list/empty state, allocation section, journal-line selector, cost-center selector, amount input, and create-allocation button |
+| `demo/cost-centers-modal.spec.ts` | Create modal open, form fields, active checkbox, and close behavior |
+
+The old file repeated auth, tenant setup, route navigation, loading waits, and modal opening for 7 separate micro-tests. The replacement keeps the same visible workflows while each workflow pays route setup once. Route setup now opens `/settings/cost-centers` with `waitForNetworkIdle: false`, waits for route-owned controls, hides the spinner, and then waits for terminal route state plus the allocation form.
+
+Local focused baseline against the branch API showed `demo/cost-centers.spec.ts` at 11.653s of Playwright result time and `8 passed (11.1s)` including auth setup. After workflow consolidation, the same visible behaviors reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/cost-centers-modal.spec.ts` | 1.296s | 1 |
+| `demo/cost-centers-page.spec.ts` | 1.213s | 1 |
+
+The focused command now reports `3 passed (10.9s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior cost-centers shard tail is reduced. The next measured demo E2E candidates are `tax-overview`, `fixed-assets`, and `cash-payments`.
