@@ -152,6 +152,8 @@
 	function templateTypeName(type: TemplateType): string {
 		switch (type) {
 			case 'INVOICE_SEND': return m.email_invoiceEmail();
+			case 'QUOTE_SEND': return m.email_quoteEmail();
+			case 'ORDER_CONFIRM': return m.email_orderConfirmation();
 			case 'PAYMENT_RECEIPT': return m.email_paymentReceipt();
 			case 'OVERDUE_REMINDER': return m.email_overdueReminder();
 			default: return type;
@@ -336,7 +338,7 @@
 					{#if templates.length === 0}
 						<p class="text-muted">{m.email_noTemplates()}</p>
 					{/if}
-					{#each templates as template}
+					{#each templates as template (template.template_type)}
 						<button
 							class="template-item"
 							class:active={selectedTemplate?.template_type === template.template_type}
@@ -415,7 +417,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each emailLog as log}
+								{#each emailLog as log (log.id)}
 									<tr>
 										<td data-label={m.common_date()}>{formatDate(log.created_at)}</td>
 										<td data-label={m.email_type()}>{templateTypeName(log.email_type as TemplateType)}</td>

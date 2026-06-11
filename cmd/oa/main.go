@@ -319,6 +319,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  email templates update    Update an email template")
 	_, _ = fmt.Fprintln(a.stdout, "  email log                 List email delivery log entries")
 	_, _ = fmt.Fprintln(a.stdout, "  email invoice             Send an invoice email")
+	_, _ = fmt.Fprintln(a.stdout, "  email quote               Send a quote email")
+	_, _ = fmt.Fprintln(a.stdout, "  email order               Send an order confirmation email")
 	_, _ = fmt.Fprintln(a.stdout, "  email payment-receipt     Send a payment receipt email")
 	_, _ = fmt.Fprintln(a.stdout, "  interest settings get     Show late-payment interest settings")
 	_, _ = fmt.Fprintln(a.stdout, "  interest settings update  Update late-payment interest settings")
@@ -363,6 +365,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  quotes create             Create a quote")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes import             Import quotes from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes get                Show one quote")
+	_, _ = fmt.Fprintln(a.stdout, "  quotes pdf                Download a quote PDF")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes update             Update a draft quote")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes delete             Delete a draft quote")
 	_, _ = fmt.Fprintln(a.stdout, "  quotes send               Mark a quote sent")
@@ -373,6 +376,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  orders create             Create an order")
 	_, _ = fmt.Fprintln(a.stdout, "  orders import             Import orders from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  orders get                Show one order")
+	_, _ = fmt.Fprintln(a.stdout, "  orders pdf                Download an order PDF")
 	_, _ = fmt.Fprintln(a.stdout, "  orders stock-check        Check order stock availability")
 	_, _ = fmt.Fprintln(a.stdout, "  orders stock-reservations List order stock reservations")
 	_, _ = fmt.Fprintln(a.stdout, "  orders pick-list          Show warehouse order pick list")
@@ -3906,6 +3910,80 @@ func (a *cliApp) runEmail(ctx context.Context, args []string) error {
 		}
 		printEmailSentResponse(a.stdout, result)
 		return nil
+	case "quote":
+		fs := flag.NewFlagSet("email quote", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		quoteID := fs.String("quote-id", "", "Quote id")
+		recipientEmail := fs.String("recipient-email", "", "Recipient email")
+		recipientName := fs.String("recipient-name", "", "Recipient name")
+		subject := fs.String("subject", "", "Email subject override")
+		message := fs.String("message", "", "Email message")
+		attachPDF := fs.Bool("attach-pdf", false, "Attach quote PDF")
+		requireApprovedEvidence := fs.Bool("require-approved-evidence", false, "Require approved quote evidence before sending")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*quoteID) == "" {
+			return errors.New("quote-id is required")
+		}
+		if strings.TrimSpace(*recipientEmail) == "" {
+			return errors.New("recipient-email is required")
+		}
+
+		result, err := client.emailQuote(ctx, cfg.TenantID, strings.TrimSpace(*quoteID), &email.SendQuoteRequest{
+			RecipientEmail:          strings.TrimSpace(*recipientEmail),
+			RecipientName:           strings.TrimSpace(*recipientName),
+			Subject:                 strings.TrimSpace(*subject),
+			Message:                 strings.TrimSpace(*message),
+			AttachPDF:               *attachPDF,
+			RequireApprovedEvidence: *requireApprovedEvidence,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printEmailSentResponse(a.stdout, result)
+		return nil
+	case "order":
+		fs := flag.NewFlagSet("email order", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		orderID := fs.String("order-id", "", "Order id")
+		recipientEmail := fs.String("recipient-email", "", "Recipient email")
+		recipientName := fs.String("recipient-name", "", "Recipient name")
+		subject := fs.String("subject", "", "Email subject override")
+		message := fs.String("message", "", "Email message")
+		attachPDF := fs.Bool("attach-pdf", false, "Attach order PDF")
+		requireApprovedEvidence := fs.Bool("require-approved-evidence", false, "Require approved order evidence before sending")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*orderID) == "" {
+			return errors.New("order-id is required")
+		}
+		if strings.TrimSpace(*recipientEmail) == "" {
+			return errors.New("recipient-email is required")
+		}
+
+		result, err := client.emailOrder(ctx, cfg.TenantID, strings.TrimSpace(*orderID), &email.SendOrderRequest{
+			RecipientEmail:          strings.TrimSpace(*recipientEmail),
+			RecipientName:           strings.TrimSpace(*recipientName),
+			Subject:                 strings.TrimSpace(*subject),
+			Message:                 strings.TrimSpace(*message),
+			AttachPDF:               *attachPDF,
+			RequireApprovedEvidence: *requireApprovedEvidence,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printEmailSentResponse(a.stdout, result)
+		return nil
 	case "payment-receipt":
 		fs := flag.NewFlagSet("email payment-receipt", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -5463,6 +5541,24 @@ func (a *cliApp) runQuotes(ctx context.Context, args []string) error {
 		printQuote(a.stdout, quote)
 		return nil
 
+	case "pdf":
+		fs := flag.NewFlagSet("quotes pdf", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		quoteID := fs.String("id", "", "Quote id")
+		outputPath := fs.String("output", "", "Optional output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*quoteID) == "" {
+			return errors.New("id is required")
+		}
+
+		content, err := client.downloadQuotePDF(ctx, cfg.TenantID, strings.TrimSpace(*quoteID))
+		if err != nil {
+			return err
+		}
+		return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "Quote PDF")
+
 	case "update":
 		fs := flag.NewFlagSet("quotes update", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -5783,6 +5879,24 @@ func (a *cliApp) runOrders(ctx context.Context, args []string) error {
 		}
 		printOrder(a.stdout, order)
 		return nil
+
+	case "pdf":
+		fs := flag.NewFlagSet("orders pdf", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		orderID := fs.String("id", "", "Order id")
+		outputPath := fs.String("output", "", "Optional output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*orderID) == "" {
+			return errors.New("id is required")
+		}
+
+		content, err := client.downloadOrderPDF(ctx, cfg.TenantID, strings.TrimSpace(*orderID))
+		if err != nil {
+			return err
+		}
+		return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "Order PDF")
 
 	case "stock-check":
 		fs := flag.NewFlagSet("orders stock-check", flag.ContinueOnError)
@@ -12280,7 +12394,7 @@ func parseRequiredReminderTriggerType(value string) (invoicing.TriggerType, erro
 func parseRequiredEmailTemplateType(value string) (email.TemplateType, error) {
 	normalized := strings.ToUpper(strings.TrimSpace(value))
 	switch email.TemplateType(normalized) {
-	case email.TemplateInvoiceSend, email.TemplatePaymentReceipt, email.TemplateOverdueReminder:
+	case email.TemplateInvoiceSend, email.TemplateQuoteSend, email.TemplateOrderConfirm, email.TemplatePaymentReceipt, email.TemplateOverdueReminder:
 		return email.TemplateType(normalized), nil
 	default:
 		if normalized == "" {
@@ -12894,7 +13008,7 @@ func resolveTextFlag(name, inlineValue, filePath string) (string, error) {
 }
 
 func writeExportOutput(w io.Writer, outputPath string, content []byte, description string) error {
-	if strings.TrimSpace(outputPath) == "" {
+	if strings.TrimSpace(outputPath) == "" || strings.TrimSpace(outputPath) == "-" {
 		_, err := w.Write(content)
 		return err
 	}

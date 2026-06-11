@@ -178,6 +178,54 @@ test.describe("Quotes View", () => {
     const conversionQuote = await createQuote(page, "Quote conversion");
     const conversionRow = quoteRow(page, conversionQuote.quote_number);
 
+    const quoteDownloadPromise = page.waitForEvent("download");
+    await conversionRow.getByRole("button", { name: /^PDF$/i }).click();
+    const quoteDownload = await quoteDownloadPromise;
+    expect(quoteDownload.suggestedFilename()).toContain(
+      conversionQuote.quote_number,
+    );
+
+    let quoteEmailPayload: Record<string, unknown> | undefined;
+    await page.route(
+      (url) =>
+        url.pathname.includes(`/quotes/${conversionQuote.id}/email`),
+      async (route) => {
+        quoteEmailPayload = route.request().postDataJSON() as Record<
+          string,
+          unknown
+        >;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: true,
+            log_id: "quote-email-e2e",
+            message: "Email sent successfully",
+          }),
+        });
+      },
+    );
+
+    await conversionRow.getByRole("button", { name: /email|e-post/i }).click();
+    const quoteEmailModal = page.getByRole("dialog", {
+      name: /email quote|saada pakkumine/i,
+    });
+    await expect(quoteEmailModal).toBeVisible();
+    await quoteEmailModal.locator("#quote-email-recipient").fill("quote-e2e@example.com");
+    await quoteEmailModal.locator("#quote-email-name").fill("Quote E2E");
+    const emailReloadPromise = waitForQuotesAndContacts(page);
+    await quoteEmailModal
+      .getByRole("button", { name: /email|e-post/i })
+      .click();
+    await emailReloadPromise;
+    expect(quoteEmailPayload).toMatchObject({
+      recipient_email: "quote-e2e@example.com",
+      recipient_name: "Quote E2E",
+      attach_pdf: true,
+      require_approved_evidence: false,
+    });
+    await expect(page.getByText(/quote email sent|pakkumise e-kiri saadetud/i)).toBeVisible();
+
     const sendResponsePromise = page.waitForResponse((response) => {
       return (
         response.request().method() === "POST" &&

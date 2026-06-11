@@ -1610,6 +1610,34 @@ GET /tenants/{tenantId}/quotes/{quoteId}
 Authorization: Bearer <token>
 ```
 
+### Download Quote PDF
+
+```http
+GET /tenants/{tenantId}/quotes/{quoteId}/pdf
+Authorization: Bearer <token>
+```
+
+Returns `application/pdf` with an attachment filename based on the quote number, for example `quote-QUO-00001.pdf`.
+
+### Email Quote
+
+```http
+POST /tenants/{tenantId}/quotes/{quoteId}/email
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "recipient_email": "billing@example.com",
+  "recipient_name": "Acme",
+  "subject": "Quote QUO-00001",
+  "message": "Please see attached quote.",
+  "attach_pdf": true,
+  "require_approved_evidence": true
+}
+```
+
+Sends the quote with the `QUOTE_SEND` template, optionally attaches the generated PDF, and records an email log linked to the quote. Draft quotes are marked `SENT` after a successful send. When `require_approved_evidence` is true, the quote must have at least one approved `contract` or `supporting_document` document attached to the `quote` entity or the endpoint returns `409 Conflict`.
+
 ### Update Quote
 
 ```http
@@ -1717,6 +1745,34 @@ Imports one CSV row per order line and groups rows by `order_number`. Required c
 GET /tenants/{tenantId}/orders/{orderId}
 Authorization: Bearer <token>
 ```
+
+### Download Order PDF
+
+```http
+GET /tenants/{tenantId}/orders/{orderId}/pdf
+Authorization: Bearer <token>
+```
+
+Returns `application/pdf` with an attachment filename based on the order number, for example `order-ORD-00001.pdf`.
+
+### Email Order
+
+```http
+POST /tenants/{tenantId}/orders/{orderId}/email
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "recipient_email": "billing@example.com",
+  "recipient_name": "Acme",
+  "subject": "Order ORD-00001",
+  "message": "Please see attached order confirmation.",
+  "attach_pdf": true,
+  "require_approved_evidence": true
+}
+```
+
+Sends the order confirmation with the `ORDER_CONFIRM` template, optionally attaches the generated PDF, and records an email log linked to the order. Pending orders are marked `CONFIRMED` after a successful send. When `require_approved_evidence` is true, the order must have at least one approved `contract` or `supporting_document` document attached to the `order` entity or the endpoint returns `409 Conflict`.
 
 ### Check Order Stock
 
@@ -2687,7 +2743,7 @@ GET /tenants/{tenantId}/email-log?limit=50
 Authorization: Bearer <token>
 ```
 
-Template types are `INVOICE_SEND`, `PAYMENT_RECEIPT`, and `OVERDUE_REMINDER`.
+Template types are `INVOICE_SEND`, `QUOTE_SEND`, `ORDER_CONFIRM`, `PAYMENT_RECEIPT`, and `OVERDUE_REMINDER`.
 
 Update an email template:
 
@@ -2704,6 +2760,8 @@ Update an email template:
 
 ```http
 POST /tenants/{tenantId}/invoices/{invoiceId}/email
+POST /tenants/{tenantId}/quotes/{quoteId}/email
+POST /tenants/{tenantId}/orders/{orderId}/email
 POST /tenants/{tenantId}/payments/{paymentId}/email-receipt
 Authorization: Bearer <token>
 ```
@@ -2719,6 +2777,8 @@ Send an invoice email:
   "attach_pdf": true
 }
 ```
+
+Quote and order emails use the same recipient, subject, message, and `attach_pdf` fields. Add `"require_approved_evidence": true` to require approved `contract` or `supporting_document` evidence before sending. A successful quote email marks draft quotes as `SENT`; a successful order email marks pending orders as `CONFIRMED`.
 
 Payment receipt emails use the same recipient, subject, and message fields without `attach_pdf`. Add `"require_approved_evidence": true` to require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the payment before sending; missing approved evidence returns `409 Conflict`.
 

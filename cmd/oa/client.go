@@ -1133,6 +1133,22 @@ func (c *apiClient) emailInvoice(ctx context.Context, tenantID, invoiceID string
 	return &resp, nil
 }
 
+func (c *apiClient) emailQuote(ctx context.Context, tenantID, quoteID string, req *email.SendQuoteRequest) (*email.EmailSentResponse, error) {
+	var resp email.EmailSentResponse
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID, "email"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) emailOrder(ctx context.Context, tenantID, orderID string, req *email.SendOrderRequest) (*email.EmailSentResponse, error) {
+	var resp email.EmailSentResponse
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "orders", orderID, "email"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) emailPaymentReceipt(ctx context.Context, tenantID, paymentID string, req *email.SendPaymentReceiptRequest) (*email.EmailSentResponse, error) {
 	var resp email.EmailSentResponse
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payments", paymentID, "email-receipt"), req, c.apiToken, &resp); err != nil {
@@ -1539,6 +1555,10 @@ func (c *apiClient) getQuote(ctx context.Context, tenantID, quoteID string) (*qu
 	return &resp, nil
 }
 
+func (c *apiClient) downloadQuotePDF(ctx context.Context, tenantID, quoteID string) ([]byte, error) {
+	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID, "pdf"), nil, c.apiToken)
+}
+
 func (c *apiClient) updateQuote(ctx context.Context, tenantID, quoteID string, req *quotes.UpdateQuoteRequest) (*quotes.Quote, error) {
 	var resp quotes.Quote
 	if err := c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "quotes", quoteID), req, c.apiToken, &resp); err != nil {
@@ -1618,6 +1638,10 @@ func (c *apiClient) getOrder(ctx context.Context, tenantID, orderID string) (*or
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *apiClient) downloadOrderPDF(ctx context.Context, tenantID, orderID string) ([]byte, error) {
+	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "orders", orderID, "pdf"), nil, c.apiToken)
 }
 
 func (c *apiClient) checkOrderStock(ctx context.Context, tenantID, orderID, warehouseID string) (*orders.OrderStockCheck, error) {

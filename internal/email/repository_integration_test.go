@@ -775,6 +775,24 @@ func TestGORMRepository_ListTemplates_MultipleTemplates(t *testing.T) {
 		{
 			ID:           uuid.New().String(),
 			TenantID:     tenant.ID,
+			TemplateType: TemplateQuoteSend,
+			Subject:      "Quote Subject",
+			BodyHTML:     "<html>Quote</html>",
+			BodyText:     "Quote text",
+			IsActive:     true,
+		},
+		{
+			ID:           uuid.New().String(),
+			TenantID:     tenant.ID,
+			TemplateType: TemplateOrderConfirm,
+			Subject:      "Order Subject",
+			BodyHTML:     "<html>Order</html>",
+			BodyText:     "Order text",
+			IsActive:     true,
+		},
+		{
+			ID:           uuid.New().String(),
+			TenantID:     tenant.ID,
 			TemplateType: TemplateOverdueReminder,
 			Subject:      "Reminder Subject",
 			BodyHTML:     "<html>Reminder</html>",
@@ -795,13 +813,13 @@ func TestGORMRepository_ListTemplates_MultipleTemplates(t *testing.T) {
 		t.Fatalf("ListTemplates failed: %v", err)
 	}
 
-	if len(result) != 3 {
-		t.Errorf("expected 3 templates, got %d", len(result))
+	if len(result) != 5 {
+		t.Errorf("expected 5 templates, got %d", len(result))
 	}
 
 	// Verify templates are ordered by template_type
-	// INVOICE_SEND, OVERDUE_REMINDER, PAYMENT_RECEIPT (alphabetical order)
-	expectedOrder := []TemplateType{TemplateInvoiceSend, TemplateOverdueReminder, TemplatePaymentReceipt}
+	// INVOICE_SEND, ORDER_CONFIRM, OVERDUE_REMINDER, PAYMENT_RECEIPT, QUOTE_SEND (alphabetical order)
+	expectedOrder := []TemplateType{TemplateInvoiceSend, TemplateOrderConfirm, TemplateOverdueReminder, TemplatePaymentReceipt, TemplateQuoteSend}
 	for i, tmpl := range result {
 		if tmpl.TemplateType != expectedOrder[i] {
 			t.Errorf("expected template type %s at position %d, got %s", expectedOrder[i], i, tmpl.TemplateType)

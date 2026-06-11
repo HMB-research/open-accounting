@@ -28,6 +28,13 @@
 	let filterStatus = $state<OrderStatus | ''>('');
 	let filterFromDate = $state('');
 	let filterToDate = $state('');
+	let emailOrderTarget = $state<Order | null>(null);
+	let emailRecipientEmail = $state('');
+	let emailRecipientName = $state('');
+	let emailSubject = $state('');
+	let emailMessage = $state('');
+	let emailAttachPDF = $state(true);
+	let emailRequireApprovedEvidence = $state(false);
 
 	// New order form
 	let newContactId = $state('');
@@ -134,6 +141,61 @@
 		try {
 			await api.confirmOrder(tenantId, orderId);
 			success = m.orders_statusConfirmed();
+			setTimeout(() => (success = ''), 3000);
+			loadData(tenantId);
+		} catch (err) {
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
+		}
+	}
+
+	async function downloadOrderPDF(order: Order) {
+		const tenantId = requireTenantId($page, (err) => (error = err));
+		if (!tenantId) return;
+
+		actionLoading = true;
+		error = '';
+		try {
+			await api.downloadOrderPDF(tenantId, order.id, order.order_number);
+			success = m.orders_pdfDownloaded();
+			setTimeout(() => (success = ''), 3000);
+		} catch (err) {
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
+		}
+	}
+
+	function openEmailOrder(order: Order) {
+		const contact = getContact(order.contact_id);
+		emailOrderTarget = order;
+		emailRecipientEmail = contact?.email || '';
+		emailRecipientName = contact?.name || '';
+		emailSubject = `Order ${order.order_number}`;
+		emailMessage = '';
+		emailAttachPDF = true;
+		emailRequireApprovedEvidence = false;
+	}
+
+	async function sendOrderEmail(e: Event) {
+		e.preventDefault();
+		const tenantId = requireTenantId($page, (err) => (error = err));
+		if (!tenantId || !emailOrderTarget) return;
+
+		actionLoading = true;
+		error = '';
+		try {
+			await api.emailOrder(tenantId, emailOrderTarget.id, {
+				recipient_email: emailRecipientEmail.trim(),
+				recipient_name: emailRecipientName.trim() || undefined,
+				subject: emailSubject.trim() || undefined,
+				message: emailMessage.trim() || undefined,
+				attach_pdf: emailAttachPDF,
+				require_approved_evidence: emailRequireApprovedEvidence
+			});
+			emailOrderTarget = null;
+			success = m.orders_emailSent();
 			setTimeout(() => (success = ''), 3000);
 			loadData(tenantId);
 		} catch (err) {
@@ -262,8 +324,12 @@
 		CANCELED: { class: 'badge-cancelled', label: m.orders_statusCancelled() }
 	};
 
+	function getContact(contactId: string): Contact | undefined {
+		return contacts.find((c) => c.id === contactId);
+	}
+
 	function getContactName(contactId: string): string {
-		const contact = contacts.find((c) => c.id === contactId);
+		const contact = getContact(contactId);
 		return contact?.name || '-';
 	}
 </script>
@@ -344,6 +410,12 @@
 								</td>
 								<td class="amount text-right" data-label={m.common_total()}>{formatCurrency(order.total)}</td>
 								<td class="actions hide-mobile" data-label={m.common_actions()}>
+									<button class="btn btn-small" onclick={() => downloadOrderPDF(order)} disabled={actionLoading} title={m.invoices_downloadPdf()}>
+										PDF
+									</button>
+									<button class="btn btn-small" onclick={() => openEmailOrder(order)} disabled={actionLoading} title={m.orders_emailOrder()}>
+										{m.orders_email()}
+									</button>
 									{#if order.status === 'PENDING'}
 										<button class="btn btn-small btn-success" onclick={() => confirmOrder(order.id)} disabled={actionLoading} title={m.orders_confirm()}>
 											{m.orders_confirm()}
@@ -497,6 +569,54 @@
 	</div>
 {/if}
 
+{#if emailOrderTarget}
+	<div class="modal-backdrop">
+		<div class="modal card" role="dialog" aria-modal="true" aria-labelledby="email-order-title" tabindex="-1">
+			<h2 id="email-order-title">{m.orders_emailOrder()}</h2>
+			<form onsubmit={sendOrderEmail}>
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="order-email-recipient">{m.common_email()} *</label>
+						<input class="input" id="order-email-recipient" type="email" bind:value={emailRecipientEmail} required />
+					</div>
+					<div class="form-group">
+						<label class="label" for="order-email-name">{m.common_name()}</label>
+						<input class="input" id="order-email-name" bind:value={emailRecipientName} />
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="order-email-subject">{m.email_subject()}</label>
+					<input class="input" id="order-email-subject" bind:value={emailSubject} />
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="order-email-message">{m.recurring_emailMessageLabel()}</label>
+					<textarea class="input" id="order-email-message" bind:value={emailMessage} rows="3"></textarea>
+				</div>
+
+				<label class="checkbox-row">
+					<input type="checkbox" bind:checked={emailAttachPDF} />
+					<span>{m.orders_attachPdf()}</span>
+				</label>
+				<label class="checkbox-row">
+					<input type="checkbox" bind:checked={emailRequireApprovedEvidence} />
+					<span>{m.orders_requireApprovedEvidence()}</span>
+				</label>
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={() => (emailOrderTarget = null)}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-primary" disabled={actionLoading}>
+						{m.orders_email()}
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
 <style>
 	.page-header {
 		display: flex;
@@ -536,6 +656,7 @@
 	.actions {
 		display: flex;
 		gap: 0.5rem;
+		flex-wrap: wrap;
 	}
 
 	.btn-small {
@@ -650,6 +771,13 @@
 		justify-content: flex-end;
 		gap: 0.5rem;
 		margin-top: 1.5rem;
+	}
+
+	.checkbox-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.75rem;
 	}
 
 	@media (max-width: 768px) {

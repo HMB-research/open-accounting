@@ -2415,8 +2415,38 @@ definitions:
       subject:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_email.SendOrderRequest:
+    properties:
+      attach_pdf:
+        type: boolean
+      message:
+        type: string
+      recipient_email:
+        type: string
+      recipient_name:
+        type: string
+      require_approved_evidence:
+        type: boolean
+      subject:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_email.SendPaymentReceiptRequest:
     properties:
+      message:
+        type: string
+      recipient_email:
+        type: string
+      recipient_name:
+        type: string
+      require_approved_evidence:
+        type: boolean
+      subject:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_email.SendQuoteRequest:
+    properties:
+      attach_pdf:
+        type: boolean
       message:
         type: string
       recipient_email:
@@ -2431,11 +2461,15 @@ definitions:
   github_com_HMB-research_open-accounting_internal_email.TemplateType:
     enum:
     - INVOICE_SEND
+    - QUOTE_SEND
+    - ORDER_CONFIRM
     - PAYMENT_RECEIPT
     - OVERDUE_REMINDER
     type: string
     x-enum-varnames:
     - TemplateInvoiceSend
+    - TemplateQuoteSend
+    - TemplateOrderConfirm
     - TemplatePaymentReceipt
     - TemplateOverdueReminder
   github_com_HMB-research_open-accounting_internal_email.TestSMTPRequest:
@@ -14057,6 +14091,102 @@ paths:
       summary: Deliver order
       tags:
       - Orders
+  /tenants/{tenantID}/orders/{orderID}/email:
+    post:
+      consumes:
+      - application/json
+      description: Send an order confirmation to a recipient via email, optionally
+        requiring approved order evidence first
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: orderID
+        required: true
+        type: string
+      - description: Email details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.SendOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.EmailSentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Email order
+      tags:
+      - Email
+  /tenants/{tenantID}/orders/{orderID}/pdf:
+    get:
+      description: Generate and download a PDF for an order
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: orderID
+        required: true
+        type: string
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download order PDF
+      tags:
+      - Orders
   /tenants/{tenantID}/orders/{orderID}/pick-list:
     get:
       description: Build a warehouse pick list from persisted order stock reservations
@@ -16327,6 +16457,102 @@ paths:
       security:
       - BearerAuth: []
       summary: Convert quote to invoice
+      tags:
+      - Quotes
+  /tenants/{tenantID}/quotes/{quoteID}/email:
+    post:
+      consumes:
+      - application/json
+      description: Send a quote to a recipient via email, optionally requiring approved
+        quote evidence first
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Quote ID
+        in: path
+        name: quoteID
+        required: true
+        type: string
+      - description: Email details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.SendQuoteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_email.EmailSentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Email quote
+      tags:
+      - Email
+  /tenants/{tenantID}/quotes/{quoteID}/pdf:
+    get:
+      description: Generate and download a PDF for a quote
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Quote ID
+        in: path
+        name: quoteID
+        required: true
+        type: string
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download quote PDF
       tags:
       - Quotes
   /tenants/{tenantID}/quotes/{quoteID}/reject:

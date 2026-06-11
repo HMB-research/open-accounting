@@ -1976,6 +1976,64 @@ describe("API Client - Core Functionality", () => {
       expect(result.success).toBe(true);
     });
 
+    it("should email quote", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, log_id: "log-1", message: "Sent" }),
+      });
+
+      const result = await api.emailQuote("tenant-123", "quote-1", {
+        recipient_email: "customer@example.com",
+        recipient_name: "Customer",
+        attach_pdf: true,
+        require_approved_evidence: true,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/quotes/quote-1/email"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            recipient_email: "customer@example.com",
+            recipient_name: "Customer",
+            attach_pdf: true,
+            require_approved_evidence: true,
+          }),
+        }),
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it("should email order", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, log_id: "log-1", message: "Sent" }),
+      });
+
+      const result = await api.emailOrder("tenant-123", "order-1", {
+        recipient_email: "customer@example.com",
+        recipient_name: "Customer",
+        attach_pdf: true,
+        require_approved_evidence: true,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/orders/order-1/email"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            recipient_email: "customer@example.com",
+            recipient_name: "Customer",
+            attach_pdf: true,
+            require_approved_evidence: true,
+          }),
+        }),
+      );
+      expect(result.success).toBe(true);
+    });
+
     it("should email payment receipt", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -3589,6 +3647,62 @@ describe("API Client - Core Functionality", () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining("/invoices/inv-1/pdf"),
+        expect.any(Object),
+      );
+      expect(mockClick).toHaveBeenCalled();
+    });
+
+    it("should download quote PDF", async () => {
+      const mockBlob = new Blob(["quote pdf content"], {
+        type: "application/pdf",
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => mockBlob,
+      });
+
+      const mockClick = vi.fn();
+      vi.spyOn(document, "createElement").mockReturnValue({
+        href: "",
+        download: "",
+        click: mockClick,
+      } as unknown as HTMLAnchorElement);
+      vi.spyOn(document.body, "appendChild").mockImplementation(vi.fn());
+      vi.spyOn(document.body, "removeChild").mockImplementation(vi.fn());
+
+      await api.downloadQuotePDF("tenant-123", "quote-1", "QUO-001");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/quotes/quote-1/pdf"),
+        expect.any(Object),
+      );
+      expect(mockClick).toHaveBeenCalled();
+    });
+
+    it("should download order PDF", async () => {
+      const mockBlob = new Blob(["order pdf content"], {
+        type: "application/pdf",
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => mockBlob,
+      });
+
+      const mockClick = vi.fn();
+      vi.spyOn(document, "createElement").mockReturnValue({
+        href: "",
+        download: "",
+        click: mockClick,
+      } as unknown as HTMLAnchorElement);
+      vi.spyOn(document.body, "appendChild").mockImplementation(vi.fn());
+      vi.spyOn(document.body, "removeChild").mockImplementation(vi.fn());
+
+      await api.downloadOrderPDF("tenant-123", "order-1", "ORD-001");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/orders/order-1/pdf"),
         expect.any(Object),
       );
       expect(mockClick).toHaveBeenCalled();

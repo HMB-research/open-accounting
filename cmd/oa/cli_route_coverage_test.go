@@ -744,6 +744,10 @@ func tenantCLICommand(method, path string) (string, bool) {
 			"PUT":    "quotes update",
 			"DELETE": "quotes delete",
 		})
+	case "/quotes/{quoteID}/pdf":
+		return commandForMethod(method, map[string]string{"GET": "quotes pdf"})
+	case "/quotes/{quoteID}/email":
+		return commandForMethod(method, map[string]string{"POST": "email quote"})
 	case "/quotes/{quoteID}/send":
 		return commandForMethod(method, map[string]string{"POST": "quotes send"})
 	case "/quotes/{quoteID}/accept":
@@ -765,6 +769,10 @@ func tenantCLICommand(method, path string) (string, bool) {
 			"PUT":    "orders update",
 			"DELETE": "orders delete",
 		})
+	case "/orders/{orderID}/pdf":
+		return commandForMethod(method, map[string]string{"GET": "orders pdf"})
+	case "/orders/{orderID}/email":
+		return commandForMethod(method, map[string]string{"POST": "email order"})
 	case "/orders/{orderID}/stock-check":
 		return commandForMethod(method, map[string]string{"GET": "orders stock-check"})
 	case "/orders/{orderID}/stock-reservations":

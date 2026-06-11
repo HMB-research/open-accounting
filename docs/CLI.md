@@ -521,16 +521,18 @@ go run ./cmd/oa quotes update \
   --quote-date 2026-03-16 \
   --line "description=Updated consulting,quantity=3,unit=hour,unit_price=100.00,vat_rate=22.00"
 go run ./cmd/oa quotes send --id <quote-id> --require-approved-evidence
+go run ./cmd/oa quotes pdf --id <quote-id> --output ./quote.pdf
 go run ./cmd/oa quotes accept --id <quote-id>
 go run ./cmd/oa quotes reject --id <quote-id>
 go run ./cmd/oa quotes convert-to-invoice --id <quote-id> --issue-date 2026-03-20 --due-date 2026-04-03
 go run ./cmd/oa quotes delete --id <quote-id>
 go run ./cmd/oa quotes import --file ./quotes.csv
+go run ./cmd/oa email quote --quote-id <quote-id> --recipient-email billing@example.com --attach-pdf
 ```
 
 Use `--line` repeatedly on `quotes create` and `quotes update` for multi-line offers. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Quote statuses are `DRAFT`, `SENT`, `ACCEPTED`, `REJECTED`, `EXPIRED`, and `CONVERTED`; accepted quotes can be converted into draft sales invoices. `quotes send --require-approved-evidence` blocks sending until an approved `contract` or `supporting_document` is attached to the quote.
 
-Use `--json` on quote read, write, import, status, conversion, and delete commands when scripting. Quote IDs and text fields are trimmed before requests, status filters are case-insensitive, and `quotes delete --json` returns `{"status":"deleted"}`. The `--require-approved-evidence` flag is only valid on `quotes send`.
+Use `--json` on quote read, write, import, status, conversion, email, and delete commands when scripting. Quote IDs and text fields are trimmed before requests, status filters are case-insensitive, and `quotes delete --json` returns `{"status":"deleted"}`. `quotes pdf` writes to `--output` or streams to stdout with `--output -`. `email quote` can attach the generated quote PDF and marks draft quotes as sent after successful delivery. The `--require-approved-evidence` flag is valid on `quotes send` and `email quote`.
 
 Quote imports use one CSV row per quote line and group rows by `quote_number`. Required columns are `quote_number`, `quote_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `valid_until`, `status`, `currency`, `exchange_rate`, `notes`, `unit`, `discount_percent`, and `product_id`.
 
@@ -557,6 +559,7 @@ go run ./cmd/oa orders update \
   --order-date 2026-03-16 \
   --line "description=Updated consulting,quantity=3,unit=hour,unit_price=100.00,vat_rate=22.00"
 go run ./cmd/oa orders confirm --id <order-id> --require-approved-evidence
+go run ./cmd/oa orders pdf --id <order-id> --output ./order.pdf
 go run ./cmd/oa orders process --id <order-id>
 go run ./cmd/oa orders ship --id <order-id>
 go run ./cmd/oa orders deliver --id <order-id>
@@ -564,11 +567,12 @@ go run ./cmd/oa orders convert-to-invoice --id <order-id> --issue-date 2026-03-2
 go run ./cmd/oa orders cancel --id <order-id>
 go run ./cmd/oa orders delete --id <order-id>
 go run ./cmd/oa orders import --file ./orders.csv
+go run ./cmd/oa email order --order-id <order-id> --recipient-email billing@example.com --attach-pdf
 ```
 
 Use `--line` repeatedly on `orders create` and `orders update`. Each line accepts `description`, `quantity`, `unit_price`, and `vat_rate`; optional keys include `unit`, `discount_percent`, and `product_id`. Order statuses are `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, and `CANCELED`. Delivered orders can be converted into draft sales invoices. `orders confirm --require-approved-evidence` blocks confirmation until an approved `contract` or `supporting_document` is attached to the order.
 
-Use `--json` on order read, write, stock, import, status, conversion, and delete commands when scripting. Mutating commands return the updated order or operation result; `orders convert-to-invoice --json` returns both the updated order and the created draft invoice, while `orders delete --json` returns `{"status":"deleted"}`. The `--require-approved-evidence` flag is only valid on `orders confirm`.
+Use `--json` on order read, write, stock, import, status, conversion, email, and delete commands when scripting. Mutating commands return the updated order or operation result; `orders convert-to-invoice --json` returns both the updated order and the created draft invoice, while `orders delete --json` returns `{"status":"deleted"}`. `orders pdf` writes to `--output` or streams to stdout with `--output -`. `email order` can attach the generated order PDF and marks pending orders as confirmed after successful delivery. The `--require-approved-evidence` flag is valid on `orders confirm` and `email order`.
 
 `orders stock-check` checks tracked product lines without mutating inventory. It sums all warehouses unless `--warehouse-id` is provided, consumes repeated lines for the same product cumulatively inside the check, and reports per-line statuses: `AVAILABLE`, `SHORTAGE`, `NOT_TRACKED`, and `PRODUCT_NOT_FOUND`.
 
@@ -821,11 +825,15 @@ go run ./cmd/oa email templates update \
 
 go run ./cmd/oa email log --limit 25
 go run ./cmd/oa email invoice --invoice-id <invoice-id> --recipient-email billing@example.com --attach-pdf
+go run ./cmd/oa email quote --quote-id <quote-id> --recipient-email billing@example.com --attach-pdf
+go run ./cmd/oa email quote --quote-id <quote-id> --recipient-email billing@example.com --require-approved-evidence
+go run ./cmd/oa email order --order-id <order-id> --recipient-email billing@example.com --attach-pdf
+go run ./cmd/oa email order --order-id <order-id> --recipient-email billing@example.com --require-approved-evidence
 go run ./cmd/oa email payment-receipt --payment-id <payment-id> --recipient-email billing@example.com
 go run ./cmd/oa email payment-receipt --payment-id <payment-id> --recipient-email billing@example.com --require-approved-evidence
 ```
 
-Template types are `INVOICE_SEND`, `PAYMENT_RECEIPT`, and `OVERDUE_REMINDER`. `email log` requires a positive `--limit` and supports `--json` for delivery-log automation. `email invoice` and `email payment-receipt` require the entity id plus `--recipient-email`; both can print the send result as JSON, including the email log id. Payment receipt emails can require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the payment by passing `--require-approved-evidence`. Use `--json` on email reads and mutations for automation.
+Template types are `INVOICE_SEND`, `QUOTE_SEND`, `ORDER_CONFIRM`, `PAYMENT_RECEIPT`, and `OVERDUE_REMINDER`. `email log` requires a positive `--limit` and supports `--json` for delivery-log automation. `email invoice`, `email quote`, `email order`, and `email payment-receipt` require the entity id plus `--recipient-email`; each can print the send result as JSON, including the email log id. Quote and order emails can attach generated PDFs with `--attach-pdf` and can require approved `contract` or `supporting_document` evidence with `--require-approved-evidence`. Payment receipt emails can require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the payment by passing `--require-approved-evidence`. Use `--json` on email reads and mutations for automation.
 
 ## Interest
 

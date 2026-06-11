@@ -113,7 +113,7 @@ func TestEmailHandlersSettingsTemplatesAndLogs(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	var templates []email.EmailTemplate
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&templates))
-	assert.GreaterOrEqual(t, len(templates), 3)
+	assert.GreaterOrEqual(t, len(templates), 5)
 
 	templateReq := email.UpdateTemplateRequest{
 		Subject:  "Receipt ready",

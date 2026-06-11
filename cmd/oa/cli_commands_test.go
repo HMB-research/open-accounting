@@ -5698,6 +5698,10 @@ func TestCLIQuoteCommands(t *testing.T) {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1":
 			_ = json.NewEncoder(w).Encode(cliQuotePayload("quote-1", "QUO-00001", "DRAFT"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/pdf":
+			assert.Equal(t, "*/*", r.Header.Get("Accept"))
+			w.Header().Set("Content-Type", "application/pdf")
+			_, _ = w.Write([]byte("%PDF quote"))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1":
 			var req quotes.UpdateQuoteRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -5813,6 +5817,11 @@ func TestCLIQuoteCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Quote QUO-00001")
 	assert.Contains(t, stdout.String(), "Consulting")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"quotes", "pdf", "--id", "quote-1", "--output", "-"})
+	require.NoError(t, err)
+	assert.Equal(t, "%PDF quote", stdout.String())
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
@@ -6054,6 +6063,8 @@ func TestCLIQuoteValidationBranches(t *testing.T) {
 		{name: "import unreadable file", args: []string{"import", "--file", missingFile}, want: "read file"},
 		{name: "get bad flag", args: []string{"get", "--bad"}, want: "flag provided but not defined"},
 		{name: "get missing id", args: []string{"get"}, want: "id is required"},
+		{name: "pdf bad flag", args: []string{"pdf", "--bad"}, want: "flag provided but not defined"},
+		{name: "pdf missing id", args: []string{"pdf"}, want: "id is required"},
 		{name: "update bad flag", args: []string{"update", "--bad"}, want: "flag provided but not defined"},
 		{name: "update missing id", args: []string{"update", "--contact-id", "contact-1", "--quote-date", "2026-03-15"}, want: "id is required"},
 		{name: "update missing contact", args: []string{"update", "--id", "quote-1", "--quote-date", "2026-03-15"}, want: "contact-id is required"},
@@ -6135,6 +6146,7 @@ func TestCLIQuoteAuthAndAPIErrors(t *testing.T) {
 			assert.Equal(t, "quotes-error.csv", req.FileName)
 			assert.Contains(t, req.CSVContent, "QT-ERR")
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-error":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-error/pdf":
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-error":
 			var req quotes.UpdateQuoteRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -6172,6 +6184,7 @@ func TestCLIQuoteAuthAndAPIErrors(t *testing.T) {
 		{name: "create api error", args: []string{"quotes", "create", "--contact-id", "contact-error", "--quote-date", "2026-06-01", "--valid-until", "2026-06-30", "--currency", "eur", "--notes", "Error quote", "--line", "description=Error work,quantity=1,unit_price=100,vat_rate=22"}},
 		{name: "import api error", args: []string{"quotes", "import", "--file", importFile}},
 		{name: "get api error", args: []string{"quotes", "get", "--id", "quote-error"}},
+		{name: "pdf api error", args: []string{"quotes", "pdf", "--id", "quote-error", "--output", "-"}},
 		{name: "update api error", args: []string{"quotes", "update", "--id", "quote-error", "--contact-id", "contact-error", "--quote-date", "2026-06-02", "--notes", "Updated error quote", "--line", "description=Updated error work,quantity=2,unit_price=80,vat_rate=22"}},
 		{name: "delete api error", args: []string{"quotes", "delete", "--id", "quote-error"}},
 		{name: "send api error", args: []string{"quotes", "send", "--id", "quote-error", "--require-approved-evidence"}},
@@ -6245,6 +6258,10 @@ func TestCLIOrderCommands(t *testing.T) {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1":
 			_ = json.NewEncoder(w).Encode(cliOrderPayload("order-1", "ORD-00001", "CONFIRMED"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/pdf":
+			assert.Equal(t, "*/*", r.Header.Get("Accept"))
+			w.Header().Set("Content-Type", "application/pdf")
+			_, _ = w.Write([]byte("%PDF order"))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/stock-check":
 			require.Equal(t, "wh-1", r.URL.Query().Get("warehouse_id"))
 			_ = json.NewEncoder(w).Encode(orders.OrderStockCheck{
@@ -6458,6 +6475,11 @@ func TestCLIOrderCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Order ORD-00001")
 	assert.Contains(t, stdout.String(), "Consulting")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"orders", "pdf", "--id", "order-1", "--output", "-"})
+	require.NoError(t, err)
+	assert.Equal(t, "%PDF order", stdout.String())
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"orders", "stock-check", "--id", "order-1", "--warehouse-id", "wh-1"})
@@ -6718,6 +6740,8 @@ func TestCLIOrderBranches(t *testing.T) {
 		{name: "import missing source file", args: []string{"orders", "import", "--file", missingOrderFile}, want: "missing-orders.csv"},
 		{name: "get bad flag", args: []string{"orders", "get", "--bad"}, want: "flag provided but not defined"},
 		{name: "get missing id", args: []string{"orders", "get"}, want: "id is required"},
+		{name: "pdf bad flag", args: []string{"orders", "pdf", "--bad"}, want: "flag provided but not defined"},
+		{name: "pdf missing id", args: []string{"orders", "pdf"}, want: "id is required"},
 		{name: "stock check bad flag", args: []string{"orders", "stock-check", "--bad"}, want: "flag provided but not defined"},
 		{name: "stock check missing id", args: []string{"orders", "stock-check"}, want: "id is required"},
 		{name: "reservations bad flag", args: []string{"orders", "stock-reservations", "--bad"}, want: "flag provided but not defined"},
@@ -6890,6 +6914,7 @@ func TestCLIOrderAuthFlagsAndAPIErrorBranches(t *testing.T) {
 			assert.Equal(t, "orders-error.csv", req.FileName)
 			assert.Contains(t, req.CSVContent, "ORD-ERROR")
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error/pdf":
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error/stock-check":
 			assert.Equal(t, "wh-error", r.URL.Query().Get("warehouse_id"))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-error/stock-reservations":
@@ -6942,6 +6967,7 @@ func TestCLIOrderAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "create api error", args: []string{"orders", "create", "--contact-id", "contact-error", "--order-date", "2026-03-15", "--currency", "usd", "--line", "description=Error line,quantity=1,unit_price=80,vat_rate=22"}},
 		{name: "import api error", args: []string{"orders", "import", "--file", orderImportFile}},
 		{name: "get api error", args: []string{"orders", "get", "--id", "order-error"}},
+		{name: "pdf api error", args: []string{"orders", "pdf", "--id", "order-error", "--output", "-"}},
 		{name: "stock check api error", args: []string{"orders", "stock-check", "--id", "order-error", "--warehouse-id", "wh-error"}},
 		{name: "reservations api error", args: []string{"orders", "stock-reservations", "--id", "order-error"}},
 		{name: "pick list api error", args: []string{"orders", "pick-list", "--id", "order-error", "--warehouse-id", "wh-error"}},
@@ -14101,6 +14127,26 @@ func TestCLIEmailCommands(t *testing.T) {
 			assert.Equal(t, "See attached", req.Message)
 			assert.True(t, req.AttachPDF)
 			_ = json.NewEncoder(w).Encode(emailSentPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/quote-1/email":
+			var req email.SendQuoteRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "billing@example.com", req.RecipientEmail)
+			assert.Equal(t, "Acme", req.RecipientName)
+			assert.Equal(t, "Quote QUO-00001", req.Subject)
+			assert.Equal(t, "See attached quote", req.Message)
+			assert.True(t, req.AttachPDF)
+			assert.True(t, req.RequireApprovedEvidence)
+			_ = json.NewEncoder(w).Encode(emailSentPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/order-1/email":
+			var req email.SendOrderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "billing@example.com", req.RecipientEmail)
+			assert.Equal(t, "Acme", req.RecipientName)
+			assert.Equal(t, "Order ORD-00001", req.Subject)
+			assert.Equal(t, "See attached order", req.Message)
+			assert.True(t, req.AttachPDF)
+			assert.True(t, req.RequireApprovedEvidence)
+			_ = json.NewEncoder(w).Encode(emailSentPayload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/pay-1/email-receipt":
 			var req email.SendPaymentReceiptRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -14154,6 +14200,16 @@ func TestCLIEmailCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"email", "invoice", "--invoice-id", "inv-1", "--recipient-email", "billing@example.com", "--recipient-name", "Acme", "--subject", "Invoice INV-00001", "--message", "See attached", "--attach-pdf"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Log ID: email-2")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "quote", "--quote-id", "quote-1", "--recipient-email", "billing@example.com", "--recipient-name", "Acme", "--subject", "Quote QUO-00001", "--message", "See attached quote", "--attach-pdf", "--require-approved-evidence"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Email sent")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"email", "order", "--order-id", "order-1", "--recipient-email", "billing@example.com", "--recipient-name", "Acme", "--subject", "Order ORD-00001", "--message", "See attached order", "--attach-pdf", "--require-approved-evidence"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Email sent")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"email", "payment-receipt", "--payment-id", "pay-1", "--recipient-email", "billing@example.com", "--recipient-name", "Acme", "--subject", "Receipt", "--message", "Thanks", "--require-approved-evidence"})
@@ -14227,6 +14283,36 @@ func TestCLIEmailBranches(t *testing.T) {
 			requestCounts["invoice-error"]++
 			w.WriteHeader(http.StatusConflict)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invoice already sent"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/trimmed-quote/email":
+			requestCounts["quote"]++
+			var req email.SendQuoteRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "quote@example.com", req.RecipientEmail)
+			assert.Equal(t, "Quote Customer", req.RecipientName)
+			assert.Equal(t, "Quote Subject", req.Subject)
+			assert.Equal(t, "Please review.", req.Message)
+			assert.True(t, req.AttachPDF)
+			assert.True(t, req.RequireApprovedEvidence)
+			_ = json.NewEncoder(w).Encode(emailSentPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/quotes/api-error/email":
+			requestCounts["quote-error"]++
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "approved quote evidence is required"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/trimmed-order/email":
+			requestCounts["order"]++
+			var req email.SendOrderRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "order@example.com", req.RecipientEmail)
+			assert.Equal(t, "Order Customer", req.RecipientName)
+			assert.Equal(t, "Order Subject", req.Subject)
+			assert.Equal(t, "Order confirmed.", req.Message)
+			assert.True(t, req.AttachPDF)
+			assert.True(t, req.RequireApprovedEvidence)
+			_ = json.NewEncoder(w).Encode(emailSentPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/orders/api-error/email":
+			requestCounts["order-error"]++
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "approved order evidence is required"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payments/trimmed-pay/email-receipt":
 			requestCounts["payment"]++
 			var req email.SendPaymentReceiptRequest
@@ -14263,6 +14349,14 @@ func TestCLIEmailBranches(t *testing.T) {
 		{name: "invoice missing invoice id", args: []string{"email", "invoice", "--recipient-email", "customer@example.com"}, want: "invoice-id is required"},
 		{name: "invoice missing recipient", args: []string{"email", "invoice", "--invoice-id", "inv-1"}, want: "recipient-email is required"},
 		{name: "invoice api error", args: []string{"email", "invoice", "--invoice-id", "api-error", "--recipient-email", "customer@example.com"}, want: "invoice already sent"},
+		{name: "quote invalid flag", args: []string{"email", "quote", "--bogus"}, want: "flag provided but not defined"},
+		{name: "quote missing quote id", args: []string{"email", "quote", "--recipient-email", "quote@example.com"}, want: "quote-id is required"},
+		{name: "quote missing recipient", args: []string{"email", "quote", "--quote-id", "quote-1"}, want: "recipient-email is required"},
+		{name: "quote api error", args: []string{"email", "quote", "--quote-id", "api-error", "--recipient-email", "quote@example.com"}, want: "approved quote evidence is required"},
+		{name: "order invalid flag", args: []string{"email", "order", "--bogus"}, want: "flag provided but not defined"},
+		{name: "order missing order id", args: []string{"email", "order", "--recipient-email", "order@example.com"}, want: "order-id is required"},
+		{name: "order missing recipient", args: []string{"email", "order", "--order-id", "order-1"}, want: "recipient-email is required"},
+		{name: "order api error", args: []string{"email", "order", "--order-id", "api-error", "--recipient-email", "order@example.com"}, want: "approved order evidence is required"},
 		{name: "payment receipt invalid flag", args: []string{"email", "payment-receipt", "--bogus"}, want: "flag provided but not defined"},
 		{name: "payment receipt missing payment id", args: []string{"email", "payment-receipt", "--recipient-email", "payer@example.com"}, want: "payment-id is required"},
 		{name: "payment receipt missing recipient", args: []string{"email", "payment-receipt", "--payment-id", "pay-1"}, want: "recipient-email is required"},
@@ -14302,6 +14396,38 @@ func TestCLIEmailBranches(t *testing.T) {
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
+		"email", "quote",
+		"--quote-id", " trimmed-quote ",
+		"--recipient-email", " quote@example.com ",
+		"--recipient-name", " Quote Customer ",
+		"--subject", " Quote Subject ",
+		"--message", " Please review. ",
+		"--attach-pdf",
+		"--require-approved-evidence",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"success": true`)
+	assert.Contains(t, stdout.String(), `"log_id": "email-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"email", "order",
+		"--order-id", " trimmed-order ",
+		"--recipient-email", " order@example.com ",
+		"--recipient-name", " Order Customer ",
+		"--subject", " Order Subject ",
+		"--message", " Order confirmed. ",
+		"--attach-pdf",
+		"--require-approved-evidence",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"success": true`)
+	assert.Contains(t, stdout.String(), `"log_id": "email-branch"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
 		"email", "payment-receipt",
 		"--payment-id", " trimmed-pay ",
 		"--recipient-email", " payer@example.com ",
@@ -14319,6 +14445,10 @@ func TestCLIEmailBranches(t *testing.T) {
 		"log":           2,
 		"invoice":       1,
 		"invoice-error": 1,
+		"quote":         1,
+		"quote-error":   1,
+		"order":         1,
+		"order-error":   1,
 		"payment":       1,
 		"payment-error": 1,
 	}, requestCounts)
@@ -22410,6 +22540,14 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, email.TemplatePaymentReceipt, emailTemplateType)
 
+	emailTemplateType, err = parseRequiredEmailTemplateType("quote_send")
+	require.NoError(t, err)
+	assert.Equal(t, email.TemplateQuoteSend, emailTemplateType)
+
+	emailTemplateType, err = parseRequiredEmailTemplateType("order_confirm")
+	require.NoError(t, err)
+	assert.Equal(t, email.TemplateOrderConfirm, emailTemplateType)
+
 	_, err = parseRequiredEmailTemplateType("")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "type is required")
@@ -22512,6 +22650,11 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	err = writeExportOutput(&exportBuf, "", []byte("raw export"), "Raw")
 	require.NoError(t, err)
 	assert.Equal(t, "raw export", exportBuf.String())
+
+	exportBuf.Reset()
+	err = writeExportOutput(&exportBuf, "-", []byte("stdout export"), "Raw")
+	require.NoError(t, err)
+	assert.Equal(t, "stdout export", exportBuf.String())
 
 	require.NoError(t, saveConfig(&cliConfig{BaseURL: "https://api.example.com"}))
 	_, _, err = app.loadAuthenticatedClient()

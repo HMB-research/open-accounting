@@ -1513,6 +1513,220 @@ func (h *Handlers) EmailInvoice(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
+// EmailQuote sends a quote via email
+// @Summary Email quote
+// @Description Send a quote to a recipient via email, optionally requiring approved quote evidence first
+// @Tags Email
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param quoteID path string true "Quote ID"
+// @Param request body email.SendQuoteRequest true "Email details"
+// @Success 200 {object} email.EmailSentResponse
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes/{quoteID}/email [post]
+func (h *Handlers) EmailQuote(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	quoteID := chi.URLParam(r, "quoteID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req email.SendQuoteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if err := req.Validate(); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	quote, err := h.quotesService.GetByID(r.Context(), tenantID, schemaName, quoteID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Quote not found")
+		return
+	}
+
+	if err := h.requireApprovedCommercialEvidence(r.Context(), schemaName, tenantID, documents.EntityTypeQuote, quoteID, req.RequireApprovedEvidence, errApprovedQuoteEvidenceRequired, "emailing quote"); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errApprovedQuoteEvidenceRequired) {
+			status = http.StatusConflict
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get tenant")
+		return
+	}
+
+	template, err := h.emailService.GetTemplate(r.Context(), schemaName, tenantID, email.TemplateQuoteSend)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get email template")
+		return
+	}
+
+	data := &email.TemplateData{
+		CompanyName: t.Name,
+		ContactName: req.RecipientName,
+		QuoteNumber: quote.QuoteNumber,
+		TotalAmount: quote.Total.StringFixed(2),
+		Currency:    quote.Currency,
+		QuoteDate:   quote.QuoteDate.Format("2006-01-02"),
+		Message:     req.Message,
+	}
+	if quote.ValidUntil != nil {
+		data.ValidUntil = quote.ValidUntil.Format("2006-01-02")
+	}
+
+	subject, bodyHTML, bodyText, err := h.emailService.RenderTemplate(template, data)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to render email template")
+		return
+	}
+	if req.Subject != "" {
+		subject = req.Subject
+	}
+
+	var attachments []email.Attachment
+	if req.AttachPDF {
+		pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
+		pdfBytes, err := h.pdfService.GenerateQuotePDF(quote, t, pdfSettings)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
+			return
+		}
+		attachments = append(attachments, email.Attachment{
+			Filename:    "quote-" + quote.QuoteNumber + ".pdf",
+			Content:     pdfBytes,
+			ContentType: "application/pdf",
+		})
+	}
+
+	result, err := h.emailService.SendEmail(r.Context(), schemaName, tenantID, string(email.TemplateQuoteSend), req.RecipientEmail, req.RecipientName, subject, bodyHTML, bodyText, attachments, quoteID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if quote.Status == quotes.QuoteStatusDraft {
+		_ = h.quotesService.Send(r.Context(), tenantID, schemaName, quoteID)
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// EmailOrder sends an order confirmation via email
+// @Summary Email order
+// @Description Send an order confirmation to a recipient via email, optionally requiring approved order evidence first
+// @Tags Email
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Param request body email.SendOrderRequest true "Email details"
+// @Success 200 {object} email.EmailSentResponse
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/email [post]
+func (h *Handlers) EmailOrder(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req email.SendOrderRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if err := req.Validate(); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	order, err := h.ordersService.GetByID(r.Context(), tenantID, schemaName, orderID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Order not found")
+		return
+	}
+
+	if err := h.requireApprovedCommercialEvidence(r.Context(), schemaName, tenantID, documents.EntityTypeOrder, orderID, req.RequireApprovedEvidence, errApprovedOrderEvidenceRequired, "emailing order"); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errApprovedOrderEvidenceRequired) {
+			status = http.StatusConflict
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get tenant")
+		return
+	}
+
+	template, err := h.emailService.GetTemplate(r.Context(), schemaName, tenantID, email.TemplateOrderConfirm)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get email template")
+		return
+	}
+
+	data := &email.TemplateData{
+		CompanyName: t.Name,
+		ContactName: req.RecipientName,
+		OrderNumber: order.OrderNumber,
+		TotalAmount: order.Total.StringFixed(2),
+		Currency:    order.Currency,
+		OrderDate:   order.OrderDate.Format("2006-01-02"),
+		Message:     req.Message,
+	}
+	if order.ExpectedDelivery != nil {
+		data.ExpectedDelivery = order.ExpectedDelivery.Format("2006-01-02")
+	}
+
+	subject, bodyHTML, bodyText, err := h.emailService.RenderTemplate(template, data)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to render email template")
+		return
+	}
+	if req.Subject != "" {
+		subject = req.Subject
+	}
+
+	var attachments []email.Attachment
+	if req.AttachPDF {
+		pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
+		pdfBytes, err := h.pdfService.GenerateOrderPDF(order, t, pdfSettings)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
+			return
+		}
+		attachments = append(attachments, email.Attachment{
+			Filename:    "order-" + order.OrderNumber + ".pdf",
+			Content:     pdfBytes,
+			ContentType: "application/pdf",
+		})
+	}
+
+	result, err := h.emailService.SendEmail(r.Context(), schemaName, tenantID, string(email.TemplateOrderConfirm), req.RecipientEmail, req.RecipientName, subject, bodyHTML, bodyText, attachments, orderID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if order.Status == orders.OrderStatusPending {
+		_ = h.ordersService.Confirm(r.Context(), tenantID, schemaName, orderID)
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // EmailPaymentReceipt sends a payment receipt via email
 // @Summary Email payment receipt
 // @Description Send a payment receipt to a recipient via email
@@ -4265,6 +4479,51 @@ func (h *Handlers) GetQuote(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, quote)
 }
 
+// GetQuotePDF generates and returns a PDF for a quote
+// @Summary Download quote PDF
+// @Description Generate and download a PDF for a quote
+// @Tags Quotes
+// @Produce application/pdf
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param quoteID path string true "Quote ID"
+// @Success 200 {file} binary
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/quotes/{quoteID}/pdf [get]
+func (h *Handlers) GetQuotePDF(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	quoteID := chi.URLParam(r, "quoteID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	quote, err := h.quotesService.GetByID(r.Context(), tenantID, schemaName, quoteID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Quote not found")
+		return
+	}
+
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get tenant")
+		return
+	}
+
+	pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
+	pdfBytes, err := h.pdfService.GenerateQuotePDF(quote, t, pdfSettings)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
+		return
+	}
+
+	filename := "quote-" + quote.QuoteNumber + ".pdf"
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(pdfBytes)))
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pdfBytes)
+}
+
 // UpdateQuote updates a quote
 // @Summary Update quote
 // @Description Update a draft quote
@@ -4715,6 +4974,51 @@ func (h *Handlers) GetOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, order)
+}
+
+// GetOrderPDF generates and returns a PDF for an order
+// @Summary Download order PDF
+// @Description Generate and download a PDF for an order
+// @Tags Orders
+// @Produce application/pdf
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param orderID path string true "Order ID"
+// @Success 200 {file} binary
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/orders/{orderID}/pdf [get]
+func (h *Handlers) GetOrderPDF(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	orderID := chi.URLParam(r, "orderID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	order, err := h.ordersService.GetByID(r.Context(), tenantID, schemaName, orderID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Order not found")
+		return
+	}
+
+	t, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get tenant")
+		return
+	}
+
+	pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
+	pdfBytes, err := h.pdfService.GenerateOrderPDF(order, t, pdfSettings)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
+		return
+	}
+
+	filename := "order-" + order.OrderNumber + ".pdf"
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(pdfBytes)))
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pdfBytes)
 }
 
 // CheckOrderStock reports whether tracked order lines have enough available stock.

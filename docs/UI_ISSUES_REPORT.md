@@ -243,8 +243,8 @@ Each view is tested for:
 | ------------ | ------ | --------------------------------------------------------------------------------------- |
 | Page Load    | ✅     | Loads correctly                                                                         |
 | Data Display | ✅     | Shows quotes with statuses in table                                                     |
-| Navigation   | ✅     | New Quote button visible, status filter works, accepted quote conversion action visible |
-| CRUD         | ✅     | Create, delete, send, accept, and quote-to-invoice conversion verified                  |
+| Navigation   | ✅     | New Quote button visible, status filter works, PDF/email/send/convert actions visible  |
+| CRUD         | ✅     | Create, delete, PDF download, email, send, accept, and quote-to-invoice conversion verified |
 | Errors       | ✅     | No errors observed                                                                      |
 | Responsive   | ⚠️     | Needs manual verification                                                               |
 
@@ -253,12 +253,12 @@ Each view is tested for:
 - Displays seeded quotes with statuses and controls
 - Creates a quote and filters by status
 - Creates and deletes a draft quote
+- Downloads a quote PDF and submits the quote email workflow
 - Sends, accepts, and converts a quote into a draft invoice
 
 **Known Issues (require manual verification):**
 
-- Email quote functionality needs implementation
-- Quote PDF generation needs verification
+- Responsive layout still needs manual verification
 
 **Overall:** ✅ Working
 
@@ -271,7 +271,7 @@ Each view is tested for:
 | Page Load    | ✅     | Loads correctly                                                           |
 | Data Display | ✅     | Shows orders with statuses, links to quotes                               |
 | Navigation   | ✅     | New Order button visible, status filter works                             |
-| CRUD         | ✅     | Create, delete, status workflow, and order-to-invoice conversion verified |
+| CRUD         | ✅     | Create, delete, PDF download, email, status workflow, and order-to-invoice conversion verified |
 | Errors       | ✅     | No errors observed                                                        |
 | Responsive   | ⚠️     | Needs manual verification                                                 |
 
@@ -280,11 +280,12 @@ Each view is tested for:
 - Displays seeded orders with statuses and controls
 - Creates an order and filters by status
 - Creates and deletes a pending order
+- Downloads an order PDF and submits the order email workflow
 - Moves an order through lifecycle and converts the delivered order into a draft invoice
 
 **Known Issues (require manual verification):**
 
-- Email/order PDF workflows need verification
+- Responsive layout still needs manual verification
 
 **Overall:** ✅ Working
 
@@ -945,6 +946,7 @@ _None identified_
 | 2026-01-12 | Claude | Tested Banking section (2 pages) - All Working (WebFetch)                                                                                           |
 | 2026-01-12 | Claude | Tested Payroll section (5 pages) - All Working (WebFetch)                                                                                           |
 | 2026-01-12 | Claude | Note: E2E tests blocked by demo user credential mismatch (demo1-4 not seeded)                                                                       |
+| 2026-06-12 | Codex  | Tested Quotes and Orders PDF/email workflows - Working (focused demo E2E passed against branch API on localhost:18081)                              |
 | 2026-06-08 | Codex  | Tested Quotes (/quotes) - Working (4/4 E2E tests passed, quote-to-invoice conversion verified)                                                      |
 | 2026-01-11 | Claude | Tested Cash Payments (/payments/cash) - Working (5/5 E2E tests passed)                                                                              |
 | 2026-01-11 | Claude | Tested Recurring (/recurring) - Working (4/4 E2E tests passed)                                                                                      |

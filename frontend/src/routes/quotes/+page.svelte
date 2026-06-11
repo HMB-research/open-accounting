@@ -27,6 +27,13 @@
 	let filterStatus = $state<QuoteStatus | ''>('');
 	let filterFromDate = $state('');
 	let filterToDate = $state('');
+	let emailQuoteTarget = $state<Quote | null>(null);
+	let emailRecipientEmail = $state('');
+	let emailRecipientName = $state('');
+	let emailSubject = $state('');
+	let emailMessage = $state('');
+	let emailAttachPDF = $state(true);
+	let emailRequireApprovedEvidence = $state(false);
 
 	// New quote form
 	let newContactId = $state('');
@@ -143,6 +150,61 @@
 		}
 	}
 
+	async function downloadQuotePDF(quote: Quote) {
+		const tenantId = requireTenantId($page, (err) => (error = err));
+		if (!tenantId) return;
+
+		actionLoading = true;
+		error = '';
+		try {
+			await api.downloadQuotePDF(tenantId, quote.id, quote.quote_number);
+			success = m.quotes_pdfDownloaded();
+			setTimeout(() => (success = ''), 3000);
+		} catch (err) {
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
+		}
+	}
+
+	function openEmailQuote(quote: Quote) {
+		const contact = getContact(quote.contact_id);
+		emailQuoteTarget = quote;
+		emailRecipientEmail = contact?.email || '';
+		emailRecipientName = contact?.name || '';
+		emailSubject = `Quote ${quote.quote_number}`;
+		emailMessage = '';
+		emailAttachPDF = true;
+		emailRequireApprovedEvidence = false;
+	}
+
+	async function sendQuoteEmail(e: Event) {
+		e.preventDefault();
+		const tenantId = requireTenantId($page, (err) => (error = err));
+		if (!tenantId || !emailQuoteTarget) return;
+
+		actionLoading = true;
+		error = '';
+		try {
+			await api.emailQuote(tenantId, emailQuoteTarget.id, {
+				recipient_email: emailRecipientEmail.trim(),
+				recipient_name: emailRecipientName.trim() || undefined,
+				subject: emailSubject.trim() || undefined,
+				message: emailMessage.trim() || undefined,
+				attach_pdf: emailAttachPDF,
+				require_approved_evidence: emailRequireApprovedEvidence
+			});
+			emailQuoteTarget = null;
+			success = m.quotes_emailSent();
+			setTimeout(() => (success = ''), 3000);
+			loadData(tenantId);
+		} catch (err) {
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
+		}
+	}
+
 	async function acceptQuote(quoteId: string) {
 		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
@@ -227,8 +289,12 @@
 
 	// formatCurrency and formatDate imported from $lib/utils/formatting
 
+	function getContact(contactId: string): Contact | undefined {
+		return contacts.find((c) => c.id === contactId);
+	}
+
 	function getContactName(contactId: string): string {
-		const contact = contacts.find((c) => c.id === contactId);
+		const contact = getContact(contactId);
 		return contact?.name || '-';
 	}
 </script>
@@ -309,24 +375,31 @@
 								</td>
 								<td class="amount text-right" data-label={m.common_total()}>{formatCurrency(quote.total)}</td>
 								<td class="actions hide-mobile" data-label={m.common_actions()}>
+									<button class="btn btn-small" onclick={() => downloadQuotePDF(quote)} disabled={actionLoading} title={m.invoices_downloadPdf()}>
+										PDF
+									</button>
+									<button class="btn btn-small" onclick={() => openEmailQuote(quote)} disabled={actionLoading} title={m.quotes_emailQuote()}>
+										{m.quotes_email()}
+									</button>
 									{#if quote.status === 'DRAFT'}
-										<button class="btn btn-small" onclick={() => sendQuote(quote.id)} title={m.quotes_send()}>
+										<button class="btn btn-small" onclick={() => sendQuote(quote.id)} disabled={actionLoading} title={m.quotes_send()}>
 											{m.quotes_send()}
 										</button>
-										<button class="btn btn-small btn-danger" onclick={() => deleteQuote(quote.id)} title={m.common_delete()}>
+										<button class="btn btn-small btn-danger" onclick={() => deleteQuote(quote.id)} disabled={actionLoading} title={m.common_delete()}>
 											{m.common_delete()}
 										</button>
 									{:else if quote.status === 'SENT'}
-										<button class="btn btn-small btn-success" onclick={() => acceptQuote(quote.id)} title={m.quotes_accept()}>
+										<button class="btn btn-small btn-success" onclick={() => acceptQuote(quote.id)} disabled={actionLoading} title={m.quotes_accept()}>
 											{m.quotes_accept()}
 										</button>
-										<button class="btn btn-small btn-danger" onclick={() => rejectQuote(quote.id)} title={m.quotes_reject()}>
+										<button class="btn btn-small btn-danger" onclick={() => rejectQuote(quote.id)} disabled={actionLoading} title={m.quotes_reject()}>
 											{m.quotes_reject()}
 										</button>
 									{:else if quote.status === 'ACCEPTED'}
 										<button
 											class="btn btn-small btn-success"
 											onclick={() => convertQuoteToInvoice(quote.id)}
+											disabled={actionLoading}
 											title={m.quotes_convertToInvoice()}
 										>
 											{m.quotes_convertToInvoice()}
@@ -453,6 +526,54 @@
 	</div>
 {/if}
 
+{#if emailQuoteTarget}
+	<div class="modal-backdrop">
+		<div class="modal card" role="dialog" aria-modal="true" aria-labelledby="email-quote-title" tabindex="-1">
+			<h2 id="email-quote-title">{m.quotes_emailQuote()}</h2>
+			<form onsubmit={sendQuoteEmail}>
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="quote-email-recipient">{m.common_email()} *</label>
+						<input class="input" id="quote-email-recipient" type="email" bind:value={emailRecipientEmail} required />
+					</div>
+					<div class="form-group">
+						<label class="label" for="quote-email-name">{m.common_name()}</label>
+						<input class="input" id="quote-email-name" bind:value={emailRecipientName} />
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="quote-email-subject">{m.email_subject()}</label>
+					<input class="input" id="quote-email-subject" bind:value={emailSubject} />
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="quote-email-message">{m.recurring_emailMessageLabel()}</label>
+					<textarea class="input" id="quote-email-message" bind:value={emailMessage} rows="3"></textarea>
+				</div>
+
+				<label class="checkbox-row">
+					<input type="checkbox" bind:checked={emailAttachPDF} />
+					<span>{m.quotes_attachPdf()}</span>
+				</label>
+				<label class="checkbox-row">
+					<input type="checkbox" bind:checked={emailRequireApprovedEvidence} />
+					<span>{m.quotes_requireApprovedEvidence()}</span>
+				</label>
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={() => (emailQuoteTarget = null)}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-primary" disabled={actionLoading}>
+						{m.quotes_email()}
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
 <style>
 	.page-header {
 		display: flex;
@@ -492,6 +613,7 @@
 	.actions {
 		display: flex;
 		gap: 0.5rem;
+		flex-wrap: wrap;
 	}
 
 	.btn-small {
@@ -606,6 +728,13 @@
 		justify-content: flex-end;
 		gap: 0.5rem;
 		margin-top: 1.5rem;
+	}
+
+	.checkbox-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.75rem;
 	}
 
 	@media (max-width: 768px) {
