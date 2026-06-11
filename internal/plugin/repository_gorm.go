@@ -448,7 +448,7 @@ func (r *GORMRepository) GetTenantPluginsWithAll(ctx context.Context, tenantID u
 		return nil, fmt.Errorf("list tenant plugins: %w", err)
 	}
 
-	var tenantPlugins []TenantPlugin
+	tenantPlugins := make([]TenantPlugin, 0, len(results))
 	for _, res := range results {
 		p := modelToPlugin(&res.Plugin)
 		tp := TenantPlugin{
