@@ -259,6 +259,30 @@ The next CI Playwright artifact should confirm whether the prior payment-reminde
 
 CI run `27308618173` on commit `e54697f` confirmed the prior payment-reminder tail was distributed. The highest single-spec cost shifted to `demo/absences.spec.ts` at 137.300s across 12 micro-tests.
 
+CI run `27325104193` on commit `8c48fa1` confirmed the legacy broad view and inventory specs had been removed or distributed. The highest single-spec costs shifted to smaller workflow files:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/tax-overview.spec.ts` | 75.973s | 5 |
+| `auth.spec.ts` | 71.557s | 8 |
+| `demo/payments.spec.ts` | 70.494s | 6 |
+| `demo/cash-payments.spec.ts` | 68.829s | 6 |
+| `demo/plugins-settings.spec.ts` | 68.396s | 6 |
+
+## Follow-up: Tax Overview Workflow Consolidation
+
+Consolidated `demo/tax-overview.spec.ts` from five page-structure micro-tests into one route-owned workflow test. The test now opens `/tax` with a KMD API readiness wait, verifies the VAT controls, generates a declaration for `2026-06`, asserts the POST response shape, and verifies the rendered declaration and VAT amount labels.
+
+The stronger workflow assertion exposed a real demo reset bug: fresh tenant schemas created through `create_tenant_schema` did not include `journal_entry_lines.vat_rate` or `journal_entry_lines.is_vat_inclusive`, so KMD generation returned a 500 from the tax repository. Migration `052_journal_line_vat_tenant_bootstrap` makes the existing VAT helper tenant-bootstrap owned and normalizes existing schemas; the `JournalEntryLine` GORM model now includes the VAT fields.
+
+Local focused baseline against the branch API showed `demo/tax-overview.spec.ts` at 12.483s across 5 tests. After the consolidation and schema fix, the same coverage reports:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/tax-overview.spec.ts` | 1.239s | 1 |
+
+The next CI Playwright artifact should confirm whether the former tax overview entry is no longer a shard tail. The next measured demo E2E candidates are `auth.spec.ts`, `payments`, `cash-payments`, and `plugins-settings`.
+
 ## Follow-up: Absences Workflow Consolidation
 
 Replaced `demo/absences.spec.ts` with workflow-sized files and moved repeated route setup into `demo/absences-utils.ts`:

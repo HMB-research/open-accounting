@@ -94,6 +94,8 @@ type JournalEntryLine struct {
 	ExchangeRate   Decimal `gorm:"type:numeric(18,10);not null;default:1" json:"exchange_rate"`
 	BaseDebit      Decimal `gorm:"type:numeric(28,8);not null;default:0" json:"base_debit"`
 	BaseCredit     Decimal `gorm:"type:numeric(28,8);not null;default:0" json:"base_credit"`
+	VATRate        Decimal `gorm:"column:vat_rate;type:numeric(5,2);not null;default:0" json:"vat_rate"`
+	IsVATInclusive bool    `gorm:"column:is_vat_inclusive;not null;default:false" json:"is_vat_inclusive"`
 
 	// Relations
 	JournalEntry *JournalEntry `gorm:"foreignKey:JournalEntryID" json:"journal_entry,omitempty"`
