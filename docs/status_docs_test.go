@@ -133,7 +133,7 @@ func TestWorkflowDemoE2EGatesMatchDocumentation(t *testing.T) {
 			t.Fatalf("local e2e job missing shard snippet %q", snippet)
 		}
 	}
-	if strings.Contains(localE2E, "continue-on-error") {
+	if workflowJobHasJobLevelContinueOnError(localE2E) {
 		t.Fatal("local seeded e2e job must be a blocking CI gate")
 	}
 
@@ -242,4 +242,13 @@ func workflowJobBlock(t *testing.T, workflow, jobName string) string {
 		}
 	}
 	return strings.Join(lines[start:end], "\n")
+}
+
+func workflowJobHasJobLevelContinueOnError(jobBlock string) bool {
+	for _, line := range strings.Split(jobBlock, "\n") {
+		if strings.HasPrefix(line, "    continue-on-error:") {
+			return true
+		}
+	}
+	return false
 }
