@@ -1751,6 +1751,208 @@ func TestService_GetInventoryValuation(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid valuation method")
 }
 
+func TestService_GetInventoryLotReport(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products["p1"] = &Product{
+		ID:             "p1",
+		TenantID:       "tenant-1",
+		Code:           "SKU-001",
+		Name:           "Widget",
+		ProductType:    ProductTypeGoods,
+		PurchasePrice:  decimal.RequireFromString("6.00"),
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	ts.repo.Products["p2"] = &Product{
+		ID:             "p2",
+		TenantID:       "tenant-1",
+		Code:           "SRV-001",
+		Name:           "Consulting",
+		ProductType:    ProductTypeService,
+		PurchasePrice:  decimal.RequireFromString("99.00"),
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	ts.repo.Products["p3"] = &Product{
+		ID:             "p3",
+		TenantID:       "tenant-1",
+		Code:           "SKU-002",
+		Name:           "Untracked part",
+		ProductType:    ProductTypeGoods,
+		PurchasePrice:  decimal.RequireFromString("2.00"),
+		TrackInventory: false,
+		IsActive:       true,
+	}
+	ts.repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Code: "MAIN", Name: "Main warehouse", IsActive: true}
+	ts.repo.Warehouses["wh-2"] = &Warehouse{ID: "wh-2", TenantID: "tenant-1", Code: "BRANCH", Name: "Branch warehouse", IsActive: true}
+
+	lotReceiptDate := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	lotIssueDate := time.Date(2026, 1, 3, 10, 0, 0, 0, time.UTC)
+	serialReceiptDate := time.Date(2026, 1, 4, 10, 0, 0, 0, time.UTC)
+	ts.repo.Movements["p1"] = []InventoryMovement{
+		{
+			ID:           "mov-lot-in",
+			TenantID:     "tenant-1",
+			ProductID:    "p1",
+			WarehouseID:  "wh-1",
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("10.00"),
+			UnitCost:     decimal.RequireFromString("5.00"),
+			TotalCost:    decimal.RequireFromString("50.00"),
+			LotNumber:    "LOT-A",
+			ExpiryDate:   "2027-01-31",
+			MovementDate: lotReceiptDate,
+		},
+		{
+			ID:           "mov-lot-out",
+			TenantID:     "tenant-1",
+			ProductID:    "p1",
+			WarehouseID:  "wh-1",
+			MovementType: MovementTypeOut,
+			Quantity:     decimal.RequireFromString("3.00"),
+			LotNumber:    "LOT-A",
+			ExpiryDate:   "2027-01-31",
+			MovementDate: lotIssueDate,
+		},
+		{
+			ID:           "mov-untracked-in",
+			TenantID:     "tenant-1",
+			ProductID:    "p1",
+			WarehouseID:  "wh-1",
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("4.00"),
+			UnitCost:     decimal.RequireFromString("4.00"),
+			TotalCost:    decimal.RequireFromString("16.00"),
+			MovementDate: time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:           "mov-zero-in",
+			TenantID:     "tenant-1",
+			ProductID:    "p1",
+			WarehouseID:  "wh-1",
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("2.00"),
+			UnitCost:     decimal.RequireFromString("7.00"),
+			TotalCost:    decimal.RequireFromString("14.00"),
+			LotNumber:    "LOT-ZERO",
+		},
+		{
+			ID:           "mov-zero-out",
+			TenantID:     "tenant-1",
+			ProductID:    "p1",
+			WarehouseID:  "wh-1",
+			MovementType: MovementTypeOut,
+			Quantity:     decimal.RequireFromString("2.00"),
+			LotNumber:    "LOT-ZERO",
+		},
+		{
+			ID:           "mov-serial-in",
+			TenantID:     "tenant-1",
+			ProductID:    "p1",
+			WarehouseID:  "wh-2",
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("1.00"),
+			UnitCost:     decimal.RequireFromString("9.00"),
+			TotalCost:    decimal.RequireFromString("9.00"),
+			SerialNumber: "SN-001",
+			MovementDate: serialReceiptDate,
+		},
+		{
+			ID:           "mov-other-tenant",
+			TenantID:     "tenant-2",
+			ProductID:    "p1",
+			WarehouseID:  "wh-1",
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("100.00"),
+			LotNumber:    "OTHER",
+		},
+	}
+	ts.repo.Movements["p2"] = []InventoryMovement{
+		{
+			ID:           "mov-service",
+			TenantID:     "tenant-1",
+			ProductID:    "p2",
+			WarehouseID:  "wh-1",
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("100.00"),
+			LotNumber:    "SERVICE",
+		},
+	}
+	ts.repo.Movements["p3"] = []InventoryMovement{
+		{
+			ID:           "mov-untracked-product",
+			TenantID:     "tenant-1",
+			ProductID:    "p3",
+			WarehouseID:  "wh-1",
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("100.00"),
+			LotNumber:    "UNTRACKED-PRODUCT",
+		},
+	}
+
+	report, err := ts.svc.GetInventoryLotReport(ctx, "tenant-1", "test_schema", "", "", false)
+	require.NoError(t, err)
+	require.Len(t, report.Lines, 3)
+	assert.Equal(t, "tenant-1", report.TenantID)
+	assert.False(t, report.IncludeEmpty)
+	assert.True(t, report.TotalQuantity.Equal(decimal.RequireFromString("12.00")))
+	assert.True(t, report.TotalValue.Equal(decimal.RequireFromString("60.00")))
+
+	lotLine := findInventoryLotLine(t, report, "wh-1", "LOT-A", "", "2027-01-31")
+	assert.Equal(t, "SKU-001", lotLine.ProductCode)
+	assert.Equal(t, "MAIN", lotLine.WarehouseCode)
+	assert.True(t, lotLine.Quantity.Equal(decimal.RequireFromString("7.00")))
+	assert.True(t, lotLine.UnitCost.Equal(decimal.RequireFromString("5.00")))
+	assert.True(t, lotLine.InventoryValue.Equal(decimal.RequireFromString("35.00")))
+	assert.Equal(t, lotIssueDate, lotLine.LastMovementDate)
+
+	untrackedLine := findInventoryLotLine(t, report, "wh-1", "", "", "")
+	assert.True(t, untrackedLine.Quantity.Equal(decimal.RequireFromString("4.00")))
+	assert.True(t, untrackedLine.UnitCost.Equal(decimal.RequireFromString("4.00")))
+
+	serialLine := findInventoryLotLine(t, report, "wh-2", "", "SN-001", "")
+	assert.Equal(t, "BRANCH", serialLine.WarehouseCode)
+	assert.True(t, serialLine.Quantity.Equal(decimal.RequireFromString("1.00")))
+	assert.True(t, serialLine.InventoryValue.Equal(decimal.RequireFromString("9.00")))
+	assert.Equal(t, serialReceiptDate, serialLine.LastMovementDate)
+
+	filtered, err := ts.svc.GetInventoryLotReport(ctx, "tenant-1", "test_schema", "p1", "wh-1", false)
+	require.NoError(t, err)
+	require.Len(t, filtered.Lines, 2)
+	assert.Equal(t, "p1", filtered.ProductID)
+	assert.Equal(t, "wh-1", filtered.WarehouseID)
+	assert.True(t, filtered.TotalQuantity.Equal(decimal.RequireFromString("11.00")))
+
+	withEmpty, err := ts.svc.GetInventoryLotReport(ctx, "tenant-1", "test_schema", "", "", true)
+	require.NoError(t, err)
+	require.Len(t, withEmpty.Lines, 4)
+	assert.True(t, withEmpty.IncludeEmpty)
+	emptyLine := findInventoryLotLine(t, withEmpty, "wh-1", "LOT-ZERO", "", "")
+	assert.True(t, emptyLine.Quantity.IsZero())
+	assert.True(t, emptyLine.InventoryValue.IsZero())
+
+	_, err = ts.svc.GetInventoryLotReport(ctx, "tenant-1", "test_schema", "missing", "", false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get product")
+
+	_, err = ts.svc.GetInventoryLotReport(ctx, "tenant-1", "test_schema", "", "missing", false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get warehouse")
+}
+
+func findInventoryLotLine(t *testing.T, report *InventoryLotReport, warehouseID, lotNumber, serialNumber, expiryDate string) InventoryLotLine {
+	t.Helper()
+	for _, line := range report.Lines {
+		if line.WarehouseID == warehouseID && line.LotNumber == lotNumber && line.SerialNumber == serialNumber && line.ExpiryDate == expiryDate {
+			return line
+		}
+	}
+	require.Failf(t, "lot line not found", "warehouse=%s lot=%s serial=%s expiry=%s", warehouseID, lotNumber, serialNumber, expiryDate)
+	return InventoryLotLine{}
+}
+
 func TestNewService(t *testing.T) {
 	svc := NewService(nil)
 	assert.NotNil(t, svc)

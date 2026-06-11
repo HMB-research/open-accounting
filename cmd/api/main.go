@@ -632,6 +632,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/products/{productID}/stock-levels", h.GetStockLevels)
 				r.Get("/products/{productID}/movements", h.GetInventoryMovements)
 				r.Get("/inventory/valuation", h.GetInventoryValuation)
+				r.Get("/inventory/lots", h.GetInventoryLotReport)
 
 				// Inventory - Warehouses
 				r.Get("/warehouses", h.ListWarehouses)

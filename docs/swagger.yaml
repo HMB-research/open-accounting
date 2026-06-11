@@ -2862,6 +2862,56 @@ definitions:
       row:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_inventory.InventoryLotLine:
+    properties:
+      expiry_date:
+        type: string
+      inventory_value:
+        type: number
+      last_movement_date:
+        type: string
+      lot_number:
+        type: string
+      product_code:
+        type: string
+      product_id:
+        type: string
+      product_name:
+        type: string
+      quantity:
+        type: number
+      serial_number:
+        type: string
+      unit_cost:
+        type: number
+      warehouse_code:
+        type: string
+      warehouse_id:
+        type: string
+      warehouse_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.InventoryLotReport:
+    properties:
+      generated_at:
+        type: string
+      include_empty:
+        type: boolean
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryLotLine'
+        type: array
+      product_id:
+        type: string
+      tenant_id:
+        type: string
+      total_quantity:
+        type: number
+      total_value:
+        type: number
+      warehouse_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_inventory.InventoryMovement:
     properties:
       created_at:
@@ -12126,6 +12176,54 @@ paths:
       security:
       - BearerAuth: []
       summary: Adjust product stock
+      tags:
+      - Inventory
+  /tenants/{tenantID}/inventory/lots:
+    get:
+      description: Return on-hand tracked goods stock grouped by lot number, serial
+        number, expiry date, and warehouse
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Product ID
+        in: query
+        name: product_id
+        type: string
+      - description: Warehouse ID
+        in: query
+        name: warehouse_id
+        type: string
+      - description: Include zero or negative lot positions
+        in: query
+        name: include_empty
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryLotReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get inventory lot report
       tags:
       - Inventory
   /tenants/{tenantID}/inventory/release:

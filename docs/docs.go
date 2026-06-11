@@ -8637,6 +8637,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/inventory/lots": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Return on-hand tracked goods stock grouped by lot number, serial number, expiry date, and warehouse",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inventory"
+                ],
+                "summary": "Get inventory lot report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Product ID",
+                        "name": "product_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Warehouse ID",
+                        "name": "warehouse_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include zero or negative lot positions",
+                        "name": "include_empty",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryLotReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/inventory/release": {
             "post": {
                 "security": [
@@ -25427,6 +25501,82 @@ const docTemplate = `{
                 },
                 "row": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.InventoryLotLine": {
+            "type": "object",
+            "properties": {
+                "expiry_date": {
+                    "type": "string"
+                },
+                "inventory_value": {
+                    "type": "number"
+                },
+                "last_movement_date": {
+                    "type": "string"
+                },
+                "lot_number": {
+                    "type": "string"
+                },
+                "product_code": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "product_name": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "unit_cost": {
+                    "type": "number"
+                },
+                "warehouse_code": {
+                    "type": "string"
+                },
+                "warehouse_id": {
+                    "type": "string"
+                },
+                "warehouse_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.InventoryLotReport": {
+            "type": "object",
+            "properties": {
+                "generated_at": {
+                    "type": "string"
+                },
+                "include_empty": {
+                    "type": "boolean"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryLotLine"
+                    }
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_quantity": {
+                    "type": "number"
+                },
+                "total_value": {
+                    "type": "number"
+                },
+                "warehouse_id": {
+                    "type": "string"
                 }
             }
         },

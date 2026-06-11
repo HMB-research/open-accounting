@@ -6762,6 +6762,48 @@ func (h *Handlers) GetInventoryValuation(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, report)
 }
 
+// GetInventoryLotReport returns stock grouped by lot, serial, and expiry metadata.
+// @Summary Get inventory lot report
+// @Description Return on-hand tracked goods stock grouped by lot number, serial number, expiry date, and warehouse
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param product_id query string false "Product ID"
+// @Param warehouse_id query string false "Warehouse ID"
+// @Param include_empty query bool false "Include zero or negative lot positions"
+// @Success 200 {object} inventory.InventoryLotReport
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/inventory/lots [get]
+func (h *Handlers) GetInventoryLotReport(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	productID := strings.TrimSpace(r.URL.Query().Get("product_id"))
+	warehouseID := strings.TrimSpace(r.URL.Query().Get("warehouse_id"))
+	includeEmpty := false
+	if value := strings.TrimSpace(r.URL.Query().Get("include_empty")); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "include_empty must be a boolean")
+			return
+		}
+		includeEmpty = parsed
+	}
+
+	report, err := h.inventoryService.GetInventoryLotReport(r.Context(), tenantID, schemaName, productID, warehouseID, includeEmpty)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "get product") || strings.Contains(err.Error(), "get warehouse") {
+			status = http.StatusBadRequest
+		}
+		respondError(w, status, fmt.Sprintf("Failed to get inventory lot report: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, report)
+}
+
 // ListWarehouses lists all warehouses.
 // @Summary List warehouses
 // @Description List tenant warehouses, optionally filtering to active warehouses

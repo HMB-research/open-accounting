@@ -8943,6 +8943,32 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"total_value":     "120.00",
 		"generated_at":    "2026-03-15T12:00:00Z",
 	}
+	lotReportPayload := map[string]any{
+		"tenant_id":     "tenant-1",
+		"product_id":    "prod-1",
+		"warehouse_id":  "wh-1",
+		"include_empty": true,
+		"lines": []map[string]any{
+			{
+				"product_id":         "prod-1",
+				"product_code":       "PRD-001",
+				"product_name":       "Widget",
+				"warehouse_id":       "wh-1",
+				"warehouse_code":     "MAIN",
+				"warehouse_name":     "Main warehouse",
+				"lot_number":         "LOT-2026-01",
+				"serial_number":      "SN-001",
+				"expiry_date":        "2027-01-31",
+				"quantity":           "7.00",
+				"unit_cost":          "10.00",
+				"inventory_value":    "70.00",
+				"last_movement_date": "2026-03-15T12:00:00Z",
+			},
+		},
+		"total_quantity": "7.00",
+		"total_value":    "70.00",
+		"generated_at":   "2026-03-15T12:00:00Z",
+	}
 	categoryImportFile := writeTempCSV(t, "categories.csv", "name,description\nParts,Spare parts\n")
 	importFile := writeTempCSV(t, "products.csv", "code,name,sales_price\nSKU-001,Widget,15.00\n")
 	warehouseImportFile := writeTempCSV(t, "warehouses.csv", "code,name,address,is_default\nMAIN,Main warehouse,Tallinn,true\n")
@@ -9031,6 +9057,11 @@ func TestCLIInventoryCommands(t *testing.T) {
 			require.Equal(t, "wh-1", r.URL.Query().Get("warehouse_id"))
 			require.Equal(t, "weighted-average", r.URL.Query().Get("method"))
 			_ = json.NewEncoder(w).Encode(valuationPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/lots":
+			require.Equal(t, "prod-1", r.URL.Query().Get("product_id"))
+			require.Equal(t, "wh-1", r.URL.Query().Get("warehouse_id"))
+			require.Equal(t, "true", r.URL.Query().Get("include_empty"))
+			_ = json.NewEncoder(w).Encode(lotReportPayload)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-1":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/warehouses":
@@ -9259,6 +9290,20 @@ func TestCLIInventoryCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"valuation_method": "WEIGHTED_AVERAGE"`)
 	assert.Contains(t, stdout.String(), `"total_value": "120"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "lots", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--include-empty"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Inventory lots")
+	assert.Contains(t, stdout.String(), "PRD-001 Widget")
+	assert.Contains(t, stdout.String(), "LOT-2026-01")
+	assert.Contains(t, stdout.String(), "70")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "lots", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--include-empty", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"lot_number": "LOT-2026-01"`)
+	assert.Contains(t, stdout.String(), `"total_value": "70"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "products", "delete", "--id", "prod-1"})
@@ -9688,6 +9733,7 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		want string
 	}{
 		{name: "valuation bad flag", args: []string{"inventory", "valuation", "--bad"}, want: "flag provided but not defined"},
+		{name: "lots bad flag", args: []string{"inventory", "lots", "--bad"}, want: "flag provided but not defined"},
 		{name: "adjust bad flag", args: []string{"inventory", "adjust", "--bad"}, want: "flag provided but not defined"},
 		{name: "transfer bad flag", args: []string{"inventory", "transfer", "--bad"}, want: "flag provided but not defined"},
 		{name: "reserve bad flag", args: []string{"inventory", "reserve", "--bad"}, want: "flag provided but not defined"},
@@ -9788,6 +9834,7 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		args []string
 	}{
 		{name: "valuation", args: []string{"inventory", "valuation", "--warehouse-id", "wh-1", "--method", "fifo"}},
+		{name: "lots", args: []string{"inventory", "lots"}},
 		{name: "adjust", args: []string{"inventory", "adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "1", "--unit-cost", "10"}},
 		{name: "transfer", args: []string{"inventory", "transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "1"}},
 		{name: "reserve", args: []string{"inventory", "reserve", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "1"}},

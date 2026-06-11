@@ -553,6 +553,220 @@ func (r *InventoryValuationReport) addValuationLine(line InventoryValuationLine)
 	r.TotalValue = r.TotalValue.Add(line.InventoryValue)
 }
 
+// GetInventoryLotReport returns on-hand stock grouped by lot, serial, and expiry metadata.
+func (s *Service) GetInventoryLotReport(ctx context.Context, tenantID, schemaName, productID, warehouseID string, includeEmpty bool) (*InventoryLotReport, error) {
+	productID = strings.TrimSpace(productID)
+	warehouseID = strings.TrimSpace(warehouseID)
+
+	if warehouseID != "" {
+		if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, warehouseID); err != nil {
+			return nil, fmt.Errorf("get warehouse: %w", err)
+		}
+	}
+
+	products, err := s.inventoryLotReportProducts(ctx, tenantID, schemaName, productID)
+	if err != nil {
+		return nil, err
+	}
+
+	warehouses, err := s.repo.ListWarehouses(ctx, schemaName, tenantID, false)
+	if err != nil {
+		return nil, fmt.Errorf("list warehouses: %w", err)
+	}
+	warehouseByID := make(map[string]Warehouse, len(warehouses))
+	for _, warehouse := range warehouses {
+		warehouseByID[warehouse.ID] = warehouse
+	}
+
+	report := &InventoryLotReport{
+		TenantID:      tenantID,
+		ProductID:     productID,
+		WarehouseID:   warehouseID,
+		IncludeEmpty:  includeEmpty,
+		Lines:         []InventoryLotLine{},
+		TotalQuantity: decimal.Zero,
+		TotalValue:    decimal.Zero,
+		GeneratedAt:   time.Now(),
+	}
+
+	positions := make(map[inventoryLotKey]*inventoryLotAccumulator)
+	for _, product := range products {
+		if product.ProductType != ProductTypeGoods || !product.TrackInventory {
+			continue
+		}
+
+		movements, err := s.repo.ListMovements(ctx, schemaName, tenantID, product.ID)
+		if err != nil {
+			return nil, fmt.Errorf("list movements for product %s: %w", product.ID, err)
+		}
+		for _, movement := range movements {
+			if movement.TenantID != tenantID {
+				continue
+			}
+			addInventoryLotReportMovement(positions, product, warehouseByID, movement, warehouseID)
+		}
+	}
+
+	lines := make([]InventoryLotLine, 0, len(positions))
+	for _, position := range positions {
+		line := position.line
+		if !includeEmpty && line.Quantity.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+		line.UnitCost = position.product.PurchasePrice
+		if position.costQuantity.GreaterThan(decimal.Zero) {
+			line.UnitCost = position.costTotal.Div(position.costQuantity)
+		}
+		line.InventoryValue = line.Quantity.Mul(line.UnitCost)
+		lines = append(lines, line)
+	}
+
+	sort.SliceStable(lines, func(i, j int) bool {
+		left := lines[i]
+		right := lines[j]
+		leftKey := strings.Join([]string{left.ProductCode, left.ProductName, left.ProductID, left.WarehouseCode, left.WarehouseName, left.WarehouseID, left.ExpiryDate, left.LotNumber, left.SerialNumber}, "\x00")
+		rightKey := strings.Join([]string{right.ProductCode, right.ProductName, right.ProductID, right.WarehouseCode, right.WarehouseName, right.WarehouseID, right.ExpiryDate, right.LotNumber, right.SerialNumber}, "\x00")
+		return leftKey < rightKey
+	})
+
+	for _, line := range lines {
+		report.addLotLine(line)
+	}
+
+	return report, nil
+}
+
+func (s *Service) inventoryLotReportProducts(ctx context.Context, tenantID, schemaName, productID string) ([]Product, error) {
+	if productID != "" {
+		product, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID)
+		if err != nil {
+			return nil, fmt.Errorf("get product: %w", err)
+		}
+		return []Product{*product}, nil
+	}
+
+	products, err := s.repo.ListProducts(ctx, schemaName, tenantID, &ProductFilter{ProductType: ProductTypeGoods})
+	if err != nil {
+		return nil, fmt.Errorf("list products: %w", err)
+	}
+	return products, nil
+}
+
+type inventoryLotKey struct {
+	productID    string
+	warehouseID  string
+	lotNumber    string
+	serialNumber string
+	expiryDate   string
+}
+
+type inventoryLotAccumulator struct {
+	product      Product
+	line         InventoryLotLine
+	costQuantity decimal.Decimal
+	costTotal    decimal.Decimal
+}
+
+func addInventoryLotReportMovement(positions map[inventoryLotKey]*inventoryLotAccumulator, product Product, warehouseByID map[string]Warehouse, movement InventoryMovement, warehouseIDFilter string) {
+	quantity := movement.Quantity
+	if movement.MovementType != MovementTypeAdjustment {
+		quantity = quantity.Abs()
+	}
+
+	switch movement.MovementType {
+	case MovementTypeOut:
+		addInventoryLotReportQuantity(positions, product, warehouseByID, movement, warehouseIDFilter, quantity.Neg())
+	case MovementTypeTransfer:
+		if strings.TrimSpace(movement.ToWarehouseID) == "" {
+			addInventoryLotReportQuantity(positions, product, warehouseByID, movement, warehouseIDFilter, quantity)
+			return
+		}
+		addInventoryLotReportQuantity(positions, product, warehouseByID, movement, warehouseIDFilter, quantity.Neg())
+		destinationMovement := movement
+		destinationMovement.WarehouseID = movement.ToWarehouseID
+		addInventoryLotReportQuantity(positions, product, warehouseByID, destinationMovement, warehouseIDFilter, quantity)
+	case MovementTypeIn, MovementTypeAdjustment:
+		addInventoryLotReportQuantity(positions, product, warehouseByID, movement, warehouseIDFilter, quantity)
+	}
+}
+
+func addInventoryLotReportQuantity(positions map[inventoryLotKey]*inventoryLotAccumulator, product Product, warehouseByID map[string]Warehouse, movement InventoryMovement, warehouseIDFilter string, quantity decimal.Decimal) {
+	if quantity.IsZero() {
+		return
+	}
+
+	movementWarehouseID := strings.TrimSpace(movement.WarehouseID)
+	if warehouseIDFilter != "" && movementWarehouseID != warehouseIDFilter {
+		return
+	}
+
+	key := inventoryLotKey{
+		productID:    product.ID,
+		warehouseID:  movementWarehouseID,
+		lotNumber:    strings.TrimSpace(movement.LotNumber),
+		serialNumber: strings.TrimSpace(movement.SerialNumber),
+		expiryDate:   strings.TrimSpace(movement.ExpiryDate),
+	}
+
+	position := positions[key]
+	if position == nil {
+		warehouse := warehouseByID[movementWarehouseID]
+		line := InventoryLotLine{
+			ProductID:     product.ID,
+			ProductCode:   product.Code,
+			ProductName:   product.Name,
+			WarehouseID:   movementWarehouseID,
+			WarehouseCode: warehouse.Code,
+			WarehouseName: warehouse.Name,
+			LotNumber:     key.lotNumber,
+			SerialNumber:  key.serialNumber,
+			ExpiryDate:    key.expiryDate,
+			Quantity:      decimal.Zero,
+			UnitCost:      decimal.Zero,
+		}
+		if line.WarehouseID == "" {
+			line.WarehouseCode = "UNASSIGNED"
+			line.WarehouseName = "Unassigned"
+		}
+		position = &inventoryLotAccumulator{product: product, line: line, costQuantity: decimal.Zero, costTotal: decimal.Zero}
+		positions[key] = position
+	}
+
+	position.line.Quantity = position.line.Quantity.Add(quantity)
+	movementDate := inventoryLotMovementDate(movement)
+	if position.line.LastMovementDate.IsZero() || movementDate.After(position.line.LastMovementDate) {
+		position.line.LastMovementDate = movementDate
+	}
+
+	if quantity.LessThanOrEqual(decimal.Zero) {
+		return
+	}
+
+	movementCost := movement.TotalCost
+	if movementCost.IsZero() && movement.UnitCost.GreaterThan(decimal.Zero) {
+		movementCost = quantity.Mul(movement.UnitCost)
+	}
+	if movementCost.LessThanOrEqual(decimal.Zero) {
+		return
+	}
+
+	position.costQuantity = position.costQuantity.Add(quantity)
+	position.costTotal = position.costTotal.Add(movementCost)
+}
+
+func inventoryLotMovementDate(movement InventoryMovement) time.Time {
+	if !movement.MovementDate.IsZero() {
+		return movement.MovementDate
+	}
+	return movement.CreatedAt
+}
+
+func (r *InventoryLotReport) addLotLine(line InventoryLotLine) {
+	r.Lines = append(r.Lines, line)
+	r.TotalQuantity = r.TotalQuantity.Add(line.Quantity)
+	r.TotalValue = r.TotalValue.Add(line.InventoryValue)
+}
+
 // AdjustStock adjusts stock level for a product
 func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, req *AdjustStockRequest) (*InventoryMovement, error) {
 	quantity, err := decimal.NewFromString(req.Quantity)

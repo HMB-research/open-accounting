@@ -174,6 +174,35 @@ type InventoryValuationReport struct {
 	GeneratedAt     time.Time                `json:"generated_at"`
 }
 
+// InventoryLotLine represents one lot, serial, expiry, or untracked stock position.
+type InventoryLotLine struct {
+	ProductID        string          `json:"product_id"`
+	ProductCode      string          `json:"product_code"`
+	ProductName      string          `json:"product_name"`
+	WarehouseID      string          `json:"warehouse_id,omitempty"`
+	WarehouseCode    string          `json:"warehouse_code,omitempty"`
+	WarehouseName    string          `json:"warehouse_name,omitempty"`
+	LotNumber        string          `json:"lot_number,omitempty"`
+	SerialNumber     string          `json:"serial_number,omitempty"`
+	ExpiryDate       string          `json:"expiry_date,omitempty"`
+	Quantity         decimal.Decimal `json:"quantity"`
+	UnitCost         decimal.Decimal `json:"unit_cost"`
+	InventoryValue   decimal.Decimal `json:"inventory_value"`
+	LastMovementDate time.Time       `json:"last_movement_date"`
+}
+
+// InventoryLotReport summarizes on-hand stock by lot, serial, and expiry metadata.
+type InventoryLotReport struct {
+	TenantID      string             `json:"tenant_id"`
+	ProductID     string             `json:"product_id,omitempty"`
+	WarehouseID   string             `json:"warehouse_id,omitempty"`
+	IncludeEmpty  bool               `json:"include_empty"`
+	Lines         []InventoryLotLine `json:"lines"`
+	TotalQuantity decimal.Decimal    `json:"total_quantity"`
+	TotalValue    decimal.Decimal    `json:"total_value"`
+	GeneratedAt   time.Time          `json:"generated_at"`
+}
+
 // CreateProductRequest represents a request to create a product
 type CreateProductRequest struct {
 	Code               string `json:"code,omitempty"`

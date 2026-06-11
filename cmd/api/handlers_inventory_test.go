@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -1186,6 +1187,93 @@ func TestGetInventoryValuation(t *testing.T) {
 	assert.True(t, result.Lines[0].UnitCost.Equal(decimal.RequireFromString("10.00")))
 	assert.True(t, result.TotalQuantity.Equal(decimal.RequireFromString("12.00")))
 	assert.True(t, result.TotalValue.Equal(decimal.RequireFromString("120.00")))
+}
+
+func TestGetInventoryLotReport(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+	repo.products["prod-1"] = &inventory.Product{
+		ID:             "prod-1",
+		TenantID:       "tenant-1",
+		Code:           "SKU-001",
+		Name:           "Widget",
+		ProductType:    inventory.ProductTypeGoods,
+		PurchasePrice:  decimal.RequireFromString("6.00"),
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	repo.warehouses["wh-1"] = &inventory.Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Code:     "MAIN",
+		Name:     "Main Warehouse",
+	}
+	repo.movements["prod-1"] = []inventory.InventoryMovement{
+		{
+			ID:           "mov-1",
+			TenantID:     "tenant-1",
+			ProductID:    "prod-1",
+			WarehouseID:  "wh-1",
+			MovementType: inventory.MovementTypeIn,
+			Quantity:     decimal.RequireFromString("10.00"),
+			UnitCost:     decimal.RequireFromString("5.00"),
+			TotalCost:    decimal.RequireFromString("50.00"),
+			LotNumber:    "LOT-A",
+			ExpiryDate:   "2027-01-31",
+			MovementDate: time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:           "mov-2",
+			TenantID:     "tenant-1",
+			ProductID:    "prod-1",
+			WarehouseID:  "wh-1",
+			MovementType: inventory.MovementTypeOut,
+			Quantity:     decimal.RequireFromString("3.00"),
+			LotNumber:    "LOT-A",
+			ExpiryDate:   "2027-01-31",
+			MovementDate: time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/inventory/lots?product_id=prod-1&warehouse_id=wh-1&include_empty=true", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.GetInventoryLotReport(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var result inventory.InventoryLotReport
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+	require.Len(t, result.Lines, 1)
+	assert.Equal(t, "tenant-1", result.TenantID)
+	assert.Equal(t, "prod-1", result.ProductID)
+	assert.Equal(t, "wh-1", result.WarehouseID)
+	assert.True(t, result.IncludeEmpty)
+	assert.Equal(t, "SKU-001", result.Lines[0].ProductCode)
+	assert.Equal(t, "MAIN", result.Lines[0].WarehouseCode)
+	assert.Equal(t, "LOT-A", result.Lines[0].LotNumber)
+	assert.Equal(t, "2027-01-31", result.Lines[0].ExpiryDate)
+	assert.True(t, result.Lines[0].Quantity.Equal(decimal.RequireFromString("7.00")))
+	assert.True(t, result.Lines[0].UnitCost.Equal(decimal.RequireFromString("5.00")))
+	assert.True(t, result.Lines[0].InventoryValue.Equal(decimal.RequireFromString("35.00")))
+	assert.True(t, result.TotalQuantity.Equal(decimal.RequireFromString("7.00")))
+	assert.True(t, result.TotalValue.Equal(decimal.RequireFromString("35.00")))
+
+	badBoolReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/inventory/lots?include_empty=maybe", nil)
+	badBoolReq = withURLParams(badBoolReq, map[string]string{"tenantID": "tenant-1"})
+	badBoolReq = badBoolReq.WithContext(contextWithClaims(badBoolReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	badBoolRR := httptest.NewRecorder()
+	h.GetInventoryLotReport(badBoolRR, badBoolReq)
+
+	assert.Equal(t, http.StatusBadRequest, badBoolRR.Code)
+	assert.Contains(t, badBoolRR.Body.String(), "include_empty must be a boolean")
 }
 
 func TestListProductCategories(t *testing.T) {
