@@ -576,24 +576,30 @@ Each view is tested for:
 
 ### Banking
 
-> **Note:** Verified via WebFetch (E2E tests blocked by demo user credential mismatch).
-
 #### /banking
 
-| Criteria     | Status | Notes                                           |
-| ------------ | ------ | ----------------------------------------------- |
-| Page Load    | ✅     | Page renders with "Bank Reconciliation" heading |
-| Data Display | ✅     | "Add Bank Account" button visible               |
-| Navigation   | ✅     | Navigation visible                              |
-| CRUD         | ⚠️     | Read verified, need E2E for full CRUD           |
-| Errors       | ✅     | No errors observed                              |
-| Responsive   | ⚠️     | Needs manual verification                       |
+| Criteria     | Status | Notes                                                                              |
+| ------------ | ------ | ---------------------------------------------------------------------------------- |
+| Page Load    | ✅     | Page renders with "Bank Reconciliation" heading                                    |
+| Data Display | ✅     | Bank accounts, transactions, amounts, and reconciliation statuses render correctly |
+| Navigation   | ✅     | Navigation visible; import action opens the transaction import workflow            |
+| CRUD         | ✅     | Bank account creation and transaction-to-payment reconciliation verified by E2E    |
+| Errors       | ✅     | No errors observed                                                                 |
+| Responsive   | ⚠️     | Needs manual verification                                                          |
 
 **Features Verified:**
 
 - Bank Reconciliation interface
 - Add Bank Account action button
-- Client-side rendering with API connection
+- Seeded account and transaction display
+- Bank account creation from the banking page
+- Imported unmatched bank transaction converted into a matched payment
+
+**E2E Tests:** 3 focused workflows passed
+
+- Displays seeded bank accounts, transactions, amounts, and statuses
+- Creates a new bank account and verifies the persisted selector entry
+- Imports a unique LHV transaction, creates a payment from it, and verifies the refreshed matched row
 
 **Overall:** ✅ Working
 
@@ -617,6 +623,7 @@ Each view is tested for:
 - Exposes Auto, Generic CSV, LHV CSV, and LHV CAMT.053 format presets
 - Previews selected LHV CSV statement data before import
 - Imports an LHV CSV statement and verifies the new unmatched transaction on the banking page
+- Converts the imported unmatched transaction into a payment and verifies the matched banking row
 
 **Overall:** ✅ Working
 
@@ -903,6 +910,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Added `/banking` demo E2E coverage for bank account creation and imported transaction-to-payment reconciliation                                      |
 | 2026-06-11 | Codex  | Added `/tsd` demo E2E coverage for XML/CSV export and manual submitted status with EMTA reference refresh                                            |
 | 2026-06-11 | Codex  | Added `/payroll` demo E2E lifecycle coverage for create, calculate, approve, payslip review, and generated TSD declaration verification              |
 | 2026-06-11 | Codex  | Added `/employees/absences` demo E2E coverage for leave request lifecycle, balance initialization, balance CSV import, and document-number display   |

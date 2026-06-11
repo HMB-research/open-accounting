@@ -4252,12 +4252,12 @@ export interface BankAccount {
   account_number: string;
   bank_name?: string;
   currency: string;
-  opening_balance: Decimal;
-  current_balance: Decimal;
+  balance?: Decimal;
   gl_account_id?: string;
+  is_default?: boolean;
   is_active: boolean;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface BankTransaction {
@@ -4334,7 +4334,6 @@ export interface CreateBankAccountRequest {
   account_number: string;
   bank_name?: string;
   currency?: string;
-  opening_balance?: string;
   gl_account_id?: string;
 }
 
