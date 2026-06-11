@@ -2,30 +2,27 @@ import { test, expect } from '@playwright/test';
 import { DEMO_URL } from './utils';
 import { loginAsDemoEnv } from './env-utils';
 
+const dashboardViewports = [
+	{ label: 'mobile', size: { width: 375, height: 667 } },
+	{ label: 'tablet', size: { width: 768, height: 1024 } }
+];
+
 test.describe('Demo Environment - Responsive Design', () => {
-	test('Mobile viewport works', async ({ page }, testInfo) => {
-		await page.setViewportSize({ width: 375, height: 667 });
-		await loginAsDemoEnv(page, testInfo);
+	test('mobile and tablet viewports work', async ({ page }, testInfo) => {
+		for (const viewport of dashboardViewports) {
+			await page.setViewportSize(viewport.size);
+			await loginAsDemoEnv(page, testInfo);
 
-		await expect(page).toHaveURL(/dashboard/);
+			await expect(page).toHaveURL(/dashboard/);
 
-		const content = page.locator('main, [class*="content"]').first();
-		await expect(content).toBeVisible();
-	});
-
-	test('Tablet viewport works', async ({ page }, testInfo) => {
-		await page.setViewportSize({ width: 768, height: 1024 });
-		await loginAsDemoEnv(page, testInfo);
-
-		await expect(page).toHaveURL(/dashboard/);
-
-		const content = page.locator('main, [class*="content"]').first();
-		await expect(content).toBeVisible();
+			const content = page.locator('main, [class*="content"]').first();
+			await expect(content, `${viewport.label} dashboard content`).toBeVisible();
+		}
 	});
 });
 
 test.describe('Demo Environment - Error Handling', () => {
-	test('Unknown route handled gracefully', async ({ page }) => {
+	test('handles unknown and protected routes gracefully', async ({ page }) => {
 		await page.goto(`${DEMO_URL}/this-page-does-not-exist`);
 		await page.waitForLoadState('domcontentloaded');
 
@@ -34,9 +31,7 @@ test.describe('Demo Environment - Error Handling', () => {
 		const hasContent = await page.locator('body').isVisible();
 
 		expect(is404 || redirected || hasContent).toBeTruthy();
-	});
 
-	test('Protected routes require authentication', async ({ page }) => {
 		await page.goto(`${DEMO_URL}/dashboard`);
 		await page.waitForLoadState('domcontentloaded');
 
