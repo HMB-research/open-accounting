@@ -13,6 +13,9 @@ import {
   getDemoCredentials,
 } from "./utils";
 
+const routeLoadTimeout = 30_000;
+const apiResponseTimeout = 30_000;
+
 interface TenantResponse {
   id: string;
   name: string;
@@ -65,9 +68,12 @@ async function openCompanySettingsFromOverview(
   testInfo: TestInfo,
 ): Promise<TenantResponse> {
   const { tenantId } = getDemoCredentials(testInfo);
-  const tenantLoaded = page.waitForResponse(tenantResponse(tenantId));
+  const tenantLoaded = page.waitForResponse(tenantResponse(tenantId), {
+    timeout: apiResponseTimeout,
+  });
   const historyLoaded = page.waitForResponse(
     periodCloseEventsResponse(tenantId),
+    { timeout: apiResponseTimeout },
   );
 
   await page
@@ -76,7 +82,7 @@ async function openCompanySettingsFromOverview(
 
   const tenantResult = await tenantLoaded;
   await historyLoaded;
-  await waitForRouteReady(page, "#company-settings-form");
+  await waitForRouteReady(page, "#company-settings-form", routeLoadTimeout);
 
   return (await tenantResult.json()) as TenantResponse;
 }
@@ -150,6 +156,7 @@ test.describe("Demo Settings", () => {
 
     const updateResponsePromise = page.waitForResponse(
       updateTenantResponse(tenantId),
+      { timeout: apiResponseTimeout },
     );
     await page
       .locator("form#company-settings-form button[type='submit']")

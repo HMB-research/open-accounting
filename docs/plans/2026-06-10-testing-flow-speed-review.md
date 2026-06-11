@@ -1534,8 +1534,37 @@ Reporter timing from the repeat-run `frontend/demo-test-results.json`:
 | `demo/settings.spec.ts` | 12.286s | 5 | 5 |
 | `demo/auth.setup.ts` | 2.798s | 1 | 1 |
 
-The next CI artifact should confirm the remote spec-level reduction. Remaining
-measured consolidation targets from run `27346709661` are `tsd`,
+CI run `27349875704` on commit `ab91d7d4beed851586a52a96073795806eaee309`
+failed only on `e2e (4, 4)`. The hard failures were existing shard-neighbor
+waits in `demo/salary-calculator.spec.ts` and `demo/tax-overview.spec.ts`;
+`demo/settings.spec.ts` was reported as flaky. All three failures timed out on
+initial route response waits under CI shard load, while screenshots showed the
+route shell or even completed salary results were visible.
+
+The follow-up hardening keeps API proof for explicit actions but stops using
+initial route response events as readiness gates. Salary and tax route opens
+now wait for route-owned loaded UI states, tax generation still asserts the
+KMD `POST` and reload response, and settings keeps tenant/history/update API
+assertions with 30s response ceilings for the slower shard.
+
+Local branch-API proof after the shard-4 hardening:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/salary-calculator.spec.ts e2e/demo/settings.spec.ts e2e/demo/tax-overview.spec.ts --workers=4` | 4 passed in 11.3s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --shard=4/4 --workers=4` | 22 passed and 12 skipped in 17.5s, including `auth-setup` |
+
+Reporter timing from the local shard-4 run:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/settings.spec.ts` | 1.965s | 1 | 1 |
+| `demo/tax-overview.spec.ts` | 1.781s | 1 | 1 |
+| `demo/salary-calculator.spec.ts` | 1.482s | 1 | 1 |
+
+The next CI artifact after hardening should confirm the remote spec-level
+reduction. Remaining measured consolidation targets from run `27346709661` are
+`tsd`,
 `env-health-auth`, `mobile-navigation`, `banking`, and
 `payment-reminders-selection`; `auth.setup` remains separate shared setup
 overhead.
