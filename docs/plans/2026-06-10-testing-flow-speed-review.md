@@ -586,3 +586,19 @@ The focused command reported `4 passed (8.7s)` including the shared
 the prior payments shard tail is reduced. The next measured demo E2E candidates
 from run `27327520607` are `bank-import`, `plugins-settings`, `fixed-assets`,
 `recurring`, and `cash-flow`.
+
+CI run `27328010552` on commit `b950ab8` confirmed the prior payments tail was
+reduced. `demo/payments.spec.ts` reported 35.977s across three tests, down from
+the prior 70.776s across six tests. The highest remaining single-spec costs
+shifted to:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/fixed-assets.spec.ts` | 64.188s | 6 |
+| `demo/recurring.spec.ts` | 60.827s | 5 |
+| `demo/plugins-settings.spec.ts` | 57.616s | 6 |
+| `demo/env-onboarding.spec.ts` | 57.542s | 5 |
+| `demo/employees.spec.ts` | 55.121s | 4 |
+
+The next measured demo E2E candidates are `fixed-assets`, `recurring`,
+`plugins-settings`, `env-onboarding`, and `employees`.
