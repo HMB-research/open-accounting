@@ -803,7 +803,7 @@ Each view is tested for:
 | Page Load    | ✅     | Page renders with "Cost Centers" heading          |
 | Data Display | ✅     | "+ Add Cost Center" button visible, Loading state |
 | Navigation   | ✅     | Navigation visible                                |
-| CRUD         | ⚠️     | Add/Edit/Delete needs E2E verification            |
+| CRUD         | ✅     | Add/Edit/Delete verified through demo E2E         |
 | Errors       | ✅     | No errors observed                                |
 | Responsive   | ⚠️     | Needs manual verification                         |
 
@@ -813,6 +813,7 @@ Each view is tested for:
 - "Manage cost centers for expense tracking and budget allocation" description
 - Add Cost Center action button
 - Cost allocation assignment controls render for journal entry lines
+- Creates, edits, and deletes a uniquely named cost center through the UI
 
 **Overall:** ✅ Working
 
@@ -871,6 +872,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Added cost-center demo E2E coverage for creating, editing, and deleting a cost center from `/settings/cost-centers`                                  |
 | 2026-06-11 | Codex  | Added fixed-asset UI edit workflow and demo E2E coverage for creating, editing, and deleting a draft asset from `/assets`                            |
 | 2026-06-11 | Codex  | Added demo E2E coverage for saving and reloading SMTP configuration from `/settings/email`                                                          |
 | 2026-06-11 | Codex  | Updated current-state evidence for PR #62 CI run `27364700539`, 100% CLI coverage, and consolidated accounts/cash-payments demo E2E workflows       |
