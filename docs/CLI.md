@@ -294,6 +294,7 @@ go run ./cmd/oa migration validate \
   --bank-transactions ./bank-transactions.csv \
   --payroll-history ./payroll-history.csv \
   --leave-balances ./leave-balances.csv \
+  --tsd-history ./tsd-history.csv \
   --kmd-history ./kmd-history.csv \
   --quotes ./quotes.csv \
   --orders ./orders.csv \
@@ -309,7 +310,7 @@ go run ./cmd/oa migration validate \
 go run ./cmd/oa migration validate --contacts ./contacts.csv --invoices ./invoices.csv --e-invoices ./supplier-einvoices.xml --json
 ```
 
-`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups, Estonian e-invoice XML payloads, and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, e-invoices, payments, bank accounts, bank transactions, payroll history, leave balances, KMD history, quotes, orders, recurring invoice templates, cost centers, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
+`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups, Estonian e-invoice XML payloads, and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, e-invoices, payments, bank accounts, bank transactions, payroll history, leave balances, TSD history, KMD history, quotes, orders, recurring invoice templates, cost centers, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
 
 ## Accounts
 
@@ -435,12 +436,16 @@ go run ./cmd/oa tsd get --year 2026 --month 3
 go run ./cmd/oa tsd generate --run-id <payroll-run-id>
 go run ./cmd/oa tsd export-xml --year 2026 --month 3 --output ./tsd-2026-03.xml
 go run ./cmd/oa tsd export-csv --year 2026 --month 3 --output ./tsd-2026-03.csv
+go run ./cmd/oa tsd import-history --file ./tsd-history.csv
+go run ./cmd/oa tsd import-history --file ./tsd-history.csv --json
 go run ./cmd/oa tsd mark-submitted --year 2026 --month 3 --emta-reference EMTA-123
 go run ./cmd/oa tsd mark-accepted --year 2026 --month 3
 go run ./cmd/oa tsd mark-rejected --year 2026 --month 3
 ```
 
-`tsd list` accepts optional `--year` and `--month` filters; `--month` must be between 1 and 12 when provided. TSD period commands require `--year` and `--month`; `--month` must be between 1 and 12. Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `--json` on list/get/generate/mark-submitted/mark-accepted/mark-rejected for automation.
+`tsd list` accepts optional `--year` and `--month` filters; `--month` must be between 1 and 12 when provided. TSD period commands require `--year` and `--month`; `--month` must be between 1 and 12. Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `--json` on list/get/generate/import-history/mark-submitted/mark-accepted/mark-rejected for automation.
+
+Historical TSD imports use one CSV row per employee declaration row and group rows by `year` + `month`. Required columns are `year`, `month`, `gross_payment`, and an employee identifier (`employee_number`, `personal_code`, `email`, or `first_name` + `last_name`). Optional columns include `status`, `submitted_at`, `emta_reference`, `payment_type`, `basic_exemption`, `taxable_amount`, `income_tax`, `social_tax`, `unemployment_insurance_employer`, `unemployment_insurance_employee`, and `funded_pension`. Existing TSD declaration periods are skipped instead of overwritten.
 
 ## KMD declarations
 
@@ -1191,6 +1196,7 @@ go run ./cmd/oa payroll runs list --year 2026 --json
 go run ./cmd/oa employees import --file ./employees.csv
 go run ./cmd/oa payroll import-history --file ./payroll-history.csv
 go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
+go run ./cmd/oa tsd import-history --file ./tsd-history.csv
 go run ./cmd/oa documents upload --entity-type asset --entity-id <asset-id> --file ./warranty.pdf --document-type asset_record
 ```
 

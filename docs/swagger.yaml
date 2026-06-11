@@ -2034,6 +2034,7 @@ definitions:
     - bank_transactions
     - payroll_history
     - leave_balances
+    - tsd_history
     - kmd_history
     - quotes
     - orders
@@ -2059,6 +2060,7 @@ definitions:
     - KindBankTransactions
     - KindPayrollHistory
     - KindLeaveBalances
+    - KindTSDHistory
     - KindKMDHistory
     - KindQuotes
     - KindOrders
@@ -4491,6 +4493,45 @@ definitions:
         type: integer
     type: object
   github_com_HMB-research_open-accounting_internal_payroll.ImportPayrollHistoryRowError:
+    properties:
+      employee_name:
+        type: string
+      employee_number:
+        type: string
+      message:
+        type: string
+      period_month:
+        type: integer
+      period_year:
+        type: integer
+      row:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryRequest:
+    properties:
+      csv_content:
+        type: string
+      file_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryResult:
+    properties:
+      declarations_created:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryRowError'
+        type: array
+      file_name:
+        type: string
+      rows_imported:
+        type: integer
+      rows_processed:
+        type: integer
+      rows_skipped:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryRowError:
     properties:
       employee_name:
         type: string
@@ -18678,6 +18719,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Export TSD to XML
+      tags:
+      - Payroll
+  /tenants/{tenantID}/tsd/import-history:
+    post:
+      consumes:
+      - application/json
+      description: Import historical TSD declarations and declaration rows from CSV
+        data
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: CSV import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.ImportTSDHistoryResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import historical TSD declarations
       tags:
       - Payroll
   /tenants/{tenantID}/users:

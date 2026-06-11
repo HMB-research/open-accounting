@@ -819,6 +819,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/tsd/{year}/{month}", h.GetTSD)
 				r.Get("/tsd/{year}/{month}/xml", h.ExportTSDXML)
 				r.Get("/tsd/{year}/{month}/csv", h.ExportTSDCSV)
+				r.Post("/tsd/import-history", h.ImportTSDHistory)
 				r.Post("/tsd/{year}/{month}/submit", h.MarkTSDSubmitted)
 				r.Post("/tsd/{year}/{month}/accept", h.MarkTSDAccepted)
 				r.Post("/tsd/{year}/{month}/reject", h.MarkTSDRejected)

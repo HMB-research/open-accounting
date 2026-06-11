@@ -60,6 +60,11 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 			CSVContent: "year,employee_number,absence_type_code,entitled_days\n2026,EMP-1,ANNUAL,28\n",
 		},
 		{
+			Kind:       KindTSDHistory,
+			FileName:   "tsd.csv",
+			CSVContent: "year,month,employee_number,gross_payment\n2026,5,EMP-1,2500\n",
+		},
+		{
 			Kind:       KindKMDHistory,
 			FileName:   "kmd.csv",
 			CSVContent: "year,month,row_code,tax_base,tax_amount\n2026,5,1,100,22\n",
@@ -125,7 +130,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	require.NotNil(t, report)
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 0, report.Summary.ErrorCount)
-	assert.Equal(t, 26, report.Summary.RowsValidated)
+	assert.Equal(t, 27, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
 
 	var stockValidation FileValidation
@@ -147,6 +152,30 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	assert.Equal(t, 1, eInvoiceValidation.Rows)
 	assert.Contains(t, eInvoiceValidation.Headers, "invoice_number")
 	assert.Contains(t, eInvoiceValidation.Headers, "contact_reg_code")
+}
+
+func TestValidateBundleReportsTSDHistoryEmployeeReferenceIssue(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindEmployees,
+			FileName:   "employees.csv",
+			CSVContent: "employee_number,first_name,last_name\nEMP-1,Mari,Maasikas\n",
+		},
+		{
+			Kind:       KindTSDHistory,
+			FileName:   "tsd.csv",
+			CSVContent: "year,month,employee_number,gross_payment\n2026,5,EMP-404,2500\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindTSDHistory, report.Issues[0].Kind)
+	assert.Equal(t, KindEmployees, report.Issues[0].TargetKind)
+	assert.Equal(t, "EMP-404", report.Issues[0].Value)
 }
 
 func TestValidateBundleReportsInventoryReferenceIssues(t *testing.T) {
