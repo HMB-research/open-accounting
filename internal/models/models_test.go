@@ -884,6 +884,8 @@ func TestJournalEntryLine_Fields(t *testing.T) {
 		ExchangeRate:   NewDecimalFromFloat(1.0),
 		BaseDebit:      NewDecimalFromFloat(100.00),
 		BaseCredit:     DecimalZero(),
+		VATRate:        NewDecimalFromFloat(22.00),
+		IsVATInclusive: true,
 	}
 
 	if jel.Description != "Test line" {
@@ -891,6 +893,12 @@ func TestJournalEntryLine_Fields(t *testing.T) {
 	}
 	if jel.DebitAmount.Decimal.InexactFloat64() != 100.00 {
 		t.Errorf("expected 100.00, got %f", jel.DebitAmount.Decimal.InexactFloat64())
+	}
+	if jel.VATRate.Decimal.InexactFloat64() != 22.00 {
+		t.Errorf("expected VAT rate 22.00, got %f", jel.VATRate.Decimal.InexactFloat64())
+	}
+	if !jel.IsVATInclusive {
+		t.Error("expected VAT-inclusive flag to be true")
 	}
 }
 

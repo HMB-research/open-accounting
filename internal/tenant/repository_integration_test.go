@@ -61,6 +61,27 @@ func TestGORMRepository_CreateAndGetTenant(t *testing.T) {
 	if retrieved.Slug != tenant.Slug {
 		t.Errorf("expected slug %s, got %s", tenant.Slug, retrieved.Slug)
 	}
+
+	expectedColumns := map[string]string{
+		"vat_rate":         "numeric",
+		"is_vat_inclusive": "boolean",
+	}
+	for columnName, expectedType := range expectedColumns {
+		var dataType string
+		err = pool.QueryRow(ctx, `
+			SELECT data_type
+			FROM information_schema.columns
+			WHERE table_schema = $1
+			  AND table_name = 'journal_entry_lines'
+			  AND column_name = $2
+		`, schemaName, columnName).Scan(&dataType)
+		if err != nil {
+			t.Fatalf("expected tenant journal_entry_lines.%s column to exist: %v", columnName, err)
+		}
+		if dataType != expectedType {
+			t.Errorf("expected %s to use %s data type, got %s", columnName, expectedType, dataType)
+		}
+	}
 }
 
 func TestGORMRepository_GetTenantBySlug(t *testing.T) {
