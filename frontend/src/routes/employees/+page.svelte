@@ -19,15 +19,19 @@
   let error = $state("");
   let showCreateEmployee = $state(false);
   let showImportEmployees = $state(false);
+  let editingEmployee = $state<Employee | null>(null);
   let showActiveOnly = $state(true);
   let searchQuery = $state("");
   let importError = $state("");
   let importFileName = $state("");
   let importCSVContent = $state("");
   let isImporting = $state(false);
+  let isSavingEmployee = $state(false);
+  let pendingEmployeeId = $state("");
   let importResult = $state<ImportEmployeesResult | null>(null);
 
   // New employee form
+  let newEmployeeNumber = $state("");
   let newFirstName = $state("");
   let newLastName = $state("");
   let newPersonalCode = $state("");
@@ -42,6 +46,25 @@
   let newApplyBasicExemption = $state(true);
   let newBasicExemptionAmount = $state("700.00");
   let newFundedPensionRate = $state("0.02");
+
+  // Edit employee form
+  let editEmployeeNumber = $state("");
+  let editFirstName = $state("");
+  let editLastName = $state("");
+  let editPersonalCode = $state("");
+  let editEmail = $state("");
+  let editPhone = $state("");
+  let editAddress = $state("");
+  let editBankAccount = $state("");
+  let editEndDate = $state("");
+  let editPosition = $state("");
+  let editDepartment = $state("");
+  let editEmploymentType = $state<EmploymentType>("FULL_TIME");
+  let editApplyBasicExemption = $state(true);
+  let editBasicExemptionAmount = $state("700.00");
+  let editFundedPensionRate = $state("0.02");
+  let editIsActive = $state(true);
+
   let filteredEmployees = $derived.by(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) {
@@ -87,6 +110,7 @@
 
     try {
       const employee = await api.createEmployee(tenantId, {
+        employee_number: newEmployeeNumber || undefined,
         first_name: newFirstName,
         last_name: newLastName,
         personal_code: newPersonalCode || undefined,
@@ -102,11 +126,7 @@
         basic_exemption_amount: newBasicExemptionAmount || undefined,
         funded_pension_rate: newFundedPensionRate || undefined,
       });
-      employees = [...employees, employee].sort((a, b) =>
-        `${a.last_name} ${a.first_name}`.localeCompare(
-          `${b.last_name} ${b.first_name}`,
-        ),
-      );
+      employees = sortEmployees([...employees, employee]);
       showCreateEmployee = false;
       resetForm();
     } catch (err) {
@@ -197,6 +217,7 @@
   }
 
   function resetForm() {
+    newEmployeeNumber = "";
     newFirstName = "";
     newLastName = "";
     newPersonalCode = "";
@@ -211,6 +232,111 @@
     newApplyBasicExemption = true;
     newBasicExemptionAmount = "700.00";
     newFundedPensionRate = "0.02";
+  }
+
+  function sortEmployees(employeeList: Employee[]): Employee[] {
+    return [...employeeList].sort((a, b) =>
+      `${a.last_name} ${a.first_name}`.localeCompare(
+        `${b.last_name} ${b.first_name}`,
+      ),
+    );
+  }
+
+  function replaceEmployeeInList(employee: Employee) {
+    employees = sortEmployees(
+      employees
+        .map((current) => (current.id === employee.id ? employee : current))
+        .filter((current) => !showActiveOnly || current.is_active),
+    );
+  }
+
+  function toDateInputValue(value?: string): string {
+    return value ? value.split("T")[0] : "";
+  }
+
+  function decimalInputValue(value: Decimal | string | number): string {
+    return value instanceof Decimal ? value.toString() : String(value);
+  }
+
+  function openEditEmployee(employee: Employee) {
+    editingEmployee = employee;
+    editEmployeeNumber = employee.employee_number || "";
+    editFirstName = employee.first_name;
+    editLastName = employee.last_name;
+    editPersonalCode = employee.personal_code || "";
+    editEmail = employee.email || "";
+    editPhone = employee.phone || "";
+    editAddress = employee.address || "";
+    editBankAccount = employee.bank_account || "";
+    editEndDate = toDateInputValue(employee.end_date);
+    editPosition = employee.position || "";
+    editDepartment = employee.department || "";
+    editEmploymentType = employee.employment_type;
+    editApplyBasicExemption = employee.apply_basic_exemption;
+    editBasicExemptionAmount = formatDecimal(employee.basic_exemption_amount);
+    editFundedPensionRate = decimalInputValue(employee.funded_pension_rate);
+    editIsActive = employee.is_active;
+  }
+
+  function closeEditEmployee() {
+    editingEmployee = null;
+  }
+
+  async function saveEmployee(e: Event) {
+    e.preventDefault();
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (!tenantId || !editingEmployee) return;
+
+    isSavingEmployee = true;
+    error = "";
+
+    try {
+      const employee = await api.updateEmployee(tenantId, editingEmployee.id, {
+        employee_number: editEmployeeNumber || undefined,
+        first_name: editFirstName,
+        last_name: editLastName,
+        personal_code: editPersonalCode || undefined,
+        email: editEmail || undefined,
+        phone: editPhone || undefined,
+        address: editAddress || undefined,
+        bank_account: editBankAccount || undefined,
+        end_date: editEndDate
+          ? dateInputToApiTimestamp(editEndDate)
+          : undefined,
+        position: editPosition || undefined,
+        department: editDepartment || undefined,
+        employment_type: editEmploymentType,
+        apply_basic_exemption: editApplyBasicExemption,
+        basic_exemption_amount: editBasicExemptionAmount || undefined,
+        funded_pension_rate: editFundedPensionRate || undefined,
+        is_active: editIsActive,
+      });
+      replaceEmployeeInList(employee);
+      closeEditEmployee();
+    } catch (err) {
+      error = err instanceof Error ? err.message : m.employees_failedToUpdate();
+    } finally {
+      isSavingEmployee = false;
+    }
+  }
+
+  async function toggleEmployeeActive(employee: Employee) {
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (!tenantId) return;
+
+    pendingEmployeeId = employee.id;
+    error = "";
+
+    try {
+      const updatedEmployee = await api.updateEmployee(tenantId, employee.id, {
+        is_active: !employee.is_active,
+      });
+      replaceEmployeeInList(updatedEmployee);
+    } catch (err) {
+      error = err instanceof Error ? err.message : m.employees_failedToUpdate();
+    } finally {
+      pendingEmployeeId = "";
+    }
   }
 
   async function handleFilter() {
@@ -317,6 +443,7 @@
             <th>{m.employees_basicExemption()}</th>
             <th>{m.employees_pensionRate()}</th>
             <th>{m.employees_status()}</th>
+            <th>{m.common_actions()}</th>
           </tr>
         </thead>
         <tbody>
@@ -366,6 +493,29 @@
                     ? m.employees_active()
                     : m.employees_inactive()}
                 </span>
+              </td>
+              <td data-label={m.common_actions()}>
+                <div class="actions">
+                  <button
+                    type="button"
+                    class="btn btn-small btn-secondary"
+                    onclick={() => openEditEmployee(employee)}
+                  >
+                    {m.common_edit()}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-small"
+                    class:btn-danger={employee.is_active}
+                    class:btn-secondary={!employee.is_active}
+                    disabled={pendingEmployeeId === employee.id}
+                    onclick={() => toggleEmployeeActive(employee)}
+                  >
+                    {employee.is_active
+                      ? m.employees_deactivate()
+                      : m.employees_activate()}
+                  </button>
+                </div>
               </td>
             </tr>
           {/each}
@@ -530,6 +680,18 @@
       <h2 id="create-employee-title">{m.employees_addNewEmployee()}</h2>
       <form onsubmit={createEmployee}>
         <h3 class="section-title">{m.employees_personalInfo()}</h3>
+        <div class="form-group">
+          <label class="label" for="employeeNumber"
+            >{m.employees_employeeNumber()}</label
+          >
+          <input
+            class="input"
+            type="text"
+            id="employeeNumber"
+            bind:value={newEmployeeNumber}
+            placeholder="EMP-001"
+          />
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label class="label" for="firstName"
@@ -734,6 +896,236 @@
   </div>
 {/if}
 
+{#if editingEmployee}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="modal-backdrop" onclick={closeEditEmployee} role="presentation">
+    <div
+      class="modal card"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-employee-title"
+      tabindex="-1"
+    >
+      <h2 id="edit-employee-title">{m.employees_editEmployee()}</h2>
+      <form onsubmit={saveEmployee}>
+        <h3 class="section-title">{m.employees_personalInfo()}</h3>
+        <div class="form-group">
+          <label class="label" for="editEmployeeNumber"
+            >{m.employees_employeeNumber()}</label
+          >
+          <input
+            class="input"
+            type="text"
+            id="editEmployeeNumber"
+            bind:value={editEmployeeNumber}
+            placeholder="EMP-001"
+          />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="label" for="editFirstName"
+              >{m.employees_firstName()} *</label
+            >
+            <input
+              class="input"
+              type="text"
+              id="editFirstName"
+              bind:value={editFirstName}
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label class="label" for="editLastName"
+              >{m.employees_lastName()} *</label
+            >
+            <input
+              class="input"
+              type="text"
+              id="editLastName"
+              bind:value={editLastName}
+              required
+            />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="label" for="editPersonalCode"
+              >{m.employees_personalCodeIsikukood()}</label
+            >
+            <input
+              class="input"
+              type="text"
+              id="editPersonalCode"
+              bind:value={editPersonalCode}
+              maxlength="11"
+            />
+          </div>
+          <div class="form-group">
+            <label class="label" for="editEmail">{m.common_email()}</label>
+            <input
+              class="input"
+              type="email"
+              id="editEmail"
+              bind:value={editEmail}
+            />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="label" for="editPhone">{m.employees_phone()}</label>
+            <input
+              class="input"
+              type="tel"
+              id="editPhone"
+              bind:value={editPhone}
+            />
+          </div>
+          <div class="form-group">
+            <label class="label" for="editBankAccount"
+              >{m.employees_bankAccount()}</label
+            >
+            <input
+              class="input"
+              type="text"
+              id="editBankAccount"
+              bind:value={editBankAccount}
+            />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="label" for="editAddress">{m.employees_address()}</label>
+          <input
+            class="input"
+            type="text"
+            id="editAddress"
+            bind:value={editAddress}
+          />
+        </div>
+
+        <h3 class="section-title">{m.employees_employmentDetails()}</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="label" for="editEndDate"
+              >{m.employees_endDate()}</label
+            >
+            <input
+              class="input"
+              type="date"
+              id="editEndDate"
+              bind:value={editEndDate}
+            />
+          </div>
+          <div class="form-group">
+            <label class="label" for="editEmploymentType"
+              >{m.employees_employmentType()}</label
+            >
+            <select
+              class="input"
+              id="editEmploymentType"
+              bind:value={editEmploymentType}
+            >
+              <option value="FULL_TIME">{m.employees_fullTime()}</option>
+              <option value="PART_TIME">{m.employees_partTime()}</option>
+              <option value="CONTRACT">{m.employees_contract()}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="label" for="editPosition"
+              >{m.employees_position()}</label
+            >
+            <input
+              class="input"
+              type="text"
+              id="editPosition"
+              bind:value={editPosition}
+            />
+          </div>
+          <div class="form-group">
+            <label class="label" for="editDepartment"
+              >{m.employees_department()}</label
+            >
+            <input
+              class="input"
+              type="text"
+              id="editDepartment"
+              bind:value={editDepartment}
+            />
+          </div>
+        </div>
+
+        <h3 class="section-title">{m.employees_taxSettings()}</h3>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={editApplyBasicExemption} />
+            {m.employees_applyBasicExemption()}
+          </label>
+        </div>
+
+        {#if editApplyBasicExemption}
+          <div class="form-group">
+            <label class="label" for="editBasicExemption"
+              >{m.employees_basicExemptionAmount()}</label
+            >
+            <input
+              class="input"
+              type="number"
+              id="editBasicExemption"
+              bind:value={editBasicExemptionAmount}
+              step="0.01"
+              min="0"
+              max="700"
+            />
+            <small class="help-text">{m.employees_basicExemptionHelp()}</small>
+          </div>
+        {/if}
+
+        <div class="form-group">
+          <label class="label" for="editPensionRate"
+            >{m.employees_fundedPensionRate()}</label
+          >
+          <select
+            class="input"
+            id="editPensionRate"
+            bind:value={editFundedPensionRate}
+          >
+            <option value="0">{m.employees_notEnrolled()}</option>
+            <option value="0.02">{m.employees_standard2()}</option>
+            <option value="0.04">{m.employees_increased4()}</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={editIsActive} />
+            {m.employees_active()}
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick={closeEditEmployee}
+          >
+            {m.common_cancel()}
+          </button>
+          <button type="submit" class="btn btn-primary" disabled={isSavingEmployee}
+            >{m.employees_saveEmployee()}</button
+          >
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
+
 <style>
   .header {
     display: flex;
@@ -802,6 +1194,26 @@
 
   .inactive {
     opacity: 0.6;
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .btn-small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-danger {
+    background: #dc2626;
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #b91c1c;
   }
 
   .badge-active {

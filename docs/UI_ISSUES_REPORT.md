@@ -429,14 +429,16 @@ Each view is tested for:
 | Page Load    | ✅     | Page renders with "Employees" heading                              |
 | Data Display | ✅     | Shows "+ New Employee" button, "Active only" filter, loading state |
 | Navigation   | ✅     | Navigation visible                                                 |
-| CRUD         | ⚠️     | Read verified, Create/Update/Delete need E2E                       |
+| CRUD         | ✅     | Create/Edit/Deactivate/Reactivate verified through demo E2E        |
 | Errors       | ✅     | No errors observed                                                 |
 | Responsive   | ⚠️     | Needs manual verification                                          |
 
 **Features Verified:**
 
 - Employee list view with table structure
-- Add new employee button
+- Add new employee button and employee number capture
+- Edit employee modal updates master data and tax settings
+- Deactivate/reactivate actions preserve payroll history through `is_active`
 - Active/inactive filter toggle
 - Loading state displays correctly
 
@@ -873,6 +875,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Added employee lifecycle UI and demo E2E coverage for create, edit, deactivate, reactivate, and active-only filtering from `/employees`              |
 | 2026-06-11 | Codex  | Strengthened company settings demo E2E to save and reload persisted tenant profile, invoice, contact, and regional settings from `/settings/company` |
 | 2026-06-11 | Codex  | Added cost-center demo E2E coverage for creating, editing, and deleting a cost center from `/settings/cost-centers`                                  |
 | 2026-06-11 | Codex  | Added fixed-asset UI edit workflow and demo E2E coverage for creating, editing, and deleting a draft asset from `/assets`                            |

@@ -32,14 +32,22 @@ function responsePath(responseUrl: string): string {
 }
 
 function employeesResponse(response: Response): boolean {
-  const url = new URL(response.url());
+  return listEmployeesResponse(true)(response);
+}
 
-  return (
-    response.request().method() === "GET" &&
-    response.status() === 200 &&
-    responsePath(response.url()).endsWith("/employees") &&
-    url.searchParams.get("active_only") === "true"
-  );
+function listEmployeesResponse(activeOnly: boolean) {
+  return (response: Response): boolean => {
+    const url = new URL(response.url());
+
+    return (
+      response.request().method() === "GET" &&
+      response.status() === 200 &&
+      responsePath(response.url()).endsWith("/employees") &&
+      (activeOnly
+        ? url.searchParams.get("active_only") === "true"
+        : !url.searchParams.has("active_only"))
+    );
+  };
 }
 
 function createEmployeeResponse(response: Response): boolean {
@@ -48,6 +56,23 @@ function createEmployeeResponse(response: Response): boolean {
     response.status() === 201 &&
     responsePath(response.url()).endsWith("/employees")
   );
+}
+
+function updateEmployeeResponse(employeeId: string) {
+  return (response: Response): boolean =>
+    response.request().method() === "PUT" &&
+    response.status() === 200 &&
+    responsePath(response.url()).endsWith(`/employees/${employeeId}`);
+}
+
+function requestPayload(response: Response): Record<string, unknown> {
+  return response.request().postDataJSON() as Record<string, unknown>;
+}
+
+async function parseEmployeeResponse(
+  response: Response,
+): Promise<EmployeeResponse> {
+  return (await response.json()) as EmployeeResponse;
 }
 
 function displayName(
@@ -86,7 +111,7 @@ test.describe("Demo Employees", () => {
     await ensureDemoTenant(page, testInfo);
   });
 
-  test("verifies seeded employees and creates a test employee", async ({
+  test("verifies seeded employees and manages employee lifecycle", async ({
     page,
   }, testInfo) => {
     const employees = await openEmployeesPage(page, testInfo);
@@ -171,6 +196,7 @@ test.describe("Demo Employees", () => {
     await expect(importDialog).toBeHidden();
 
     const suffix = `${testInfo.workerIndex}-${testInfo.repeatEachIndex}-${Date.now()}`;
+    const createdNumber = `E2E-${suffix.replace(/\D/g, "").slice(-8)}`;
     const createdFirstName = "E2E";
     const createdLastName = `Worker${suffix.replace(/\D/g, "").slice(-8)}`;
     const createdEmail = `e2e.employee.${suffix}@example.com`;
@@ -182,6 +208,7 @@ test.describe("Demo Employees", () => {
       name: /add new employee|lisa uus töötaja/i,
     });
     await expect(createDialog).toBeVisible();
+    await createDialog.locator("#employeeNumber").fill(createdNumber);
     await createDialog.locator("#firstName").fill(createdFirstName);
     await createDialog.locator("#lastName").fill(createdLastName);
     await createDialog.locator("#email").fill(createdEmail);
@@ -198,7 +225,18 @@ test.describe("Demo Employees", () => {
         })
         .click(),
     ]);
-    const createdEmployee = (await createdResponse.json()) as EmployeeResponse;
+    const createdEmployee = await parseEmployeeResponse(createdResponse);
+    expect(requestPayload(createdResponse)).toMatchObject({
+      employee_number: createdNumber,
+      first_name: createdFirstName,
+      last_name: createdLastName,
+      email: createdEmail,
+      position: "E2E Payroll Tester",
+      department: "Quality",
+      employment_type: "PART_TIME",
+      funded_pension_rate: "0.04",
+    });
+    expect(createdEmployee.employee_number).toBe(createdNumber);
     expect(createdEmployee.first_name).toBe(createdFirstName);
     expect(createdEmployee.last_name).toBe(createdLastName);
     expect(createdEmployee.email).toBe(createdEmail);
@@ -212,6 +250,7 @@ test.describe("Demo Employees", () => {
       .first();
     await expect(createdRow).toBeVisible();
     await expect(rows).toHaveCount(employees.length + 1);
+    await expect(createdRow).toContainText(createdNumber);
     await expect(createdRow).toContainText(createdEmail);
     await expect(createdRow).toContainText("E2E Payroll Tester");
     await expect(createdRow).toContainText("Quality");
@@ -222,5 +261,130 @@ test.describe("Demo Employees", () => {
     await expect(createdRow).toContainText(
       formatPercent(createdEmployee.funded_pension_rate),
     );
+
+    const updatedNumber = `${createdNumber}-U`;
+    const updatedEmail = `updated.${createdEmail}`;
+    const updatedPosition = "E2E Updated Specialist";
+    const updatedDepartment = "Payroll Ops";
+
+    await createdRow.getByRole("button", { name: /edit|muuda/i }).click();
+    const editDialog = page.getByRole("dialog", {
+      name: /edit employee|muuda töötajat/i,
+    });
+    await expect(editDialog).toBeVisible();
+    await expect(editDialog.locator("#editEmployeeNumber")).toHaveValue(
+      createdNumber,
+    );
+    await editDialog.locator("#editEmployeeNumber").fill(updatedNumber);
+    await editDialog.locator("#editEmail").fill(updatedEmail);
+    await editDialog.locator("#editPosition").fill(updatedPosition);
+    await editDialog.locator("#editDepartment").fill(updatedDepartment);
+    await editDialog.locator("#editEmploymentType").selectOption("CONTRACT");
+    await editDialog.locator("#editBasicExemption").fill("650.00");
+    await editDialog.locator("#editPensionRate").selectOption("0.02");
+
+    const [updatedResponse] = await Promise.all([
+      page.waitForResponse(updateEmployeeResponse(createdEmployee.id)),
+      editDialog
+        .getByRole("button", {
+          name: /save employee|salvesta töötaja/i,
+        })
+        .click(),
+    ]);
+    const updatedEmployee = await parseEmployeeResponse(updatedResponse);
+    expect(requestPayload(updatedResponse)).toMatchObject({
+      employee_number: updatedNumber,
+      email: updatedEmail,
+      position: updatedPosition,
+      department: updatedDepartment,
+      employment_type: "CONTRACT",
+      basic_exemption_amount: 650,
+      funded_pension_rate: "0.02",
+      is_active: true,
+    });
+    expect(updatedEmployee.employee_number).toBe(updatedNumber);
+    expect(updatedEmployee.email).toBe(updatedEmail);
+    expect(updatedEmployee.position).toBe(updatedPosition);
+    expect(updatedEmployee.department).toBe(updatedDepartment);
+    expect(updatedEmployee.employment_type).toBe("CONTRACT");
+
+    const updatedRow = rows
+      .filter({ hasText: displayName(updatedEmployee) })
+      .first();
+    await expect(updatedRow).toBeVisible();
+    await expect(updatedRow).toContainText(updatedNumber);
+    await expect(updatedRow).toContainText(updatedEmail);
+    await expect(updatedRow).toContainText(updatedPosition);
+    await expect(updatedRow).toContainText(updatedDepartment);
+    await expect(updatedRow).toContainText(/contract|töövõtuleping/i);
+    await expect(updatedRow).toContainText("650.00");
+    await expect(updatedRow).toContainText("2%");
+
+    const [deactivatedResponse] = await Promise.all([
+      page.waitForResponse(updateEmployeeResponse(createdEmployee.id)),
+      updatedRow
+        .getByRole("button", {
+          name: /deactivate|muuda mitteaktiivseks/i,
+        })
+        .click(),
+    ]);
+    const deactivatedEmployee = await parseEmployeeResponse(
+      deactivatedResponse,
+    );
+    expect(requestPayload(deactivatedResponse)).toMatchObject({
+      is_active: false,
+    });
+    expect(deactivatedEmployee.is_active).toBe(false);
+    await expect(rows).toHaveCount(employees.length);
+    await expect(page.getByText(displayName(updatedEmployee))).toHaveCount(0);
+
+    const activeOnly = page.getByLabel(/active only|ainult aktiivsed/i);
+    const allEmployeesLoaded = page.waitForResponse(
+      listEmployeesResponse(false),
+    );
+    await activeOnly.uncheck();
+    const allEmployees = (await (
+      await allEmployeesLoaded
+    ).json()) as EmployeeResponse[];
+    expect(
+      allEmployees.some(
+        (employee) =>
+          employee.id === createdEmployee.id && employee.is_active === false,
+      ),
+    ).toBe(true);
+
+    const inactiveRow = rows
+      .filter({ hasText: displayName(updatedEmployee) })
+      .first();
+    await expect(inactiveRow).toBeVisible();
+    await expect(inactiveRow).toContainText(/inactive|mitteaktiivne/i);
+
+    const [reactivatedResponse] = await Promise.all([
+      page.waitForResponse(updateEmployeeResponse(createdEmployee.id)),
+      inactiveRow
+        .getByRole("button", { name: /activate|muuda aktiivseks/i })
+        .click(),
+    ]);
+    const reactivatedEmployee = await parseEmployeeResponse(
+      reactivatedResponse,
+    );
+    expect(requestPayload(reactivatedResponse)).toMatchObject({
+      is_active: true,
+    });
+    expect(reactivatedEmployee.is_active).toBe(true);
+    await expect(
+      inactiveRow.getByRole("button", {
+        name: /deactivate|muuda mitteaktiivseks/i,
+      }),
+    ).toBeVisible();
+
+    const activeEmployeesLoaded = page.waitForResponse(
+      listEmployeesResponse(true),
+    );
+    await activeOnly.check();
+    await activeEmployeesLoaded;
+    await expect(
+      rows.filter({ hasText: displayName(updatedEmployee) }).first(),
+    ).toBeVisible();
   });
 });
