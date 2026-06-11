@@ -1562,9 +1562,18 @@ Reporter timing from the local shard-4 run:
 | `demo/tax-overview.spec.ts` | 1.781s | 1 | 1 |
 | `demo/salary-calculator.spec.ts` | 1.482s | 1 | 1 |
 
-The next CI artifact after hardening should confirm the remote spec-level
-reduction. Remaining measured consolidation targets from run `27346709661` are
-`tsd`,
-`env-health-auth`, `mobile-navigation`, `banking`, and
-`payment-reminders-selection`; `auth.setup` remains separate shared setup
+Remote proof: CI run `27350669422` on commit
+`1c46a370b0955e0bc1e51e7d3a72c5d9d62883ef` passed all checks, including
+`e2e (4, 4)` in 3m11s. The timing artifact confirmed the hardened specs no
+longer time out on shard 4:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/settings.spec.ts` | 15.921s | 1 | 1 |
+| `demo/tax-overview.spec.ts` | 15.053s | 1 | 1 |
+| `demo/salary-calculator.spec.ts` | 14.328s | 1 | 1 |
+
+Remaining measured consolidation targets from run `27350669422` are `tsd`,
+`payments`, `mobile-navigation`, `payment-reminders-selection`,
+`env-health-auth`, and `banking`; `auth.setup` remains separate shared setup
 overhead.
