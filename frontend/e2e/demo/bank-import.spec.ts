@@ -1,5 +1,5 @@
-import { test, expect, type Page, type TestInfo } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { test, expect, type Page, type Response, type TestInfo } from '@playwright/test';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
 
 const MAIN_DEMO_BANK_ACCOUNT = 'EE123456789012345678';
 
@@ -26,12 +26,52 @@ function buildLHVStatementCSV(externalId: string, description: string, statement
 	].join('\n');
 }
 
+function responsePath(response: Response): string {
+	return new URL(response.url()).pathname;
+}
+
+function isTenantBankAccountsResponse(response: Response): boolean {
+	return (
+		response.request().method() === 'GET' &&
+		response.status() === 200 &&
+		/\/api\/v1\/tenants\/[^/]+\/bank-accounts$/.test(responsePath(response))
+	);
+}
+
+function isBankTransactionsResponse(response: Response): boolean {
+	return (
+		response.request().method() === 'GET' &&
+		response.status() === 200 &&
+		/\/api\/v1\/tenants\/[^/]+\/bank-accounts\/[^/]+\/transactions$/.test(responsePath(response))
+	);
+}
+
+function isBankImportResponse(response: Response): boolean {
+	return (
+		response.request().method() === 'POST' &&
+		response.status() === 200 &&
+		/\/api\/v1\/tenants\/[^/]+\/bank-accounts\/[^/]+\/import$/.test(responsePath(response))
+	);
+}
+
 async function openBankImport(page: Page, testInfo: TestInfo) {
-	await navigateTo(page, '/banking/import', testInfo);
+	const bankAccountsResponse = page.waitForResponse(isTenantBankAccountsResponse);
+	await navigateTo(page, '/banking/import', testInfo, { waitForNetworkIdle: false });
+	await bankAccountsResponse;
+	await waitForRouteReady(page, '.max-w-6xl h1, .max-w-6xl #import-csv-file, .max-w-6xl .bg-red-50');
 
 	await expect(page.getByRole('heading', { name: 'Import Bank Transactions' })).toBeVisible();
 	await expect(page.getByRole('button', { name: /back/i })).toBeVisible();
 	await expect(page.getByText('Select a CSV file to preview')).toBeVisible();
+}
+
+async function openBankingLedger(page: Page, testInfo: TestInfo) {
+	const bankAccountsResponse = page.waitForResponse(isTenantBankAccountsResponse);
+	const transactionsResponse = page.waitForResponse(isBankTransactionsResponse);
+	await navigateTo(page, '/banking', testInfo, { waitForNetworkIdle: false });
+	await bankAccountsResponse;
+	await transactionsResponse;
+	await waitForRouteReady(page, '.max-w-7xl h1, .max-w-7xl table, .max-w-7xl .empty-state, .max-w-7xl .bg-red-50');
 }
 
 async function uploadLHVStatement(page: Page, testInfo: TestInfo): Promise<{ description: string; displayAmount: string }> {
@@ -61,7 +101,7 @@ test.describe('Bank Import View', () => {
 		await ensureDemoTenant(page, testInfo);
 	});
 
-	test('displays bank import page with correct structure', async ({ page }, testInfo) => {
+	test('renders import settings, account presets, and LHV preview', async ({ page }, testInfo) => {
 		await openBankImport(page, testInfo);
 
 		await expect(page.getByRole('heading', { name: 'Import Settings' })).toBeVisible();
@@ -70,10 +110,6 @@ test.describe('Bank Import View', () => {
 		await expect(page.getByLabel('Bank Format Preset')).toBeVisible();
 		await expect(page.getByLabel('Skip duplicate transactions')).toBeChecked();
 		await expect(page.getByRole('button', { name: 'Import Transactions' })).toBeDisabled();
-	});
-
-	test('has bank account selector', async ({ page }, testInfo) => {
-		await openBankImport(page, testInfo);
 
 		const bankSelect = page.getByLabel('Bank Account');
 		await expect(bankSelect).toContainText('Main EUR Account');
@@ -81,10 +117,6 @@ test.describe('Bank Import View', () => {
 
 		const options = await bankSelect.locator('option').count();
 		expect(options).toBeGreaterThanOrEqual(2);
-	});
-
-	test('has bank format presets', async ({ page }, testInfo) => {
-		await openBankImport(page, testInfo);
 
 		const presetSelect = page.getByLabel('Bank Format Preset');
 		await expect(presetSelect.locator('option')).toHaveText([
@@ -93,10 +125,6 @@ test.describe('Bank Import View', () => {
 			'LHV (Estonia)',
 			'LHV CAMT.053'
 		]);
-	});
-
-	test('previews selected LHV statement file', async ({ page }, testInfo) => {
-		await openBankImport(page, testInfo);
 
 		const { description } = await uploadLHVStatement(page, testInfo);
 
@@ -110,17 +138,21 @@ test.describe('Bank Import View', () => {
 
 		const { description, displayAmount } = await uploadLHVStatement(page, testInfo);
 
+		const importResponsePromise = page.waitForResponse(isBankImportResponse);
 		const alertPromise = page.waitForEvent('dialog');
 		await page.getByRole('button', { name: 'Import Transactions' }).click({ noWaitAfter: true });
-		const alert = await alertPromise;
+		const [importResponse, alert] = await Promise.all([importResponsePromise, alertPromise]);
+		expect(importResponse.status()).toBe(200);
 		expect(alert.message()).toMatch(/Imported 1 transactions|Imporditud 1 tehingut/i);
 		await alert.accept();
+		const importResult = await importResponse.json();
+		expect(importResult.transactions_imported).toBe(1);
+		expect(importResult.duplicates_skipped).toBe(0);
 
-		await page.waitForURL(/\/banking/);
-		await navigateTo(page, '/banking', testInfo);
+		await openBankingLedger(page, testInfo);
 
 		const importedRow = page.getByRole('row', { name: new RegExp(description) });
-		await expect(importedRow).toBeVisible();
+		await expect(importedRow).toBeVisible({ timeout: 15000 });
 		await expect(importedRow).toContainText('E2E Import Client');
 		await expect(importedRow).toContainText(displayAmount);
 		await expect(importedRow).toContainText(/Unmatched|Sobitamata/i);
