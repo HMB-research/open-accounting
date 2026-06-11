@@ -776,6 +776,51 @@ the required PR gate:
 |------|--------|-------|
 | `demo/cash-flow.spec.ts` | 63.060s, 6 tests, 6 attempts | 22.218s, 2 tests, 2 attempts |
 
-The highest remaining measured demo E2E candidates are now `recurring`,
-`fixed-assets`, `quotes`, `payroll`, `tsd`, `vat-returns`,
-`salary-calculator`, and `env-onboarding`.
+CI run `27331569311` on commit `e7dcadb` kept the required PR gate green after
+the cash-flow docs follow-up. Its uploaded Playwright artifact showed the
+highest remaining single-file demo E2E candidates:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/fixed-assets.spec.ts` | 62.927s | 6 | 6 |
+| `demo/quotes.spec.ts` | 59.326s | 4 | 4 |
+| `demo/recurring.spec.ts` | 58.940s | 5 | 5 |
+| `demo/tsd.spec.ts` | 57.031s | 5 | 5 |
+| `demo/env-onboarding.spec.ts` | 56.275s | 5 | 5 |
+| `demo/salary-calculator.spec.ts` | 54.661s | 5 | 5 |
+| `demo/vat-returns.spec.ts` | 52.974s | 6 | 6 |
+| `demo/payroll.spec.ts` | 49.828s | 5 | 5 |
+
+## Follow-up: Fixed Assets Spec Consolidation
+
+Consolidated `demo/fixed-assets.spec.ts` from six repeated route tests into two
+workflow checks:
+
+| Workflow | Coverage |
+|----------|----------|
+| Seeded asset controls and table details | Heading, status filter, new-asset button, category header, seeded row count, asset number/name cells, category, active/disposed/draft statuses, and seeded fixed-asset names |
+| Status filtering | DRAFT filter API response, rendered filter value, filtered row count, draft asset visibility, and absent non-draft row |
+
+The route helper now opens `/assets` with `waitForNetworkIdle: false`, waits for
+the fixed-assets list API response, and then waits for route-owned terminal UI.
+The rewritten assertions no longer accept an empty page as success because the
+demo seed contains six fixed assets.
+
+Local focused baseline against the branch API showed:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/fixed-assets.spec.ts` | 11.385s | 6 |
+
+The baseline focused command reported `7 passed (11.2s)` including the shared
+`auth-setup` dependency. After consolidation, the same coverage reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/fixed-assets.spec.ts` | 2.039s | 2 |
+
+The focused command reported `3 passed (8.5s)` including the shared
+`auth-setup` dependency. The next CI Playwright artifact should confirm whether
+the prior fixed-assets shard tail is reduced. The next measured demo E2E
+candidates are `quotes`, `recurring`, `tsd`, `env-onboarding`,
+`salary-calculator`, `vat-returns`, and `payroll`.

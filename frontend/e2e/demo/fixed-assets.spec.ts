@@ -1,13 +1,33 @@
-import { test, expect, type Page } from "@playwright/test";
+import {
+  test,
+  expect,
+  type Page,
+  type Response,
+  type TestInfo,
+} from "@playwright/test";
 import {
   ensureAuthenticated,
   navigateTo,
   ensureDemoTenant,
-  waitForPageReady,
+  waitForRouteReady,
 } from "./utils";
 
+interface FixedAssetResponse {
+  asset_number: string;
+  name: string;
+  status: string;
+}
+
+function isAssetsListResponse(response: Response): boolean {
+  return (
+    response.request().method() === "GET" &&
+    response.status() === 200 &&
+    /\/api\/v1\/tenants\/[^/]+\/assets$/.test(new URL(response.url()).pathname)
+  );
+}
+
 async function waitForAssetsReady(page: Page) {
-  await waitForPageReady(page);
+  await waitForRouteReady(page, ".filters, table, .empty-state, .alert-error");
   await page
     .getByText(/^Loading\.\.\.$/)
     .waitFor({ state: "hidden", timeout: 10000 })
@@ -15,24 +35,28 @@ async function waitForAssetsReady(page: Page) {
   await expect(
     page.getByRole("heading", { name: /fixed assets|assets/i }),
   ).toBeVisible();
-  await expect(async () => {
-    const hasTable = await page
-      .locator("table")
-      .isVisible()
-      .catch(() => false);
-    const hasEmptyState = await page
-      .locator(".empty-state")
-      .isVisible()
-      .catch(() => false);
-    expect(hasTable || hasEmptyState).toBeTruthy();
-  }).toPass({ timeout: 10000 });
+  await expect(
+    page.locator("table, .empty-state, .alert-error").first(),
+  ).toBeVisible();
 }
 
-async function assetRowCount(page: Page): Promise<number> {
-  return page
-    .locator("table tbody tr")
-    .count()
-    .catch(() => 0);
+async function openAssets(
+  page: Page,
+  testInfo: TestInfo,
+): Promise<FixedAssetResponse[]> {
+  const assetsResponsePromise = page.waitForResponse(isAssetsListResponse);
+  await navigateTo(page, "/assets", testInfo, { waitForNetworkIdle: false });
+  const assetsResponse = await assetsResponsePromise;
+  await waitForAssetsReady(page);
+  return (await assetsResponse.json()) as FixedAssetResponse[];
+}
+
+function assetRows(page: Page) {
+  return page.locator("table tbody tr");
+}
+
+function statusFilter(page: Page) {
+  return page.locator(".filters select").first();
 }
 
 test.describe("Fixed Assets View", () => {
@@ -41,94 +65,56 @@ test.describe("Fixed Assets View", () => {
     await ensureDemoTenant(page, testInfo);
   });
 
-  test("displays fixed assets page with correct structure", async ({
+  test("renders seeded asset controls and table details", async ({
     page,
   }, testInfo) => {
-    await navigateTo(page, "/assets", testInfo);
-    await waitForAssetsReady(page);
+    const assets = await openAssets(page, testInfo);
+    const rows = assetRows(page);
 
+    expect(assets.length).toBeGreaterThanOrEqual(6);
+    await expect(rows).toHaveCount(assets.length);
     await expect(page.locator(".filters select").first()).toBeVisible();
     await expect(
       page.getByRole("button", { name: /new asset|new|create|add/i }),
     ).toBeVisible();
-    if ((await assetRowCount(page)) > 0) {
-      await expect(page.getByText(/FA-\d{4}-\d{3}/i).first()).toBeVisible();
-    }
+    await expect(page.locator("table thead")).toContainText(/category/i);
+
+    const serverRow = rows.filter({ hasText: "Dell PowerEdge Server" });
+    await expect(serverRow).toBeVisible();
+    await expect(serverRow).toContainText("FA-2024-001");
+    await expect(serverRow).toContainText(/active/i);
+    await expect(serverRow).toContainText("IT Equipment");
+    await expect(serverRow.locator("td").nth(0)).toBeVisible();
+    await expect(serverRow.locator("td").nth(1)).toBeVisible();
+
+    await expect(rows.filter({ hasText: "Old Projector" })).toContainText(
+      /disposed/i,
+    );
+    await expect(rows.filter({ hasText: "New Monitor Setup" })).toContainText(
+      /draft/i,
+    );
   });
 
-  test("displays asset statuses in table when data exists", async ({
-    page,
-  }, testInfo) => {
-    await navigateTo(page, "/assets", testInfo);
+  test("filters assets by status", async ({ page }, testInfo) => {
+    await openAssets(page, testInfo);
+
+    const draftAssetsResponsePromise = page.waitForResponse((response) => {
+      if (!isAssetsListResponse(response)) return false;
+      return new URL(response.url()).searchParams.get("status") === "DRAFT";
+    });
+    await statusFilter(page).selectOption("DRAFT");
+    const draftAssetsResponse = await draftAssetsResponsePromise;
+    const draftAssets =
+      (await draftAssetsResponse.json()) as FixedAssetResponse[];
+
+    expect(draftAssets).toHaveLength(1);
+    expect(draftAssets[0]?.name).toBe("New Monitor Setup");
+    expect(draftAssets[0]?.status).toBe("DRAFT");
     await waitForAssetsReady(page);
-
-    const table = page.locator("table");
-    if ((await assetRowCount(page)) > 0) {
-      const statusTexts = ["active", "draft", "disposed", "sold", "scrapped"];
-      let foundStatus = false;
-      for (const status of statusTexts) {
-        const hasStatus = await table
-          .getByText(new RegExp(status, "i"))
-          .first()
-          .isVisible()
-          .catch(() => false);
-        if (hasStatus) {
-          foundStatus = true;
-          break;
-        }
-      }
-      expect(foundStatus).toBe(true);
-    }
-  });
-
-  test("shows asset categories when data exists", async ({
-    page,
-  }, testInfo) => {
-    await navigateTo(page, "/assets", testInfo);
-    await waitForAssetsReady(page);
-
-    if ((await assetRowCount(page)) > 0) {
-      await expect(
-        page.locator("table thead").getByText(/category/i),
-      ).toBeVisible();
-      await expect(
-        page.locator("table tbody tr").first().locator("td").nth(3),
-      ).toBeVisible();
-    }
-  });
-
-  test("displays asset details when data exists", async ({
-    page,
-  }, testInfo) => {
-    await navigateTo(page, "/assets", testInfo);
-    await waitForAssetsReady(page);
-
-    if ((await assetRowCount(page)) > 0) {
-      const firstRow = page.locator("table tbody tr").first();
-      await expect(firstRow).toBeVisible();
-      await expect(firstRow.locator("td").nth(0)).toBeVisible();
-      await expect(firstRow.locator("td").nth(1)).toBeVisible();
-    }
-  });
-
-  test("can filter assets by status", async ({ page }, testInfo) => {
-    await navigateTo(page, "/assets", testInfo);
-    await waitForAssetsReady(page);
-
-    const statusFilter = page.locator(".filters select").first();
-    await expect(statusFilter).toBeVisible();
-    await statusFilter.selectOption({ index: 1 });
-    await expect(statusFilter).not.toHaveValue("");
-    await expect(page.locator("table, .empty-state").first()).toBeVisible();
-  });
-
-  test("has New Asset button", async ({ page }, testInfo) => {
-    await navigateTo(page, "/assets", testInfo);
-
-    // Verify New button exists
-    const newButton = page
-      .getByRole("button", { name: /new|create|add/i })
-      .or(page.getByRole("link", { name: /new|create|add/i }));
-    await expect(newButton).toBeVisible();
+    await expect(statusFilter(page)).toHaveValue("DRAFT");
+    await expect(assetRows(page)).toHaveCount(draftAssets.length);
+    await expect(assetRows(page).first()).toContainText("New Monitor Setup");
+    await expect(assetRows(page).first()).toContainText(/draft/i);
+    await expect(page.getByText("Old Projector")).toHaveCount(0);
   });
 });
