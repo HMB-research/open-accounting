@@ -5,35 +5,21 @@ import {
 	waitForReminderDataState
 } from './payment-reminders-utils';
 
-test.describe('Demo Payment Reminders - Page Structure', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
+test.describe('Demo Payment Reminders - Page Structure and Summary', () => {
+	test('shows page controls, summary statistics, and invoice list states', async ({ page }, testInfo) => {
 		await setupPaymentRemindersPage(page, testInfo);
-	});
 
-	test('displays payment reminders page heading', async ({ page }) => {
 		await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 10000 });
 		const heading = page.getByRole('heading', { level: 1 });
 		const headingText = await heading.textContent();
 		expect(headingText?.toLowerCase()).toMatch(/reminder|meeldetuletus/i);
-	});
 
-	test('has refresh button', async ({ page }) => {
 		const refreshBtn = page.locator('button.btn-secondary').first();
 		await expect(refreshBtn).toBeVisible({ timeout: 10000 });
-	});
 
-	test('has back button linking to invoices', async ({ page }) => {
 		const backLink = page.locator('a.btn-secondary[href*="invoices"]');
 		await expect(backLink).toBeVisible({ timeout: 10000 });
-	});
-});
 
-test.describe('Demo Payment Reminders - Summary Display', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
-		await setupPaymentRemindersPage(page, testInfo);
-	});
-
-	test('shows overdue summary statistics', async ({ page }) => {
 		await waitForReminderDataState(page);
 
 		const summaryCard = page.locator('.summary-card');
@@ -47,14 +33,9 @@ test.describe('Demo Payment Reminders - Summary Display', () => {
 				pageContent?.match(/contact|kontakt/i);
 
 			expect(hasStats).toBeTruthy();
-			return;
+		} else {
+			await expectTerminalReminderState(page);
 		}
-
-		await expectTerminalReminderState(page);
-	});
-
-	test('displays empty state or invoice list', async ({ page }) => {
-		await waitForReminderDataState(page);
 
 		const hasEmptyState = await page
 			.getByText(/no overdue|ei leitud/i)
