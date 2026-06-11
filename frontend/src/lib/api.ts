@@ -2633,7 +2633,7 @@ class ApiClient {
       "POST",
       `/api/v1/admin/plugins/${pluginId}/enable`,
       {
-        permissions,
+        granted_permissions: permissions,
       },
     );
   }

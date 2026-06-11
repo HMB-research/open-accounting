@@ -230,7 +230,7 @@ func (h *Handlers) UninstallPlugin(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Param id path string true "Plugin ID"
 // @Param request body plugin.EnablePluginRequest true "Permissions to grant"
-// @Success 200 {object} object{status=string}
+// @Success 200 {object} plugin.Plugin
 // @Failure 400 {object} object{error=string}
 // @Router /admin/plugins/{id}/enable [post]
 func (h *Handlers) EnablePlugin(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +252,13 @@ func (h *Handlers) EnablePlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
+	updated, err := h.pluginService.GetPlugin(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load plugin")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, updated)
 }
 
 // DisablePlugin disables a plugin at the instance level
@@ -262,7 +268,7 @@ func (h *Handlers) EnablePlugin(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Plugin ID"
-// @Success 200 {object} object{status=string}
+// @Success 200 {object} plugin.Plugin
 // @Failure 400 {object} object{error=string}
 // @Router /admin/plugins/{id}/disable [post]
 func (h *Handlers) DisablePlugin(w http.ResponseWriter, r *http.Request) {
@@ -278,7 +284,13 @@ func (h *Handlers) DisablePlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
+	updated, err := h.pluginService.GetPlugin(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load plugin")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, updated)
 }
 
 // GetPlugin returns a plugin by ID
@@ -371,7 +383,7 @@ func (h *Handlers) ListTenantPlugins(w http.ResponseWriter, r *http.Request) {
 // @Param tenantID path string true "Tenant ID"
 // @Param pluginID path string true "Plugin ID"
 // @Param request body plugin.TenantPluginSettingsRequest false "Initial settings"
-// @Success 200 {object} object{status=string}
+// @Success 200 {object} plugin.TenantPlugin
 // @Failure 400 {object} object{error=string}
 // @Router /tenants/{tenantID}/plugins/{pluginID}/enable [post]
 func (h *Handlers) EnableTenantPlugin(w http.ResponseWriter, r *http.Request) {
@@ -413,7 +425,19 @@ func (h *Handlers) EnableTenantPlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
+	plugins, err := h.pluginService.GetTenantPlugins(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load tenant plugin")
+		return
+	}
+	for _, tenantPlugin := range plugins {
+		if tenantPlugin.PluginID == pluginID {
+			respondJSON(w, http.StatusOK, tenantPlugin)
+			return
+		}
+	}
+
+	respondError(w, http.StatusInternalServerError, "Failed to load tenant plugin")
 }
 
 // DisableTenantPlugin disables a plugin for a tenant
