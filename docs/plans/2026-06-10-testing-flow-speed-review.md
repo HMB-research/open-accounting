@@ -1059,3 +1059,47 @@ Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
 The next CI artifact should confirm the remote spec-level reduction. Remaining
 measured consolidation targets are `env-onboarding`, `vat-returns`, `quotes`,
 `salary-calculator`, `payroll`, `tsd`, and `mobile-navigation`.
+
+## 2026-06-11 Onboarding Spec Consolidation
+
+CI run `27336885746` measured `demo/env-onboarding.spec.ts` at 57.884s across
+five tests, making it the largest remaining single demo spec in that artifact
+set.
+
+The seeded demo tenants are already onboarded, so the old onboarding tests
+mostly repeated authentication and dashboard setup before conditionally passing
+when the wizard was absent. That made the spec slow and weak: it did not
+deterministically exercise the onboarding flow.
+
+The spec now uses a single workflow check that:
+
+- creates a fresh organization through the dashboard modal;
+- opens the guided setup for that incomplete organization;
+- asserts the wizard step labels and form fields;
+- verifies the tenant create, tenant update, contact create, complete
+  onboarding, and tenant reload API responses;
+- verifies that the completed organization returns to the dashboard as a ready
+  workspace.
+
+The spec is marked serial because it intentionally creates tenant schemas.
+Local repeat runs showed parallel schema creation can deadlock in PostgreSQL
+(`SQLSTATE 40P01`). Playwright can still parallelize `--repeat-each` copies of
+a single test, so local stress repeats for this spec should use `--workers=1`.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/env-onboarding.spec.ts --workers=4` | 2 passed in 9.9s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/env-onboarding.spec.ts --workers=1 --repeat-each=5` | 6 passed in 19.0s, including `auth-setup` |
+
+Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/env-onboarding.spec.ts` | 11.480s | 5 | 5 |
+| `demo/auth.setup.ts` | 1.641s | 1 | 1 |
+
+The next local and CI artifacts should confirm the spec-level reduction.
+Remaining measured consolidation targets are `vat-returns`, `quotes`,
+`salary-calculator`, `payroll`, `tsd`, and `mobile-navigation`.

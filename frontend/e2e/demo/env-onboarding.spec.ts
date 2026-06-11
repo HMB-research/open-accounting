@@ -1,110 +1,138 @@
-import { test, expect } from '@playwright/test';
-import { advanceWizardStep, clickWizardButton, loginAsDemoEnv } from './env-utils';
+import { test, expect, type Locator } from '@playwright/test';
+import { loginAsDemoEnv } from './env-utils';
+
+type TenantResponse = {
+	id: string;
+	name: string;
+	slug: string;
+	onboarding_completed: boolean;
+};
+
+function responsePath(responseUrl: string) {
+	return new URL(responseUrl).pathname;
+}
+
+async function clickWizardAction(wizard: Locator, name: RegExp) {
+	const button = wizard.getByRole('button', { name }).first();
+	await expect(button).toBeVisible({ timeout: 10000 });
+	await expect(button).toBeEnabled();
+	await button.click();
+}
 
 test.describe('Demo Environment - Onboarding Wizard', () => {
-	test('Onboarding wizard displays for new organization', async ({ page }, testInfo) => {
+	test.describe.configure({ mode: 'serial' });
+
+	test('creates a new organization and completes onboarding', async ({ page }, testInfo) => {
 		await loginAsDemoEnv(page, testInfo);
 
-		const wizardHeading = page.getByRole('heading', { name: /welcome to open accounting/i });
-		const hasWizard = await wizardHeading.isVisible({ timeout: 5000 }).catch(() => false);
+		const suffix = `${testInfo.parallelIndex}-${testInfo.repeatEachIndex}-${testInfo.retry}-${Date.now().toString(36)}`;
+		const orgName = `E2E Onboarding ${suffix}`;
+		const slug = `e2e-onboarding-${suffix}`;
+		const updatedName = `${orgName} Updated`;
 
-		if (hasWizard) {
-			await expect(wizardHeading).toBeVisible();
+		await page.getByRole('button', { name: /new organization/i }).click();
 
-			await expect(page.getByText(/set up your organization/i)).toBeVisible();
+		const createDialog = page.getByRole('dialog', { name: /create organization/i });
+		await expect(createDialog).toBeVisible();
+		await createDialog.locator('#name').fill(orgName);
+		await expect(createDialog.locator('#slug')).toHaveValue(slug);
 
-			await expect(page.getByText('Company')).toBeVisible();
-			await expect(page.getByText('Branding')).toBeVisible();
-			await expect(page.getByText('Contact')).toBeVisible();
-			await expect(page.getByText('Done')).toBeVisible();
-		}
-	});
+		const createResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				responsePath(response.url()) === '/api/v1/tenants'
+		);
+		await createDialog.getByRole('button', { name: /^create$/i }).click();
+		const createResponse = await createResponsePromise;
+		const createPayload = await createResponse.json();
+		expect(createResponse.status(), JSON.stringify(createPayload)).toBe(201);
 
-	test('Company information form displays correctly', async ({ page }, testInfo) => {
-		await loginAsDemoEnv(page, testInfo);
+		const createdTenant = createPayload as TenantResponse;
+		expect(createdTenant.name).toBe(orgName);
+		expect(createdTenant.slug).toBe(slug);
+		expect(createdTenant.onboarding_completed).toBe(false);
 
-		const companyHeading = page.getByRole('heading', { name: /company information/i });
-		const hasCompanyForm = await companyHeading.isVisible({ timeout: 5000 }).catch(() => false);
+		const workspaceHero = page.locator('.workspace-hero');
+		await expect(workspaceHero.getByRole('heading', { name: orgName })).toBeVisible({
+			timeout: 10000
+		});
+		await expect(workspaceHero.getByText('/' + slug)).toBeVisible();
 
-		if (hasCompanyForm) {
-			await expect(companyHeading).toBeVisible();
+		await workspaceHero.getByRole('button', { name: /continue guided setup/i }).click();
 
-			await expect(page.getByLabel(/company name/i)).toBeVisible();
-			await expect(page.getByLabel(/registration code/i)).toBeVisible();
-			await expect(page.getByLabel(/vat number/i)).toBeVisible();
-			await expect(page.getByLabel(/email/i)).toBeVisible();
-			await expect(page.getByLabel(/phone/i)).toBeVisible();
-			await expect(page.getByLabel(/address/i)).toBeVisible();
-		}
-	});
+		const wizard = page.locator('.onboarding-wizard');
+		await expect(wizard).toBeVisible({ timeout: 10000 });
+		await expect(page.getByRole('heading', { name: /welcome to open accounting/i })).toBeVisible();
+		await expect(wizard.getByText('Company', { exact: true }).first()).toBeVisible();
+		await expect(wizard.getByText('Branding', { exact: true }).first()).toBeVisible();
+		await expect(wizard.getByText('Contact', { exact: true }).first()).toBeVisible();
+		await expect(wizard.getByText('Done', { exact: true }).first()).toBeVisible();
 
-	test('Onboarding form accepts valid company data', async ({ page }, testInfo) => {
-		await loginAsDemoEnv(page, testInfo);
+		await expect(page.getByRole('heading', { name: /company information/i })).toBeVisible();
+		await page.locator('#companyName').fill(updatedName);
+		await page.locator('#regCode').fill('12345678');
+		await page.locator('#vatNumber').fill('EE123456789');
+		await page.locator('#email').fill(`onboarding-${suffix}@example.com`);
+		await page.locator('#phone').fill('+372 5555 5555');
+		await page.locator('#address').fill('Tartu 1, Tallinn, Estonia');
 
-		const companyNameInput = page.getByLabel(/company name/i);
-		const hasCompanyForm = await companyNameInput.isVisible({ timeout: 5000 }).catch(() => false);
+		const tenantPath = `/api/v1/tenants/${createdTenant.id}`;
+		const companyUpdatePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'PUT' && responsePath(response.url()) === tenantPath
+		);
+		await clickWizardAction(wizard, /continue/i);
+		const companyUpdate = await companyUpdatePromise;
+		expect(companyUpdate.ok()).toBe(true);
+		const savedCompany = (await companyUpdate.json()) as TenantResponse;
+		expect(savedCompany.name).toBe(updatedName);
+		await expect(page.getByRole('heading', { name: /branding & invoice settings/i })).toBeVisible();
 
-		if (hasCompanyForm) {
-			await companyNameInput.fill('Test Company');
-			await expect(companyNameInput).toHaveValue('Test Company');
+		await page.locator('#bankDetails').fill('LHV Pank EE121212121212121212');
+		await page.locator('#invoiceTerms').fill('Payment due within 14 days');
 
-			const nextButton = page.getByRole('button', { name: /next|continue|save/i });
-			const hasNext = await nextButton.isVisible().catch(() => false);
+		const brandingUpdatePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'PUT' && responsePath(response.url()) === tenantPath
+		);
+		await clickWizardAction(wizard, /continue/i);
+		const brandingUpdate = await brandingUpdatePromise;
+		expect(brandingUpdate.ok()).toBe(true);
+		await expect(page.getByRole('heading', { name: /add your first contact/i })).toBeVisible();
 
-			if (hasNext) {
-				await expect(nextButton).toBeEnabled();
-			}
-		}
-	});
+		await page.locator('#contactName').fill(`Onboarding Contact ${suffix}`);
+		await page.locator('#contactEmail').fill(`contact-${suffix}@example.com`);
 
-	test('Onboarding wizard step navigation works', async ({ page }, testInfo) => {
-		await loginAsDemoEnv(page, testInfo);
+		const contactCreatePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				responsePath(response.url()) === `${tenantPath}/contacts`
+		);
+		await clickWizardAction(wizard, /add.*continue|continue/i);
+		const contactCreate = await contactCreatePromise;
+		expect(contactCreate.status()).toBe(201);
+		await expect(page.getByRole('heading', { name: /you're all set/i })).toBeVisible();
 
-		const step1Active = page.locator('[class*="active"], [class*="current"]').filter({ hasText: /company/i });
-		const hasSteps = await step1Active.isVisible({ timeout: 5000 }).catch(() => false);
+		const completePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				responsePath(response.url()) === `${tenantPath}/complete-onboarding`
+		);
+		const tenantReloadPromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'GET' && responsePath(response.url()) === tenantPath
+		);
+		await clickWizardAction(wizard, /go to dashboard/i);
+		const completeResponse = await completePromise;
+		expect(completeResponse.ok()).toBe(true);
+		const tenantReload = await tenantReloadPromise;
+		expect(tenantReload.ok()).toBe(true);
+		const completedTenant = (await tenantReload.json()) as TenantResponse;
+		expect(completedTenant.onboarding_completed).toBe(true);
 
-		if (hasSteps) {
-			await expect(step1Active).toBeVisible();
-		}
-	});
-
-	test('Onboarding wizard can be completed to reach dashboard', async ({ page }, testInfo) => {
-		await loginAsDemoEnv(page, testInfo);
-
-		const wizardOverlay = page.locator('.onboarding-overlay, .onboarding-wizard');
-		const hasWizard = await wizardOverlay.isVisible({ timeout: 5000 }).catch(() => false);
-
-		if (hasWizard) {
-			const companyNameInput = page.getByLabel(/company name/i);
-			if (await companyNameInput.isVisible()) {
-				await companyNameInput.fill('E2E Test Company');
-			}
-			await advanceWizardStep(page, /continue|next/i, /branding|invoice settings/i);
-
-			const step2Continue = page.getByRole('button', { name: /continue|next/i });
-			if (await step2Continue.isVisible()) {
-				await advanceWizardStep(page, /continue|next/i, /first contact/i);
-			}
-
-			const step3Continue = page.getByRole('button', { name: /skip|continue/i });
-			if (await step3Continue.isVisible()) {
-				await advanceWizardStep(page, /skip|continue/i, /all set/i);
-			}
-
-			const goToDashboard = page.getByRole('button', { name: /go to dashboard|finish|complete/i });
-			if (await goToDashboard.isVisible()) {
-				await clickWizardButton(page, /go to dashboard|finish|complete/i);
-				await expect(page).toHaveURL(/dashboard/, { timeout: 10000 });
-			}
-
-			await expect(wizardOverlay).not.toBeVisible({ timeout: 10000 });
-		}
-
-		await expect(page).toHaveURL(/dashboard/);
-		const dashboardContent = page.locator('main, .dashboard, [class*="content"]').first();
-		await expect(dashboardContent).toBeVisible();
-
-		const wizardAfter = page.locator('.onboarding-overlay');
-		await expect(wizardAfter).not.toBeVisible();
+		await expect(wizard).not.toBeVisible({ timeout: 10000 });
+		await expect(page.getByRole('heading', { name: updatedName })).toBeVisible();
+		await expect(page.getByText(/workspace ready/i)).toBeVisible();
+		await expect(page.getByRole('link', { name: /new invoice/i })).toBeVisible();
 	});
 });
