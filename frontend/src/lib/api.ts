@@ -297,6 +297,34 @@ class ApiClient {
     return this.parseDecimals(data) as T;
   }
 
+  private async downloadFile(
+    path: string,
+    fileName: string,
+    errorMessage: string,
+  ) {
+    const response = await fetch(`${getApiBase()}${path}`, {
+      method: "GET",
+      headers: this.accessToken
+        ? { Authorization: `Bearer ${this.accessToken}` }
+        : {},
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}) as ApiError);
+      throw new Error(error.error || errorMessage);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  }
+
   private parseDecimals(obj: unknown, key?: string): unknown {
     if (
       typeof obj === "string" &&
@@ -2096,6 +2124,35 @@ class ApiClient {
     return this.request<BalanceConfirmation>(
       "GET",
       `/api/v1/tenants/${tenantId}/reports/balance-confirmations/${contactId}?type=${type}&as_of_date=${asOfDate}`,
+    );
+  }
+
+  async downloadBalanceConfirmationSummary(
+    tenantId: string,
+    type: BalanceConfirmationType,
+    asOfDate: string,
+    format: ReportExportFormat,
+  ) {
+    const query = buildQuery({ type, as_of_date: asOfDate, format });
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/reports/balance-confirmations${query}`,
+      `balance-confirmations-${type.toLowerCase()}-${asOfDate}.${format}`,
+      `Failed to download balance confirmations ${format.toUpperCase()}`,
+    );
+  }
+
+  async downloadBalanceConfirmation(
+    tenantId: string,
+    contactId: string,
+    type: BalanceConfirmationType,
+    asOfDate: string,
+    format: ReportExportFormat,
+  ) {
+    const query = buildQuery({ type, as_of_date: asOfDate, format });
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/reports/balance-confirmations/${encodeURIComponent(contactId)}${query}`,
+      `balance-confirmation-${contactId}-${asOfDate}.${format}`,
+      `Failed to download balance confirmation ${format.toUpperCase()}`,
     );
   }
 
@@ -4424,6 +4481,7 @@ export interface CashFlowStatement {
 
 // Balance Confirmation types
 export type BalanceConfirmationType = "RECEIVABLE" | "PAYABLE";
+export type ReportExportFormat = "csv" | "xlsx" | "pdf";
 
 export interface BalanceInvoice {
   invoice_id: string;

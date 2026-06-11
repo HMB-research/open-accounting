@@ -4,6 +4,7 @@
 	import {
 		api,
 		type BalanceConfirmationType,
+		type ReportExportFormat,
 		type BalanceConfirmationSummary,
 		type BalanceConfirmation,
 		type ContactBalance
@@ -22,6 +23,10 @@
 	let selectedContact = $state<ContactBalance | null>(null);
 	let contactDetail = $state<BalanceConfirmation | null>(null);
 	let showDetailModal = $state(false);
+	let summaryExporting = $state<ReportExportFormat | null>(null);
+	let detailExporting = $state<ReportExportFormat | null>(null);
+
+	const exportFormats: ReportExportFormat[] = ['csv', 'xlsx', 'pdf'];
 
 	onMount(() => {
 		if (tenantId) {
@@ -67,6 +72,50 @@
 		showDetailModal = false;
 		selectedContact = null;
 		contactDetail = null;
+	}
+
+	async function exportSummary(format: ReportExportFormat) {
+		if (!tenantId || !summary || summary.contacts.length === 0) return;
+
+		summaryExporting = format;
+		error = '';
+		try {
+			await api.downloadBalanceConfirmationSummary(tenantId, balanceType, asOfDate, format);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to export balance confirmations';
+		} finally {
+			summaryExporting = null;
+		}
+	}
+
+	async function exportContactConfirmation(format: ReportExportFormat) {
+		if (!tenantId || !contactDetail) return;
+
+		detailExporting = format;
+		error = '';
+		try {
+			await api.downloadBalanceConfirmation(
+				tenantId,
+				contactDetail.contact_id,
+				contactDetail.type,
+				contactDetail.as_of_date,
+				format
+			);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to export balance confirmation';
+		} finally {
+			detailExporting = null;
+		}
+	}
+
+	function exportLabel(format: ReportExportFormat): string {
+		return format === 'xlsx' ? 'XLSX' : format.toUpperCase();
+	}
+
+	function exportTitle(format: ReportExportFormat): string {
+		if (format === 'csv') return m.reports_exportCsv();
+		if (format === 'xlsx') return m.reports_exportExcel();
+		return m.reports_exportPdf();
 	}
 
 	function formatAmount(amount: string | undefined): string {
@@ -132,6 +181,21 @@
 				</button>
 				{#if summary && summary.contacts.length > 0}
 					<button class="btn btn-secondary" onclick={printReport}>{m.common_print()}</button>
+					<div class="export-actions" aria-label={m.reports_export()}>
+						{#each exportFormats as format (format)}
+							<button
+								type="button"
+								class="btn btn-secondary btn-export"
+								onclick={() => exportSummary(format)}
+								disabled={summaryExporting !== null}
+								aria-label={exportTitle(format)}
+								title={exportTitle(format)}
+								data-testid={`balance-summary-export-${format}`}
+							>
+								{summaryExporting === format ? m.common_loading() : exportLabel(format)}
+							</button>
+						{/each}
+					</div>
 				{/if}
 			</div>
 		</div>
@@ -185,7 +249,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each summary.contacts as contact}
+							{#each summary.contacts as contact (contact.contact_id)}
 								<tr>
 									<td>
 										<div class="contact-name">{contact.contact_name}</div>
@@ -226,9 +290,7 @@
 
 <!-- Contact Detail Modal -->
 {#if showDetailModal && contactDetail}
-	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div class="modal-overlay" onclick={closeModal} onkeydown={(e) => e.key === 'Escape' && closeModal()} role="presentation">
-		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
 			<div class="modal-header">
 				<h2>{m.balance_confirmation_detail_title()}</h2>
@@ -276,7 +338,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each contactDetail.invoices as invoice}
+							{#each contactDetail.invoices as invoice (invoice.invoice_id)}
 								<tr class={getOverdueClass(invoice.days_overdue)}>
 									<td>{invoice.invoice_number}</td>
 									<td>{invoice.invoice_date}</td>
@@ -308,6 +370,21 @@
 			</div>
 
 			<div class="modal-footer">
+				<div class="export-actions" aria-label={m.reports_export()}>
+					{#each exportFormats as format (format)}
+						<button
+							type="button"
+							class="btn btn-secondary btn-export"
+							onclick={() => exportContactConfirmation(format)}
+							disabled={detailExporting !== null}
+							aria-label={exportTitle(format)}
+							title={exportTitle(format)}
+							data-testid={`balance-detail-export-${format}`}
+						>
+							{detailExporting === format ? m.common_loading() : exportLabel(format)}
+						</button>
+					{/each}
+				</div>
 				<button class="btn btn-secondary" onclick={printConfirmation}>{m.common_print()}</button>
 				<button class="btn btn-primary" onclick={closeModal}>{m.common_close()}</button>
 			</div>
@@ -437,6 +514,18 @@
 		font-size: 0.875rem;
 	}
 
+	.export-actions {
+		display: inline-flex;
+		gap: 0.375rem;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+
+	.btn-export {
+		min-width: 3.25rem;
+		justify-content: center;
+	}
+
 	/* Overdue styling */
 	.slightly-overdue {
 		background: rgba(255, 193, 7, 0.1);
@@ -520,6 +609,8 @@
 	.modal-footer {
 		display: flex;
 		justify-content: flex-end;
+		align-items: center;
+		flex-wrap: wrap;
 		gap: 0.75rem;
 		padding: 1rem 1.5rem;
 		border-top: 1px solid var(--color-border);
@@ -584,11 +675,20 @@
 
 		.controls-form {
 			flex-direction: column;
+			align-items: stretch;
 		}
 
 		.controls-form .form-group {
 			max-width: none;
 			width: 100%;
+		}
+
+		.export-actions {
+			width: 100%;
+		}
+
+		.btn-export {
+			flex: 1 1 4rem;
 		}
 
 		.summary-stats {
