@@ -1,89 +1,166 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForDataOrEmpty } from './utils';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { ensureAuthenticated, navigateTo, waitForRouteReady } from './utils';
+
+const demoTsdYear = 2024;
+const routeLoadTimeout = 30_000;
+const apiResponseTimeout = 30_000;
+
+interface TSDDeclarationResponse {
+	id: string;
+	period_year: number;
+	period_month: number;
+	total_payments: string | number;
+	total_income_tax: string | number;
+	total_social_tax: string | number;
+	total_unemployment_employer: string | number;
+	total_unemployment_employee: string | number;
+	total_funded_pension: string | number;
+	status: 'DRAFT' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED';
+	emta_reference?: string | null;
+}
+
+function responsePath(responseUrl: string): string {
+	return new URL(responseUrl).pathname;
+}
+
+function formatAmount(amount: string | number): string {
+	return Number(amount).toFixed(2);
+}
+
+function totalTaxes(declaration: TSDDeclarationResponse): string {
+	return [
+		declaration.total_income_tax,
+		declaration.total_social_tax,
+		declaration.total_unemployment_employer,
+		declaration.total_unemployment_employee,
+		declaration.total_funded_pension
+	]
+		.reduce((sum, amount) => sum + Number(amount), 0)
+		.toFixed(2);
+}
+
+function statusPattern(status: TSDDeclarationResponse['status']): RegExp {
+	switch (status) {
+		case 'DRAFT':
+			return /draft|mustand/i;
+		case 'SUBMITTED':
+			return /submitted|esitatud/i;
+		case 'ACCEPTED':
+			return /accepted|aktsepteeritud/i;
+		case 'REJECTED':
+			return /rejected|tagasi/i;
+	}
+}
+
+function waitForTSDListResponse(page: Page, expectedYear?: number) {
+	return page.waitForResponse((response) => {
+		if (response.request().method() !== 'GET' || response.status() !== 200) {
+			return false;
+		}
+
+		const url = new URL(response.url());
+		const isTsdList = /\/api\/v1\/tenants\/[^/]+\/tsd$/.test(url.pathname);
+		if (!isTsdList) {
+			return false;
+		}
+
+		return expectedYear === undefined || url.searchParams.get('year') === String(expectedYear);
+	}, { timeout: apiResponseTimeout });
+}
+
+function waitForTSDExportResponse(page: Page, declaration: TSDDeclarationResponse, format: 'xml' | 'csv') {
+	return page.waitForResponse((response) => {
+		return (
+			response.request().method() === 'GET' &&
+			response.status() === 200 &&
+			new RegExp(`/api/v1/tenants/[^/]+/tsd/${declaration.period_year}/${declaration.period_month}/${format}$`)
+				.test(responsePath(response.url()))
+		);
+	}, { timeout: apiResponseTimeout });
+}
+
+async function waitForTSDLoaded(page: Page): Promise<void> {
+	await waitForRouteReady(page, 'table tbody tr, .empty-state', routeLoadTimeout);
+	await expect(page.getByText(/^Loading\.\.\.$|^Laadimine\.\.\.$/i)).toHaveCount(0, {
+		timeout: routeLoadTimeout
+	});
+}
+
+async function openTSD(page: Page, testInfo: TestInfo): Promise<void> {
+	const initialYear = new Date().getFullYear();
+	const listPromise = waitForTSDListResponse(page, initialYear);
+	await navigateTo(page, '/tsd', testInfo, { waitForNetworkIdle: false });
+	expect((await listPromise).ok()).toBeTruthy();
+	await waitForRouteReady(page, 'main h1, .container h1', routeLoadTimeout);
+	await waitForTSDLoaded(page);
+}
+
+async function selectTSDYear(page: Page, year: number): Promise<TSDDeclarationResponse[]> {
+	const listPromise = waitForTSDListResponse(page, year);
+	await page.locator('select#yearFilter').selectOption(String(year));
+	const response = await listPromise;
+	expect(response.ok()).toBeTruthy();
+	await waitForTSDLoaded(page);
+	return (await response.json()) as TSDDeclarationResponse[];
+}
 
 test.describe('Demo TSD Declarations', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
+	test('covers list, exports, and manual submission controls', async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
-		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/tsd', testInfo);
-		await page.waitForLoadState('networkidle');
-	});
+		await openTSD(page, testInfo);
 
-	test('displays TSD page correctly', async ({ page }) => {
-		// Wait for page to load
-		const { hasData, isEmpty } = await waitForDataOrEmpty(page, 15000);
+		await expect(page.getByRole('heading', { level: 1, name: /tsd/i })).toBeVisible();
+		await expect(page.locator('.info-banner')).toContainText(/e-mta|emta|manual|käsitsi/i);
+		await expect(page.locator('.info-banner a[href="https://www.emta.ee"]')).toBeVisible();
 
-		// Page should render either data or empty state
-		expect(hasData || isEmpty).toBeTruthy();
+		const yearFilter = page.locator('select#yearFilter');
+		await expect(yearFilter).toBeVisible();
+		const yearOptions = await yearFilter.locator('option').allTextContents();
+		expect(yearOptions).toContain(String(demoTsdYear));
 
-		// Check for page header
-		const header = page.getByRole('heading', { level: 1 });
-		await expect(header).toBeVisible({ timeout: 5000 });
-	});
-
-	test('shows declaration data when available', async ({ page }) => {
-		const { hasData } = await waitForDataOrEmpty(page, 15000);
-
-		if (hasData) {
-			const pageContent = await page.content().then((c) => c.toLowerCase());
-			const hasRelevantContent =
-				pageContent.includes('declaration') ||
-				pageContent.includes('draft') ||
-				pageContent.includes('submitted') ||
-				pageContent.includes('tsd') ||
-				pageContent.includes('2024');
-			expect(hasRelevantContent).toBeTruthy();
-		} else {
-			// If no data, just verify page loaded correctly
-			await expect(page.getByRole('heading', { level: 1, name: /tsd/i })).toBeVisible();
-		}
-	});
-
-	test('shows declaration statuses when data exists', async ({ page }) => {
-		const { hasData } = await waitForDataOrEmpty(page, 15000);
-
-		if (hasData) {
-			// Should show SUBMITTED and DRAFT statuses
-			const pageContent = await page.content().then((c) => c.toLowerCase());
-			expect(pageContent.includes('submitted') || pageContent.includes('draft')).toBeTruthy();
-		} else {
-			// Empty state is acceptable
-			await expect(page.getByRole('heading', { level: 1, name: /tsd/i })).toBeVisible();
-		}
-	});
-
-	test('shows correct declaration count when data exists', async ({ page }) => {
-		const tableBody = page.locator('table tbody');
-		const emptyState = page.getByText(/no.*declaration|no data|empty/i);
-
-		await Promise.race([
-			tableBody.locator('tr').first().waitFor({ state: 'visible', timeout: 15000 }),
-			emptyState.waitFor({ state: 'visible', timeout: 15000 })
-		]).catch(() => {});
+		const declarations = await selectTSDYear(page, demoTsdYear);
+		expect(declarations.length).toBeGreaterThanOrEqual(3);
+		expect(declarations.map((declaration) => `${declaration.period_year}-${declaration.period_month}`)).toEqual(
+			expect.arrayContaining(['2024-10', '2024-11', '2024-12'])
+		);
+		expect(declarations.some((declaration) => declaration.status === 'DRAFT')).toBeTruthy();
+		expect(declarations.some((declaration) => declaration.status === 'SUBMITTED')).toBeTruthy();
 
 		const rows = page.locator('table tbody tr');
-		const count = await rows.count();
+		await expect(rows).toHaveCount(declarations.length);
 
-		if (count > 0) {
-			// Should have at least 3 TSD declarations when data exists
-			expect(count).toBeGreaterThanOrEqual(3);
-		} else {
-			// Empty state is acceptable if no data seeded
-			const hasEmptyState = await emptyState.isVisible().catch(() => false);
-			expect(hasEmptyState || count === 0).toBeTruthy();
-		}
-	});
+		const firstDeclaration = declarations[0];
+		const firstRow = rows.first();
+		await expect(firstRow).toContainText(String(firstDeclaration.period_year));
+		await expect(firstRow).toContainText(formatAmount(firstDeclaration.total_payments));
+		await expect(firstRow).toContainText(formatAmount(firstDeclaration.total_income_tax));
+		await expect(firstRow).toContainText(formatAmount(firstDeclaration.total_social_tax));
+		await expect(firstRow).toContainText(totalTaxes(firstDeclaration));
+		await expect(firstRow).toContainText(statusPattern(firstDeclaration.status));
+		await expect(firstRow.getByRole('button', { name: 'XML' })).toBeVisible();
+		await expect(firstRow.getByRole('button', { name: 'CSV' })).toBeVisible();
 
-	test('shows tax amounts when data exists', async ({ page }) => {
-		const { hasData } = await waitForDataOrEmpty(page, 15000);
+		const xmlResponsePromise = waitForTSDExportResponse(page, firstDeclaration, 'xml');
+		await firstRow.getByRole('button', { name: 'XML' }).click();
+		expect((await xmlResponsePromise).ok()).toBeTruthy();
 
-		if (hasData) {
-			// Check for tax amounts
-			const pageContent = await page.content();
-			expect(pageContent).toMatch(/[\d,]+\.\d{2}/);
-		} else {
-			// If no data, verify page structure
-			await expect(page.getByRole('heading', { level: 1, name: /tsd/i })).toBeVisible();
-		}
+		const csvResponsePromise = waitForTSDExportResponse(page, firstDeclaration, 'csv');
+		await firstRow.getByRole('button', { name: 'CSV' }).click();
+		expect((await csvResponsePromise).ok()).toBeTruthy();
+
+		const draftIndex = declarations.findIndex((declaration) => declaration.status === 'DRAFT');
+		expect(draftIndex).toBeGreaterThanOrEqual(0);
+		const draftRow = rows.nth(draftIndex);
+		await draftRow.getByRole('button', { name: /mark.*submitted|märgi.*esitatuks/i }).click();
+
+		const submitDialog = page.getByRole('dialog');
+		await expect(submitDialog).toBeVisible();
+		await expect(submitDialog.getByRole('heading', { name: /mark.*tsd|märgi.*tsd/i })).toBeVisible();
+		await expect(submitDialog.getByLabel(/emta|e-mta|reference|viite/i)).toBeVisible();
+		await submitDialog.getByRole('button', { name: /cancel|tühista/i }).click();
+		await expect(submitDialog).toBeHidden();
+
+		await expect(page.locator('.workflow-steps li')).toHaveCount(6);
+		await expect(page.locator('.workflow-info')).toContainText(/xml|e-mta|emta|tsd/i);
 	});
 });
