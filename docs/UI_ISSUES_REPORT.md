@@ -868,9 +868,9 @@ Each view is tested for:
 | Criteria     | Status | Notes                                                                     |
 | ------------ | ------ | ------------------------------------------------------------------------- |
 | Page Load    | ✅     | Plugin marketplace renders                                                |
-| Data Display | ✅     | Search, "Install from URL", seeded Demo Bank Import card, registries visible |
+| Data Display | ✅     | Search, "Install from URL", seeded Demo Bank Import card, fixture install card, registries visible |
 | Navigation   | ✅     | Navigation visible                                                        |
-| CRUD         | ⚠️     | Seeded plugin card verified; repository install clone path still needs E2E fixture |
+| CRUD         | ✅     | Seeded plugin card plus deterministic repository install/uninstall verified through demo E2E |
 | Errors       | ✅     | Shows "Loading..." - expected initial state                               |
 | Responsive   | ⚠️     | Needs manual verification                                                 |
 
@@ -880,6 +880,7 @@ Each view is tested for:
 - Search functionality ready
 - "Install from URL" option
 - Seeded installed plugin card
+- Deterministic repository install and uninstall workflow
 - Registries section
 - Clean loading state
 
@@ -912,6 +913,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Added deterministic admin plugin repository install/uninstall coverage with a demo-mode git fixture                                                 |
 | 2026-06-11 | Codex  | Added seeded demo plugin coverage for tenant plugin enable/disable from `/settings/plugins` and visibility from `/admin/plugins`                    |
 | 2026-06-11 | Codex  | Strengthened `/vat-returns` demo E2E coverage for tenant-scoped KMD generation, detail totals, row rendering, and XML export download               |
 | 2026-06-11 | Codex  | Added `/banking` demo E2E coverage for bank account creation and imported transaction-to-payment reconciliation                                      |

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -75,9 +76,13 @@ func TestResetService_ResetCleansAndSeedsDemoUser(t *testing.T) {
 	}
 	userID := "a9000000-0000-0000-0000-000000000001"
 	tenantID := "b9000000-0000-0000-0000-000000000001"
+	fixturePluginID := "66000000-0000-0000-0002-000000000001"
 
 	cleanup := func() {
 		_, _ = pool.Exec(ctx, "DROP SCHEMA IF EXISTS tenant_demo_reset_service CASCADE")
+		_, _ = pool.Exec(ctx, "DELETE FROM tenant_plugins WHERE plugin_id = $1", fixturePluginID)
+		_, _ = pool.Exec(ctx, "DELETE FROM plugin_migrations WHERE plugin_id = $1", fixturePluginID)
+		_, _ = pool.Exec(ctx, "DELETE FROM plugins WHERE id = $1 OR name = 'demo-admin-install'", fixturePluginID)
 		_, _ = pool.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id = $1", tenantID)
 		_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1 OR slug = $2", tenantID, user.Slug)
 		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1 OR email = $2", userID, user.Email)
@@ -101,6 +106,23 @@ func TestResetService_ResetCleansAndSeedsDemoUser(t *testing.T) {
 		INSERT INTO tenant_users (tenant_id, user_id, role, is_default)
 		VALUES ($1, $2, 'viewer', true)
 	`, tenantID, userID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO plugins (
+			id, name, display_name, description, version, repository_url, repository_type,
+			author, license, homepage_url, state, granted_permissions, manifest
+		) VALUES (
+			$1, 'demo-admin-install', 'Demo Admin Install', 'Old demo install fixture',
+			'1.0.0', $2, 'github', 'HMB Research', 'MIT',
+			'https://github.com/HMB-research/open-accounting', 'installed',
+			ARRAY[]::text[], '{"name":"demo-admin-install","display_name":"Demo Admin Install","version":"1.0.0"}'::jsonb
+		)
+	`, fixturePluginID, plugin.DemoInstallFixtureRepositoryURL)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO tenant_plugins (tenant_id, plugin_id, is_enabled)
+		VALUES ($1, $2, true)
+	`, tenantID, fixturePluginID)
 	require.NoError(t, err)
 
 	var receivedNums []int
@@ -142,6 +164,15 @@ func TestResetService_ResetCleansAndSeedsDemoUser(t *testing.T) {
 	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM tenant_demo_reset_service.seed_marker").Scan(&markerCount)
 	require.NoError(t, err)
 	require.Equal(t, 1, markerCount)
+
+	var fixturePluginCount int
+	err = pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM plugins
+		WHERE id = $1 OR name = 'demo-admin-install' OR repository_url = $2
+	`, fixturePluginID, plugin.DemoInstallFixtureRepositoryURL).Scan(&fixturePluginCount)
+	require.NoError(t, err)
+	require.Equal(t, 0, fixturePluginCount)
 }
 
 func TestResetService_ResetRejectsInvalidSchema(t *testing.T) {

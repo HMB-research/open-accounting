@@ -3319,6 +3319,15 @@ describe("API Client - Core Functionality", () => {
 
       const result = await api.installPlugin("https://github.com/test/plugin");
 
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/admin/plugins/install"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            repository_url: "https://github.com/test/plugin",
+          }),
+        }),
+      );
       expect(result.id).toBe("plugin-new");
     });
 
