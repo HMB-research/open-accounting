@@ -501,3 +501,33 @@ Local focused baseline against the branch API showed `demo/dashboard.spec.ts` at
 | `demo/dashboard.spec.ts` | 0.774s | 1 |
 
 The focused command now reports `2 passed (7.8s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior dashboard shard tail is reduced. The next measured demo E2E candidates are `plugins-settings`, `auth.spec.ts`, `payments`, `fixed-assets`, and `bank-import`.
+
+CI run `27326646716` on commit `dddc1ba` confirmed the prior dashboard tail was reduced. `demo/dashboard.spec.ts` reported 12.689s across one test, down from the prior 71.924s across six tests. The highest remaining single-spec costs shifted to:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `auth.spec.ts` | 69.242s | 8 |
+| `demo/bank-import.spec.ts` | 66.039s | 5 |
+| `demo/plugins-settings.spec.ts` | 65.206s | 6 |
+| `demo/payments.spec.ts` | 62.842s | 6 |
+| `demo/fixed-assets.spec.ts` | 62.058s | 6 |
+
+## Follow-up: Auth Spec Consolidation
+
+Consolidated root `auth.spec.ts` from eight unauthenticated login micro-tests into three workflow checks:
+
+| Workflow | Coverage |
+|----------|----------|
+| Login and register form controls | Login heading, email/password inputs, submit button, input values, login password validation, register mode toggle, name field, and register password minlength |
+| Invalid credentials | Invalid login POST response status, visible error state, and staying on the login route |
+| Demo password validation | Demo login password length is accepted by browser validation in login mode without submitting a duplicate full login |
+
+The removed `test@example.com` login attempt was a stale legacy assertion: no seeded user backs it in the demo run, and the test only asserted that the URL was either dashboard or login. Full demo login success remains covered by the shared `auth.setup.ts` dependency and `demo/env-health-auth.spec.ts`, so the root auth spec no longer duplicates that full login path.
+
+Local focused baseline against the branch API showed `auth.spec.ts` at 12.119s across 8 tests. After consolidation, the same login/register coverage reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `auth.spec.ts` | 4.435s | 3 |
+
+The focused command now reports `4 passed (8.4s)` including the shared `auth-setup` dependency. The login page still keeps its local `networkidle` readiness wait because clicking before Svelte hydration can turn the submit into a native page reload instead of an API-backed login attempt. The next CI Playwright artifact should confirm whether the prior auth shard tail is reduced. The next measured demo E2E candidates are `bank-import`, `plugins-settings`, `payments`, and `fixed-assets`.
