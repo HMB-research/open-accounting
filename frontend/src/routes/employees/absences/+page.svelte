@@ -16,6 +16,7 @@
     type StatusConfig,
   } from "$lib/components/StatusBadge.svelte";
   import DocumentManager from "$lib/components/DocumentManager.svelte";
+  import { dateInputToApiTimestamp } from "$lib/utils/dates";
   import { formatDate } from "$lib/utils/formatting";
 
   let absenceTypes = $state<AbsenceType[]>([]);
@@ -201,8 +202,8 @@
       const record = await api.createLeaveRecord(tenantId, {
         employee_id: newEmployeeId,
         absence_type_id: newAbsenceTypeId,
-        start_date: newStartDate,
-        end_date: newEndDate,
+        start_date: dateInputToApiTimestamp(newStartDate),
+        end_date: dateInputToApiTimestamp(newEndDate),
         total_days: new Decimal(newTotalDays),
         working_days: new Decimal(newWorkingDays),
         document_number: newDocumentNumber || undefined,
@@ -491,6 +492,7 @@
               <th>{m.leave_start_date()}</th>
               <th>{m.leave_end_date()}</th>
               <th class="text-right">{m.leave_working_days()}</th>
+              <th>{m.leave_document_number()}</th>
               <th>{m.leave_status()}</th>
               <th>Actions</th>
             </tr>
@@ -515,6 +517,9 @@
                 >
                 <td class="text-right mono" data-label={m.leave_working_days()}>
                   {formatDecimal(record.working_days)}
+                </td>
+                <td data-label={m.leave_document_number()}>
+                  {record.document_number || "-"}
                 </td>
                 <td data-label={m.leave_status()}>
                   <StatusBadge status={record.status} config={statusConfig} />

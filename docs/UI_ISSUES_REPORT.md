@@ -420,7 +420,7 @@ Each view is tested for:
 
 ### Payroll
 
-> **Note:** E2E tests blocked by demo user credential mismatch (demo1-4@example.com users not seeded in Railway). Pages verified via WebFetch showing correct rendering.
+> **Note:** Older Railway WebFetch notes are historical. Current entries list local resettable demo E2E evidence where route workflow coverage has been refreshed.
 
 #### /employees
 
@@ -453,16 +453,26 @@ Each view is tested for:
 | Page Load    | ✅     | Page renders as "Leave Management"                                                 |
 | Data Display | ✅     | Year filter (2022-2026), Employee filter, two tabs (Leave Records, Leave Balances) |
 | Navigation   | ✅     | Request Leave button visible                                                       |
-| CRUD         | ⚠️     | Read verified, need E2E for full CRUD                                              |
+| CRUD         | ✅     | Create, approve, reject, cancel, balance initialize, and balance CSV import verified through demo E2E |
 | Errors       | ✅     | No errors observed                                                                 |
 | Responsive   | ⚠️     | Needs manual verification                                                          |
 
 **Features Verified:**
 
 - Leave request creation button
+- Leave request creation with RFC3339 API date payloads
+- Records table shows document numbers for created requests
+- Approve, reject with reason, and cancel status transitions
 - Year filter dropdown
 - Employee filter (All Employees default)
 - Tabbed interface for Records vs Balances
+- Leave balance initialization for an employee/year
+- Leave balance CSV import and rendered balance update
+
+**E2E Tests:** 5 focused workflows passed
+
+- Shell, filter, modal, and empty-balance selection checks
+- Consolidated lifecycle workflow creates, approves, rejects, cancels, initializes balances, imports balance CSV, and verifies rendered balances
 
 **Overall:** ✅ Working
 
@@ -875,6 +885,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Added `/employees/absences` demo E2E coverage for leave request lifecycle, balance initialization, balance CSV import, and document-number display   |
 | 2026-06-11 | Codex  | Added employee lifecycle UI and demo E2E coverage for create, edit, deactivate, reactivate, and active-only filtering from `/employees`              |
 | 2026-06-11 | Codex  | Strengthened company settings demo E2E to save and reload persisted tenant profile, invoice, contact, and regional settings from `/settings/company` |
 | 2026-06-11 | Codex  | Added cost-center demo E2E coverage for creating, editing, and deleting a cost center from `/settings/cost-centers`                                  |
