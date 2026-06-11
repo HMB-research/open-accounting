@@ -1473,8 +1473,69 @@ Reporter timing from the repeat-run `frontend/demo-test-results.json`:
 | `demo/employees.spec.ts` | 10.884s | 5 | 5 |
 | `demo/auth.setup.ts` | 3.246s | 1 | 1 |
 
+CI run `27346709661` confirmed the remote employee reduction on commit
+`1957ea0cbb30976bcaad24a7c10de2ad0ab160f9`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/employees.spec.ts` | 15.976s | 1 | 1 |
+| `demo/settings.spec.ts` | 48.362s | 3 | 3 |
+| `demo/tsd.spec.ts` | 47.970s | 5 | 5 |
+| `demo/env-health-auth.spec.ts` | 44.727s | 6 | 6 |
+| `demo/mobile-navigation.spec.ts` | 44.277s | 4 | 4 |
+| `demo/banking.spec.ts` | 43.617s | 4 | 4 |
+
+Compared with run `27345224201`, `demo/employees.spec.ts` dropped from
+49.055s across four tests to 15.976s as one workflow test. The next
+route-specific consolidation target is `demo/settings.spec.ts`.
+
+## 2026-06-11 Settings Spec Consolidation
+
+CI run `27346709661` measured `demo/settings.spec.ts` at 48.362s across three
+destination/form tests, making it the largest remaining route-specific demo
+spec in that artifact set after employees.
+
+The old spec repeated authenticated settings navigation before separate shallow
+checks for the settings overview, company settings, and period history. The
+spec now uses one workflow check that:
+
+- opens `/settings` once and verifies all seven settings destination cards
+  carry the selected tenant query;
+- navigates through the company settings card and waits for the tenant and
+  period history API responses;
+- verifies seeded company, regional, and period-history controls from the API
+  response; and
+- saves unique company settings, asserting the outgoing tenant update payload,
+  update API response, success alert, and persisted form value.
+
+The stronger save workflow exposed two real settings-page bugs. First, the
+company settings form wrapped the period close/reopen controls, so the required
+reopen note blocked `Save Settings` before any tenant update request reached
+the API. The period action inputs no longer use native required validation
+inside the company settings form; the close/reopen action handlers still submit
+to the API, where the accounting-specific validation and audit rules live.
+
+Second, the Svelte template rendered the primary-color text input pattern as
+`^#[0-9A-Fa-f]6$` because the `{6}` quantifier was parsed as template syntax.
+The pattern now comes from a script constant, so the default `#4f46e5` value is
+valid and native form validation no longer blocks saves.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/settings.spec.ts --workers=4` | 2 passed in 10.5s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/settings.spec.ts --workers=4 --repeat-each=5` | 6 passed in 11.3s, including `auth-setup` |
+
+Reporter timing from the repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/settings.spec.ts` | 12.286s | 5 | 5 |
+| `demo/auth.setup.ts` | 2.798s | 1 | 1 |
+
 The next CI artifact should confirm the remote spec-level reduction. Remaining
-measured consolidation targets from run `27345224201` are
-`mobile-navigation`, `settings`, `tsd`, `banking`, and
+measured consolidation targets from run `27346709661` are `tsd`,
+`env-health-auth`, `mobile-navigation`, `banking`, and
 `payment-reminders-selection`; `auth.setup` remains separate shared setup
 overhead.
