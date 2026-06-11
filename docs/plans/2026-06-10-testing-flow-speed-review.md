@@ -1103,3 +1103,42 @@ Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
 The next local and CI artifacts should confirm the spec-level reduction.
 Remaining measured consolidation targets are `vat-returns`, `quotes`,
 `salary-calculator`, `payroll`, `tsd`, and `mobile-navigation`.
+
+## 2026-06-11 Quotes Spec Consolidation
+
+CI run `27337889253` measured `demo/quotes.spec.ts` at 54.033s across four
+tests, making it the largest route-specific demo spec in that artifact set.
+
+The old spec repeated authentication and `/quotes` route setup before each
+micro-test. It also relied on broad navigation waits even though the route's
+ready state is the quotes list plus active-contact options. The spec now uses a
+single workflow check that:
+
+- verifies the seeded quotes table, status labels, and primary controls;
+- creates a unique draft quote, filters it in and out by status, and deletes it;
+- creates a second unique quote, sends it, accepts it, and converts it to a
+  draft invoice;
+- asserts the mutation API responses and the final rendered quote status.
+
+Route setup now waits for the route-owned quotes and active-contact API
+responses while opening `/quotes` with `waitForNetworkIdle: false`. Filter and
+mutation actions wait for the same route reload signals instead of sleeping or
+waiting on global page idleness.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/quotes.spec.ts --workers=4` | 2 passed in 8.1s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/quotes.spec.ts --workers=4 --repeat-each=5` | 6 passed in 10.4s, including `auth-setup` |
+
+Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/quotes.spec.ts` | 9.956s | 5 | 5 |
+| `demo/auth.setup.ts` | 2.611s | 1 | 1 |
+
+The next CI artifact should confirm the remote spec-level reduction. Remaining
+measured consolidation targets are `vat-returns`, `salary-calculator`,
+`payroll`, `tsd`, and `mobile-navigation`.
