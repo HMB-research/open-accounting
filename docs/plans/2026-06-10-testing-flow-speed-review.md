@@ -476,3 +476,28 @@ Local focused baseline against the branch API showed `demo/cash-payments.spec.ts
 | `demo/cash-payments.spec.ts` | 2.416s | 2 |
 
 The focused command now reports `3 passed (10.3s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior cash-payments shard tail is reduced. The next measured demo E2E candidates are `auth.spec.ts`, `plugins-settings`, `fixed-assets`, and `payments`.
+
+CI run `27326205809` on commit `48325c6` confirmed the prior cash-payments tail was reduced. `demo/cash-payments.spec.ts` reported 25.681s across two tests, down from the prior 71.273s across six tests. The highest remaining single-spec costs shifted to:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/dashboard.spec.ts` | 71.924s | 6 |
+| `demo/plugins-settings.spec.ts` | 71.152s | 6 |
+| `auth.spec.ts` | 69.637s | 8 |
+| `demo/payments.spec.ts` | 66.740s | 6 |
+| `demo/fixed-assets.spec.ts` | 64.368s | 6 |
+| `demo/bank-import.spec.ts` | 63.922s | 5 |
+
+## Follow-up: Dashboard Workflow Consolidation
+
+Consolidated `demo/dashboard.spec.ts` from six repeated page-structure checks into one route-owned dashboard shell workflow. The replacement keeps the same visible coverage: tenant selector, dashboard heading, new-organization control, navigation links, four summary cards, cash-flow card, recent activity, revenue-vs-expenses chart, and quick actions.
+
+The old file repeated auth, tenant setup, dashboard navigation, and broad network-idle waits for every section check. The replacement waits for the dashboard-owned API responses (`/me/tenants`, dashboard analytics, revenue-expense, and cash-flow), opens `/dashboard` with `waitForNetworkIdle: false`, and then asserts the loaded shell once.
+
+Local focused baseline against the branch API showed `demo/dashboard.spec.ts` at 12.436s across 6 tests. After workflow consolidation, the same visible behaviors reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/dashboard.spec.ts` | 0.774s | 1 |
+
+The focused command now reports `2 passed (7.8s)` including the shared `auth-setup` dependency. The next CI Playwright artifact should confirm whether the prior dashboard shard tail is reduced. The next measured demo E2E candidates are `plugins-settings`, `auth.spec.ts`, `payments`, `fixed-assets`, and `bank-import`.
