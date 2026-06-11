@@ -72,7 +72,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Invoice reminders | ✅ | ✅ | ✅ | Implemented |
 | Recurring invoices | ✅ | ✅ | ✅ | Implemented |
 | E-invoice (Estonian e-arve) | ✅ | ✅ | ⚠️ | Manual Estonian e-invoice XML import is implemented through API/CLI; direct operator-network sending/receiving remains blocked |
-| Offers/Quotes | ✅ | ✅ | ✅ | Implemented with quote lifecycle, import, and quote-to-invoice conversion through API/CLI |
+| Offers/Quotes | ✅ | ✅ | ✅ | Implemented with quote lifecycle, import, PDF/email delivery, and quote-to-invoice conversion through API/CLI plus UI delivery flows |
 
 ### 2.2 Purchase Invoices
 
