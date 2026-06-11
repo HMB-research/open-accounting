@@ -24,8 +24,13 @@ interface TenantResponse {
     vat_number?: string;
     email?: string;
     phone?: string;
+    address?: string;
     bank_details?: string;
+    invoice_terms?: string;
+    pdf_footer_text?: string;
     timezone?: string;
+    date_format?: string;
+    fiscal_year_start_month?: number;
   };
 }
 
@@ -146,13 +151,25 @@ test.describe("Demo Settings", () => {
     const vatNumber = `EE${regCode}`;
     const email = `settings-${suffix}@example.com`;
     const phone = `+372 55${suffix.slice(-6)}`;
+    const address = `E2E Settings Street ${suffix}, Tallinn`;
     const bankDetails = `E2E settings bank reference ${suffix}`;
+    const invoiceTerms = `Payment terms updated by demo E2E ${suffix}`;
+    const pdfFooterText = `Footer ${suffix}`;
+    const dateFormat = "YYYY-MM-DD";
+    const fiscalYearStartMonth = 4;
 
     await page.locator("#regCode").fill(regCode);
     await page.locator("#vatNumber").fill(vatNumber);
     await page.locator("#email").fill(email);
     await page.locator("#phone").fill(phone);
+    await page.locator("#address").fill(address);
     await page.locator("#bankDetails").fill(bankDetails);
+    await page.locator("#invoiceTerms").fill(invoiceTerms);
+    await page.locator("#pdfFooterText").fill(pdfFooterText);
+    await page.locator("#dateFormat").selectOption(dateFormat);
+    await page
+      .locator("#fiscalYearStart")
+      .selectOption(String(fiscalYearStartMonth));
 
     const updateResponsePromise = page.waitForResponse(
       updateTenantResponse(tenantId),
@@ -171,15 +188,65 @@ test.describe("Demo Settings", () => {
     expect(updatePayload.settings?.vat_number).toBe(vatNumber);
     expect(updatePayload.settings?.email).toBe(email);
     expect(updatePayload.settings?.phone).toBe(phone);
+    expect(updatePayload.settings?.address).toBe(address);
     expect(updatePayload.settings?.bank_details).toBe(bankDetails);
+    expect(updatePayload.settings?.invoice_terms).toBe(invoiceTerms);
+    expect(updatePayload.settings?.pdf_footer_text).toBe(pdfFooterText);
+    expect(updatePayload.settings?.date_format).toBe(dateFormat);
+    expect(updatePayload.settings?.fiscal_year_start_month).toBe(
+      fiscalYearStartMonth,
+    );
     expect(updatedTenant.settings?.reg_code).toBe(regCode);
     expect(updatedTenant.settings?.vat_number).toBe(vatNumber);
     expect(updatedTenant.settings?.email).toBe(email);
     expect(updatedTenant.settings?.phone).toBe(phone);
+    expect(updatedTenant.settings?.address).toBe(address);
     expect(updatedTenant.settings?.bank_details).toBe(bankDetails);
+    expect(updatedTenant.settings?.invoice_terms).toBe(invoiceTerms);
+    expect(updatedTenant.settings?.pdf_footer_text).toBe(pdfFooterText);
+    expect(updatedTenant.settings?.date_format).toBe(dateFormat);
+    expect(updatedTenant.settings?.fiscal_year_start_month).toBe(
+      fiscalYearStartMonth,
+    );
     await expect(page.locator(".alert-success")).toContainText(
       /settings saved|seaded salvestatud/i,
     );
     await expect(page.locator("#regCode")).toHaveValue(regCode);
+
+    const reloadResponsePromise = page.waitForResponse(
+      tenantResponse(tenantId),
+      {
+        timeout: apiResponseTimeout,
+      },
+    );
+    await page.reload();
+    const reloadResponse = await reloadResponsePromise;
+    const reloadedTenant = (await reloadResponse.json()) as TenantResponse;
+    await waitForRouteReady(page, "#company-settings-form", routeLoadTimeout);
+
+    expect(reloadedTenant.settings?.reg_code).toBe(regCode);
+    expect(reloadedTenant.settings?.vat_number).toBe(vatNumber);
+    expect(reloadedTenant.settings?.email).toBe(email);
+    expect(reloadedTenant.settings?.phone).toBe(phone);
+    expect(reloadedTenant.settings?.address).toBe(address);
+    expect(reloadedTenant.settings?.bank_details).toBe(bankDetails);
+    expect(reloadedTenant.settings?.invoice_terms).toBe(invoiceTerms);
+    expect(reloadedTenant.settings?.pdf_footer_text).toBe(pdfFooterText);
+    expect(reloadedTenant.settings?.date_format).toBe(dateFormat);
+    expect(reloadedTenant.settings?.fiscal_year_start_month).toBe(
+      fiscalYearStartMonth,
+    );
+    await expect(page.locator("#regCode")).toHaveValue(regCode);
+    await expect(page.locator("#vatNumber")).toHaveValue(vatNumber);
+    await expect(page.locator("#email")).toHaveValue(email);
+    await expect(page.locator("#phone")).toHaveValue(phone);
+    await expect(page.locator("#address")).toHaveValue(address);
+    await expect(page.locator("#bankDetails")).toHaveValue(bankDetails);
+    await expect(page.locator("#invoiceTerms")).toHaveValue(invoiceTerms);
+    await expect(page.locator("#pdfFooterText")).toHaveValue(pdfFooterText);
+    await expect(page.locator("#dateFormat")).toHaveValue(dateFormat);
+    await expect(page.locator("#fiscalYearStart")).toHaveValue(
+      String(fiscalYearStartMonth),
+    );
   });
 });
