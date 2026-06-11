@@ -1189,3 +1189,45 @@ Remote CI run `27339522291` confirmed the reduction after commit `554e9b3`:
 
 The remaining measured consolidation targets are `tsd`, `payroll`,
 `salary-calculator`, `auth.setup`, and `mobile-navigation`.
+
+## 2026-06-11 Orders Spec Consolidation
+
+CI run `27340457120` measured `demo/orders.spec.ts` at 51.693s across four
+tests, making it the largest remaining non-setup route-specific demo spec in
+that artifact set.
+
+The old spec repeated authentication, tenant setup, `/orders` navigation, and
+generic page readiness before separate table, create/filter, delete, and
+lifecycle checks. The spec now uses one workflow check that:
+
+- verifies the seeded orders table, status labels, and primary create control;
+- creates a unique pending order, filters it in and out by status, and deletes
+  it;
+- creates a second unique order, confirms it, processes it, ships it, delivers
+  it, and converts it into a draft invoice;
+- asserts the mutation API responses, rendered status changes, invoice
+  conversion payload, and removal of the convert action after conversion.
+
+Route setup now waits for the route-owned orders and active-contact API
+responses while opening `/orders` with `waitForNetworkIdle: false`. Filter and
+mutation actions wait for the same route reload signals instead of depending on
+global network idleness.
+
+Local branch-API proof after the consolidation:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/orders.spec.ts --workers=4` | 2 passed in 8.8s, including `auth-setup` |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/orders.spec.ts --workers=4 --repeat-each=5` | 6 passed in 11.0s, including `auth-setup` |
+
+Reporter timing from the final repeat-run `frontend/demo-test-results.json`:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/orders.spec.ts` | 11.085s | 5 | 5 |
+| `demo/auth.setup.ts` | 2.891s | 1 | 1 |
+
+The next CI artifact should confirm the remote spec-level reduction. Remaining
+measured consolidation targets are `mobile-navigation`, `journal`, `payroll`,
+`tsd`, and `salary-calculator`; `auth.setup` should be reviewed separately as
+shared setup overhead rather than route workflow coverage.
