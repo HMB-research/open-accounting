@@ -18130,7 +18130,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get all TSD declarations for a tenant",
+                "description": "Get TSD declarations for a tenant, optionally filtered by period",
                 "produces": [
                     "application/json"
                 ],
@@ -18145,6 +18145,18 @@ const docTemplate = `{
                         "name": "tenantID",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by declaration year",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by declaration month",
+                        "name": "month",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -18154,6 +18166,17 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.TSDDeclaration"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
                             }
                         }
                     },

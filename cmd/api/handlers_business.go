@@ -3818,27 +3818,58 @@ func (h *Handlers) GetTSD(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, tsd)
 }
 
-// ListTSD returns all TSD declarations for a tenant
+// ListTSD returns TSD declarations for a tenant
 // @Summary List TSD declarations
-// @Description Get all TSD declarations for a tenant
+// @Description Get TSD declarations for a tenant, optionally filtered by period
 // @Tags Payroll
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
+// @Param year query int false "Filter by declaration year"
+// @Param month query int false "Filter by declaration month"
 // @Success 200 {array} payroll.TSDDeclaration
+// @Failure 400 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/tsd [get]
 func (h *Handlers) ListTSD(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	declarations, err := h.payrollService.ListTSD(r.Context(), schemaName, tenantID)
+	filter, err := parseTSDListFilter(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	declarations, err := h.payrollService.ListTSD(r.Context(), schemaName, tenantID, filter)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to list TSD declarations")
 		return
 	}
 
 	respondJSON(w, http.StatusOK, declarations)
+}
+
+func parseTSDListFilter(r *http.Request) (payroll.TSDListFilter, error) {
+	var filter payroll.TSDListFilter
+
+	if rawYear := strings.TrimSpace(r.URL.Query().Get("year")); rawYear != "" {
+		year, err := strconv.Atoi(rawYear)
+		if err != nil || year <= 0 {
+			return filter, errors.New("Invalid year")
+		}
+		filter.Year = year
+	}
+
+	if rawMonth := strings.TrimSpace(r.URL.Query().Get("month")); rawMonth != "" {
+		month, err := strconv.Atoi(rawMonth)
+		if err != nil || month < 1 || month > 12 {
+			return filter, errors.New("Invalid month")
+		}
+		filter.Month = month
+	}
+
+	return filter, nil
 }
 
 // ExportTSDXML exports a TSD declaration to e-MTA XML format

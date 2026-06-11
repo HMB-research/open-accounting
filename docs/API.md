@@ -3506,6 +3506,13 @@ GET /tenants/{tenantId}/tsd
 Authorization: Bearer <token>
 ```
 
+Optional query parameters:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `year`    | int  | Filter declarations by period year |
+| `month`   | int  | Filter declarations by period month (`1`-`12`) |
+
 ### Get TSD Declaration
 
 ```http

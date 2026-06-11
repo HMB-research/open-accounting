@@ -213,6 +213,21 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 	if len(tsdList) != 1 {
 		t.Fatalf("expected 1 TSD declaration, got %d", len(tsdList))
 	}
+	tsdFiltered := invokeJSON[[]payroll.TSDDeclaration](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.ListTSD(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/tsd?year=2025&month=2", nil, claims), map[string]string{"tenantID": tenant.ID}))
+	if len(tsdFiltered) != 1 || tsdFiltered[0].PeriodYear != 2025 || tsdFiltered[0].PeriodMonth != 2 {
+		t.Fatalf("expected filtered 2025-02 TSD declaration, got %#v", tsdFiltered)
+	}
+	tsdFuture := invokeJSON[[]payroll.TSDDeclaration](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.ListTSD(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/tsd?year=2026", nil, claims), map[string]string{"tenantID": tenant.ID}))
+	if len(tsdFuture) != 0 {
+		t.Fatalf("expected no future-year TSD declarations, got %d", len(tsdFuture))
+	}
+	invokeRaw(t, http.StatusBadRequest, func(w http.ResponseWriter, r *http.Request) {
+		h.ListTSD(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/tsd?month=13", nil, claims), map[string]string{"tenantID": tenant.ID}))
 
 	xmlResp := invokeRaw(t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
 		h.ExportTSDXML(w, r)

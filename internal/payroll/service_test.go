@@ -346,13 +346,15 @@ func (m *MockRepository) GetTSDRows(ctx context.Context, schemaName, tenantID, d
 	return append([]TSDRow(nil), m.TSDRows[declarationID]...), nil
 }
 
-func (m *MockRepository) ListTSD(ctx context.Context, schemaName, tenantID string) ([]TSDDeclaration, error) {
+func (m *MockRepository) ListTSD(ctx context.Context, schemaName, tenantID string, filter TSDListFilter) ([]TSDDeclaration, error) {
 	if m.ListTSDErr != nil {
 		return nil, m.ListTSDErr
 	}
 	declarations := []TSDDeclaration{}
 	for _, declaration := range m.TSDDeclarations {
-		if declaration.TenantID == tenantID {
+		if declaration.TenantID == tenantID &&
+			(filter.Year == 0 || declaration.PeriodYear == filter.Year) &&
+			(filter.Month == 0 || declaration.PeriodMonth == filter.Month) {
 			copy := *declaration
 			declarations = append(declarations, copy)
 		}

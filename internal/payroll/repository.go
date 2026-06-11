@@ -59,7 +59,7 @@ type Repository interface {
 	CreateTSDRows(ctx context.Context, schemaName string, rows []TSDRow) error
 	GetTSD(ctx context.Context, schemaName, tenantID string, year, month int) (*TSDDeclaration, error)
 	GetTSDRows(ctx context.Context, schemaName, tenantID, declarationID string) ([]TSDRow, error)
-	ListTSD(ctx context.Context, schemaName, tenantID string) ([]TSDDeclaration, error)
+	ListTSD(ctx context.Context, schemaName, tenantID string, filter TSDListFilter) ([]TSDDeclaration, error)
 	MarkTSDSubmitted(ctx context.Context, schemaName, tenantID, declarationID, emtaReference string, submittedAt time.Time) error
 	UpdateTSDStatus(ctx context.Context, schemaName, tenantID, declarationID string, status TSDStatus, updatedAt time.Time) error
 

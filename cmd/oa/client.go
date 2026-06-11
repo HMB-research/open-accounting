@@ -2674,9 +2674,16 @@ func (c *apiClient) calculateTaxPreview(ctx context.Context, tenantID string, gr
 	return &resp, nil
 }
 
-func (c *apiClient) listTSD(ctx context.Context, tenantID string) ([]payroll.TSDDeclaration, error) {
+func (c *apiClient) listTSD(ctx context.Context, tenantID string, filter payroll.TSDListFilter) ([]payroll.TSDDeclaration, error) {
 	var resp []payroll.TSDDeclaration
-	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "tsd"), nil, c.apiToken, &resp); err != nil {
+	values := url.Values{}
+	if filter.Year > 0 {
+		values.Set("year", strconv.Itoa(filter.Year))
+	}
+	if filter.Month > 0 {
+		values.Set("month", strconv.Itoa(filter.Month))
+	}
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "tsd"), values), nil, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil

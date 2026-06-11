@@ -10146,11 +10146,24 @@ func (a *cliApp) runTSD(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("tsd list", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
 		asJSON := fs.Bool("json", false, "Output JSON")
+		yearFlag := fs.String("year", "", "Filter by declaration year")
+		monthFlag := fs.String("month", "", "Filter by declaration month")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 
-		declarations, err := client.listTSD(ctx, cfg.TenantID)
+		year, err := parseOptionalPositiveInt("year", *yearFlag)
+		if err != nil {
+			return err
+		}
+		month, err := parseOptionalBoundedInt("month", *monthFlag, 1, 12)
+		if err != nil {
+			return err
+		}
+		declarations, err := client.listTSD(ctx, cfg.TenantID, payroll.TSDListFilter{
+			Year:  year,
+			Month: month,
+		})
 		if err != nil {
 			return err
 		}
@@ -11905,6 +11918,22 @@ func parseRequiredPositiveInt(name, value string) (int, error) {
 		return 0, fmt.Errorf("%s must be positive", name)
 	}
 	return parsed, nil
+}
+
+func parseOptionalPositiveInt(name, value string) (int, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, nil
+	}
+	return parseRequiredPositiveInt(name, trimmed)
+}
+
+func parseOptionalBoundedInt(name, value string, min, max int) (int, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, nil
+	}
+	return parseRequiredBoundedInt(name, trimmed, min, max)
 }
 
 func parseRequiredBoundedInt(name, value string, min, max int) (int, error) {

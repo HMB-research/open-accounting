@@ -430,6 +430,7 @@ Use `--json` on leave-management reads and mutations for automation. Leave comma
 
 ```bash
 go run ./cmd/oa tsd list
+go run ./cmd/oa tsd list --year 2026 --month 3
 go run ./cmd/oa tsd get --year 2026 --month 3
 go run ./cmd/oa tsd generate --run-id <payroll-run-id>
 go run ./cmd/oa tsd export-xml --year 2026 --month 3 --output ./tsd-2026-03.xml
@@ -439,7 +440,7 @@ go run ./cmd/oa tsd mark-accepted --year 2026 --month 3
 go run ./cmd/oa tsd mark-rejected --year 2026 --month 3
 ```
 
-TSD period commands require `--year` and `--month`; `--month` must be between 1 and 12. Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `--json` on list/get/generate/mark-submitted/mark-accepted/mark-rejected for automation.
+`tsd list` accepts optional `--year` and `--month` filters; `--month` must be between 1 and 12 when provided. TSD period commands require `--year` and `--month`; `--month` must be between 1 and 12. Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `--json` on list/get/generate/mark-submitted/mark-accepted/mark-rejected for automation.
 
 ## KMD declarations
 

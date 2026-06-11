@@ -196,6 +196,12 @@ type TSDDeclaration struct {
 	Rows []TSDRow `json:"rows,omitempty"`
 }
 
+// TSDListFilter contains optional filters for listing TSD declarations.
+type TSDListFilter struct {
+	Year  int
+	Month int
+}
+
 // TSDRow represents a single row in TSD Annex 1 (payments to residents)
 type TSDRow struct {
 	ID            string `json:"id"`
