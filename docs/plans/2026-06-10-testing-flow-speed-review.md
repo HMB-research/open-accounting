@@ -908,3 +908,53 @@ Three environment specs passed only after retry:
 The next stage should fix this environment readiness cluster first, then resume
 measured consolidation with `recurring`, `env-onboarding`, `quotes`, `payroll`,
 `tsd`, and `mobile-navigation`.
+
+## 2026-06-11 Auth Register Toggle Retry
+
+CI run `27333893655` on commit `a3f00c7` confirmed the environment readiness
+cluster was removed: `demo/env-dashboard.spec.ts`,
+`demo/env-report-settings-routes.spec.ts`, and
+`demo/env-responsive-errors.spec.ts` all completed with matching test and
+attempt counts.
+
+The same uploaded Playwright artifacts showed one remaining retry:
+
+| Spec | Test | Failure |
+|------|------|---------|
+| `auth.spec.ts` | Validates login form controls and register mode requirements | Timed out waiting for the register heading after toggling from login mode |
+
+The root auth test still used a manual DOM `button.click()` inside
+`page.evaluate()` and searched only for the English `Create Account` text. That
+bypassed Playwright actionability checks and made the test sensitive to the
+current locale. The same test also reused a login-named submit helper after
+entering register mode, which could assert the toggle-back button instead of
+the form submit button.
+
+The fix keeps the same unauthenticated login/register coverage but uses:
+
+- a role-based click on the visible `.toggle-mode` button;
+- English and Estonian text alternatives for login/register headings and
+  controls;
+- `form button[type="submit"]` for the actual auth form submit button.
+
+Local branch-API proof before committing:
+
+| Command | Result |
+|---------|--------|
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium auth.spec.ts --workers=1 --repeat-each=5` | 46 passed in 48.1s, including `env-health-auth.spec.ts` because the filename filter also matches that auth health spec |
+| `bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/auth.spec.ts --workers=4 --repeat-each=5` | 16 passed in 14.6s |
+
+The next CI artifact should confirm that `auth.spec.ts` no longer needs a retry.
+After that, the next measured spec-level speed targets from run `27333893655`
+are:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/vat-returns.spec.ts` | 62.087s | 6 | 6 |
+| `demo/recurring.spec.ts` | 60.052s | 5 | 5 |
+| `demo/env-onboarding.spec.ts` | 57.266s | 5 | 5 |
+| `demo/quotes.spec.ts` | 55.815s | 4 | 4 |
+| `demo/payroll.spec.ts` | 54.565s | 5 | 5 |
+| `demo/tsd.spec.ts` | 52.877s | 5 | 5 |
+| `demo/salary-calculator.spec.ts` | 52.846s | 5 | 5 |
+| `demo/mobile-navigation.spec.ts` | 45.838s | 4 | 4 |

@@ -9,12 +9,15 @@ test.describe('Authentication - Login Page', () => {
 		await page.waitForLoadState('networkidle').catch(() => {
 			// Vite and background requests can keep the page busy in local runs.
 		});
-		await expect(page.getByRole('heading', { name: /welcome|login|sign in/i })).toBeVisible();
+		await expect(page.getByRole('heading', { name: /welcome|login|sign in|tere tulemast|logi/i })).toBeVisible();
 	};
 
-	const emailInput = (page: Page) => page.getByLabel(/email/i);
+	const emailInput = (page: Page) => page.getByLabel(/email|e-post/i);
 	const passwordInput = (page: Page) => page.locator('#password');
-	const submitButton = (page: Page) => page.getByRole('button', { name: /sign in|login/i });
+	const nameInput = (page: Page) => page.getByLabel(/name|nimi/i);
+	const submitButton = (page: Page) => page.locator('form button[type="submit"]');
+	const registerToggleButton = (page: Page) =>
+		page.locator('.toggle-mode').getByRole('button', { name: /create account|register|loo konto/i });
 
 	test('validates login form controls and register mode requirements', async ({ page }) => {
 		await openLoginPage(page);
@@ -31,20 +34,12 @@ test.describe('Authentication - Login Page', () => {
 		await expect(passwordInput(page)).not.toHaveAttribute('minlength', /.+/);
 		await expect(submitButton(page)).toBeEnabled();
 
-		await page.evaluate(() => {
-			const buttons = document.querySelectorAll('button.link-btn');
-			for (const button of buttons) {
-				if (button.textContent?.toLowerCase().includes('create account')) {
-					(button as HTMLButtonElement).click();
-					break;
-				}
-			}
-		});
+		await registerToggleButton(page).click();
 
-		await expect(page.getByRole('heading', { name: /create account|register/i })).toBeVisible();
-		await expect(page.getByLabel(/name/i)).toBeVisible();
+		await expect(page.getByRole('heading', { name: /create account|register|loo konto/i })).toBeVisible();
+		await expect(nameInput(page)).toBeVisible();
 		await expect(passwordInput(page)).toHaveAttribute('minlength', '8');
-		await expect(submitButton(page)).toBeVisible();
+		await expect(submitButton(page)).toContainText(/create account|register|loo konto/i);
 	});
 
 	test('shows invalid credential errors without leaving login', async ({ page }) => {
