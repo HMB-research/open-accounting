@@ -824,3 +824,51 @@ The focused command reported `3 passed (8.5s)` including the shared
 the prior fixed-assets shard tail is reduced. The next measured demo E2E
 candidates are `quotes`, `recurring`, `tsd`, `env-onboarding`,
 `salary-calculator`, `vat-returns`, and `payroll`.
+
+CI run `27332212613` on commit `35d092c` confirmed the fixed-assets reduction
+in the required PR gate. `demo/fixed-assets.spec.ts` reported 20.970s across
+two tests, down from 62.927s across six tests in run `27331569311`.
+
+The current required PR gate shape is:
+
+| Gate | Current observation |
+|------|---------------------|
+| `integration-test` | Slowest shard job was 4m12s; weight-aware sharding is still balanced enough |
+| `e2e` | Slowest shard job was 4m12s; Playwright runtime per shard was about 1m53s to 2m35s |
+| `e2e-smoke` | 2m30s; still useful as an early core-flow signal |
+| `test` | 1m57s and still enforces 100% `cmd/oa` coverage through `make test-backend-coverage` |
+| `frontend` | 1m41s; keep Paraglide/SvelteKit-writing gates serial locally |
+| `build` | 37s after backend/integration gates |
+
+Uploaded Playwright artifacts from run `27332212613` show the next highest
+single-file demo E2E candidates:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/env-onboarding.spec.ts` | 57.103s | 5 | 5 |
+| `demo/vat-returns.spec.ts` | 56.228s | 6 | 6 |
+| `demo/recurring.spec.ts` | 55.853s | 5 | 5 |
+| `demo/payroll.spec.ts` | 53.234s | 5 | 5 |
+| `demo/tsd.spec.ts` | 49.484s | 5 | 5 |
+| `demo/orders.spec.ts` | 49.216s | 4 | 4 |
+| `demo/quotes.spec.ts` | 48.285s | 4 | 4 |
+| `demo/mobile-navigation.spec.ts` | 47.810s | 4 | 4 |
+
+There was one retry in `demo/env-responsive-errors.spec.ts`: the tablet
+viewport test timed out waiting for `nav.navbar, .mobile-menu-btn` and then
+passed on retry. Treat that as a readiness bug before spending effort on more
+runner-level parallelism.
+
+The next practical speed work is:
+
+1. Consolidate the remaining repeated-navigation demo specs in measured order:
+   `env-onboarding`, `vat-returns`, `recurring`, `payroll`, `tsd`, `orders`,
+   `quotes`, and `mobile-navigation`.
+2. Fix the `env-responsive-errors` tablet readiness retry so green runs stay
+   single-attempt.
+3. After the top demo specs are mostly workflow-sized, review CI setup overhead:
+   every E2E shard repeats Bun install, dependency install, Playwright browser
+   setup, backend build, migration, API start, and demo reset. The current
+   artifact/runtime spread suggests this setup cost is now large enough to be
+   the next workflow-level target, but it should follow spec-level retry and
+   repeated-navigation cleanup.
