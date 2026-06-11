@@ -1,4 +1,5 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { ensureAuthenticated, navigateTo } from './utils';
 
 interface KMDDeclarationResponse {
@@ -52,7 +53,7 @@ async function openVATReturns(page: Page, testInfo: TestInfo) {
 }
 
 test.describe('Demo VAT Returns (KMD)', () => {
-	test('covers page controls, declaration generation, and detail rendering', async ({
+	test('covers page controls, declaration generation, detail rendering, and XML export', async ({
 		page
 	}, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
@@ -109,7 +110,33 @@ test.describe('Demo VAT Returns (KMD)', () => {
 		await expect(detailPanel.getByRole('heading', { name: new RegExp(`KMD ${periodLabel}`) })).toBeVisible();
 		await expect(detailPanel).toContainText(`${formatAmount(declaration.total_output_vat)} EUR`);
 		await expect(detailPanel).toContainText(`${formatAmount(declaration.total_input_vat)} EUR`);
-		await expect(detailPanel.getByRole('button', { name: /export xml|ekspordi xml/i })).toBeVisible();
+		const exportButton = detailPanel.getByRole('button', { name: /export xml|ekspordi xml/i });
+		await expect(exportButton).toBeVisible();
 		await expect(detailPanel.locator('table thead')).toContainText(/row|code|description|tax|rida|kood|kirjeldus|maks/i);
+
+		const xmlResponsePromise = page.waitForResponse((response) => {
+			return (
+				response.request().method() === 'GET' &&
+				new RegExp(`/api/v1/tenants/[^/]+/tax/kmd/${period.year}/${period.month}/xml$`).test(
+					responsePath(response.url())
+				)
+			);
+		});
+		const downloadPromise = page.waitForEvent('download');
+		await exportButton.click();
+
+		const [xmlResponse, download] = await Promise.all([xmlResponsePromise, downloadPromise]);
+		expect(xmlResponse.ok()).toBeTruthy();
+		expect(xmlResponse.headers()['content-type']).toContain('application/xml');
+		expect(xmlResponse.headers()['content-disposition']).toContain(
+			`KMD_${period.year}_${period.month}.xml`
+		);
+		expect(download.suggestedFilename()).toBe(
+			`KMD_${period.year}_${String(period.month).padStart(2, '0')}.xml`
+		);
+		const downloadPath = await download.path();
+		expect(downloadPath).toBeTruthy();
+		const xml = await readFile(downloadPath as string, 'utf8');
+		expect(xml).toContain(`<periood>${periodLabel}</periood>`);
 	});
 });
