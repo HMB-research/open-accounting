@@ -739,7 +739,7 @@ Each view is tested for:
 | Page Load    | ✅     | Page renders with "Company Settings" heading            |
 | Data Display | ✅     | Loading state visible (expected for client-side render) |
 | Navigation   | ✅     | Back navigation to settings visible                     |
-| CRUD         | ⚠️     | Need E2E for full verification                          |
+| CRUD         | ✅     | Save and reload verified through demo E2E               |
 | Errors       | ✅     | No errors observed                                      |
 | Responsive   | ⚠️     | Needs manual verification                               |
 
@@ -748,6 +748,7 @@ Each view is tested for:
 - Company Settings interface
 - Back navigation to settings section
 - Client-side form loading ready
+- Saves company profile, contact, invoice, and regional settings, then reloads the page and verifies persisted API/UI values
 
 **Overall:** ✅ Working
 
@@ -872,6 +873,7 @@ _None identified_
 
 | Date       | Tester | Changes                                                                                                                                             |
 | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-11 | Codex  | Strengthened company settings demo E2E to save and reload persisted tenant profile, invoice, contact, and regional settings from `/settings/company` |
 | 2026-06-11 | Codex  | Added cost-center demo E2E coverage for creating, editing, and deleting a cost center from `/settings/cost-centers`                                  |
 | 2026-06-11 | Codex  | Added fixed-asset UI edit workflow and demo E2E coverage for creating, editing, and deleting a draft asset from `/assets`                            |
 | 2026-06-11 | Codex  | Added demo E2E coverage for saving and reloading SMTP configuration from `/settings/email`                                                          |
