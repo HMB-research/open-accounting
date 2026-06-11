@@ -543,3 +543,46 @@ CI run `27327274971` on commit `f8b4413` confirmed the prior auth tail was reduc
 | `demo/plugins-settings.spec.ts` | 58.502s | 6 |
 
 The next measured demo E2E candidates are `payments`, `cash-flow`, `bank-import`, `fixed-assets`, and `plugins-settings`.
+
+CI run `27327520607` on commit `bb0340e` showed `demo/payments.spec.ts` as one
+of the highest remaining repeated-workflow costs before the next stage:
+
+| Spec | Executed time | Tests | Attempts |
+|------|---------------|-------|----------|
+| `demo/payments.spec.ts` | 70.776s | 6 | 6 |
+| `demo/bank-import.spec.ts` | 76.390s | 5 | 6 |
+| `demo/plugins-settings.spec.ts` | 68.196s | 6 | 6 |
+| `demo/fixed-assets.spec.ts` | 62.168s | 6 | 6 |
+| `demo/recurring.spec.ts` | 59.866s | 5 | 5 |
+| `demo/cash-flow.spec.ts` | 59.185s | 6 | 6 |
+
+## Follow-up: Payments Workflow Consolidation
+
+Consolidated `demo/payments.spec.ts` from six repeated route tests into three
+workflow checks:
+
+| Workflow | Coverage |
+|----------|----------|
+| Payment ledger shell | Heading, new-payment control, type filter options, and loaded table/empty terminal state |
+| Received payment allocation | Payment create modal, invoice allocation payload, payment API response, rendered row, unallocated amount, and received/made filter behavior |
+| Payment reversal | Payment create modal, reversal modal payload, reversal API response links, original reversed state, offsetting payment row, and made-filter behavior |
+
+The old file repeated auth, tenant setup, payments navigation, payment loading,
+and sent-invoice loading for four structure checks plus two mutation workflows.
+The replacement keeps the same user-visible assertions while each workflow pays
+route setup once. Route setup now opens `/payments` with `waitForNetworkIdle:
+false` and waits for route-owned payment and sent-invoice API responses. Payment
+creation and type filtering now use shared helpers, matching the newer cash
+payments pattern.
+
+After consolidation, focused local E2E against the branch API reported:
+
+| Spec | Executed time | Tests |
+|------|---------------|-------|
+| `demo/payments.spec.ts` | 4.397s | 3 |
+
+The focused command reported `4 passed (8.7s)` including the shared
+`auth-setup` dependency. The next CI Playwright artifact should confirm whether
+the prior payments shard tail is reduced. The next measured demo E2E candidates
+from run `27327520607` are `bank-import`, `plugins-settings`, `fixed-assets`,
+`recurring`, and `cash-flow`.
