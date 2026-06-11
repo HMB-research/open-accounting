@@ -415,6 +415,7 @@ jobs:
       - name: Upload Playwright smoke timing data
         uses: actions/upload-artifact@v6
         if: always()
+        continue-on-error: true
         with:
           name: playwright-smoke-results-${{ github.run_attempt }}
           path: frontend/demo-test-results.json
@@ -558,6 +559,7 @@ jobs:
       - name: Upload Playwright timing data
         uses: actions/upload-artifact@v6
         if: always()
+        continue-on-error: true
         with:
           name: playwright-results-shard-${{ matrix.shard }}-${{ github.run_attempt }}
           path: frontend/demo-test-results.json
@@ -650,6 +652,7 @@ jobs:
       - name: Upload Playwright timing data
         uses: actions/upload-artifact@v6
         if: always()
+        continue-on-error: true
         with:
           name: playwright-demo-results-${{ github.run_attempt }}
           path: frontend/demo-test-results.json
