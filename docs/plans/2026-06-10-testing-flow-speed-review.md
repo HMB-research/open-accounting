@@ -767,8 +767,15 @@ The baseline focused command reported `7 passed (11.5s)` including the shared
 | `demo/cash-flow.spec.ts` | 1.710s | 2 |
 
 The focused command reported `3 passed (9.3s)` including the shared
-`auth-setup` dependency. The next CI Playwright artifact should confirm whether
-the prior cash-flow shard tail is reduced. The next measured demo E2E
-candidates from run `27330447206` are `recurring`, `quotes`, `tsd`,
-`fixed-assets`, `salary-calculator`, `vat-returns`, `env-onboarding`, and
-`payroll`.
+`auth-setup` dependency.
+
+CI run `27331263746` on commit `1c42c23` confirmed the cash-flow reduction in
+the required PR gate:
+
+| Spec | Before | After |
+|------|--------|-------|
+| `demo/cash-flow.spec.ts` | 63.060s, 6 tests, 6 attempts | 22.218s, 2 tests, 2 attempts |
+
+The highest remaining measured demo E2E candidates are now `recurring`,
+`fixed-assets`, `quotes`, `payroll`, `tsd`, `vat-returns`,
+`salary-calculator`, and `env-onboarding`.
