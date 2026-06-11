@@ -64,7 +64,7 @@ test.describe("Demo Chart of Accounts", () => {
     await openAccounts(page, testInfo);
   });
 
-  test("displays seeded accounts with workflow controls", async ({ page }) => {
+  test("displays seeded accounts and manages a custom account", async ({ page }) => {
     await expect(
       page.getByRole("heading", { name: /chart of accounts|kontoplaan/i }),
     ).toBeVisible();
@@ -90,9 +90,7 @@ test.describe("Demo Chart of Accounts", () => {
     await expect(
       page.getByRole("heading", { name: /liabilities|kohustused/i }),
     ).toBeVisible();
-  });
 
-  test("creates, edits, and deactivates a custom account", async ({ page }) => {
     const unique = Date.now().toString(36).slice(-5).toUpperCase();
     const account = await createAccount(page, {
       code: `88${unique.slice(-3)}`,
