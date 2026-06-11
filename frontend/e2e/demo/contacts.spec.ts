@@ -106,7 +106,9 @@ test.describe("Demo Contacts", () => {
     await openContacts(page, testInfo);
   });
 
-  test("displays seeded contacts with workflow controls", async ({ page }) => {
+  test("displays seeded contacts, filters, edits, and deletes", async ({
+    page,
+  }) => {
     await expect(
       page.getByRole("heading", { name: /contacts|kontaktid/i }),
     ).toBeVisible();
@@ -136,11 +138,7 @@ test.describe("Demo Contacts", () => {
         .getByRole("button", { name: /delete|kustuta/i })
         .first(),
     ).toBeVisible();
-  });
 
-  test("creates a customer and filters it by search and type", async ({
-    page,
-  }) => {
     const unique = Date.now().toString(36);
     const contact = await createContact(page, {
       name: `Workflow Customer ${unique}`,
@@ -163,11 +161,12 @@ test.describe("Demo Contacts", () => {
     await typeFilter(page).selectOption("SUPPLIER");
     await waitForContactsLoaded(page);
     await expect(contactRow(page, contact.name)).toHaveCount(0);
-  });
 
-  test("creates, edits, and deletes a contact", async ({ page }) => {
-    const unique = Date.now().toString(36);
-    const contact = await createContact(page, {
+    await typeFilter(page).selectOption("");
+    await waitForContactsLoaded(page);
+    await searchContacts(page, "");
+
+    const editableContact = await createContact(page, {
       name: `Workflow Editable ${unique}`,
       contact_type: "CUSTOMER",
       email: `editable-${unique}@example.com`,
@@ -177,7 +176,7 @@ test.describe("Demo Contacts", () => {
 
     const updatedName = `Workflow Edited ${unique}`;
     const updatedEmail = `edited-${unique}@example.com`;
-    let row = contactRow(page, contact.name);
+    let row = contactRow(page, editableContact.name);
     await row.getByRole("button", { name: /edit|muuda/i }).click();
 
     const modal = page.locator('[role="dialog"], .modal').first();
@@ -193,7 +192,7 @@ test.describe("Demo Contacts", () => {
     const updateResponsePromise = page.waitForResponse(
       (response) =>
         response.request().method() === "PUT" &&
-        response.url().includes(`/contacts/${contact.id}`),
+        response.url().includes(`/contacts/${editableContact.id}`),
     );
     await modal.getByRole("button", { name: /save|salvesta/i }).click();
     const updateResponse = await updateResponsePromise;
@@ -212,7 +211,7 @@ test.describe("Demo Contacts", () => {
     const deleteResponsePromise = page.waitForResponse(
       (response) =>
         response.request().method() === "DELETE" &&
-        response.url().includes(`/contacts/${contact.id}`),
+        response.url().includes(`/contacts/${editableContact.id}`),
     );
     await row.getByRole("button", { name: /delete|kustuta/i }).click();
     const deleteResponse = await deleteResponsePromise;
