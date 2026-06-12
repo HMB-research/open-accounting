@@ -369,6 +369,8 @@ go run ./cmd/oa employees salary-components --id <employee-id> --active-on 2026-
 go run ./cmd/oa employees import --file ./employees.csv
 ```
 
+Employee CSV import requires `first_name`, `last_name`, and `start_date`. Optional cutover fields include `employee_number`, `personal_code`, `email`, phone/address/bank details, `end_date`, employment metadata, tax settings, `base_salary`, `salary_effective_from`, and `is_active`. Importer-compatible aliases include `number`, `employee_no`, or `employee_id` for `employee_number`; `given_name`/`surname`; `isikukood`; `telephone`; `iban`; `employment_start`/`employment_end`; `title`/`team`; `type`; `basic_exemption`; `pension_rate`; `salary` or `gross_salary`; `effective_from`; and `active`. Dates accept `YYYY-MM-DD`, RFC3339, or `DD.MM.YYYY`; booleans accept `true`/`false`, `yes`/`no`, `1`/`0`, and Estonian `ja`/`ei`; decimal fields accept comma decimals.
+
 ## Payroll runs
 
 ```bash
@@ -1160,6 +1162,8 @@ employee_number,first_name,last_name,personal_code,email,start_date,employment_t
 EMP-001,Mari,Maasikas,49001010001,mari@example.com,2026-01-15,FULL_TIME,true,700.00,0.02,3200.00,2026-01-15
 EMP-002,Juhan,Tamm,49001010002,juhan@example.com,2026-02-01,PART_TIME,true,700.00,0.02,,
 ```
+
+Importer aliases are accepted for incumbent exports, for example `number;given_name;surname;isikukood;employment_start;employment_end;type;basic_exemption;pension_rate;salary;effective_from;active`. Employee import rejects duplicate employee numbers, personal codes, emails, and same full name plus start date.
 
 ### Payroll history
 
