@@ -655,7 +655,7 @@ func TestService_CreateJournalEntry(t *testing.T) {
 	})
 
 	t.Run("sets source type and ID", func(t *testing.T) {
-		sourceID := "inv-1"
+		sourceID := "11111111-1111-1111-1111-111111111111"
 		req := &CreateJournalEntryRequest{
 			EntryDate:   time.Now(),
 			Description: "Invoice entry",
@@ -672,6 +672,25 @@ func TestService_CreateJournalEntry(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "INVOICE", result.SourceType)
 		assert.Equal(t, &sourceID, result.SourceID)
+	})
+
+	t.Run("rejects invalid source ID", func(t *testing.T) {
+		sourceID := "legacy-invoice"
+		req := &CreateJournalEntryRequest{
+			EntryDate:   time.Now(),
+			Description: "Invoice entry",
+			SourceType:  "INVOICE",
+			SourceID:    &sourceID,
+			Lines: []CreateJournalEntryLineReq{
+				{AccountID: "acc-1", DebitAmount: decimal.NewFromFloat(100)},
+				{AccountID: "acc-2", CreditAmount: decimal.NewFromFloat(100)},
+			},
+			UserID: "user-1",
+		}
+
+		_, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "source_id must be a valid UUID")
 	})
 
 	t.Run("sets evidence requirement", func(t *testing.T) {

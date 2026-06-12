@@ -9606,13 +9606,17 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 		if len(lines) < 2 {
 			return errors.New("at least two lines are required")
 		}
+		parsedSourceID, err := optionalUUIDStringPtr("source-id", *sourceID)
+		if err != nil {
+			return err
+		}
 
 		entry, err := client.createJournalEntry(ctx, cfg.TenantID, &accounting.CreateJournalEntryRequest{
 			EntryDate:        entryDateValue,
 			Description:      strings.TrimSpace(*description),
 			Reference:        strings.TrimSpace(*reference),
 			SourceType:       strings.TrimSpace(*sourceType),
-			SourceID:         optionalStringPtr(*sourceID),
+			SourceID:         parsedSourceID,
 			RequiresEvidence: *requiresEvidence,
 			Lines:            []accounting.CreateJournalEntryLineReq(lines),
 		})
