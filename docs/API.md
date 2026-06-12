@@ -1073,6 +1073,7 @@ Authorization: Bearer <token>
 ```
 
 Contacts are soft-deleted by deactivating them.
+Contact create and update requests may set `default_account_id`; when supplied it must be a valid UUID.
 
 ### Import Contacts
 

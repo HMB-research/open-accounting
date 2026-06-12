@@ -3,6 +3,7 @@ package contacts
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
@@ -42,6 +43,10 @@ func (s *Service) Create(ctx context.Context, tenantID string, schemaName string
 	if contactID == "" {
 		contactID = uuid.New().String()
 	}
+	defaultAccountID, err := normalizeOptionalContactUUIDPtr(req.DefaultAccountID, "default_account_id")
+	if err != nil {
+		return nil, err
+	}
 
 	contact := &Contact{
 		ID:               contactID,
@@ -60,7 +65,7 @@ func (s *Service) Create(ctx context.Context, tenantID string, schemaName string
 		CountryCode:      req.CountryCode,
 		PaymentTermsDays: req.PaymentTermsDays,
 		CreditLimit:      req.CreditLimit,
-		DefaultAccountID: req.DefaultAccountID,
+		DefaultAccountID: defaultAccountID,
 		IsActive:         true,
 		Notes:            req.Notes,
 		CreatedAt:        time.Now(),
@@ -98,7 +103,26 @@ func validateCreateRequest(req *CreateContactRequest) error {
 	if !isValidContactType(req.ContactType) {
 		return fmt.Errorf("invalid contact type: %s", req.ContactType)
 	}
+	if _, err := normalizeOptionalContactUUIDPtr(req.DefaultAccountID, "default_account_id"); err != nil {
+		return err
+	}
 	return nil
+}
+
+func normalizeOptionalContactUUIDPtr(value *string, field string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", field)
+	}
+	id := parsedID.String()
+	return &id, nil
 }
 
 // isValidContactType checks if the contact type is valid
@@ -136,7 +160,9 @@ func (s *Service) Update(ctx context.Context, tenantID, schemaName, contactID st
 	}
 
 	// Apply updates
-	applyUpdates(contact, req)
+	if err := applyUpdates(contact, req); err != nil {
+		return nil, err
+	}
 	contact.UpdatedAt = time.Now()
 
 	if err := s.repo.Update(ctx, schemaName, contact); err != nil {
@@ -147,7 +173,7 @@ func (s *Service) Update(ctx context.Context, tenantID, schemaName, contactID st
 }
 
 // applyUpdates applies update request fields to a contact
-func applyUpdates(contact *Contact, req *UpdateContactRequest) {
+func applyUpdates(contact *Contact, req *UpdateContactRequest) error {
 	if req.Name != nil {
 		contact.Name = *req.Name
 	}
@@ -185,7 +211,11 @@ func applyUpdates(contact *Contact, req *UpdateContactRequest) {
 		contact.CreditLimit = *req.CreditLimit
 	}
 	if req.DefaultAccountID != nil {
-		contact.DefaultAccountID = req.DefaultAccountID
+		defaultAccountID, err := normalizeOptionalContactUUIDPtr(req.DefaultAccountID, "default_account_id")
+		if err != nil {
+			return err
+		}
+		contact.DefaultAccountID = defaultAccountID
 	}
 	if req.Notes != nil {
 		contact.Notes = *req.Notes
@@ -193,6 +223,7 @@ func applyUpdates(contact *Contact, req *UpdateContactRequest) {
 	if req.IsActive != nil {
 		contact.IsActive = *req.IsActive
 	}
+	return nil
 }
 
 // Delete deactivates a contact (soft delete)

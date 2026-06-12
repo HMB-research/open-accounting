@@ -12401,12 +12401,14 @@ func TestCLIContactsBranches(t *testing.T) {
 		{name: "create invalid flag", args: []string{"contacts", "create", "--bogus"}, want: "flag provided but not defined"},
 		{name: "create missing name", args: []string{"contacts", "create"}, want: "name is required"},
 		{name: "create invalid credit limit", args: []string{"contacts", "create", "--name", "Acme", "--credit-limit", "not-money"}, want: "parse credit limit"},
+		{name: "create invalid default account id", args: []string{"contacts", "create", "--name", "Acme", "--default-account-id", "legacy-account"}, want: "default-account-id must be a valid UUID"},
 		{name: "get invalid flag", args: []string{"contacts", "get", "--bogus"}, want: "flag provided but not defined"},
 		{name: "get missing id", args: []string{"contacts", "get"}, want: "id is required"},
 		{name: "update invalid flag", args: []string{"contacts", "update", "--bogus"}, want: "flag provided but not defined"},
 		{name: "update missing id", args: []string{"contacts", "update", "--name", "Acme"}, want: "id is required"},
 		{name: "update invalid payment terms", args: []string{"contacts", "update", "--id", "contact-2", "--payment-terms-days", "-1"}, want: "payment-terms-days must be non-negative"},
 		{name: "update invalid credit limit", args: []string{"contacts", "update", "--id", "contact-2", "--credit-limit", "nope"}, want: "parse credit limit"},
+		{name: "update invalid default account id", args: []string{"contacts", "update", "--id", "contact-2", "--default-account-id", "legacy-account"}, want: "default-account-id must be a valid UUID"},
 		{name: "update invalid active", args: []string{"contacts", "update", "--id", "contact-2", "--active", "maybe"}, want: "parse active"},
 		{name: "delete invalid flag", args: []string{"contacts", "delete", "--bogus"}, want: "flag provided but not defined"},
 		{name: "delete missing id", args: []string{"contacts", "delete"}, want: "id is required"},
@@ -12424,6 +12426,8 @@ func TestCLIContactsBranches(t *testing.T) {
 	}
 
 	importFile := writeTempCSV(t, "contacts-branch.csv", "name,email\nBranch Co,branch@example.com\n")
+	branchDefaultAccountID := "77777777-7777-7777-7777-777777777777"
+	updatedDefaultAccountID := "88888888-8888-8888-8888-888888888888"
 	requestCounts := map[string]int{}
 	contactPayload := func(id, name string, contactType contacts.ContactType, active bool) map[string]any {
 		return map[string]any{
@@ -12443,7 +12447,7 @@ func TestCLIContactsBranches(t *testing.T) {
 			"country_code":       "EE",
 			"payment_terms_days": 21,
 			"credit_limit":       "99.50",
-			"default_account_id": "acc-branch",
+			"default_account_id": branchDefaultAccountID,
 			"is_active":          active,
 			"notes":              "Branch fixture",
 			"created_at":         "2026-03-12T00:00:00Z",
@@ -12481,7 +12485,7 @@ func TestCLIContactsBranches(t *testing.T) {
 			assert.Equal(t, 21, req.PaymentTermsDays)
 			assert.True(t, req.CreditLimit.Equal(decimal.RequireFromString("99.50")))
 			require.NotNil(t, req.DefaultAccountID)
-			assert.Equal(t, "acc-branch", *req.DefaultAccountID)
+			assert.Equal(t, branchDefaultAccountID, *req.DefaultAccountID)
 			assert.Equal(t, "Branch fixture", req.Notes)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(contactPayload("contact-2", req.Name, req.ContactType, true))
@@ -12517,7 +12521,7 @@ func TestCLIContactsBranches(t *testing.T) {
 			require.NotNil(t, req.CreditLimit)
 			assert.True(t, req.CreditLimit.Equal(decimal.RequireFromString("199.99")))
 			require.NotNil(t, req.DefaultAccountID)
-			assert.Equal(t, "acc-updated", *req.DefaultAccountID)
+			assert.Equal(t, updatedDefaultAccountID, *req.DefaultAccountID)
 			require.NotNil(t, req.Notes)
 			assert.Equal(t, "Updated branch", *req.Notes)
 			require.NotNil(t, req.IsActive)
@@ -12572,7 +12576,7 @@ func TestCLIContactsBranches(t *testing.T) {
 		"--country-code", " ee ",
 		"--payment-terms-days", "21",
 		"--credit-limit", " 99.50 ",
-		"--default-account-id", " acc-branch ",
+		"--default-account-id", " " + branchDefaultAccountID + " ",
 		"--notes", " Branch fixture ",
 		"--json",
 	})
@@ -12601,7 +12605,7 @@ func TestCLIContactsBranches(t *testing.T) {
 		"--country-code", " ee ",
 		"--payment-terms-days", "45",
 		"--credit-limit", "199.99",
-		"--default-account-id", " acc-updated ",
+		"--default-account-id", " " + updatedDefaultAccountID + " ",
 		"--notes", " Updated branch ",
 		"--active", " true ",
 		"--json",
