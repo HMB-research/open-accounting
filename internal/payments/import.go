@@ -263,6 +263,10 @@ func (s *Service) buildPaymentFromImportRow(
 	if err != nil {
 		return nil, nil, err
 	}
+	contactID, err := parseOptionalPaymentImportUUID("contact_id", row.values["contact_id"])
+	if err != nil {
+		return nil, nil, err
+	}
 
 	currency := strings.ToUpper(strings.TrimSpace(row.values["currency"]))
 	if currency == "" {
@@ -274,7 +278,7 @@ func (s *Service) buildPaymentFromImportRow(
 		TenantID:      tenantID,
 		PaymentNumber: strings.TrimSpace(row.values["payment_number"]),
 		PaymentType:   paymentType,
-		ContactID:     optionalPaymentImportString(row.values["contact_id"]),
+		ContactID:     contactID,
 		PaymentDate:   paymentDate,
 		Amount:        amount,
 		Currency:      currency,
@@ -341,7 +345,11 @@ func (s *Service) buildPaymentImportAllocation(
 
 func (s *Service) resolvePaymentImportInvoiceID(ctx context.Context, tenantID, schemaName string, row paymentImportRow) (string, error) {
 	if invoiceID := strings.TrimSpace(row.values["invoice_id"]); invoiceID != "" {
-		return invoiceID, nil
+		parsedID, err := uuid.Parse(invoiceID)
+		if err != nil {
+			return "", fmt.Errorf("invoice_id must be a valid UUID")
+		}
+		return parsedID.String(), nil
 	}
 
 	invoiceNumber := strings.TrimSpace(row.values["invoice_number"])
@@ -406,12 +414,17 @@ func parsePaymentImportOptionalPositiveDecimal(field, value string, fallback dec
 	return parsePaymentImportPositiveDecimal(field, value)
 }
 
-func optionalPaymentImportString(value string) *string {
+func parseOptionalPaymentImportUUID(field, value string) (*string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return nil
+		return nil, nil
 	}
-	return &trimmed
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", field)
+	}
+	canonicalID := parsedID.String()
+	return &canonicalID, nil
 }
 
 func detectPaymentImportDelimiter(content string) rune {

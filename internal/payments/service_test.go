@@ -686,9 +686,12 @@ func TestService_Create(t *testing.T) {
 }
 
 func TestService_ImportPaymentsCSV(t *testing.T) {
+	contactID := "55555555-5555-4555-8555-555555555555"
+	invoiceID := "66666666-6666-4666-8666-666666666666"
+	resolvedInvoiceID := "77777777-7777-4777-8777-777777777777"
 	repo := NewMockRepository()
 	invoiceSvc := &MockInvoiceService{
-		invoiceIDsByNumber: map[string]string{"INV-2": "inv-2"},
+		invoiceIDsByNumber: map[string]string{"INV-2": resolvedInvoiceID},
 	}
 	service := NewServiceWithRepository(repo, invoiceSvc)
 	ctx := context.Background()
@@ -707,8 +710,8 @@ func TestService_ImportPaymentsCSV(t *testing.T) {
 		UserID:   "user-1",
 		LockDate: &lockDate,
 		CSVContent: "payment_number,payment_type,payment_date,amount,currency,exchange_rate,contact_id,invoice_id,invoice_number,allocation_amount,reference\n" +
-			"PAY-001,RECEIVED,2026-03-15,100.00,EUR,1,contact-1,inv-1,,60.00,Receipt 1\n" +
-			"PAY-002,RECEIVED,2026-03-18,75.00,EUR,1,contact-1,,INV-2,75.00,Receipt 2\n" +
+			"PAY-001,RECEIVED,2026-03-15,100.00,EUR,1," + contactID + "," + invoiceID + ",,60.00,Receipt 1\n" +
+			"PAY-002,RECEIVED,2026-03-18,75.00,EUR,1," + contactID + ",,INV-2,75.00,Receipt 2\n" +
 			",MADE,2026-03-16,50.00,EUR,1,,,,,Supplier payment\n" +
 			"PMT-EXISTING,RECEIVED,2026-03-17,20.00,EUR,1,,,,,Duplicate\n" +
 			"PAY-LOCKED,RECEIVED,2026-01-15,25.00,EUR,1,,,,,Locked\n",
@@ -741,20 +744,20 @@ func TestService_ImportPaymentsCSV(t *testing.T) {
 	assert.Equal(t, "PAY-001", preserved.PaymentNumber)
 	assert.Equal(t, PaymentTypeReceived, preserved.PaymentType)
 	assert.True(t, preserved.Amount.Equal(decimal.RequireFromString("100.00")))
-	assert.Equal(t, "contact-1", *preserved.ContactID)
+	assert.Equal(t, contactID, *preserved.ContactID)
 	assert.Equal(t, "user-1", preserved.CreatedBy)
 	require.Len(t, repo.allocations[preserved.ID], 1)
-	assert.Equal(t, "inv-1", repo.allocations[preserved.ID][0].InvoiceID)
+	assert.Equal(t, invoiceID, repo.allocations[preserved.ID][0].InvoiceID)
 	assert.True(t, repo.allocations[preserved.ID][0].Amount.Equal(decimal.RequireFromString("60.00")))
 	require.Len(t, invoiceSvc.recordPaymentCalls, 2)
-	assert.Equal(t, "inv-1", invoiceSvc.recordPaymentCalls[0].invoiceID)
+	assert.Equal(t, invoiceID, invoiceSvc.recordPaymentCalls[0].invoiceID)
 
 	require.NotNil(t, resolvedByNumber)
 	assert.Equal(t, "PAY-002", resolvedByNumber.PaymentNumber)
 	require.Len(t, repo.allocations[resolvedByNumber.ID], 1)
-	assert.Equal(t, "inv-2", repo.allocations[resolvedByNumber.ID][0].InvoiceID)
+	assert.Equal(t, resolvedInvoiceID, repo.allocations[resolvedByNumber.ID][0].InvoiceID)
 	assert.True(t, repo.allocations[resolvedByNumber.ID][0].Amount.Equal(decimal.RequireFromString("75.00")))
-	assert.Equal(t, "inv-2", invoiceSvc.recordPaymentCalls[1].invoiceID)
+	assert.Equal(t, resolvedInvoiceID, invoiceSvc.recordPaymentCalls[1].invoiceID)
 
 	require.NotNil(t, generated)
 	assert.Equal(t, "OUT-00001", generated.PaymentNumber)
@@ -783,6 +786,29 @@ func TestService_ImportPaymentsCSVReportsMissingInvoiceNumber(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, `resolve invoice_number "INV-404"`)
 	assert.Len(t, repo.payments, 0)
 	assert.Empty(t, invoiceSvc.recordPaymentCalls)
+}
+
+func TestService_ImportPaymentsCSVReportsInvalidUUIDReferences(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil)
+	ctx := context.Background()
+
+	result, err := service.ImportPaymentsCSV(ctx, "tenant-1", "test_schema", &ImportPaymentsRequest{
+		FileName: "payments.csv",
+		UserID:   "user-1",
+		CSVContent: "payment_number,payment_type,payment_date,amount,contact_id,invoice_id,allocation_amount\n" +
+			"PAY-BAD-CONTACT,RECEIVED,2026-03-15,100.00,legacy-contact,,\n" +
+			"PAY-BAD-INVOICE,RECEIVED,2026-03-16,100.00,,legacy-invoice,25.00\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Zero(t, result.PaymentsCreated)
+	assert.Equal(t, 2, result.RowsSkipped)
+	require.Len(t, result.Errors, 2)
+	assert.Contains(t, result.Errors[0].Message, "contact_id must be a valid UUID")
+	assert.Contains(t, result.Errors[1].Message, "invoice_id must be a valid UUID")
+	assert.Empty(t, repo.payments)
 }
 
 func TestService_Create_WithExchangeRate(t *testing.T) {

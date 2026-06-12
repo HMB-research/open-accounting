@@ -2617,7 +2617,7 @@ Content-Type: application/json
 }
 ```
 
-Payment CSV imports require `payment_type`, `payment_date`, and `amount`. Optional columns include `payment_number`, `contact_id`, `currency`, `exchange_rate`, `payment_method`, `bank_account`, `reference`, `notes`, `invoice_id`, `invoice_number`, and `allocation_amount`. `customer_id` and `supplier_id` are accepted as `contact_id`, `method` as `payment_method`, `description` as `notes`, and `invoice_no` as `invoice_number`. Omitted payment numbers are generated; supplied numbers are preserved and checked for duplicates. Payment allocations can target `invoice_id` directly, including UUIDs preserved by invoice import, or resolve `invoice_number` through the tenant invoice list.
+Payment CSV imports require `payment_type`, `payment_date`, and `amount`. Optional columns include `payment_number`, `contact_id`, `currency`, `exchange_rate`, `payment_method`, `bank_account`, `reference`, `notes`, `invoice_id`, `invoice_number`, and `allocation_amount`. `contact_id` and direct `invoice_id` values must be valid UUIDs. `customer_id` and `supplier_id` are accepted as `contact_id`, `method` as `payment_method`, `description` as `notes`, and `invoice_no` as `invoice_number`. Omitted payment numbers are generated; supplied numbers are preserved and checked for duplicates. Payment allocations can target `invoice_id` directly, including UUIDs preserved by invoice import, or resolve `invoice_number` through the tenant invoice list.
 
 ### Export SEPA Payment XML
 
