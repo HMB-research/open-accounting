@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
@@ -4637,6 +4638,10 @@ func (a *cliApp) runBankAccounts(ctx context.Context, cfg *cliConfig, client *ap
 		if strings.TrimSpace(*accountNumber) == "" {
 			return errors.New("account-number is required")
 		}
+		parsedGLAccountID, err := optionalUUIDStringPtr("gl-account-id", *glAccountID)
+		if err != nil {
+			return err
+		}
 
 		account, err := client.createBankAccount(ctx, cfg.TenantID, &banking.CreateBankAccountRequest{
 			Name:          strings.TrimSpace(*name),
@@ -4644,7 +4649,7 @@ func (a *cliApp) runBankAccounts(ctx context.Context, cfg *cliConfig, client *ap
 			BankName:      strings.TrimSpace(*bankName),
 			SwiftCode:     strings.TrimSpace(*swiftCode),
 			Currency:      strings.ToUpper(strings.TrimSpace(*currency)),
-			GLAccountID:   optionalStringPtr(*glAccountID),
+			GLAccountID:   parsedGLAccountID,
 			IsDefault:     *isDefault,
 		})
 		if err != nil {
@@ -4735,12 +4740,16 @@ func (a *cliApp) runBankAccounts(ctx context.Context, cfg *cliConfig, client *ap
 		if err != nil {
 			return err
 		}
+		parsedGLAccountID, err := optionalUUIDStringPtr("gl-account-id", *glAccountID)
+		if err != nil {
+			return err
+		}
 
 		account, err := client.updateBankAccount(ctx, cfg.TenantID, strings.TrimSpace(*accountID), &banking.UpdateBankAccountRequest{
 			Name:        strings.TrimSpace(*name),
 			BankName:    strings.TrimSpace(*bankName),
 			SwiftCode:   strings.TrimSpace(*swiftCode),
-			GLAccountID: optionalStringPtr(*glAccountID),
+			GLAccountID: parsedGLAccountID,
 			IsActive:    active,
 			IsDefault:   isDefault,
 		})
@@ -12518,6 +12527,19 @@ func optionalStringPtr(value string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func optionalUUIDStringPtr(name, value string) (*string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", name)
+	}
+	id := parsedID.String()
+	return &id, nil
 }
 
 func optionalUpperStringPtr(value string) *string {
