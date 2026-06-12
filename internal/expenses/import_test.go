@@ -39,6 +39,8 @@ func TestServiceImportExpensesCSV(t *testing.T) {
 }
 
 func TestServiceImportExpensesCSVSkipsInvalidRows(t *testing.T) {
+	expenseAccountID := "99999999-9999-4999-8999-999999999999"
+	paymentAccountID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 	repo := newMemoryRepository()
 	service := NewServiceWithRepository(repo, newFakeAccountingPoster(), &fakeEvidenceEvaluator{compliant: true})
 	service.now = fixedExpenseNow
@@ -48,9 +50,9 @@ func TestServiceImportExpensesCSVSkipsInvalidRows(t *testing.T) {
 		UserID:   "user-1",
 		LockDate: &lockDate,
 		CSVContent: "expense_number,expense_date,merchant,expense_account_id,payment_account_id,amount,status,rejection_reason\n" +
-			"EXP-LOCKED,2026-05-30,Locked,expense-account,cash-account,10,DRAFT,\n" +
-			"EXP-POSTED,2026-05-31,Posted,expense-account,cash-account,20,POSTED,\n" +
-			"EXP-REJECTED,2026-05-31,Rejected,expense-account,cash-account,30,REJECTED,Missing receipt\n",
+			"EXP-LOCKED,2026-05-30,Locked," + expenseAccountID + "," + paymentAccountID + ",10,DRAFT,\n" +
+			"EXP-POSTED,2026-05-31,Posted," + expenseAccountID + "," + paymentAccountID + ",20,POSTED,\n" +
+			"EXP-REJECTED,2026-05-31,Rejected," + expenseAccountID + "," + paymentAccountID + ",30,REJECTED,Missing receipt\n",
 	})
 
 	require.NoError(t, err)
@@ -62,6 +64,33 @@ func TestServiceImportExpensesCSVSkipsInvalidRows(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, "period locked through 2026-05-30")
 	assert.Contains(t, result.Errors[1].Message, "posted expenses must be imported")
 	assert.Equal(t, StatusRejected, repo.expensesByNumber(t, "EXP-REJECTED").Status)
+}
+
+func TestServiceImportExpensesCSVReportsInvalidUUIDReferences(t *testing.T) {
+	expenseAccountID := "99999999-9999-4999-8999-999999999999"
+	paymentAccountID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	repo := newMemoryRepository()
+	service := NewServiceWithRepository(repo, newFakeAccountingPoster(), &fakeEvidenceEvaluator{compliant: true})
+	service.now = fixedExpenseNow
+
+	result, err := service.ImportExpensesCSV(context.Background(), "tenant_acme", "tenant-1", &ImportExpensesRequest{
+		UserID: "user-1",
+		CSVContent: "expense_number,expense_date,merchant,employee_id,contact_id,expense_account_id,payment_account_id,amount\n" +
+			"EXP-BAD-EMPLOYEE,2026-05-31,Employee,legacy-employee,," + expenseAccountID + "," + paymentAccountID + ",10\n" +
+			"EXP-BAD-CONTACT,2026-05-31,Contact,,legacy-contact," + expenseAccountID + "," + paymentAccountID + ",10\n" +
+			"EXP-BAD-EXPENSE-ACCOUNT,2026-05-31,Expense Account,,,legacy-expense-account," + paymentAccountID + ",10\n" +
+			"EXP-BAD-PAYMENT-ACCOUNT,2026-05-31,Payment Account,,," + expenseAccountID + ",legacy-payment-account,10\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 4, result.RowsProcessed)
+	assert.Zero(t, result.ExpensesCreated)
+	assert.Equal(t, 4, result.RowsSkipped)
+	require.Len(t, result.Errors, 4)
+	assert.Contains(t, result.Errors[0].Message, "employee_id must be a valid UUID")
+	assert.Contains(t, result.Errors[1].Message, "contact_id must be a valid UUID")
+	assert.Contains(t, result.Errors[2].Message, "expense_account_id must be a valid UUID")
+	assert.Contains(t, result.Errors[3].Message, "payment_account_id must be a valid UUID")
 }
 
 func (r *memoryRepository) expensesByNumber(t *testing.T, expenseNumber string) *Expense {
