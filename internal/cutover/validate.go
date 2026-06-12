@@ -34,7 +34,7 @@ type parsedRow struct {
 
 type bundleIndexes struct {
 	files             map[FileKind]bool
-	accounts          map[string]bool
+	accountCodes      map[string]bool
 	accountIDs        map[string]bool
 	bankAccounts      map[string]string
 	contacts          map[string]bool
@@ -1438,7 +1438,7 @@ func eInvoiceValidationHeaders() []string {
 func buildIndexes(files []parsedFile) bundleIndexes {
 	indexes := bundleIndexes{
 		files:             map[FileKind]bool{},
-		accounts:          map[string]bool{},
+		accountCodes:      map[string]bool{},
 		accountIDs:        map[string]bool{},
 		bankAccounts:      map[string]string{},
 		contacts:          map[string]bool{},
@@ -1455,8 +1455,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 		for _, row := range file.rows {
 			switch file.kind {
 			case KindAccounts:
-				addIndexValue(indexes.accounts, row.values["code"])
-				addIndexValue(indexes.accounts, row.values["id"])
+				addIndexValue(indexes.accountCodes, row.values["code"])
 				addIndexValue(indexes.accountIDs, row.values["id"])
 			case KindBankAccounts:
 				addBankAccountIndexValue(indexes.bankAccounts, row.values["account_number"], row.values["currency"])
@@ -1501,15 +1500,13 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindAccounts:
 			checkOptionalUUID(report, file, row, "id")
 			checkSelfReference(report, file, row, "parent_code", "code")
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
+			checkTargetReference(report, indexes.files[KindAccounts], indexes.accountCodes, file, row, KindAccounts,
 				[]string{"parent_code"})
 		case KindContacts:
 			checkOptionalUUID(report, file, row, "id")
 		case KindExpenses:
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
-				[]string{"expense_account_code"})
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
-				[]string{"payment_account_code"})
+			checkAccountReference(report, indexes, file, row, "expense_account_id", "expense_account_code")
+			checkAccountReference(report, indexes, file, row, "payment_account_id", "payment_account_code")
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				[]string{"contact_id"})
 		case KindInvoices:
@@ -1527,10 +1524,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
 		case KindRecurringInvoices:
-			if checkOptionalUUID(report, file, row, "account_id") {
-				checkTargetReference(report, indexes.files[KindAccounts], indexes.accountIDs, file, row, KindAccounts,
-					[]string{"account_id"})
-			}
+			checkAccountReference(report, indexes, file, row, "account_id", "")
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				commercialDocumentContactReferenceFields())
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
@@ -1548,14 +1542,13 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 				[]string{"invoice_id", "invoice_number"})
 		case KindBankAccounts:
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
-				[]string{"gl_account_id", "gl_account_code"})
+			checkAccountReference(report, indexes, file, row, "gl_account_id", "gl_account_code")
 		case KindBankTransactions:
 			checkBankTransactionSourceAccount(report, indexes, file, row)
 		case KindPayrollHistory, KindLeaveBalances, KindTSDHistory:
 			checkEmployeeReference(report, indexes, file, row)
 		case KindOpeningBalances, KindJournalEntries:
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
+			checkTargetReference(report, indexes.files[KindAccounts], indexes.accountCodes, file, row, KindAccounts,
 				[]string{"account_code"})
 		case KindCostCenters:
 			checkSelfReference(report, file, row, "parent_code", "code")
@@ -1574,12 +1567,9 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindProducts:
 			checkTargetReference(report, indexes.files[KindProductCategories], indexes.productCategories, file, row, KindProductCategories,
 				[]string{"category_id", "category_name"})
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
-				[]string{"sale_account_id", "sale_account_code"})
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
-				[]string{"purchase_account_id", "purchase_account_code"})
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
-				[]string{"inventory_account_id", "inventory_account_code"})
+			checkAccountReference(report, indexes, file, row, "sale_account_id", "sale_account_code")
+			checkAccountReference(report, indexes, file, row, "purchase_account_id", "purchase_account_code")
+			checkAccountReference(report, indexes, file, row, "inventory_account_id", "inventory_account_code")
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				[]string{"supplier_id"})
 		case KindStockAdjustments:
@@ -1588,12 +1578,9 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkTargetReference(report, indexes.files[KindWarehouses], indexes.warehouses, file, row, KindWarehouses,
 				[]string{"warehouse_id", "warehouse_code"})
 		case KindFixedAssets:
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
-				[]string{"asset_account_id", "asset_account_code"})
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
-				[]string{"depreciation_expense_account_id", "depreciation_expense_account_code"})
-			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
-				[]string{"accumulated_depreciation_account_id", "accumulated_depreciation_account_code"})
+			checkAccountReference(report, indexes, file, row, "asset_account_id", "asset_account_code")
+			checkAccountReference(report, indexes, file, row, "depreciation_expense_account_id", "depreciation_expense_account_code")
+			checkAccountReference(report, indexes, file, row, "accumulated_depreciation_account_id", "accumulated_depreciation_account_code")
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				[]string{"supplier_id"})
 			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
@@ -5169,6 +5156,21 @@ func checkEmployeeReference(report *BundleValidationReport, indexes bundleIndexe
 		employeeName(row.values),
 	}
 	checkReferenceValues(report, indexes.employees, file, row, KindEmployees, "employee", values)
+}
+
+func checkAccountReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, idField, codeField string) {
+	accountID := strings.TrimSpace(row.values[idField])
+	if accountID != "" {
+		if !checkOptionalUUID(report, file, row, idField) || !indexes.files[KindAccounts] {
+			return
+		}
+		checkReferenceValues(report, indexes.accountIDs, file, row, KindAccounts, idField, []string{accountID})
+		return
+	}
+	if codeField == "" || !indexes.files[KindAccounts] {
+		return
+	}
+	checkReferenceValues(report, indexes.accountCodes, file, row, KindAccounts, codeField, []string{row.values[codeField]})
 }
 
 func checkSelfReference(report *BundleValidationReport, file parsedFile, row parsedRow, field, identityField string) {

@@ -503,9 +503,9 @@ func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
 		{
 			Kind:     KindExpenses,
 			FileName: "expenses.csv",
-			CSVContent: "expense_number,expense_date,merchant,expense_account_id,payment_account_id,amount\n" +
-				"EXP-1,2026-05-31,Office,acc-exp,acc-pay,42\n" +
-				"EXP-1,2026-06-01,Office,acc-exp,acc-pay,43\n",
+			CSVContent: "expense_number,expense_date,merchant,expense_account_code,payment_account_code,amount\n" +
+				"EXP-1,2026-05-31,Office,1000,1000,42\n" +
+				"EXP-1,2026-06-01,Office,1000,1000,43\n",
 		},
 	}})
 
@@ -1225,7 +1225,7 @@ func TestValidateBundleReportsBankAccountReferenceIssues(t *testing.T) {
 	require.Len(t, report.Issues, 1)
 	assert.Equal(t, KindBankAccounts, report.Issues[0].Kind)
 	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
-	assert.Equal(t, "gl_account_id/gl_account_code", report.Issues[0].Field)
+	assert.Equal(t, "gl_account_code", report.Issues[0].Field)
 	assert.Equal(t, "9999", report.Issues[0].Value)
 }
 
@@ -1414,6 +1414,38 @@ func TestValidateBundleReportsAccountParentAliasReferenceIssues(t *testing.T) {
 	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
 	assert.Equal(t, "parent_code", report.Issues[0].Field)
 	assert.Equal(t, "9999", report.Issues[0].Value)
+}
+
+func TestValidateBundleTreatsPreservedAccountIDsAndCodesSeparately(t *testing.T) {
+	accountID := "11111111-1111-1111-1111-111111111111"
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "id,account_code,account_name,type,parent_code\n" +
+				accountID + ",1000,Cash,ASSET," + accountID + "\n",
+		},
+		{
+			Kind:       KindOpeningBalances,
+			FileName:   "opening.csv",
+			CSVContent: "account_code,debit,credit\n" + accountID + ",100,0\n1000,0,100\n",
+		},
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit\n" +
+				"JE-1,2026-05-30," + accountID + ",100,0\n" +
+				"JE-1,2026-05-30,1000,0,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindAccounts, "parent_code", "reference")
+	assertValidationIssue(t, report, KindOpeningBalances, "account_code", "reference")
+	assertValidationIssue(t, report, KindJournalEntries, "account_code", "reference")
 }
 
 func TestValidateBundleReportsHierarchySelfReferenceIssues(t *testing.T) {
@@ -1691,16 +1723,9 @@ func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 	require.NotNil(t, report)
 	assert.False(t, report.Summary.Ready)
 	assert.Equal(t, 3, report.Summary.ErrorCount)
-	require.Len(t, report.Issues, 3)
-	assert.Equal(t, KindProductCategories, report.Issues[0].TargetKind)
-	assert.Equal(t, "category_id/category_name", report.Issues[0].Field)
-	assert.Equal(t, "33333333-3333-3333-3333-333333333333", report.Issues[0].Value)
-	assert.Equal(t, KindAccounts, report.Issues[1].TargetKind)
-	assert.Equal(t, "sale_account_id/sale_account_code", report.Issues[1].Field)
-	assert.Equal(t, "missing-sales", report.Issues[1].Value)
-	assert.Equal(t, KindAccounts, report.Issues[2].TargetKind)
-	assert.Equal(t, "purchase_account_id/purchase_account_code", report.Issues[2].Field)
-	assert.Equal(t, "5999", report.Issues[2].Value)
+	assertValidationIssue(t, report, KindProducts, "category_id/category_name", "reference")
+	assertValidationIssue(t, report, KindProducts, "sale_account_id", "sale_account_id must be a valid UUID")
+	assertValidationIssue(t, report, KindProducts, "purchase_account_code", "reference")
 }
 
 func TestValidateBundleReportsProductCategoryRowValueIssues(t *testing.T) {
@@ -2037,7 +2062,7 @@ func TestValidateBundleReportsFixedAssetAccountReferenceIssues(t *testing.T) {
 	require.Len(t, report.Issues, 1)
 	assert.Equal(t, KindFixedAssets, report.Issues[0].Kind)
 	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
-	assert.Equal(t, "asset_account_id/asset_account_code", report.Issues[0].Field)
+	assert.Equal(t, "asset_account_code", report.Issues[0].Field)
 	assert.Equal(t, "9999", report.Issues[0].Value)
 }
 
