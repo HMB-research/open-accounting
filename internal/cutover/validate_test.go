@@ -166,6 +166,109 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	assert.Contains(t, eInvoiceValidation.Headers, "buyer_reg_code")
 }
 
+func TestValidateBundleAcceptsMeritProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetMerit,
+		Files: []BundleFile{
+			{
+				Kind:       KindAccounts,
+				FileName:   "merit-accounts.csv",
+				CSVContent: "konto_kood,konto_nimi,konto_tüüp\n1000,Cash,ASSET\n3000,Equity,EQUITY\n4000,Sales,REVENUE\n",
+			},
+			{
+				Kind:       KindContacts,
+				FileName:   "merit-contacts.csv",
+				CSVContent: "kliendi_kood,nimi,registrikood,kmkr_nr\nCUST-1,Customer One,12345678,EE12345678\n",
+			},
+			{
+				Kind:       KindInvoices,
+				FileName:   "merit-invoices.csv",
+				CSVContent: "arve_nr,arve_kuupäev,kliendi_kood,rea_kirjeldus,kogus,ühiku_hind,käibemaks\nINV-1,2026-05-30,CUST-1,Implementation,1,100,22\n",
+			},
+			{
+				Kind:       KindOpeningBalances,
+				FileName:   "merit-opening.csv",
+				CSVContent: "konto,deebet,kreedit\n1000,100,0\n3000,0,100\n",
+			},
+			{
+				Kind:       KindJournalEntries,
+				FileName:   "merit-journal.csv",
+				CSVContent: "kanne_nr,kuupäev,konto,deebet,kreedit,selgitus\nJE-1,2026-05-31,1000,50,0,Receipt\nJE-1,2026-05-31,4000,0,50,Receipt\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 5)
+	assert.Contains(t, report.Files[0].Headers, "account_type")
+	assert.Contains(t, report.Files[2].Headers, "invoice_number")
+	assert.Contains(t, report.Files[3].Headers, "account_code")
+	assert.Contains(t, report.Files[4].Headers, "entry_reference")
+}
+
+func TestValidateBundleAcceptsSmartAccountsProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: "smart-accounts",
+		Files: []BundleFile{
+			{
+				Kind:       KindAccounts,
+				FileName:   "smartaccounts-accounts.csv",
+				CSVContent: "account_no,account_title,classification\n1000,Cash,ASSET\n3000,Equity,EQUITY\n4000,Sales,REVENUE\n",
+			},
+			{
+				Kind:       KindContacts,
+				FileName:   "smartaccounts-clients.csv",
+				CSVContent: "client_no,client_name,registration_no,vat_no\nCUST-1,Customer One,12345678,EE12345678\n",
+			},
+			{
+				Kind:       KindInvoices,
+				FileName:   "smartaccounts-invoices.csv",
+				CSVContent: "document_no,document_date,client_no,item_description,qty,unit_price,vat_percent\nINV-1,2026-05-30,CUST-1,Implementation,1,100,22\n",
+			},
+			{
+				Kind:       KindOpeningBalances,
+				FileName:   "smartaccounts-opening.csv",
+				CSVContent: "account_no,debit_amount,credit_amount\n1000,100,0\n3000,0,100\n",
+			},
+			{
+				Kind:       KindJournalEntries,
+				FileName:   "smartaccounts-journal.csv",
+				CSVContent: "entry_no,transaction_date,account_no,debit_amount,credit_amount,line_memo\nJE-1,2026-05-31,1000,50,0,Receipt\nJE-1,2026-05-31,4000,0,50,Receipt\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 5)
+	assert.Contains(t, report.Files[0].Headers, "account_type")
+	assert.Contains(t, report.Files[1].Headers, "reg_code")
+	assert.Contains(t, report.Files[2].Headers, "invoice_number")
+	assert.Contains(t, report.Files[4].Headers, "entry_reference")
+}
+
+func TestValidateBundleRejectsUnsupportedProviderPreset(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: "legacy-system",
+		Files: []BundleFile{
+			{
+				Kind:       KindContacts,
+				FileName:   "contacts.csv",
+				CSVContent: "name\nSupplier OÜ\n",
+			},
+		},
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, report)
+	assert.Contains(t, err.Error(), "unsupported provider_preset")
+}
+
 func TestValidateBundleReportsOpeningBalanceBalanceIssue(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

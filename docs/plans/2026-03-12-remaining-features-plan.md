@@ -39,7 +39,7 @@ Goal:
 - make cutover realistic for a small accounting firm or SMB without manual SQL
 
 Work:
-- extend vendor-specific mapping presets for Merit, SmartAccounts, and common bank/provider exports
+- expand the initial vendor-specific mapping presets for Merit, SmartAccounts, and common bank/provider exports into complete documented migration templates
 - deepen migration bundle validation for remaining cross-file consistency checks
 - cover more incumbent-system history families where pilots still require manual work
 
