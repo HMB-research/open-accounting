@@ -2244,7 +2244,7 @@ Content-Type: application/json
 }
 ```
 
-Category CSV imports require `name`. Optional columns include `id`, `category_id`, or `product_category_id` to preserve UUIDs for cutover references, plus `description`, `parent_id`, `parent_category_id`, and `parent_name`; parent names can reference existing categories or earlier rows in the same import.
+Category CSV imports require `name`. Optional columns include `id`, `category_id`, or `product_category_id` to preserve UUIDs for cutover references, plus `description`, `parent_id`, `parent_category_id`, and `parent_name`; parent ID columns must be valid UUIDs, while parent names can reference existing categories or earlier rows in the same import.
 
 ### List Products
 
