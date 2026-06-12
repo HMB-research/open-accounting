@@ -214,6 +214,91 @@ func TestValidateBundleReportsBankAccountReferenceIssues(t *testing.T) {
 	assert.Equal(t, "9999", report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsBankTransactionSourceAccountReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "account_name,account_number,currency\nMain bank,EE471000001020145685,EUR\n",
+		},
+		{
+			Kind:       KindBankTransactions,
+			FileName:   "bank.csv",
+			CSVContent: "date,amount,description,source_account,currency\n2026-05-31,100,Customer receipt,EE999,EUR\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindBankTransactions, report.Issues[0].Kind)
+	assert.Equal(t, KindBankAccounts, report.Issues[0].TargetKind)
+	assert.Equal(t, "source_account", report.Issues[0].Field)
+	assert.Equal(t, "EE999", report.Issues[0].Value)
+}
+
+func TestValidateBundleReportsBankTransactionCurrencyMismatch(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "account_name,account_number,currency\nMain bank,EE471000001020145685,EUR\n",
+		},
+		{
+			Kind:       KindBankTransactions,
+			FileName:   "bank.csv",
+			CSVContent: "date,amount,details,client_account,currency\n2026-05-31,100,Customer receipt,EE471000001020145685,USD\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindBankTransactions, report.Issues[0].Kind)
+	assert.Equal(t, KindBankAccounts, report.Issues[0].TargetKind)
+	assert.Equal(t, "source_account/currency", report.Issues[0].Field)
+	assert.Equal(t, "EE471000001020145685/USD", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, `currency "USD"`)
+}
+
+func TestValidateBundleAcceptsBankTransactionStatementAccountAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "account_name,account_number\nMain bank,EE47 1000 0010 2014 5685\n",
+		},
+		{
+			Kind:       KindBankTransactions,
+			FileName:   "lhv-bank.csv",
+			CSVContent: "date,sum,details,client_account,currency,payment_reference,counterparty_iban,entry_reference\n2026-05-31,100,Customer receipt,EE471000001020145685,EUR,REF-1,EE111,ext-1\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+
+	var bankValidation FileValidation
+	for _, file := range report.Files {
+		if file.Kind == KindBankTransactions {
+			bankValidation = file
+		}
+	}
+	require.Equal(t, KindBankTransactions, bankValidation.Kind)
+	assert.Contains(t, bankValidation.Headers, "source_account")
+	assert.Contains(t, bankValidation.Headers, "amount")
+	assert.Contains(t, bankValidation.Headers, "reference")
+	assert.Contains(t, bankValidation.Headers, "counterparty_account")
+	assert.Contains(t, bankValidation.Headers, "external_id")
+}
+
 func TestValidateBundleReportsAccountParentReferenceIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

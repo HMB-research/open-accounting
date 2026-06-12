@@ -31,6 +31,7 @@ type parsedRow struct {
 type bundleIndexes struct {
 	files             map[FileKind]bool
 	accounts          map[string]bool
+	bankAccounts      map[string]string
 	contacts          map[string]bool
 	employees         map[string]bool
 	invoices          map[string]bool
@@ -203,13 +204,21 @@ var fileSpecs = map[FileKind]fileSpec{
 			"booking_date":         "date",
 			"value_date":           "value_date",
 			"amount":               "amount",
+			"sum":                  "amount",
+			"source_account":       "source_account",
+			"client_account":       "source_account",
+			"account_number":       "source_account",
+			"bank_account":         "source_account",
 			"description":          "description",
 			"details":              "description",
 			"reference":            "reference",
+			"payment_reference":    "reference",
 			"counterparty_name":    "counterparty_name",
 			"counterparty":         "counterparty_name",
 			"counterparty_account": "counterparty_account",
+			"counterparty_iban":    "counterparty_account",
 			"external_id":          "external_id",
+			"entry_reference":      "external_id",
 		}),
 		requiredGroups: [][]string{{"date"}, {"amount"}},
 	},
@@ -760,6 +769,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 	indexes := bundleIndexes{
 		files:             map[FileKind]bool{},
 		accounts:          map[string]bool{},
+		bankAccounts:      map[string]string{},
 		contacts:          map[string]bool{},
 		employees:         map[string]bool{},
 		invoices:          map[string]bool{},
@@ -775,6 +785,8 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 			case KindAccounts:
 				addIndexValue(indexes.accounts, row.values["code"])
 				addIndexValue(indexes.accounts, row.values["id"])
+			case KindBankAccounts:
+				addBankAccountIndexValue(indexes.bankAccounts, row.values["account_number"], row.values["currency"])
 			case KindContacts:
 				addIndexValue(indexes.contacts, row.values["code"])
 				addIndexValue(indexes.contacts, row.values["reg_code"])
@@ -838,6 +850,8 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindBankAccounts:
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"gl_account_id", "gl_account_code"})
+		case KindBankTransactions:
+			checkBankTransactionSourceAccount(report, indexes, file, row)
 		case KindPayrollHistory, KindLeaveBalances, KindTSDHistory:
 			checkEmployeeReference(report, indexes, file, row)
 		case KindOpeningBalances, KindJournalEntries:
@@ -877,6 +891,48 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"accumulated_depreciation_account_id", "accumulated_depreciation_account_code"})
 		}
 	}
+}
+
+func checkBankTransactionSourceAccount(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if !indexes.files[KindBankAccounts] {
+		return
+	}
+
+	sourceAccount := strings.TrimSpace(row.values["source_account"])
+	if sourceAccount == "" {
+		return
+	}
+
+	accountCurrency, ok := indexes.bankAccounts[bankAccountIndexKey(sourceAccount)]
+	if !ok {
+		report.addIssue(ValidationIssue{
+			Severity:   SeverityError,
+			Kind:       file.kind,
+			FileName:   file.fileName,
+			Row:        row.number,
+			Field:      "source_account",
+			Value:      sourceAccount,
+			TargetKind: KindBankAccounts,
+			Message:    fmt.Sprintf("source_account reference %q was not found in %s file", sourceAccount, KindBankAccounts),
+		})
+		return
+	}
+
+	rowCurrency := strings.ToUpper(strings.TrimSpace(row.values["currency"]))
+	if rowCurrency == "" || accountCurrency == "" || rowCurrency == accountCurrency {
+		return
+	}
+
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       file.kind,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "source_account/currency",
+		Value:      sourceAccount + "/" + rowCurrency,
+		TargetKind: KindBankAccounts,
+		Message:    fmt.Sprintf("source_account %q uses currency %q but %s file has currency %q", sourceAccount, rowCurrency, KindBankAccounts, accountCurrency),
+	})
 }
 
 func checkEmployeeReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
@@ -1001,6 +1057,18 @@ func addEmployeeIndexValues(index map[string]bool, values map[string]string) {
 	addIndexValue(index, employeeName(values))
 }
 
+func addBankAccountIndexValue(index map[string]string, accountNumber, currency string) {
+	key := bankAccountIndexKey(accountNumber)
+	if key == "" {
+		return
+	}
+	normalizedCurrency := strings.ToUpper(strings.TrimSpace(currency))
+	if normalizedCurrency == "" {
+		normalizedCurrency = "EUR"
+	}
+	index[key] = normalizedCurrency
+}
+
 func addIndexValue(index map[string]bool, value string) {
 	key := normalizedValue(value)
 	if key != "" {
@@ -1053,6 +1121,10 @@ func normalizedHeader(value string) string {
 
 func normalizedValue(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func bankAccountIndexKey(value string) string {
+	return strings.ReplaceAll(normalizedValue(value), " ", "")
 }
 
 func detectDelimiter(content string) rune {
