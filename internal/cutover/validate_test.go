@@ -1723,7 +1723,7 @@ func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 	require.NotNil(t, report)
 	assert.False(t, report.Summary.Ready)
 	assert.Equal(t, 3, report.Summary.ErrorCount)
-	assertValidationIssue(t, report, KindProducts, "category_id/category_name", "reference")
+	assertValidationIssue(t, report, KindProducts, "category_id", "reference")
 	assertValidationIssue(t, report, KindProducts, "sale_account_id", "sale_account_id must be a valid UUID")
 	assertValidationIssue(t, report, KindProducts, "purchase_account_code", "reference")
 }
@@ -1821,8 +1821,35 @@ func TestValidateBundleReportsProductCategoryParentIDReferenceIssue(t *testing.T
 	require.Len(t, report.Issues, 1)
 	assert.Equal(t, KindProductCategories, report.Issues[0].Kind)
 	assert.Equal(t, KindProductCategories, report.Issues[0].TargetKind)
-	assert.Equal(t, "parent_id/parent_name", report.Issues[0].Field)
+	assert.Equal(t, "parent_id", report.Issues[0].Field)
 	assert.Equal(t, missingParentID, report.Issues[0].Value)
+}
+
+func TestValidateBundleReportsProductCategoryIDReferenceWhenValueMatchesName(t *testing.T) {
+	legacyCategoryID := "11111111-1111-1111-1111-111111111111"
+	categoryNameThatLooksLikeID := "22222222-2222-2222-2222-222222222222"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindProductCategories,
+			FileName: "categories.csv",
+			CSVContent: "category_id,category_name,parent_category_id\n" +
+				legacyCategoryID + "," + categoryNameThatLooksLikeID + ",\n" +
+				"33333333-3333-3333-3333-333333333333,Child," + categoryNameThatLooksLikeID + "\n",
+		},
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,category_id,sales_price\nSKU-1,Widget," + categoryNameThatLooksLikeID + ",10\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindProductCategories, "parent_id", "reference")
+	assertValidationIssue(t, report, KindProducts, "category_id", "reference")
 }
 
 func TestValidateBundleReportsInventoryRowValueIssues(t *testing.T) {
