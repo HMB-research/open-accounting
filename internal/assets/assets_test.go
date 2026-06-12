@@ -824,6 +824,29 @@ func TestService_ImportAssetsCSVReportsMissingAccountCode(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, `account code "MISSING" was not found for asset_account_code`)
 }
 
+func TestService_ImportAssetsCSVReportsInvalidUUIDFields(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "name,purchase_date,purchase_cost,category_id,asset_account_id,supplier_id,invoice_id\n" +
+			"Bad category,2025-01-10,1200.00,legacy-category,,,\n" +
+			"Bad account,2025-01-10,1200.00,,legacy-account,,\n" +
+			"Bad supplier,2025-01-10,1200.00,,,legacy-supplier,\n" +
+			"Bad invoice,2025-01-10,1200.00,,,,legacy-invoice\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 4, result.RowsProcessed)
+	assert.Zero(t, result.AssetsCreated)
+	assert.Equal(t, 4, result.RowsSkipped)
+	require.Len(t, result.Errors, 4)
+	assert.Contains(t, result.Errors[0].Message, "category_id must be a valid UUID")
+	assert.Contains(t, result.Errors[1].Message, "asset_account_id must be a valid UUID")
+	assert.Contains(t, result.Errors[2].Message, "supplier_id must be a valid UUID")
+	assert.Contains(t, result.Errors[3].Message, "invoice_id must be a valid UUID")
+}
+
 func TestService_ImportAssetsCSV_DuplicateAssetNumber(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()

@@ -2182,7 +2182,7 @@ Content-Type: application/json
 }
 ```
 
-Required CSV columns are `name`, `purchase_date`, and `purchase_cost`. Optional columns include `asset_number`, `category_id`, `category_name`, `status`, `description`, supplier/invoice IDs, serial/location fields, depreciation settings, `accumulated_depreciation`, `book_value`, `last_depreciation_date`, disposal fields, and asset/depreciation account IDs or account codes. Account-code columns are `asset_account_code`, `depreciation_expense_account_code`, and `accumulated_depreciation_account_code`. Omitted asset numbers are generated; supplied asset numbers are preserved and checked for duplicates.
+Required CSV columns are `name`, `purchase_date`, and `purchase_cost`. Optional columns include `asset_number`, `category_id`, `category_name`, `status`, `description`, supplier/invoice IDs, serial/location fields, depreciation settings, `accumulated_depreciation`, `book_value`, `last_depreciation_date`, disposal fields, and asset/depreciation account IDs or account codes. ID columns must be valid UUIDs; account-code columns are `asset_account_code`, `depreciation_expense_account_code`, and `accumulated_depreciation_account_code`. Omitted asset numbers are generated; supplied asset numbers are preserved and checked for duplicates.
 
 ### Get, Update, and Delete Asset
 

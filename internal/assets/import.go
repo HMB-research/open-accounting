@@ -347,6 +347,14 @@ func buildFixedAssetFromImportRow(
 	if err != nil {
 		return nil, err
 	}
+	supplierID, err := parseOptionalAssetImportUUID("supplier_id", row.values["supplier_id"])
+	if err != nil {
+		return nil, err
+	}
+	invoiceID, err := parseOptionalAssetImportUUID("invoice_id", row.values["invoice_id"])
+	if err != nil {
+		return nil, err
+	}
 
 	now := time.Now()
 	asset := &FixedAsset{
@@ -359,8 +367,8 @@ func buildFixedAssetFromImportRow(
 		Status:                        status,
 		PurchaseDate:                  purchaseDate,
 		PurchaseCost:                  purchaseCost,
-		SupplierID:                    optionalAssetImportString(row.values["supplier_id"]),
-		InvoiceID:                     optionalAssetImportString(row.values["invoice_id"]),
+		SupplierID:                    supplierID,
+		InvoiceID:                     invoiceID,
 		SerialNumber:                  strings.TrimSpace(row.values["serial_number"]),
 		Location:                      strings.TrimSpace(row.values["location"]),
 		DepreciationMethod:            depreciationMethod,
@@ -425,7 +433,7 @@ func (s *Service) assetImportAccountIDsByCode(ctx context.Context, schemaName, t
 
 func resolveAssetImportCategoryID(row assetImportRow, categoryNameToID map[string]string) (*string, error) {
 	if categoryID := strings.TrimSpace(row.values["category_id"]); categoryID != "" {
-		return &categoryID, nil
+		return parseOptionalAssetImportUUID("category_id", categoryID)
 	}
 	categoryName := strings.TrimSpace(row.values["category_name"])
 	if categoryName == "" {
@@ -440,7 +448,7 @@ func resolveAssetImportCategoryID(row assetImportRow, categoryNameToID map[strin
 
 func resolveOptionalAssetImportAccountID(row assetImportRow, idField, codeField string, accountIDsByCode map[string]string) (*string, error) {
 	if accountID := strings.TrimSpace(row.values[idField]); accountID != "" {
-		return &accountID, nil
+		return parseOptionalAssetImportUUID(idField, accountID)
 	}
 	accountCode := strings.TrimSpace(row.values[codeField])
 	if accountCode == "" {
@@ -451,6 +459,19 @@ func resolveOptionalAssetImportAccountID(row assetImportRow, idField, codeField 
 		return nil, fmt.Errorf("account code %q was not found for %s", accountCode, codeField)
 	}
 	return &accountID, nil
+}
+
+func parseOptionalAssetImportUUID(field, value string) (*string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", field)
+	}
+	canonicalID := parsedID.String()
+	return &canonicalID, nil
 }
 
 func parseAssetImportStatus(value string) (AssetStatus, error) {
@@ -614,12 +635,4 @@ func normalizedAssetImportHeader(header string) string {
 
 func normalizedAssetImportKey(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
-}
-
-func optionalAssetImportString(value string) *string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
-	}
-	return &value
 }
