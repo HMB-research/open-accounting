@@ -3,6 +3,7 @@ package invoicing
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
@@ -138,6 +139,34 @@ func (s *Service) List(ctx context.Context, tenantID, schemaName string, filter 
 		return nil, fmt.Errorf("list invoices: %w", err)
 	}
 	return invoices, nil
+}
+
+// ResolveInvoiceIDByNumber returns the unique invoice ID for an invoice number.
+func (s *Service) ResolveInvoiceIDByNumber(ctx context.Context, tenantID, schemaName, invoiceNumber string) (string, error) {
+	trimmed := strings.TrimSpace(invoiceNumber)
+	if trimmed == "" {
+		return "", fmt.Errorf("invoice_number is required")
+	}
+
+	invoices, err := s.repo.List(ctx, schemaName, tenantID, &InvoiceFilter{Search: trimmed})
+	if err != nil {
+		return "", fmt.Errorf("list invoices: %w", err)
+	}
+
+	var matchedID string
+	for _, invoice := range invoices {
+		if !strings.EqualFold(strings.TrimSpace(invoice.InvoiceNumber), trimmed) {
+			continue
+		}
+		if matchedID != "" {
+			return "", fmt.Errorf("invoice_number %q matched multiple invoices", trimmed)
+		}
+		matchedID = invoice.ID
+	}
+	if matchedID == "" {
+		return "", ErrInvoiceNotFound
+	}
+	return matchedID, nil
 }
 
 // Send marks an invoice as sent and updates status

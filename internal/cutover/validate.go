@@ -825,7 +825,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
 		case KindPayments:
 			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
-				[]string{"invoice_number"})
+				[]string{"invoice_id", "invoice_number"})
 		case KindPayrollHistory, KindLeaveBalances, KindTSDHistory:
 			checkEmployeeReference(report, indexes, file, row)
 		case KindOpeningBalances, KindJournalEntries:
