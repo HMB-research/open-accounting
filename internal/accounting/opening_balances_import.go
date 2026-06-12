@@ -30,6 +30,9 @@ var openingBalanceHeaderAliases = map[string]string{
 
 // ImportOpeningBalancesCSV imports opening balances from CSV and posts them as a journal entry.
 func (s *Service) ImportOpeningBalancesCSV(ctx context.Context, schemaName, tenantID string, req *ImportOpeningBalancesRequest) (*ImportOpeningBalancesResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("csv_content is required")
+	}
 	if strings.TrimSpace(req.EntryDate) == "" {
 		return nil, fmt.Errorf("entry_date is required")
 	}
