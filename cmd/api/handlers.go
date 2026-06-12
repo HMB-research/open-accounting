@@ -77,7 +77,7 @@ type Handlers struct {
 	reminderService          *invoicing.ReminderService
 	automatedReminderService *invoicing.AutomatedReminderService
 	costCenterService        *accounting.CostCenterService
-	interestService          *invoicing.InterestService
+	interestService          interestManager
 	webhookService           *webhooks.Service
 	expensesService          *expenses.Service
 	demoResetService         demoResetter
@@ -101,6 +101,12 @@ type passwordResetManager interface {
 type securityAuditManager interface {
 	RecordEvent(ctx context.Context, event *auth.SecurityAuditEvent) error
 	ListUserEvents(ctx context.Context, userID string, limit int) ([]auth.SecurityAuditEvent, error)
+}
+
+type interestManager interface {
+	CalculateInterest(ctx context.Context, schemaName, tenantID, invoiceID string, interestRate float64, asOfDate time.Time) (*invoicing.InterestCalculationResult, error)
+	ListInterestHistory(ctx context.Context, schemaName, invoiceID string) ([]invoicing.InvoiceInterest, error)
+	CalculateInterestForOverdueInvoices(ctx context.Context, schemaName, tenantID string, interestRate float64) ([]invoicing.InterestCalculationResult, error)
 }
 
 type demoResetter interface {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +23,42 @@ import (
 
 type mockReminderRuleRepository struct {
 	rules map[string]*invoicing.ReminderRule
+}
+
+type mockInterestManager struct {
+	history       map[string][]invoicing.InvoiceInterest
+	err           error
+	lastSchema    string
+	lastTenantID  string
+	lastInvoiceID string
+}
+
+func (m *mockInterestManager) CalculateInterest(ctx context.Context, schemaName, tenantID, invoiceID string, interestRate float64, asOfDate time.Time) (*invoicing.InterestCalculationResult, error) {
+	m.lastSchema = schemaName
+	m.lastTenantID = tenantID
+	m.lastInvoiceID = invoiceID
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &invoicing.InterestCalculationResult{InvoiceID: invoiceID, CalculatedAt: asOfDate}, nil
+}
+
+func (m *mockInterestManager) ListInterestHistory(ctx context.Context, schemaName, invoiceID string) ([]invoicing.InvoiceInterest, error) {
+	m.lastSchema = schemaName
+	m.lastInvoiceID = invoiceID
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.history[invoiceID], nil
+}
+
+func (m *mockInterestManager) CalculateInterestForOverdueInvoices(ctx context.Context, schemaName, tenantID string, interestRate float64) ([]invoicing.InterestCalculationResult, error) {
+	m.lastSchema = schemaName
+	m.lastTenantID = tenantID
+	if m.err != nil {
+		return nil, m.err
+	}
+	return []invoicing.InterestCalculationResult{}, nil
 }
 
 func newMockReminderRuleRepository() *mockReminderRuleRepository {
@@ -932,6 +969,79 @@ func TestInterestAndPluginValidationHandlers(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.UpdateTenantPluginSettings(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestGetInvoiceInterestHistory(t *testing.T) {
+	tenantRepo := newMockTenantRepository()
+	tenantRecord := tenantRepo.addTestTenant("de305d54-75b4-431b-adb2-eb6b9e546014", "Test Tenant", "test-tenant")
+	interestSvc := &mockInterestManager{
+		history: map[string][]invoicing.InvoiceInterest{
+			"inv-1": {
+				{
+					ID:                "interest-2",
+					InvoiceID:         "inv-1",
+					CalculatedAt:      time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
+					DaysOverdue:       20,
+					PrincipalAmount:   decimal.NewFromInt(1000),
+					InterestRate:      decimal.NewFromFloat(0.0005),
+					InterestAmount:    decimal.NewFromInt(10),
+					TotalWithInterest: decimal.NewFromInt(1010),
+					CreatedAt:         time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
+				},
+				{
+					ID:                "interest-1",
+					InvoiceID:         "inv-1",
+					CalculatedAt:      time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC),
+					DaysOverdue:       10,
+					PrincipalAmount:   decimal.NewFromInt(1000),
+					InterestRate:      decimal.NewFromFloat(0.0005),
+					InterestAmount:    decimal.NewFromInt(5),
+					TotalWithInterest: decimal.NewFromInt(1005),
+					CreatedAt:         time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC),
+				},
+			},
+		},
+	}
+	h := &Handlers{
+		tenantService:   tenant.NewServiceWithRepository(tenantRepo),
+		interestService: interestSvc,
+	}
+
+	req := withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/inv-1/interest/history", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "inv-1",
+	})
+	rr := httptest.NewRecorder()
+	h.GetInvoiceInterestHistory(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, tenantRecord.SchemaName, interestSvc.lastSchema)
+	assert.Equal(t, "inv-1", interestSvc.lastInvoiceID)
+
+	var history []invoicing.InvoiceInterest
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&history)) && assert.Len(t, history, 2) {
+		assert.Equal(t, "interest-2", history[0].ID)
+		assert.True(t, history[0].InterestAmount.Equal(decimal.NewFromInt(10)))
+		assert.Equal(t, "interest-1", history[1].ID)
+	}
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/inv-empty/interest/history", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "inv-empty",
+	})
+	rr = httptest.NewRecorder()
+	h.GetInvoiceInterestHistory(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, "[]", rr.Body.String())
+
+	interestSvc.err = errors.New("repository unavailable")
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/inv-1/interest/history", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "inv-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetInvoiceInterestHistory(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Failed to get interest history")
 }
 
 func TestPluginTenantAdminValidation(t *testing.T) {
