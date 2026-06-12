@@ -457,6 +457,7 @@ const (
 	testTenantID    = "tenant-123"
 	testSchemaName  = "test_schema"
 	testGLAccountID = "11111111-1111-1111-1111-111111111111"
+	testBankID      = "44444444-4444-4444-4444-444444444444"
 )
 
 func stringPtr(value string) *string {
@@ -1012,7 +1013,7 @@ func TestService_BankMatchRuleLifecycle(t *testing.T) {
 	service := NewServiceWithRepository(repo)
 	ctx := context.Background()
 	account := &BankAccount{
-		ID:       "bank-1",
+		ID:       testBankID,
 		TenantID: testTenantID,
 		Name:     "Main bank",
 	}
@@ -1132,6 +1133,15 @@ func TestService_CreateBankMatchRuleValidation(t *testing.T) {
 			},
 			wantError: "invalid bank match field",
 		},
+		{
+			name: "invalid bank account id",
+			req: &CreateBankMatchRuleRequest{
+				BankAccountID: stringPtr("legacy-account"),
+				Name:          "Stripe",
+				Pattern:       "stripe",
+			},
+			wantError: "bank_account_id must be a valid UUID",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1144,6 +1154,32 @@ func TestService_CreateBankMatchRuleValidation(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %v", tt.wantError, err)
 			}
 		})
+	}
+}
+
+func TestService_UpdateBankMatchRule_InvalidBankAccountID(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+
+	repo.matchRules["rule-1"] = &BankMatchRule{
+		ID:            "rule-1",
+		TenantID:      testTenantID,
+		Name:          "Stripe",
+		MatchField:    BankMatchFieldDescription,
+		Pattern:       "stripe",
+		MinConfidence: 0.8,
+	}
+
+	bankAccountID := "legacy-account"
+	_, err := service.UpdateBankMatchRule(ctx, testSchemaName, testTenantID, "rule-1", &UpdateBankMatchRuleRequest{
+		BankAccountID: &bankAccountID,
+	})
+	if err == nil {
+		t.Fatal("expected invalid bank_account_id error")
+	}
+	if !strings.Contains(err.Error(), "bank_account_id must be a valid UUID") {
+		t.Fatalf("expected invalid bank_account_id error, got %v", err)
 	}
 }
 

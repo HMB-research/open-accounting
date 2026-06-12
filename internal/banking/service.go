@@ -540,10 +540,14 @@ func (s *Service) normalizeBankMatchRuleAccount(ctx context.Context, schemaName,
 	if trimmed == "" {
 		return nil, nil
 	}
-	if _, err := s.repo.GetBankAccount(ctx, schemaName, tenantID, trimmed); err != nil {
+	normalized, err := normalizeBankAccountUUIDValue(trimmed, "bank_account_id")
+	if err != nil {
 		return nil, err
 	}
-	return &trimmed, nil
+	if _, err := s.repo.GetBankAccount(ctx, schemaName, tenantID, normalized); err != nil {
+		return nil, err
+	}
+	return &normalized, nil
 }
 
 func validateBankMatchRuleText(name, pattern string) (string, string, error) {

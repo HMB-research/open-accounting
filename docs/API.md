@@ -3017,7 +3017,7 @@ Create a rule:
 }
 ```
 
-Rules can be bank-account scoped or tenant-wide by omitting `bank_account_id`. `match_field` supports `DESCRIPTION`, `REFERENCE`, `COUNTERPARTY_NAME`, and `COUNTERPARTY_ACCOUNT`. `priority` runs lowest first, `min_confidence` can only raise the CLI/API auto-match threshold for matching transactions, `max_date_diff_days` narrows the payment date window, and `require_exact_amount` filters candidate payments before scoring.
+Rules can be bank-account scoped or tenant-wide by omitting `bank_account_id`; supplied `bank_account_id` values must be valid UUIDs. `match_field` supports `DESCRIPTION`, `REFERENCE`, `COUNTERPARTY_NAME`, and `COUNTERPARTY_ACCOUNT`. `priority` runs lowest first, `min_confidence` can only raise the CLI/API auto-match threshold for matching transactions, `max_date_diff_days` narrows the payment date window, and `require_exact_amount` filters candidate payments before scoring.
 
 Update supports `bank_account_id`, `clear_bank_account`, `name`, `priority`, `match_field`, `pattern`, `min_confidence`, `max_date_diff_days`, `require_exact_amount`, and `is_active`.
 

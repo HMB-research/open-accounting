@@ -862,20 +862,21 @@ func TestDeleteBankAccount(t *testing.T) {
 
 func TestBankMatchRuleHandlers(t *testing.T) {
 	h, repo, tenantRepo := setupBankingTestHandlers()
+	bankAccountID := "44444444-4444-4444-4444-444444444444"
 
 	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
 		ID:         "tenant-1",
 		SchemaName: "tenant_test",
 	}
-	repo.accounts["bank-1"] = &banking.BankAccount{
-		ID:       "bank-1",
+	repo.accounts[bankAccountID] = &banking.BankAccount{
+		ID:       bankAccountID,
 		TenantID: "tenant-1",
 		Name:     "Main bank",
 		IsActive: true,
 	}
 
 	createBody, _ := json.Marshal(map[string]interface{}{
-		"bank_account_id":      "bank-1",
+		"bank_account_id":      bankAccountID,
 		"name":                 "Stripe receipts",
 		"priority":             10,
 		"match_field":          "DESCRIPTION",
@@ -900,7 +901,7 @@ func TestBankMatchRuleHandlers(t *testing.T) {
 	assert.Equal(t, banking.BankMatchFieldDescription, created.MatchField)
 	assert.True(t, created.RequireExactAmount)
 
-	listReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/bank-match-rules?bank_account_id=bank-1&active_only=true&include_global=true", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/bank-match-rules?bank_account_id="+bankAccountID+"&active_only=true&include_global=true", nil)
 	listReq = withURLParams(listReq, map[string]string{"tenantID": "tenant-1"})
 	listReq = listReq.WithContext(contextWithClaims(listReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
 
