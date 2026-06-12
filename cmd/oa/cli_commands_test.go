@@ -3941,6 +3941,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 				assert.Contains(t, req.Files[1].CSVContent, "CUST-404")
 			}
 			if len(req.Files) > 2 {
+				assert.Equal(t, cutover.EInvoiceContactModeBoth, req.EInvoiceContactMode)
 				kinds := map[cutover.FileKind]bool{}
 				for _, file := range req.Files {
 					kinds[file.Kind] = true
@@ -4008,6 +4009,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 		"--contacts", contactsFile,
 		"--invoices", invoicesFile,
 		"--e-invoices", eInvoicesFile,
+		"--e-invoice-contact-mode", "both",
 		"--bank-accounts", bankAccountsFile,
 		"--bank-transactions", bankFile,
 		"--tsd-history", tsdFile,

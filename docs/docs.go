@@ -23608,6 +23608,9 @@ const docTemplate = `{
                 "currency": {
                     "type": "string"
                 },
+                "gl_account_code": {
+                    "type": "string"
+                },
                 "gl_account_id": {
                     "type": "string"
                 },
@@ -24254,6 +24257,19 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_cutover.EInvoiceContactMode": {
+            "type": "string",
+            "enum": [
+                "supplier",
+                "customer",
+                "both"
+            ],
+            "x-enum-varnames": [
+                "EInvoiceContactModeSupplier",
+                "EInvoiceContactModeCustomer",
+                "EInvoiceContactModeBoth"
+            ]
+        },
         "github_com_HMB-research_open-accounting_internal_cutover.FileKind": {
             "type": "string",
             "enum": [
@@ -24351,6 +24367,9 @@ const docTemplate = `{
         "github_com_HMB-research_open-accounting_internal_cutover.ValidateBundleRequest": {
             "type": "object",
             "properties": {
+                "e_invoice_contact_mode": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.EInvoiceContactMode"
+                },
                 "files": {
                     "type": "array",
                     "items": {

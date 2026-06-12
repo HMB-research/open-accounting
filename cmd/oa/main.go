@@ -2008,6 +2008,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		expensesFile := fs.String("expenses", "", "Expenses CSV file")
 		invoicesFile := fs.String("invoices", "", "Invoices CSV file")
 		eInvoicesFile := fs.String("e-invoices", "", "Estonian e-invoice XML file")
+		eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
 		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
 		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
@@ -2066,7 +2067,10 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			return errors.New("at least one migration CSV or XML file is required")
 		}
 
-		report, err := client.validateMigrationBundle(ctx, cfg.TenantID, &cutover.ValidateBundleRequest{Files: files})
+		report, err := client.validateMigrationBundle(ctx, cfg.TenantID, &cutover.ValidateBundleRequest{
+			Files:               files,
+			EInvoiceContactMode: cutover.EInvoiceContactMode(strings.TrimSpace(*eInvoiceContactMode)),
+		})
 		if err != nil {
 			return err
 		}

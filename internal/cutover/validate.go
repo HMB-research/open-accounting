@@ -586,6 +586,10 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 	if req == nil || len(req.Files) == 0 {
 		return nil, fmt.Errorf("at least one migration file is required")
 	}
+	eInvoiceContactMode, err := normalizeEInvoiceContactMode(req.EInvoiceContactMode)
+	if err != nil {
+		return nil, err
+	}
 
 	report := &BundleValidationReport{}
 	parsed := make([]parsedFile, 0, len(req.Files))
@@ -627,7 +631,7 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 	report.Summary.FilesValidated = len(report.Files)
 	indexes := buildIndexes(parsed)
 	for _, file := range parsed {
-		validateReferences(report, indexes, file)
+		validateReferences(report, indexes, file, eInvoiceContactMode)
 	}
 
 	sort.SliceStable(report.Issues, func(i, j int) bool {
@@ -642,6 +646,17 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 
 	report.Summary.Ready = report.Summary.ErrorCount == 0
 	return report, nil
+}
+
+func normalizeEInvoiceContactMode(mode EInvoiceContactMode) (EInvoiceContactMode, error) {
+	switch normalized := EInvoiceContactMode(strings.ToLower(strings.TrimSpace(string(mode)))); normalized {
+	case "":
+		return EInvoiceContactModeSupplier, nil
+	case EInvoiceContactModeSupplier, EInvoiceContactModeCustomer, EInvoiceContactModeBoth:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported e_invoice_contact_mode %q (expected supplier, customer, or both)", mode)
+	}
 }
 
 func parseBundleFileByKind(file BundleFile) (parsedFile, FileValidation, error) {
@@ -739,7 +754,7 @@ func parseEInvoiceBundleFile(file BundleFile) (parsedFile, FileValidation, error
 	validation := FileValidation{
 		Kind:     file.Kind,
 		FileName: fileName,
-		Headers:  []string{"invoice_number", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"},
+		Headers:  eInvoiceValidationHeaders(),
 	}
 
 	invoices, err := einvoice.Parse(file.XMLContent)
@@ -768,6 +783,21 @@ func parseEInvoiceBundleFile(file BundleFile) (parsedFile, FileValidation, error
 
 	validation.Rows = len(rows)
 	return parsedFile{kind: file.Kind, fileName: fileName, headers: validation.Headers, rows: rows}, validation, nil
+}
+
+func eInvoiceValidationHeaders() []string {
+	return []string{
+		"invoice_id",
+		"invoice_number",
+		"contact_reg_code",
+		"contact_vat_number",
+		"contact_email",
+		"contact_name",
+		"buyer_reg_code",
+		"buyer_vat_number",
+		"buyer_contact_email",
+		"buyer_contact_name",
+	}
 }
 
 func buildIndexes(files []parsedFile) bundleIndexes {
@@ -828,7 +858,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 	return indexes
 }
 
-func validateReferences(report *BundleValidationReport, indexes bundleIndexes, file parsedFile) {
+func validateReferences(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, eInvoiceContactMode EInvoiceContactMode) {
 	for _, row := range file.rows {
 		switch file.kind {
 		case KindAccounts:
@@ -851,8 +881,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
 		case KindEInvoices:
-			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
+			checkEInvoiceContactReferences(report, indexes, file, row, eInvoiceContactMode)
 		case KindQuotes, KindRecurringInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				commercialDocumentContactReferenceFields())
@@ -920,6 +949,26 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"invoice_id"})
 		}
 	}
+}
+
+func checkEInvoiceContactReferences(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, mode EInvoiceContactMode) {
+	switch mode {
+	case EInvoiceContactModeCustomer:
+		checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts, eInvoiceBuyerContactReferenceFields())
+	case EInvoiceContactModeBoth:
+		checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts, eInvoiceSellerContactReferenceFields())
+		checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts, eInvoiceBuyerContactReferenceFields())
+	default:
+		checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts, eInvoiceSellerContactReferenceFields())
+	}
+}
+
+func eInvoiceSellerContactReferenceFields() []string {
+	return []string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
+}
+
+func eInvoiceBuyerContactReferenceFields() []string {
+	return []string{"buyer_reg_code", "buyer_vat_number", "buyer_contact_email", "buyer_contact_name"}
 }
 
 func checkBankTransactionSourceAccount(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {

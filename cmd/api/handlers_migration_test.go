@@ -51,3 +51,21 @@ func TestValidateMigrationBundleHandlerRejectsEmptyRequest(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 	assert.Contains(t, w.Body.String(), "at least one migration file is required")
 }
+
+func TestValidateMigrationBundleHandlerRejectsUnsupportedEInvoiceContactMode(t *testing.T) {
+	h := &Handlers{}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/migration/validate", cutover.ValidateBundleRequest{
+		EInvoiceContactMode: "partner",
+		Files: []cutover.BundleFile{{
+			Kind:       cutover.KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		}},
+	}, createTestClaims("user-1", "user@example.com", "tenant-1", "admin"))
+
+	w := httptest.NewRecorder()
+	h.ValidateMigrationBundle(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "unsupported e_invoice_contact_mode")
+}
