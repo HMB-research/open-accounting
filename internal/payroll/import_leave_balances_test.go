@@ -129,6 +129,36 @@ func TestImportLeaveBalancesCSV_SkipsInvalidRows(t *testing.T) {
 	assert.Contains(t, result.Errors[2].Message, "entitled_days must be zero or greater")
 }
 
+func TestImportLeaveBalancesCSV_RejectsInvalidAbsenceTypeID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockAbsenceRepository()
+	repo.Employees["emp-1"] = &Employee{
+		ID:             "emp-1",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+	result, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", &ImportLeaveBalancesRequest{
+		CSVContent: "year,employee_number,absence_type_id,entitled_days\n" +
+			"2025,EMP-100,legacy-type,28\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.LeaveBalancesCreated)
+	assert.Zero(t, result.LeaveBalancesUpdated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, "absence_type_id must be a valid UUID")
+}
+
 func TestImportLeaveBalancesCSV_RejectsMissingHeaders(t *testing.T) {
 	t.Parallel()
 

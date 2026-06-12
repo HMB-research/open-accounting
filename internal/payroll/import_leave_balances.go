@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -333,6 +334,11 @@ func findLeaveBalanceAbsenceType(values map[string]string, indexes *leaveBalance
 	candidates := make(map[string]*AbsenceType)
 
 	if typeID := strings.TrimSpace(values["absence_type_id"]); typeID != "" {
+		parsedID, err := uuid.Parse(typeID)
+		if err != nil {
+			return nil, fmt.Errorf("absence_type_id must be a valid UUID")
+		}
+		typeID = parsedID.String()
 		match, ok := indexes.ids[normalizeEmployeeImportValue(typeID)]
 		if !ok {
 			return nil, fmt.Errorf("absence_type_id %q not found", typeID)

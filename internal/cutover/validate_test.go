@@ -817,6 +817,22 @@ func TestValidateBundleReportsLeaveBalanceRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindLeaveBalances, "pending_days", "pending_days must be zero or greater")
 }
 
+func TestValidateBundleReportsInvalidLeaveBalanceAbsenceTypeIDs(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindLeaveBalances,
+			FileName:   "leave-balances.csv",
+			CSVContent: "year,employee_number,absence_type_id,entitled_days\n2026,EMP-1,legacy-type,28\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindLeaveBalances, "absence_type_id", "absence_type_id must be a valid UUID")
+}
+
 func TestValidateBundleReportsTSDHistoryRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

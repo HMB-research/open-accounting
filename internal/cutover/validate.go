@@ -2405,6 +2405,9 @@ func checkPayrollHistoryRows(report *BundleValidationReport, file parsedFile) {
 func checkLeaveBalanceRows(report *BundleValidationReport, file parsedFile) {
 	for _, row := range file.rows {
 		checkLeaveBalanceYear(report, file, row)
+		if fileHasHeaders(file, "absence_type_id") {
+			checkOptionalUUID(report, file, row, "absence_type_id")
+		}
 		for _, field := range []string{"entitled_days", "carryover_days", "used_days", "pending_days"} {
 			if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
 				continue
