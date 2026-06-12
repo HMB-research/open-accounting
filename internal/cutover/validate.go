@@ -33,19 +33,20 @@ type parsedRow struct {
 }
 
 type bundleIndexes struct {
-	files             map[FileKind]bool
-	accountCodes      map[string]bool
-	accountIDs        map[string]bool
-	bankAccounts      map[string]string
-	contactIDs        map[string]bool
-	contacts          map[string]bool
-	employees         map[string]bool
-	invoices          map[string]bool
-	quotes            map[string]bool
-	costCenters       map[string]bool
-	productCategories map[string]bool
-	products          map[string]bool
-	warehouses        map[string]bool
+	files              map[FileKind]bool
+	accountCodes       map[string]bool
+	accountIDs         map[string]bool
+	bankAccounts       map[string]string
+	contactIDs         map[string]bool
+	contacts           map[string]bool
+	employees          map[string]bool
+	invoices           map[string]bool
+	quotes             map[string]bool
+	costCenters        map[string]bool
+	productCategoryIDs map[string]bool
+	productCategories  map[string]bool
+	products           map[string]bool
+	warehouses         map[string]bool
 }
 
 type duplicateIdentifierSpec struct {
@@ -1438,19 +1439,20 @@ func eInvoiceValidationHeaders() []string {
 
 func buildIndexes(files []parsedFile) bundleIndexes {
 	indexes := bundleIndexes{
-		files:             map[FileKind]bool{},
-		accountCodes:      map[string]bool{},
-		accountIDs:        map[string]bool{},
-		bankAccounts:      map[string]string{},
-		contactIDs:        map[string]bool{},
-		contacts:          map[string]bool{},
-		employees:         map[string]bool{},
-		invoices:          map[string]bool{},
-		quotes:            map[string]bool{},
-		costCenters:       map[string]bool{},
-		productCategories: map[string]bool{},
-		products:          map[string]bool{},
-		warehouses:        map[string]bool{},
+		files:              map[FileKind]bool{},
+		accountCodes:       map[string]bool{},
+		accountIDs:         map[string]bool{},
+		bankAccounts:       map[string]string{},
+		contactIDs:         map[string]bool{},
+		contacts:           map[string]bool{},
+		employees:          map[string]bool{},
+		invoices:           map[string]bool{},
+		quotes:             map[string]bool{},
+		costCenters:        map[string]bool{},
+		productCategoryIDs: map[string]bool{},
+		productCategories:  map[string]bool{},
+		products:           map[string]bool{},
+		warehouses:         map[string]bool{},
 	}
 	for _, file := range files {
 		indexes.files[file.kind] = true
@@ -1481,7 +1483,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 				addIndexValue(indexes.costCenters, row.values["id"])
 			case KindProductCategories:
 				addIndexValue(indexes.productCategories, row.values["name"])
-				addIndexValue(indexes.productCategories, row.values["id"])
+				addIndexValue(indexes.productCategoryIDs, row.values["id"])
 			case KindProducts:
 				addIndexValue(indexes.products, row.values["code"])
 				addIndexValue(indexes.products, row.values["id"])
@@ -1559,11 +1561,9 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkOptionalUUID(report, file, row, "parent_id")
 			checkSelfReference(report, file, row, "parent_id", "id")
 			checkSelfReference(report, file, row, "parent_name", "name")
-			checkTargetReference(report, indexes.files[KindProductCategories], indexes.productCategories, file, row, KindProductCategories,
-				[]string{"parent_id", "parent_name"})
+			checkProductCategoryReference(report, indexes, file, row, "parent_id", "parent_name")
 		case KindProducts:
-			checkTargetReference(report, indexes.files[KindProductCategories], indexes.productCategories, file, row, KindProductCategories,
-				[]string{"category_id", "category_name"})
+			checkProductCategoryReference(report, indexes, file, row, "category_id", "category_name")
 			checkAccountReference(report, indexes, file, row, "sale_account_id", "sale_account_code")
 			checkAccountReference(report, indexes, file, row, "purchase_account_id", "purchase_account_code")
 			checkAccountReference(report, indexes, file, row, "inventory_account_id", "inventory_account_code")
@@ -5186,6 +5186,21 @@ func checkCommercialDocumentContactReference(report *BundleValidationReport, ind
 	}
 	checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 		commercialDocumentContactLookupFields())
+}
+
+func checkProductCategoryReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, idField, nameField string) {
+	categoryID := strings.TrimSpace(row.values[idField])
+	if categoryID != "" {
+		if _, err := uuid.Parse(categoryID); err != nil || !indexes.files[KindProductCategories] {
+			return
+		}
+		checkReferenceValues(report, indexes.productCategoryIDs, file, row, KindProductCategories, idField, []string{categoryID})
+		return
+	}
+	if nameField == "" || !indexes.files[KindProductCategories] {
+		return
+	}
+	checkReferenceValues(report, indexes.productCategories, file, row, KindProductCategories, nameField, []string{row.values[nameField]})
 }
 
 func checkSelfReference(report *BundleValidationReport, file parsedFile, row parsedRow, field, identityField string) {
