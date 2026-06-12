@@ -202,6 +202,11 @@ func buildCreateCostAllocationRequestFromImportRow(row costAllocationImportRow, 
 	if journalEntryLineID == "" {
 		return nil, fmt.Errorf("journal_entry_line_id is required")
 	}
+	parsedJournalEntryLineID, err := uuid.Parse(journalEntryLineID)
+	if err != nil {
+		return nil, fmt.Errorf("journal_entry_line_id must be a valid UUID")
+	}
+	journalEntryLineID = parsedJournalEntryLineID.String()
 
 	amount, err := parseCostAllocationImportPositiveDecimal("amount", row.values["amount"])
 	if err != nil {

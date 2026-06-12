@@ -4201,6 +4201,7 @@ func checkCostAllocationRows(report *BundleValidationReport, file parsedFile) {
 		checkRequiredCutoverFieldGroup(report, file, row, "cost_center_id", "cost_center_code")
 		if hasJournalLine {
 			checkRequiredCutoverField(report, file, row, "journal_entry_line_id")
+			checkOptionalUUID(report, file, row, "journal_entry_line_id")
 		}
 		if hasAmount {
 			checkCostAllocationAmount(report, file, row)

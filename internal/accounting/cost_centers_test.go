@@ -10,6 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	costAllocationJournalLineID1 = "11111111-1111-4111-8111-111111111111"
+	costAllocationJournalLineID2 = "22222222-2222-4222-8222-222222222222"
+	costAllocationJournalLineID3 = "33333333-3333-4333-8333-333333333333"
+	costAllocationJournalLineID4 = "44444444-4444-4444-8444-444444444444"
+)
+
 func TestBudgetPeriodConstants(t *testing.T) {
 	assert.Equal(t, BudgetPeriod("MONTHLY"), BudgetPeriodMonthly)
 	assert.Equal(t, BudgetPeriod("QUARTERLY"), BudgetPeriodQuarterly)
@@ -330,10 +337,10 @@ func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
 	result, err := ts.svc.ImportCostAllocationsCSV(ctx, "test_schema", "tenant-1", &ImportCostAllocationsRequest{
 		FileName: "cost-allocations.csv",
 		CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\n" +
-			"SALES,line-1,125.50,50,2026-03-20,Shared rent\n" +
-			"ADMIN,line-2,300.00,,2026-03-21,Admin payroll\n" +
-			"UNKNOWN,line-3,10.00,10,2026-03-22,Missing center\n" +
-			"SALES,line-4,0,10,2026-03-23,Bad amount\n",
+			"SALES," + costAllocationJournalLineID1 + ",125.50,50,2026-03-20,Shared rent\n" +
+			"ADMIN," + costAllocationJournalLineID2 + ",300.00,,2026-03-21,Admin payroll\n" +
+			"UNKNOWN," + costAllocationJournalLineID3 + ",10.00,10,2026-03-22,Missing center\n" +
+			"SALES," + costAllocationJournalLineID4 + ",0,10,2026-03-23,Bad amount\n",
 	})
 
 	require.NoError(t, err)
@@ -356,7 +363,7 @@ func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
 		byLine[allocation.JournalEntryLineID] = allocation
 	}
 
-	salesAllocation := byLine["line-1"]
+	salesAllocation := byLine[costAllocationJournalLineID1]
 	assert.Equal(t, "cc-sales", salesAllocation.CostCenterID)
 	assert.True(t, salesAllocation.Amount.Equal(decimal.RequireFromString("125.50")))
 	require.NotNil(t, salesAllocation.AllocationPercentage)
@@ -364,7 +371,7 @@ func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
 	assert.Equal(t, time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC), salesAllocation.AllocationDate)
 	assert.Equal(t, "Shared rent", salesAllocation.Notes)
 
-	adminAllocation := byLine["line-2"]
+	adminAllocation := byLine[costAllocationJournalLineID2]
 	assert.Equal(t, "cc-admin", adminAllocation.CostCenterID)
 	assert.True(t, adminAllocation.Amount.Equal(decimal.RequireFromString("300.00")))
 	assert.Nil(t, adminAllocation.AllocationPercentage)
@@ -385,7 +392,7 @@ func TestCostCenterService_ImportCostAllocationsCSVByID(t *testing.T) {
 
 	result, err := ts.svc.ImportCostAllocationsCSV(ctx, "test_schema", "tenant-1", &ImportCostAllocationsRequest{
 		CSVContent: "cost_center_id,journal_entry_line_id,amount,allocation_date\n" +
-			costCenterID + ",line-1,42.00,2026-04-01\n",
+			costCenterID + "," + costAllocationJournalLineID1 + ",42.00,2026-04-01\n",
 	})
 
 	require.NoError(t, err)
@@ -394,7 +401,7 @@ func TestCostCenterService_ImportCostAllocationsCSVByID(t *testing.T) {
 	assert.Zero(t, result.RowsSkipped)
 	assert.Nil(t, result.Errors)
 	assert.Len(t, ts.repo.Allocations[costCenterID], 1)
-	assert.Equal(t, "line-1", ts.repo.Allocations[costCenterID][0].JournalEntryLineID)
+	assert.Equal(t, costAllocationJournalLineID1, ts.repo.Allocations[costCenterID][0].JournalEntryLineID)
 }
 
 func TestCostCenterService_ImportCostAllocationsCSVRejectsInvalidCostCenterID(t *testing.T) {
@@ -403,7 +410,7 @@ func TestCostCenterService_ImportCostAllocationsCSVRejectsInvalidCostCenterID(t 
 
 	result, err := ts.svc.ImportCostAllocationsCSV(ctx, "test_schema", "tenant-1", &ImportCostAllocationsRequest{
 		CSVContent: "cost_center_id,journal_entry_line_id,amount,allocation_date\n" +
-			"legacy-cc,line-1,42.00,2026-04-01\n",
+			"legacy-cc," + costAllocationJournalLineID1 + ",42.00,2026-04-01\n",
 	})
 
 	require.NoError(t, err)
@@ -414,6 +421,33 @@ func TestCostCenterService_ImportCostAllocationsCSVRejectsInvalidCostCenterID(t 
 	assert.Equal(t, 2, result.Errors[0].Row)
 	assert.Equal(t, "legacy-cc", result.Errors[0].CostCenterID)
 	assert.Contains(t, result.Errors[0].Message, "cost_center_id must be a valid UUID")
+}
+
+func TestCostCenterService_ImportCostAllocationsCSVRejectsInvalidJournalEntryLineID(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	ts.repo.CostCenters["cc-sales"] = &CostCenter{
+		ID:       "cc-sales",
+		TenantID: "tenant-1",
+		Code:     "SALES",
+		Name:     "Sales",
+		IsActive: true,
+	}
+
+	result, err := ts.svc.ImportCostAllocationsCSV(ctx, "test_schema", "tenant-1", &ImportCostAllocationsRequest{
+		CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_date\n" +
+			"SALES,legacy-line,42.00,2026-04-01\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.AllocationsImported)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 2, result.Errors[0].Row)
+	assert.Equal(t, "legacy-line", result.Errors[0].JournalEntryLineID)
+	assert.Contains(t, result.Errors[0].Message, "journal_entry_line_id must be a valid UUID")
 }
 
 func TestCostCenterService_GetCostCenter(t *testing.T) {

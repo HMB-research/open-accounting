@@ -590,7 +590,7 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations/import", map[string]interface{}{
 		"file_name":   "cost-allocations.csv",
-		"csv_content": "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\nADMIN,line-4,42.00,100,2026-01-22,Imported allocation\n",
+		"csv_content": "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\nADMIN,44444444-4444-4444-8444-444444444444,42.00,100,2026-01-22,Imported allocation\n",
 	}, nil)
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
