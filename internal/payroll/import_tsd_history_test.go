@@ -41,9 +41,9 @@ func TestImportTSDHistoryCSV_Success(t *testing.T) {
 
 	result, err := service.ImportTSDHistoryCSV(ctx, "tenant_schema", "tenant-1", &ImportTSDHistoryRequest{
 		FileName: "tsd-history.csv",
-		CSVContent: "year,month,status,submitted_at,emta_reference,employee_number,gross_payment,basic_exemption,taxable_amount,income_tax,social_tax,unemployment_insurance_employer,unemployment_insurance_employee,funded_pension\n" +
-			"2025,12,ACCEPTED,2026-01-10,EMTA-2025-12,EMP-100,3200.00,50.00,3150.00,693.00,1056.00,25.60,51.20,64.00\n" +
-			"2025,12,ACCEPTED,2026-01-10,EMTA-2025-12,EMP-101,2800.00,40.00,2760.00,607.20,924.00,22.40,44.80,56.00\n",
+		CSVContent: "year,month,status,submitted_at,emta_reference,employee_number,name,gross_payment,basic_exemption,taxable_amount,income_tax,social_tax,unemployment_insurance_employer,unemployment_insurance_employee,funded_pension\n" +
+			"2025,12,ACCEPTED,2026-01-10,EMTA-2025-12,EMP-100,,3200.00,50.00,3150.00,693.00,1056.00,25.60,51.20,64.00\n" +
+			"2025,12,ACCEPTED,2026-01-10,EMTA-2025-12,,Juhan Tamm,2800.00,40.00,2760.00,607.20,924.00,22.40,44.80,56.00\n",
 	})
 	require.NoError(t, err)
 

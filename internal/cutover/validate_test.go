@@ -319,6 +319,103 @@ func TestValidateBundleReportsTSDHistoryEmployeeReferenceIssue(t *testing.T) {
 	assert.Equal(t, "EMP-404", report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsEmployeeReferenceRequiresCompleteNameColumns(t *testing.T) {
+	tests := []struct {
+		name        string
+		kind        FileKind
+		csvContent  string
+		missingText string
+	}{
+		{
+			name:        "payroll history",
+			kind:        KindPayrollHistory,
+			csvContent:  "year,month,first_name,gross_salary\n2026,5,Mari,2500\n",
+			missingText: "employee_number|personal_code|email|name|last_name",
+		},
+		{
+			name:        "leave balances",
+			kind:        KindLeaveBalances,
+			csvContent:  "year,first_name,absence_type_code\n2026,Mari,ANNUAL\n",
+			missingText: "employee_number|personal_code|email|name|last_name",
+		},
+		{
+			name:        "tsd history",
+			kind:        KindTSDHistory,
+			csvContent:  "year,month,first_name,gross_payment\n2026,5,Mari,2500\n",
+			missingText: "employee_number|personal_code|email|name|last_name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+				{
+					Kind:       tt.kind,
+					FileName:   string(tt.kind) + ".csv",
+					CSVContent: tt.csvContent,
+				},
+			}})
+
+			require.NoError(t, err)
+			require.NotNil(t, report)
+			assert.False(t, report.Summary.Ready)
+			assert.Equal(t, 1, report.Summary.ErrorCount)
+			require.Len(t, report.Files, 1)
+			assert.Contains(t, report.Files[0].MissingColumns, tt.missingText)
+			require.Len(t, report.Issues, 1)
+			assert.Contains(t, report.Issues[0].Message, tt.missingText)
+		})
+	}
+}
+
+func TestValidateBundleAcceptsEmployeeReferenceNameColumns(t *testing.T) {
+	tests := []struct {
+		name       string
+		kind       FileKind
+		csvContent string
+	}{
+		{
+			name:       "payroll history full name column",
+			kind:       KindPayrollHistory,
+			csvContent: "year,month,name,gross_salary\n2026,5,Mari Maasikas,2500\n",
+		},
+		{
+			name:       "payroll history first and last name columns",
+			kind:       KindPayrollHistory,
+			csvContent: "year,month,first_name,last_name,gross_salary\n2026,5,Mari,Maasikas,2500\n",
+		},
+		{
+			name:       "leave balances full name column",
+			kind:       KindLeaveBalances,
+			csvContent: "year,name,absence_type_code\n2026,Mari Maasikas,ANNUAL\n",
+		},
+		{
+			name:       "tsd history full name column",
+			kind:       KindTSDHistory,
+			csvContent: "year,month,name,gross_payment\n2026,5,Mari Maasikas,2500\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+				{
+					Kind:       tt.kind,
+					FileName:   string(tt.kind) + ".csv",
+					CSVContent: tt.csvContent,
+				},
+			}})
+
+			require.NoError(t, err)
+			require.NotNil(t, report)
+			assert.True(t, report.Summary.Ready)
+			assert.Empty(t, report.Issues)
+			require.Len(t, report.Files, 1)
+			assert.Empty(t, report.Files[0].MissingColumns)
+		})
+	}
+}
+
 func TestValidateBundleReportsInventoryReferenceIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

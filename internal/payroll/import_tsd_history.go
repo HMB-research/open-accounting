@@ -64,6 +64,7 @@ var tsdHistoryImportHeaderAliases = map[string]string{
 	"isikukood":                       "personal_code",
 	"email":                           "email",
 	"e_mail":                          "email",
+	"name":                            "name",
 	"first_name":                      "first_name",
 	"last_name":                       "last_name",
 	"payment_type":                    "payment_type",
@@ -138,7 +139,7 @@ func (s *Service) ImportTSDHistoryCSV(
 				Row:            row.rowNumber,
 				PeriodYear:     parseOptionalInt(row.values["period_year"]),
 				PeriodMonth:    parseOptionalInt(row.values["period_month"]),
-				EmployeeName:   employeeImportDisplayName(row.values["first_name"], row.values["last_name"]),
+				EmployeeName:   payrollHistoryImportEmployeeName(row.values),
 				EmployeeNumber: strings.TrimSpace(row.values["employee_number"]),
 				Message:        err.Error(),
 			})
