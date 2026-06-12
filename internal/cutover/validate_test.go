@@ -503,6 +503,31 @@ func TestValidateBundleReportsPaymentRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindPayments, "allocation_amount", "allocation_amount exceeds payment amount")
 }
 
+func TestValidateBundleReportsBankAccountRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindBankAccounts,
+			FileName: "bank-accounts.csv",
+			CSVContent: "name,account_number,currency,is_default,is_active\n" +
+				",EE1,EUR,true,true\n" +
+				"Missing number,,EUR,false,true\n" +
+				"Invalid bools,EE2,EUR,maybe,nope\n" +
+				"Invalid currency,EE3,EURO,yes,no\n" +
+				"Valid defaults,EE4,,y,n\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 5, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindBankAccounts, "name", "name is required")
+	assertValidationIssue(t, report, KindBankAccounts, "account_number", "account_number is required")
+	assertValidationIssue(t, report, KindBankAccounts, "is_default", "is_default must be true or false")
+	assertValidationIssue(t, report, KindBankAccounts, "is_active", "is_active must be true or false")
+	assertValidationIssue(t, report, KindBankAccounts, "currency", "currency must be a 3-letter ISO code")
+}
+
 func TestValidateBundleReportsBankTransactionRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

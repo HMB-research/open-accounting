@@ -1454,6 +1454,8 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkExpenseRows(report, file)
 	case KindPayments:
 		checkPaymentRows(report, file)
+	case KindBankAccounts:
+		checkBankAccountRows(report, file)
 	case KindBankTransactions:
 		checkBankTransactionRows(report, file)
 	case KindProducts:
@@ -2883,6 +2885,58 @@ func checkPaymentAllocation(report *BundleValidationReport, file parsedFile, row
 			Message:  "allocation_amount exceeds payment amount",
 		})
 	}
+}
+
+func checkBankAccountRows(report *BundleValidationReport, file parsedFile) {
+	hasName := fileHasHeaders(file, "name")
+	hasAccountNumber := fileHasHeaders(file, "account_number")
+	for _, row := range file.rows {
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		if hasAccountNumber {
+			checkRequiredCutoverField(report, file, row, "account_number")
+		}
+		checkBankAccountCurrency(report, file, row)
+		checkCutoverBoolField(report, file, row, "is_default")
+		checkCutoverBoolField(report, file, row, "is_active")
+	}
+}
+
+func checkBankAccountCurrency(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "currency") {
+		return
+	}
+	value := strings.TrimSpace(row.values["currency"])
+	if value == "" {
+		return
+	}
+	if len(value) == 3 {
+		for _, r := range value {
+			if !unicode.IsLetter(r) {
+				report.addIssue(ValidationIssue{
+					Severity: SeverityError,
+					Kind:     file.kind,
+					FileName: file.fileName,
+					Row:      row.number,
+					Field:    "currency",
+					Value:    value,
+					Message:  "currency must be a 3-letter ISO code",
+				})
+				return
+			}
+		}
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "currency",
+		Value:    value,
+		Message:  "currency must be a 3-letter ISO code",
+	})
 }
 
 func checkBankTransactionRows(report *BundleValidationReport, file parsedFile) {
