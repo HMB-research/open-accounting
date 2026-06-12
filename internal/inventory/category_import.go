@@ -209,7 +209,11 @@ func buildCategoryFromImportRow(row categoryImportRow, tenantID string, nameToID
 
 func resolveCategoryImportParentID(row categoryImportRow, nameToID map[string]string) (string, error) {
 	if parentID := strings.TrimSpace(row.values["parent_id"]); parentID != "" {
-		return parentID, nil
+		parsedID, err := uuid.Parse(parentID)
+		if err != nil {
+			return "", fmt.Errorf("parent_id must be a valid UUID")
+		}
+		return parsedID.String(), nil
 	}
 	parentName := strings.TrimSpace(row.values["parent_name"])
 	if parentName == "" {

@@ -906,6 +906,24 @@ func TestService_ImportProductCategoriesCSV(t *testing.T) {
 	assert.Equal(t, parts.ID, fasteners.ParentID)
 }
 
+func TestService_ImportProductCategoriesCSVRejectsInvalidParentID(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportProductCategoriesCSV(ctx, "tenant-1", "test_schema", &ImportProductCategoriesRequest{
+		CSVContent: "category_name,parent_category_id\nFasteners,legacy-parent\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.CategoriesCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 2, result.Errors[0].Row)
+	assert.Equal(t, "Fasteners", result.Errors[0].Name)
+	assert.Contains(t, result.Errors[0].Message, "parent_id must be a valid UUID")
+}
+
 func TestService_ImportWarehousesCSV(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
