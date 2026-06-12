@@ -88,6 +88,57 @@ func TestImportLeaveBalancesCSV_CreatesAndUpdatesBalances(t *testing.T) {
 	assert.Equal(t, "Updated balance", updated.Notes)
 }
 
+func TestImportLeaveBalancesCSV_AcceptsMigrationHeaderAliases(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockAbsenceRepository()
+	repo.Employees["emp-400"] = &Employee{
+		ID:             "emp-400",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-400",
+		FirstName:      "Marta",
+		LastName:       "Mets",
+		PersonalCode:   "49001010400",
+		Email:          "marta@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.AbsenceTypes["type-annual"] = &AbsenceType{
+		ID:                 "type-annual",
+		TenantID:           "tenant-1",
+		Code:               "ANNUAL_LEAVE",
+		Name:               "Annual leave",
+		DefaultDaysPerYear: decimal.NewFromInt(28),
+		IsActive:           true,
+	}
+	service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+	result, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", &ImportLeaveBalancesRequest{
+		FileName: "leave-balances-aliases.csv",
+		CSVContent: "period_year,employee_no,leave_type_code,entitlement,carried_forward_days,taken_days,reserved_days,notes\n" +
+			"2025,EMP-400,ANNUAL_LEAVE,28,4,6,1,Alias opening balance\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "leave-balances-aliases.csv", result.FileName)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.LeaveBalancesCreated)
+	assert.Zero(t, result.LeaveBalancesUpdated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+
+	balance := repo.LeaveBalances["tenant-1-emp-400-type-annual-2025"]
+	require.NotNil(t, balance)
+	assert.Equal(t, "leave-1", balance.ID)
+	assert.True(t, balance.EntitledDays.Equal(decimal.NewFromInt(28)))
+	assert.True(t, balance.CarryoverDays.Equal(decimal.NewFromInt(4)))
+	assert.True(t, balance.UsedDays.Equal(decimal.NewFromInt(6)))
+	assert.True(t, balance.PendingDays.Equal(decimal.NewFromInt(1)))
+	assert.True(t, balance.RemainingDays.Equal(decimal.NewFromInt(25)))
+	assert.Equal(t, "Alias opening balance", balance.Notes)
+}
+
 func TestImportLeaveBalancesCSV_MatchesAbsenceTypesByIDAndNameWithDefaults(t *testing.T) {
 	t.Parallel()
 

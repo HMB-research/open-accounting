@@ -308,6 +308,61 @@ func TestImportPayrollHistoryCSV_MatchesAlternateEmployeeIdentifiersAndDerivesAm
 	assert.Equal(t, "emp-name", repo.Payslips[2].EmployeeID)
 }
 
+func TestImportPayrollHistoryCSV_AcceptsMigrationAliasesAndCanceledPaymentStatus(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-300"] = &Employee{
+		ID:             "emp-300",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-300",
+		FirstName:      "Marta",
+		LastName:       "Mets",
+		PersonalCode:   "49001010300",
+		Email:          "marta@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+	result, err := service.ImportPayrollHistoryCSV(ctx, "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+		FileName: "payroll-history-aliases.csv",
+		CSVContent: "payroll_year,payroll_month,run_status,pay_date,employee_no,gross,income_tax,unemployment_employee,pension,net,social_tax,unemployment_employer,employer_cost,basic_exemption_applied,payment_status\n" +
+			"2025,9,paid,2025-10-05,EMP-300,1200.00,100.00,19.20,24.00,1056.80,396.00,9.60,1605.60,0,canceled\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "payroll-history-aliases.csv", result.FileName)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.PayrollRunsCreated)
+	assert.Equal(t, 1, result.PayslipsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+
+	run := repo.PayrollRuns["hist-1"]
+	require.NotNil(t, run)
+	assert.Equal(t, PayrollPaid, run.Status)
+	require.NotNil(t, run.PaymentDate)
+	assert.Equal(t, "2025-10-05", run.PaymentDate.Format("2006-01-02"))
+	assert.Equal(t, "user-1", run.ApprovedBy)
+	require.NotNil(t, run.ApprovedAt)
+	assert.Equal(t, "2025-10-05", run.ApprovedAt.Format("2006-01-02"))
+	assert.True(t, run.TotalGross.Equal(decimal.RequireFromString("1200.00")))
+	assert.True(t, run.TotalNet.Equal(decimal.RequireFromString("1056.80")))
+	assert.True(t, run.TotalEmployerCost.Equal(decimal.RequireFromString("1605.60")))
+
+	require.Len(t, repo.Payslips, 1)
+	payslip := repo.Payslips[0]
+	assert.Equal(t, "hist-2", payslip.ID)
+	assert.Equal(t, "hist-1", payslip.PayrollRunID)
+	assert.Equal(t, "emp-300", payslip.EmployeeID)
+	assert.Equal(t, "CANCELLED", payslip.PaymentStatus) //nolint:misspell // Existing API/database spelling.
+	assert.Nil(t, payslip.PaidAt)
+	assert.True(t, payslip.NetSalary.Equal(decimal.RequireFromString("1056.80")))
+	assert.True(t, payslip.TotalEmployerCost.Equal(decimal.RequireFromString("1605.60")))
+}
+
 func TestImportPayrollHistoryCSV_RejectsMismatchedIdentifiersAndGroupInconsistency(t *testing.T) {
 	t.Parallel()
 
