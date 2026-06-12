@@ -1437,10 +1437,129 @@ func normalizeCutoverBoolComparable(value string) string {
 
 func validateAccountingPreflight(report *BundleValidationReport, file parsedFile) {
 	switch file.kind {
+	case KindPayments:
+		checkPaymentRows(report, file)
 	case KindOpeningBalances:
 		checkOpeningBalanceTotals(report, file)
 	case KindJournalEntries:
 		checkJournalEntryGroups(report, file)
+	}
+}
+
+func checkPaymentRows(report *BundleValidationReport, file parsedFile) {
+	hasPaymentType := fileHasHeaders(file, "payment_type")
+	hasPaymentDate := fileHasHeaders(file, "payment_date")
+	hasAmount := fileHasHeaders(file, "amount")
+	for _, row := range file.rows {
+		if hasPaymentType {
+			checkPaymentType(report, file, row)
+		}
+		if hasPaymentDate {
+			checkPaymentDate(report, file, row)
+		}
+		amount, amountOK := decimal.Zero, false
+		if hasAmount {
+			parsedAmount, amountIssue := parseCutoverPositiveDecimal(row.values["amount"], "amount")
+			if amountIssue != nil {
+				report.addIssue(cutoverAmountValidationIssue(file, row, *amountIssue))
+			} else {
+				amount = parsedAmount
+				amountOK = true
+			}
+		}
+		checkPaymentExchangeRate(report, file, row)
+		checkPaymentAllocation(report, file, row, amount, amountOK)
+	}
+}
+
+func checkPaymentType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["payment_type"])
+	switch strings.ToUpper(value) {
+	case "RECEIVED", "MADE":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "payment_type",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid payment_type %q", value),
+		})
+	}
+}
+
+func checkPaymentDate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["payment_date"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "payment_date",
+			Message:  "payment_date is required",
+		})
+		return
+	}
+	if _, err := time.Parse("2006-01-02", value); err == nil {
+		return
+	}
+	if _, err := time.Parse(time.RFC3339, value); err == nil {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "payment_date",
+		Value:    value,
+		Message:  "payment_date must be YYYY-MM-DD or RFC3339",
+	})
+}
+
+func checkPaymentExchangeRate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "exchange_rate") || strings.TrimSpace(row.values["exchange_rate"]) == "" {
+		return
+	}
+	if _, issue := parseCutoverPositiveDecimal(row.values["exchange_rate"], "exchange_rate"); issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+	}
+}
+
+func checkPaymentAllocation(report *BundleValidationReport, file parsedFile, row parsedRow, paymentAmount decimal.Decimal, amountOK bool) {
+	allocationValue := strings.TrimSpace(row.values["allocation_amount"])
+	if allocationValue == "" {
+		return
+	}
+	if strings.TrimSpace(row.values["invoice_id"]) == "" && strings.TrimSpace(row.values["invoice_number"]) == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "allocation_amount",
+			Value:    allocationValue,
+			Message:  "invoice_id or invoice_number is required when allocation_amount is provided",
+		})
+	}
+	allocationAmount, issue := parseCutoverPositiveDecimal(allocationValue, "allocation_amount")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if amountOK && allocationAmount.GreaterThan(paymentAmount) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "allocation_amount",
+			Value:    allocationValue,
+			Message:  "allocation_amount exceeds payment amount",
+		})
 	}
 }
 
@@ -1666,6 +1785,21 @@ func parseCutoverDecimal(value, fieldName string) (decimal.Decimal, error) {
 	parsed, err := decimal.NewFromString(normalizeCutoverDecimal(trimmed))
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("invalid %s", fieldName)
+	}
+	return parsed, nil
+}
+
+func parseCutoverPositiveDecimal(value, fieldName string) (decimal.Decimal, *cutoverAmountIssue) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, message: fmt.Sprintf("%s is required", fieldName)}
+	}
+	parsed, err := decimal.NewFromString(trimmed)
+	if err != nil {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be a decimal", fieldName)}
+	}
+	if parsed.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be positive", fieldName)}
 	}
 	return parsed, nil
 }

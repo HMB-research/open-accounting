@@ -370,6 +370,30 @@ func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
 	assertValidationIssue(t, report, KindBankAccounts, "account_number", `account_number "EE47 1000 0010 2014 5685" duplicates row 2`)
 }
 
+func TestValidateBundleReportsPaymentRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindPayments,
+			FileName: "payments.csv",
+			CSVContent: "payment_number,payment_type,payment_date,amount,exchange_rate,allocation_amount,invoice_number\n" +
+				"PAY-1,REFUND,bad-date,0,-1,10,\n" +
+				"PAY-2,RECEIVED,2026-05-31,100,1,150,INV-1\n" +
+				"PAY-3,MADE,2026-05-31T12:00:00Z,100,,50,INV-1\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 6, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindPayments, "payment_type", `invalid payment_type "REFUND"`)
+	assertValidationIssue(t, report, KindPayments, "payment_date", "payment_date must be YYYY-MM-DD or RFC3339")
+	assertValidationIssue(t, report, KindPayments, "amount", "amount must be positive")
+	assertValidationIssue(t, report, KindPayments, "exchange_rate", "exchange_rate must be positive")
+	assertValidationIssue(t, report, KindPayments, "allocation_amount", "invoice_id or invoice_number is required when allocation_amount is provided")
+	assertValidationIssue(t, report, KindPayments, "allocation_amount", "allocation_amount exceeds payment amount")
+}
+
 func TestValidateBundleReportsOpeningBalanceBalanceIssue(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -1033,7 +1057,7 @@ func TestValidateBundleAcceptsEInvoiceXMLAndPaymentReference(t *testing.T) {
 		{
 			Kind:       KindPayments,
 			FileName:   "payments.csv",
-			CSVContent: "payment_type,payment_date,amount,invoice_number\nPAID,2026-05-31,122,BILL-2026-001\n",
+			CSVContent: "payment_type,payment_date,amount,invoice_number\nMADE,2026-05-31,122,BILL-2026-001\n",
 		},
 	}})
 
