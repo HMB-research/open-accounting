@@ -47,6 +47,7 @@ var leaveBalanceImportHeaderAliases = map[string]string{
 	"personal_code":        "personal_code",
 	"isikukood":            "personal_code",
 	"email":                "email",
+	"name":                 "name",
 	"first_name":           "first_name",
 	"last_name":            "last_name",
 	"absence_type_id":      "absence_type_id",
@@ -388,7 +389,7 @@ func appendLeaveBalanceRowError(result *ImportLeaveBalancesResult, row leaveBala
 	rowError := ImportLeaveBalanceRowError{
 		Row:             row.rowNumber,
 		Year:            parseOptionalInt(row.values["year"]),
-		EmployeeName:    employeeImportDisplayName(row.values["first_name"], row.values["last_name"]),
+		EmployeeName:    payrollHistoryImportEmployeeName(row.values),
 		EmployeeNumber:  strings.TrimSpace(row.values["employee_number"]),
 		AbsenceTypeCode: strings.TrimSpace(row.values["absence_type_code"]),
 		Message:         message,

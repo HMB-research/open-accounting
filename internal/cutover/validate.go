@@ -224,12 +224,7 @@ var fileSpecs = map[FileKind]fileSpec{
 			"gross":         "gross_salary",
 			"gross_salary":  "gross_salary",
 		}),
-		requiredGroups: [][]string{
-			{"period_year"},
-			{"period_month"},
-			{"employee_number", "personal_code", "email", "first_name", "name"},
-			{"gross_salary"},
-		},
+		requiredGroups: payrollHistoryRequiredGroups(),
 	},
 	KindLeaveBalances: {
 		aliases: mergeAliases(employeeReferenceAliases(), map[string]string{
@@ -240,11 +235,7 @@ var fileSpecs = map[FileKind]fileSpec{
 			"entitled":          "entitled_days",
 			"entitled_days":     "entitled_days",
 		}),
-		requiredGroups: [][]string{
-			{"year"},
-			{"employee_number", "personal_code", "email", "first_name", "name"},
-			{"absence_type_code", "absence_type", "absence_type_id"},
-		},
+		requiredGroups: leaveBalanceRequiredGroups(),
 	},
 	KindTSDHistory: {
 		aliases: mergeAliases(employeeReferenceAliases(), map[string]string{
@@ -277,12 +268,7 @@ var fileSpecs = map[FileKind]fileSpec{
 			"unemployment_insurance_er":       "unemployment_insurance_employer",
 			"pension":                         "funded_pension",
 		}),
-		requiredGroups: [][]string{
-			{"period_year"},
-			{"period_month"},
-			{"employee_number", "personal_code", "email", "first_name", "name"},
-			{"gross_payment"},
-		},
+		requiredGroups: tsdHistoryRequiredGroups(),
 	},
 	KindKMDHistory: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
@@ -1152,6 +1138,31 @@ func commercialDocumentRequiredGroups(numberColumn, dateColumn string) [][]strin
 		{"unit_price"},
 		{"vat_rate"},
 	}
+}
+
+func employeeReferenceRequiredGroups() [][]string {
+	return [][]string{
+		{"employee_number", "personal_code", "email", "name", "first_name"},
+		{"employee_number", "personal_code", "email", "name", "last_name"},
+	}
+}
+
+func payrollHistoryRequiredGroups() [][]string {
+	groups := [][]string{{"period_year"}, {"period_month"}}
+	groups = append(groups, employeeReferenceRequiredGroups()...)
+	return append(groups, []string{"gross_salary"})
+}
+
+func leaveBalanceRequiredGroups() [][]string {
+	groups := [][]string{{"year"}}
+	groups = append(groups, employeeReferenceRequiredGroups()...)
+	return append(groups, []string{"absence_type_code", "absence_type", "absence_type_id"})
+}
+
+func tsdHistoryRequiredGroups() [][]string {
+	groups := [][]string{{"period_year"}, {"period_month"}}
+	groups = append(groups, employeeReferenceRequiredGroups()...)
+	return append(groups, []string{"gross_payment"})
 }
 
 func employeeReferenceAliases() map[string]string {

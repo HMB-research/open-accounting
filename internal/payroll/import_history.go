@@ -66,6 +66,7 @@ var payrollHistoryImportHeaderAliases = map[string]string{
 	"personal_code":                   "personal_code",
 	"isikukood":                       "personal_code",
 	"email":                           "email",
+	"name":                            "name",
 	"first_name":                      "first_name",
 	"last_name":                       "last_name",
 	"gross_salary":                    "gross_salary",
@@ -146,7 +147,7 @@ func (s *Service) ImportPayrollHistoryCSV(
 				Row:            row.rowNumber,
 				PeriodYear:     parseOptionalInt(row.values["period_year"]),
 				PeriodMonth:    parseOptionalInt(row.values["period_month"]),
-				EmployeeName:   employeeImportDisplayName(row.values["first_name"], row.values["last_name"]),
+				EmployeeName:   payrollHistoryImportEmployeeName(row.values),
 				EmployeeNumber: strings.TrimSpace(row.values["employee_number"]),
 				Message:        err.Error(),
 			})
@@ -572,6 +573,19 @@ func findPayrollHistoryEmployee(values map[string]string, indexes *payrollHistor
 		candidates[match.ID] = match
 	}
 
+	if name := strings.TrimSpace(values["name"]); name != "" {
+		matches := indexes.names[normalizeEmployeeImportValue(name)]
+		if len(matches) == 0 {
+			return nil, "", fmt.Errorf("employee %q not found", name)
+		}
+		if len(matches) > 1 && len(candidates) == 0 {
+			return nil, "", fmt.Errorf("employee %q matches multiple employees; use employee_number or personal_code", name)
+		}
+		if len(matches) == 1 {
+			candidates[matches[0].ID] = matches[0]
+		}
+	}
+
 	firstName := strings.TrimSpace(values["first_name"])
 	lastName := strings.TrimSpace(values["last_name"])
 	if firstName != "" || lastName != "" {
@@ -592,7 +606,7 @@ func findPayrollHistoryEmployee(values map[string]string, indexes *payrollHistor
 	}
 
 	if len(candidates) == 0 {
-		return nil, "", fmt.Errorf("employee_number, personal_code, email, or first_name/last_name is required")
+		return nil, "", fmt.Errorf("employee_number, personal_code, email, name, or first_name/last_name is required")
 	}
 	if len(candidates) > 1 {
 		return nil, "", fmt.Errorf("employee identifiers do not match the same employee")
@@ -725,6 +739,13 @@ func payrollHistoryGroupKey(year, month int) string {
 
 func payrollHistoryNameKey(firstName, lastName string) string {
 	return normalizeEmployeeImportValue(employeeImportDisplayName(firstName, lastName))
+}
+
+func payrollHistoryImportEmployeeName(values map[string]string) string {
+	if name := strings.TrimSpace(values["name"]); name != "" {
+		return name
+	}
+	return employeeImportDisplayName(values["first_name"], values["last_name"])
 }
 
 func payrollHistoryDatesEqual(left, right *time.Time) bool {

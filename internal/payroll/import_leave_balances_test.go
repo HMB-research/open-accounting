@@ -61,9 +61,9 @@ func TestImportLeaveBalancesCSV_CreatesAndUpdatesBalances(t *testing.T) {
 
 	result, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", &ImportLeaveBalancesRequest{
 		FileName: "leave-balances.csv",
-		CSVContent: "year,employee_number,absence_type_code,entitled_days,carryover_days,used_days,pending_days,notes\n" +
-			"2025,EMP-100,ANNUAL_LEAVE,28,3,10,2,Opening balance\n" +
-			"2025,EMP-101,ANNUAL_LEAVE,28,1,6,0,Updated balance\n",
+		CSVContent: "year,employee_number,name,absence_type_code,entitled_days,carryover_days,used_days,pending_days,notes\n" +
+			"2025,EMP-100,,ANNUAL_LEAVE,28,3,10,2,Opening balance\n" +
+			"2025,,Juhan Tamm,ANNUAL_LEAVE,28,1,6,0,Updated balance\n",
 	})
 	require.NoError(t, err)
 
