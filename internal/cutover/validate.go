@@ -565,6 +565,7 @@ var fileSpecs = map[FileKind]fileSpec{
 			"category_id":                           "category_id",
 			"category":                              "category_name",
 			"category_name":                         "category_name",
+			"location":                              "location",
 			"purchase_date":                         "purchase_date",
 			"acquisition_date":                      "purchase_date",
 			"date":                                  "purchase_date",
@@ -594,7 +595,11 @@ var fileSpecs = map[FileKind]fileSpec{
 			"depreciation_expense_account_id":       "depreciation_expense_account_id",
 			"depreciation_expense_account_code":     "depreciation_expense_account_code",
 			"accumulated_depreciation_account_id":   "accumulated_depreciation_account_id",
+			"accumulated_depreciation_acct_id":      "accumulated_depreciation_account_id",
+			"accumulated_depreciation_account":      "accumulated_depreciation_account_id",
+			"accumulated_depreciation_account_uuid": "accumulated_depreciation_account_id",
 			"accumulated_depreciation_account_code": "accumulated_depreciation_account_code",
+			"accumulated_depreciation_acct_code":    "accumulated_depreciation_account_code",
 		}),
 		requiredGroups: [][]string{{"name"}, {"purchase_date"}, {"purchase_cost"}},
 	},
@@ -1457,6 +1462,8 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkWarehouseRows(report, file)
 	case KindStockAdjustments:
 		checkStockAdjustmentRows(report, file)
+	case KindFixedAssets:
+		checkFixedAssetRows(report, file)
 	case KindOpeningBalances:
 		checkOpeningBalanceTotals(report, file)
 	case KindJournalEntries:
@@ -2105,6 +2112,317 @@ func checkCutoverOptionalDate(report *BundleValidationReport, file parsedFile, r
 			Message:  fmt.Sprintf("%s must use YYYY-MM-DD", field),
 		})
 	}
+}
+
+func checkFixedAssetRows(report *BundleValidationReport, file parsedFile) {
+	hasName := fileHasHeaders(file, "name")
+	hasPurchaseDate := fileHasHeaders(file, "purchase_date")
+	hasPurchaseCost := fileHasHeaders(file, "purchase_cost")
+	for _, row := range file.rows {
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		if hasPurchaseDate {
+			checkFixedAssetRequiredDate(report, file, row, "purchase_date")
+		}
+
+		purchaseCost := decimal.Zero
+		purchaseCostOK := false
+		if hasPurchaseCost {
+			purchaseCost, purchaseCostOK = checkFixedAssetPurchaseCost(report, file, row)
+		}
+
+		checkFixedAssetStatus(report, file, row)
+		checkFixedAssetDepreciationMethod(report, file, row)
+		checkFixedAssetUsefulLifeMonths(report, file, row)
+
+		residualValue, _, residualOK := checkFixedAssetOptionalDecimal(report, file, row, "residual_value")
+		if residualOK && residualValue.IsNegative() {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "residual_value",
+				Value:    strings.TrimSpace(row.values["residual_value"]),
+				Message:  "residual value cannot be negative",
+			})
+			residualOK = false
+		}
+		if residualOK && purchaseCostOK && residualValue.GreaterThan(purchaseCost) {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "residual_value",
+				Value:    strings.TrimSpace(row.values["residual_value"]),
+				Message:  "residual value cannot exceed purchase cost",
+			})
+			residualOK = false
+		}
+
+		accumulatedDepreciation, _, accumulatedOK := checkFixedAssetOptionalDecimal(report, file, row, "accumulated_depreciation")
+		if accumulatedOK && accumulatedDepreciation.IsNegative() {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "accumulated_depreciation",
+				Value:    strings.TrimSpace(row.values["accumulated_depreciation"]),
+				Message:  "accumulated_depreciation cannot be negative",
+			})
+			accumulatedOK = false
+		}
+
+		bookValue, bookValueProvided, bookValueOK := checkFixedAssetOptionalDecimal(report, file, row, "book_value")
+		if bookValueOK && bookValue.IsNegative() {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "book_value",
+				Value:    strings.TrimSpace(row.values["book_value"]),
+				Message:  "book_value cannot be negative",
+			})
+			bookValueOK = false
+		}
+		if bookValueProvided && bookValueOK && purchaseCostOK && accumulatedOK {
+			expectedBookValue := purchaseCost.Sub(accumulatedDepreciation)
+			if !bookValue.Equal(expectedBookValue) {
+				report.addIssue(ValidationIssue{
+					Severity: SeverityError,
+					Kind:     file.kind,
+					FileName: file.fileName,
+					Row:      row.number,
+					Field:    "book_value",
+					Value:    strings.TrimSpace(row.values["book_value"]),
+					Message:  "book_value must equal purchase_cost minus accumulated_depreciation",
+				})
+			}
+		}
+		if purchaseCostOK && residualOK && accumulatedOK && accumulatedDepreciation.GreaterThan(purchaseCost.Sub(residualValue)) {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "accumulated_depreciation",
+				Value:    strings.TrimSpace(row.values["accumulated_depreciation"]),
+				Message:  "accumulated_depreciation cannot exceed depreciable amount",
+			})
+		}
+
+		checkFixedAssetOptionalDate(report, file, row, "depreciation_start_date")
+		checkFixedAssetOptionalDate(report, file, row, "last_depreciation_date")
+		checkFixedAssetOptionalDate(report, file, row, "disposal_date")
+		checkFixedAssetDisposalMethod(report, file, row)
+		checkFixedAssetDisposalProceeds(report, file, row)
+	}
+}
+
+func checkFixedAssetPurchaseCost(report *BundleValidationReport, file parsedFile, row parsedRow) (decimal.Decimal, bool) {
+	purchaseCost, issue := parseCutoverRequiredDecimal(row.values["purchase_cost"], "purchase_cost")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return decimal.Zero, false
+	}
+	if purchaseCost.LessThanOrEqual(decimal.Zero) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "purchase_cost",
+			Value:    strings.TrimSpace(row.values["purchase_cost"]),
+			Message:  "purchase cost must be positive",
+		})
+		return decimal.Zero, false
+	}
+	return purchaseCost, true
+}
+
+func checkFixedAssetOptionalDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (decimal.Decimal, bool, bool) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return decimal.Zero, false, true
+	}
+	parsed, issue := parseCutoverRequiredDecimal(row.values[field], field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return decimal.Zero, true, false
+	}
+	return parsed, true, true
+}
+
+func checkFixedAssetStatus(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "status") || strings.TrimSpace(row.values["status"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["status"])
+	switch normalizeCutoverUpper(value) {
+	case "DRAFT", "ACTIVE", "DISPOSED", "SOLD":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid status %q", value),
+		})
+	}
+}
+
+func checkFixedAssetDepreciationMethod(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "depreciation_method") || strings.TrimSpace(row.values["depreciation_method"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["depreciation_method"])
+	switch normalizeFixedAssetDepreciationMethod(value) {
+	case "STRAIGHT_LINE", "DECLINING_BALANCE", "UNITS_OF_PRODUCTION":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "depreciation_method",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid depreciation_method %q", value),
+		})
+	}
+}
+
+func normalizeFixedAssetDepreciationMethod(value string) string {
+	normalized := normalizeCutoverUpper(value)
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	return strings.ReplaceAll(normalized, " ", "_")
+}
+
+func checkFixedAssetUsefulLifeMonths(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "useful_life_months") || strings.TrimSpace(row.values["useful_life_months"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["useful_life_months"])
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "useful_life_months",
+			Value:    value,
+			Message:  "useful_life_months must be an integer",
+		})
+		return
+	}
+	if parsed <= 0 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "useful_life_months",
+			Value:    value,
+			Message:  "useful_life_months must be positive",
+		})
+	}
+}
+
+func checkFixedAssetRequiredDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Message:  fmt.Sprintf("%s is required", field),
+		})
+		return
+	}
+	if !isFixedAssetCutoverDate(value) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be a date in YYYY-MM-DD or RFC3339 format", field),
+		})
+	}
+}
+
+func checkFixedAssetOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	if !isFixedAssetCutoverDate(value) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be a date in YYYY-MM-DD or RFC3339 format", field),
+		})
+	}
+}
+
+func isFixedAssetCutoverDate(value string) bool {
+	for _, layout := range []string{"2006-01-02", time.RFC3339, "2006-01-02 15:04:05"} {
+		if _, err := time.Parse(layout, value); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func checkFixedAssetDisposalMethod(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "disposal_method") || strings.TrimSpace(row.values["disposal_method"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["disposal_method"])
+	switch normalizeCutoverUpper(value) {
+	case "SOLD", "SCRAPPED", "DONATED", "LOST":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "disposal_method",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid disposal_method %q", value),
+		})
+	}
+}
+
+func checkFixedAssetDisposalProceeds(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	disposalProceeds, provided, ok := checkFixedAssetOptionalDecimal(report, file, row, "disposal_proceeds")
+	if !provided || !ok || !disposalProceeds.IsNegative() {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "disposal_proceeds",
+		Value:    strings.TrimSpace(row.values["disposal_proceeds"]),
+		Message:  "disposal_proceeds cannot be negative",
+	})
 }
 
 func checkExpenseRows(report *BundleValidationReport, file parsedFile) {
