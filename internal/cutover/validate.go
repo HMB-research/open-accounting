@@ -56,6 +56,7 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindContacts: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
+			"contact_id":         "id",
 			"contact_name":       "name",
 			"company":            "name",
 			"company_name":       "name",
@@ -793,6 +794,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 			case KindBankAccounts:
 				addBankAccountIndexValue(indexes.bankAccounts, row.values["account_number"], row.values["currency"])
 			case KindContacts:
+				addIndexValue(indexes.contacts, row.values["id"])
 				addIndexValue(indexes.contacts, row.values["code"])
 				addIndexValue(indexes.contacts, row.values["reg_code"])
 				addIndexValue(indexes.contacts, row.values["vat_number"])
@@ -833,11 +835,15 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkSelfReference(report, file, row, "parent_code", "code")
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"parent_code"})
+		case KindContacts:
+			checkOptionalUUID(report, file, row, "id")
 		case KindExpenses:
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"expense_account_code"})
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"payment_account_code"})
+			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
+				[]string{"contact_id"})
 		case KindInvoices:
 			checkOptionalUUID(report, file, row, "id")
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
@@ -849,17 +855,19 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
 		case KindQuotes, KindRecurringInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
+				commercialDocumentContactReferenceFields())
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
 		case KindOrders:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
+				commercialDocumentContactReferenceFields())
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
 			checkTargetReference(report, indexes.files[KindQuotes], indexes.quotes, file, row, KindQuotes,
 				[]string{"quote_id"})
 		case KindPayments:
+			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
+				[]string{"contact_id"})
 			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 				[]string{"invoice_id", "invoice_number"})
 		case KindBankAccounts:
@@ -892,6 +900,8 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"purchase_account_id", "purchase_account_code"})
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"inventory_account_id", "inventory_account_code"})
+			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
+				[]string{"supplier_id"})
 		case KindStockAdjustments:
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
@@ -904,6 +914,10 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"depreciation_expense_account_id", "depreciation_expense_account_code"})
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"accumulated_depreciation_account_id", "accumulated_depreciation_account_code"})
+			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
+				[]string{"supplier_id"})
+			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
+				[]string{"invoice_id"})
 		}
 	}
 }
@@ -1245,6 +1259,10 @@ func commercialDocumentRequiredGroups(numberColumn, dateColumn string) [][]strin
 		{"unit_price"},
 		{"vat_rate"},
 	}
+}
+
+func commercialDocumentContactReferenceFields() []string {
+	return []string{"contact_id", "contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
 }
 
 func employeeReferenceRequiredGroups() [][]string {

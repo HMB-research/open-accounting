@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -17,6 +18,7 @@ type importRow struct {
 }
 
 type importIndexes struct {
+	ids      map[string]string
 	codes    map[string]string
 	regCodes map[string]string
 	emails   map[string]string
@@ -24,6 +26,8 @@ type importIndexes struct {
 }
 
 var contactImportHeaderAliases = map[string]string{
+	"id":                 "id",
+	"contact_id":         "id",
 	"name":               "name",
 	"contact_name":       "name",
 	"company":            "name",
@@ -252,6 +256,15 @@ func buildCreateRequestFromImportRow(row importRow) (*CreateContactRequest, erro
 		return nil, fmt.Errorf("country_code must be a 2-letter code")
 	}
 
+	id := strings.TrimSpace(row.values["id"])
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, fmt.Errorf("invalid id")
+		}
+		id = parsedID.String()
+	}
+
 	creditLimit := decimal.Zero
 	if value := strings.TrimSpace(row.values["credit_limit"]); value != "" {
 		parsed, err := decimal.NewFromString(normalizeImportDecimal(value))
@@ -262,6 +275,7 @@ func buildCreateRequestFromImportRow(row importRow) (*CreateContactRequest, erro
 	}
 
 	return &CreateContactRequest{
+		ID:               id,
 		Code:             strings.TrimSpace(row.values["code"]),
 		Name:             name,
 		ContactType:      contactType,
@@ -282,6 +296,7 @@ func buildCreateRequestFromImportRow(row importRow) (*CreateContactRequest, erro
 
 func buildImportIndexes(existing []Contact) *importIndexes {
 	indexes := &importIndexes{
+		ids:      make(map[string]string),
 		codes:    make(map[string]string),
 		regCodes: make(map[string]string),
 		emails:   make(map[string]string),
@@ -289,6 +304,7 @@ func buildImportIndexes(existing []Contact) *importIndexes {
 	}
 	for _, contact := range existing {
 		indexes.add(CreateContactRequest{
+			ID:          contact.ID,
 			Code:        contact.Code,
 			Name:        contact.Name,
 			RegCode:     contact.RegCode,
@@ -300,6 +316,9 @@ func buildImportIndexes(existing []Contact) *importIndexes {
 }
 
 func (i *importIndexes) add(contact CreateContactRequest) {
+	if key := normalizedImportKey(contact.ID); key != "" {
+		i.ids[key] = contact.Name
+	}
 	if key := normalizedImportKey(contact.Code); key != "" {
 		i.codes[key] = contact.Name
 	}
@@ -315,6 +334,11 @@ func (i *importIndexes) add(contact CreateContactRequest) {
 }
 
 func (i *importIndexes) findDuplicate(contact CreateContactRequest) string {
+	if key := normalizedImportKey(contact.ID); key != "" {
+		if existingName, ok := i.ids[key]; ok {
+			return fmt.Sprintf("duplicate id %q matches existing contact %q", contact.ID, existingName)
+		}
+	}
 	if key := normalizedImportKey(contact.Code); key != "" {
 		if existingName, ok := i.codes[key]; ok {
 			return fmt.Sprintf("duplicate code %q matches existing contact %q", contact.Code, existingName)
