@@ -360,14 +360,59 @@ func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
 				"Main bank,EE471000001020145685\n" +
 				"Duplicate main,EE47 1000 0010 2014 5685\n",
 		},
+		{
+			Kind:     KindExpenses,
+			FileName: "expenses.csv",
+			CSVContent: "expense_number,expense_date,merchant,expense_account_id,payment_account_id,amount\n" +
+				"EXP-1,2026-05-31,Office,acc-exp,acc-pay,42\n" +
+				"EXP-1,2026-06-01,Office,acc-exp,acc-pay,43\n",
+		},
 	}})
 
 	require.NoError(t, err)
 	require.NotNil(t, report)
 	assert.False(t, report.Summary.Ready)
-	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assert.Equal(t, 3, report.Summary.ErrorCount)
 	assertValidationIssue(t, report, KindAccounts, "code", `code "1000" duplicates row 2`)
 	assertValidationIssue(t, report, KindBankAccounts, "account_number", `account_number "EE47 1000 0010 2014 5685" duplicates row 2`)
+	assertValidationIssue(t, report, KindExpenses, "expense_number", `expense_number "EXP-1" duplicates row 2`)
+}
+
+func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindExpenses,
+			FileName: "expenses.csv",
+			CSVContent: "expense_number,expense_date,merchant,expense_account_code,payment_account_code,amount,exchange_rate,status,requires_receipt,submitted_at,approved_at,rejected_at,rejection_reason\n" +
+				"EXP-1,bad-date,, , ,0,0,POSTED,maybe,,,,\n" +
+				"EXP-2,2026-05-31,Office,5500,1000,abc,abc,UNKNOWN,true,,,,\n" +
+				"EXP-3,2026-05-31,Office,5500,1000,10,1,REJECTED,true,bad-date,,bad-date,\n" +
+				"EXP-4,2026-05-31T12:00:00Z,Office,5500,1000,10,1,APPROVED,false,bad-date,bad-date,,\n" +
+				"EXP-5,2026-05-31,Office,5500,1000,\"10,50\",\"1,2\",SUBMITTED,no,2026-05-31,,,\n" +
+				"EXP-6,,Office,5500,1000,10,1,DRAFT,true,,,,\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 17, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindExpenses, "expense_date", "expense_date must be YYYY-MM-DD or RFC3339")
+	assertValidationIssue(t, report, KindExpenses, "expense_date", "expense_date is required")
+	assertValidationIssue(t, report, KindExpenses, "merchant", "merchant is required")
+	assertValidationIssue(t, report, KindExpenses, "expense_account_id/expense_account_code", "expense_account_id or expense_account_code is required")
+	assertValidationIssue(t, report, KindExpenses, "payment_account_id/payment_account_code", "payment_account_id or payment_account_code is required")
+	assertValidationIssue(t, report, KindExpenses, "amount", "amount must be positive")
+	assertValidationIssue(t, report, KindExpenses, "amount", "amount must be a decimal")
+	assertValidationIssue(t, report, KindExpenses, "exchange_rate", "exchange_rate must be positive")
+	assertValidationIssue(t, report, KindExpenses, "exchange_rate", "exchange_rate must be a decimal")
+	assertValidationIssue(t, report, KindExpenses, "status", "posted expenses must be imported as approved and posted through the expense workflow")
+	assertValidationIssue(t, report, KindExpenses, "status", `invalid status "UNKNOWN"`)
+	assertValidationIssue(t, report, KindExpenses, "requires_receipt", "invalid requires_receipt")
+	assertValidationIssue(t, report, KindExpenses, "rejection_reason", "rejection_reason is required")
+	assertValidationIssue(t, report, KindExpenses, "submitted_at", "submitted_at must be YYYY-MM-DD or RFC3339")
+	assertValidationIssue(t, report, KindExpenses, "approved_at", "approved_at must be YYYY-MM-DD or RFC3339")
+	assertValidationIssue(t, report, KindExpenses, "rejected_at", "rejected_at must be YYYY-MM-DD or RFC3339")
 }
 
 func TestValidateBundleReportsPaymentRowValueIssues(t *testing.T) {
