@@ -139,6 +139,11 @@ var fileSpecs = map[FileKind]fileSpec{
 			"qty":                "quantity",
 			"price":              "unit_price",
 			"vat":                "vat_rate",
+			"product":            "product_code",
+			"product_code":       "product_code",
+			"sku":                "product_code",
+			"item_code":          "product_code",
+			"product_id":         "product_id",
 		}),
 		requiredGroups: [][]string{
 			{"invoice_number"},
@@ -817,12 +822,19 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"expense_account_code"})
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"payment_account_code"})
-		case KindInvoices, KindEInvoices:
+		case KindInvoices:
+			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
+				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
+			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
+				[]string{"product_id", "product_code"})
+		case KindEInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
 		case KindQuotes, KindOrders, KindRecurringInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
+			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
+				[]string{"product_id", "product_code"})
 		case KindPayments:
 			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 				[]string{"invoice_id", "invoice_number"})
@@ -1091,6 +1103,10 @@ func commercialDocumentAliases() map[string]string {
 		"discount":           "discount_percent",
 		"vat_rate":           "vat_rate",
 		"vat":                "vat_rate",
+		"product":            "product_code",
+		"product_code":       "product_code",
+		"sku":                "product_code",
+		"item_code":          "product_code",
 		"product_id":         "product_id",
 		"invoice_type":       "invoice_type",
 		"type":               "invoice_type",

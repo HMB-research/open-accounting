@@ -12,6 +12,8 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/importrefs"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 )
 
 type quoteImportRow struct {
@@ -110,6 +112,9 @@ var quoteImportHeaderAliases = map[string]string{
 	"vat_rate":           "vat_rate",
 	"vat":                "vat_rate",
 	"product_id":         "product_id",
+	"product_code":       "product_code",
+	"sku":                "product_code",
+	"item_code":          "product_code",
 }
 
 var quoteImportStatusAliases = map[string]QuoteStatus{
@@ -132,6 +137,7 @@ func (s *Service) ImportCSV(
 	ctx context.Context,
 	tenantID, schemaName string,
 	existingContacts []contacts.Contact,
+	existingProducts []inventory.Product,
 	req *ImportQuotesRequest,
 ) (*ImportQuotesResult, error) {
 	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
@@ -164,13 +170,14 @@ func (s *Service) ImportCSV(
 	}
 
 	contactLookup := buildQuoteImportContactLookup(existingContacts)
+	productLookup := importrefs.NewProductLookup(existingProducts)
 	groupOrder := make([]string, 0)
 	groups := make(map[string]*quoteImportGroup)
 
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		parsed, err := parseQuoteImportDataRow(row)
+		parsed, err := parseQuoteImportDataRow(row, productLookup)
 		if err != nil {
 			result.RowsSkipped++
 			result.Errors = append(result.Errors, ImportQuotesRowError{
@@ -360,7 +367,7 @@ func parseQuoteImportRows(content string) ([]quoteImportRow, error) {
 	return rows, nil
 }
 
-func parseQuoteImportDataRow(row quoteImportRow) (*quoteImportParsedRow, error) {
+func parseQuoteImportDataRow(row quoteImportRow, productLookup importrefs.ProductLookup) (*quoteImportParsedRow, error) {
 	quoteNumber := strings.TrimSpace(row.values["quote_number"])
 	if quoteNumber == "" {
 		return nil, fmt.Errorf("quote_number is required")
@@ -455,9 +462,9 @@ func parseQuoteImportDataRow(row quoteImportRow) (*quoteImportParsedRow, error) 
 		return nil, fmt.Errorf("vat_rate cannot be negative")
 	}
 
-	var productID *string
-	if value := strings.TrimSpace(row.values["product_id"]); value != "" {
-		productID = &value
+	productID, err := productLookup.ResolveID(row.values["product_id"], row.values["product_code"])
+	if err != nil {
+		return nil, err
 	}
 
 	return &quoteImportParsedRow{

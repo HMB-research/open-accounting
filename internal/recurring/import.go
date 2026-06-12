@@ -13,6 +13,8 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/importrefs"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 )
 
 type recurringImportRow struct {
@@ -139,6 +141,9 @@ var recurringImportHeaderAliases = map[string]string{
 	"vat":                      "vat_rate",
 	"account_id":               "account_id",
 	"product_id":               "product_id",
+	"product_code":             "product_code",
+	"sku":                      "product_code",
+	"item_code":                "product_code",
 }
 
 // ImportCSV imports recurring invoice templates from grouped CSV rows.
@@ -146,6 +151,7 @@ func (s *Service) ImportCSV(
 	ctx context.Context,
 	tenantID, schemaName string,
 	existingContacts []contacts.Contact,
+	existingProducts []inventory.Product,
 	req *ImportRecurringInvoicesRequest,
 ) (*ImportRecurringInvoicesResult, error) {
 	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
@@ -179,12 +185,13 @@ func (s *Service) ImportCSV(
 		Errors:   []ImportRecurringInvoicesRowError{},
 	}
 	contactLookup := buildRecurringImportContactLookup(existingContacts)
+	productLookup := importrefs.NewProductLookup(existingProducts)
 	groupOrder := make([]string, 0)
 	groups := make(map[string]*recurringImportGroup)
 
 	for _, row := range rows {
 		result.RowsProcessed++
-		parsed, err := parseRecurringImportDataRow(row)
+		parsed, err := parseRecurringImportDataRow(row, productLookup)
 		if err != nil {
 			result.RowsSkipped++
 			result.Errors = append(result.Errors, ImportRecurringInvoicesRowError{
@@ -356,7 +363,7 @@ func parseRecurringImportRows(content string) ([]recurringImportRow, error) {
 	return rows, nil
 }
 
-func parseRecurringImportDataRow(row recurringImportRow) (*recurringImportParsedRow, error) {
+func parseRecurringImportDataRow(row recurringImportRow, productLookup importrefs.ProductLookup) (*recurringImportParsedRow, error) {
 	name := strings.TrimSpace(row.values["name"])
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
@@ -425,7 +432,7 @@ func parseRecurringImportDataRow(row recurringImportRow) (*recurringImportParsed
 		return nil, err
 	}
 
-	line, err := parseRecurringImportLine(row)
+	line, err := parseRecurringImportLine(row, productLookup)
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +477,7 @@ func parseRecurringImportDataRow(row recurringImportRow) (*recurringImportParsed
 	}, nil
 }
 
-func parseRecurringImportLine(row recurringImportRow) (recurringImportLine, error) {
+func parseRecurringImportLine(row recurringImportRow, productLookup importrefs.ProductLookup) (recurringImportLine, error) {
 	description := strings.TrimSpace(row.values["line_description"])
 	if description == "" {
 		return recurringImportLine{}, fmt.Errorf("line_description is required")
@@ -506,6 +513,10 @@ func parseRecurringImportLine(row recurringImportRow) (recurringImportLine, erro
 	if vatRate.IsNegative() {
 		return recurringImportLine{}, fmt.Errorf("vat_rate cannot be negative")
 	}
+	productID, err := productLookup.ResolveID(row.values["product_id"], row.values["product_code"])
+	if err != nil {
+		return recurringImportLine{}, err
+	}
 	return recurringImportLine{
 		description:     description,
 		quantity:        quantity,
@@ -514,7 +525,7 @@ func parseRecurringImportLine(row recurringImportRow) (recurringImportLine, erro
 		discountPercent: discountPercent,
 		vatRate:         vatRate,
 		accountID:       optionalRecurringImportString(row.values["account_id"]),
-		productID:       optionalRecurringImportString(row.values["product_id"]),
+		productID:       productID,
 	}, nil
 }
 

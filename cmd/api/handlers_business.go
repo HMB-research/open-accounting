@@ -642,7 +642,13 @@ func (h *Handlers) ImportInvoices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.invoicingService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, &req, func(issueDate time.Time) error {
+	productsList, err := h.importProductList(r.Context(), tenantID, schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load products")
+		return
+	}
+
+	result, err := h.invoicingService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, productsList, &req, func(issueDate time.Time) error {
 		return h.ensurePeriodUnlocked(r.Context(), tenantID, issueDate)
 	})
 	if err != nil {
@@ -651,6 +657,13 @@ func (h *Handlers) ImportInvoices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+func (h *Handlers) importProductList(ctx context.Context, tenantID, schemaName string) ([]inventory.Product, error) {
+	if h.inventoryService == nil {
+		return nil, nil
+	}
+	return h.inventoryService.ListProducts(ctx, tenantID, schemaName, nil)
 }
 
 // ImportEInvoice imports invoices from Estonian e-invoice XML data.
@@ -4445,7 +4458,13 @@ func (h *Handlers) ImportQuotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.quotesService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, &req)
+	productsList, err := h.importProductList(r.Context(), tenantID, schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load products")
+		return
+	}
+
+	result, err := h.quotesService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, productsList, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -4942,7 +4961,13 @@ func (h *Handlers) ImportOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.ordersService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, &req)
+	productsList, err := h.importProductList(r.Context(), tenantID, schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load products")
+		return
+	}
+
+	result, err := h.ordersService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, productsList, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
