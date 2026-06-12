@@ -139,3 +139,31 @@ func TestService_ImportAccountsCSV(t *testing.T) {
 		assert.Contains(t, err.Error(), "missing required columns")
 	})
 }
+
+func TestParseAccountImportType(t *testing.T) {
+	t.Run("accepts canonical account types", func(t *testing.T) {
+		accountType, err := parseAccountImportType(" expense ")
+		require.NoError(t, err)
+		assert.Equal(t, AccountTypeExpense, accountType)
+	})
+
+	t.Run("accepts aliases", func(t *testing.T) {
+		accountType, err := parseAccountImportType("omakapital")
+		require.NoError(t, err)
+		assert.Equal(t, AccountTypeEquity, accountType)
+	})
+
+	t.Run("requires account type", func(t *testing.T) {
+		accountType, err := parseAccountImportType(" \t ")
+		require.Error(t, err)
+		assert.Empty(t, accountType)
+		assert.Contains(t, err.Error(), "account_type is required")
+	})
+
+	t.Run("rejects unknown account types", func(t *testing.T) {
+		accountType, err := parseAccountImportType("contra")
+		require.Error(t, err)
+		assert.Empty(t, accountType)
+		assert.Contains(t, err.Error(), `invalid account_type "contra"`)
+	})
+}
