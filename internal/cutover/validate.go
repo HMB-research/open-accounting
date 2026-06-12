@@ -78,6 +78,12 @@ type groupedSeenValue struct {
 	normalized string
 }
 
+type payrollHistoryPreflightGroup struct {
+	status      string
+	paymentDate string
+	notes       string
+}
+
 var fileSpecs = map[FileKind]fileSpec{
 	KindAccounts: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
@@ -300,14 +306,38 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindPayrollHistory: {
 		aliases: mergeAliases(employeeReferenceAliases(), map[string]string{
-			"period_year":   "period_year",
-			"payroll_year":  "period_year",
-			"year":          "period_year",
-			"period_month":  "period_month",
-			"payroll_month": "period_month",
-			"month":         "period_month",
-			"gross":         "gross_salary",
-			"gross_salary":  "gross_salary",
+			"period_year":                     "period_year",
+			"year":                            "period_year",
+			"payroll_year":                    "period_year",
+			"period_month":                    "period_month",
+			"month":                           "period_month",
+			"payroll_month":                   "period_month",
+			"status":                          "status",
+			"run_status":                      "status",
+			"payment_date":                    "payment_date",
+			"pay_date":                        "payment_date",
+			"notes":                           "notes",
+			"gross_salary":                    "gross_salary",
+			"gross":                           "gross_salary",
+			"taxable_income":                  "taxable_income",
+			"income_tax":                      "income_tax",
+			"unemployment_insurance_employee": "unemployment_insurance_employee",
+			"unemployment_employee":           "unemployment_insurance_employee",
+			"unemployment_insurance_ee":       "unemployment_insurance_employee",
+			"funded_pension":                  "funded_pension",
+			"pension":                         "funded_pension",
+			"other_deductions":                "other_deductions",
+			"net_salary":                      "net_salary",
+			"net":                             "net_salary",
+			"social_tax":                      "social_tax",
+			"unemployment_insurance_employer": "unemployment_insurance_employer",
+			"unemployment_employer":           "unemployment_insurance_employer",
+			"unemployment_insurance_er":       "unemployment_insurance_employer",
+			"total_employer_cost":             "total_employer_cost",
+			"employer_cost":                   "total_employer_cost",
+			"basic_exemption_applied":         "basic_exemption_applied",
+			"payment_status":                  "payment_status",
+			"paid_at":                         "paid_at",
 		}),
 		requiredGroups: payrollHistoryRequiredGroups(),
 	},
@@ -787,6 +817,19 @@ var cutoverEmployeeBoolAliases = map[string]bool{
 	"n":     false,
 	"ja":    true,
 	"ei":    false,
+}
+
+var cutoverPayrollHistoryStatusAliases = map[string]string{
+	"approved": "APPROVED",
+	"paid":     "PAID",
+	"declared": "DECLARED",
+}
+
+var cutoverPayrollHistoryPaymentStatusAliases = map[string]string{
+	"pending":   "PENDING",
+	"paid":      "PAID",
+	"cancelled": "CANCELLED", //nolint:misspell // External payment status values use existing API/database spelling.
+	"canceled":  "CANCELLED", //nolint:misspell // External payment status values use existing API/database spelling.
 }
 
 var groupedDocumentPreflightSpecs = map[FileKind]groupedDocumentSpec{
@@ -1544,6 +1587,8 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkContactRows(report, file)
 	case KindEmployees:
 		checkEmployeeRows(report, file)
+	case KindPayrollHistory:
+		checkPayrollHistoryRows(report, file)
 	case KindInvoices, KindQuotes, KindOrders, KindRecurringInvoices:
 		checkCommercialDocumentRows(report, file)
 	case KindExpenses:
@@ -1868,6 +1913,261 @@ func parseEmployeeCutoverDate(value string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+func checkPayrollHistoryRows(report *BundleValidationReport, file parsedFile) {
+	groups := map[string]payrollHistoryPreflightGroup{}
+	for _, row := range file.rows {
+		periodYear, yearOK := checkPayrollHistoryPeriodYear(report, file, row)
+		periodMonth, monthOK := checkPayrollHistoryPeriodMonth(report, file, row)
+		status, statusOK := checkPayrollHistoryStatus(report, file, row)
+		paymentDate, paymentDateOK := checkPayrollHistoryOptionalDate(report, file, row, "payment_date")
+		checkPayrollHistoryRequiredPositiveDecimal(report, file, row, "gross_salary")
+		checkPayrollHistoryOptionalAmountFields(report, file, row)
+		checkPayrollHistoryPaymentStatus(report, file, row)
+		checkPayrollHistoryOptionalDate(report, file, row, "paid_at")
+		if yearOK && monthOK && statusOK && paymentDateOK {
+			checkPayrollHistoryGroupConsistency(report, file, row, groups, periodYear, periodMonth, status, paymentDate)
+		}
+	}
+}
+
+func checkPayrollHistoryPeriodYear(report *BundleValidationReport, file parsedFile, row parsedRow) (int, bool) {
+	if !fileHasHeaders(file, "period_year") {
+		return 0, false
+	}
+	value := strings.TrimSpace(row.values["period_year"])
+	year, err := strconv.Atoi(value)
+	if err != nil || year < 2020 || year > 2100 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "period_year",
+			Value:    value,
+			Message:  "period_year must be between 2020 and 2100",
+		})
+		return 0, false
+	}
+	return year, true
+}
+
+func checkPayrollHistoryPeriodMonth(report *BundleValidationReport, file parsedFile, row parsedRow) (int, bool) {
+	if !fileHasHeaders(file, "period_month") {
+		return 0, false
+	}
+	value := strings.TrimSpace(row.values["period_month"])
+	month, err := strconv.Atoi(value)
+	if err != nil || month < 1 || month > 12 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "period_month",
+			Value:    value,
+			Message:  "period_month must be between 1 and 12",
+		})
+		return 0, false
+	}
+	return month, true
+}
+
+func checkPayrollHistoryStatus(report *BundleValidationReport, file parsedFile, row parsedRow) (string, bool) {
+	if !fileHasHeaders(file, "status") {
+		return "PAID", true
+	}
+	value := strings.TrimSpace(row.values["status"])
+	if value == "" {
+		return "PAID", true
+	}
+	if status, ok := cutoverPayrollHistoryStatusAliases[normalizedValue(value)]; ok {
+		return status, true
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "status",
+		Value:    value,
+		Message:  "status must be APPROVED, PAID, or DECLARED",
+	})
+	return "", false
+}
+
+func checkPayrollHistoryPaymentStatus(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "payment_status") || strings.TrimSpace(row.values["payment_status"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["payment_status"])
+	if _, ok := cutoverPayrollHistoryPaymentStatusAliases[normalizedValue(value)]; ok {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "payment_status",
+		Value:    value,
+		Message:  "payment_status must be PENDING, PAID, or CANCELLED", //nolint:misspell // Existing API/database spelling.
+	})
+}
+
+func checkPayrollHistoryOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (string, bool) {
+	if !fileHasHeaders(file, field) {
+		return "", true
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return "", true
+	}
+	parsed, ok := parseEmployeeCutoverDate(value)
+	if !ok {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be in YYYY-MM-DD format", field),
+		})
+		return "", false
+	}
+	return parsed.Format("2006-01-02"), true
+}
+
+func checkPayrollHistoryRequiredPositiveDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Message:  fmt.Sprintf("%s is required", field),
+		})
+		return
+	}
+	amount, ok := checkPayrollHistoryNonNegativeDecimal(report, file, row, field)
+	if !ok {
+		return
+	}
+	if !amount.GreaterThan(decimal.Zero) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be greater than zero", field),
+		})
+	}
+}
+
+func checkPayrollHistoryOptionalAmountFields(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	for _, field := range []string{
+		"basic_exemption_applied",
+		"taxable_income",
+		"income_tax",
+		"unemployment_insurance_employee",
+		"funded_pension",
+		"other_deductions",
+		"net_salary",
+		"social_tax",
+		"unemployment_insurance_employer",
+		"total_employer_cost",
+	} {
+		if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+			continue
+		}
+		checkPayrollHistoryNonNegativeDecimal(report, file, row, field)
+	}
+}
+
+func checkPayrollHistoryNonNegativeDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (decimal.Decimal, bool) {
+	amount, issue := parseCutoverRequiredImportDecimal(row.values[field], field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return decimal.Zero, false
+	}
+	if amount.IsNegative() {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    strings.TrimSpace(row.values[field]),
+			Message:  fmt.Sprintf("%s must be zero or greater", field),
+		})
+		return decimal.Zero, false
+	}
+	return amount, true
+}
+
+func checkPayrollHistoryGroupConsistency(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	groups map[string]payrollHistoryPreflightGroup,
+	periodYear int,
+	periodMonth int,
+	status string,
+	paymentDate string,
+) {
+	key := fmt.Sprintf("%04d-%02d", periodYear, periodMonth)
+	current := payrollHistoryPreflightGroup{
+		status:      status,
+		paymentDate: paymentDate,
+		notes:       strings.TrimSpace(row.values["notes"]),
+	}
+	group, exists := groups[key]
+	if !exists {
+		groups[key] = current
+		return
+	}
+	if group.status != current.status {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    strings.TrimSpace(row.values["status"]),
+			Message:  "status must be consistent for each payroll period",
+		})
+	}
+	if group.paymentDate != current.paymentDate {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "payment_date",
+			Value:    strings.TrimSpace(row.values["payment_date"]),
+			Message:  "payment_date must be consistent for each payroll period",
+		})
+	}
+	if group.notes != current.notes {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "notes",
+			Value:    strings.TrimSpace(row.values["notes"]),
+			Message:  "notes must be consistent for each payroll period",
+		})
+	}
 }
 
 func checkAccountRows(report *BundleValidationReport, file parsedFile) {

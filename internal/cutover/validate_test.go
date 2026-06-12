@@ -564,6 +564,47 @@ func TestValidateBundleRequiresEmployeeImportColumns(t *testing.T) {
 	}, messages)
 }
 
+func TestValidateBundleReportsPayrollHistoryRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindPayrollHistory,
+			FileName: "payroll.csv",
+			CSVContent: "period_year,period_month,status,payment_date,notes,employee_number,gross_salary,income_tax,unemployment_insurance_employee,funded_pension,other_deductions,net_salary,social_tax,unemployment_insurance_employer,total_employer_cost,basic_exemption_applied,payment_status,paid_at\n" +
+				"2019,5,PAID,2026-01-05,May payroll,EMP-1,3200,550,51.2,64,0,2534.8,1056,25.6,4281.6,50,PAID,2026-01-05\n" +
+				"2026,13,PAID,2026-01-05,May payroll,EMP-2,3200,550,51.2,64,0,2534.8,1056,25.6,4281.6,50,PAID,2026-01-05\n" +
+				"2026,5,DRAFT,2026-01-05,May payroll,EMP-3,3200,550,51.2,64,0,2534.8,1056,25.6,4281.6,50,PAID,2026-01-05\n" +
+				"2026,5,PAID,bad-date,May payroll,EMP-4,3200,550,51.2,64,0,2534.8,1056,25.6,4281.6,50,PAID,2026-01-05\n" +
+				"2026,5,PAID,2026-01-05,May payroll,EMP-5,,550,51.2,64,0,2534.8,1056,25.6,4281.6,50,PAID,2026-01-05\n" +
+				"2026,5,PAID,2026-01-05,May payroll,EMP-6,0,550,51.2,64,0,2534.8,1056,25.6,4281.6,50,PAID,2026-01-05\n" +
+				"2026,5,PAID,2026-01-05,May payroll,EMP-7,3200,nope,51.2,64,0,2534.8,1056,25.6,4281.6,50,PAID,2026-01-05\n" +
+				"2026,5,PAID,2026-01-05,May payroll,EMP-8,3200,550,51.2,-1,0,2534.8,1056,25.6,4281.6,50,PAID,2026-01-05\n" +
+				"2026,5,PAID,2026-01-05,May payroll,EMP-9,3200,550,51.2,64,0,2534.8,1056,25.6,4281.6,50,VOID,2026-01-05\n" +
+				"2026,5,PAID,2026-01-05,May payroll,EMP-10,3200,550,51.2,64,0,2534.8,1056,25.6,4281.6,50,PAID,bad-date\n" +
+				"2026,6,PAID,2026-07-05,June payroll,EMP-11,\"3 200,00\",\"550,00\",\"51,20\",\"64,00\",0,\"2534,80\",\"1056,00\",\"25,60\",\"4281,60\",\"50,00\",PAID,05.07.2026\n" +
+				"2026,6,APPROVED,2026-07-06,Changed notes,EMP-12,2800,420,44.8,56,10,2269.2,924,22.4,3746.4,40,PENDING,2026-07-06\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 13, report.Summary.ErrorCount)
+	cancelledPaymentStatusMessage := "payment_status must be PENDING, PAID, or CANCELLED" //nolint:misspell // Existing API/database spelling.
+	assertValidationIssue(t, report, KindPayrollHistory, "period_year", "period_year must be between 2020 and 2100")
+	assertValidationIssue(t, report, KindPayrollHistory, "period_month", "period_month must be between 1 and 12")
+	assertValidationIssue(t, report, KindPayrollHistory, "status", "status must be APPROVED, PAID, or DECLARED")
+	assertValidationIssue(t, report, KindPayrollHistory, "payment_date", "payment_date must be in YYYY-MM-DD format")
+	assertValidationIssue(t, report, KindPayrollHistory, "gross_salary", "gross_salary is required")
+	assertValidationIssue(t, report, KindPayrollHistory, "gross_salary", "gross_salary must be greater than zero")
+	assertValidationIssue(t, report, KindPayrollHistory, "income_tax", "income_tax must be a decimal")
+	assertValidationIssue(t, report, KindPayrollHistory, "funded_pension", "funded_pension must be zero or greater")
+	assertValidationIssue(t, report, KindPayrollHistory, "payment_status", cancelledPaymentStatusMessage)
+	assertValidationIssue(t, report, KindPayrollHistory, "paid_at", "paid_at must be in YYYY-MM-DD format")
+	assertValidationIssue(t, report, KindPayrollHistory, "status", "status must be consistent for each payroll period")
+	assertValidationIssue(t, report, KindPayrollHistory, "payment_date", "payment_date must be consistent for each payroll period")
+	assertValidationIssue(t, report, KindPayrollHistory, "notes", "notes must be consistent for each payroll period")
+}
+
 func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
