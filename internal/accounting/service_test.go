@@ -398,6 +398,49 @@ func TestService_GetAccountHierarchy(t *testing.T) {
 	})
 }
 
+func TestBuildAccountHierarchy(t *testing.T) {
+	t.Run("sorts duplicate codes by name then id and treats missing parent as root", func(t *testing.T) {
+		missingParentID := "missing-parent"
+
+		result := BuildAccountHierarchy([]Account{
+			{ID: "acc-b", Code: "1000", Name: "Cash B", AccountType: AccountTypeAsset, IsActive: true},
+			{ID: "acc-a2", Code: "1000", Name: "Cash A", AccountType: AccountTypeAsset, IsActive: true},
+			{ID: "orphan", Code: "0500", Name: "Orphan", AccountType: AccountTypeAsset, ParentID: &missingParentID, IsActive: true},
+			{ID: "acc-a1", Code: "1000", Name: "Cash A", AccountType: AccountTypeAsset, IsActive: true},
+		})
+
+		require.Len(t, result, 4)
+		assert.Equal(t, []string{"orphan", "acc-a1", "acc-a2", "acc-b"}, []string{result[0].ID, result[1].ID, result[2].ID, result[3].ID})
+		assert.Equal(t, 0, result[0].Depth)
+		assert.Empty(t, result[0].ParentCode)
+		assert.Empty(t, result[0].ParentName)
+		assert.Equal(t, "0500", result[0].Path)
+		assert.False(t, result[0].HasChildren)
+	})
+
+	t.Run("does not recurse forever when parent references form a cycle", func(t *testing.T) {
+		parentA := "acc-a"
+		parentB := "acc-b"
+
+		result := BuildAccountHierarchy([]Account{
+			{ID: "acc-a", Code: "1000", Name: "Assets", AccountType: AccountTypeAsset, ParentID: &parentB, IsActive: true},
+			{ID: "acc-b", Code: "1100", Name: "Bank", AccountType: AccountTypeAsset, ParentID: &parentA, IsActive: true},
+		})
+
+		require.Len(t, result, 2)
+		assert.Equal(t, []string{"acc-a", "acc-b"}, []string{result[0].ID, result[1].ID})
+		assert.Equal(t, 0, result[0].Depth)
+		assert.Empty(t, result[0].ParentCode)
+		assert.Equal(t, "1000", result[0].Path)
+		assert.True(t, result[0].HasChildren)
+		assert.Equal(t, 1, result[1].Depth)
+		assert.Equal(t, "1000", result[1].ParentCode)
+		assert.Equal(t, "Assets", result[1].ParentName)
+		assert.Equal(t, "1000/1100", result[1].Path)
+		assert.True(t, result[1].HasChildren)
+	})
+}
+
 func TestService_CreateAccount(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
