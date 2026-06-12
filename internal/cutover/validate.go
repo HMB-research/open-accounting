@@ -699,6 +699,23 @@ var duplicateIdentifierPreflightSpecs = map[FileKind][]duplicateIdentifierSpec{
 	},
 }
 
+var cutoverAccountTypeAliases = map[string]string{
+	"asset":       "ASSET",
+	"assets":      "ASSET",
+	"vara":        "ASSET",
+	"liability":   "LIABILITY",
+	"liabilities": "LIABILITY",
+	"kohustus":    "LIABILITY",
+	"equity":      "EQUITY",
+	"omakapital":  "EQUITY",
+	"revenue":     "REVENUE",
+	"income":      "REVENUE",
+	"tulu":        "REVENUE",
+	"expense":     "EXPENSE",
+	"expenses":    "EXPENSE",
+	"kulu":        "EXPENSE",
+}
+
 var groupedDocumentPreflightSpecs = map[FileKind]groupedDocumentSpec{
 	KindInvoices: {
 		keyLabel: "invoice_number/invoice_type",
@@ -1448,6 +1465,8 @@ func normalizeCutoverBoolComparable(value string) string {
 
 func validateAccountingPreflight(report *BundleValidationReport, file parsedFile) {
 	switch file.kind {
+	case KindAccounts:
+		checkAccountRows(report, file)
 	case KindInvoices, KindQuotes, KindOrders, KindRecurringInvoices:
 		checkCommercialDocumentRows(report, file)
 	case KindExpenses:
@@ -1474,6 +1493,56 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkOpeningBalanceTotals(report, file)
 	case KindJournalEntries:
 		checkJournalEntryGroups(report, file)
+	}
+}
+
+func checkAccountRows(report *BundleValidationReport, file parsedFile) {
+	hasCode := fileHasHeaders(file, "code")
+	hasName := fileHasHeaders(file, "name")
+	hasAccountType := fileHasHeaders(file, "account_type")
+	for _, row := range file.rows {
+		if hasCode {
+			checkRequiredCutoverField(report, file, row, "code")
+		}
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		if hasAccountType {
+			checkAccountType(report, file, row)
+		}
+	}
+}
+
+func checkAccountType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["account_type"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "account_type",
+			Message:  "account_type is required",
+		})
+		return
+	}
+
+	if _, ok := cutoverAccountTypeAliases[normalizedValue(value)]; ok {
+		return
+	}
+	switch normalizeCutoverUpper(value) {
+	case "ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "account_type",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid account_type %q", value),
+		})
 	}
 }
 

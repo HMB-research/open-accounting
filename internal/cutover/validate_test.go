@@ -442,6 +442,31 @@ func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
 	assertValidationIssue(t, report, KindExpenses, "expense_number", `expense_number "EXP-1" duplicates row 2`)
 }
 
+func TestValidateBundleReportsAccountRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "code,name,account_type,parent_code\n" +
+				",Missing Code,ASSET,\n" +
+				"1001,,ASSET,\n" +
+				"1002,Missing Type,,\n" +
+				"1003,Bad Type,SALES,\n" +
+				"4000,Revenue,tulu,\n" +
+				"5000,Expense,EXPENSE,\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 4, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindAccounts, "code", "code is required")
+	assertValidationIssue(t, report, KindAccounts, "name", "name is required")
+	assertValidationIssue(t, report, KindAccounts, "account_type", "account_type is required")
+	assertValidationIssue(t, report, KindAccounts, "account_type", `invalid account_type "SALES"`)
+}
+
 func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
