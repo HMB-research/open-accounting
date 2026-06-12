@@ -290,6 +290,24 @@ func TestCostCenterService_ImportCostCentersCSV(t *testing.T) {
 	assert.True(t, child.IsActive)
 }
 
+func TestCostCenterService_ImportCostCentersCSVRejectsInvalidParentID(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportCostCentersCSV(ctx, "test_schema", "tenant-1", &ImportCostCentersRequest{
+		CSVContent: "code,name,parent_id\nCC-CHILD,Child,legacy-parent\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.CostCentersCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 2, result.Errors[0].Row)
+	assert.Equal(t, "CC-CHILD", result.Errors[0].Code)
+	assert.Contains(t, result.Errors[0].Message, "parent_id must be a valid UUID")
+}
+
 func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
 	ts := newTestCostCenterService()
 	ctx := context.Background()
