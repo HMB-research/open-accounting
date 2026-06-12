@@ -303,10 +303,11 @@ func TestService_ImportCSV(t *testing.T) {
 	t.Run("imports grouped quotes and preserves status", func(t *testing.T) {
 		repo := NewMockRepository()
 		svc := NewServiceWithRepository(repo)
+		legacyQuoteID := "11111111-1111-1111-1111-111111111111"
 
-		csvContent := `quote_number,contact_code,quote_date,valid_until,status,currency,exchange_rate,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,product_code
-QT-LEGACY-1,CUST-1,2026-03-15,2026-04-15,sent,EUR,1,March offer,Consulting,2,hour,100,10,22,SERV-001
-QT-LEGACY-1,CUST-1,2026-03-15,2026-04-15,sent,EUR,1,March offer,Support,1,hour,50,0,22,
+		csvContent := `id,quote_number,contact_code,quote_date,valid_until,status,currency,exchange_rate,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,product_code
+11111111-1111-1111-1111-111111111111,QT-LEGACY-1,CUST-1,2026-03-15,2026-04-15,sent,EUR,1,March offer,Consulting,2,hour,100,10,22,SERV-001
+11111111-1111-1111-1111-111111111111,QT-LEGACY-1,CUST-1,2026-03-15,2026-04-15,sent,EUR,1,March offer,Support,1,hour,50,0,22,
 `
 
 		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
@@ -333,16 +334,18 @@ QT-LEGACY-1,CUST-1,2026-03-15,2026-04-15,sent,EUR,1,March offer,Support,1,hour,5
 		assert.Nil(t, result.Errors)
 
 		require.Len(t, repo.Quotes, 1)
-		for _, quote := range repo.Quotes {
-			assert.Equal(t, "QT-LEGACY-1", quote.QuoteNumber)
-			assert.Equal(t, "contact-1", quote.ContactID)
-			assert.Equal(t, QuoteStatusSent, quote.Status)
-			assert.True(t, quote.Subtotal.Equal(decimal.RequireFromString("230.00")))
-			assert.True(t, quote.VATAmount.Equal(decimal.RequireFromString("50.60")))
-			require.Len(t, quote.Lines, 2)
-			require.NotNil(t, quote.Lines[0].ProductID)
-			assert.Equal(t, "prod-1", *quote.Lines[0].ProductID)
-		}
+		quote := repo.Quotes[legacyQuoteID]
+		require.NotNil(t, quote)
+		assert.Equal(t, legacyQuoteID, quote.ID)
+		assert.Equal(t, "QT-LEGACY-1", quote.QuoteNumber)
+		assert.Equal(t, "contact-1", quote.ContactID)
+		assert.Equal(t, QuoteStatusSent, quote.Status)
+		assert.True(t, quote.Subtotal.Equal(decimal.RequireFromString("230.00")))
+		assert.True(t, quote.VATAmount.Equal(decimal.RequireFromString("50.60")))
+		require.Len(t, quote.Lines, 2)
+		assert.Equal(t, legacyQuoteID, quote.Lines[0].QuoteID)
+		require.NotNil(t, quote.Lines[0].ProductID)
+		assert.Equal(t, "prod-1", *quote.Lines[0].ProductID)
 	})
 
 	t.Run("skips duplicate and invalid groups", func(t *testing.T) {
@@ -379,6 +382,28 @@ QT-BAD,contact-1,2026-03-15,Bad quantity,0,10,22
 		assert.Contains(t, joinedMessages, "already exists")
 		assert.Contains(t, joinedMessages, "contact_id")
 		assert.Contains(t, joinedMessages, "quantity must be greater than zero")
+	})
+
+	t.Run("skips invalid imported quote id", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `quote_id,quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate
+legacy-id,QT-BAD-ID,contact-1,2026-03-15,Consulting,1,10,22
+`
+
+		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:       "contact-1",
+			TenantID: "tenant-1",
+			Name:     "Acme",
+		}}, nil, &ImportQuotesRequest{CSVContent: csvContent})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.QuotesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Equal(t, 2, result.Errors[0].Row)
+		assert.Contains(t, result.Errors[0].Message, "invalid id")
 	})
 }
 

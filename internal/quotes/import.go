@@ -40,6 +40,7 @@ type quoteImportLine struct {
 }
 
 type quoteImportHeader struct {
+	id             string
 	quoteNumber    string
 	contactRef     quoteImportContactRef
 	quoteDate      time.Time
@@ -73,6 +74,8 @@ type quoteImportContactLookup struct {
 }
 
 var quoteImportHeaderAliases = map[string]string{
+	"id":                 "id",
+	"quote_id":           "id",
 	"quote_number":       "quote_number",
 	"quotation_number":   "quote_number",
 	"offer_number":       "quote_number",
@@ -158,9 +161,13 @@ func (s *Service) ImportCSV(
 	}
 
 	existingKeys := make(map[string]struct{}, len(existingQuotes))
+	existingIDs := make(map[string]struct{}, len(existingQuotes))
 	for _, quote := range existingQuotes {
 		if key := normalizedQuoteImportKey(quote.QuoteNumber); key != "" {
 			existingKeys[key] = struct{}{}
+		}
+		if key := normalizedQuoteImportKey(quote.ID); key != "" {
+			existingIDs[key] = struct{}{}
 		}
 	}
 
@@ -229,6 +236,17 @@ func (s *Service) ImportCSV(
 			})
 			continue
 		}
+		if idKey := normalizedQuoteImportKey(group.header.id); idKey != "" {
+			if _, exists := existingIDs[idKey]; exists {
+				result.RowsSkipped += group.rowCount
+				result.Errors = append(result.Errors, ImportQuotesRowError{
+					Row:         group.firstRow,
+					QuoteNumber: group.header.quoteNumber,
+					Message:     fmt.Sprintf("id %q already exists", group.header.id),
+				})
+				continue
+			}
+		}
 
 		contact, err := contactLookup.find(group.header.contactRef)
 		if err != nil {
@@ -263,6 +281,9 @@ func (s *Service) ImportCSV(
 		}
 
 		existingKeys[key] = struct{}{}
+		if idKey := normalizedQuoteImportKey(quote.ID); idKey != "" {
+			existingIDs[idKey] = struct{}{}
+		}
 		result.QuotesCreated++
 		result.LinesImported += len(quote.Lines)
 	}
@@ -373,6 +394,15 @@ func parseQuoteImportDataRow(row quoteImportRow, productLookup importrefs.Produc
 		return nil, fmt.Errorf("quote_number is required")
 	}
 
+	id := strings.TrimSpace(row.values["id"])
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, fmt.Errorf("invalid id")
+		}
+		id = parsedID.String()
+	}
+
 	contactRef := quoteImportContactRef{
 		id:      strings.TrimSpace(row.values["contact_id"]),
 		code:    strings.TrimSpace(row.values["contact_code"]),
@@ -469,6 +499,7 @@ func parseQuoteImportDataRow(row quoteImportRow, productLookup importrefs.Produc
 
 	return &quoteImportParsedRow{
 		header: quoteImportHeader{
+			id:             id,
 			quoteNumber:    quoteNumber,
 			contactRef:     contactRef,
 			quoteDate:      quoteDate,
@@ -491,6 +522,9 @@ func parseQuoteImportDataRow(row quoteImportRow, productLookup importrefs.Produc
 }
 
 func mergeQuoteImportGroup(group *quoteImportGroup, next quoteImportHeader, rowNumber int) string {
+	if conflict := mergeQuoteImportOptionalString(&group.header.id, next.id, "id"); conflict != "" {
+		return conflict
+	}
 	if !normalizeQuoteImportDate(group.header.quoteDate).Equal(normalizeQuoteImportDate(next.quoteDate)) {
 		return "quote_date must be consistent for each quote_number"
 	}
@@ -573,8 +607,13 @@ func buildImportedQuote(
 	group *quoteImportGroup,
 	now time.Time,
 ) (*Quote, error) {
+	quoteID := group.header.id
+	if quoteID == "" {
+		quoteID = uuid.New().String()
+	}
+
 	quote := &Quote{
-		ID:           uuid.New().String(),
+		ID:           quoteID,
 		TenantID:     tenantID,
 		QuoteNumber:  group.header.quoteNumber,
 		ContactID:    contactID,
