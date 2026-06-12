@@ -2792,6 +2792,10 @@ func (a *cliApp) runContacts(ctx context.Context, args []string) error {
 		if strings.TrimSpace(*name) == "" {
 			return errors.New("name is required")
 		}
+		parsedDefaultAccountID, err := optionalUUIDStringPtr("default-account-id", *defaultAccountID)
+		if err != nil {
+			return err
+		}
 
 		creditLimitValue := decimal.Zero
 		if trimmed := strings.TrimSpace(*creditLimit); trimmed != "" {
@@ -2817,7 +2821,7 @@ func (a *cliApp) runContacts(ctx context.Context, args []string) error {
 			CountryCode:      strings.ToUpper(strings.TrimSpace(*countryCode)),
 			PaymentTermsDays: *paymentTermsDays,
 			CreditLimit:      creditLimitValue,
-			DefaultAccountID: optionalStringPtr(*defaultAccountID),
+			DefaultAccountID: parsedDefaultAccountID,
 			Notes:            strings.TrimSpace(*notes),
 		})
 		if err != nil {
@@ -2877,6 +2881,10 @@ func (a *cliApp) runContacts(ctx context.Context, args []string) error {
 		if strings.TrimSpace(*contactID) == "" {
 			return errors.New("id is required")
 		}
+		parsedDefaultAccountID, err := optionalUUIDStringPtr("default-account-id", *defaultAccountID)
+		if err != nil {
+			return err
+		}
 
 		req := &contacts.UpdateContactRequest{
 			Name:             optionalStringPtr(*name),
@@ -2889,7 +2897,7 @@ func (a *cliApp) runContacts(ctx context.Context, args []string) error {
 			City:             optionalStringPtr(*city),
 			PostalCode:       optionalStringPtr(*postalCode),
 			CountryCode:      optionalUpperStringPtr(*countryCode),
-			DefaultAccountID: optionalStringPtr(*defaultAccountID),
+			DefaultAccountID: parsedDefaultAccountID,
 			Notes:            optionalStringPtr(*notes),
 		}
 		if strings.TrimSpace(*paymentTermsDays) != "" {
