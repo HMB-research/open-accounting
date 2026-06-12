@@ -148,6 +148,77 @@ func TestImportTSDHistoryCSV_MatchesAlternateEmployeeIdentifiersAndDerivesAmount
 	assert.Equal(t, "10", rows[2].PaymentType)
 }
 
+func TestImportTSDHistoryCSV_AcceptsDeclarationAliasesAndStatusAliases(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-310"] = &Employee{
+		ID:             "emp-310",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-310",
+		FirstName:      "Marta",
+		LastName:       "Mets",
+		PersonalCode:   "49001010310",
+		Email:          "marta@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+
+	result, err := service.ImportTSDHistoryCSV(ctx, "tenant_schema", "tenant-1", &ImportTSDHistoryRequest{
+		FileName: "tsd-history-aliases.csv",
+		CSVContent: "declaration_year,declaration_month,declaration_status,submitted_date,emta_ref,employee_no,payment_code,gross_salary,basic_exemption_applied,taxable_income,income_tax,social_tax,unemployment_employer,unemployment_employee,pension\n" +
+			"2025,9,filed,,EMTA-FILED,EMP-310,13,1200.00,100.00,1100.00,242.00,396.00,9.60,19.20,24.00\n" +
+			"2025,10,confirmed,2025-11-10,EMTA-CONFIRMED,EMP-310,10,1300.00,0.00,1300.00,286.00,429.00,10.40,20.80,26.00\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "tsd-history-aliases.csv", result.FileName)
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Equal(t, 2, result.DeclarationsCreated)
+	assert.Equal(t, 2, result.RowsImported)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+
+	var filed *TSDDeclaration
+	var confirmed *TSDDeclaration
+	for _, declaration := range repo.TSDDeclarations {
+		switch declaration.PeriodMonth {
+		case 9:
+			filed = declaration
+		case 10:
+			confirmed = declaration
+		}
+	}
+
+	require.NotNil(t, filed)
+	assert.Equal(t, TSDSubmitted, filed.Status)
+	assert.Equal(t, "EMTA-FILED", filed.EMTAReference)
+	assert.NotNil(t, filed.SubmittedAt)
+	assert.True(t, filed.TotalPayments.Equal(decimal.RequireFromString("1200.00")))
+	assert.True(t, filed.TotalIncomeTax.Equal(decimal.RequireFromString("242.00")))
+
+	filedRows := repo.TSDRows[filed.ID]
+	require.Len(t, filedRows, 1)
+	assert.Equal(t, "emp-310", filedRows[0].EmployeeID)
+	assert.Equal(t, "13", filedRows[0].PaymentType)
+	assert.True(t, filedRows[0].TaxableAmount.Equal(decimal.RequireFromString("1100.00")))
+
+	require.NotNil(t, confirmed)
+	assert.Equal(t, TSDAccepted, confirmed.Status)
+	assert.Equal(t, "EMTA-CONFIRMED", confirmed.EMTAReference)
+	require.NotNil(t, confirmed.SubmittedAt)
+	assert.Equal(t, "2025-11-10", confirmed.SubmittedAt.Format("2006-01-02"))
+
+	confirmedRows := repo.TSDRows[confirmed.ID]
+	require.Len(t, confirmedRows, 1)
+	assert.Equal(t, "10", confirmedRows[0].PaymentType)
+	assert.True(t, confirmedRows[0].UnemploymentER.Equal(decimal.RequireFromString("10.40")))
+	assert.True(t, confirmedRows[0].UnemploymentEE.Equal(decimal.RequireFromString("20.80")))
+	assert.True(t, confirmedRows[0].FundedPension.Equal(decimal.RequireFromString("26.00")))
+}
+
 func TestImportTSDHistoryCSV_RejectsMismatchedIdentifiersAndGroupInconsistency(t *testing.T) {
 	t.Parallel()
 
