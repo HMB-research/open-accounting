@@ -15618,7 +15618,7 @@ func TestCLIBankingCommands(t *testing.T) {
 
 	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number,bank_name,swift_code,currency,gl_account_code,is_default,is_active\nReserve bank,EE999,LHV,LHVBEE22,EUR,1000,false,true\n")
 	importFile := writeTempCSV(t, "lhv-bank.csv", "Client account;Document number;Date;Beneficiary's/remitter's account;Beneficiary's/remitter's name;Debit/Credit (D/C);Amount;Reference number;Archival ID;Details;Currency;Personal identification code or registry code;Beneficiary's/remitter's bank's BIC;Payment initiator's name;Entry reference;Account service provider's reference\nEE457700771000676899;123;2026-03-15;EE111;Acme;C;100,00;REF-1;202603150001;Client payment;EUR;12345678;LHVBEE22;;ENTRY-1;ext-1\n")
-	glAccountID := "acc-bank"
+	glAccountID := "11111111-1111-1111-1111-111111111111"
 	accountPayload := func(active bool) map[string]any {
 		return map[string]any{
 			"id":             "bank-1",
@@ -15707,7 +15707,7 @@ func TestCLIBankingCommands(t *testing.T) {
 			assert.Equal(t, "LHVBEE22", req.SwiftCode)
 			assert.Equal(t, "EUR", req.Currency)
 			require.NotNil(t, req.GLAccountID)
-			assert.Equal(t, "acc-bank", *req.GLAccountID)
+			assert.Equal(t, glAccountID, *req.GLAccountID)
 			assert.True(t, req.IsDefault)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(accountPayload(true))
@@ -15855,7 +15855,7 @@ func TestCLIBankingCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"name": "Main bank"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"banking", "accounts", "create", "--name", "Main bank", "--account-number", "EE471000001020145685", "--bank-name", "LHV", "--swift-code", "LHVBEE22", "--currency", "eur", "--gl-account-id", "acc-bank", "--default"})
+	err = app.run(context.Background(), []string{"banking", "accounts", "create", "--name", "Main bank", "--account-number", "EE471000001020145685", "--bank-name", "LHV", "--swift-code", "LHVBEE22", "--currency", "eur", "--gl-account-id", glAccountID, "--default"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created bank account Main bank (bank-1)")
 
@@ -16029,6 +16029,7 @@ func TestCLIBankAccountBranches(t *testing.T) {
 		{name: "create bad flag", args: []string{"create", "--unknown"}, want: "flag provided but not defined"},
 		{name: "create missing name", args: []string{"create", "--account-number", "EE123"}, want: "name is required"},
 		{name: "create missing account number", args: []string{"create", "--name", "Main"}, want: "account-number is required"},
+		{name: "create invalid gl account id", args: []string{"create", "--name", "Main", "--account-number", "EE123", "--gl-account-id", "legacy-account"}, want: "gl-account-id must be a valid UUID"},
 		{name: "import bad flag", args: []string{"import", "--unknown"}, want: "flag provided but not defined"},
 		{name: "import invalid row", args: []string{"import", "--file", invalidImportFile}, want: "requires name and account_number"},
 		{name: "get bad flag", args: []string{"get", "--unknown"}, want: "flag provided but not defined"},
@@ -16037,6 +16038,7 @@ func TestCLIBankAccountBranches(t *testing.T) {
 		{name: "update missing id", args: []string{"update"}, want: "id is required"},
 		{name: "update invalid active", args: []string{"update", "--id", "bank-1", "--active", "maybe"}, want: "parse active"},
 		{name: "update invalid default", args: []string{"update", "--id", "bank-1", "--default", "maybe"}, want: "parse default"},
+		{name: "update invalid gl account id", args: []string{"update", "--id", "bank-1", "--gl-account-id", "legacy-account"}, want: "gl-account-id must be a valid UUID"},
 		{name: "delete bad flag", args: []string{"delete", "--unknown"}, want: "flag provided but not defined"},
 		{name: "delete missing id", args: []string{"delete"}, want: "id is required"},
 	} {
@@ -16048,6 +16050,7 @@ func TestCLIBankAccountBranches(t *testing.T) {
 	}
 
 	importFile := writeTempCSV(t, "bank-accounts-branches.csv", "account_name;iban;bank;bic;currency;ledger_account_id;default;active\nReserve bank;EE999;LHV;LHVBEE22;usd;acc-reserve;yes;false\n")
+	updatedGLAccountID := "22222222-2222-2222-2222-222222222222"
 	accountPayload := func(id, name string, active bool) map[string]any {
 		return map[string]any{
 			"id":             id,
@@ -16115,7 +16118,7 @@ func TestCLIBankAccountBranches(t *testing.T) {
 			assert.Equal(t, "Coop", req.BankName)
 			assert.Equal(t, "COBAEE2X", req.SwiftCode)
 			require.NotNil(t, req.GLAccountID)
-			assert.Equal(t, "acc-updated", *req.GLAccountID)
+			assert.Equal(t, updatedGLAccountID, *req.GLAccountID)
 			require.NotNil(t, req.IsActive)
 			assert.True(t, *req.IsActive)
 			require.NotNil(t, req.IsDefault)
@@ -16123,7 +16126,7 @@ func TestCLIBankAccountBranches(t *testing.T) {
 			payload := accountPayload("bank-branch", "Updated reserve", true)
 			payload["bank_name"] = "Coop"
 			payload["swift_code"] = "COBAEE2X"
-			payload["gl_account_id"] = "acc-updated"
+			payload["gl_account_id"] = updatedGLAccountID
 			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/bank-branch":
 			w.WriteHeader(http.StatusNoContent)
@@ -16164,7 +16167,7 @@ func TestCLIBankAccountBranches(t *testing.T) {
 		"--name", "Updated reserve",
 		"--bank-name", "Coop",
 		"--swift-code", "COBAEE2X",
-		"--gl-account-id", "acc-updated",
+		"--gl-account-id", updatedGLAccountID,
 		"--active", "true",
 		"--default", "false",
 		"--json",
@@ -16198,6 +16201,7 @@ func TestCLIBankAccountReadAndAPIErrors(t *testing.T) {
 	assert.Empty(t, stdout.String())
 
 	importFile := writeTempCSV(t, "bank-accounts-error.csv", "name,account_number,bank_name,swift_code,currency,gl_account_id,is_default,is_active\nError bank,EEERR,LHV,LHVBEE22,EUR,acc-error,false,true\n")
+	errorGLAccountID := "33333333-3333-3333-3333-333333333333"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -16212,7 +16216,7 @@ func TestCLIBankAccountReadAndAPIErrors(t *testing.T) {
 			assert.Equal(t, "EEERR", req.AccountNumber)
 			assert.Equal(t, "EUR", req.Currency)
 			require.NotNil(t, req.GLAccountID)
-			assert.Equal(t, "acc-error", *req.GLAccountID)
+			assert.Equal(t, errorGLAccountID, *req.GLAccountID)
 			assert.True(t, req.IsDefault)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/bank-accounts/import":
 			var req banking.ImportBankAccountsRequest
@@ -16248,7 +16252,7 @@ func TestCLIBankAccountReadAndAPIErrors(t *testing.T) {
 		args []string
 	}{
 		{name: "list api error", args: []string{"banking", "accounts", "list", "--active-only"}},
-		{name: "create api error", args: []string{"banking", "accounts", "create", "--name", "Error bank", "--account-number", "EEERR", "--currency", "eur", "--gl-account-id", "acc-error", "--default"}},
+		{name: "create api error", args: []string{"banking", "accounts", "create", "--name", "Error bank", "--account-number", "EEERR", "--currency", "eur", "--gl-account-id", errorGLAccountID, "--default"}},
 		{name: "import api error", args: []string{"banking", "accounts", "import", "--file", importFile, "--skip-duplicates=false"}},
 		{name: "get api error", args: []string{"banking", "accounts", "get", "--id", "bank-error"}},
 		{name: "update api error", args: []string{"banking", "accounts", "update", "--id", "bank-error", "--name", "Updated error", "--bank-name", "SEB", "--active", "false", "--default", "true"}},
