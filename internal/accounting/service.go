@@ -146,6 +146,7 @@ func BuildAccountHierarchy(accounts []Account) []AccountHierarchyRow {
 
 // CreateAccount creates a new account
 func (s *Service) CreateAccount(ctx context.Context, schemaName, tenantID string, req *CreateAccountRequest) (*Account, error) {
+	id := strings.TrimSpace(req.ID)
 	code := strings.TrimSpace(req.Code)
 	name := strings.TrimSpace(req.Name)
 	description := strings.TrimSpace(req.Description)
@@ -155,9 +156,18 @@ func (s *Service) CreateAccount(ctx context.Context, schemaName, tenantID string
 	if !isValidAccountType(req.AccountType) {
 		return nil, fmt.Errorf("invalid account_type: %s", req.AccountType)
 	}
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, errors.New("id must be a valid UUID")
+		}
+		id = parsedID.String()
+	} else {
+		id = uuid.New().String()
+	}
 
 	account := &Account{
-		ID:          uuid.New().String(),
+		ID:          id,
 		TenantID:    tenantID,
 		Code:        code,
 		Name:        name,
@@ -177,6 +187,7 @@ func (s *Service) CreateAccount(ctx context.Context, schemaName, tenantID string
 
 // CreateAccountRequest is the request to create an account
 type CreateAccountRequest struct {
+	ID          string      `json:"id,omitempty"`
 	Code        string      `json:"code"`
 	Name        string      `json:"name"`
 	AccountType AccountType `json:"account_type"`

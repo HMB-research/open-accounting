@@ -46,6 +46,57 @@ func TestService_ImportAccountsCSV(t *testing.T) {
 		assert.Equal(t, "1100", parent.Code)
 	})
 
+	t.Run("preserves supplied account ids", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		rootID := "11111111-1111-1111-1111-111111111111"
+		childID := "22222222-2222-2222-2222-222222222222"
+		req := &ImportAccountsRequest{
+			CSVContent: "account_id,account_code,account_name,type,parent_account\n" +
+				rootID + ",1100,Cash in Office,ASSET,\n" +
+				childID + ",1110,Cash Drawer,ASSET,1100\n",
+		}
+
+		result, err := svc.ImportAccountsCSV(ctx, schemaName, tenantID, req)
+		require.NoError(t, err)
+		assert.Equal(t, 2, result.RowsProcessed)
+		assert.Equal(t, 2, result.AccountsCreated)
+		assert.Equal(t, 0, result.RowsSkipped)
+		assert.Empty(t, result.Errors)
+
+		root := repo.accounts[rootID]
+		require.NotNil(t, root)
+		assert.Equal(t, "1100", root.Code)
+		child := repo.accounts[childID]
+		require.NotNil(t, child)
+		require.NotNil(t, child.ParentID)
+		assert.Equal(t, rootID, *child.ParentID)
+	})
+
+	t.Run("rejects invalid and duplicate preserved ids", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		accountID := "33333333-3333-3333-3333-333333333333"
+		req := &ImportAccountsRequest{
+			CSVContent: "id,code,name,account_type\n" +
+				accountID + ",1100,Cash,ASSET\n" +
+				accountID + ",1110,Duplicate Cash,ASSET\n" +
+				"not-a-uuid,1120,Bad ID,ASSET\n",
+		}
+
+		result, err := svc.ImportAccountsCSV(ctx, schemaName, tenantID, req)
+		require.NoError(t, err)
+		assert.Equal(t, 3, result.RowsProcessed)
+		assert.Equal(t, 1, result.AccountsCreated)
+		assert.Equal(t, 2, result.RowsSkipped)
+		require.Len(t, result.Errors, 2)
+		assert.Contains(t, result.Errors[0].Message, "duplicate id")
+		assert.Contains(t, result.Errors[1].Message, "id must be a valid UUID")
+		assert.NotNil(t, repo.accounts[accountID])
+	})
+
 	t.Run("skips duplicates and unresolved parents", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.accounts["existing"] = &Account{
