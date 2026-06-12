@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 )
 
 func TestService_ImportCSV(t *testing.T) {
@@ -33,12 +34,18 @@ func TestService_ImportCSV(t *testing.T) {
 				PaymentTermsDays: 14,
 				IsActive:         true,
 			},
+		}, []inventory.Product{
+			{
+				ID:       "prod-1",
+				TenantID: tenantID,
+				Code:     "SERV-001",
+			},
 		}, &ImportInvoicesRequest{
 			FileName: "invoices.csv",
 			UserID:   "user-1",
-			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,status,line_description,quantity,unit_price,vat_rate,amount_paid\n" +
-				"INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,PAID,Implementation work,1,100.00,22,183.00\n" +
-				"INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,PAID,Support retainer,1,50.00,22,183.00\n",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,status,line_description,quantity,unit_price,vat_rate,product_code,amount_paid\n" +
+				"INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,PAID,Implementation work,1,100.00,22,SERV-001,183.00\n" +
+				"INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,PAID,Support retainer,1,50.00,22,,183.00\n",
 		}, nil)
 		require.NoError(t, err)
 
@@ -55,6 +62,8 @@ func TestService_ImportCSV(t *testing.T) {
 			assert.Equal(t, StatusPaid, invoice.Status)
 			assert.True(t, invoice.AmountPaid.Equal(invoice.Total))
 			assert.Len(t, invoice.Lines, 2)
+			require.NotNil(t, invoice.Lines[0].ProductID)
+			assert.Equal(t, "prod-1", *invoice.Lines[0].ProductID)
 		}
 	})
 
@@ -73,7 +82,7 @@ func TestService_ImportCSV(t *testing.T) {
 				PaymentTermsDays: 14,
 				IsActive:         true,
 			},
-		}, &ImportInvoicesRequest{
+		}, nil, &ImportInvoicesRequest{
 			FileName: "reverse-charge.csv",
 			UserID:   "user-1",
 			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate,vat_treatment\n" +
@@ -112,7 +121,7 @@ func TestService_ImportCSV(t *testing.T) {
 				PaymentTermsDays: 14,
 				IsActive:         true,
 			},
-		}, &ImportInvoicesRequest{
+		}, nil, &ImportInvoicesRequest{
 			CSVContent: "invoice_number,invoice_type,contact_name,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
 				"INV-EXT-001,SALES,Acme Corp,2026-02-01,2026-02-15,Implementation work,1,100.00,22\n" +
 				"INV-EXT-002,SALES,Missing Contact,2026-02-01,2026-02-15,Support,1,50.00,22\n",
@@ -143,7 +152,7 @@ func TestService_ImportCSV(t *testing.T) {
 				PaymentTermsDays: 14,
 				IsActive:         true,
 			},
-		}, &ImportInvoicesRequest{
+		}, nil, &ImportInvoicesRequest{
 			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
 				"INV-LOCKED-001,SALES,CUST-001,2026-01-10,2026-01-24,Implementation work,1,100.00,22\n",
 		}, func(issueDate time.Time) error {

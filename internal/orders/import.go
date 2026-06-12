@@ -12,6 +12,8 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/importrefs"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 )
 
 type orderImportRow struct {
@@ -110,6 +112,9 @@ var orderImportHeaderAliases = map[string]string{
 	"vat_rate":           "vat_rate",
 	"vat":                "vat_rate",
 	"product_id":         "product_id",
+	"product_code":       "product_code",
+	"sku":                "product_code",
+	"item_code":          "product_code",
 }
 
 var orderImportStatusAliases = map[string]OrderStatus{
@@ -127,6 +132,7 @@ func (s *Service) ImportCSV(
 	ctx context.Context,
 	tenantID, schemaName string,
 	existingContacts []contacts.Contact,
+	existingProducts []inventory.Product,
 	req *ImportOrdersRequest,
 ) (*ImportOrdersResult, error) {
 	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
@@ -158,13 +164,14 @@ func (s *Service) ImportCSV(
 		Errors:   []ImportOrdersRowError{},
 	}
 	contactLookup := buildOrderImportContactLookup(existingContacts)
+	productLookup := importrefs.NewProductLookup(existingProducts)
 	groupOrder := make([]string, 0)
 	groups := make(map[string]*orderImportGroup)
 
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		parsed, err := parseOrderImportDataRow(row)
+		parsed, err := parseOrderImportDataRow(row, productLookup)
 		if err != nil {
 			result.RowsSkipped++
 			result.Errors = append(result.Errors, ImportOrdersRowError{
@@ -347,7 +354,7 @@ func parseOrderImportRows(content string) ([]orderImportRow, error) {
 	return rows, nil
 }
 
-func parseOrderImportDataRow(row orderImportRow) (*orderImportParsedRow, error) {
+func parseOrderImportDataRow(row orderImportRow, productLookup importrefs.ProductLookup) (*orderImportParsedRow, error) {
 	orderNumber := strings.TrimSpace(row.values["order_number"])
 	if orderNumber == "" {
 		return nil, fmt.Errorf("order_number is required")
@@ -447,9 +454,9 @@ func parseOrderImportDataRow(row orderImportRow) (*orderImportParsedRow, error) 
 		return nil, fmt.Errorf("vat_rate cannot be negative")
 	}
 
-	var productID *string
-	if value := strings.TrimSpace(row.values["product_id"]); value != "" {
-		productID = &value
+	productID, err := productLookup.ResolveID(row.values["product_id"], row.values["product_code"])
+	if err != nil {
+		return nil, err
 	}
 
 	return &orderImportParsedRow{

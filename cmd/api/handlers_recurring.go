@@ -98,7 +98,13 @@ func (h *Handlers) ImportRecurringInvoices(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	result, err := h.recurringService.ImportCSV(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, contactsList, &req)
+	productsList, err := h.importProductList(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load products")
+		return
+	}
+
+	result, err := h.recurringService.ImportCSV(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, contactsList, productsList, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return

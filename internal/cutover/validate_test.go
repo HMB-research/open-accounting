@@ -32,7 +32,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-1,2026-05-30,Work,1,100,22\n",
+			CSVContent: "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate,product_code\nINV-1,CUST-1,2026-05-30,Work,1,100,22,SKU-1\n",
 		},
 		{
 			Kind:       KindEInvoices,
@@ -72,17 +72,17 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindQuotes,
 			FileName:   "quotes.csv",
-			CSVContent: "quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate\nQ-1,2026-05-30,CUST-1,Work,1,100,22\n",
+			CSVContent: "quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate,product_code\nQ-1,2026-05-30,CUST-1,Work,1,100,22,SKU-1\n",
 		},
 		{
 			Kind:       KindOrders,
 			FileName:   "orders.csv",
-			CSVContent: "order_number,order_date,contact_code,line_description,quantity,unit_price,vat_rate\nSO-1,2026-05-30,CUST-1,Work,1,100,22\n",
+			CSVContent: "order_number,order_date,contact_code,line_description,quantity,unit_price,vat_rate,product_code\nSO-1,2026-05-30,CUST-1,Work,1,100,22,SKU-1\n",
 		},
 		{
 			Kind:       KindRecurringInvoices,
 			FileName:   "recurring.csv",
-			CSVContent: "name,frequency,start_date,contact_code,line_description,quantity,unit_price,vat_rate\nMonthly retainer,MONTHLY,2026-06-01,CUST-1,Work,1,100,22\n",
+			CSVContent: "name,frequency,start_date,contact_code,line_description,quantity,unit_price,vat_rate,product_code\nMonthly retainer,MONTHLY,2026-06-01,CUST-1,Work,1,100,22,SKU-1\n",
 		},
 		{
 			Kind:       KindCostCenters,
@@ -324,6 +324,31 @@ func TestValidateBundleReportsInventoryReferenceIssues(t *testing.T) {
 	assert.Equal(t, "SKU-404", report.Issues[1].Value)
 	assert.Equal(t, KindWarehouses, report.Issues[2].TargetKind)
 	assert.Equal(t, "NOPE", report.Issues[2].Value)
+}
+
+func TestValidateBundleReportsCommercialDocumentProductReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "product_code,name,sales_price\nSKU-1,Widget,10\n",
+		},
+		{
+			Kind:       KindQuotes,
+			FileName:   "quotes.csv",
+			CSVContent: "quote_number,quote_date,contact_name,line_description,quantity,unit_price,vat_rate,product_code\nQ-1,2026-05-30,Customer One,Work,1,100,22,SKU-404\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindQuotes, report.Issues[0].Kind)
+	assert.Equal(t, KindProducts, report.Issues[0].TargetKind)
+	assert.Equal(t, "product_id/product_code", report.Issues[0].Field)
+	assert.Equal(t, "SKU-404", report.Issues[0].Value)
 }
 
 func TestValidateBundleReportsMissingColumnsAndReferences(t *testing.T) {

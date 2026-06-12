@@ -11,6 +11,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -1420,12 +1421,16 @@ func TestService_ImportCSV(t *testing.T) {
 		Name:     "Acme",
 	}
 
-	csvContent := `name,contact_code,frequency,start_date,end_date,next_generation_date,payment_terms_days,is_active,generated_count,send_email_on_generation,recipient_email,attach_pdf,line_description,quantity,unit,unit_price,discount_percent,vat_rate,account_id,product_id
-Monthly Retainer,CUST-1,MONTHLY,2026-03-01,2026-12-31,2026-04-01,21,true,2,true,billing@example.com,true,Consulting,2,hour,100,10,22,acc-1,prod-1
+	csvContent := `name,contact_code,frequency,start_date,end_date,next_generation_date,payment_terms_days,is_active,generated_count,send_email_on_generation,recipient_email,attach_pdf,line_description,quantity,unit,unit_price,discount_percent,vat_rate,account_id,product_code
+Monthly Retainer,CUST-1,MONTHLY,2026-03-01,2026-12-31,2026-04-01,21,true,2,true,billing@example.com,true,Consulting,2,hour,100,10,22,acc-1,SERV-001
 Monthly Retainer,CUST-1,MONTHLY,2026-03-01,2026-12-31,2026-04-01,21,true,2,true,billing@example.com,true,Support,1,hour,50,0,22,,
 `
 
-	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, &ImportRecurringInvoicesRequest{
+	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, []inventory.Product{{
+		ID:       "prod-1",
+		TenantID: "tenant-1",
+		Code:     "SERV-001",
+	}}, &ImportRecurringInvoicesRequest{
 		CSVContent: csvContent,
 		FileName:   "recurring.csv",
 		UserID:     "user-1",
@@ -1529,7 +1534,7 @@ Missing Contact,missing-contact,MONTHLY,2026-03-01,Unknown,1,10,22
 Bad Quantity,contact-1,MONTHLY,2026-03-01,Bad,0,10,22
 `
 
-	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, &ImportRecurringInvoicesRequest{
+	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, nil, &ImportRecurringInvoicesRequest{
 		CSVContent: csvContent,
 		FileName:   "recurring.csv",
 		UserID:     "user-1",

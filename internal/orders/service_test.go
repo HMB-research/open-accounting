@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 )
 
 // MockRepository implements Repository for testing
@@ -344,8 +345,8 @@ func TestService_ImportCSV(t *testing.T) {
 		repo := NewMockRepository()
 		svc := NewServiceWithRepository(repo)
 
-		csvContent := `order_number,contact_code,order_date,expected_delivery,status,currency,exchange_rate,notes,quote_id,line_description,quantity,unit,unit_price,discount_percent,vat_rate,product_id
-ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,quote-1,Consulting,2,hour,100,10,22,prod-1
+		csvContent := `order_number,contact_code,order_date,expected_delivery,status,currency,exchange_rate,notes,quote_id,line_description,quantity,unit,unit_price,discount_percent,vat_rate,product_code
+ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,quote-1,Consulting,2,hour,100,10,22,SERV-001
 ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,quote-1,Support,1,hour,50,0,22,
 `
 
@@ -354,6 +355,10 @@ ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,quote-1,Su
 			TenantID: "tenant-1",
 			Code:     "CUST-1",
 			Name:     "Acme",
+		}}, []inventory.Product{{
+			ID:       "prod-1",
+			TenantID: "tenant-1",
+			Code:     "SERV-001",
 		}}, &ImportOrdersRequest{
 			CSVContent: csvContent,
 			FileName:   "orders.csv",
@@ -402,7 +407,7 @@ ORD-BAD,contact-1,2026-03-15,Bad quantity,0,10,22
 			ID:       "contact-1",
 			TenantID: "tenant-1",
 			Name:     "Acme",
-		}}, &ImportOrdersRequest{CSVContent: csvContent})
+		}}, nil, &ImportOrdersRequest{CSVContent: csvContent})
 
 		require.NoError(t, err)
 		assert.Equal(t, 3, result.RowsProcessed)

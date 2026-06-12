@@ -494,7 +494,7 @@ Content-Type: application/json
 }
 ```
 
-Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files plus Estonian e-invoice XML bundles. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `e_invoices`, `payments`, `bank_accounts`, `bank_transactions`, `payroll_history`, `leave_balances`, `tsd_history`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `cost_allocations`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`. CSV files use `csv_content`; `e_invoices` files use `xml_content`. Cost-allocation validation checks required `journal_entry_line_id`, `amount`, `allocation_date`, and `cost_center_id` or `cost_center_code` columns, plus same-bundle cost-center references when a cost center file is included. Stock-adjustment validation recognizes optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`.
+Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files plus Estonian e-invoice XML bundles. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `e_invoices`, `payments`, `bank_accounts`, `bank_transactions`, `payroll_history`, `leave_balances`, `tsd_history`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `cost_allocations`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`. CSV files use `csv_content`; `e_invoices` files use `xml_content`. Cost-allocation validation checks required `journal_entry_line_id`, `amount`, `allocation_date`, and `cost_center_id` or `cost_center_code` columns, plus same-bundle cost-center references when a cost center file is included. Commercial document validation checks invoice, quote, order, and recurring-invoice line `product_id` or `product_code` values against product files when both are included. Stock-adjustment validation recognizes optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`.
 
 When the related files are present in the same bundle, the validator also checks references such as commercial documents and e-invoice suppliers to contacts, payments to CSV or XML invoices by ID or number, payroll/leave/TSD rows to employees, account parent codes and expense account/payment account codes to accounts, products to product categories, stock rows to products and warehouses, cost centers to parent cost centers, cost allocations to cost centers, product categories to parent categories, and opening balances or journals to accounts. Hierarchy files also reject self-parent rows before import.
 
@@ -742,7 +742,7 @@ Content-Type: application/json
 
 {
   "file_name": "invoices.csv",
-  "csv_content": "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,vat_treatment\nINV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22,standard\nBILL-RC-001,PURCHASE,SUP-001,2026-02-01,2026-02-15,SENT,0,,Reverse-charge supplier invoice,EU service,1,hour,100.00,0,22,reverse_charge"
+  "csv_content": "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,vat_treatment,product_code\nINV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22,standard,SERV-001\nBILL-RC-001,PURCHASE,SUP-001,2026-02-01,2026-02-15,SENT,0,,Reverse-charge supplier invoice,EU service,1,hour,100.00,0,22,reverse_charge,EU-SERV"
 }
 ```
 
@@ -752,6 +752,8 @@ Rows are grouped by `invoice_number` and `invoice_type`. Contacts are resolved b
 - `contact_reg_code`
 - `contact_email`
 - `contact_name`
+
+Invoice line product references may use `product_id` or `product_code`; `sku` and `item_code` are accepted as `product_code` aliases.
 
 **Response (200 OK):**
 
@@ -1637,7 +1639,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-Imports one CSV row per quote line and groups rows by `quote_number`. Required columns are `quote_number`, `quote_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `valid_until`, `status`, `currency`, `exchange_rate`, `notes`, `unit`, `discount_percent`, and `product_id`. Duplicate quote numbers are skipped.
+Imports one CSV row per quote line and groups rows by `quote_number`. Required columns are `quote_number`, `quote_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `valid_until`, `status`, `currency`, `exchange_rate`, `notes`, `unit`, `discount_percent`, and `product_id` or `product_code`; `sku` and `item_code` are accepted as `product_code` aliases. Duplicate quote numbers are skipped.
 
 ### Get Quote
 
@@ -1773,7 +1775,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-Imports one CSV row per order line and groups rows by `order_number`. Required columns are `order_number`, `order_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `expected_delivery`, `status`, `currency`, `exchange_rate`, `notes`, `quote_id`, `unit`, `discount_percent`, and `product_id`. Duplicate order numbers are skipped.
+Imports one CSV row per order line and groups rows by `order_number`. Required columns are `order_number`, `order_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `expected_delivery`, `status`, `currency`, `exchange_rate`, `notes`, `quote_id`, `unit`, `discount_percent`, and `product_id` or `product_code`; `sku` and `item_code` are accepted as `product_code` aliases. Duplicate order numbers are skipped.
 
 ### Get Order
 
@@ -1972,7 +1974,7 @@ Content-Type: application/json
 }
 ```
 
-Imports one CSV row per recurring template line and groups rows by `name`. Required columns are `name`, `frequency`, `start_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `invoice_type`, `currency`, `end_date`, `next_generation_date`, `payment_terms_days`, `reference`, `notes`, active/generation/email settings, `unit`, `discount_percent`, `account_id`, and `product_id`. Duplicate template names are skipped.
+Imports one CSV row per recurring template line and groups rows by `name`. Required columns are `name`, `frequency`, `start_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `invoice_type`, `currency`, `end_date`, `next_generation_date`, `payment_terms_days`, `reference`, `notes`, active/generation/email settings, `unit`, `discount_percent`, `account_id`, and `product_id` or `product_code`; `sku` and `item_code` are accepted as `product_code` aliases. Duplicate template names are skipped.
 
 ### Create From Existing Invoice
 

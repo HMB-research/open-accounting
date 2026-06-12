@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/importrefs"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 )
 
 // MockRepository implements Repository for testing
@@ -302,8 +304,8 @@ func TestService_ImportCSV(t *testing.T) {
 		repo := NewMockRepository()
 		svc := NewServiceWithRepository(repo)
 
-		csvContent := `quote_number,contact_code,quote_date,valid_until,status,currency,exchange_rate,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,product_id
-QT-LEGACY-1,CUST-1,2026-03-15,2026-04-15,sent,EUR,1,March offer,Consulting,2,hour,100,10,22,prod-1
+		csvContent := `quote_number,contact_code,quote_date,valid_until,status,currency,exchange_rate,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,product_code
+QT-LEGACY-1,CUST-1,2026-03-15,2026-04-15,sent,EUR,1,March offer,Consulting,2,hour,100,10,22,SERV-001
 QT-LEGACY-1,CUST-1,2026-03-15,2026-04-15,sent,EUR,1,March offer,Support,1,hour,50,0,22,
 `
 
@@ -312,6 +314,10 @@ QT-LEGACY-1,CUST-1,2026-03-15,2026-04-15,sent,EUR,1,March offer,Support,1,hour,5
 			TenantID: "tenant-1",
 			Code:     "CUST-1",
 			Name:     "Acme",
+		}}, []inventory.Product{{
+			ID:       "prod-1",
+			TenantID: "tenant-1",
+			Code:     "SERV-001",
 		}}, &ImportQuotesRequest{
 			CSVContent: csvContent,
 			FileName:   "quotes.csv",
@@ -358,7 +364,7 @@ QT-BAD,contact-1,2026-03-15,Bad quantity,0,10,22
 			ID:       "contact-1",
 			TenantID: "tenant-1",
 			Name:     "Acme",
-		}}, &ImportQuotesRequest{CSVContent: csvContent})
+		}}, nil, &ImportQuotesRequest{CSVContent: csvContent})
 
 		require.NoError(t, err)
 		assert.Equal(t, 3, result.RowsProcessed)
@@ -380,17 +386,17 @@ func TestService_ImportCSVValidationFailures(t *testing.T) {
 	t.Run("requires csv content", func(t *testing.T) {
 		svc := NewServiceWithRepository(NewMockRepository())
 
-		_, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", nil, nil)
+		_, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", nil, nil, nil)
 		require.EqualError(t, err, "csv_content is required")
 
-		_, err = svc.ImportCSV(context.Background(), "tenant-1", "test_schema", nil, &ImportQuotesRequest{CSVContent: "  "})
+		_, err = svc.ImportCSV(context.Background(), "tenant-1", "test_schema", nil, nil, &ImportQuotesRequest{CSVContent: "  "})
 		require.EqualError(t, err, "csv_content is required")
 	})
 
 	t.Run("returns parser errors before repository access", func(t *testing.T) {
 		svc := NewServiceWithRepository(NewMockRepository())
 
-		_, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", nil, &ImportQuotesRequest{
+		_, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", nil, nil, &ImportQuotesRequest{
 			CSVContent: "quote_number,contact_id\nQ-1,contact-1\n",
 		})
 
@@ -403,7 +409,7 @@ func TestService_ImportCSVValidationFailures(t *testing.T) {
 		repo.ListErr = errors.New("repository unavailable")
 		svc := NewServiceWithRepository(repo)
 
-		_, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", nil, &ImportQuotesRequest{
+		_, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", nil, nil, &ImportQuotesRequest{
 			CSVContent: `quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate
 QT-1,contact-1,2026-03-15,Consulting,1,10,22
 `,
@@ -427,7 +433,7 @@ QT-LEGACY-2;billing@example.com;2000-01-15;2000-02-15;eur;1,5;Old offer;Analysis
 		TenantID: "tenant-1",
 		Email:    "billing@example.com",
 		Name:     "Acme Billing",
-	}}, &ImportQuotesRequest{
+	}}, nil, &ImportQuotesRequest{
 		CSVContent: csvContent,
 		FileName:   "legacy-quotes.csv",
 		UserID:     "user-1",
@@ -465,7 +471,7 @@ QT-CONFLICT,contact-1,2026-03-15,USD,Support,1,10,22
 		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
 			ID:       "contact-1",
 			TenantID: "tenant-1",
-		}}, &ImportQuotesRequest{CSVContent: csvContent})
+		}}, nil, &ImportQuotesRequest{CSVContent: csvContent})
 
 		require.NoError(t, err)
 		assert.Zero(t, result.QuotesCreated)
@@ -488,7 +494,7 @@ QT-FAIL,Acme,2026-03-15,Consulting,1,10,22
 			ID:       "contact-1",
 			TenantID: "tenant-1",
 			Name:     "Acme",
-		}}, &ImportQuotesRequest{CSVContent: csvContent})
+		}}, nil, &ImportQuotesRequest{CSVContent: csvContent})
 
 		require.NoError(t, err)
 		assert.Zero(t, result.QuotesCreated)
@@ -859,7 +865,7 @@ func TestParseQuoteImportDataRow(t *testing.T) {
 			"product_id": "product-1",
 		})
 
-		parsed, err := parseQuoteImportDataRow(row)
+		parsed, err := parseQuoteImportDataRow(row, importrefs.ProductLookup{})
 
 		require.NoError(t, err)
 		assert.Equal(t, "QT-1", parsed.header.quoteNumber)
@@ -894,7 +900,7 @@ func TestParseQuoteImportDataRow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := parseQuoteImportDataRow(quoteImportRowForTest(tt.overrides))
+			_, err := parseQuoteImportDataRow(quoteImportRowForTest(tt.overrides), importrefs.ProductLookup{})
 
 			require.EqualError(t, err, tt.want)
 		})

@@ -311,7 +311,7 @@ go run ./cmd/oa migration validate \
 go run ./cmd/oa migration validate --contacts ./contacts.csv --invoices ./invoices.csv --e-invoices ./supplier-einvoices.xml --json
 ```
 
-`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups, Estonian e-invoice XML payloads, and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, e-invoices, payments, bank accounts, bank transactions, payroll history, leave balances, TSD history, KMD history, quotes, orders, recurring invoice templates, cost centers, cost allocations, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Account validation checks `parent_code` against the accounts file and hierarchy imports reject self-parent rows before import. Payment validation checks `invoice_id` or `invoice_number` against invoice files when both are included in the same bundle. Expense validation checks `expense_account_code` and `payment_account_code` against the accounts file when both are included in the same bundle. Cost-allocation validation checks required `journal_entry_line_id`, `amount`, `allocation_date`, and `cost_center_id` or `cost_center_code` columns, plus same-bundle cost-center references when a cost center file is included. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
+`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups, Estonian e-invoice XML payloads, and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, e-invoices, payments, bank accounts, bank transactions, payroll history, leave balances, TSD history, KMD history, quotes, orders, recurring invoice templates, cost centers, cost allocations, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Account validation checks `parent_code` against the accounts file and hierarchy imports reject self-parent rows before import. Payment validation checks `invoice_id` or `invoice_number` against invoice files when both are included in the same bundle. Expense validation checks `expense_account_code` and `payment_account_code` against the accounts file when both are included in the same bundle. Commercial document validation checks invoice, quote, order, and recurring-invoice line `product_id` or `product_code` values against product files when both are included. Cost-allocation validation checks required `journal_entry_line_id`, `amount`, `allocation_date`, and `cost_center_id` or `cost_center_code` columns, plus same-bundle cost-center references when a cost center file is included. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
 
 ## Accounts
 
@@ -540,7 +540,7 @@ Use `--line` repeatedly on `quotes create` and `quotes update` for multi-line of
 
 Use `--json` on quote read, write, import, status, conversion, email, and delete commands when scripting. Quote IDs and text fields are trimmed before requests, status filters are case-insensitive, and `quotes delete --json` returns `{"status":"deleted"}`. `quotes pdf` writes to `--output` or streams to stdout with `--output -`. `email quote` can attach the generated quote PDF and marks draft quotes as sent after successful delivery. The `--require-approved-evidence` flag is valid on `quotes send` and `email quote`.
 
-Quote imports use one CSV row per quote line and group rows by `quote_number`. Required columns are `quote_number`, `quote_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `valid_until`, `status`, `currency`, `exchange_rate`, `notes`, `unit`, `discount_percent`, and `product_id`.
+Quote imports use one CSV row per quote line and group rows by `quote_number`. Required columns are `quote_number`, `quote_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `valid_until`, `status`, `currency`, `exchange_rate`, `notes`, `unit`, `discount_percent`, and `product_id` or `product_code`. `sku` and `item_code` are accepted as `product_code` aliases.
 
 ## Orders
 
@@ -584,7 +584,7 @@ Use `--json` on order read, write, stock, import, status, conversion, email, and
 
 `orders reserve-stock` and `orders release-stock` mutate the selected warehouse's reserved and available quantities for the order's cumulative tracked goods and update the persisted order-level reservation ledger. `reserve-stock` first requires the selected warehouse to be ready for every tracked line. Use `orders stock-reservations` to inspect the ledger by order, and `orders pick-list` to turn those reservations into a warehouse picking view.
 
-Order imports use one CSV row per order line and group rows by `order_number`. Required columns are `order_number`, `order_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `expected_delivery`, `status`, `currency`, `exchange_rate`, `notes`, `quote_id`, `unit`, `discount_percent`, and `product_id`.
+Order imports use one CSV row per order line and group rows by `order_number`. Required columns are `order_number`, `order_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `expected_delivery`, `status`, `currency`, `exchange_rate`, `notes`, `quote_id`, `unit`, `discount_percent`, and `product_id` or `product_code`. `sku` and `item_code` are accepted as `product_code` aliases.
 
 ## Recurring invoices
 
@@ -614,7 +614,7 @@ go run ./cmd/oa recurring-invoices delete --id <recurring-id>
 
 Frequencies are `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `QUARTERLY`, and `YEARLY`. Use `--line` repeatedly on create or update. Recurring invoice email options include `--send-email`, `--recipient-email`, `--attach-pdf`, `--email-subject`, and `--email-message`.
 
-Recurring invoice imports use one CSV row per recurring template line and group rows by `name`. Required columns are `name`, `frequency`, `start_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `invoice_type`, `currency`, `end_date`, `next_generation_date`, `payment_terms_days`, `reference`, `notes`, active/generation/email settings, `unit`, `discount_percent`, `account_id`, and `product_id`. Duplicate template names are skipped.
+Recurring invoice imports use one CSV row per recurring template line and group rows by `name`. Required columns are `name`, `frequency`, `start_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`; optional columns include `invoice_type`, `currency`, `end_date`, `next_generation_date`, `payment_terms_days`, `reference`, `notes`, active/generation/email settings, `unit`, `discount_percent`, `account_id`, and `product_id` or `product_code`. `sku` and `item_code` are accepted as `product_code` aliases. Duplicate template names are skipped.
 
 ## Fixed assets
 
@@ -1138,9 +1138,9 @@ Supply Partner,SUPPLIER,purchases@supply.example,30,EE,2500.00
 ### Invoices
 
 ```csv
-invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,vat_treatment
-INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22,standard
-INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Support retainer,1,month,50.00,0,22,standard
+invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,vat_treatment,product_code
+INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22,standard,SERV-001
+INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Support retainer,1,month,50.00,0,22,standard,RET-001
 ```
 
 ### Employees

@@ -12,6 +12,8 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/importrefs"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 )
 
 type invoiceImportRow struct {
@@ -34,6 +36,7 @@ type invoiceImportLine struct {
 	discountPercent decimal.Decimal
 	vatRate         decimal.Decimal
 	vatTreatment    VATTreatment
+	productID       *string
 }
 
 type invoiceImportHeader struct {
@@ -113,6 +116,10 @@ var invoiceImportHeaderAliases = map[string]string{
 	"vat_treatment":      "vat_treatment",
 	"vat_type":           "vat_treatment",
 	"reverse_charge":     "reverse_charge",
+	"product_id":         "product_id",
+	"product_code":       "product_code",
+	"sku":                "product_code",
+	"item_code":          "product_code",
 }
 
 var invoiceImportTypeAliases = map[string]InvoiceType{
@@ -158,6 +165,7 @@ func (s *Service) ImportCSV(
 	ctx context.Context,
 	tenantID, schemaName string,
 	existingContacts []contacts.Contact,
+	existingProducts []inventory.Product,
 	req *ImportInvoicesRequest,
 	validateDate func(time.Time) error,
 ) (*ImportInvoicesResult, error) {
@@ -189,13 +197,14 @@ func (s *Service) ImportCSV(
 	}
 
 	contactLookup := buildInvoiceImportContactLookup(existingContacts)
+	productLookup := importrefs.NewProductLookup(existingProducts)
 	groupOrder := make([]string, 0)
 	groups := make(map[string]*invoiceImportGroup)
 
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		parsed, err := parseInvoiceImportDataRow(row)
+		parsed, err := parseInvoiceImportDataRow(row, productLookup)
 		if err != nil {
 			result.RowsSkipped++
 			result.Errors = append(result.Errors, ImportInvoicesRowError{
@@ -399,7 +408,7 @@ func parseInvoiceImportRows(content string) ([]invoiceImportRow, error) {
 	return rows, nil
 }
 
-func parseInvoiceImportDataRow(row invoiceImportRow) (*invoiceImportParsedRow, error) {
+func parseInvoiceImportDataRow(row invoiceImportRow, productLookup importrefs.ProductLookup) (*invoiceImportParsedRow, error) {
 	invoiceNumber := strings.TrimSpace(row.values["invoice_number"])
 	if invoiceNumber == "" {
 		return nil, fmt.Errorf("invoice_number is required")
@@ -513,6 +522,11 @@ func parseInvoiceImportDataRow(row invoiceImportRow) (*invoiceImportParsedRow, e
 		return nil, fmt.Errorf("reverse charge VAT rate must be positive")
 	}
 
+	productID, err := productLookup.ResolveID(row.values["product_id"], row.values["product_code"])
+	if err != nil {
+		return nil, err
+	}
+
 	return &invoiceImportParsedRow{
 		header: invoiceImportHeader{
 			invoiceNumber:       invoiceNumber,
@@ -536,6 +550,7 @@ func parseInvoiceImportDataRow(row invoiceImportRow) (*invoiceImportParsedRow, e
 			discountPercent: discountPercent,
 			vatRate:         vatRate,
 			vatTreatment:    vatTreatment,
+			productID:       productID,
 		},
 	}, nil
 }
@@ -649,6 +664,7 @@ func buildImportedInvoice(
 			DiscountPercent: line.discountPercent,
 			VATRate:         line.vatRate,
 			VATTreatment:    line.vatTreatment,
+			ProductID:       line.productID,
 		}
 		invoiceLine.Calculate()
 		invoice.Lines = append(invoice.Lines, invoiceLine)
