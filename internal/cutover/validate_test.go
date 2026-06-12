@@ -1698,6 +1698,31 @@ func TestValidateBundleReportsInventoryReferenceIssues(t *testing.T) {
 	assert.Equal(t, "NOPE", report.Issues[2].Value)
 }
 
+func TestValidateBundleDoesNotTreatProductAndWarehouseImportIDsAsPreserved(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "id,product_code,name,sales_price\nlegacy-product,SKU-1,Widget,10\nlegacy-product,SKU-2,Gadget,11\n",
+		},
+		{
+			Kind:       KindWarehouses,
+			FileName:   "warehouses.csv",
+			CSVContent: "id,warehouse_code,warehouse_name\nlegacy-warehouse,MAIN,Main warehouse\nlegacy-warehouse,SECOND,Secondary warehouse\n",
+		},
+		{
+			Kind:       KindStockAdjustments,
+			FileName:   "stock.csv",
+			CSVContent: "product_code,warehouse_code,quantity\nSKU-2,SECOND,3\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Empty(t, report.Issues)
+}
+
 func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 	accountID := "22222222-2222-2222-2222-222222222222"
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
