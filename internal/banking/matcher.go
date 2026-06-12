@@ -117,6 +117,9 @@ func (s *Service) AutoMatchTransactions(ctx context.Context, schemaName, tenantI
 		if len(suggestions) == 0 {
 			continue
 		}
+		sort.Slice(suggestions, func(i, j int) bool {
+			return suggestions[i].Confidence > suggestions[j].Confidence
+		})
 
 		// Only auto-match if confidence is high enough and there's a clear winner
 		best := suggestions[0]
