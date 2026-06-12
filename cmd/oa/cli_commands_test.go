@@ -3942,6 +3942,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 			}
 			if len(req.Files) > 2 {
 				assert.Equal(t, cutover.EInvoiceContactModeBoth, req.EInvoiceContactMode)
+				assert.Equal(t, cutover.MigrationProviderPresetMerit, req.ProviderPreset)
 				kinds := map[cutover.FileKind]bool{}
 				for _, file := range req.Files {
 					kinds[file.Kind] = true
@@ -4010,6 +4011,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 		"--invoices", invoicesFile,
 		"--e-invoices", eInvoicesFile,
 		"--e-invoice-contact-mode", "both",
+		"--provider-preset", "merit",
 		"--bank-accounts", bankAccountsFile,
 		"--bank-transactions", bankFile,
 		"--tsd-history", tsdFile,

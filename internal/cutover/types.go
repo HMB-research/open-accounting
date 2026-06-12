@@ -45,6 +45,14 @@ const (
 	EInvoiceContactModeBoth     EInvoiceContactMode = "both"
 )
 
+type MigrationProviderPreset string
+
+const (
+	MigrationProviderPresetGeneric       MigrationProviderPreset = "generic"
+	MigrationProviderPresetMerit         MigrationProviderPreset = "merit"
+	MigrationProviderPresetSmartAccounts MigrationProviderPreset = "smartaccounts"
+)
+
 type BundleFile struct {
 	Kind       FileKind `json:"kind"`
 	FileName   string   `json:"file_name"`
@@ -53,8 +61,9 @@ type BundleFile struct {
 }
 
 type ValidateBundleRequest struct {
-	Files               []BundleFile        `json:"files"`
-	EInvoiceContactMode EInvoiceContactMode `json:"e_invoice_contact_mode,omitempty"`
+	Files               []BundleFile            `json:"files"`
+	EInvoiceContactMode EInvoiceContactMode     `json:"e_invoice_contact_mode,omitempty"`
+	ProviderPreset      MigrationProviderPreset `json:"provider_preset,omitempty"`
 }
 
 type BundleValidationReport struct {

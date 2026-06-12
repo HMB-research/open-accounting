@@ -610,6 +610,10 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 	if err != nil {
 		return nil, err
 	}
+	providerPreset, err := normalizeMigrationProviderPreset(req.ProviderPreset)
+	if err != nil {
+		return nil, err
+	}
 
 	report := &BundleValidationReport{}
 	parsed := make([]parsedFile, 0, len(req.Files))
@@ -624,7 +628,7 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 			continue
 		}
 
-		parsedFile, validation, err := parseBundleFileByKind(file)
+		parsedFile, validation, err := parseBundleFileByKind(file, providerPreset)
 		report.Files = append(report.Files, validation)
 		if err != nil {
 			report.addIssue(ValidationIssue{
@@ -680,12 +684,12 @@ func normalizeEInvoiceContactMode(mode EInvoiceContactMode) (EInvoiceContactMode
 	}
 }
 
-func parseBundleFileByKind(file BundleFile) (parsedFile, FileValidation, error) {
+func parseBundleFileByKind(file BundleFile, providerPreset MigrationProviderPreset) (parsedFile, FileValidation, error) {
 	if file.Kind == KindEInvoices {
 		return parseEInvoiceBundleFile(file)
 	}
 
-	return parseBundleFile(file, fileSpecs[file.Kind])
+	return parseBundleFile(file, fileSpecForProviderPreset(file.Kind, providerPreset))
 }
 
 func isSupportedBundleKind(kind FileKind) bool {

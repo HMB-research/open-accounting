@@ -2009,6 +2009,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		invoicesFile := fs.String("invoices", "", "Invoices CSV file")
 		eInvoicesFile := fs.String("e-invoices", "", "Estonian e-invoice XML file")
 		eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
+		providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, or smartaccounts")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
 		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
 		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
@@ -2070,6 +2071,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		report, err := client.validateMigrationBundle(ctx, cfg.TenantID, &cutover.ValidateBundleRequest{
 			Files:               files,
 			EInvoiceContactMode: cutover.EInvoiceContactMode(strings.TrimSpace(*eInvoiceContactMode)),
+			ProviderPreset:      cutover.MigrationProviderPreset(strings.TrimSpace(*providerPreset)),
 		})
 		if err != nil {
 			return err

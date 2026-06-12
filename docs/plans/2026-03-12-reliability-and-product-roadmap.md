@@ -122,7 +122,7 @@ It should not claim full parity with SmartAccounts or Merit by day 90.
 - contacts import
 - invoices import
 - employees import
-- migration templates for Merit and SmartAccounts CSV exports
+- deeper migration templates for Merit and SmartAccounts CSV exports
 
 2. Accounting controls
 - fiscal year settings

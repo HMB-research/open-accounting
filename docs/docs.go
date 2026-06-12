@@ -24364,6 +24364,19 @@ const docTemplate = `{
                 "SeverityWarning"
             ]
         },
+        "github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset": {
+            "type": "string",
+            "enum": [
+                "generic",
+                "merit",
+                "smartaccounts"
+            ],
+            "x-enum-varnames": [
+                "MigrationProviderPresetGeneric",
+                "MigrationProviderPresetMerit",
+                "MigrationProviderPresetSmartAccounts"
+            ]
+        },
         "github_com_HMB-research_open-accounting_internal_cutover.ValidateBundleRequest": {
             "type": "object",
             "properties": {
@@ -24375,6 +24388,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleFile"
                     }
+                },
+                "provider_preset": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset"
                 }
             }
         },
