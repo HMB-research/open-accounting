@@ -233,3 +233,64 @@ func TestParseJournalImportExchangeRate(t *testing.T) {
 		assert.Contains(t, err.Error(), "exchange_rate cannot be negative")
 	})
 }
+
+func TestParseJournalImportDate(t *testing.T) {
+	t.Run("accepts trimmed ISO date", func(t *testing.T) {
+		parsed, err := parseJournalImportDate(" 2026-03-31 ")
+
+		require.NoError(t, err)
+		assert.Equal(t, time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC), parsed)
+	})
+
+	t.Run("requires entry date", func(t *testing.T) {
+		parsed, err := parseJournalImportDate(" \t ")
+
+		require.Error(t, err)
+		assert.True(t, parsed.IsZero())
+		assert.Contains(t, err.Error(), "entry_date is required")
+	})
+
+	t.Run("rejects non ISO date", func(t *testing.T) {
+		parsed, err := parseJournalImportDate("31/03/2026")
+
+		require.Error(t, err)
+		assert.True(t, parsed.IsZero())
+		assert.Contains(t, err.Error(), "entry_date must be in YYYY-MM-DD format")
+	})
+}
+
+func TestJournalImportHeaderAndOptionalUUID(t *testing.T) {
+	t.Run("canonicalizes journal import header aliases", func(t *testing.T) {
+		assert.Equal(t, "entry_reference", canonicalJournalImportHeader(" Voucher Number "))
+		assert.Equal(t, "entry_date", canonicalJournalImportHeader("posting-date"))
+		assert.Equal(t, "entry_description", canonicalJournalImportHeader("entry memo"))
+		assert.Equal(t, "account_code", canonicalJournalImportHeader("Account"))
+		assert.Equal(t, "line_description", canonicalJournalImportHeader("Memo"))
+		assert.Equal(t, "debit", canonicalJournalImportHeader("Debit Amount"))
+		assert.Equal(t, "credit", canonicalJournalImportHeader("credit_amount"))
+		assert.Equal(t, "custom_field", canonicalJournalImportHeader("Custom Field"))
+	})
+
+	t.Run("parses optional UUID fields", func(t *testing.T) {
+		id, err := optionalJournalImportUUID("source_id", "550e8400-e29b-41d4-a716-446655440000")
+
+		require.NoError(t, err)
+		require.NotNil(t, id)
+		assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", *id)
+	})
+
+	t.Run("allows blank optional UUID fields", func(t *testing.T) {
+		id, err := optionalJournalImportUUID("source_id", " \t ")
+
+		require.NoError(t, err)
+		assert.Nil(t, id)
+	})
+
+	t.Run("rejects invalid optional UUID fields", func(t *testing.T) {
+		id, err := optionalJournalImportUUID("source_id", "legacy-source")
+
+		require.Error(t, err)
+		assert.Nil(t, id)
+		assert.Contains(t, err.Error(), "source_id must be a valid UUID")
+	})
+}
