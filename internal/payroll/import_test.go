@@ -2,6 +2,7 @@ package payroll
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -155,6 +156,179 @@ func TestImportPayrollHistoryCSV_Success(t *testing.T) {
 	require.NotNil(t, repo.Payslips[0].PaidAt)
 	assert.Equal(t, "PAID", repo.Payslips[0].PaymentStatus)
 	assert.Equal(t, "hist-1", repo.Payslips[0].PayrollRunID)
+}
+
+func TestImportPayrollHistoryCSV_MatchesAlternateEmployeeIdentifiersAndDerivesAmounts(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-personal"] = &Employee{
+		ID:             "emp-personal",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-200",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		PersonalCode:   "49001010001",
+		Email:          "mari@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-email"] = &Employee{
+		ID:             "emp-email",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-201",
+		FirstName:      "Liis",
+		LastName:       "Lepp",
+		PersonalCode:   "49001010002",
+		Email:          "liis@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-name"] = &Employee{
+		ID:             "emp-name",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-202",
+		FirstName:      "Kati",
+		LastName:       "Kask",
+		PersonalCode:   "49001010003",
+		Email:          "kati@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+	result, err := service.ImportPayrollHistoryCSV(ctx, "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+		FileName: "payroll-history.csv",
+		CSVContent: "period_year,period_month,status,personal_code,email,first_name,last_name,gross_salary,income_tax,unemployment_insurance_employee,funded_pension,other_deductions,social_tax,unemployment_insurance_employer\n" +
+			"2025,8,APPROVED,49001010001,,, ,3000.00,500.00,48.00,60.00,10.00,990.00,24.00\n" +
+			"2025,8,APPROVED,,liis@example.com,,,2500.00,400.00,40.00,50.00,0.00,825.00,20.00\n" +
+			"2025,8,APPROVED,,,Kati,Kask,2000.00,300.00,32.00,40.00,5.00,660.00,16.00\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, result.RowsProcessed)
+	assert.Equal(t, 1, result.PayrollRunsCreated)
+	assert.Equal(t, 3, result.PayslipsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+
+	require.Len(t, repo.PayrollRuns, 1)
+	run := repo.PayrollRuns["hist-1"]
+	require.NotNil(t, run)
+	assert.Equal(t, PayrollApproved, run.Status)
+	assert.Nil(t, run.PaymentDate)
+	assert.Equal(t, "user-1", run.ApprovedBy)
+	require.NotNil(t, run.ApprovedAt)
+	assert.Equal(t, decimal.RequireFromString("7500.00"), run.TotalGross)
+	assert.Equal(t, decimal.RequireFromString("6015.00"), run.TotalNet)
+	assert.Equal(t, decimal.RequireFromString("10035.00"), run.TotalEmployerCost)
+
+	require.Len(t, repo.Payslips, 3)
+	assert.Equal(t, "emp-personal", repo.Payslips[0].EmployeeID)
+	assert.Equal(t, "PENDING", repo.Payslips[0].PaymentStatus)
+	assert.Equal(t, decimal.RequireFromString("3000.00"), repo.Payslips[0].TaxableIncome)
+	assert.Equal(t, decimal.RequireFromString("2382.00"), repo.Payslips[0].NetSalary)
+	assert.Equal(t, decimal.RequireFromString("4014.00"), repo.Payslips[0].TotalEmployerCost)
+	assert.Equal(t, "emp-email", repo.Payslips[1].EmployeeID)
+	assert.Equal(t, "emp-name", repo.Payslips[2].EmployeeID)
+}
+
+func TestImportPayrollHistoryCSV_RejectsMismatchedIdentifiersAndGroupInconsistency(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-1"] = &Employee{
+		ID:             "emp-1",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		PersonalCode:   "49001010001",
+		Email:          "mari@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-2"] = &Employee{
+		ID:             "emp-2",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-101",
+		FirstName:      "Liis",
+		LastName:       "Lepp",
+		PersonalCode:   "49001010002",
+		Email:          "liis@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+	result, err := service.ImportPayrollHistoryCSV(ctx, "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+		CSVContent: "period_year,period_month,status,payment_date,notes,employee_number,email,gross_salary\n" +
+			"2025,7,PAID,2025-08-05,Batch A,EMP-100,,1000.00\n" +
+			"2025,7,PAID,2025-08-05,Batch A,EMP-100,,900.00\n" +
+			"2025,7,PAID,2025-08-05,Batch A,EMP-100,liis@example.com,800.00\n" +
+			"2025,7,APPROVED,2025-08-05,Batch A,EMP-101,,700.00\n" +
+			"2025,7,PAID,2025-08-06,Batch A,EMP-101,,600.00\n" +
+			"2025,7,PAID,2025-08-05,Batch B,EMP-101,,500.00\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 6, result.RowsProcessed)
+	assert.Equal(t, 1, result.PayrollRunsCreated)
+	assert.Equal(t, 1, result.PayslipsCreated)
+	assert.Equal(t, 5, result.RowsSkipped)
+	require.Len(t, result.Errors, 5)
+	assert.Contains(t, result.Errors[0].Message, "employee already has a payslip in this payroll period")
+	assert.Contains(t, result.Errors[1].Message, "employee identifiers do not match the same employee")
+	assert.Contains(t, result.Errors[2].Message, "status must be consistent for each payroll period")
+	assert.Contains(t, result.Errors[3].Message, "payment_date must be consistent for each payroll period")
+	assert.Contains(t, result.Errors[4].Message, "notes must be consistent for each payroll period")
+}
+
+func TestImportPayrollHistoryCSV_ReportsTransactionErrorsPerGroup(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-1"] = &Employee{
+		ID:             "emp-1",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		PersonalCode:   "49001010001",
+		Email:          "mari@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-2"] = &Employee{
+		ID:             "emp-2",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-101",
+		FirstName:      "Liis",
+		LastName:       "Lepp",
+		PersonalCode:   "49001010002",
+		Email:          "liis@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.CreatePayslipErr = errors.New("write failed")
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+	result, err := service.ImportPayrollHistoryCSV(ctx, "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+		CSVContent: "period_year,period_month,status,employee_number,gross_salary\n" +
+			"2025,6,PAID,EMP-100,1000.00\n" +
+			"2025,6,PAID,EMP-101,900.00\n",
+	})
+	require.NoError(t, err)
+
+	assert.Zero(t, result.PayrollRunsCreated)
+	assert.Zero(t, result.PayslipsCreated)
+	assert.Equal(t, 2, result.RowsSkipped)
+	require.Len(t, result.Errors, 2)
+	assert.Contains(t, result.Errors[0].Message, "create payslip: write failed")
+	assert.Contains(t, result.Errors[1].Message, "create payslip: write failed")
 }
 
 func TestImportPayrollHistoryCSV_SkipsInvalidRowsAndExistingPeriods(t *testing.T) {
