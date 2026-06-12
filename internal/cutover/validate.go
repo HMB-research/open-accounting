@@ -838,11 +838,9 @@ var duplicateIdentifierPreflightSpecs = map[FileKind][]duplicateIdentifierSpec{
 		{field: "name"},
 	},
 	KindWarehouses: {
-		{field: "id"},
 		{field: "code"},
 	},
 	KindProducts: {
-		{field: "id"},
 		{field: "code"},
 	},
 	KindFixedAssets: {
