@@ -101,4 +101,26 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "missing required column")
 	})
+
+	t.Run("skips journals with invalid source id", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.accounts["acc-1000"] = &Account{ID: "acc-1000", TenantID: tenantID, Code: "1000", Name: "Cash", AccountType: AccountTypeAsset, IsActive: true}
+		repo.accounts["acc-4000"] = &Account{ID: "acc-4000", TenantID: tenantID, Code: "4000", Name: "Revenue", AccountType: AccountTypeRevenue, IsActive: true}
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
+			UserID: "user-1",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit,source_id\n" +
+				"BAD-SOURCE,2026-03-31,1000,75.00,0,legacy-source\n" +
+				"BAD-SOURCE,2026-03-31,4000,0,75.00,\n",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, 2, result.RowsProcessed)
+		assert.Zero(t, result.EntriesCreated)
+		assert.Zero(t, result.LinesImported)
+		assert.Equal(t, 2, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "source_id must be a valid UUID")
+	})
 }

@@ -4750,6 +4750,11 @@ func checkJournalEntryRows(report *BundleValidationReport, file parsedFile) {
 			checkRequiredCutoverField(report, file, row, "account_code")
 		}
 	}
+	if fileHasHeaders(file, "source_id") {
+		for _, row := range file.rows {
+			checkOptionalUUID(report, file, row, "source_id")
+		}
+	}
 	checkJournalEntryGroups(report, file)
 }
 

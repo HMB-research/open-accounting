@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -196,13 +197,17 @@ func (s *Service) buildJournalEntryFromImportGroup(
 	if sourceType == "" {
 		sourceType = defaultJournalImportSourceType
 	}
+	sourceID, err := optionalJournalImportUUID("source_id", firstValues["source_id"])
+	if err != nil {
+		return nil, decimal.Zero, decimal.Zero, err
+	}
 
 	createReq := &CreateJournalEntryRequest{
 		EntryDate:   entryDate,
 		Description: description,
 		Reference:   group.reference,
 		SourceType:  sourceType,
-		SourceID:    optionalJournalImportString(firstValues["source_id"]),
+		SourceID:    sourceID,
 		Lines:       lines,
 		UserID:      req.UserID,
 	}
@@ -377,12 +382,17 @@ func canonicalJournalImportHeader(header string) string {
 	return normalized
 }
 
-func optionalJournalImportString(value string) *string {
+func optionalJournalImportUUID(field, value string) (*string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return nil
+		return nil, nil
 	}
-	return &trimmed
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", field)
+	}
+	id := parsedID.String()
+	return &id, nil
 }
 
 func sameAccountingDate(a, b time.Time) bool {
