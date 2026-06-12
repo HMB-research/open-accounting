@@ -45,6 +45,11 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 			CSVContent: "payment_type,payment_date,amount,invoice_number\nRECEIVED,2026-05-31,100,INV-1\n",
 		},
 		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "account_name,account_number,gl_account_code\nMain bank,EE471000001020145685,1000\n",
+		},
+		{
 			Kind:       KindBankTransactions,
 			FileName:   "bank.csv",
 			CSVContent: "date,amount,description\n2026-05-31,100,Customer receipt\n",
@@ -135,7 +140,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	require.NotNil(t, report)
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 0, report.Summary.ErrorCount)
-	assert.Equal(t, 29, report.Summary.RowsValidated)
+	assert.Equal(t, 30, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
 
 	var stockValidation FileValidation
@@ -182,6 +187,31 @@ func TestValidateBundleReportsExpenseAccountReferenceIssues(t *testing.T) {
 	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
 	assert.Equal(t, "expense_account_code", report.Issues[0].Field)
 	assert.Equal(t, "5500", report.Issues[0].Value)
+}
+
+func TestValidateBundleReportsBankAccountReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n",
+		},
+		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "account_name,iban,ledger_account_code\nReserve bank,EE999,9999\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindBankAccounts, report.Issues[0].Kind)
+	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
+	assert.Equal(t, "gl_account_id/gl_account_code", report.Issues[0].Field)
+	assert.Equal(t, "9999", report.Issues[0].Value)
 }
 
 func TestValidateBundleReportsAccountParentReferenceIssues(t *testing.T) {

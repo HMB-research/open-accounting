@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/payments"
@@ -436,7 +437,9 @@ func (m *mockBankingRepository) GetImportHistory(ctx context.Context, schemaName
 
 func setupBankingTestHandlers() (*Handlers, *mockBankingRepository, *mockTenantRepository) {
 	bankingRepo := newMockBankingRepository()
-	bankingSvc := banking.NewServiceWithRepository(bankingRepo)
+	bankingSvc := banking.NewServiceWithRepositoryAndAccounting(bankingRepo, fakeBankingAccountLister{accounts: []accounting.Account{
+		{ID: "gl-bank", Code: "1000", AccountType: accounting.AccountTypeAsset},
+	}})
 
 	tenantRepo := newMockTenantRepository()
 	tenantSvc := tenant.NewServiceWithRepository(tenantRepo)
@@ -446,6 +449,14 @@ func setupBankingTestHandlers() (*Handlers, *mockBankingRepository, *mockTenantR
 		tenantService:  tenantSvc,
 	}
 	return h, bankingRepo, tenantRepo
+}
+
+type fakeBankingAccountLister struct {
+	accounts []accounting.Account
+}
+
+func (f fakeBankingAccountLister) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	return f.accounts, nil
 }
 
 func TestListBankAccounts(t *testing.T) {
@@ -613,13 +624,13 @@ func TestImportBankAccounts(t *testing.T) {
 		"skip_duplicates": true,
 		"rows": []map[string]string{
 			{
-				"name":           "Main bank",
-				"account_number": "EE471000001020145685",
-				"bank_name":      "LHV",
-				"swift_code":     "LHVBEE22",
-				"currency":       "EUR",
-				"gl_account_id":  "gl-bank",
-				"is_default":     "true",
+				"name":            "Main bank",
+				"account_number":  "EE471000001020145685",
+				"bank_name":       "LHV",
+				"swift_code":      "LHVBEE22",
+				"currency":        "EUR",
+				"gl_account_code": "1000",
+				"is_default":      "true",
 			},
 			{
 				"name":           "Existing duplicate",

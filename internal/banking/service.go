@@ -6,15 +6,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
 )
 
+type accountingLister interface {
+	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]accounting.Account, error)
+}
+
 // Service provides bank reconciliation operations
 type Service struct {
-	repo Repository
+	repo     Repository
+	accounts accountingLister
 }
 
 // NewService creates a new banking service
@@ -27,7 +33,8 @@ func NewService(db *pgxpool.Pool) *Service {
 		panic(fmt.Errorf("create banking GORM repository: %w", err))
 	}
 	return &Service{
-		repo: NewGORMRepository(gormDB),
+		repo:     NewGORMRepository(gormDB),
+		accounts: accounting.NewService(db),
 	}
 }
 
@@ -40,8 +47,14 @@ func NewServiceWithGORM(db *gorm.DB) *Service {
 
 // NewServiceWithRepository creates a new banking service with a custom repository
 func NewServiceWithRepository(repo Repository) *Service {
+	return NewServiceWithRepositoryAndAccounting(repo, nil)
+}
+
+// NewServiceWithRepositoryAndAccounting creates a new banking service with a custom repository and accounting account lister.
+func NewServiceWithRepositoryAndAccounting(repo Repository, accounts accountingLister) *Service {
 	return &Service{
-		repo: repo,
+		repo:     repo,
+		accounts: accounts,
 	}
 }
 
@@ -108,6 +121,11 @@ func (s *Service) ImportBankAccounts(ctx context.Context, schemaName, tenantID s
 		}
 	}
 
+	accountIDsByCode, err := s.bankAccountImportAccountIDsByCode(ctx, schemaName, tenantID, req.Rows)
+	if err != nil {
+		return nil, err
+	}
+
 	for i, row := range req.Rows {
 		rowNum := i + 1
 		result.RowsProcessed++
@@ -147,13 +165,20 @@ func (s *Service) ImportBankAccounts(ctx context.Context, schemaName, tenantID s
 			continue
 		}
 
+		glAccountID, err := resolveOptionalBankAccountImportAccountID(row, accountIDsByCode)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: %v", rowNum, err))
+			result.RowsSkipped++
+			continue
+		}
+
 		if _, err := s.CreateBankAccount(ctx, schemaName, tenantID, &CreateBankAccountRequest{
 			Name:          name,
 			AccountNumber: accountNumber,
 			BankName:      row.BankName,
 			SwiftCode:     row.SwiftCode,
 			Currency:      row.Currency,
-			GLAccountID:   nonEmptyStringPtr(row.GLAccountID),
+			GLAccountID:   glAccountID,
 			IsDefault:     isDefault,
 			IsActive:      &isActive,
 		}); err != nil {
@@ -167,6 +192,54 @@ func (s *Service) ImportBankAccounts(ctx context.Context, schemaName, tenantID s
 	}
 
 	return result, nil
+}
+
+func (s *Service) bankAccountImportAccountIDsByCode(ctx context.Context, schemaName, tenantID string, rows []CSVBankAccountRow) (map[string]string, error) {
+	usesAccountCodes := false
+	for _, row := range rows {
+		if strings.TrimSpace(row.GLAccountCode) != "" {
+			usesAccountCodes = true
+			break
+		}
+	}
+	if !usesAccountCodes {
+		return nil, nil
+	}
+	if s.accounts == nil {
+		return nil, fmt.Errorf("accounting service is required to resolve bank account ledger account codes")
+	}
+
+	accounts, err := s.accounts.ListAccounts(ctx, schemaName, tenantID, false)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts for bank account import: %w", err)
+	}
+	accountIDsByCode := make(map[string]string, len(accounts))
+	for _, account := range accounts {
+		key := normalizedBankAccountImportKey(account.Code)
+		if key != "" {
+			accountIDsByCode[key] = account.ID
+		}
+	}
+	return accountIDsByCode, nil
+}
+
+func resolveOptionalBankAccountImportAccountID(row CSVBankAccountRow, accountIDsByCode map[string]string) (*string, error) {
+	if accountID := strings.TrimSpace(row.GLAccountID); accountID != "" {
+		return &accountID, nil
+	}
+	accountCode := strings.TrimSpace(row.GLAccountCode)
+	if accountCode == "" {
+		return nil, nil
+	}
+	accountID, ok := accountIDsByCode[normalizedBankAccountImportKey(accountCode)]
+	if !ok {
+		return nil, fmt.Errorf("account code %q was not found for gl_account_code", accountCode)
+	}
+	return &accountID, nil
+}
+
+func normalizedBankAccountImportKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func parseOptionalImportBool(value string, defaultValue bool) (bool, error) {

@@ -214,6 +214,7 @@ type CSVBankAccountRow struct {
 	SwiftCode     string `json:"swift_code,omitempty"`
 	Currency      string `json:"currency,omitempty"`
 	GLAccountID   string `json:"gl_account_id,omitempty"`
+	GLAccountCode string `json:"gl_account_code,omitempty"`
 	IsDefault     string `json:"is_default,omitempty"`
 	IsActive      string `json:"is_active,omitempty"`
 }
