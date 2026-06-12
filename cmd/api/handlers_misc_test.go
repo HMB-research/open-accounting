@@ -26,19 +26,26 @@ type mockReminderRuleRepository struct {
 }
 
 type mockInterestManager struct {
-	history       map[string][]invoicing.InvoiceInterest
-	err           error
-	lastSchema    string
-	lastTenantID  string
-	lastInvoiceID string
+	history          map[string][]invoicing.InvoiceInterest
+	result           *invoicing.InterestCalculationResult
+	overdue          []invoicing.InterestCalculationResult
+	err              error
+	lastSchema       string
+	lastTenantID     string
+	lastInvoiceID    string
+	lastInterestRate float64
 }
 
 func (m *mockInterestManager) CalculateInterest(ctx context.Context, schemaName, tenantID, invoiceID string, interestRate float64, asOfDate time.Time) (*invoicing.InterestCalculationResult, error) {
 	m.lastSchema = schemaName
 	m.lastTenantID = tenantID
 	m.lastInvoiceID = invoiceID
+	m.lastInterestRate = interestRate
 	if m.err != nil {
 		return nil, m.err
+	}
+	if m.result != nil {
+		return m.result, nil
 	}
 	return &invoicing.InterestCalculationResult{InvoiceID: invoiceID, CalculatedAt: asOfDate}, nil
 }
@@ -55,10 +62,11 @@ func (m *mockInterestManager) ListInterestHistory(ctx context.Context, schemaNam
 func (m *mockInterestManager) CalculateInterestForOverdueInvoices(ctx context.Context, schemaName, tenantID string, interestRate float64) ([]invoicing.InterestCalculationResult, error) {
 	m.lastSchema = schemaName
 	m.lastTenantID = tenantID
+	m.lastInterestRate = interestRate
 	if m.err != nil {
 		return nil, m.err
 	}
-	return []invoicing.InterestCalculationResult{}, nil
+	return m.overdue, nil
 }
 
 func newMockReminderRuleRepository() *mockReminderRuleRepository {
@@ -1042,6 +1050,106 @@ func TestGetInvoiceInterestHistory(t *testing.T) {
 	h.GetInvoiceInterestHistory(rr, req)
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
 	assert.Contains(t, rr.Body.String(), "Failed to get interest history")
+}
+
+func TestInvoiceInterestCalculationHandlers(t *testing.T) {
+	tenantRepo := newMockTenantRepository()
+	tenantRecord := tenantRepo.addTestTenant("de305d54-75b4-431b-adb2-eb6b9e546014", "Test Tenant", "test-tenant")
+	interestSvc := &mockInterestManager{
+		result: &invoicing.InterestCalculationResult{
+			InvoiceID:         "inv-1",
+			InvoiceNumber:     "INV-001",
+			DueDate:           time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC),
+			DaysOverdue:       10,
+			OutstandingAmount: decimal.NewFromInt(1000),
+			InterestRate:      decimal.NewFromFloat(0.0005),
+			DailyInterest:     decimal.NewFromFloat(0.50),
+			TotalInterest:     decimal.NewFromInt(5),
+			TotalWithInterest: decimal.NewFromInt(1005),
+			CalculatedAt:      time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC),
+			Currency:          "EUR",
+		},
+	}
+	h := &Handlers{
+		tenantService:   tenant.NewServiceWithRepository(tenantRepo),
+		interestService: interestSvc,
+	}
+
+	req := withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/inv-1/interest", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "inv-1",
+	})
+	rr := httptest.NewRecorder()
+	h.GetInvoiceInterest(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, tenantRecord.SchemaName, interestSvc.lastSchema)
+	assert.Equal(t, tenantRecord.ID, interestSvc.lastTenantID)
+	assert.Equal(t, "inv-1", interestSvc.lastInvoiceID)
+	assert.Equal(t, 0.0005, interestSvc.lastInterestRate)
+
+	var current invoicing.InterestCalculationResult
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&current)) {
+		assert.Equal(t, "INV-001", current.InvoiceNumber)
+		assert.True(t, current.TotalInterest.Equal(decimal.NewFromInt(5)))
+	}
+
+	interestSvc.err = &invoicing.NotFoundError{Entity: "invoice"}
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/missing/interest", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "missing",
+	})
+	rr = httptest.NewRecorder()
+	h.GetInvoiceInterest(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Invoice not found")
+
+	interestSvc.err = errors.New("calculator unavailable")
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/inv-1/interest", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "inv-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetInvoiceInterest(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Failed to calculate interest")
+
+	interestSvc.err = nil
+	interestSvc.overdue = nil
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/overdue-with-interest", nil), map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.GetOverdueInvoicesWithInterest(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, "[]", rr.Body.String())
+
+	tenantRecord.Settings.LatePaymentInterestRate = 0.001
+	interestSvc.overdue = []invoicing.InterestCalculationResult{{
+		InvoiceID:         "inv-overdue",
+		InvoiceNumber:     "INV-OVERDUE",
+		DaysOverdue:       14,
+		OutstandingAmount: decimal.NewFromInt(500),
+		InterestRate:      decimal.NewFromFloat(0.001),
+		TotalInterest:     decimal.NewFromInt(7),
+		TotalWithInterest: decimal.NewFromInt(507),
+		Currency:          "EUR",
+	}}
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/overdue-with-interest", nil), map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.GetOverdueInvoicesWithInterest(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, 0.001, interestSvc.lastInterestRate)
+
+	var overdue []invoicing.InterestCalculationResult
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&overdue)) && assert.Len(t, overdue, 1) {
+		assert.Equal(t, "INV-OVERDUE", overdue[0].InvoiceNumber)
+		assert.True(t, overdue[0].TotalWithInterest.Equal(decimal.NewFromInt(507)))
+	}
+
+	interestSvc.err = errors.New("overdue query failed")
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/overdue-with-interest", nil), map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.GetOverdueInvoicesWithInterest(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Failed to calculate interest")
 }
 
 func TestPluginTenantAdminValidation(t *testing.T) {
