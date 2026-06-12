@@ -442,6 +442,24 @@ func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
 	assertValidationIssue(t, report, KindExpenses, "expense_number", `expense_number "EXP-1" duplicates row 2`)
 }
 
+func TestValidateBundleAcceptsBankAccountAccountNumberAlias(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "name,account\nMain bank,EE471000001020145685\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 1)
+	assert.Contains(t, report.Files[0].Headers, "account_number")
+	assert.Empty(t, report.Files[0].MissingColumns)
+}
+
 func TestValidateBundleReportsAccountRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
