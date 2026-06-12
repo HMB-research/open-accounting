@@ -1180,6 +1180,22 @@ func TestValidateBundleReportsHistoricalJournalAccountCodeRowIssue(t *testing.T)
 	assertValidationIssue(t, report, KindJournalEntries, "account_code", "account_code is required")
 }
 
+func TestValidateBundleReportsHistoricalJournalInvalidSourceID(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindJournalEntries,
+			FileName:   "journals.csv",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit,source_id\nJE-1,2026-05-30,1000,100,0,legacy-source\nJE-1,2026-05-30,4000,0,100,\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindJournalEntries, "source_id", "source_id must be a valid UUID")
+}
+
 func TestValidateBundleAcceptsJournalImportAliasesAndExchangeRateBalance(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
