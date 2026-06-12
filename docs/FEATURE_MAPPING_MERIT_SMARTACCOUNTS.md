@@ -213,7 +213,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | CSV export | ✅ | ✅ | ✅ | Implemented |
 | Excel export | ✅ | ✅ | ✅ | Implemented for core financial statements, cash flow, aging, balance confirmations, contact statements, sales margin, budget-vs-actual, and cost-center budget reports |
-| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV and XML imports cover setup data, invoices, Estonian e-invoices, expenses, opening balances, employees, finalized payroll history, leave balances, historical TSD declarations, and multiple operational-history files; a migration bundle validator now checks required columns and cross-file references before import, but full incumbent-system migration remains incomplete |
+| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV and XML imports cover setup data, invoices, Estonian e-invoices, payments, expenses, opening balances, employees, finalized payroll history, leave balances, historical TSD/KMD declarations, quotes, orders, recurring invoice templates, bank accounts, bank transactions, cost centers, cost allocations, product categories, warehouses, products, stock adjustments with lot metadata, fixed assets, and historical journal entries; a migration bundle validator checks required columns, XML payloads, and same-bundle references before import, but provider-specific mapping presets and full incumbent-system cutover remain incomplete |
 
 ---
 
