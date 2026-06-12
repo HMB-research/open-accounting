@@ -72,6 +72,10 @@ func (s *Service) CreateBankAccount(ctx context.Context, schemaName, tenantID st
 	if req.IsActive != nil {
 		isActive = *req.IsActive
 	}
+	glAccountID, err := normalizeOptionalBankAccountUUIDPtr(req.GLAccountID, "gl_account_id")
+	if err != nil {
+		return nil, err
+	}
 
 	account := &BankAccount{
 		ID:            uuid.New().String(),
@@ -81,7 +85,7 @@ func (s *Service) CreateBankAccount(ctx context.Context, schemaName, tenantID st
 		BankName:      strings.TrimSpace(req.BankName),
 		SwiftCode:     strings.ToUpper(strings.TrimSpace(req.SwiftCode)),
 		Currency:      currency,
-		GLAccountID:   trimmedStringPtr(req.GLAccountID),
+		GLAccountID:   glAccountID,
 		IsDefault:     req.IsDefault,
 		IsActive:      isActive,
 		CreatedAt:     time.Now(),
@@ -225,11 +229,10 @@ func (s *Service) bankAccountImportAccountIDsByCode(ctx context.Context, schemaN
 
 func resolveOptionalBankAccountImportAccountID(row CSVBankAccountRow, accountIDsByCode map[string]string) (*string, error) {
 	if accountID := strings.TrimSpace(row.GLAccountID); accountID != "" {
-		parsedID, err := uuid.Parse(accountID)
+		id, err := normalizeBankAccountUUIDValue(accountID, "gl_account_id")
 		if err != nil {
-			return nil, fmt.Errorf("gl_account_id must be a valid UUID")
+			return nil, err
 		}
-		id := parsedID.String()
 		return &id, nil
 	}
 	accountCode := strings.TrimSpace(row.GLAccountCode)
@@ -241,6 +244,29 @@ func resolveOptionalBankAccountImportAccountID(row CSVBankAccountRow, accountIDs
 		return nil, fmt.Errorf("account code %q was not found for gl_account_code", accountCode)
 	}
 	return &accountID, nil
+}
+
+func normalizeOptionalBankAccountUUIDPtr(value *string, field string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	normalized, err := normalizeBankAccountUUIDValue(trimmed, field)
+	if err != nil {
+		return nil, err
+	}
+	return &normalized, nil
+}
+
+func normalizeBankAccountUUIDValue(value, field string) (string, error) {
+	parsedID, err := uuid.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return "", fmt.Errorf("%s must be a valid UUID", field)
+	}
+	return parsedID.String(), nil
 }
 
 func normalizedBankAccountImportKey(value string) string {
@@ -266,21 +292,6 @@ func normalizeBankAccountNumber(value string) string {
 	normalized := strings.ToUpper(strings.TrimSpace(value))
 	normalized = strings.ReplaceAll(normalized, " ", "")
 	return normalized
-}
-
-func trimmedStringPtr(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	return nonEmptyStringPtr(*value)
-}
-
-func nonEmptyStringPtr(value string) *string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
 }
 
 // GetBankAccount retrieves a bank account by ID
@@ -341,7 +352,11 @@ func (s *Service) UpdateBankAccount(ctx context.Context, schemaName, tenantID, a
 		account.SwiftCode = req.SwiftCode
 	}
 	if req.GLAccountID != nil {
-		account.GLAccountID = req.GLAccountID
+		glAccountID, err := normalizeOptionalBankAccountUUIDPtr(req.GLAccountID, "gl_account_id")
+		if err != nil {
+			return nil, err
+		}
+		account.GLAccountID = glAccountID
 	}
 	if req.IsActive != nil {
 		account.IsActive = *req.IsActive

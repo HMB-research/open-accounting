@@ -454,9 +454,14 @@ func (m *MockRepository) GetImportHistory(ctx context.Context, schemaName, tenan
 
 // Test helpers
 const (
-	testTenantID   = "tenant-123"
-	testSchemaName = "test_schema"
+	testTenantID    = "tenant-123"
+	testSchemaName  = "test_schema"
+	testGLAccountID = "11111111-1111-1111-1111-111111111111"
 )
+
+func stringPtr(value string) *string {
+	return &value
+}
 
 func TestNewServiceWithRepository(t *testing.T) {
 	repo := NewMockRepository()
@@ -595,6 +600,15 @@ func TestService_CreateBankAccount(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "invalid gl account id",
+			req: &CreateBankAccountRequest{
+				Name:          "Bad GL Account",
+				AccountNumber: "EE123",
+				GLAccountID:   stringPtr("legacy-account"),
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -644,7 +658,7 @@ func TestService_ImportBankAccounts(t *testing.T) {
 		IsActive:      true,
 	}
 	service := NewServiceWithRepositoryAndAccounting(repo, fakeBankingAccountLister{accounts: []accounting.Account{
-		{ID: "gl-bank", Code: "1000", AccountType: accounting.AccountTypeAsset},
+		{ID: testGLAccountID, Code: "1000", AccountType: accounting.AccountTypeAsset},
 	}})
 
 	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
@@ -710,8 +724,8 @@ func TestService_ImportBankAccounts(t *testing.T) {
 	if main.SwiftCode != "LHVBEE22" {
 		t.Errorf("expected uppercase swift code, got %q", main.SwiftCode)
 	}
-	if main.GLAccountID == nil || *main.GLAccountID != "gl-bank" {
-		t.Errorf("expected GL account id gl-bank, got %v", main.GLAccountID)
+	if main.GLAccountID == nil || *main.GLAccountID != testGLAccountID {
+		t.Errorf("expected GL account id %s, got %v", testGLAccountID, main.GLAccountID)
 	}
 	if !main.IsDefault {
 		t.Error("expected imported main account to become default")
@@ -733,7 +747,7 @@ func TestService_ImportBankAccounts(t *testing.T) {
 func TestService_ImportBankAccountsReportsMissingAccountCode(t *testing.T) {
 	repo := NewMockRepository()
 	service := NewServiceWithRepositoryAndAccounting(repo, fakeBankingAccountLister{accounts: []accounting.Account{
-		{ID: "gl-bank", Code: "1000", AccountType: accounting.AccountTypeAsset},
+		{ID: testGLAccountID, Code: "1000", AccountType: accounting.AccountTypeAsset},
 	}})
 
 	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
@@ -931,7 +945,7 @@ func TestService_UpdateBankAccount(t *testing.T) {
 	// Update the account
 	isDefault := true
 	isActive := false
-	glID := "gl-123"
+	glID := testGLAccountID
 	result, err := service.UpdateBankAccount(ctx, testSchemaName, testTenantID, "acc-123", &UpdateBankAccountRequest{
 		Name:        "Updated Name",
 		BankName:    "Updated Bank",
@@ -955,6 +969,30 @@ func TestService_UpdateBankAccount(t *testing.T) {
 	}
 	if result.IsActive {
 		t.Error("expected account to be inactive")
+	}
+}
+
+func TestService_UpdateBankAccount_InvalidGLAccountID(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+
+	repo.accounts["acc-123"] = &BankAccount{
+		ID:       "acc-123",
+		TenantID: testTenantID,
+		Name:     "Original Name",
+		IsActive: true,
+	}
+
+	glID := "legacy-account"
+	_, err := service.UpdateBankAccount(ctx, testSchemaName, testTenantID, "acc-123", &UpdateBankAccountRequest{
+		GLAccountID: &glID,
+	})
+	if err == nil {
+		t.Fatal("expected invalid gl_account_id error")
+	}
+	if !strings.Contains(err.Error(), "gl_account_id must be a valid UUID") {
+		t.Fatalf("expected invalid gl_account_id error, got %v", err)
 	}
 }
 

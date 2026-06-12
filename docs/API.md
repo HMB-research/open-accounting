@@ -2965,7 +2965,7 @@ Create a bank account:
 }
 ```
 
-Update supports `name`, `bank_name`, `swift_code`, `gl_account_id`, `is_active`, and `is_default`.
+Create and update `gl_account_id` values must be valid UUIDs. Update supports `name`, `bank_name`, `swift_code`, `gl_account_id`, `is_active`, and `is_default`.
 
 Import bank account master data:
 
