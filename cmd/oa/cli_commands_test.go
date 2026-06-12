@@ -8884,8 +8884,13 @@ func TestCLIInventoryCommands(t *testing.T) {
 	}))
 
 	categoryParentID := "11111111-1111-1111-1111-111111111111"
+	productCategoryID := "22222222-2222-4222-8222-222222222222"
+	productSupplierID := "33333333-3333-4333-8333-333333333333"
+	saleAccountID := "44444444-4444-4444-8444-444444444444"
+	purchaseAccountID := "55555555-5555-4555-8555-555555555555"
+	inventoryAccountID := "66666666-6666-4666-8666-666666666666"
 	categoryPayload := map[string]any{
-		"id":          "cat-1",
+		"id":          productCategoryID,
 		"tenant_id":   "tenant-1",
 		"name":        "Parts",
 		"description": "Spare parts",
@@ -8894,7 +8899,13 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"updated_at":  "2026-03-15T12:00:00Z",
 	}
 	productPayload := func(name string, active bool) map[string]any {
-		return cliInventoryProductPayload("prod-1", "PRD-001", name, inventory.ProductTypeGoods, active, true)
+		payload := cliInventoryProductPayload("prod-1", "PRD-001", name, inventory.ProductTypeGoods, active, true)
+		payload["category_id"] = productCategoryID
+		payload["sale_account_id"] = saleAccountID
+		payload["purchase_account_id"] = purchaseAccountID
+		payload["inventory_account_id"] = inventoryAccountID
+		payload["supplier_id"] = productSupplierID
+		return payload
 	}
 	warehousePayload := func(name string) map[string]any {
 		return map[string]any{
@@ -9012,14 +9023,14 @@ func TestCLIInventoryCommands(t *testing.T) {
 				"categories_created": 1,
 				"rows_skipped":       0,
 			})
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/cat-1":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/"+productCategoryID:
 			_ = json.NewEncoder(w).Encode(categoryPayload)
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/cat-1":
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/"+productCategoryID:
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products":
 			require.Equal(t, "GOODS", r.URL.Query().Get("product_type"))
 			require.Equal(t, "ACTIVE", r.URL.Query().Get("status"))
-			require.Equal(t, "cat-1", r.URL.Query().Get("category_id"))
+			require.Equal(t, productCategoryID, r.URL.Query().Get("category_id"))
 			require.Equal(t, "Widget", r.URL.Query().Get("search"))
 			require.Equal(t, "true", r.URL.Query().Get("low_stock"))
 			_ = json.NewEncoder(w).Encode([]map[string]any{productPayload("Widget", true)})
@@ -9029,16 +9040,19 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, "PRD-001", req.Code)
 			assert.Equal(t, "Widget", req.Name)
 			assert.Equal(t, "GOODS", req.ProductType)
-			assert.Equal(t, "cat-1", req.CategoryID)
+			assert.Equal(t, productCategoryID, req.CategoryID)
 			assert.Equal(t, "pcs", req.Unit)
 			assert.Equal(t, "10.5", req.PurchasePrice)
 			assert.Equal(t, "15", req.SalesPrice)
 			assert.Equal(t, "22", req.VATRate)
 			assert.Equal(t, "5", req.MinStockLevel)
 			assert.Equal(t, "7", req.ReorderPoint)
+			assert.Equal(t, saleAccountID, req.SaleAccountID)
+			assert.Equal(t, purchaseAccountID, req.PurchaseAccountID)
+			assert.Equal(t, inventoryAccountID, req.InventoryAccountID)
 			assert.True(t, req.TrackInventory)
 			assert.Equal(t, "123456", req.Barcode)
-			assert.Equal(t, "supplier-1", req.SupplierID)
+			assert.Equal(t, productSupplierID, req.SupplierID)
 			assert.Equal(t, 4, req.LeadTimeDays)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(productPayload("Widget", true))
@@ -9184,7 +9198,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "categories", "create", "--name", "Parts", "--description", "Spare parts", "--parent-id", categoryParentID})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "Created product category Parts (cat-1)")
+	assert.Contains(t, stdout.String(), "Created product category Parts ("+productCategoryID+")")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "categories", "create", "--name", "Parts", "--description", "Spare parts", "--parent-id", categoryParentID, "--json"})
@@ -9202,22 +9216,22 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"categories_created": 1`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "categories", "get", "--id", "cat-1"})
+	err = app.run(context.Background(), []string{"inventory", "categories", "get", "--id", productCategoryID})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Product category Parts")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "categories", "get", "--id", "cat-1", "--json"})
+	err = app.run(context.Background(), []string{"inventory", "categories", "get", "--id", productCategoryID, "--json"})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), `"id": "cat-1"`)
+	assert.Contains(t, stdout.String(), `"id": "`+productCategoryID+`"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "categories", "delete", "--id", "cat-1"})
+	err = app.run(context.Background(), []string{"inventory", "categories", "delete", "--id", productCategoryID})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "Deleted product category cat-1")
+	assert.Contains(t, stdout.String(), "Deleted product category "+productCategoryID)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "categories", "delete", "--id", "cat-1", "--json"})
+	err = app.run(context.Background(), []string{"inventory", "categories", "delete", "--id", productCategoryID, "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "deleted"`)
 
@@ -9226,7 +9240,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"inventory", "products", "list",
 		"--type", "goods",
 		"--status", "active",
-		"--category-id", "cat-1",
+		"--category-id", productCategoryID,
 		"--search", "Widget",
 		"--low-stock",
 		"--json",
@@ -9241,18 +9255,18 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"--name", "Widget",
 		"--description", "Inventory item",
 		"--type", "goods",
-		"--category-id", "cat-1",
+		"--category-id", productCategoryID,
 		"--unit", "pcs",
 		"--purchase-price", "10.50",
 		"--sales-price", "15.00",
 		"--vat-rate", "22.00",
 		"--min-stock-level", "5.00",
 		"--reorder-point", "7.00",
-		"--sale-account-id", "acc-sale",
-		"--purchase-account-id", "acc-purchase",
-		"--inventory-account-id", "acc-inventory",
+		"--sale-account-id", saleAccountID,
+		"--purchase-account-id", purchaseAccountID,
+		"--inventory-account-id", inventoryAccountID,
 		"--barcode", "123456",
-		"--supplier-id", "supplier-1",
+		"--supplier-id", productSupplierID,
 		"--lead-time-days", "4",
 	})
 	require.NoError(t, err)
@@ -10039,10 +10053,16 @@ func TestCLIInventoryProductBranches(t *testing.T) {
 		})
 	}
 
+	productCategoryID := "11111111-1111-4111-8111-111111111111"
+	productSupplierID := "22222222-2222-4222-8222-222222222222"
+	updatedProductSupplierID := "33333333-3333-4333-8333-333333333333"
+	saleAccountID := "44444444-4444-4444-8444-444444444444"
+	purchaseAccountID := "55555555-5555-4555-8555-555555555555"
+	inventoryAccountID := "66666666-6666-4666-8666-666666666666"
 	productPayload := func(name string, active bool) map[string]any {
 		payload := cliInventoryProductPayload("prod-json", "SVC-001", name, inventory.ProductTypeService, active, false)
 		payload["description"] = "Monthly package"
-		payload["category_id"] = "cat-branch"
+		payload["category_id"] = productCategoryID
 		payload["unit"] = "hour"
 		payload["purchase_price"] = "20.00"
 		payload["sales_price"] = "75.50"
@@ -10050,7 +10070,10 @@ func TestCLIInventoryProductBranches(t *testing.T) {
 		payload["min_stock_level"] = "2.00"
 		payload["reorder_point"] = "4.00"
 		payload["barcode"] = "BAR-SVC"
-		payload["supplier_id"] = "supplier-json"
+		payload["sale_account_id"] = saleAccountID
+		payload["purchase_account_id"] = purchaseAccountID
+		payload["inventory_account_id"] = inventoryAccountID
+		payload["supplier_id"] = productSupplierID
 		payload["lead_time_days"] = 6
 		return payload
 	}
@@ -10064,7 +10087,7 @@ func TestCLIInventoryProductBranches(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products":
 			require.Equal(t, "SERVICE", r.URL.Query().Get("product_type"))
 			require.Equal(t, "INACTIVE", r.URL.Query().Get("status"))
-			require.Equal(t, "cat-branch", r.URL.Query().Get("category_id"))
+			require.Equal(t, productCategoryID, r.URL.Query().Get("category_id"))
 			require.Equal(t, "Branch", r.URL.Query().Get("search"))
 			require.Empty(t, r.URL.Query().Get("low_stock"))
 			_ = json.NewEncoder(w).Encode([]map[string]any{productPayload("Consulting", false)})
@@ -10075,19 +10098,19 @@ func TestCLIInventoryProductBranches(t *testing.T) {
 			assert.Equal(t, "Consulting", req.Name)
 			assert.Equal(t, "Monthly package", req.Description)
 			assert.Equal(t, "SERVICE", req.ProductType)
-			assert.Equal(t, "cat-branch", req.CategoryID)
+			assert.Equal(t, productCategoryID, req.CategoryID)
 			assert.Equal(t, "hour", req.Unit)
 			assert.Equal(t, "20", req.PurchasePrice)
 			assert.Equal(t, "75.5", req.SalesPrice)
 			assert.Equal(t, "22.5", req.VATRate)
 			assert.Equal(t, "2", req.MinStockLevel)
 			assert.Equal(t, "4", req.ReorderPoint)
-			assert.Equal(t, "acc-sale", req.SaleAccountID)
-			assert.Equal(t, "acc-purchase", req.PurchaseAccountID)
-			assert.Equal(t, "acc-inventory", req.InventoryAccountID)
+			assert.Equal(t, saleAccountID, req.SaleAccountID)
+			assert.Equal(t, purchaseAccountID, req.PurchaseAccountID)
+			assert.Equal(t, inventoryAccountID, req.InventoryAccountID)
 			assert.False(t, req.TrackInventory)
 			assert.Equal(t, "BAR-SVC", req.Barcode)
-			assert.Equal(t, "supplier-json", req.SupplierID)
+			assert.Equal(t, productSupplierID, req.SupplierID)
 			assert.Equal(t, 6, req.LeadTimeDays)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(productPayload("Consulting", true))
@@ -10114,25 +10137,25 @@ func TestCLIInventoryProductBranches(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "Consulting updated", req.Name)
 			assert.Equal(t, "Updated package", req.Description)
-			assert.Equal(t, "cat-branch", req.CategoryID)
+			assert.Equal(t, productCategoryID, req.CategoryID)
 			assert.Equal(t, "hour", req.Unit)
 			assert.Equal(t, "21", req.PurchasePrice)
 			assert.Equal(t, "80", req.SalesPrice)
 			assert.Equal(t, "24", req.VATRate)
 			assert.Equal(t, "3", req.MinStockLevel)
 			assert.Equal(t, "5", req.ReorderPoint)
-			assert.Equal(t, "acc-sale", req.SaleAccountID)
-			assert.Equal(t, "acc-purchase", req.PurchaseAccountID)
-			assert.Equal(t, "acc-inventory", req.InventoryAccountID)
+			assert.Equal(t, saleAccountID, req.SaleAccountID)
+			assert.Equal(t, purchaseAccountID, req.PurchaseAccountID)
+			assert.Equal(t, inventoryAccountID, req.InventoryAccountID)
 			assert.False(t, req.TrackInventory)
 			assert.False(t, req.IsActive)
 			assert.Equal(t, "BAR-SVC-2", req.Barcode)
-			assert.Equal(t, "supplier-updated", req.SupplierID)
+			assert.Equal(t, updatedProductSupplierID, req.SupplierID)
 			assert.Equal(t, 8, req.LeadTimeDays)
 
 			payload := productPayload("Consulting updated", false)
 			payload["barcode"] = "BAR-SVC-2"
-			payload["supplier_id"] = "supplier-updated"
+			payload["supplier_id"] = updatedProductSupplierID
 			payload["lead_time_days"] = 8
 			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/products/prod-json/stock-levels":
@@ -10153,7 +10176,7 @@ func TestCLIInventoryProductBranches(t *testing.T) {
 		"inventory", "products", "list",
 		"--type", " service ",
 		"--status", " inactive ",
-		"--category-id", " cat-branch ",
+		"--category-id", " " + productCategoryID + " ",
 		"--search", " Branch ",
 		"--json",
 	})
@@ -10168,19 +10191,19 @@ func TestCLIInventoryProductBranches(t *testing.T) {
 		"--name", " Consulting ",
 		"--description", " Monthly package ",
 		"--type", " service ",
-		"--category-id", " cat-branch ",
+		"--category-id", " " + productCategoryID + " ",
 		"--unit", " hour ",
 		"--purchase-price", "20.00",
 		"--sales-price", "75.50",
 		"--vat-rate", "22.50",
 		"--min-stock-level", "2.00",
 		"--reorder-point", "4.00",
-		"--sale-account-id", " acc-sale ",
-		"--purchase-account-id", " acc-purchase ",
-		"--inventory-account-id", " acc-inventory ",
+		"--sale-account-id", " " + saleAccountID + " ",
+		"--purchase-account-id", " " + purchaseAccountID + " ",
+		"--inventory-account-id", " " + inventoryAccountID + " ",
 		"--track-inventory=false",
 		"--barcode", " BAR-SVC ",
-		"--supplier-id", " supplier-json ",
+		"--supplier-id", " " + productSupplierID + " ",
 		"--lead-time-days", "6",
 		"--json",
 	})
@@ -10205,20 +10228,20 @@ func TestCLIInventoryProductBranches(t *testing.T) {
 		"--id", " prod-json ",
 		"--name", " Consulting updated ",
 		"--description", " Updated package ",
-		"--category-id", " cat-branch ",
+		"--category-id", " " + productCategoryID + " ",
 		"--unit", " hour ",
 		"--purchase-price", "21.00",
 		"--sales-price", "80.00",
 		"--vat-rate", "24.00",
 		"--min-stock-level", "3.00",
 		"--reorder-point", "5.00",
-		"--sale-account-id", " acc-sale ",
-		"--purchase-account-id", " acc-purchase ",
-		"--inventory-account-id", " acc-inventory ",
+		"--sale-account-id", " " + saleAccountID + " ",
+		"--purchase-account-id", " " + purchaseAccountID + " ",
+		"--inventory-account-id", " " + inventoryAccountID + " ",
 		"--track-inventory=false",
 		"--active=false",
 		"--barcode", " BAR-SVC-2 ",
-		"--supplier-id", " supplier-updated ",
+		"--supplier-id", " " + updatedProductSupplierID + " ",
 		"--lead-time-days", "8",
 		"--json",
 	})
@@ -10267,6 +10290,36 @@ func TestCLIInventoryProductFlagAndAPIErrors(t *testing.T) {
 			want: "flag provided but not defined",
 		},
 		{
+			name: "list invalid category id",
+			args: []string{"list", "--category-id", "legacy-category"},
+			want: "category-id must be a valid UUID",
+		},
+		{
+			name: "create invalid category id",
+			args: []string{"create", "--name", "Widget", "--sales-price", "15", "--category-id", "legacy-category"},
+			want: "category-id must be a valid UUID",
+		},
+		{
+			name: "create invalid sale account id",
+			args: []string{"create", "--name", "Widget", "--sales-price", "15", "--sale-account-id", "legacy-account"},
+			want: "sale-account-id must be a valid UUID",
+		},
+		{
+			name: "create invalid purchase account id",
+			args: []string{"create", "--name", "Widget", "--sales-price", "15", "--purchase-account-id", "legacy-account"},
+			want: "purchase-account-id must be a valid UUID",
+		},
+		{
+			name: "create invalid inventory account id",
+			args: []string{"create", "--name", "Widget", "--sales-price", "15", "--inventory-account-id", "legacy-account"},
+			want: "inventory-account-id must be a valid UUID",
+		},
+		{
+			name: "create invalid supplier id",
+			args: []string{"create", "--name", "Widget", "--sales-price", "15", "--supplier-id", "legacy-supplier"},
+			want: "supplier-id must be a valid UUID",
+		},
+		{
 			name: "update negative minimum stock",
 			args: []string{"update", "--id", "prod-error", "--name", "Widget", "--sales-price", "15", "--min-stock-level", "-1"},
 			want: "min-stock-level must be non-negative",
@@ -10275,6 +10328,31 @@ func TestCLIInventoryProductFlagAndAPIErrors(t *testing.T) {
 			name: "update negative reorder point",
 			args: []string{"update", "--id", "prod-error", "--name", "Widget", "--sales-price", "15", "--reorder-point", "-1"},
 			want: "reorder-point must be non-negative",
+		},
+		{
+			name: "update invalid category id",
+			args: []string{"update", "--id", "prod-error", "--name", "Widget", "--sales-price", "15", "--category-id", "legacy-category"},
+			want: "category-id must be a valid UUID",
+		},
+		{
+			name: "update invalid sale account id",
+			args: []string{"update", "--id", "prod-error", "--name", "Widget", "--sales-price", "15", "--sale-account-id", "legacy-account"},
+			want: "sale-account-id must be a valid UUID",
+		},
+		{
+			name: "update invalid purchase account id",
+			args: []string{"update", "--id", "prod-error", "--name", "Widget", "--sales-price", "15", "--purchase-account-id", "legacy-account"},
+			want: "purchase-account-id must be a valid UUID",
+		},
+		{
+			name: "update invalid inventory account id",
+			args: []string{"update", "--id", "prod-error", "--name", "Widget", "--sales-price", "15", "--inventory-account-id", "legacy-account"},
+			want: "inventory-account-id must be a valid UUID",
+		},
+		{
+			name: "update invalid supplier id",
+			args: []string{"update", "--id", "prod-error", "--name", "Widget", "--sales-price", "15", "--supplier-id", "legacy-supplier"},
+			want: "supplier-id must be a valid UUID",
 		},
 		{
 			name: "delete invalid flag",

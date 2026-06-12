@@ -6552,6 +6552,10 @@ func (h *Handlers) ListProducts(w http.ResponseWriter, r *http.Request) {
 
 	products, err := h.inventoryService.ListProducts(r.Context(), tenantID, schemaName, filter)
 	if err != nil {
+		if strings.Contains(err.Error(), "valid UUID") {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		respondError(w, http.StatusInternalServerError, "Failed to list products")
 		return
 	}
@@ -6584,6 +6588,10 @@ func (h *Handlers) CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	product, err := h.inventoryService.CreateProduct(r.Context(), tenantID, schemaName, &req)
 	if err != nil {
+		if strings.Contains(err.Error(), "valid UUID") {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create product: %v", err))
 		return
 	}
@@ -6678,6 +6686,10 @@ func (h *Handlers) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	product, err := h.inventoryService.UpdateProduct(r.Context(), tenantID, schemaName, productID, &req)
 	if err != nil {
+		if strings.Contains(err.Error(), "valid UUID") {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update product: %v", err))
 		return
 	}

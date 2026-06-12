@@ -2263,6 +2263,8 @@ Authorization: Bearer <token>
 - `search` (string): Search product code or name
 - `low_stock` (boolean): Return products below reorder threshold
 
+Malformed `category_id` values return `400 Bad Request`.
+
 ### Create Product
 
 ```http
@@ -2282,11 +2284,15 @@ Content-Type: application/json
   "vat_rate": "22.00",
   "min_stock_level": "5",
   "reorder_point": "7",
+  "sale_account_id": "uuid",
+  "purchase_account_id": "uuid",
+  "inventory_account_id": "uuid",
+  "supplier_id": "uuid",
   "track_inventory": true
 }
 ```
 
-`sales_price` is required. If `code` is omitted, the service generates one.
+`sales_price` is required. If `code` is omitted, the service generates one. Optional `category_id`, account ID, and `supplier_id` fields must be valid UUIDs when supplied.
 
 ### Import Products
 
@@ -2301,7 +2307,7 @@ Content-Type: application/json
 }
 ```
 
-Required CSV columns are `name` and `sales_price`. Optional columns include `code`, `product_type`, `category_id`, `category_name`, `description`, `unit`, purchase/VAT/reorder prices, account IDs or account-code columns, `track_inventory`, `status` or `is_active`, `barcode`, `supplier_id`, and `lead_time_days`. `category_id` and `supplier_id` values must be valid UUIDs for existing or already imported records; invalid or missing category IDs and malformed supplier IDs are returned as row-level errors. Account-code columns are `sale_account_code`, `purchase_account_code`, and `inventory_account_code`. Product imports generate new UUIDs rather than preserving `id` or `product_id` values. Omitted codes are generated; supplied codes are preserved, checked for duplicates, and used as the same-bundle lookup key for product lines and stock. Use inventory stock adjustment commands or APIs after product import to load opening quantities.
+Required CSV columns are `name` and `sales_price`. Optional columns include `code`, `product_type`, `category_id`, `category_name`, `description`, `unit`, purchase/VAT/reorder prices, account IDs or account-code columns, `track_inventory`, `status` or `is_active`, `barcode`, `supplier_id`, and `lead_time_days`. `category_id`, direct account ID, and `supplier_id` values must be valid UUIDs for existing or already imported records; invalid or missing category IDs and malformed ID values are returned as row-level errors. Account-code columns are `sale_account_code`, `purchase_account_code`, and `inventory_account_code`. Product imports generate new UUIDs rather than preserving `id` or `product_id` values. Omitted codes are generated; supplied codes are preserved, checked for duplicates, and used as the same-bundle lookup key for product lines and stock. Use inventory stock adjustment commands or APIs after product import to load opening quantities.
 
 ### Get, Update, and Delete Product
 

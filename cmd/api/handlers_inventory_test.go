@@ -351,6 +351,7 @@ func TestListProducts(t *testing.T) {
 		query      string
 		wantStatus int
 		wantCount  int
+		wantErr    string
 	}{
 		{
 			name:       "list all products",
@@ -363,6 +364,12 @@ func TestListProducts(t *testing.T) {
 			query:      "?status=ACTIVE",
 			wantStatus: http.StatusOK,
 			wantCount:  1,
+		},
+		{
+			name:       "invalid category filter",
+			query:      "?category_id=legacy-category",
+			wantStatus: http.StatusBadRequest,
+			wantErr:    "category_id must be a valid UUID",
 		},
 	}
 
@@ -382,6 +389,8 @@ func TestListProducts(t *testing.T) {
 				err := json.Unmarshal(rr.Body.Bytes(), &result)
 				require.NoError(t, err)
 				assert.Len(t, result, tt.wantCount)
+			} else if tt.wantErr != "" {
+				assert.Contains(t, rr.Body.String(), tt.wantErr)
 			}
 		})
 	}
@@ -412,6 +421,17 @@ func TestCreateProduct(t *testing.T) {
 			},
 			wantStatus: http.StatusInternalServerError,
 			wantErr:    "name",
+		},
+		{
+			name: "invalid category id",
+			body: map[string]interface{}{
+				"name":         "Invalid category",
+				"product_type": "GOODS",
+				"sales_price":  "100.00",
+				"category_id":  "legacy-category",
+			},
+			wantStatus: http.StatusBadRequest,
+			wantErr:    "category_id must be a valid UUID",
 		},
 		{
 			name:       "invalid JSON",
@@ -607,6 +627,16 @@ func TestUpdateDeleteProductAndStockViews(t *testing.T) {
 	assert.Equal(t, "Updated product", updated.Name)
 	assert.Equal(t, "pcs", updated.Unit)
 	assert.True(t, updated.SalesPrice.Equal(decimal.RequireFromString("12.50")))
+
+	invalidUpdateReq := newInventoryJSONRequest(t, http.MethodPut, "/tenants/tenant-1/products/prod-1", map[string]interface{}{
+		"name":        "Updated product",
+		"sales_price": "12.50",
+		"category_id": "legacy-category",
+	}, map[string]string{"tenantID": "tenant-1", "productID": "prod-1"})
+	invalidUpdateRR := httptest.NewRecorder()
+	h.UpdateProduct(invalidUpdateRR, invalidUpdateReq)
+	require.Equal(t, http.StatusBadRequest, invalidUpdateRR.Code)
+	assert.Contains(t, invalidUpdateRR.Body.String(), "category_id must be a valid UUID")
 
 	stockReq := newInventoryJSONRequest(t, http.MethodGet, "/tenants/tenant-1/products/prod-1/stock-levels", nil, map[string]string{
 		"tenantID":  "tenant-1",
