@@ -7096,7 +7096,7 @@ func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
 
 	movement, err := h.inventoryService.AdjustStock(r.Context(), tenantID, schemaName, &req)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to adjust stock: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("Failed to adjust stock: %v", err))
 		return
 	}
 
@@ -7135,7 +7135,7 @@ func (h *Handlers) TransferStock(w http.ResponseWriter, r *http.Request) {
 	req.UserID = claims.UserID
 
 	if err := h.inventoryService.TransferStock(r.Context(), tenantID, schemaName, &req); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to transfer stock: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("Failed to transfer stock: %v", err))
 		return
 	}
 

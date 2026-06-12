@@ -8889,6 +8889,9 @@ func TestCLIInventoryCommands(t *testing.T) {
 	saleAccountID := "44444444-4444-4444-8444-444444444444"
 	purchaseAccountID := "55555555-5555-4555-8555-555555555555"
 	inventoryAccountID := "66666666-6666-4666-8666-666666666666"
+	stockProductID := "77777777-7777-4777-8777-777777777777"
+	stockWarehouseID := "88888888-8888-4888-8888-888888888888"
+	stockWarehouseID2 := "99999999-9999-4999-8999-999999999999"
 	categoryPayload := map[string]any{
 		"id":          productCategoryID,
 		"tenant_id":   "tenant-1",
@@ -8920,12 +8923,12 @@ func TestCLIInventoryCommands(t *testing.T) {
 			"updated_at": "2026-03-15T12:00:00Z",
 		}
 	}
-	stockLevelPayload := cliInventoryStockLevelPayload("prod-1", "wh-1")
+	stockLevelPayload := cliInventoryStockLevelPayload(stockProductID, stockWarehouseID)
 	reservedStockLevelPayload := map[string]any{
 		"id":            "stock-1",
 		"tenant_id":     "tenant-1",
-		"product_id":    "prod-1",
-		"warehouse_id":  "wh-1",
+		"product_id":    stockProductID,
+		"warehouse_id":  stockWarehouseID,
 		"quantity":      "12.00",
 		"reserved_qty":  "5.00",
 		"available_qty": "7.00",
@@ -8934,14 +8937,14 @@ func TestCLIInventoryCommands(t *testing.T) {
 	releasedStockLevelPayload := map[string]any{
 		"id":            "stock-1",
 		"tenant_id":     "tenant-1",
-		"product_id":    "prod-1",
-		"warehouse_id":  "wh-1",
+		"product_id":    stockProductID,
+		"warehouse_id":  stockWarehouseID,
 		"quantity":      "12.00",
 		"reserved_qty":  "3.00",
 		"available_qty": "9.00",
 		"last_updated":  "2026-03-15T12:00:00Z",
 	}
-	movementPayload := cliInventoryMovementPayload("prod-1", "wh-1")
+	movementPayload := cliInventoryMovementPayload(stockProductID, stockWarehouseID)
 	valuationPayload := map[string]any{
 		"tenant_id":        "tenant-1",
 		"warehouse_id":     "wh-1",
@@ -9128,8 +9131,8 @@ func TestCLIInventoryCommands(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/adjust":
 			var req inventory.AdjustStockRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			assert.Equal(t, "prod-1", req.ProductID)
-			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, stockProductID, req.ProductID)
+			assert.Equal(t, stockWarehouseID, req.WarehouseID)
 			assert.Equal(t, "-2", req.Quantity)
 			assert.Equal(t, "10.5", req.UnitCost)
 			assert.Equal(t, "LOT-2026-01", req.LotNumber)
@@ -9151,9 +9154,9 @@ func TestCLIInventoryCommands(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/transfer":
 			var req inventory.TransferStockRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			assert.Equal(t, "prod-1", req.ProductID)
-			assert.Equal(t, "wh-1", req.FromWarehouseID)
-			assert.Equal(t, "wh-2", req.ToWarehouseID)
+			assert.Equal(t, stockProductID, req.ProductID)
+			assert.Equal(t, stockWarehouseID, req.FromWarehouseID)
+			assert.Equal(t, stockWarehouseID2, req.ToWarehouseID)
 			assert.Equal(t, "3", req.Quantity)
 			assert.Equal(t, "LOT-2026-01", req.LotNumber)
 			assert.Equal(t, "SN-001", req.SerialNumber)
@@ -9163,16 +9166,16 @@ func TestCLIInventoryCommands(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/reserve":
 			var req inventory.StockReservationRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			assert.Equal(t, "prod-1", req.ProductID)
-			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, stockProductID, req.ProductID)
+			assert.Equal(t, stockWarehouseID, req.WarehouseID)
 			assert.Equal(t, "3", req.Quantity)
 			assert.Equal(t, "Sales order allocation", req.Reason)
 			_ = json.NewEncoder(w).Encode(reservedStockLevelPayload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/release":
 			var req inventory.StockReservationRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			assert.Equal(t, "prod-1", req.ProductID)
-			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, stockProductID, req.ProductID)
+			assert.Equal(t, stockWarehouseID, req.WarehouseID)
 			assert.Equal(t, "2", req.Quantity)
 			assert.Equal(t, "Order canceled", req.Reason)
 			_ = json.NewEncoder(w).Encode(releasedStockLevelPayload)
@@ -9371,12 +9374,12 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Deleted warehouse wh-1")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "-2.00", "--unit-cost", "10.50", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--reason", "Cycle count"})
+	err = app.run(context.Background(), []string{"inventory", "adjust", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "-2.00", "--unit-cost", "10.50", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--reason", "Cycle count"})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "Adjusted stock for product prod-1 by -2 in warehouse wh-1")
+	assert.Contains(t, stdout.String(), "Adjusted stock for product "+stockProductID+" by -2 in warehouse "+stockWarehouseID)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "-2.00", "--unit-cost", "10.50", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--reason", "Cycle count", "--json"})
+	err = app.run(context.Background(), []string{"inventory", "adjust", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "-2.00", "--unit-cost", "10.50", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--reason", "Cycle count", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"movement_type": "ADJUSTMENT"`)
 	assert.Contains(t, stdout.String(), `"notes": "Cycle count"`)
@@ -9392,17 +9395,17 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"adjustments_imported": 1`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "3.00", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--notes", "Move to branch", "--json"})
+	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", stockProductID, "--from-warehouse-id", stockWarehouseID, "--to-warehouse-id", stockWarehouseID2, "--quantity", "3.00", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--notes", "Move to branch", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "transferred"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "reserve", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "3.00", "--reason", "Sales order allocation"})
+	err = app.run(context.Background(), []string{"inventory", "reserve", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "3.00", "--reason", "Sales order allocation"})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "Reserved 3 of product prod-1 in warehouse wh-1")
+	assert.Contains(t, stdout.String(), "Reserved 3 of product "+stockProductID+" in warehouse "+stockWarehouseID)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "release", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "2.00", "--reason", "Order canceled", "--json"})
+	err = app.run(context.Background(), []string{"inventory", "release", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "2.00", "--reason", "Order canceled", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"reserved_qty": "3"`)
 }
@@ -9471,6 +9474,16 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 			want: "parse expiry-date",
 		},
 		{
+			name: "adjust invalid product id",
+			args: []string{"adjust", "--product-id", "legacy-product", "--warehouse-id", "22222222-2222-4222-8222-222222222222", "--quantity", "1"},
+			want: "product-id must be a valid UUID",
+		},
+		{
+			name: "adjust invalid warehouse id",
+			args: []string{"adjust", "--product-id", "11111111-1111-4111-8111-111111111111", "--warehouse-id", "legacy-warehouse", "--quantity", "1"},
+			want: "warehouse-id must be a valid UUID",
+		},
+		{
 			name: "transfer missing product",
 			args: []string{"transfer", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "1"},
 			want: "product-id is required",
@@ -9496,6 +9509,21 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 			want: "parse expiry-date",
 		},
 		{
+			name: "transfer invalid product id",
+			args: []string{"transfer", "--product-id", "legacy-product", "--from-warehouse-id", "22222222-2222-4222-8222-222222222222", "--to-warehouse-id", "33333333-3333-4333-8333-333333333333", "--quantity", "1"},
+			want: "product-id must be a valid UUID",
+		},
+		{
+			name: "transfer invalid source warehouse id",
+			args: []string{"transfer", "--product-id", "11111111-1111-4111-8111-111111111111", "--from-warehouse-id", "legacy-warehouse", "--to-warehouse-id", "33333333-3333-4333-8333-333333333333", "--quantity", "1"},
+			want: "from-warehouse-id must be a valid UUID",
+		},
+		{
+			name: "transfer invalid destination warehouse id",
+			args: []string{"transfer", "--product-id", "11111111-1111-4111-8111-111111111111", "--from-warehouse-id", "22222222-2222-4222-8222-222222222222", "--to-warehouse-id", "legacy-warehouse", "--quantity", "1"},
+			want: "to-warehouse-id must be a valid UUID",
+		},
+		{
 			name: "reserve missing warehouse",
 			args: []string{"reserve", "--product-id", "prod-1", "--quantity", "1"},
 			want: "warehouse-id is required",
@@ -9506,6 +9534,16 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 			want: "quantity is required",
 		},
 		{
+			name: "reserve invalid product id",
+			args: []string{"reserve", "--product-id", "legacy-product", "--warehouse-id", "22222222-2222-4222-8222-222222222222", "--quantity", "1"},
+			want: "product-id must be a valid UUID",
+		},
+		{
+			name: "reserve invalid warehouse id",
+			args: []string{"reserve", "--product-id", "11111111-1111-4111-8111-111111111111", "--warehouse-id", "legacy-warehouse", "--quantity", "1"},
+			want: "warehouse-id must be a valid UUID",
+		},
+		{
 			name: "release missing product",
 			args: []string{"release", "--warehouse-id", "wh-1", "--quantity", "1"},
 			want: "product-id is required",
@@ -9514,6 +9552,16 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 			name: "release non-positive quantity",
 			args: []string{"release", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "0"},
 			want: "quantity must be positive",
+		},
+		{
+			name: "release invalid product id",
+			args: []string{"release", "--product-id", "legacy-product", "--warehouse-id", "22222222-2222-4222-8222-222222222222", "--quantity", "1"},
+			want: "product-id must be a valid UUID",
+		},
+		{
+			name: "release invalid warehouse id",
+			args: []string{"release", "--product-id", "11111111-1111-4111-8111-111111111111", "--warehouse-id", "legacy-warehouse", "--quantity", "1"},
+			want: "warehouse-id must be a valid UUID",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -9767,6 +9815,9 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		TenantSlug: "alpha",
 		APIToken:   "oa_saved_token",
 	}))
+	stockProductID := "11111111-1111-4111-8111-111111111111"
+	stockWarehouseID := "22222222-2222-4222-8222-222222222222"
+	stockWarehouseID2 := "33333333-3333-4333-8333-333333333333"
 
 	for _, tc := range []struct {
 		name string
@@ -9799,24 +9850,24 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/transfer":
 			var req inventory.TransferStockRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			assert.Equal(t, "prod-1", req.ProductID)
-			assert.Equal(t, "wh-1", req.FromWarehouseID)
-			assert.Equal(t, "wh-2", req.ToWarehouseID)
+			assert.Equal(t, stockProductID, req.ProductID)
+			assert.Equal(t, stockWarehouseID, req.FromWarehouseID)
+			assert.Equal(t, stockWarehouseID2, req.ToWarehouseID)
 			assert.Equal(t, "3", req.Quantity)
 			assert.Equal(t, "Move to branch", req.Notes)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "transferred"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/reserve":
 			var req inventory.StockReservationRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			assert.Equal(t, "prod-1", req.ProductID)
-			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, stockProductID, req.ProductID)
+			assert.Equal(t, stockWarehouseID, req.WarehouseID)
 			assert.Equal(t, "2", req.Quantity)
 			assert.Equal(t, "Sales order", req.Reason)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":            "stock-1",
 				"tenant_id":     "tenant-1",
-				"product_id":    "prod-1",
-				"warehouse_id":  "wh-1",
+				"product_id":    stockProductID,
+				"warehouse_id":  stockWarehouseID,
 				"quantity":      "12.00",
 				"reserved_qty":  "4.00",
 				"available_qty": "8.00",
@@ -9825,15 +9876,15 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/release":
 			var req inventory.StockReservationRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			assert.Equal(t, "prod-1", req.ProductID)
-			assert.Equal(t, "wh-1", req.WarehouseID)
+			assert.Equal(t, stockProductID, req.ProductID)
+			assert.Equal(t, stockWarehouseID, req.WarehouseID)
 			assert.Equal(t, "1", req.Quantity)
 			assert.Equal(t, "Order canceled", req.Reason)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":            "stock-1",
 				"tenant_id":     "tenant-1",
-				"product_id":    "prod-1",
-				"warehouse_id":  "wh-1",
+				"product_id":    stockProductID,
+				"warehouse_id":  stockWarehouseID,
 				"quantity":      "12.00",
 				"reserved_qty":  "3.00",
 				"available_qty": "9.00",
@@ -9847,19 +9898,19 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 	t.Setenv("OA_BASE_URL", successServer.URL)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", " prod-1 ", "--from-warehouse-id", " wh-1 ", "--to-warehouse-id", " wh-2 ", "--quantity", "3.00", "--notes", " Move to branch "})
+	err = app.run(context.Background(), []string{"inventory", "transfer", "--product-id", " " + stockProductID + " ", "--from-warehouse-id", " " + stockWarehouseID + " ", "--to-warehouse-id", " " + stockWarehouseID2 + " ", "--quantity", "3.00", "--notes", " Move to branch "})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "Transferred 3 of product prod-1 from wh-1 to wh-2")
+	assert.Contains(t, stdout.String(), "Transferred 3 of product "+stockProductID+" from "+stockWarehouseID+" to "+stockWarehouseID2)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "reserve", "--product-id", " prod-1 ", "--warehouse-id", " wh-1 ", "--quantity", "2.00", "--reason", " Sales order ", "--json"})
+	err = app.run(context.Background(), []string{"inventory", "reserve", "--product-id", " " + stockProductID + " ", "--warehouse-id", " " + stockWarehouseID + " ", "--quantity", "2.00", "--reason", " Sales order ", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"reserved_qty": "4"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "release", "--product-id", " prod-1 ", "--warehouse-id", " wh-1 ", "--quantity", "1.00", "--reason", " Order canceled "})
+	err = app.run(context.Background(), []string{"inventory", "release", "--product-id", " " + stockProductID + " ", "--warehouse-id", " " + stockWarehouseID + " ", "--quantity", "1.00", "--reason", " Order canceled "})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "Released 1 of product prod-1 in warehouse wh-1")
+	assert.Contains(t, stdout.String(), "Released 1 of product "+stockProductID+" in warehouse "+stockWarehouseID)
 
 	errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -9876,10 +9927,10 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 	}{
 		{name: "valuation", args: []string{"inventory", "valuation", "--warehouse-id", "wh-1", "--method", "fifo"}},
 		{name: "lots", args: []string{"inventory", "lots"}},
-		{name: "adjust", args: []string{"inventory", "adjust", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "1", "--unit-cost", "10"}},
-		{name: "transfer", args: []string{"inventory", "transfer", "--product-id", "prod-1", "--from-warehouse-id", "wh-1", "--to-warehouse-id", "wh-2", "--quantity", "1"}},
-		{name: "reserve", args: []string{"inventory", "reserve", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "1"}},
-		{name: "release", args: []string{"inventory", "release", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--quantity", "1"}},
+		{name: "adjust", args: []string{"inventory", "adjust", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1", "--unit-cost", "10"}},
+		{name: "transfer", args: []string{"inventory", "transfer", "--product-id", stockProductID, "--from-warehouse-id", stockWarehouseID, "--to-warehouse-id", stockWarehouseID2, "--quantity", "1"}},
+		{name: "reserve", args: []string{"inventory", "reserve", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1"}},
+		{name: "release", args: []string{"inventory", "release", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1"}},
 	} {
 		t.Run(tc.name+" API error", func(t *testing.T) {
 			stdout.Reset()

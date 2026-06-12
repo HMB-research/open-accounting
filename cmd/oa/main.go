@@ -7392,10 +7392,18 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		if _, err := parseOptionalDate("expiry-date", *expiryDate); err != nil {
 			return err
 		}
+		productIDValue, err := optionalUUIDStringValue("product-id", *productID)
+		if err != nil {
+			return err
+		}
+		warehouseIDValue, err := optionalUUIDStringValue("warehouse-id", *warehouseID)
+		if err != nil {
+			return err
+		}
 
 		movement, err := client.adjustStock(ctx, cfg.TenantID, &inventory.AdjustStockRequest{
-			ProductID:    strings.TrimSpace(*productID),
-			WarehouseID:  strings.TrimSpace(*warehouseID),
+			ProductID:    productIDValue,
+			WarehouseID:  warehouseIDValue,
 			Quantity:     quantity.String(),
 			UnitCost:     unitCost.String(),
 			LotNumber:    strings.TrimSpace(*lotNumber),
@@ -7409,7 +7417,7 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		if *asJSON {
 			return printJSON(a.stdout, movement)
 		}
-		_, _ = fmt.Fprintf(a.stdout, "Adjusted stock for product %s by %s in warehouse %s\n", strings.TrimSpace(*productID), quantity.String(), strings.TrimSpace(*warehouseID))
+		_, _ = fmt.Fprintf(a.stdout, "Adjusted stock for product %s by %s in warehouse %s\n", productIDValue, quantity.String(), warehouseIDValue)
 		return nil
 
 	case "transfer":
@@ -7443,11 +7451,23 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		if _, err := parseOptionalDate("expiry-date", *expiryDate); err != nil {
 			return err
 		}
+		productIDValue, err := optionalUUIDStringValue("product-id", *productID)
+		if err != nil {
+			return err
+		}
+		fromWarehouseIDValue, err := optionalUUIDStringValue("from-warehouse-id", *fromWarehouseID)
+		if err != nil {
+			return err
+		}
+		toWarehouseIDValue, err := optionalUUIDStringValue("to-warehouse-id", *toWarehouseID)
+		if err != nil {
+			return err
+		}
 
 		result, err := client.transferStock(ctx, cfg.TenantID, &inventory.TransferStockRequest{
-			ProductID:       strings.TrimSpace(*productID),
-			FromWarehouseID: strings.TrimSpace(*fromWarehouseID),
-			ToWarehouseID:   strings.TrimSpace(*toWarehouseID),
+			ProductID:       productIDValue,
+			FromWarehouseID: fromWarehouseIDValue,
+			ToWarehouseID:   toWarehouseIDValue,
 			Quantity:        quantity.String(),
 			LotNumber:       strings.TrimSpace(*lotNumber),
 			SerialNumber:    strings.TrimSpace(*serialNumber),
@@ -7460,7 +7480,7 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		if *asJSON {
 			return printJSON(a.stdout, result)
 		}
-		_, _ = fmt.Fprintf(a.stdout, "Transferred %s of product %s from %s to %s\n", quantity.String(), strings.TrimSpace(*productID), strings.TrimSpace(*fromWarehouseID), strings.TrimSpace(*toWarehouseID))
+		_, _ = fmt.Fprintf(a.stdout, "Transferred %s of product %s from %s to %s\n", quantity.String(), productIDValue, fromWarehouseIDValue, toWarehouseIDValue)
 		return nil
 
 	case "reserve":
@@ -7484,10 +7504,18 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		productIDValue, err := optionalUUIDStringValue("product-id", *productID)
+		if err != nil {
+			return err
+		}
+		warehouseIDValue, err := optionalUUIDStringValue("warehouse-id", *warehouseID)
+		if err != nil {
+			return err
+		}
 
 		level, err := client.reserveStock(ctx, cfg.TenantID, &inventory.StockReservationRequest{
-			ProductID:   strings.TrimSpace(*productID),
-			WarehouseID: strings.TrimSpace(*warehouseID),
+			ProductID:   productIDValue,
+			WarehouseID: warehouseIDValue,
 			Quantity:    quantity.String(),
 			Reason:      strings.TrimSpace(*reason),
 		})
@@ -7497,7 +7525,7 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		if *asJSON {
 			return printJSON(a.stdout, level)
 		}
-		_, _ = fmt.Fprintf(a.stdout, "Reserved %s of product %s in warehouse %s\n", quantity.String(), strings.TrimSpace(*productID), strings.TrimSpace(*warehouseID))
+		_, _ = fmt.Fprintf(a.stdout, "Reserved %s of product %s in warehouse %s\n", quantity.String(), productIDValue, warehouseIDValue)
 		return nil
 
 	case "release":
@@ -7521,10 +7549,18 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		productIDValue, err := optionalUUIDStringValue("product-id", *productID)
+		if err != nil {
+			return err
+		}
+		warehouseIDValue, err := optionalUUIDStringValue("warehouse-id", *warehouseID)
+		if err != nil {
+			return err
+		}
 
 		level, err := client.releaseStock(ctx, cfg.TenantID, &inventory.StockReservationRequest{
-			ProductID:   strings.TrimSpace(*productID),
-			WarehouseID: strings.TrimSpace(*warehouseID),
+			ProductID:   productIDValue,
+			WarehouseID: warehouseIDValue,
 			Quantity:    quantity.String(),
 			Reason:      strings.TrimSpace(*reason),
 		})
@@ -7534,7 +7570,7 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		if *asJSON {
 			return printJSON(a.stdout, level)
 		}
-		_, _ = fmt.Fprintf(a.stdout, "Released %s of product %s in warehouse %s\n", quantity.String(), strings.TrimSpace(*productID), strings.TrimSpace(*warehouseID))
+		_, _ = fmt.Fprintf(a.stdout, "Released %s of product %s in warehouse %s\n", quantity.String(), productIDValue, warehouseIDValue)
 		return nil
 
 	default:

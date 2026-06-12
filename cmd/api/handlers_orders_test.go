@@ -710,7 +710,9 @@ func TestReserveAndReleaseOrderStock(t *testing.T) {
 		SchemaName: "tenant_test",
 	}
 
-	productID := "prod-1"
+	productID := "11111111-1111-4111-8111-111111111111"
+	warehouseID := "22222222-2222-4222-8222-222222222222"
+	stockLevelKey := productID + "-" + warehouseID
 	repo.orders["order-1"] = &orders.Order{
 		ID:          "order-1",
 		TenantID:    "tenant-1",
@@ -722,9 +724,9 @@ func TestReserveAndReleaseOrderStock(t *testing.T) {
 			{ID: "line-2", LineNumber: 2, Description: "More tracked goods", Quantity: decimal.NewFromInt(2), ProductID: &productID},
 		},
 	}
-	inventoryRepo.warehouses["wh-1"] = &inventory.Warehouse{ID: "wh-1", TenantID: "tenant-1", Code: "MAIN", Name: "Main", IsActive: true}
-	inventoryRepo.products["prod-1"] = &inventory.Product{
-		ID:             "prod-1",
+	inventoryRepo.warehouses[warehouseID] = &inventory.Warehouse{ID: warehouseID, TenantID: "tenant-1", Code: "MAIN", Name: "Main", IsActive: true}
+	inventoryRepo.products[productID] = &inventory.Product{
+		ID:             productID,
 		TenantID:       "tenant-1",
 		Code:           "PROD-001",
 		Name:           "Widget",
@@ -732,18 +734,18 @@ func TestReserveAndReleaseOrderStock(t *testing.T) {
 		TrackInventory: true,
 		IsActive:       true,
 	}
-	inventoryRepo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+	inventoryRepo.stockLevels[stockLevelKey] = &inventory.StockLevel{
 		ID:           "sl-1",
 		TenantID:     "tenant-1",
-		ProductID:    "prod-1",
-		WarehouseID:  "wh-1",
+		ProductID:    productID,
+		WarehouseID:  warehouseID,
 		Quantity:     decimal.NewFromInt(10),
 		ReservedQty:  decimal.NewFromInt(1),
 		AvailableQty: decimal.NewFromInt(9),
 	}
 
 	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
-	reserveBody, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: "wh-1", Reason: "Pick list"})
+	reserveBody, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: warehouseID, Reason: "Pick list"})
 	reserveReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/reserve-stock", bytes.NewReader(reserveBody))
 	reserveReq.Header.Set("Content-Type", "application/json")
 	reserveReq = withURLParams(reserveReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
@@ -756,13 +758,13 @@ func TestReserveAndReleaseOrderStock(t *testing.T) {
 	var reserveResult orders.OrderStockReservationResult
 	require.NoError(t, json.Unmarshal(reserveResp.Body.Bytes(), &reserveResult))
 	assert.Equal(t, orders.OrderStockReservationActionReserve, reserveResult.Action)
-	assert.Equal(t, "wh-1", reserveResult.WarehouseID)
+	assert.Equal(t, warehouseID, reserveResult.WarehouseID)
 	require.Len(t, reserveResult.Lines, 1)
 	assert.True(t, reserveResult.Lines[0].Quantity.Equal(decimal.NewFromInt(5)))
 	assert.True(t, reserveResult.Lines[0].ReservedQty.Equal(decimal.NewFromInt(6)))
 	assert.True(t, reserveResult.Lines[0].AvailableQty.Equal(decimal.NewFromInt(4)))
 	assert.Equal(t, orders.OrderStockReservationStatusReserved, reserveResult.Lines[0].Status)
-	ledgerReservation := repo.stockReservations[orderStockReservationKey("order-1", "prod-1", "wh-1")]
+	ledgerReservation := repo.stockReservations[orderStockReservationKey("order-1", productID, warehouseID)]
 	require.NotNil(t, ledgerReservation)
 	assert.True(t, ledgerReservation.Quantity.Equal(decimal.NewFromInt(5)))
 	assert.Equal(t, orders.OrderStockReservationStatusReserved, ledgerReservation.Status)
@@ -780,7 +782,7 @@ func TestReserveAndReleaseOrderStock(t *testing.T) {
 	require.Len(t, listed, 1)
 	assert.True(t, listed[0].Quantity.Equal(decimal.NewFromInt(5)))
 
-	pickReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/pick-list?warehouse_id=wh-1", nil)
+	pickReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/pick-list?warehouse_id="+warehouseID, nil)
 	pickReq = withURLParams(pickReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
 	pickReq = pickReq.WithContext(contextWithClaims(pickReq.Context(), claims))
 
@@ -799,7 +801,7 @@ func TestReserveAndReleaseOrderStock(t *testing.T) {
 	assert.True(t, pickList.Lines[1].PickQty.Equal(decimal.NewFromInt(2)))
 	assert.True(t, pickList.Lines[1].ReservedQty.Equal(decimal.NewFromInt(2)))
 
-	releaseBody, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: "wh-1", Reason: "Order canceled"})
+	releaseBody, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: warehouseID, Reason: "Order canceled"})
 	releaseReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/release-stock", bytes.NewReader(releaseBody))
 	releaseReq.Header.Set("Content-Type", "application/json")
 	releaseReq = withURLParams(releaseReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
@@ -831,7 +833,9 @@ func TestReserveOrderStockRejectsShortage(t *testing.T) {
 		SchemaName: "tenant_test",
 	}
 
-	productID := "prod-1"
+	productID := "33333333-3333-4333-8333-333333333333"
+	warehouseID := "44444444-4444-4444-8444-444444444444"
+	stockLevelKey := productID + "-" + warehouseID
 	repo.orders["order-1"] = &orders.Order{
 		ID:          "order-1",
 		TenantID:    "tenant-1",
@@ -842,9 +846,9 @@ func TestReserveOrderStockRejectsShortage(t *testing.T) {
 			{ID: "line-1", LineNumber: 1, Description: "Tracked goods", Quantity: decimal.NewFromInt(5), ProductID: &productID},
 		},
 	}
-	inventoryRepo.warehouses["wh-1"] = &inventory.Warehouse{ID: "wh-1", TenantID: "tenant-1", Code: "MAIN", Name: "Main", IsActive: true}
-	inventoryRepo.products["prod-1"] = &inventory.Product{
-		ID:             "prod-1",
+	inventoryRepo.warehouses[warehouseID] = &inventory.Warehouse{ID: warehouseID, TenantID: "tenant-1", Code: "MAIN", Name: "Main", IsActive: true}
+	inventoryRepo.products[productID] = &inventory.Product{
+		ID:             productID,
 		TenantID:       "tenant-1",
 		Code:           "PROD-001",
 		Name:           "Widget",
@@ -852,17 +856,17 @@ func TestReserveOrderStockRejectsShortage(t *testing.T) {
 		TrackInventory: true,
 		IsActive:       true,
 	}
-	inventoryRepo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+	inventoryRepo.stockLevels[stockLevelKey] = &inventory.StockLevel{
 		ID:           "sl-1",
 		TenantID:     "tenant-1",
-		ProductID:    "prod-1",
-		WarehouseID:  "wh-1",
+		ProductID:    productID,
+		WarehouseID:  warehouseID,
 		Quantity:     decimal.NewFromInt(4),
 		ReservedQty:  decimal.Zero,
 		AvailableQty: decimal.NewFromInt(4),
 	}
 
-	body, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: "wh-1"})
+	body, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: warehouseID})
 	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/reserve-stock", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
@@ -873,7 +877,7 @@ func TestReserveOrderStockRejectsShortage(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
 	assert.Contains(t, resp.Body.String(), "Order stock is not ready for reservation")
-	level := inventoryRepo.stockLevels["prod-1-wh-1"]
+	level := inventoryRepo.stockLevels[stockLevelKey]
 	assert.True(t, level.ReservedQty.IsZero())
 	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(4)))
 	assert.Empty(t, repo.stockReservations)

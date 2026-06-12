@@ -25,6 +25,16 @@ var (
 	errWarehouseNotFound = errors.New("warehouse not found")
 )
 
+const (
+	apiInventoryStockProductID    = "11111111-1111-4111-8111-111111111111"
+	apiInventoryStockWarehouseID  = "22222222-2222-4222-8222-222222222222"
+	apiInventoryStockWarehouseID2 = "33333333-3333-4333-8333-333333333333"
+)
+
+func apiInventoryStockLevelKey(productID, warehouseID string) string {
+	return productID + "-" + warehouseID
+}
+
 // mockInventoryRepository implements inventory.Repository for testing
 type mockInventoryRepository struct {
 	products    map[string]*inventory.Product
@@ -850,14 +860,14 @@ func TestAdjustStock(t *testing.T) {
 		SchemaName: "tenant_test",
 	}
 
-	repo.products["prod-1"] = &inventory.Product{
-		ID:           "prod-1",
+	repo.products[apiInventoryStockProductID] = &inventory.Product{
+		ID:           apiInventoryStockProductID,
 		TenantID:     "tenant-1",
 		Name:         "Product A",
 		CurrentStock: decimal.NewFromInt(100),
 	}
-	repo.warehouses["wh-1"] = &inventory.Warehouse{
-		ID:       "wh-1",
+	repo.warehouses[apiInventoryStockWarehouseID] = &inventory.Warehouse{
+		ID:       apiInventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Name:     "Main Warehouse",
 	}
@@ -871,8 +881,8 @@ func TestAdjustStock(t *testing.T) {
 		{
 			name: "valid adjustment",
 			body: map[string]interface{}{
-				"product_id":   "prod-1",
-				"warehouse_id": "wh-1",
+				"product_id":   apiInventoryStockProductID,
+				"warehouse_id": apiInventoryStockWarehouseID,
 				"quantity":     "10",
 				"reason":       "Stock count correction",
 			},
@@ -881,11 +891,21 @@ func TestAdjustStock(t *testing.T) {
 		{
 			name: "missing product_id",
 			body: map[string]interface{}{
-				"warehouse_id": "wh-1",
+				"warehouse_id": apiInventoryStockWarehouseID,
 				"quantity":     "10",
 			},
-			wantStatus: http.StatusInternalServerError,
-			wantErr:    "product",
+			wantStatus: http.StatusBadRequest,
+			wantErr:    "product_id is required",
+		},
+		{
+			name: "invalid product id",
+			body: map[string]interface{}{
+				"product_id":   "legacy-product",
+				"warehouse_id": apiInventoryStockWarehouseID,
+				"quantity":     "10",
+			},
+			wantStatus: http.StatusBadRequest,
+			wantErr:    "product_id must be a valid UUID",
 		},
 	}
 
@@ -918,15 +938,15 @@ func TestImportStockAdjustments(t *testing.T) {
 		SchemaName: "tenant_test",
 	}
 
-	repo.products["prod-1"] = &inventory.Product{
-		ID:           "prod-1",
+	repo.products[apiInventoryStockProductID] = &inventory.Product{
+		ID:           apiInventoryStockProductID,
 		TenantID:     "tenant-1",
 		Code:         "SKU-001",
 		Name:         "Widget",
 		CurrentStock: decimal.Zero,
 	}
-	repo.warehouses["wh-1"] = &inventory.Warehouse{
-		ID:       "wh-1",
+	repo.warehouses[apiInventoryStockWarehouseID] = &inventory.Warehouse{
+		ID:       apiInventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Code:     "MAIN",
 		Name:     "Main Warehouse",
@@ -955,7 +975,7 @@ func TestImportStockAdjustments(t *testing.T) {
 	assert.Equal(t, 1, result.RowsProcessed)
 	assert.Equal(t, 1, result.AdjustmentsImported)
 	assert.Equal(t, 0, result.RowsSkipped)
-	assert.True(t, repo.products["prod-1"].CurrentStock.Equal(decimal.NewFromInt(12)))
+	assert.True(t, repo.products[apiInventoryStockProductID].CurrentStock.Equal(decimal.NewFromInt(12)))
 }
 
 func TestReserveAndReleaseStock(t *testing.T) {
@@ -966,22 +986,22 @@ func TestReserveAndReleaseStock(t *testing.T) {
 		SchemaName: "tenant_test",
 	}
 
-	repo.products["prod-1"] = &inventory.Product{
-		ID:           "prod-1",
+	repo.products[apiInventoryStockProductID] = &inventory.Product{
+		ID:           apiInventoryStockProductID,
 		TenantID:     "tenant-1",
 		Name:         "Product A",
 		CurrentStock: decimal.NewFromInt(12),
 	}
-	repo.warehouses["wh-1"] = &inventory.Warehouse{
-		ID:       "wh-1",
+	repo.warehouses[apiInventoryStockWarehouseID] = &inventory.Warehouse{
+		ID:       apiInventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Name:     "Main Warehouse",
 	}
-	repo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+	repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID)] = &inventory.StockLevel{
 		ID:           "stock-1",
 		TenantID:     "tenant-1",
-		ProductID:    "prod-1",
-		WarehouseID:  "wh-1",
+		ProductID:    apiInventoryStockProductID,
+		WarehouseID:  apiInventoryStockWarehouseID,
 		Quantity:     decimal.NewFromInt(12),
 		ReservedQty:  decimal.NewFromInt(2),
 		AvailableQty: decimal.NewFromInt(10),
@@ -990,8 +1010,8 @@ func TestReserveAndReleaseStock(t *testing.T) {
 	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
 
 	reserveBody, _ := json.Marshal(map[string]interface{}{
-		"product_id":   "prod-1",
-		"warehouse_id": "wh-1",
+		"product_id":   apiInventoryStockProductID,
+		"warehouse_id": apiInventoryStockWarehouseID,
 		"quantity":     "3",
 		"reason":       "Sales order allocation",
 	})
@@ -1010,8 +1030,8 @@ func TestReserveAndReleaseStock(t *testing.T) {
 	assert.True(t, reservedLevel.AvailableQty.Equal(decimal.NewFromInt(7)))
 
 	releaseBody, _ := json.Marshal(map[string]interface{}{
-		"product_id":   "prod-1",
-		"warehouse_id": "wh-1",
+		"product_id":   apiInventoryStockProductID,
+		"warehouse_id": apiInventoryStockWarehouseID,
 		"quantity":     "2",
 		"reason":       "Order canceled",
 	})
@@ -1038,29 +1058,29 @@ func TestReleaseStockRejectsOverRelease(t *testing.T) {
 		SchemaName: "tenant_test",
 	}
 
-	repo.products["prod-1"] = &inventory.Product{
-		ID:       "prod-1",
+	repo.products[apiInventoryStockProductID] = &inventory.Product{
+		ID:       apiInventoryStockProductID,
 		TenantID: "tenant-1",
 		Name:     "Product A",
 	}
-	repo.warehouses["wh-1"] = &inventory.Warehouse{
-		ID:       "wh-1",
+	repo.warehouses[apiInventoryStockWarehouseID] = &inventory.Warehouse{
+		ID:       apiInventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Name:     "Main Warehouse",
 	}
-	repo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+	repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID)] = &inventory.StockLevel{
 		ID:           "stock-1",
 		TenantID:     "tenant-1",
-		ProductID:    "prod-1",
-		WarehouseID:  "wh-1",
+		ProductID:    apiInventoryStockProductID,
+		WarehouseID:  apiInventoryStockWarehouseID,
 		Quantity:     decimal.NewFromInt(5),
 		ReservedQty:  decimal.NewFromInt(1),
 		AvailableQty: decimal.NewFromInt(4),
 	}
 
 	body, _ := json.Marshal(map[string]interface{}{
-		"product_id":   "prod-1",
-		"warehouse_id": "wh-1",
+		"product_id":   apiInventoryStockProductID,
+		"warehouse_id": apiInventoryStockWarehouseID,
 		"quantity":     "2",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/inventory/release", bytes.NewReader(body))
@@ -1084,37 +1104,37 @@ func TestTransferStock(t *testing.T) {
 		SchemaName: "tenant_test",
 	}
 
-	repo.products["prod-1"] = &inventory.Product{
-		ID:          "prod-1",
+	repo.products[apiInventoryStockProductID] = &inventory.Product{
+		ID:          apiInventoryStockProductID,
 		TenantID:    "tenant-1",
 		Name:        "Product A",
 		ProductType: inventory.ProductTypeGoods,
 	}
-	repo.warehouses["wh-1"] = &inventory.Warehouse{ID: "wh-1", TenantID: "tenant-1", Name: "Main"}
-	repo.warehouses["wh-2"] = &inventory.Warehouse{ID: "wh-2", TenantID: "tenant-1", Name: "Overflow"}
-	repo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+	repo.warehouses[apiInventoryStockWarehouseID] = &inventory.Warehouse{ID: apiInventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main"}
+	repo.warehouses[apiInventoryStockWarehouseID2] = &inventory.Warehouse{ID: apiInventoryStockWarehouseID2, TenantID: "tenant-1", Name: "Overflow"}
+	repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID)] = &inventory.StockLevel{
 		ID:           "stock-1",
 		TenantID:     "tenant-1",
-		ProductID:    "prod-1",
-		WarehouseID:  "wh-1",
+		ProductID:    apiInventoryStockProductID,
+		WarehouseID:  apiInventoryStockWarehouseID,
 		Quantity:     decimal.NewFromInt(9),
 		ReservedQty:  decimal.NewFromInt(1),
 		AvailableQty: decimal.NewFromInt(8),
 	}
-	repo.stockLevels["prod-1-wh-2"] = &inventory.StockLevel{
+	repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID2)] = &inventory.StockLevel{
 		ID:           "stock-2",
 		TenantID:     "tenant-1",
-		ProductID:    "prod-1",
-		WarehouseID:  "wh-2",
+		ProductID:    apiInventoryStockProductID,
+		WarehouseID:  apiInventoryStockWarehouseID2,
 		Quantity:     decimal.Zero,
 		ReservedQty:  decimal.Zero,
 		AvailableQty: decimal.Zero,
 	}
 
 	body := map[string]interface{}{
-		"product_id":        "prod-1",
-		"from_warehouse_id": "wh-1",
-		"to_warehouse_id":   "wh-2",
+		"product_id":        apiInventoryStockProductID,
+		"from_warehouse_id": apiInventoryStockWarehouseID,
+		"to_warehouse_id":   apiInventoryStockWarehouseID2,
 		"quantity":          "4",
 		"lot_number":        "LOT-2026-01",
 		"serial_number":     "SN-001",
@@ -1128,14 +1148,14 @@ func TestTransferStock(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), "transferred")
-	assert.True(t, repo.stockLevels["prod-1-wh-1"].Quantity.Equal(decimal.NewFromInt(5)))
-	assert.True(t, repo.stockLevels["prod-1-wh-1"].AvailableQty.Equal(decimal.NewFromInt(4)))
-	assert.True(t, repo.stockLevels["prod-1-wh-2"].Quantity.Equal(decimal.NewFromInt(4)))
-	assert.True(t, repo.stockLevels["prod-1-wh-2"].AvailableQty.Equal(decimal.NewFromInt(4)))
-	require.Len(t, repo.movements["prod-1"], 2)
-	assert.Equal(t, inventory.MovementTypeOut, repo.movements["prod-1"][0].MovementType)
-	assert.Equal(t, inventory.MovementTypeIn, repo.movements["prod-1"][1].MovementType)
-	for _, movement := range repo.movements["prod-1"] {
+	assert.True(t, repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID)].Quantity.Equal(decimal.NewFromInt(5)))
+	assert.True(t, repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID)].AvailableQty.Equal(decimal.NewFromInt(4)))
+	assert.True(t, repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID2)].Quantity.Equal(decimal.NewFromInt(4)))
+	assert.True(t, repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID2)].AvailableQty.Equal(decimal.NewFromInt(4)))
+	require.Len(t, repo.movements[apiInventoryStockProductID], 2)
+	assert.Equal(t, inventory.MovementTypeOut, repo.movements[apiInventoryStockProductID][0].MovementType)
+	assert.Equal(t, inventory.MovementTypeIn, repo.movements[apiInventoryStockProductID][1].MovementType)
+	for _, movement := range repo.movements[apiInventoryStockProductID] {
 		assert.Equal(t, "LOT-2026-01", movement.LotNumber)
 		assert.Equal(t, "SN-001", movement.SerialNumber)
 		assert.Equal(t, "2027-01-31", movement.ExpiryDate)
