@@ -585,12 +585,16 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindProductCategories: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
-			"category":         "name",
-			"category_name":    "name",
-			"product_category": "name",
-			"parent":           "parent_name",
-			"parent_name":      "parent_name",
-			"parent_category":  "parent_name",
+			"category_id":         "id",
+			"product_category_id": "id",
+			"category":            "name",
+			"category_name":       "name",
+			"product_category":    "name",
+			"parent_id":           "parent_id",
+			"parent_category_id":  "parent_id",
+			"parent":              "parent_name",
+			"parent_name":         "parent_name",
+			"parent_category":     "parent_name",
 		}),
 		requiredGroups: [][]string{{"name"}},
 	},
@@ -1424,9 +1428,12 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenters, file, row, KindCostCenters,
 				[]string{"cost_center_id", "cost_center_code"})
 		case KindProductCategories:
+			checkOptionalUUID(report, file, row, "id")
+			checkOptionalUUID(report, file, row, "parent_id")
+			checkSelfReference(report, file, row, "parent_id", "id")
 			checkSelfReference(report, file, row, "parent_name", "name")
 			checkTargetReference(report, indexes.files[KindProductCategories], indexes.productCategories, file, row, KindProductCategories,
-				[]string{"parent_name"})
+				[]string{"parent_id", "parent_name"})
 		case KindProducts:
 			checkTargetReference(report, indexes.files[KindProductCategories], indexes.productCategories, file, row, KindProductCategories,
 				[]string{"category_id", "category_name"})
