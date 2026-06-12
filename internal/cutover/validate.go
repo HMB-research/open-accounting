@@ -1680,9 +1680,9 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 	case KindCostAllocations:
 		checkCostAllocationRows(report, file)
 	case KindOpeningBalances:
-		checkOpeningBalanceTotals(report, file)
+		checkOpeningBalanceRows(report, file)
 	case KindJournalEntries:
-		checkJournalEntryGroups(report, file)
+		checkJournalEntryRows(report, file)
 	}
 }
 
@@ -4285,6 +4285,15 @@ func checkBankTransactionAmount(report *BundleValidationReport, file parsedFile,
 	}
 }
 
+func checkOpeningBalanceRows(report *BundleValidationReport, file parsedFile) {
+	if fileHasHeaders(file, "account_code") {
+		for _, row := range file.rows {
+			checkRequiredCutoverField(report, file, row, "account_code")
+		}
+	}
+	checkOpeningBalanceTotals(report, file)
+}
+
 func checkOpeningBalanceTotals(report *BundleValidationReport, file parsedFile) {
 	if !fileHasHeaders(file, "debit", "credit") {
 		return
@@ -4326,6 +4335,15 @@ func checkOpeningBalanceTotals(report *BundleValidationReport, file parsedFile) 
 			Message:  fmt.Sprintf("opening balances do not balance: debits=%s credits=%s", totalDebit.String(), totalCredit.String()),
 		})
 	}
+}
+
+func checkJournalEntryRows(report *BundleValidationReport, file parsedFile) {
+	if fileHasHeaders(file, "account_code") {
+		for _, row := range file.rows {
+			checkRequiredCutoverField(report, file, row, "account_code")
+		}
+	}
+	checkJournalEntryGroups(report, file)
 }
 
 func checkJournalEntryGroups(report *BundleValidationReport, file parsedFile) {

@@ -854,6 +854,22 @@ func TestValidateBundleReportsOpeningBalanceBalanceIssue(t *testing.T) {
 	assert.Contains(t, report.Issues[0].Message, "opening balances do not balance")
 }
 
+func TestValidateBundleReportsOpeningBalanceAccountCodeRowIssue(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindOpeningBalances,
+			FileName:   "opening.csv",
+			CSVContent: "account_code,debit,credit\n,100,0\n3000,0,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindOpeningBalances, "account_code", "account_code is required")
+}
+
 func TestValidateBundleReportsHistoricalJournalBalanceIssue(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -904,6 +920,22 @@ func TestValidateBundleReportsHistoricalJournalAmountIssue(t *testing.T) {
 	assert.Equal(t, "debit", report.Issues[0].Field)
 	assert.Equal(t, "not-a-number", report.Issues[0].Value)
 	assert.Equal(t, "invalid debit", report.Issues[0].Message)
+}
+
+func TestValidateBundleReportsHistoricalJournalAccountCodeRowIssue(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindJournalEntries,
+			FileName:   "journals.csv",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit\nJE-1,2026-05-30,,100,0\nJE-1,2026-05-30,4000,0,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindJournalEntries, "account_code", "account_code is required")
 }
 
 func TestValidateBundleAcceptsJournalImportAliasesAndExchangeRateBalance(t *testing.T) {
