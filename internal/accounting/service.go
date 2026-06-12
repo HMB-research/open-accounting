@@ -165,6 +165,10 @@ func (s *Service) CreateAccount(ctx context.Context, schemaName, tenantID string
 	} else {
 		id = uuid.New().String()
 	}
+	parentID, err := normalizeOptionalAccountUUIDPtr(req.ParentID, "parent_id")
+	if err != nil {
+		return nil, err
+	}
 
 	account := &Account{
 		ID:          id,
@@ -172,7 +176,7 @@ func (s *Service) CreateAccount(ctx context.Context, schemaName, tenantID string
 		Code:        code,
 		Name:        name,
 		AccountType: req.AccountType,
-		ParentID:    req.ParentID,
+		ParentID:    parentID,
 		IsActive:    true,
 		IsSystem:    false,
 		Description: description,
@@ -214,11 +218,15 @@ func (s *Service) UpdateAccount(ctx context.Context, schemaName, tenantID, accou
 	if !isValidAccountType(req.AccountType) {
 		return nil, fmt.Errorf("invalid account_type: %s", req.AccountType)
 	}
+	parentID, err := normalizeOptionalAccountUUIDPtr(req.ParentID, "parent_id")
+	if err != nil {
+		return nil, err
+	}
 
 	account.Code = code
 	account.Name = name
 	account.AccountType = req.AccountType
-	account.ParentID = req.ParentID
+	account.ParentID = parentID
 	account.Description = description
 
 	if err := s.repo.UpdateAccount(ctx, schemaName, account); err != nil {
@@ -260,6 +268,22 @@ func isValidAccountType(accountType AccountType) bool {
 	default:
 		return false
 	}
+}
+
+func normalizeOptionalAccountUUIDPtr(value *string, field string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", field)
+	}
+	id := parsedID.String()
+	return &id, nil
 }
 
 // GetJournalEntry retrieves a journal entry by ID

@@ -101,6 +101,18 @@ func TestAccountingHandlers_ListCreateAndGet(t *testing.T) {
 	h.CreateAccount(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/accounts", map[string]interface{}{
+		"code":         "2100",
+		"name":         "Invalid Parent",
+		"account_type": accounting.AccountTypeAsset,
+		"parent_id":    "legacy-parent",
+	}, &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateAccount(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "parent_id must be a valid UUID")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/accounts/acc-1", nil), map[string]string{
 		"tenantID":  "tenant-1",
 		"accountID": "acc-1",
