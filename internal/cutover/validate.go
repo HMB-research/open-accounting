@@ -808,6 +808,11 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 func validateReferences(report *BundleValidationReport, indexes bundleIndexes, file parsedFile) {
 	for _, row := range file.rows {
 		switch file.kind {
+		case KindExpenses:
+			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
+				[]string{"expense_account_code"})
+			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
+				[]string{"payment_account_code"})
 		case KindInvoices, KindEInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})

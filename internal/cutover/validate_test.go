@@ -12,7 +12,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindAccounts,
 			FileName:   "accounts.csv",
-			CSVContent: "account_code;account_name;type\n1000;Cash;ASSET\n4000;Sales;REVENUE\n",
+			CSVContent: "account_code;account_name;type\n1000;Cash;ASSET\n4000;Sales;REVENUE\n5500;Office expenses;EXPENSE\n",
 		},
 		{
 			Kind:       KindContacts,
@@ -135,7 +135,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	require.NotNil(t, report)
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 0, report.Summary.ErrorCount)
-	assert.Equal(t, 28, report.Summary.RowsValidated)
+	assert.Equal(t, 29, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
 
 	var stockValidation FileValidation
@@ -157,6 +157,31 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	assert.Equal(t, 1, eInvoiceValidation.Rows)
 	assert.Contains(t, eInvoiceValidation.Headers, "invoice_number")
 	assert.Contains(t, eInvoiceValidation.Headers, "contact_reg_code")
+}
+
+func TestValidateBundleReportsExpenseAccountReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n",
+		},
+		{
+			Kind:       KindExpenses,
+			FileName:   "expenses.csv",
+			CSVContent: "expense_date,merchant,expense_account_code,payment_account_code,amount\n2026-05-31,Office Store,5500,1000,42\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindExpenses, report.Issues[0].Kind)
+	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
+	assert.Equal(t, "expense_account_code", report.Issues[0].Field)
+	assert.Equal(t, "5500", report.Issues[0].Value)
 }
 
 func TestValidateBundleReportsCostAllocationReferenceIssues(t *testing.T) {
