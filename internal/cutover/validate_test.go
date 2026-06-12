@@ -1844,6 +1844,77 @@ func TestValidateBundleAcceptsPaymentInvoiceIDReference(t *testing.T) {
 	assert.Contains(t, invoiceValidation.Headers, "id")
 }
 
+func TestValidateBundleAcceptsPaymentImporterReferenceAliases(t *testing.T) {
+	legacyContactID := "11111111-1111-1111-1111-111111111111"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_id,contact_code,name\n" + legacyContactID + ",SUP-1,Supplier One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nINV-1,PURCHASE,SUP-1,2026-05-30,2026-06-14,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,supplier_id,amount,method,description,invoice_no,allocation_amount\nMADE,2026-05-31," + legacyContactID + ",100,BANK_TRANSFER,Imported payment,INV-1,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.RowsValidated)
+	assert.Empty(t, report.Issues)
+
+	var paymentValidation FileValidation
+	for _, file := range report.Files {
+		if file.Kind == KindPayments {
+			paymentValidation = file
+		}
+	}
+	require.Equal(t, KindPayments, paymentValidation.Kind)
+	assert.Contains(t, paymentValidation.Headers, "contact_id")
+	assert.Contains(t, paymentValidation.Headers, "payment_method")
+	assert.Contains(t, paymentValidation.Headers, "notes")
+	assert.Contains(t, paymentValidation.Headers, "invoice_number")
+	assert.NotContains(t, paymentValidation.Headers, "supplier_id")
+	assert.NotContains(t, paymentValidation.Headers, "method")
+	assert.NotContains(t, paymentValidation.Headers, "description")
+	assert.NotContains(t, paymentValidation.Headers, "invoice_no")
+}
+
+func TestValidateBundleReportsPaymentCustomerAliasReferenceIssues(t *testing.T) {
+	missingContactID := "22222222-2222-2222-2222-222222222222"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_id,name\n11111111-1111-1111-1111-111111111111,Customer One\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,customer_id,amount\nRECEIVED,2026-05-31," + missingContactID + ",100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
+	assert.Equal(t, "contact_id", report.Issues[0].Field)
+	assert.Equal(t, missingContactID, report.Issues[0].Value)
+}
+
 func TestValidateBundleAcceptsPreservedContactIDReferences(t *testing.T) {
 	legacyContactID := "11111111-1111-1111-1111-111111111111"
 	legacyInvoiceID := "22222222-2222-2222-2222-222222222222"
