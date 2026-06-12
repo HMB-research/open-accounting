@@ -17,6 +17,7 @@ import (
 // InvoiceService defines the interface for invoice operations needed by payments
 type InvoiceService interface {
 	RecordPayment(ctx context.Context, tenantID, schemaName, invoiceID string, amount decimal.Decimal) error
+	ResolveInvoiceIDByNumber(ctx context.Context, tenantID, schemaName, invoiceNumber string) (string, error)
 }
 
 // Service provides payment operations

@@ -541,6 +541,34 @@ func TestService_List_Error(t *testing.T) {
 	}
 }
 
+func TestService_ResolveInvoiceIDByNumber(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.invoices["inv-1"] = &Invoice{ID: "inv-1", TenantID: "tenant-1", InvoiceNumber: "INV-001"}
+	repo.invoices["inv-2"] = &Invoice{ID: "inv-2", TenantID: "tenant-1", InvoiceNumber: "INV-002"}
+	repo.invoices["other"] = &Invoice{ID: "other", TenantID: "tenant-2", InvoiceNumber: "INV-001"}
+	service := NewServiceWithRepository(repo, nil)
+
+	invoiceID, err := service.ResolveInvoiceIDByNumber(ctx, "tenant-1", "public", " inv-001 ")
+	require.NoError(t, err)
+	require.Equal(t, "inv-1", invoiceID)
+}
+
+func TestService_ResolveInvoiceIDByNumberReportsMissingAndDuplicateMatches(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil)
+
+	_, err := service.ResolveInvoiceIDByNumber(ctx, "tenant-1", "public", "MISSING")
+	require.ErrorIs(t, err, ErrInvoiceNotFound)
+
+	repo.invoices["dup-1"] = &Invoice{ID: "dup-1", TenantID: "tenant-1", InvoiceNumber: "DUP-001"}
+	repo.invoices["dup-2"] = &Invoice{ID: "dup-2", TenantID: "tenant-1", InvoiceNumber: "DUP-001"}
+	_, err = service.ResolveInvoiceIDByNumber(ctx, "tenant-1", "public", "DUP-001")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "matched multiple invoices")
+}
+
 func TestService_Send(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()

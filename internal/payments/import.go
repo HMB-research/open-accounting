@@ -38,6 +38,8 @@ var paymentImportHeaderAliases = map[string]string{
 	"notes":             "notes",
 	"description":       "notes",
 	"invoice_id":        "invoice_id",
+	"invoice_number":    "invoice_number",
+	"invoice_no":        "invoice_number",
 	"allocation_amount": "allocation_amount",
 	"allocated_amount":  "allocation_amount",
 }
@@ -77,7 +79,7 @@ func (s *Service) ImportPaymentsCSV(ctx context.Context, tenantID, schemaName st
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		payment, allocation, err := buildPaymentFromImportRow(row, tenantID, req.UserID, req.LockDate)
+		payment, allocation, err := s.buildPaymentFromImportRow(ctx, tenantID, schemaName, row, req.UserID, req.LockDate)
 		if err != nil {
 			appendPaymentImportRowError(result, row, err)
 			continue
@@ -234,7 +236,14 @@ func parsePaymentImportRows(content string) ([]paymentImportRow, error) {
 	return rows, nil
 }
 
-func buildPaymentFromImportRow(row paymentImportRow, tenantID, userID string, lockDate *time.Time) (*Payment, *PaymentAllocation, error) {
+func (s *Service) buildPaymentFromImportRow(
+	ctx context.Context,
+	tenantID string,
+	schemaName string,
+	row paymentImportRow,
+	userID string,
+	lockDate *time.Time,
+) (*Payment, *PaymentAllocation, error) {
 	paymentType, err := parsePaymentImportType(row.values["payment_type"])
 	if err != nil {
 		return nil, nil, err
@@ -279,7 +288,7 @@ func buildPaymentFromImportRow(row paymentImportRow, tenantID, userID string, lo
 		CreatedBy:     userID,
 	}
 
-	allocation, err := buildPaymentImportAllocation(row, tenantID, payment.ID, amount, now)
+	allocation, err := s.buildPaymentImportAllocation(ctx, tenantID, schemaName, row, payment.ID, amount, now)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -287,14 +296,25 @@ func buildPaymentFromImportRow(row paymentImportRow, tenantID, userID string, lo
 	return payment, allocation, nil
 }
 
-func buildPaymentImportAllocation(row paymentImportRow, tenantID, paymentID string, paymentAmount decimal.Decimal, now time.Time) (*PaymentAllocation, error) {
-	invoiceID := strings.TrimSpace(row.values["invoice_id"])
+func (s *Service) buildPaymentImportAllocation(
+	ctx context.Context,
+	tenantID string,
+	schemaName string,
+	row paymentImportRow,
+	paymentID string,
+	paymentAmount decimal.Decimal,
+	now time.Time,
+) (*PaymentAllocation, error) {
+	invoiceID, err := s.resolvePaymentImportInvoiceID(ctx, tenantID, schemaName, row)
+	if err != nil {
+		return nil, err
+	}
 	allocationValue := strings.TrimSpace(row.values["allocation_amount"])
 	if invoiceID == "" && allocationValue == "" {
 		return nil, nil
 	}
 	if invoiceID == "" {
-		return nil, fmt.Errorf("invoice_id is required when allocation_amount is provided")
+		return nil, fmt.Errorf("invoice_id or invoice_number is required when allocation_amount is provided")
 	}
 
 	amount := paymentAmount
@@ -317,6 +337,26 @@ func buildPaymentImportAllocation(row paymentImportRow, tenantID, paymentID stri
 		Amount:    amount,
 		CreatedAt: now,
 	}, nil
+}
+
+func (s *Service) resolvePaymentImportInvoiceID(ctx context.Context, tenantID, schemaName string, row paymentImportRow) (string, error) {
+	if invoiceID := strings.TrimSpace(row.values["invoice_id"]); invoiceID != "" {
+		return invoiceID, nil
+	}
+
+	invoiceNumber := strings.TrimSpace(row.values["invoice_number"])
+	if invoiceNumber == "" {
+		return "", nil
+	}
+	if s.invoicing == nil {
+		return "", fmt.Errorf("invoice_number %q cannot be resolved without invoicing service", invoiceNumber)
+	}
+
+	invoiceID, err := s.invoicing.ResolveInvoiceIDByNumber(ctx, tenantID, schemaName, invoiceNumber)
+	if err != nil {
+		return "", fmt.Errorf("resolve invoice_number %q: %w", invoiceNumber, err)
+	}
+	return invoiceID, nil
 }
 
 func parsePaymentImportType(value string) (PaymentType, error) {

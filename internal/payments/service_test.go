@@ -3,9 +3,11 @@ package payments
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -528,7 +530,9 @@ type MockInvoiceService struct {
 		invoiceID  string
 		amount     decimal.Decimal
 	}
-	recordPaymentErr error
+	recordPaymentErr   error
+	invoiceIDsByNumber map[string]string
+	resolveInvoiceErr  error
 }
 
 func (m *MockInvoiceService) RecordPayment(ctx context.Context, tenantID, schemaName, invoiceID string, amount decimal.Decimal) error {
@@ -539,6 +543,20 @@ func (m *MockInvoiceService) RecordPayment(ctx context.Context, tenantID, schema
 		amount     decimal.Decimal
 	}{tenantID, schemaName, invoiceID, amount})
 	return m.recordPaymentErr
+}
+
+func (m *MockInvoiceService) ResolveInvoiceIDByNumber(ctx context.Context, tenantID, schemaName, invoiceNumber string) (string, error) {
+	if m.resolveInvoiceErr != nil {
+		return "", m.resolveInvoiceErr
+	}
+	if m.invoiceIDsByNumber == nil {
+		return "", invoicing.ErrInvoiceNotFound
+	}
+	invoiceID, ok := m.invoiceIDsByNumber[strings.TrimSpace(invoiceNumber)]
+	if !ok {
+		return "", invoicing.ErrInvoiceNotFound
+	}
+	return invoiceID, nil
 }
 
 func TestNewServiceWithRepository(t *testing.T) {
@@ -669,7 +687,9 @@ func TestService_Create(t *testing.T) {
 
 func TestService_ImportPaymentsCSV(t *testing.T) {
 	repo := NewMockRepository()
-	invoiceSvc := &MockInvoiceService{}
+	invoiceSvc := &MockInvoiceService{
+		invoiceIDsByNumber: map[string]string{"INV-2": "inv-2"},
+	}
 	service := NewServiceWithRepository(repo, invoiceSvc)
 	ctx := context.Background()
 
@@ -686,28 +706,32 @@ func TestService_ImportPaymentsCSV(t *testing.T) {
 		FileName: "payments.csv",
 		UserID:   "user-1",
 		LockDate: &lockDate,
-		CSVContent: "payment_number,payment_type,payment_date,amount,currency,exchange_rate,contact_id,invoice_id,allocation_amount,reference\n" +
-			"PAY-001,RECEIVED,2026-03-15,100.00,EUR,1,contact-1,inv-1,60.00,Receipt 1\n" +
-			",MADE,2026-03-16,50.00,EUR,1,,,,Supplier payment\n" +
-			"PMT-EXISTING,RECEIVED,2026-03-17,20.00,EUR,1,,,,Duplicate\n" +
-			"PAY-LOCKED,RECEIVED,2026-01-15,25.00,EUR,1,,,,Locked\n",
+		CSVContent: "payment_number,payment_type,payment_date,amount,currency,exchange_rate,contact_id,invoice_id,invoice_number,allocation_amount,reference\n" +
+			"PAY-001,RECEIVED,2026-03-15,100.00,EUR,1,contact-1,inv-1,,60.00,Receipt 1\n" +
+			"PAY-002,RECEIVED,2026-03-18,75.00,EUR,1,contact-1,,INV-2,75.00,Receipt 2\n" +
+			",MADE,2026-03-16,50.00,EUR,1,,,,,Supplier payment\n" +
+			"PMT-EXISTING,RECEIVED,2026-03-17,20.00,EUR,1,,,,,Duplicate\n" +
+			"PAY-LOCKED,RECEIVED,2026-01-15,25.00,EUR,1,,,,,Locked\n",
 	})
 
 	require.NoError(t, err)
 	assert.Equal(t, "payments.csv", result.FileName)
-	assert.Equal(t, 4, result.RowsProcessed)
-	assert.Equal(t, 2, result.PaymentsCreated)
+	assert.Equal(t, 5, result.RowsProcessed)
+	assert.Equal(t, 3, result.PaymentsCreated)
 	assert.Equal(t, 2, result.RowsSkipped)
 	require.Len(t, result.Errors, 2)
 	assert.Contains(t, result.Errors[0].Message, "duplicate payment_number")
 	assert.Contains(t, result.Errors[1].Message, "period locked")
 
 	var preserved *Payment
+	var resolvedByNumber *Payment
 	var generated *Payment
 	for _, payment := range repo.payments {
 		switch payment.Reference {
 		case "Receipt 1":
 			preserved = payment
+		case "Receipt 2":
+			resolvedByNumber = payment
 		case "Supplier payment":
 			generated = payment
 		}
@@ -722,12 +746,43 @@ func TestService_ImportPaymentsCSV(t *testing.T) {
 	require.Len(t, repo.allocations[preserved.ID], 1)
 	assert.Equal(t, "inv-1", repo.allocations[preserved.ID][0].InvoiceID)
 	assert.True(t, repo.allocations[preserved.ID][0].Amount.Equal(decimal.RequireFromString("60.00")))
-	require.Len(t, invoiceSvc.recordPaymentCalls, 1)
+	require.Len(t, invoiceSvc.recordPaymentCalls, 2)
 	assert.Equal(t, "inv-1", invoiceSvc.recordPaymentCalls[0].invoiceID)
+
+	require.NotNil(t, resolvedByNumber)
+	assert.Equal(t, "PAY-002", resolvedByNumber.PaymentNumber)
+	require.Len(t, repo.allocations[resolvedByNumber.ID], 1)
+	assert.Equal(t, "inv-2", repo.allocations[resolvedByNumber.ID][0].InvoiceID)
+	assert.True(t, repo.allocations[resolvedByNumber.ID][0].Amount.Equal(decimal.RequireFromString("75.00")))
+	assert.Equal(t, "inv-2", invoiceSvc.recordPaymentCalls[1].invoiceID)
 
 	require.NotNil(t, generated)
 	assert.Equal(t, "OUT-00001", generated.PaymentNumber)
 	assert.Equal(t, PaymentTypeMade, generated.PaymentType)
+}
+
+func TestService_ImportPaymentsCSVReportsMissingInvoiceNumber(t *testing.T) {
+	repo := NewMockRepository()
+	invoiceSvc := &MockInvoiceService{}
+	service := NewServiceWithRepository(repo, invoiceSvc)
+	ctx := context.Background()
+
+	result, err := service.ImportPaymentsCSV(ctx, "tenant-1", "test_schema", &ImportPaymentsRequest{
+		FileName: "payments.csv",
+		UserID:   "user-1",
+		CSVContent: "payment_number,payment_type,payment_date,amount,currency,invoice_number,allocation_amount\n" +
+			"PAY-404,RECEIVED,2026-03-18,75.00,EUR,INV-404,75.00\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 0, result.PaymentsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 2, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, `resolve invoice_number "INV-404"`)
+	assert.Len(t, repo.payments, 0)
+	assert.Empty(t, invoiceSvc.recordPaymentCalls)
 }
 
 func TestService_Create_WithExchangeRate(t *testing.T) {

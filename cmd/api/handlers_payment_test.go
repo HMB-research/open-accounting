@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -154,6 +155,10 @@ func (m *mockInvoiceServiceForPayments) RecordPayment(ctx context.Context, tenan
 		amount    decimal.Decimal
 	}{invoiceID, amount})
 	return m.recordPaymentErr
+}
+
+func (m *mockInvoiceServiceForPayments) ResolveInvoiceIDByNumber(ctx context.Context, tenantID, schemaName, invoiceNumber string) (string, error) {
+	return "", invoicing.ErrInvoiceNotFound
 }
 
 func setupPaymentTestHandlers() (*Handlers, *mockPaymentsRepository, *mockTenantRepository) {

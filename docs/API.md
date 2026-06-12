@@ -496,7 +496,7 @@ Content-Type: application/json
 
 Returns a non-mutating cutover report with required-column checks and cross-file reference issues for supported migration CSV files plus Estonian e-invoice XML bundles. Supported `kind` values are `accounts`, `contacts`, `employees`, `expenses`, `invoices`, `e_invoices`, `payments`, `bank_accounts`, `bank_transactions`, `payroll_history`, `leave_balances`, `tsd_history`, `kmd_history`, `quotes`, `orders`, `recurring_invoices`, `cost_centers`, `cost_allocations`, `product_categories`, `warehouses`, `products`, `stock_adjustments`, `fixed_assets`, `opening_balances`, and `journal_entries`. CSV files use `csv_content`; `e_invoices` files use `xml_content`. Cost-allocation validation checks required `journal_entry_line_id`, `amount`, `allocation_date`, and `cost_center_id` or `cost_center_code` columns, plus same-bundle cost-center references when a cost center file is included. Stock-adjustment validation recognizes optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`.
 
-When the related files are present in the same bundle, the validator also checks references such as commercial documents and e-invoice suppliers to contacts, payments to CSV or XML invoices, payroll/leave/TSD rows to employees, account parent codes and expense account/payment account codes to accounts, products to product categories, stock rows to products and warehouses, cost centers to parent cost centers, cost allocations to cost centers, product categories to parent categories, and opening balances or journals to accounts. Hierarchy files also reject self-parent rows before import.
+When the related files are present in the same bundle, the validator also checks references such as commercial documents and e-invoice suppliers to contacts, payments to CSV or XML invoices by ID or number, payroll/leave/TSD rows to employees, account parent codes and expense account/payment account codes to accounts, products to product categories, stock rows to products and warehouses, cost centers to parent cost centers, cost allocations to cost centers, product categories to parent categories, and opening balances or journals to accounts. Hierarchy files also reject self-parent rows before import.
 
 ### List Recent Journal Entries
 
@@ -2600,11 +2600,11 @@ Content-Type: application/json
 
 {
   "file_name": "payments.csv",
-  "csv_content": "payment_number,payment_type,payment_date,amount,currency,invoice_id,allocation_amount\nPAY-001,RECEIVED,2026-03-15,1220.00,EUR,uuid,1220.00\n"
+  "csv_content": "payment_number,payment_type,payment_date,amount,currency,invoice_number,allocation_amount\nPAY-001,RECEIVED,2026-03-15,1220.00,EUR,INV-001,1220.00\n"
 }
 ```
 
-Payment CSV imports require `payment_type`, `payment_date`, and `amount`. Optional columns include `payment_number`, `contact_id`, `currency`, `exchange_rate`, `payment_method`, `bank_account`, `reference`, `notes`, `invoice_id`, and `allocation_amount`. Omitted payment numbers are generated; supplied numbers are preserved and checked for duplicates.
+Payment CSV imports require `payment_type`, `payment_date`, and `amount`. Optional columns include `payment_number`, `contact_id`, `currency`, `exchange_rate`, `payment_method`, `bank_account`, `reference`, `notes`, `invoice_id`, `invoice_number`, and `allocation_amount`. Omitted payment numbers are generated; supplied numbers are preserved and checked for duplicates. Payment allocations can target `invoice_id` directly or resolve `invoice_number` through the tenant invoice list.
 
 ### Export SEPA Payment XML
 
