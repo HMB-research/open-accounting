@@ -438,7 +438,7 @@ func (m *mockBankingRepository) GetImportHistory(ctx context.Context, schemaName
 func setupBankingTestHandlers() (*Handlers, *mockBankingRepository, *mockTenantRepository) {
 	bankingRepo := newMockBankingRepository()
 	bankingSvc := banking.NewServiceWithRepositoryAndAccounting(bankingRepo, fakeBankingAccountLister{accounts: []accounting.Account{
-		{ID: "gl-bank", Code: "1000", AccountType: accounting.AccountTypeAsset},
+		{ID: "11111111-1111-1111-1111-111111111111", Code: "1000", AccountType: accounting.AccountTypeAsset},
 	}})
 
 	tenantRepo := newMockTenantRepository()
@@ -667,7 +667,7 @@ func TestImportBankAccounts(t *testing.T) {
 	assert.Equal(t, "Main bank", imported.Name)
 	assert.Equal(t, "LHVBEE22", imported.SwiftCode)
 	require.NotNil(t, imported.GLAccountID)
-	assert.Equal(t, "gl-bank", *imported.GLAccountID)
+	assert.Equal(t, "11111111-1111-1111-1111-111111111111", *imported.GLAccountID)
 	assert.True(t, imported.IsDefault)
 }
 
