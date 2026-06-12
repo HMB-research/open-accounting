@@ -731,6 +731,7 @@ Content-Type: application/json
 ```
 
 System accounts cannot be updated. `code`, `name`, and `account_type` are required.
+Account `parent_id` values are optional on create and update, but must be valid UUIDs when supplied.
 
 ### Delete Account
 

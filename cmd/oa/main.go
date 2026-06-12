@@ -2585,9 +2585,9 @@ func (a *cliApp) runAccounts(ctx context.Context, args []string) error {
 		if !isValidAccountType(normalizedType) {
 			return fmt.Errorf("invalid account type %q", *accountType)
 		}
-		var parentRef *string
-		if trimmed := strings.TrimSpace(*parentID); trimmed != "" {
-			parentRef = &trimmed
+		parentRef, err := optionalUUIDStringPtr("parent-id", *parentID)
+		if err != nil {
+			return err
 		}
 
 		account, err := client.createAccount(ctx, cfg.TenantID, &accounting.CreateAccountRequest{
@@ -2651,9 +2651,9 @@ func (a *cliApp) runAccounts(ctx context.Context, args []string) error {
 		if !isValidAccountType(normalizedType) {
 			return fmt.Errorf("invalid account type %q", *accountType)
 		}
-		var parentRef *string
-		if trimmed := strings.TrimSpace(*parentID); trimmed != "" {
-			parentRef = &trimmed
+		parentRef, err := optionalUUIDStringPtr("parent-id", *parentID)
+		if err != nil {
+			return err
 		}
 
 		account, err := client.updateAccount(ctx, cfg.TenantID, strings.TrimSpace(*accountID), &accounting.UpdateAccountRequest{

@@ -393,7 +393,7 @@ func TestService_CreateAccount(t *testing.T) {
 	})
 
 	t.Run("creates account with parent", func(t *testing.T) {
-		parentID := "parent-1"
+		parentID := "11111111-1111-1111-1111-111111111111"
 		req := &CreateAccountRequest{
 			Code:        "1010",
 			Name:        "Petty Cash",
@@ -404,6 +404,20 @@ func TestService_CreateAccount(t *testing.T) {
 		result, err := svc.CreateAccount(ctx, schemaName, "tenant-1", req)
 		require.NoError(t, err)
 		assert.Equal(t, &parentID, result.ParentID)
+	})
+
+	t.Run("rejects invalid parent id", func(t *testing.T) {
+		parentID := "legacy-parent"
+		req := &CreateAccountRequest{
+			Code:        "1010",
+			Name:        "Petty Cash",
+			AccountType: AccountTypeAsset,
+			ParentID:    &parentID,
+		}
+
+		_, err := svc.CreateAccount(ctx, schemaName, "tenant-1", req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "parent_id must be a valid UUID")
 	})
 
 	t.Run("propagates repository error", func(t *testing.T) {
@@ -478,6 +492,18 @@ func TestService_UpdateAndDeactivateAccount(t *testing.T) {
 			AccountType: AccountTypeExpense,
 		})
 		assert.Error(t, err)
+	})
+
+	t.Run("rejects invalid parent id update", func(t *testing.T) {
+		parentID := "legacy-parent"
+		_, err := svc.UpdateAccount(ctx, schemaName, "tenant-1", "custom", &UpdateAccountRequest{
+			Code:        "6150",
+			Name:        "Updated Expense",
+			AccountType: AccountTypeExpense,
+			ParentID:    &parentID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "parent_id must be a valid UUID")
 	})
 
 	t.Run("deactivates editable account", func(t *testing.T) {

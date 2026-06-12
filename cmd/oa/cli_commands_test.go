@@ -4639,6 +4639,8 @@ func TestCLIAccountsBranches(t *testing.T) {
 	importFile := writeTempCSV(t, "accounts-branch.csv", "code,name,type\n6100,Office Supplies,EXPENSE\n")
 	requestCounts := map[string]int{}
 
+	parentCreateID := "11111111-1111-1111-1111-111111111111"
+	parentUpdateID := "22222222-2222-2222-2222-222222222222"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -4679,7 +4681,7 @@ func TestCLIAccountsBranches(t *testing.T) {
 			assert.Equal(t, "Office Supplies", req.Name)
 			assert.Equal(t, accounting.AccountTypeExpense, req.AccountType)
 			require.NotNil(t, req.ParentID)
-			assert.Equal(t, "parent-1", *req.ParentID)
+			assert.Equal(t, parentCreateID, *req.ParentID)
 			assert.Equal(t, "Monthly office costs", req.Description)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":           "acc-branch",
@@ -4711,7 +4713,7 @@ func TestCLIAccountsBranches(t *testing.T) {
 			assert.Equal(t, "Updated Office Supplies", req.Name)
 			assert.Equal(t, accounting.AccountTypeExpense, req.AccountType)
 			require.NotNil(t, req.ParentID)
-			assert.Equal(t, "parent-2", *req.ParentID)
+			assert.Equal(t, parentUpdateID, *req.ParentID)
 			assert.Equal(t, "Updated monthly office costs", req.Description)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":           "acc-branch",
@@ -4770,10 +4772,12 @@ func TestCLIAccountsBranches(t *testing.T) {
 		{name: "import invalid flag", args: []string{"accounts", "import", "--bogus"}, want: "flag provided but not defined"},
 		{name: "create missing required", args: []string{"accounts", "create", "--code", "6100", "--type", "expense"}, want: "code, name, and type are required"},
 		{name: "create invalid type", args: []string{"accounts", "create", "--code", "6100", "--name", "Office Supplies", "--type", "cash"}, want: `invalid account type "cash"`},
+		{name: "create invalid parent id", args: []string{"accounts", "create", "--code", "6100", "--name", "Office Supplies", "--type", "expense", "--parent-id", "legacy-parent"}, want: "parent-id must be a valid UUID"},
 		{name: "get missing id", args: []string{"accounts", "get"}, want: "id is required"},
 		{name: "update missing id", args: []string{"accounts", "update", "--code", "6110", "--name", "Updated", "--type", "expense"}, want: "id is required"},
 		{name: "update missing required", args: []string{"accounts", "update", "--id", "acc-branch", "--code", "6110", "--type", "expense"}, want: "code, name, and type are required"},
 		{name: "update invalid type", args: []string{"accounts", "update", "--id", "acc-branch", "--code", "6110", "--name", "Updated", "--type", "cash"}, want: `invalid account type "cash"`},
+		{name: "update invalid parent id", args: []string{"accounts", "update", "--id", "acc-branch", "--code", "6110", "--name", "Updated", "--type", "expense", "--parent-id", "legacy-parent"}, want: "parent-id must be a valid UUID"},
 		{name: "delete missing id", args: []string{"accounts", "delete"}, want: "id is required"},
 		{name: "import missing file", args: []string{"accounts", "import"}, want: "file is required"},
 		{name: "import unreadable file", args: []string{"accounts", "import", "--file", filepath.Join(t.TempDir(), "missing.csv")}, want: "read file"},
@@ -4809,13 +4813,13 @@ func TestCLIAccountsBranches(t *testing.T) {
 		"--code", " 6100 ",
 		"--name", " Office Supplies ",
 		"--type", " expense ",
-		"--parent-id", " parent-1 ",
+		"--parent-id", " " + parentCreateID + " ",
 		"--description", " Monthly office costs ",
 		"--json",
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"code": "6100"`)
-	assert.Contains(t, stdout.String(), `"parent_id": "parent-1"`)
+	assert.Contains(t, stdout.String(), `"parent_id": "`+parentCreateID+`"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"accounts", "get", "--id", " acc-branch ", "--json"})
@@ -4830,13 +4834,13 @@ func TestCLIAccountsBranches(t *testing.T) {
 		"--code", " 6110 ",
 		"--name", " Updated Office Supplies ",
 		"--type", " expense ",
-		"--parent-id", " parent-2 ",
+		"--parent-id", " " + parentUpdateID + " ",
 		"--description", " Updated monthly office costs ",
 		"--json",
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"code": "6110"`)
-	assert.Contains(t, stdout.String(), `"parent_id": "parent-2"`)
+	assert.Contains(t, stdout.String(), `"parent_id": "`+parentUpdateID+`"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"accounts", "delete", "--id", " acc-branch ", "--json"})
@@ -4879,6 +4883,7 @@ func TestCLIAccountsAuthAndAPIErrors(t *testing.T) {
 	}))
 
 	importFile := writeTempCSV(t, "accounts-error.csv", "code,name,type\n6200,Error Supplies,EXPENSE\n")
+	errorParentID := "33333333-3333-3333-3333-333333333333"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -4895,7 +4900,7 @@ func TestCLIAccountsAuthAndAPIErrors(t *testing.T) {
 			assert.Equal(t, "Error Supplies", req.Name)
 			assert.Equal(t, accounting.AccountTypeExpense, req.AccountType)
 			require.NotNil(t, req.ParentID)
-			assert.Equal(t, "parent-error", *req.ParentID)
+			assert.Equal(t, errorParentID, *req.ParentID)
 			assert.Equal(t, "Error branch", req.Description)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/acc-error":
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/acc-error":
@@ -4905,7 +4910,7 @@ func TestCLIAccountsAuthAndAPIErrors(t *testing.T) {
 			assert.Equal(t, "Updated Error Supplies", req.Name)
 			assert.Equal(t, accounting.AccountTypeExpense, req.AccountType)
 			require.NotNil(t, req.ParentID)
-			assert.Equal(t, "parent-error", *req.ParentID)
+			assert.Equal(t, errorParentID, *req.ParentID)
 			assert.Equal(t, "Updated error branch", req.Description)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/acc-error":
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/accounts/import":
@@ -4929,9 +4934,9 @@ func TestCLIAccountsAuthAndAPIErrors(t *testing.T) {
 	}{
 		{name: "list api error", args: []string{"accounts", "list", "--active-only"}},
 		{name: "hierarchy api error", args: []string{"accounts", "hierarchy", "--active-only"}},
-		{name: "create api error", args: []string{"accounts", "create", "--code", "6200", "--name", "Error Supplies", "--type", "expense", "--parent-id", "parent-error", "--description", "Error branch"}},
+		{name: "create api error", args: []string{"accounts", "create", "--code", "6200", "--name", "Error Supplies", "--type", "expense", "--parent-id", errorParentID, "--description", "Error branch"}},
 		{name: "get api error", args: []string{"accounts", "get", "--id", "acc-error"}},
-		{name: "update api error", args: []string{"accounts", "update", "--id", "acc-error", "--code", "6210", "--name", "Updated Error Supplies", "--type", "expense", "--parent-id", "parent-error", "--description", "Updated error branch"}},
+		{name: "update api error", args: []string{"accounts", "update", "--id", "acc-error", "--code", "6210", "--name", "Updated Error Supplies", "--type", "expense", "--parent-id", errorParentID, "--description", "Updated error branch"}},
 		{name: "delete api error", args: []string{"accounts", "delete", "--id", "acc-error"}},
 		{name: "import api error", args: []string{"accounts", "import", "--file", importFile}},
 	}
