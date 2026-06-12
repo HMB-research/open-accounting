@@ -676,6 +676,48 @@ func TestValidateBundleReportsTSDHistoryRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindTSDHistory, "emta_reference", "emta_reference must be consistent for each TSD period")
 }
 
+func TestValidateBundleReportsKMDHistoryRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindKMDHistory,
+			FileName: "kmd-history.csv",
+			CSVContent: "declaration_year,declaration_month,declaration_status,submitted_date,row_code,tax_base,tax_amount,total_output_vat,total_input_vat\n" +
+				"1899,5,ACCEPTED,2026-01-20,1,100,22,22,0\n" +
+				"2026,13,ACCEPTED,2026-01-20,1,100,22,22,0\n" +
+				"2026,5,BAD,2026-01-20,1,100,22,22,0\n" +
+				"2026,6,ACCEPTED,bad-date,1,100,22,22,0\n" +
+				"2026,7,ACCEPTED,2026-01-20,,100,22,22,0\n" +
+				"2026,8,ACCEPTED,2026-01-20,1,,,22,0\n" +
+				"2026,9,ACCEPTED,2026-01-20,1,nope,22,22,0\n" +
+				"2026,10,ACCEPTED,2026-01-20,1,100,nope,22,0\n" +
+				"2026,11,ACCEPTED,2026-01-20,1,100,22,nope,0\n" +
+				"2026,12,ACCEPTED,2026-01-20,1,100,22,22,nope\n" +
+				"2026,4,ACCEPTED,2026-01-20,1,100,22,22,0\n" +
+				"2026,4,SUBMITTED,2026-01-21,4,50,11,23,1\n" +
+				"2026,3,filed,31.12.2026,row_4,\"1 000,50\",\"220,11\",\"220,11\",0\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 14, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindKMDHistory, "year", "year must be between 1900 and 2200")
+	assertValidationIssue(t, report, KindKMDHistory, "month", "month must be between 1 and 12")
+	assertValidationIssue(t, report, KindKMDHistory, "status", "status must be DRAFT, SUBMITTED, or ACCEPTED")
+	assertValidationIssue(t, report, KindKMDHistory, "submitted_at", "submitted_at must be in YYYY-MM-DD format")
+	assertValidationIssue(t, report, KindKMDHistory, "row_code", "row_code is required")
+	assertValidationIssue(t, report, KindKMDHistory, "tax_base", "tax_base or tax_amount is required")
+	assertValidationIssue(t, report, KindKMDHistory, "tax_base", "tax_base must be a decimal")
+	assertValidationIssue(t, report, KindKMDHistory, "tax_amount", "tax_amount must be a decimal")
+	assertValidationIssue(t, report, KindKMDHistory, "total_output_vat", "total_output_vat must be a decimal")
+	assertValidationIssue(t, report, KindKMDHistory, "total_input_vat", "total_input_vat must be a decimal")
+	assertValidationIssue(t, report, KindKMDHistory, "status", "status must be consistent for each KMD period")
+	assertValidationIssue(t, report, KindKMDHistory, "submitted_at", "submitted_at must be consistent for each KMD period")
+	assertValidationIssue(t, report, KindKMDHistory, "total_output_vat", "total_output_vat must be consistent for each KMD period")
+	assertValidationIssue(t, report, KindKMDHistory, "total_input_vat", "total_input_vat must be consistent for each KMD period")
+}
+
 func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
