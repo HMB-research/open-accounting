@@ -8,6 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	cutoverJournalLineID1 = "11111111-1111-4111-8111-111111111111"
+	cutoverJournalLineID2 = "22222222-2222-4222-8222-222222222222"
+)
+
 func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -96,9 +101,10 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 			CSVContent: "code,name,parent_code\nCC-ROOT,Root,\nCC-SALES,Sales,CC-ROOT\n",
 		},
 		{
-			Kind:       KindCostAllocations,
-			FileName:   "cost-allocations.csv",
-			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\nCC-SALES,line-1,125.50,50,2026-05-31,Shared rent\n",
+			Kind:     KindCostAllocations,
+			FileName: "cost-allocations.csv",
+			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\n" +
+				"CC-SALES," + cutoverJournalLineID1 + ",125.50,50,2026-05-31,Shared rent\n",
 		},
 		{
 			Kind:       KindProductCategories,
@@ -1485,9 +1491,10 @@ func TestValidateBundleReportsCostAllocationReferenceIssues(t *testing.T) {
 			CSVContent: "code,name\nOPS,Operations\n",
 		},
 		{
-			Kind:       KindCostAllocations,
-			FileName:   "cost-allocations.csv",
-			CSVContent: "cc_code,journal_line_id,allocation_amount,allocation_date\nMISSING,line-1,125.50,2026-05-31\n",
+			Kind:     KindCostAllocations,
+			FileName: "cost-allocations.csv",
+			CSVContent: "cc_code,journal_line_id,allocation_amount,allocation_date\n" +
+				"MISSING," + cutoverJournalLineID1 + ",125.50,2026-05-31\n",
 		},
 	}})
 
@@ -1501,6 +1508,22 @@ func TestValidateBundleReportsCostAllocationReferenceIssues(t *testing.T) {
 	assert.Equal(t, "MISSING", report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsInvalidCostAllocationJournalEntryLineIDs(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindCostAllocations,
+			FileName:   "cost-allocations.csv",
+			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_date\nOPS,legacy-line,125.50,2026-05-31\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindCostAllocations, "journal_entry_line_id", "journal_entry_line_id must be a valid UUID")
+}
+
 func TestValidateBundleReportsCostAllocationIDsThatMatchGeneratedCostCenterImportIDs(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -1509,9 +1532,11 @@ func TestValidateBundleReportsCostAllocationIDsThatMatchGeneratedCostCenterImpor
 			CSVContent: "id,cost_center_code,name\nlegacy-cc,SALES,Sales\nlegacy-cc,OPS,Operations\n",
 		},
 		{
-			Kind:       KindCostAllocations,
-			FileName:   "cost-allocations.csv",
-			CSVContent: "cost_center_code,cost_center_id,journal_entry_line_id,amount,allocation_date\nOPS,,line-1,125.50,2026-05-31\n,legacy-cc,line-2,75.00,2026-05-31\n",
+			Kind:     KindCostAllocations,
+			FileName: "cost-allocations.csv",
+			CSVContent: "cost_center_code,cost_center_id,journal_entry_line_id,amount,allocation_date\n" +
+				"OPS,," + cutoverJournalLineID1 + ",125.50,2026-05-31\n" +
+				",legacy-cc," + cutoverJournalLineID2 + ",75.00,2026-05-31\n",
 		},
 	}})
 
@@ -1552,7 +1577,7 @@ func TestValidateBundleReportsCostCenterRowValueIssues(t *testing.T) {
 			FileName: "cost-allocations.csv",
 			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date\n" +
 				",,0,101,2026/05/30\n" +
-				"OPS,line-1,nope,nope,\n",
+				"OPS," + cutoverJournalLineID1 + ",nope,nope,\n",
 		},
 	}})
 
@@ -2027,9 +2052,10 @@ func TestValidateBundleCanonicalizesImporterDescriptionMemoAliases(t *testing.T)
 			CSVContent: "cost_center_code,name\nSALES,Sales\n",
 		},
 		{
-			Kind:       KindCostAllocations,
-			FileName:   "cost-allocations.csv",
-			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_date,description\nSALES,line-1,125.50,2026-05-31,Shared rent\n",
+			Kind:     KindCostAllocations,
+			FileName: "cost-allocations.csv",
+			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_date,description\n" +
+				"SALES," + cutoverJournalLineID1 + ",125.50,2026-05-31,Shared rent\n",
 		},
 		{
 			Kind:       KindProducts,
