@@ -204,6 +204,21 @@ func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
 
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries", map[string]interface{}{
 		"entry_date":  "2026-02-10T00:00:00Z",
+		"description": "Bad source journal",
+		"source_id":   "legacy-source",
+		"lines": []map[string]interface{}{
+			{"account_id": "cash", "debit_amount": "100.00"},
+			{"account_id": "sales", "credit_amount": "100.00"},
+		},
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateJournalEntry(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "source_id must be a valid UUID")
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries", map[string]interface{}{
+		"entry_date":  "2026-02-10T00:00:00Z",
 		"description": "Sales journal",
 		"reference":   "REF-1",
 		"source_type": "MANUAL",

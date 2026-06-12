@@ -875,7 +875,7 @@ Content-Type: application/json
 }
 ```
 
-**Note:** Debits must equal credits in base currency. Line `currency` defaults to `EUR`, omitted or zero `exchange_rate` defaults to `1`, and non-zero exchange rates must be positive. When `requires_evidence` is true, posting is blocked until the journal entry has at least one approved `supporting_document`, `receipt`, or `tax_support` document attached.
+**Note:** Debits must equal credits in base currency. Line `currency` defaults to `EUR`, omitted or zero `exchange_rate` defaults to `1`, and non-zero exchange rates must be positive. Optional `source_id` values must be valid UUIDs. When `requires_evidence` is true, posting is blocked until the journal entry has at least one approved `supporting_document`, `receipt`, or `tax_support` document attached.
 
 ### Post Journal Entry
 

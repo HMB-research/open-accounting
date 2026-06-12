@@ -11617,6 +11617,18 @@ func TestCLIJournalBranches(t *testing.T) {
 			},
 			want: "line account_id is required",
 		},
+		{
+			name: "invalid create source id",
+			args: []string{
+				"journal", "create",
+				"--entry-date", "2026-04-01",
+				"--description", "Manual accrual",
+				"--source-id", "legacy-source",
+				"--line", "account_id=acc-1,debit=100",
+				"--line", "account_id=acc-2,credit=100",
+			},
+			want: "source-id must be a valid UUID",
+		},
 		{name: "missing post id", args: []string{"journal", "post", "--id", " "}, want: "id is required"},
 		{name: "missing void id", args: []string{"journal", "void", "--id", " ", "--reason", "Duplicate"}, want: "id is required"},
 		{name: "missing void reason", args: []string{"journal", "void", "--id", "je-1", "--reason", " "}, want: "reason is required"},
@@ -11633,6 +11645,7 @@ func TestCLIJournalBranches(t *testing.T) {
 		})
 	}
 
+	branchSourceID := "33333333-3333-3333-3333-333333333333"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -11652,7 +11665,7 @@ func TestCLIJournalBranches(t *testing.T) {
 			assert.Equal(t, "BR-1", req.Reference)
 			assert.Equal(t, "MANUAL", req.SourceType)
 			require.NotNil(t, req.SourceID)
-			assert.Equal(t, "src-1", *req.SourceID)
+			assert.Equal(t, branchSourceID, *req.SourceID)
 			require.Len(t, req.Lines, 2)
 			assert.Equal(t, "acc-1", req.Lines[0].AccountID)
 			assert.Equal(t, "Line one", req.Lines[0].Description)
@@ -11731,14 +11744,14 @@ func TestCLIJournalBranches(t *testing.T) {
 		"--description", " Branch accrual ",
 		"--reference", " BR-1 ",
 		"--source-type", " MANUAL ",
-		"--source-id", " src-1 ",
+		"--source-id", " " + branchSourceID + " ",
 		"--line", "account_id=acc-1,description=Line one,debit=20.00,currency=usd,exchange_rate=0.91",
 		"--line", "account_id=acc-2,description=Line two,credit=20.00",
 		"--json",
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"entry_number": "JE-2026-010"`)
-	assert.Contains(t, stdout.String(), `"source_id": "src-1"`)
+	assert.Contains(t, stdout.String(), `"source_id": "`+branchSourceID+`"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"journal", "get", "--id", " je-branch ", "--json"})

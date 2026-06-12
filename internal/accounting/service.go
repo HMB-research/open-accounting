@@ -274,6 +274,11 @@ func (s *Service) ListJournalEntries(ctx context.Context, schemaName, tenantID s
 
 // CreateJournalEntry creates a new journal entry
 func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *CreateJournalEntryRequest) (*JournalEntry, error) {
+	sourceID, err := normalizeOptionalJournalUUIDPtr(req.SourceID, "source_id")
+	if err != nil {
+		return nil, err
+	}
+
 	entry := &JournalEntry{
 		ID:               uuid.New().String(),
 		TenantID:         tenantID,
@@ -281,7 +286,7 @@ func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID s
 		Description:      req.Description,
 		Reference:        req.Reference,
 		SourceType:       req.SourceType,
-		SourceID:         req.SourceID,
+		SourceID:         sourceID,
 		RequiresEvidence: req.RequiresEvidence,
 		Status:           StatusDraft,
 		CreatedAt:        time.Now(),
@@ -321,6 +326,22 @@ func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID s
 	}
 
 	return entry, nil
+}
+
+func normalizeOptionalJournalUUIDPtr(value *string, field string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", field)
+	}
+	id := parsedID.String()
+	return &id, nil
 }
 
 // CreateJournalEntryTemplate stores a balanced reusable journal entry template.
