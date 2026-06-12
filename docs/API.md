@@ -1205,7 +1205,11 @@ Content-Type: application/json
 }
 ```
 
-Supported header aliases include `employee_number` / `employee_no`, `personal_code` / `isikukood`, `employment_type` / `type`, `base_salary` / `salary`, and `salary_effective_from` / `effective_from`.
+Required columns are `first_name`, `last_name`, and `start_date`. Optional columns include `employee_number`, `personal_code`, `email`, `phone`, `address`, `bank_account`, `end_date`, `position`, `department`, `employment_type`, `apply_basic_exemption`, `basic_exemption_amount`, `funded_pension_rate`, `base_salary`, `salary_effective_from`, and `is_active`.
+
+Supported header aliases include `number`, `employee_no`, or `employee_id` for `employee_number`; `firstname` or `given_name` for `first_name`; `lastname`, `surname`, or `family_name` for `last_name`; `isikukood` for `personal_code`; `telephone` for `phone`; `iban` for `bank_account`; `employment_start` for `start_date`; `employment_end` for `end_date`; `title` for `position`; `team` for `department`; `type` for `employment_type`; `basic_exemption` for `apply_basic_exemption`; `pension_rate` for `funded_pension_rate`; `salary` or `gross_salary` for `base_salary`; `effective_from` for `salary_effective_from`; and `active` for `is_active`.
+
+Dates can use `YYYY-MM-DD`, RFC3339 timestamps, or `DD.MM.YYYY`. Boolean fields accept common migration values such as `true`/`false`, `yes`/`no`, `1`/`0`, and Estonian `ja`/`ei`. Decimal fields accept comma decimals such as `4500,50`. Duplicate employees are detected by employee number, personal code, email, or the same full name plus start date. If `base_salary` is provided, it must be positive; if `salary_effective_from` is omitted, the employee start date is used.
 
 **Response (200 OK):**
 
