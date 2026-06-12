@@ -2413,6 +2413,71 @@ func TestValidateBundleReportsMissingContactIDReference(t *testing.T) {
 	assert.Equal(t, missingContactID, report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsContactIDReferenceWhenValueMatchesLookupField(t *testing.T) {
+	legacyContactID := "11111111-1111-1111-1111-111111111111"
+	contactCodeThatLooksLikeID := "22222222-2222-2222-2222-222222222222"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_id,contact_code,name\n" + legacyContactID + "," + contactCodeThatLooksLikeID + ",Supplier One\n",
+		},
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n5500,Office expenses,EXPENSE\n",
+		},
+		{
+			Kind:       KindExpenses,
+			FileName:   "expenses.csv",
+			CSVContent: "expense_date,merchant,expense_account_code,payment_account_code,amount,contact_id\n2026-05-30,Supplier One,5500,1000,42," + contactCodeThatLooksLikeID + "\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,contact_id\nRECEIVED,2026-05-31,100," + contactCodeThatLooksLikeID + "\n",
+		},
+		{
+			Kind:       KindQuotes,
+			FileName:   "quotes.csv",
+			CSVContent: "quote_number,quote_date,contact_id,line_description,quantity,unit_price,vat_rate\nQ-1,2026-05-30," + contactCodeThatLooksLikeID + ",Work,1,100,22\n",
+		},
+		{
+			Kind:       KindOrders,
+			FileName:   "orders.csv",
+			CSVContent: "order_number,order_date,contact_id,line_description,quantity,unit_price,vat_rate\nSO-1,2026-05-31," + contactCodeThatLooksLikeID + ",Work,1,100,22\n",
+		},
+		{
+			Kind:       KindRecurringInvoices,
+			FileName:   "recurring.csv",
+			CSVContent: "name,frequency,start_date,contact_id,line_description,quantity,unit_price,vat_rate\nMonthly,MONTHLY,2026-06-01," + contactCodeThatLooksLikeID + ",Work,1,100,22\n",
+		},
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,sales_price,supplier_id\nSKU-1,Widget,10," + contactCodeThatLooksLikeID + "\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_id\nFA-1,Laptop,2026-05-30,1200," + contactCodeThatLooksLikeID + "\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 7, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindExpenses, "contact_id", "reference")
+	assertValidationIssue(t, report, KindPayments, "contact_id", "reference")
+	assertValidationIssue(t, report, KindQuotes, "contact_id", "reference")
+	assertValidationIssue(t, report, KindOrders, "contact_id", "reference")
+	assertValidationIssue(t, report, KindRecurringInvoices, "contact_id", "reference")
+	assertValidationIssue(t, report, KindProducts, "supplier_id", "reference")
+	assertValidationIssue(t, report, KindFixedAssets, "supplier_id", "reference")
+}
+
 func TestValidateBundleReportsInvalidContactImportID(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

@@ -37,6 +37,7 @@ type bundleIndexes struct {
 	accountCodes      map[string]bool
 	accountIDs        map[string]bool
 	bankAccounts      map[string]string
+	contactIDs        map[string]bool
 	contacts          map[string]bool
 	employees         map[string]bool
 	invoices          map[string]bool
@@ -1441,6 +1442,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 		accountCodes:      map[string]bool{},
 		accountIDs:        map[string]bool{},
 		bankAccounts:      map[string]string{},
+		contactIDs:        map[string]bool{},
 		contacts:          map[string]bool{},
 		employees:         map[string]bool{},
 		invoices:          map[string]bool{},
@@ -1460,7 +1462,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 			case KindBankAccounts:
 				addBankAccountIndexValue(indexes.bankAccounts, row.values["account_number"], row.values["currency"])
 			case KindContacts:
-				addIndexValue(indexes.contacts, row.values["id"])
+				addIndexValue(indexes.contactIDs, row.values["id"])
 				addIndexValue(indexes.contacts, row.values["code"])
 				addIndexValue(indexes.contacts, row.values["reg_code"])
 				addIndexValue(indexes.contacts, row.values["vat_number"])
@@ -1507,8 +1509,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindExpenses:
 			checkAccountReference(report, indexes, file, row, "expense_account_id", "expense_account_code")
 			checkAccountReference(report, indexes, file, row, "payment_account_id", "payment_account_code")
-			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				[]string{"contact_id"})
+			checkContactIDReference(report, indexes, file, row, "contact_id")
 		case KindInvoices:
 			checkOptionalUUID(report, file, row, "id")
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
@@ -1519,26 +1520,22 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkEInvoiceContactReferences(report, indexes, file, row, eInvoiceContactMode)
 		case KindQuotes:
 			checkOptionalUUID(report, file, row, "id")
-			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				commercialDocumentContactReferenceFields())
+			checkCommercialDocumentContactReference(report, indexes, file, row)
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
 		case KindRecurringInvoices:
 			checkAccountReference(report, indexes, file, row, "account_id", "")
-			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				commercialDocumentContactReferenceFields())
+			checkCommercialDocumentContactReference(report, indexes, file, row)
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
 		case KindOrders:
-			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				commercialDocumentContactReferenceFields())
+			checkCommercialDocumentContactReference(report, indexes, file, row)
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
 			checkTargetReference(report, indexes.files[KindQuotes], indexes.quotes, file, row, KindQuotes,
 				[]string{"quote_id"})
 		case KindPayments:
-			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				[]string{"contact_id"})
+			checkContactIDReference(report, indexes, file, row, "contact_id")
 			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 				[]string{"invoice_id", "invoice_number"})
 		case KindBankAccounts:
@@ -1570,8 +1567,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkAccountReference(report, indexes, file, row, "sale_account_id", "sale_account_code")
 			checkAccountReference(report, indexes, file, row, "purchase_account_id", "purchase_account_code")
 			checkAccountReference(report, indexes, file, row, "inventory_account_id", "inventory_account_code")
-			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				[]string{"supplier_id"})
+			checkContactIDReference(report, indexes, file, row, "supplier_id")
 		case KindStockAdjustments:
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
@@ -1581,8 +1577,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkAccountReference(report, indexes, file, row, "asset_account_id", "asset_account_code")
 			checkAccountReference(report, indexes, file, row, "depreciation_expense_account_id", "depreciation_expense_account_code")
 			checkAccountReference(report, indexes, file, row, "accumulated_depreciation_account_id", "accumulated_depreciation_account_code")
-			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				[]string{"supplier_id"})
+			checkContactIDReference(report, indexes, file, row, "supplier_id")
 			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 				[]string{"invoice_id"})
 		}
@@ -5173,6 +5168,26 @@ func checkAccountReference(report *BundleValidationReport, indexes bundleIndexes
 	checkReferenceValues(report, indexes.accountCodes, file, row, KindAccounts, codeField, []string{row.values[codeField]})
 }
 
+func checkContactIDReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, idField string) {
+	contactID := strings.TrimSpace(row.values[idField])
+	if contactID == "" {
+		return
+	}
+	if !checkOptionalUUID(report, file, row, idField) || !indexes.files[KindContacts] {
+		return
+	}
+	checkReferenceValues(report, indexes.contactIDs, file, row, KindContacts, idField, []string{contactID})
+}
+
+func checkCommercialDocumentContactReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["contact_id"]) != "" {
+		checkContactIDReference(report, indexes, file, row, "contact_id")
+		return
+	}
+	checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
+		commercialDocumentContactLookupFields())
+}
+
 func checkSelfReference(report *BundleValidationReport, file parsedFile, row parsedRow, field, identityField string) {
 	value := strings.TrimSpace(row.values[field])
 	identity := strings.TrimSpace(row.values[identityField])
@@ -5460,6 +5475,10 @@ func commercialDocumentRequiredGroups(numberColumn, dateColumn string) [][]strin
 
 func commercialDocumentContactReferenceFields() []string {
 	return []string{"contact_id", "contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
+}
+
+func commercialDocumentContactLookupFields() []string {
+	return []string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
 }
 
 func employeeReferenceRequiredGroups() [][]string {
