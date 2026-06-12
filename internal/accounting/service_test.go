@@ -424,6 +424,27 @@ func TestService_CreateAccount(t *testing.T) {
 		assert.False(t, result.CreatedAt.IsZero())
 	})
 
+	t.Run("creates account with explicit normalized ID and blank parent", func(t *testing.T) {
+		id := "  11111111-1111-4111-8111-111111111111  "
+		blankParentID := "  "
+		req := &CreateAccountRequest{
+			ID:          id,
+			Code:        "  1020  ",
+			Name:        "  Clearing  ",
+			AccountType: AccountTypeAsset,
+			ParentID:    &blankParentID,
+			Description: "  Suspense clearing account  ",
+		}
+
+		result, err := svc.CreateAccount(ctx, schemaName, "tenant-1", req)
+		require.NoError(t, err)
+		assert.Equal(t, "11111111-1111-4111-8111-111111111111", result.ID)
+		assert.Equal(t, "1020", result.Code)
+		assert.Equal(t, "Clearing", result.Name)
+		assert.Equal(t, "Suspense clearing account", result.Description)
+		assert.Nil(t, result.ParentID)
+	})
+
 	t.Run("creates account with parent", func(t *testing.T) {
 		parentID := "11111111-1111-1111-1111-111111111111"
 		req := &CreateAccountRequest{
@@ -436,6 +457,40 @@ func TestService_CreateAccount(t *testing.T) {
 		result, err := svc.CreateAccount(ctx, schemaName, "tenant-1", req)
 		require.NoError(t, err)
 		assert.Equal(t, &parentID, result.ParentID)
+	})
+
+	t.Run("rejects missing required fields", func(t *testing.T) {
+		_, err := svc.CreateAccount(ctx, schemaName, "tenant-1", &CreateAccountRequest{
+			Code:        "   ",
+			Name:        "Missing type",
+			AccountType: "",
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "code, name, and account_type are required")
+	})
+
+	t.Run("rejects invalid account type", func(t *testing.T) {
+		_, err := svc.CreateAccount(ctx, schemaName, "tenant-1", &CreateAccountRequest{
+			Code:        "1999",
+			Name:        "Unsupported",
+			AccountType: AccountType("unsupported"),
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid account_type")
+	})
+
+	t.Run("rejects invalid explicit id", func(t *testing.T) {
+		_, err := svc.CreateAccount(ctx, schemaName, "tenant-1", &CreateAccountRequest{
+			ID:          "legacy-id",
+			Code:        "1998",
+			Name:        "Legacy",
+			AccountType: AccountTypeAsset,
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "id must be a valid UUID")
 	})
 
 	t.Run("rejects invalid parent id", func(t *testing.T) {
@@ -507,6 +562,15 @@ func TestService_UpdateAndDeactivateAccount(t *testing.T) {
 		assert.True(t, repo.accounts["custom"].IsActive)
 	})
 
+	t.Run("returns get errors on update", func(t *testing.T) {
+		_, err := svc.UpdateAccount(ctx, schemaName, "tenant-1", "missing", &UpdateAccountRequest{
+			Code:        "6150",
+			Name:        "Missing",
+			AccountType: AccountTypeExpense,
+		})
+		assert.Error(t, err)
+	})
+
 	t.Run("rejects system account update", func(t *testing.T) {
 		_, err := svc.UpdateAccount(ctx, schemaName, "tenant-1", "system", &UpdateAccountRequest{
 			Code:        "1010",
@@ -526,6 +590,16 @@ func TestService_UpdateAndDeactivateAccount(t *testing.T) {
 		assert.Error(t, err)
 	})
 
+	t.Run("rejects invalid update account type", func(t *testing.T) {
+		_, err := svc.UpdateAccount(ctx, schemaName, "tenant-1", "custom", &UpdateAccountRequest{
+			Code:        "6150",
+			Name:        "Updated Expense",
+			AccountType: AccountType("unsupported"),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid account_type")
+	})
+
 	t.Run("rejects invalid parent id update", func(t *testing.T) {
 		parentID := "legacy-parent"
 		_, err := svc.UpdateAccount(ctx, schemaName, "tenant-1", "custom", &UpdateAccountRequest{
@@ -538,6 +612,18 @@ func TestService_UpdateAndDeactivateAccount(t *testing.T) {
 		assert.Contains(t, err.Error(), "parent_id must be a valid UUID")
 	})
 
+	t.Run("propagates update repository errors", func(t *testing.T) {
+		repo.updateAccountErr = errors.New("update failed")
+		_, err := svc.UpdateAccount(ctx, schemaName, "tenant-1", "custom", &UpdateAccountRequest{
+			Code:        "6150",
+			Name:        "Updated Expense",
+			AccountType: AccountTypeExpense,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update failed")
+		repo.updateAccountErr = nil
+	})
+
 	t.Run("deactivates editable account", func(t *testing.T) {
 		result, err := svc.DeactivateAccount(ctx, schemaName, "tenant-1", "custom")
 		require.NoError(t, err)
@@ -545,10 +631,34 @@ func TestService_UpdateAndDeactivateAccount(t *testing.T) {
 		assert.False(t, repo.accounts["custom"].IsActive)
 	})
 
+	t.Run("returns get errors on deactivation", func(t *testing.T) {
+		_, err := svc.DeactivateAccount(ctx, schemaName, "tenant-1", "missing")
+		assert.Error(t, err)
+	})
+
 	t.Run("rejects system account deactivation", func(t *testing.T) {
 		_, err := svc.DeactivateAccount(ctx, schemaName, "tenant-1", "system")
 		assert.ErrorIs(t, err, ErrSystemAccountImmutable)
 		assert.True(t, repo.accounts["system"].IsActive)
+	})
+
+	t.Run("propagates deactivation update errors", func(t *testing.T) {
+		repo.accounts["deactivate-error"] = &Account{
+			ID:          "deactivate-error",
+			TenantID:    "tenant-1",
+			Code:        "6200",
+			Name:        "Temporary Expense",
+			AccountType: AccountTypeExpense,
+			IsActive:    true,
+			IsSystem:    false,
+		}
+		repo.updateAccountErr = errors.New("deactivate failed")
+
+		_, err := svc.DeactivateAccount(ctx, schemaName, "tenant-1", "deactivate-error")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "deactivate failed")
+		repo.updateAccountErr = nil
 	})
 }
 
