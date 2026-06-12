@@ -388,6 +388,38 @@ func TestValidateBundleReportsGroupedCommercialDocumentHeaderConflicts(t *testin
 	assertValidationIssue(t, report, KindRecurringInvoices, "frequency", "frequency must be consistent for each template")
 }
 
+func TestValidateBundleReportsGroupedDocumentPreservedIDIssues(t *testing.T) {
+	sharedInvoiceID := "11111111-1111-1111-1111-111111111111"
+	sharedQuoteID := "22222222-2222-2222-2222-222222222222"
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				sharedInvoiceID + ",INV-1,SALES,CUST-1,2026-05-30,2026-06-14,Setup,1,100,22\n" +
+				sharedInvoiceID + ",INV-1,sale,CUST-1,2026-05-30,2026-06-14,Support,2,50,22\n" +
+				sharedInvoiceID + ",INV-2,SALES,CUST-1,2026-05-31,2026-06-15,Duplicate ID,1,75,22\n",
+		},
+		{
+			Kind:     KindQuotes,
+			FileName: "quotes.csv",
+			CSVContent: "quote_id,quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate\n" +
+				sharedQuoteID + ",Q-1,2026-05-30,CUST-1,Setup,1,100,22\n" +
+				sharedQuoteID + ",Q-1,2026-05-30,CUST-1,Support,2,50,22\n" +
+				sharedQuoteID + ",Q-2,2026-05-31,CUST-1,Duplicate ID,1,75,22\n" +
+				"not-a-uuid,Q-BAD,2026-06-01,CUST-1,Bad ID,1,10,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindInvoices, "id", "duplicates row")
+	assertValidationIssue(t, report, KindQuotes, "id", "duplicates row")
+	assertValidationIssue(t, report, KindQuotes, "id", "id must be a valid UUID")
+}
+
 func TestValidateBundleReportsCommercialDocumentRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

@@ -59,6 +59,12 @@ type duplicateCompositeValue struct {
 	row int
 }
 
+type groupedDocumentPreservedIDValue struct {
+	row          int
+	groupKey     string
+	groupDisplay string
+}
+
 type groupedDocumentSpec struct {
 	keyLabel string
 	key      []groupedFieldSpec
@@ -1510,7 +1516,13 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"product_id", "product_code"})
 		case KindEInvoices:
 			checkEInvoiceContactReferences(report, indexes, file, row, eInvoiceContactMode)
-		case KindQuotes, KindRecurringInvoices:
+		case KindQuotes:
+			checkOptionalUUID(report, file, row, "id")
+			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
+				commercialDocumentContactReferenceFields())
+			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
+				[]string{"product_id", "product_code"})
+		case KindRecurringInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				commercialDocumentContactReferenceFields())
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
@@ -1638,6 +1650,8 @@ func normalizedDuplicateIdentifierValue(spec duplicateIdentifierSpec, value stri
 
 func validateCompositeDuplicatePreflight(report *BundleValidationReport, file parsedFile) {
 	switch file.kind {
+	case KindInvoices, KindQuotes:
+		validateGroupedDocumentPreservedIDs(report, file)
 	case KindPayrollHistory:
 		validatePayrollHistoryDuplicateEmployees(report, file)
 	case KindLeaveBalances:
@@ -1646,6 +1660,54 @@ func validateCompositeDuplicatePreflight(report *BundleValidationReport, file pa
 		validateTSDHistoryDuplicateEmployees(report, file)
 	case KindKMDHistory:
 		validateKMDHistoryDuplicateRows(report, file)
+	}
+}
+
+func validateGroupedDocumentPreservedIDs(report *BundleValidationReport, file parsedFile) {
+	spec, ok := groupedDocumentPreflightSpecs[file.kind]
+	if !ok {
+		return
+	}
+
+	seen := map[string]groupedDocumentPreservedIDValue{}
+	for _, row := range file.rows {
+		value := strings.TrimSpace(row.values["id"])
+		if value == "" {
+			continue
+		}
+		groupKey, groupDisplay, ok := groupedDocumentKey(row, spec)
+		if !ok {
+			continue
+		}
+		key := normalizedValue(value)
+		first, exists := seen[key]
+		if !exists {
+			seen[key] = groupedDocumentPreservedIDValue{
+				row:          row.number,
+				groupKey:     groupKey,
+				groupDisplay: groupDisplay,
+			}
+			continue
+		}
+		if first.groupKey == groupKey {
+			continue
+		}
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "id",
+			Value:    value,
+			Message: fmt.Sprintf(
+				"id %q duplicates row %d across %s groups %q and %q",
+				value,
+				first.row,
+				spec.keyLabel,
+				first.groupDisplay,
+				groupDisplay,
+			),
+		})
 	}
 }
 
