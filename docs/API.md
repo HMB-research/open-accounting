@@ -2494,7 +2494,7 @@ Content-Type: application/json
 }
 ```
 
-Cost center CSV imports require `code` and `name`. Optional columns include `description`, `parent_id`, `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`; parent codes can reference existing cost centers or rows in the same import.
+Cost center CSV imports require `code` and `name`. Optional columns include `description`, `parent_id`, `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`; `parent_id` must be an existing cost-center UUID, while `parent_code` can reference existing cost centers or earlier rows in the same import.
 
 ### Cost Allocations
 

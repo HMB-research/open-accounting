@@ -1538,6 +1538,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accountCodes, file, row, KindAccounts,
 				[]string{"account_code"})
 		case KindCostCenters:
+			checkOptionalUUID(report, file, row, "parent_id")
 			checkSelfReference(report, file, row, "parent_code", "code")
 			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenterCodes, file, row, KindCostCenters,
 				[]string{"parent_code"})
