@@ -96,8 +96,10 @@ func (s *Service) ImportProductsCSV(ctx context.Context, tenantID, schemaName st
 		return nil, fmt.Errorf("list product categories: %w", err)
 	}
 	categoryNameToID := make(map[string]string, len(categories))
+	categoryIDs := make(map[string]bool, len(categories))
 	for _, category := range categories {
 		categoryNameToID[normalizedProductImportKey(category.Name)] = category.ID
+		categoryIDs[strings.ToLower(strings.TrimSpace(category.ID))] = true
 	}
 
 	accountIDsByCode, err := s.productImportAccountIDsByCode(ctx, schemaName, tenantID, rows)
@@ -113,7 +115,7 @@ func (s *Service) ImportProductsCSV(ctx context.Context, tenantID, schemaName st
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		product, err := buildProductFromImportRow(row, tenantID, categoryNameToID, accountIDsByCode)
+		product, err := buildProductFromImportRow(row, tenantID, categoryNameToID, categoryIDs, accountIDsByCode)
 		if err != nil {
 			appendProductImportRowError(result, row, err)
 			continue
@@ -248,6 +250,7 @@ func buildProductFromImportRow(
 	row productImportRow,
 	tenantID string,
 	categoryNameToID map[string]string,
+	categoryIDs map[string]bool,
 	accountIDsByCode map[string]string,
 ) (*Product, error) {
 	name := strings.TrimSpace(row.values["name"])
@@ -291,7 +294,7 @@ func buildProductFromImportRow(
 	if err != nil {
 		return nil, err
 	}
-	categoryID, err := resolveProductImportCategoryID(row, categoryNameToID)
+	categoryID, err := resolveProductImportCategoryID(row, categoryNameToID, categoryIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -391,8 +394,16 @@ func (s *Service) productImportAccountIDsByCode(ctx context.Context, schemaName,
 	return accountIDsByCode, nil
 }
 
-func resolveProductImportCategoryID(row productImportRow, categoryNameToID map[string]string) (string, error) {
+func resolveProductImportCategoryID(row productImportRow, categoryNameToID map[string]string, categoryIDs map[string]bool) (string, error) {
 	if categoryID := strings.TrimSpace(row.values["category_id"]); categoryID != "" {
+		parsedID, err := uuid.Parse(categoryID)
+		if err != nil {
+			return "", fmt.Errorf("category_id must be a valid UUID")
+		}
+		categoryID = parsedID.String()
+		if !categoryIDs[strings.ToLower(categoryID)] {
+			return "", fmt.Errorf("category_id %q was not found", categoryID)
+		}
 		return categoryID, nil
 	}
 	categoryName := strings.TrimSpace(row.values["category_name"])

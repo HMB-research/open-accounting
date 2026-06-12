@@ -1687,6 +1687,26 @@ func TestValidateBundleReportsInventoryRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindStockAdjustments, "expiry_date", "expiry_date must use YYYY-MM-DD")
 }
 
+func TestValidateBundleReportsInvalidProductCategoryID(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,category_id,sales_price\nSKU-1,Widget,legacy-id,10\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindProducts, report.Issues[0].Kind)
+	assert.Equal(t, "category_id", report.Issues[0].Field)
+	assert.Equal(t, "legacy-id", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, "valid UUID")
+}
+
 func TestValidateBundleCanonicalizesImporterDescriptionMemoAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
