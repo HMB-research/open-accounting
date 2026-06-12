@@ -551,6 +551,17 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers", map[string]interface{}{
+		"code":      "BAD-PARENT",
+		"name":      "Invalid Parent",
+		"parent_id": "legacy-parent",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateCostCenter(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "parent_id must be a valid UUID")
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers", map[string]interface{}{
 		"code": "OPS",
 		"name": "Operations",
 	}, nil)
@@ -613,6 +624,17 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.CreateCostAllocation(rr, req)
 	assert.Equal(t, http.StatusNotFound, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/cc-1", map[string]interface{}{
+		"code":      "ADMIN",
+		"name":      "Admin Updated",
+		"parent_id": "legacy-parent",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": "cc-1"})
+	rr = httptest.NewRecorder()
+	h.UpdateCostCenter(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "parent_id must be a valid UUID")
 
 	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/cc-1", map[string]interface{}{
 		"code": "ADMIN",

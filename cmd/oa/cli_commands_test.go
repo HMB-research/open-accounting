@@ -10691,12 +10691,14 @@ func TestCLICostCenterCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
+	costCenterParentID := "11111111-1111-4111-8111-111111111111"
 	costCenterPayload := map[string]any{
 		"id":            "cc-1",
 		"tenant_id":     "tenant-1",
 		"code":          "CC001",
 		"name":          "Sales",
 		"description":   "Sales team",
+		"parent_id":     costCenterParentID,
 		"is_active":     true,
 		"budget_amount": "1000.00",
 		"budget_period": "MONTHLY",
@@ -10750,6 +10752,8 @@ func TestCLICostCenterCommands(t *testing.T) {
 			assert.Equal(t, "CC001", req.Code)
 			assert.Equal(t, "Sales", req.Name)
 			assert.True(t, req.IsActive)
+			require.NotNil(t, req.ParentID)
+			assert.Equal(t, costCenterParentID, *req.ParentID)
 			require.NotNil(t, req.BudgetAmount)
 			assert.True(t, req.BudgetAmount.Equal(decimal.RequireFromString("1000.00")))
 			assert.Equal(t, accounting.BudgetPeriodMonthly, req.BudgetPeriod)
@@ -10802,6 +10806,8 @@ func TestCLICostCenterCommands(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "CC002", req.Code)
 			assert.Equal(t, "Sales updated", req.Name)
+			require.NotNil(t, req.ParentID)
+			assert.Equal(t, costCenterParentID, *req.ParentID)
 			require.NotNil(t, req.BudgetAmount)
 			assert.True(t, req.BudgetAmount.Equal(decimal.RequireFromString("1200.00")))
 			payload := map[string]any{}
@@ -10857,6 +10863,7 @@ func TestCLICostCenterCommands(t *testing.T) {
 		"--code", "CC001",
 		"--name", "Sales",
 		"--description", "Sales team",
+		"--parent-id", costCenterParentID,
 		"--budget-amount", "1000.00",
 		"--budget-period", "monthly",
 	})
@@ -10868,6 +10875,7 @@ func TestCLICostCenterCommands(t *testing.T) {
 		"cost-centers", "create",
 		"--code", "CC001",
 		"--name", "Sales",
+		"--parent-id", costCenterParentID,
 		"--budget-amount", "1000.00",
 		"--budget-period", "monthly",
 		"--json",
@@ -10933,6 +10941,7 @@ func TestCLICostCenterCommands(t *testing.T) {
 		"--id", "cc-1",
 		"--code", "CC002",
 		"--name", "Sales updated",
+		"--parent-id", costCenterParentID,
 		"--budget-amount", "1200.00",
 		"--budget-period", "monthly",
 	})
@@ -10945,6 +10954,7 @@ func TestCLICostCenterCommands(t *testing.T) {
 		"--id", "cc-1",
 		"--code", "CC002",
 		"--name", "Sales updated",
+		"--parent-id", costCenterParentID,
 		"--budget-amount", "1200.00",
 		"--budget-period", "monthly",
 		"--json",
@@ -11052,6 +11062,11 @@ func TestCLICostCenterValidationBranches(t *testing.T) {
 			name: "create invalid budget period",
 			args: []string{"create", "--code", "CC001", "--name", "Sales", "--budget-period", "weekly"},
 			want: `invalid budget period "weekly"`,
+		},
+		{
+			name: "create invalid parent id",
+			args: []string{"create", "--code", "CC001", "--name", "Sales", "--parent-id", "legacy-parent"},
+			want: "parent-id must be a valid UUID",
 		},
 		{
 			name: "import bad flag",
@@ -11187,6 +11202,11 @@ func TestCLICostCenterValidationBranches(t *testing.T) {
 			name: "update invalid budget period",
 			args: []string{"update", "--id", "cc-1", "--code", "CC001", "--name", "Sales", "--budget-period", "weekly"},
 			want: `invalid budget period "weekly"`,
+		},
+		{
+			name: "update invalid parent id",
+			args: []string{"update", "--id", "cc-1", "--code", "CC001", "--name", "Sales", "--parent-id", "legacy-parent"},
+			want: "parent-id must be a valid UUID",
 		},
 		{
 			name: "delete bad flag",

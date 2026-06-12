@@ -2479,6 +2479,7 @@ Content-Type: application/json
   "code": "CC001",
   "name": "Sales",
   "description": "Sales team",
+  "parent_id": "cost-center-uuid",
   "is_active": true,
   "budget_amount": "1000.00",
   "budget_period": "MONTHLY"
@@ -2496,7 +2497,7 @@ Content-Type: application/json
 }
 ```
 
-Cost center CSV imports require `code` and `name`. Optional columns include `description`, `parent_id`, `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`; `parent_id` must be an existing cost-center UUID, while `parent_code` can reference existing cost centers or earlier rows in the same import.
+Cost center create and update payloads accept optional `parent_id`, which must be a valid UUID when supplied. Cost center CSV imports require `code` and `name`. Optional columns include `description`, `parent_id`, `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`; `parent_id` must be an existing cost-center UUID, while `parent_code` can reference existing cost centers or earlier rows in the same import.
 
 ### Cost Allocations
 

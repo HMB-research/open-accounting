@@ -8282,12 +8282,16 @@ func (a *cliApp) runCostCenters(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		parentRef, err := optionalUUIDStringPtr("parent-id", *parentID)
+		if err != nil {
+			return err
+		}
 
 		costCenter, err := client.createCostCenter(ctx, cfg.TenantID, &accounting.CreateCostCenterRequest{
 			Code:         strings.TrimSpace(*code),
 			Name:         strings.TrimSpace(*name),
 			Description:  strings.TrimSpace(*description),
-			ParentID:     optionalStringPtr(*parentID),
+			ParentID:     parentRef,
 			IsActive:     *active,
 			BudgetAmount: budgetAmount,
 			BudgetPeriod: budgetPeriod,
@@ -8384,12 +8388,16 @@ func (a *cliApp) runCostCenters(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		parentRef, err := optionalUUIDStringPtr("parent-id", *parentID)
+		if err != nil {
+			return err
+		}
 
 		costCenter, err := client.updateCostCenter(ctx, cfg.TenantID, strings.TrimSpace(*costCenterID), &accounting.UpdateCostCenterRequest{
 			Code:         strings.TrimSpace(*code),
 			Name:         strings.TrimSpace(*name),
 			Description:  strings.TrimSpace(*description),
-			ParentID:     optionalStringPtr(*parentID),
+			ParentID:     parentRef,
 			IsActive:     *active,
 			BudgetAmount: budgetAmount,
 			BudgetPeriod: budgetPeriod,

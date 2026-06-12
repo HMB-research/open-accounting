@@ -724,6 +724,7 @@ go run ./cmd/oa cost-centers list --active-only
 go run ./cmd/oa cost-centers create \
   --code CC001 \
   --name Sales \
+  --parent-id <parent-cost-center-id> \
   --budget-amount 1000.00 \
   --budget-period MONTHLY
 go run ./cmd/oa cost-centers import --file ./cost-centers.csv
@@ -732,6 +733,7 @@ go run ./cmd/oa cost-centers update \
   --id <cost-center-id> \
   --code CC001 \
   --name Sales \
+  --parent-id <parent-cost-center-id> \
   --budget-amount 1200.00
 go run ./cmd/oa cost-centers allocations create \
   --cost-center-id <cost-center-id> \
@@ -746,7 +748,7 @@ go run ./cmd/oa cost-centers report --start 2026-03-01 --end 2026-03-31 --csv --
 go run ./cmd/oa cost-centers delete --id <cost-center-id>
 ```
 
-Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`. Cost center CSV imports require `code` and `name`, with optional `parent_id`, `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`; `parent_id` must be an existing cost-center UUID, while `parent_code` can reference existing cost centers or earlier import rows. Imports generate new UUIDs and preserve codes for downstream lookup. Cost allocations assign positive journal-entry-line amounts to cost centers and can be filtered by cost center, journal entry line, and allocation date range. Cost allocation CSV imports require a UUID `journal_entry_line_id`, `amount`, `allocation_date`, and either an existing UUID in `cost_center_id` or a resolvable `cost_center_code`; optional columns include `allocation_percentage` and `notes`. Cost center reports support `--csv`, `--xlsx`, `--pdf`, and `--output`. Use `--json` on cost-center read, mutation, and import commands for automation.
+Budget periods are `MONTHLY`, `QUARTERLY`, and `ANNUAL`. Cost-center create and update commands require `--parent-id` to be a valid cost-center UUID when supplied. Cost center CSV imports require `code` and `name`, with optional `parent_id`, `parent_code`, `budget_amount`, `budget_period`, `status`, and `is_active`; `parent_id` must be an existing cost-center UUID, while `parent_code` can reference existing cost centers or earlier import rows. Imports generate new UUIDs and preserve codes for downstream lookup. Cost allocations assign positive journal-entry-line amounts to cost centers and can be filtered by cost center, journal entry line, and allocation date range. Cost allocation CSV imports require a UUID `journal_entry_line_id`, `amount`, `allocation_date`, and either an existing UUID in `cost_center_id` or a resolvable `cost_center_code`; optional columns include `allocation_percentage` and `notes`. Cost center reports support `--csv`, `--xlsx`, `--pdf`, and `--output`. Use `--json` on cost-center read, mutation, and import commands for automation.
 
 ## Analytics
 
