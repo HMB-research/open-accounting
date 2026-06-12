@@ -79,6 +79,80 @@ func TestImportEmployeesCSV_SkipsDuplicatesAndInvalidRows(t *testing.T) {
 	assert.Contains(t, result.Errors[2].Message, "base_salary must be greater than zero")
 }
 
+func TestImportEmployeesCSV_ParsesAliasesBooleansEndDatesAndDuplicateRows(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "emp"})
+
+	result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", &ImportEmployeesRequest{
+		FileName: "employees-aliases.csv",
+		CSVContent: "number;given_name;surname;isikukood;email;telephone;iban;employment_start;employment_end;title;team;type;basic_exemption;basic_exemption_amount;pension_rate;salary;effective_from;active\n" +
+			"EMP-010;Mari;Mets;49001010010;mari.alias@example.com;+37255550000;EE471000001020145685;01.02.2026;2030-12-31;Engineer;Payroll;part-time;ei;0;0,04;4500,50;2026-02-15T00:00:00Z;ja\n" +
+			";Mari;Mets;49001010011;duplicate@example.com;;;01.02.2026;;;;full_time;yes;700;;;;\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "employees-aliases.csv", result.FileName)
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Equal(t, 1, result.EmployeesCreated)
+	assert.Equal(t, 1, result.SalariesCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `employee "Mari Mets" with start_date 2026-02-01 already exists`)
+
+	require.Len(t, repo.Employees, 1)
+	employee := repo.Employees["emp-1"]
+	require.NotNil(t, employee)
+	assert.Equal(t, "EMP-010", employee.EmployeeNumber)
+	assert.Equal(t, "Mari", employee.FirstName)
+	assert.Equal(t, "Mets", employee.LastName)
+	assert.Equal(t, "49001010010", employee.PersonalCode)
+	assert.Equal(t, "mari.alias@example.com", employee.Email)
+	assert.Equal(t, "+37255550000", employee.Phone)
+	assert.Equal(t, "EE471000001020145685", employee.BankAccount)
+	assert.Equal(t, "2026-02-01", employee.StartDate.Format("2006-01-02"))
+	require.NotNil(t, employee.EndDate)
+	assert.Equal(t, "2030-12-31", employee.EndDate.Format("2006-01-02"))
+	assert.Equal(t, "Engineer", employee.Position)
+	assert.Equal(t, "Payroll", employee.Department)
+	assert.Equal(t, EmploymentPartTime, employee.EmploymentType)
+	assert.False(t, employee.ApplyBasicExemption)
+	assert.True(t, employee.BasicExemptionAmount.IsZero())
+	assert.Equal(t, decimal.RequireFromString("0.04"), employee.FundedPensionRate)
+	assert.True(t, employee.IsActive)
+	assert.Equal(t, decimal.RequireFromString("4500.50"), repo.Salaries["emp-1"])
+}
+
+func TestImportEmployeesCSV_ReportsAliasValidationErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "emp"})
+
+	result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", &ImportEmployeesRequest{
+		CSVContent: "first_name,last_name,start_date,apply_basic_exemption,end_date,funded_pension_rate,salary_effective_from,base_salary\n" +
+			"Bad,Bool,2026-01-01,maybe,,,,\n" +
+			"Bad,End,2026-01-10,,2026-01-09,,,\n" +
+			"Bad,Pension,2026-01-01,,,1.2,,\n" +
+			"Bad,Effective,2026-01-01,,,,2026-01-01,\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 4, result.RowsProcessed)
+	assert.Zero(t, result.EmployeesCreated)
+	assert.Zero(t, result.SalariesCreated)
+	assert.Equal(t, 4, result.RowsSkipped)
+	require.Len(t, result.Errors, 4)
+	assert.Contains(t, result.Errors[0].Message, `invalid apply_basic_exemption "maybe"`)
+	assert.Contains(t, result.Errors[1].Message, "end_date cannot be before start_date")
+	assert.Contains(t, result.Errors[2].Message, "funded_pension_rate must be between 0 and 1")
+	assert.Contains(t, result.Errors[3].Message, "salary_effective_from requires base_salary")
+	assert.Empty(t, repo.Employees)
+}
+
 func TestImportEmployeesCSV_RejectsMissingHeaders(t *testing.T) {
 	t.Parallel()
 
