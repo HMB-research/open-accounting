@@ -15,7 +15,7 @@
 
 ## Verified Engineering Baseline
 
-Full local baseline last completed on 2026-06-08. On 2026-06-12, the current branch was revalidated locally for quote/order delivery, migration compatibility, CLI coverage, documentation, and recent frontend stage gates; PR #62 CI run `27382488074` at commit `5a6b1a2` revalidated lint, backend tests, integration shards, frontend lint/check/test/build, smoke E2E, build, and all four seeded demo E2E shards:
+Full local baseline last completed on 2026-06-08. On 2026-06-12, the current branch was revalidated locally for quote/order delivery, migration compatibility, CLI coverage, documentation, recent frontend stage gates, historical TSD import, inventory lot reporting, and lot/serial/expiry-preserving inventory transfers; PR #62 CI run `27385096250` at commit `1737a54` revalidated lint, backend tests with CLI coverage enforcement, integration shards, frontend lint/check/test/build, smoke E2E, build, and all four seeded demo E2E shards:
 
 - `make test-backend-coverage` passes without requiring PostgreSQL and enforces `cmd/oa` at 100.0% statement coverage from the same backend coverage profile
 - `make test-cli-coverage` passes as the focused CLI-only coverage gate
@@ -79,7 +79,7 @@ Still not done:
 ## What The Project Can Honestly Claim Today
 
 - Open Accounting is a broad, real codebase with working accounting, invoicing, payroll, banking, and multi-tenant foundations.
-- The local backend, frontend, tagged backend integration, smoke E2E, and full local demo E2E baselines were green in the last full local baseline on 2026-06-08, with current branch local CLI/docs/frontend stage checks and PR #62 CI revalidated on 2026-06-12 in run `27382488074` at commit `5a6b1a2`.
+- The local backend, frontend, tagged backend integration, smoke E2E, and full local demo E2E baselines were green in the last full local baseline on 2026-06-08, with current branch local CLI/docs/frontend stage checks and PR #62 CI revalidated on 2026-06-12 in run `27385096250` at commit `1737a54`.
 - The project now includes a working Go CLI and tenant-scoped API tokens for scriptable reads and writes; the `cmd/oa` package is verified at 100.0% statement coverage by the blocking `make test-backend-coverage` CI gate and the focused `make test-cli-coverage` local gate. Payment correction is handled through auditable offsetting reversals in API, CLI, payments UI, and cash-payments UI instead of destructive deletion.
 - Quote and order workflows now include PDF download and email delivery through API, CLI, and UI, including optional approved commercial-evidence blockers before sending or confirmation.
 - Historical payroll run/payslip import, leave-balance import, TSD history import, KMD history import, quote/order history import, recurring invoice template import, payment history import, bank-account import, bank transaction import with LHV CSV, LHV camt.053, generic mappers, and statement account/currency validation, cost center/cost allocation/product category/warehouse/product master/stock import with lot/serial/expiry metadata, fixed-asset import, historical journal import, and manual Estonian e-invoice XML import are now available through API and CLI, with migration preflight coverage for e-invoice XML parsing/contact/payment references and TSD employee references, but broader incumbent-system cutover is still incomplete.

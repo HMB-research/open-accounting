@@ -1,6 +1,11 @@
 # Reliability and Product Roadmap
 
 **Date:** 2026-03-12
+**Reviewed:** 2026-06-12
+
+This is a historical roadmap. Many March backlog items are now complete; use
+[DEVELOPMENT_STATUS.md](../DEVELOPMENT_STATUS.md) as the current source of
+truth for verified capability and test status.
 
 **Goal:** Turn Open Accounting from a broad demo into a trustworthy accounting product with a clear wedge, a green main branch, and a realistic path to adoption.
 
@@ -12,6 +17,13 @@
 - backend integration tests are now blocking in CI
 - documentation truthfulness cleanup is in place
 - blocking smoke E2E now covers auth setup, invoices, reports, banking, and payroll in CI
+
+**Status update on 2026-06-12:**
+
+- PR #62 CI run `27385096250` at commit `1737a54` is green for lint, backend tests with CLI coverage enforcement, integration shards, frontend lint/check/test/build, build, smoke E2E, and all four seeded demo E2E shards
+- the CLI package is enforced at 100.0% statement coverage by the backend gate
+- broad migration imports, period close/reopen, fiscal-year close, carry-forward/reversal, document evidence/retention workflows, server-side report exports, auth/session hardening, and backup/restore wrappers now exist
+- remaining gaps are narrower: deeper incumbent-system cutover presets/validation, more accountant exception actions, broader document-retention automation, remaining auth/ops hardening, and external-dependency integrations
 
 ## Product Decision
 
@@ -40,14 +52,14 @@ The repository has substantial breadth, but trust and product fit are the main b
 
 ### Reliability blockers
 
-- Documentation makes stronger completion claims than the codebase supports.
+- Some older planning docs may still read as current backlog even after features were implemented. `DEVELOPMENT_STATUS.md` is the authoritative status page.
 
 ### Product blockers
 
-- No migration/import story strong enough for real adoption.
-- Missing fiscal-year close and carry-forward workflows.
-- Missing document and attachment workflows.
-- Security and operations are below accounting-product expectations.
+- Migration/import coverage is broad, but full incumbent-system cutover still needs provider-specific presets, deeper validation, and pilot-driven edge cases.
+- Fiscal-year close and carry-forward workflows exist, including approved evidence and carry-forward reversal; more close exception reporting and late-correction guidance is still needed.
+- Document and attachment workflows exist; broader retention automation and policy enforcement remain thin.
+- Security and operations have improved, but remaining hardening is still needed for accounting-firm production use.
 - Several parity features are still blocked by external partnerships or compliance requirements.
 
 ## 90-Day Outcomes
@@ -182,7 +194,25 @@ It should not claim full parity with SmartAccounts or Merit by day 90.
 - no insecure production defaults remain
 - first design-partner users could run a pilot on the chosen wedge
 
-## GitHub Issue Backlog
+## Current Backlog Disposition
+
+This table refreshes the original backlog before the historical issue list
+below. It is intentionally concise; detailed proof belongs in
+`DEVELOPMENT_STATUS.md`.
+
+| Original area | 2026-06-12 disposition |
+| --- | --- |
+| Green backend/frontend/CI baseline | Implemented and blocking in CI, with current PR #62 green |
+| Documentation truthfulness | Current status page exists; older planning docs are being refreshed as historical artifacts |
+| Import and migration | Broadly implemented with bundle validation; provider-specific presets and deeper cutover validation remain |
+| Period close and year-end carry-forward | Implemented with reopen, evidence, carry-forward, and reversal paths |
+| Documents and retention | Implemented for core evidence workflows; retention automation remains thin |
+| Server-side reports | Implemented for primary report exports; accountant-grade depth and edge-case validation remain |
+| Accountant dashboard | Implemented for key queues; deeper exception actions remain |
+| Security and ops | Production secret/CORS checks, sessions, password reset, audit events, backups, offsite sync, and restore-drill wrappers exist; hardening remains |
+| External integrations | Still blocked by partnerships, certification, or infrastructure |
+
+## Original GitHub Issue Backlog (Historical)
 
 The list below is ordered by practical priority, not by implementation convenience.
 
