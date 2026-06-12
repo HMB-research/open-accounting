@@ -1203,6 +1203,46 @@ func TestValidateBundleReportsFixedAssetAccountReferenceIssues(t *testing.T) {
 	assert.Equal(t, "9999", report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsFixedAssetRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindFixedAssets,
+			FileName: "assets.csv",
+			CSVContent: "asset_number,name,status,purchase_date,purchase_cost,depreciation_method,useful_life_months,residual_value,accumulated_depreciation,book_value,depreciation_start_date,last_depreciation_date,disposal_date,disposal_method,disposal_proceeds\n" +
+				"FA-1,,retired,2026/05/30,nope,accelerated,abc,nope,nope,nope,not-date,2026/06/01,bad-date,recycled,nope\n" +
+				"FA-2,Lathe,ACTIVE,2026-05-30T00:00:00Z,0,DECLINING BALANCE,0,-1,-1,-1,2026-06-01 15:04:05,2026-06-02,2026-06-03,SOLD,-1\n" +
+				"FA-3,Desk,DRAFT,2026-05-30,100,STRAIGHT_LINE,12,10,95,90,,,,,\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 22, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindFixedAssets, "name", "name is required")
+	assertValidationIssue(t, report, KindFixedAssets, "status", "invalid status")
+	assertValidationIssue(t, report, KindFixedAssets, "purchase_date", "purchase_date must be a date")
+	assertValidationIssue(t, report, KindFixedAssets, "purchase_cost", "purchase_cost must be a decimal")
+	assertValidationIssue(t, report, KindFixedAssets, "purchase_cost", "purchase cost must be positive")
+	assertValidationIssue(t, report, KindFixedAssets, "depreciation_method", "invalid depreciation_method")
+	assertValidationIssue(t, report, KindFixedAssets, "useful_life_months", "useful_life_months must be an integer")
+	assertValidationIssue(t, report, KindFixedAssets, "useful_life_months", "useful_life_months must be positive")
+	assertValidationIssue(t, report, KindFixedAssets, "residual_value", "residual_value must be a decimal")
+	assertValidationIssue(t, report, KindFixedAssets, "residual_value", "residual value cannot be negative")
+	assertValidationIssue(t, report, KindFixedAssets, "accumulated_depreciation", "accumulated_depreciation must be a decimal")
+	assertValidationIssue(t, report, KindFixedAssets, "accumulated_depreciation", "accumulated_depreciation cannot be negative")
+	assertValidationIssue(t, report, KindFixedAssets, "accumulated_depreciation", "accumulated_depreciation cannot exceed depreciable amount")
+	assertValidationIssue(t, report, KindFixedAssets, "book_value", "book_value must be a decimal")
+	assertValidationIssue(t, report, KindFixedAssets, "book_value", "book_value cannot be negative")
+	assertValidationIssue(t, report, KindFixedAssets, "book_value", "book_value must equal purchase_cost minus accumulated_depreciation")
+	assertValidationIssue(t, report, KindFixedAssets, "depreciation_start_date", "depreciation_start_date must be a date")
+	assertValidationIssue(t, report, KindFixedAssets, "last_depreciation_date", "last_depreciation_date must be a date")
+	assertValidationIssue(t, report, KindFixedAssets, "disposal_date", "disposal_date must be a date")
+	assertValidationIssue(t, report, KindFixedAssets, "disposal_method", "invalid disposal_method")
+	assertValidationIssue(t, report, KindFixedAssets, "disposal_proceeds", "disposal_proceeds must be a decimal")
+	assertValidationIssue(t, report, KindFixedAssets, "disposal_proceeds", "disposal_proceeds cannot be negative")
+}
+
 func TestValidateBundleReportsMissingColumnsAndReferences(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
