@@ -2040,6 +2040,7 @@ definitions:
     - orders
     - recurring_invoices
     - cost_centers
+    - cost_allocations
     - product_categories
     - warehouses
     - products
@@ -2066,6 +2067,7 @@ definitions:
     - KindOrders
     - KindRecurringInvoices
     - KindCostCenters
+    - KindCostAllocations
     - KindProductCategories
     - KindWarehouses
     - KindProducts
