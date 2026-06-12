@@ -90,6 +90,16 @@ type tsdHistoryPreflightGroup struct {
 	emtaReference string
 }
 
+type kmdHistoryPreflightGroup struct {
+	status            string
+	submittedAt       string
+	submittedAtSet    bool
+	totalOutputVAT    string
+	totalOutputVATSet bool
+	totalInputVAT     string
+	totalInputVATSet  bool
+}
+
 var fileSpecs = map[FileKind]fileSpec{
 	KindAccounts: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
@@ -872,6 +882,16 @@ var cutoverTSDHistoryStatusAliases = map[string]string{
 	"rejected":  "REJECTED",
 }
 
+var cutoverKMDHistoryStatusAliases = map[string]string{
+	"":          "ACCEPTED",
+	"draft":     "DRAFT",
+	"submitted": "SUBMITTED",
+	"filed":     "SUBMITTED",
+	"accepted":  "ACCEPTED",
+	"approved":  "ACCEPTED",
+	"confirmed": "ACCEPTED",
+}
+
 var groupedDocumentPreflightSpecs = map[FileKind]groupedDocumentSpec{
 	KindInvoices: {
 		keyLabel: "invoice_number/invoice_type",
@@ -1633,6 +1653,8 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkLeaveBalanceRows(report, file)
 	case KindTSDHistory:
 		checkTSDHistoryRows(report, file)
+	case KindKMDHistory:
+		checkKMDHistoryRows(report, file)
 	case KindInvoices, KindQuotes, KindOrders, KindRecurringInvoices:
 		checkCommercialDocumentRows(report, file)
 	case KindExpenses:
@@ -2143,6 +2165,269 @@ func checkTSDHistoryGroupConsistency(
 			Message:  "emta_reference must be consistent for each TSD period",
 		})
 	}
+}
+
+func checkKMDHistoryRows(report *BundleValidationReport, file parsedFile) {
+	groups := map[string]kmdHistoryPreflightGroup{}
+	for _, row := range file.rows {
+		year, yearOK := checkKMDHistoryYear(report, file, row)
+		month, monthOK := checkKMDHistoryMonth(report, file, row)
+		status, statusOK := checkKMDHistoryStatus(report, file, row)
+		submittedAt, submittedAtSet, submittedAtOK := checkKMDHistorySubmittedAt(report, file, row)
+		checkKMDHistoryRowCode(report, file, row)
+		checkKMDHistoryAmounts(report, file, row)
+		totalOutputVAT, totalOutputVATSet, totalOutputVATOK := checkKMDHistoryOptionalDecimal(report, file, row, "total_output_vat")
+		totalInputVAT, totalInputVATSet, totalInputVATOK := checkKMDHistoryOptionalDecimal(report, file, row, "total_input_vat")
+		if yearOK && monthOK && statusOK && submittedAtOK && totalOutputVATOK && totalInputVATOK {
+			checkKMDHistoryGroupConsistency(
+				report,
+				file,
+				row,
+				groups,
+				year,
+				month,
+				status,
+				submittedAt,
+				submittedAtSet,
+				totalOutputVAT,
+				totalOutputVATSet,
+				totalInputVAT,
+				totalInputVATSet,
+			)
+		}
+	}
+}
+
+func checkKMDHistoryYear(report *BundleValidationReport, file parsedFile, row parsedRow) (int, bool) {
+	if !fileHasHeaders(file, "year") {
+		return 0, false
+	}
+	value := strings.TrimSpace(row.values["year"])
+	year, err := strconv.Atoi(value)
+	if err != nil || year < 1900 || year > 2200 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "year",
+			Value:    value,
+			Message:  "year must be between 1900 and 2200",
+		})
+		return 0, false
+	}
+	return year, true
+}
+
+func checkKMDHistoryMonth(report *BundleValidationReport, file parsedFile, row parsedRow) (int, bool) {
+	if !fileHasHeaders(file, "month") {
+		return 0, false
+	}
+	value := strings.TrimSpace(row.values["month"])
+	month, err := strconv.Atoi(value)
+	if err != nil || month < 1 || month > 12 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "month",
+			Value:    value,
+			Message:  "month must be between 1 and 12",
+		})
+		return 0, false
+	}
+	return month, true
+}
+
+func checkKMDHistoryStatus(report *BundleValidationReport, file parsedFile, row parsedRow) (string, bool) {
+	if !fileHasHeaders(file, "status") {
+		return "ACCEPTED", true
+	}
+	value := strings.TrimSpace(row.values["status"])
+	key := strings.ReplaceAll(normalizedValue(value), "-", "_")
+	if status, ok := cutoverKMDHistoryStatusAliases[key]; ok {
+		return status, true
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "status",
+		Value:    value,
+		Message:  "status must be DRAFT, SUBMITTED, or ACCEPTED",
+	})
+	return "", false
+}
+
+func checkKMDHistorySubmittedAt(report *BundleValidationReport, file parsedFile, row parsedRow) (string, bool, bool) {
+	if !fileHasHeaders(file, "submitted_at") {
+		return "", false, true
+	}
+	value := strings.TrimSpace(row.values["submitted_at"])
+	if value == "" {
+		return "", false, true
+	}
+	parsed, ok := parseEmployeeCutoverDate(value)
+	if !ok {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "submitted_at",
+			Value:    value,
+			Message:  "submitted_at must be in YYYY-MM-DD format",
+		})
+		return "", true, false
+	}
+	return parsed.Format("2006-01-02"), true, true
+}
+
+func checkKMDHistoryRowCode(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "row_code") {
+		return
+	}
+	if normalizeKMDHistoryRowCode(row.values["row_code"]) != "" {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "row_code",
+		Value:    strings.TrimSpace(row.values["row_code"]),
+		Message:  "row_code is required",
+	})
+}
+
+func checkKMDHistoryAmounts(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	_, taxBaseSet, taxBaseOK := checkKMDHistoryOptionalDecimal(report, file, row, "tax_base")
+	_, taxAmountSet, taxAmountOK := checkKMDHistoryOptionalDecimal(report, file, row, "tax_amount")
+	if !taxBaseOK || !taxAmountOK {
+		return
+	}
+	if taxBaseSet || taxAmountSet {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "tax_base",
+		Message:  "tax_base or tax_amount is required",
+	})
+}
+
+func checkKMDHistoryOptionalDecimal(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	field string,
+) (string, bool, bool) {
+	if !fileHasHeaders(file, field) {
+		return "", false, true
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return "", false, true
+	}
+	amount, issue := parseCutoverRequiredImportDecimal(value, field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return "", true, false
+	}
+	return amount.String(), true, true
+}
+
+func checkKMDHistoryGroupConsistency(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	groups map[string]kmdHistoryPreflightGroup,
+	year int,
+	month int,
+	status string,
+	submittedAt string,
+	submittedAtSet bool,
+	totalOutputVAT string,
+	totalOutputVATSet bool,
+	totalInputVAT string,
+	totalInputVATSet bool,
+) {
+	key := fmt.Sprintf("%04d-%02d", year, month)
+	current := kmdHistoryPreflightGroup{
+		status:            status,
+		submittedAt:       submittedAt,
+		submittedAtSet:    submittedAtSet,
+		totalOutputVAT:    totalOutputVAT,
+		totalOutputVATSet: totalOutputVATSet,
+		totalInputVAT:     totalInputVAT,
+		totalInputVATSet:  totalInputVATSet,
+	}
+	group, exists := groups[key]
+	if !exists {
+		groups[key] = current
+		return
+	}
+	if group.status != current.status {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    strings.TrimSpace(row.values["status"]),
+			Message:  "status must be consistent for each KMD period",
+		})
+	}
+	checkKMDHistoryOptionalGroupValue(report, file, row, "submitted_at", group.submittedAt, group.submittedAtSet, current.submittedAt, current.submittedAtSet)
+	checkKMDHistoryOptionalGroupValue(report, file, row, "total_output_vat", group.totalOutputVAT, group.totalOutputVATSet, current.totalOutputVAT, current.totalOutputVATSet)
+	checkKMDHistoryOptionalGroupValue(report, file, row, "total_input_vat", group.totalInputVAT, group.totalInputVATSet, current.totalInputVAT, current.totalInputVATSet)
+	if !group.submittedAtSet && current.submittedAtSet {
+		group.submittedAt = current.submittedAt
+		group.submittedAtSet = true
+	}
+	if !group.totalOutputVATSet && current.totalOutputVATSet {
+		group.totalOutputVAT = current.totalOutputVAT
+		group.totalOutputVATSet = true
+	}
+	if !group.totalInputVATSet && current.totalInputVATSet {
+		group.totalInputVAT = current.totalInputVAT
+		group.totalInputVATSet = true
+	}
+	groups[key] = group
+}
+
+func checkKMDHistoryOptionalGroupValue(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	field string,
+	groupValue string,
+	groupValueSet bool,
+	currentValue string,
+	currentValueSet bool,
+) {
+	if !groupValueSet || !currentValueSet || groupValue == currentValue {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    strings.TrimSpace(row.values[field]),
+		Message:  fmt.Sprintf("%s must be consistent for each KMD period", field),
+	})
+}
+
+func normalizeKMDHistoryRowCode(value string) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.ToLower(value), "row_"))
 }
 
 func checkPayrollHistoryPeriodYear(report *BundleValidationReport, file parsedFile, row parsedRow) (int, bool) {
