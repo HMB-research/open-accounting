@@ -4557,6 +4557,7 @@ export type BankTransactionImportFormat =
   | "auto"
   | "generic"
   | "lhv"
+  | "camt053"
   | "lhv-camt";
 
 export interface ImportTransactionsRequest {

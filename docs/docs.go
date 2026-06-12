@@ -4305,7 +4305,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Import bank transactions from CSV data",
+                "description": "Import bank transactions from normalized rows or raw statement data. Raw format supports auto, generic, lhv, camt053, and lhv-camt.",
                 "consumes": [
                     "application/json"
                 ],

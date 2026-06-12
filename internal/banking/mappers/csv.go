@@ -15,6 +15,7 @@ const (
 	FormatAuto    Format = "auto"
 	FormatGeneric Format = "generic"
 	FormatLHV     Format = "lhv"
+	FormatCAMT053 Format = "camt053"
 	FormatLHVCAMT Format = "lhv-camt"
 )
 

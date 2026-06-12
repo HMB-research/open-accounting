@@ -190,6 +190,7 @@ test.describe('Bank Import View', () => {
 			'Auto',
 			'Generic CSV',
 			'LHV (Estonia)',
+			'CAMT.053 (ISO 20022)',
 			'LHV CAMT.053'
 		]);
 

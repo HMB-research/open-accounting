@@ -2272,7 +2272,7 @@ func (h *Handlers) GetBankTransaction(w http.ResponseWriter, r *http.Request) {
 
 // ImportBankTransactions imports transactions from JSON data
 // @Summary Import bank transactions
-// @Description Import bank transactions from CSV data
+// @Description Import bank transactions from normalized rows or raw statement data. Raw format supports auto, generic, lhv, camt053, and lhv-camt.
 // @Tags Banking
 // @Accept json
 // @Produce json

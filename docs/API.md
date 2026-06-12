@@ -3043,7 +3043,7 @@ Import raw statement content with the shared bank mappers:
 }
 ```
 
-`format` supports `auto`, `generic`, `lhv`, and `lhv-camt`. `auto` detects LHV Internet Bank CSV and LHV Connect camt.053 XML before falling back to generic headers. The LHV CSV mapper follows the 2026 Internet Bank account statement columns documented by LHV. The LHV camt.053 mapper is covered by the current LHV Connect Account Statement `Statement data` sample. LHV and generic mappers preserve statement account and currency metadata when present; import rejects rows whose `source_account` or `currency` does not match the selected bank account.
+`format` supports `auto`, `generic`, `lhv`, `camt053`, and `lhv-camt`. `auto` detects LHV Internet Bank CSV and ISO 20022 camt.053 XML before falling back to generic headers. The LHV CSV mapper follows the 2026 Internet Bank account statement columns documented by LHV. The camt.053 mapper is covered by the current LHV Connect Account Statement `Statement data` sample, and `lhv-camt` remains accepted as an LHV compatibility alias. LHV, camt.053, and generic mappers preserve statement account and currency metadata when present; import rejects rows whose `source_account` or `currency` does not match the selected bank account.
 
 Pre-parsed transaction rows are also supported for clients that normalize statements before calling the API:
 

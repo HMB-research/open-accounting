@@ -190,7 +190,8 @@ type UpdateBankMatchRuleRequest struct {
 }
 
 // ImportCSVRequest is the request to import bank transactions from raw statement
-// content or already normalized rows.
+// content or already normalized rows. Format supports auto, generic, lhv,
+// camt053, and lhv-camt.
 type ImportCSVRequest struct {
 	FileName       string              `json:"file_name,omitempty"`
 	CSVContent     string              `json:"csv_content,omitempty"`
