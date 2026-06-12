@@ -249,14 +249,22 @@ type assetHandlerAccounting struct {
 func newAssetHandlerAccounting() *assetHandlerAccounting {
 	return &assetHandlerAccounting{
 		accounts: map[string]*accounting.Account{
-			"fixed-assets":             {ID: "fixed-assets", AccountType: accounting.AccountTypeAsset},
-			"accumulated-depreciation": {ID: "accumulated-depreciation", AccountType: accounting.AccountTypeAsset},
-			"cash-account":             {ID: "cash-account", AccountType: accounting.AccountTypeAsset},
-			"asset-disposal-gain":      {ID: "asset-disposal-gain", AccountType: accounting.AccountTypeRevenue},
-			"asset-disposal-loss":      {ID: "asset-disposal-loss", AccountType: accounting.AccountTypeExpense},
-			"depreciation-expense":     {ID: "depreciation-expense", AccountType: accounting.AccountTypeExpense},
+			"fixed-assets":             {ID: "fixed-assets", Code: "FA", AccountType: accounting.AccountTypeAsset},
+			"accumulated-depreciation": {ID: "accumulated-depreciation", Code: "ACC-DEP", AccountType: accounting.AccountTypeAsset},
+			"cash-account":             {ID: "cash-account", Code: "CASH", AccountType: accounting.AccountTypeAsset},
+			"asset-disposal-gain":      {ID: "asset-disposal-gain", Code: "GAIN", AccountType: accounting.AccountTypeRevenue},
+			"asset-disposal-loss":      {ID: "asset-disposal-loss", Code: "LOSS", AccountType: accounting.AccountTypeExpense},
+			"depreciation-expense":     {ID: "depreciation-expense", Code: "DEP-EXP", AccountType: accounting.AccountTypeExpense},
 		},
 	}
+}
+
+func (a *assetHandlerAccounting) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	accounts := make([]accounting.Account, 0, len(a.accounts))
+	for _, account := range a.accounts {
+		accounts = append(accounts, *account)
+	}
+	return accounts, nil
 }
 
 func (a *assetHandlerAccounting) GetAccount(_ context.Context, _, _, accountID string) (*accounting.Account, error) {

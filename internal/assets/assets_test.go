@@ -749,6 +749,7 @@ func TestService_CreateAsset_InheritsCategoryDefaults(t *testing.T) {
 func TestService_ImportAssetsCSV(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
+	ts.svc.ledger = newFakeAssetAccountingPoster()
 
 	ts.repo.Categories["cat-1"] = &AssetCategory{
 		ID:       "cat-1",
@@ -759,10 +760,10 @@ func TestService_ImportAssetsCSV(t *testing.T) {
 	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
 		FileName: "assets.csv",
 		UserID:   "user-1",
-		CSVContent: "asset_number,name,category_name,status,purchase_date,purchase_cost,accumulated_depreciation,book_value,useful_life_months\n" +
-			"LEG-001,Laptop,Equipment,ACTIVE,2025-01-10,1200.00,300.00,900.00,36\n" +
-			",Missing date,,ACTIVE,,500.00,,,60\n" +
-			",Generated desk,,DRAFT,2026-02-01,600.00,,,60\n",
+		CSVContent: "asset_number,name,category_name,status,purchase_date,purchase_cost,accumulated_depreciation,book_value,useful_life_months,asset_account_code,depreciation_expense_account_code,accumulated_depreciation_account_code\n" +
+			"LEG-001,Laptop,Equipment,ACTIVE,2025-01-10,1200.00,300.00,900.00,36,FA,DEP-EXP,ACC-DEP\n" +
+			",Missing date,,ACTIVE,,500.00,,,60,,,\n" +
+			",Generated desk,,DRAFT,2026-02-01,600.00,,,60,,,\n",
 	})
 
 	require.NoError(t, err)
@@ -792,12 +793,35 @@ func TestService_ImportAssetsCSV(t *testing.T) {
 	assert.True(t, legacyAsset.AccumulatedDepreciation.Equal(decimal.RequireFromString("300.00")))
 	require.NotNil(t, legacyAsset.CategoryID)
 	assert.Equal(t, "cat-1", *legacyAsset.CategoryID)
+	require.NotNil(t, legacyAsset.AssetAccountID)
+	assert.Equal(t, "fixed-assets", *legacyAsset.AssetAccountID)
+	require.NotNil(t, legacyAsset.DepreciationExpenseAccountID)
+	assert.Equal(t, "depreciation-expense", *legacyAsset.DepreciationExpenseAccountID)
+	require.NotNil(t, legacyAsset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, "accumulated-depreciation", *legacyAsset.AccumulatedDepreciationAcctID)
 	assert.Equal(t, "user-1", legacyAsset.CreatedBy)
 
 	require.NotNil(t, generatedAsset)
 	assert.Equal(t, "FA-00001", generatedAsset.AssetNumber)
 	assert.Equal(t, AssetStatusDraft, generatedAsset.Status)
 	assert.True(t, generatedAsset.BookValue.Equal(decimal.RequireFromString("600.00")))
+}
+
+func TestService_ImportAssetsCSVReportsMissingAccountCode(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	ts.svc.ledger = newFakeAssetAccountingPoster()
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,asset_account_code\nLEG-001,Laptop,2025-01-10,1200.00,MISSING\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.AssetsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `account code "MISSING" was not found for asset_account_code`)
 }
 
 func TestService_ImportAssetsCSV_DuplicateAssetNumber(t *testing.T) {
@@ -1485,14 +1509,22 @@ type fakeAssetAccountingPoster struct {
 func newFakeAssetAccountingPoster() *fakeAssetAccountingPoster {
 	return &fakeAssetAccountingPoster{
 		accounts: map[string]*accounting.Account{
-			"depreciation-expense":     {ID: "depreciation-expense", AccountType: accounting.AccountTypeExpense},
-			"accumulated-depreciation": {ID: "accumulated-depreciation", AccountType: accounting.AccountTypeAsset},
-			"fixed-assets":             {ID: "fixed-assets", AccountType: accounting.AccountTypeAsset},
-			"cash":                     {ID: "cash", AccountType: accounting.AccountTypeAsset},
-			"asset-disposal-gain":      {ID: "asset-disposal-gain", AccountType: accounting.AccountTypeRevenue},
-			"asset-disposal-loss":      {ID: "asset-disposal-loss", AccountType: accounting.AccountTypeExpense},
+			"depreciation-expense":     {ID: "depreciation-expense", Code: "DEP-EXP", AccountType: accounting.AccountTypeExpense},
+			"accumulated-depreciation": {ID: "accumulated-depreciation", Code: "ACC-DEP", AccountType: accounting.AccountTypeAsset},
+			"fixed-assets":             {ID: "fixed-assets", Code: "FA", AccountType: accounting.AccountTypeAsset},
+			"cash":                     {ID: "cash", Code: "CASH", AccountType: accounting.AccountTypeAsset},
+			"asset-disposal-gain":      {ID: "asset-disposal-gain", Code: "GAIN", AccountType: accounting.AccountTypeRevenue},
+			"asset-disposal-loss":      {ID: "asset-disposal-loss", Code: "LOSS", AccountType: accounting.AccountTypeExpense},
 		},
 	}
+}
+
+func (f *fakeAssetAccountingPoster) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	accounts := make([]accounting.Account, 0, len(f.accounts))
+	for _, account := range f.accounts {
+		accounts = append(accounts, *account)
+	}
+	return accounts, nil
 }
 
 func (f *fakeAssetAccountingPoster) GetAccount(_ context.Context, _, _, accountID string) (*accounting.Account, error) {
