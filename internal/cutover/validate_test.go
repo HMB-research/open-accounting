@@ -107,7 +107,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindProducts,
 			FileName:   "products.csv",
-			CSVContent: "product_code,name,category_name,sales_price\nSKU-1,Widget,Widgets,10\n",
+			CSVContent: "product_code,name,category_name,sales_price,sale_account_code,purchase_account_code,inventory_account_code\nSKU-1,Widget,Widgets,10,4000,5500,1000\n",
 		},
 		{
 			Kind:       KindStockAdjustments,
@@ -324,6 +324,42 @@ func TestValidateBundleReportsInventoryReferenceIssues(t *testing.T) {
 	assert.Equal(t, "SKU-404", report.Issues[1].Value)
 	assert.Equal(t, KindWarehouses, report.Issues[2].TargetKind)
 	assert.Equal(t, "NOPE", report.Issues[2].Value)
+}
+
+func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "id,account_code,account_name,type\nacc-sales,4000,Sales,REVENUE\n",
+		},
+		{
+			Kind:       KindProductCategories,
+			FileName:   "categories.csv",
+			CSVContent: "id,name\ncat-1,Hardware\n",
+		},
+		{
+			Kind:     KindProducts,
+			FileName: "products.csv",
+			CSVContent: "code,name,category_id,sales_price,sale_account_id,purchase_account_code,inventory_account_code\n" +
+				"SKU-1,Widget,cat-missing,10,missing-sales,5999,4000\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 3)
+	assert.Equal(t, KindProductCategories, report.Issues[0].TargetKind)
+	assert.Equal(t, "category_id/category_name", report.Issues[0].Field)
+	assert.Equal(t, "cat-missing", report.Issues[0].Value)
+	assert.Equal(t, KindAccounts, report.Issues[1].TargetKind)
+	assert.Equal(t, "sale_account_id/sale_account_code", report.Issues[1].Field)
+	assert.Equal(t, "missing-sales", report.Issues[1].Value)
+	assert.Equal(t, KindAccounts, report.Issues[2].TargetKind)
+	assert.Equal(t, "purchase_account_id/purchase_account_code", report.Issues[2].Field)
+	assert.Equal(t, "5999", report.Issues[2].Value)
 }
 
 func TestValidateBundleReportsCommercialDocumentProductReferenceIssues(t *testing.T) {

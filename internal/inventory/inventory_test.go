@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -621,6 +622,14 @@ func newTestService() *testService {
 	return &testService{repo: repo, svc: svc}
 }
 
+type fakeInventoryAccountLister struct {
+	accounts []accounting.Account
+}
+
+func (f fakeInventoryAccountLister) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	return f.accounts, nil
+}
+
 func TestService_CreateProduct(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
@@ -677,6 +686,11 @@ func TestService_CreateProduct_Defaults(t *testing.T) {
 
 func TestService_ImportProductsCSV(t *testing.T) {
 	ts := newTestService()
+	ts.svc.accounts = fakeInventoryAccountLister{accounts: []accounting.Account{
+		{ID: "sales-account", Code: "4000", AccountType: accounting.AccountTypeRevenue},
+		{ID: "purchase-account", Code: "5000", AccountType: accounting.AccountTypeExpense},
+		{ID: "inventory-account", Code: "1400", AccountType: accounting.AccountTypeAsset},
+	}}
 	ctx := context.Background()
 
 	ts.repo.Categories["cat-1"] = &ProductCategory{
@@ -687,10 +701,10 @@ func TestService_ImportProductsCSV(t *testing.T) {
 
 	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
 		FileName: "products.csv",
-		CSVContent: "code,name,product_type,category_name,sales_price,purchase_price,vat_rate,track_inventory,status\n" +
-			"SKU-001,Widget,GOODS,Parts,15.00,10.50,22,true,ACTIVE\n" +
-			",Missing price,GOODS,Parts,,10.50,22,true,ACTIVE\n" +
-			",Consulting,SERVICE,,120.00,0,22,,INACTIVE\n",
+		CSVContent: "code,name,product_type,category_name,sales_price,purchase_price,vat_rate,track_inventory,status,sale_account_code,purchase_account_code,inventory_account_code\n" +
+			"SKU-001,Widget,GOODS,Parts,15.00,10.50,22,true,ACTIVE,4000,5000,1400\n" +
+			",Missing price,GOODS,Parts,,10.50,22,true,ACTIVE,,,\n" +
+			",Consulting,SERVICE,,120.00,0,22,,INACTIVE,,,\n",
 	})
 
 	require.NoError(t, err)
@@ -717,6 +731,9 @@ func TestService_ImportProductsCSV(t *testing.T) {
 	assert.Equal(t, "SKU-001", widget.Code)
 	assert.Equal(t, ProductTypeGoods, widget.ProductType)
 	assert.Equal(t, "cat-1", widget.CategoryID)
+	assert.Equal(t, "sales-account", widget.SaleAccountID)
+	assert.Equal(t, "purchase-account", widget.PurchaseAccountID)
+	assert.Equal(t, "inventory-account", widget.InventoryAccountID)
 	assert.True(t, widget.TrackInventory)
 	assert.True(t, widget.IsActive)
 	assert.True(t, widget.SalesPrice.Equal(decimal.RequireFromString("15.00")))
@@ -749,6 +766,25 @@ func TestService_ImportProductsCSV_DuplicateCode(t *testing.T) {
 	assert.Equal(t, 1, result.RowsSkipped)
 	require.Len(t, result.Errors, 1)
 	assert.Contains(t, result.Errors[0].Message, "duplicate code")
+}
+
+func TestService_ImportProductsCSVReportsMissingAccountCode(t *testing.T) {
+	repo := NewMockRepository()
+	svc := NewServiceWithRepositoryAndAccounting(repo, fakeInventoryAccountLister{accounts: []accounting.Account{
+		{ID: "sales-account", Code: "4000", AccountType: accounting.AccountTypeRevenue},
+	}})
+	ctx := context.Background()
+
+	result, err := svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		CSVContent: "code,name,sales_price,sale_account_code,purchase_account_code\nSKU-001,Widget,15.00,4000,5999\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 0, result.ProductsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `account code "5999" was not found for purchase_account_code`)
 }
 
 func TestService_ImportProductCategoriesCSV(t *testing.T) {

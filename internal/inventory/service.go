@@ -7,27 +7,40 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
+type accountingLister interface {
+	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]accounting.Account, error)
+}
+
 // Service provides inventory operations
 type Service struct {
-	repo Repository
+	repo     Repository
+	accounts accountingLister
 }
 
 // NewService creates a new inventory service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
 	return &Service{
-		repo: NewGORMRepository(db),
+		repo:     NewGORMRepository(db),
+		accounts: accounting.NewService(db),
 	}
 }
 
 // NewServiceWithRepository creates a new inventory service with a custom repository
 func NewServiceWithRepository(repo Repository) *Service {
+	return NewServiceWithRepositoryAndAccounting(repo, nil)
+}
+
+// NewServiceWithRepositoryAndAccounting creates a new inventory service with a custom repository and accounting account lister.
+func NewServiceWithRepositoryAndAccounting(repo Repository, accounts accountingLister) *Service {
 	return &Service{
-		repo: repo,
+		repo:     repo,
+		accounts: accounts,
 	}
 }
 
