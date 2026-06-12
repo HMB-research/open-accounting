@@ -3462,7 +3462,7 @@ func (h *Handlers) ListCostAllocations(w http.ResponseWriter, r *http.Request) {
 
 	allocations, err := h.costCenterService.ListCostAllocations(r.Context(), schemaName, tenantID, filters)
 	if err != nil {
-		if strings.Contains(err.Error(), "end_date") {
+		if strings.Contains(err.Error(), "end_date") || strings.Contains(err.Error(), "valid UUID") {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -3503,7 +3503,7 @@ func (h *Handlers) CreateCostAllocation(w http.ResponseWriter, r *http.Request) 
 			respondError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "greater than zero") || strings.Contains(err.Error(), "between 0 and 100") {
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "valid UUID") || strings.Contains(err.Error(), "greater than zero") || strings.Contains(err.Error(), "between 0 and 100") {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}

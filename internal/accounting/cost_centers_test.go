@@ -333,16 +333,18 @@ func TestCostCenterService_ImportCostCentersCSVRejectsInvalidParentID(t *testing
 func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
 	ts := newTestCostCenterService()
 	ctx := context.Background()
+	salesCostCenterID := "55555555-5555-4555-8555-555555555555"
+	adminCostCenterID := "66666666-6666-4666-8666-666666666666"
 
-	ts.repo.CostCenters["cc-sales"] = &CostCenter{
-		ID:       "cc-sales",
+	ts.repo.CostCenters[salesCostCenterID] = &CostCenter{
+		ID:       salesCostCenterID,
 		TenantID: "tenant-1",
 		Code:     "SALES",
 		Name:     "Sales",
 		IsActive: true,
 	}
-	ts.repo.CostCenters["cc-admin"] = &CostCenter{
-		ID:       "cc-admin",
+	ts.repo.CostCenters[adminCostCenterID] = &CostCenter{
+		ID:       adminCostCenterID,
 		TenantID: "tenant-1",
 		Code:     "ADMIN",
 		Name:     "Administration",
@@ -379,7 +381,7 @@ func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
 	}
 
 	salesAllocation := byLine[costAllocationJournalLineID1]
-	assert.Equal(t, "cc-sales", salesAllocation.CostCenterID)
+	assert.Equal(t, salesCostCenterID, salesAllocation.CostCenterID)
 	assert.True(t, salesAllocation.Amount.Equal(decimal.RequireFromString("125.50")))
 	require.NotNil(t, salesAllocation.AllocationPercentage)
 	assert.True(t, salesAllocation.AllocationPercentage.Equal(decimal.RequireFromString("50")))
@@ -387,7 +389,7 @@ func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
 	assert.Equal(t, "Shared rent", salesAllocation.Notes)
 
 	adminAllocation := byLine[costAllocationJournalLineID2]
-	assert.Equal(t, "cc-admin", adminAllocation.CostCenterID)
+	assert.Equal(t, adminCostCenterID, adminAllocation.CostCenterID)
 	assert.True(t, adminAllocation.Amount.Equal(decimal.RequireFromString("300.00")))
 	assert.Nil(t, adminAllocation.AllocationPercentage)
 }
