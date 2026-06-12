@@ -16,6 +16,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -879,6 +880,53 @@ func TestGetInvoice(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetInvoicePDF(t *testing.T) {
+	h, tenantRepo, invoiceRepo := setupInvoiceTestHandlers()
+	h.pdfService = pdf.NewService()
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	tenantRecord.Settings.RegCode = "12345678"
+
+	invoice := invoiceRepo.addTestInvoice("inv-pdf", "tenant-1", "contact-1", invoicing.InvoiceTypeSales, invoicing.StatusSent)
+	invoice.InvoiceNumber = "INV-PDF-001"
+	invoice.Contact = &contacts.Contact{
+		ID:          "contact-1",
+		Name:        "Acme OU",
+		Email:       "billing@example.com",
+		CountryCode: "EE",
+	}
+	invoice.IssueDate = time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	invoice.DueDate = time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)
+	invoice.Subtotal = decimal.NewFromInt(100)
+	invoice.VATAmount = decimal.NewFromInt(22)
+	invoice.Total = decimal.NewFromInt(122)
+	invoice.Lines = []invoicing.InvoiceLine{{
+		ID:           "line-1",
+		TenantID:     "tenant-1",
+		InvoiceID:    "inv-pdf",
+		LineNumber:   1,
+		Description:  "Consulting",
+		Quantity:     decimal.NewFromInt(1),
+		Unit:         "hour",
+		UnitPrice:    decimal.NewFromInt(100),
+		VATRate:      decimal.NewFromInt(22),
+		VATTreatment: invoicing.VATTreatmentStandard,
+		LineSubtotal: decimal.NewFromInt(100),
+		LineVAT:      decimal.NewFromInt(22),
+		LineTotal:    decimal.NewFromInt(122),
+	}}
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/invoices/inv-pdf/pdf", nil, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invoiceID": "inv-pdf"})
+	rr := httptest.NewRecorder()
+
+	h.GetInvoicePDF(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), `invoice-INV-PDF-001.pdf`)
+	requirePDF(t, rr.Body.Bytes())
 }
 
 // =============================================================================
