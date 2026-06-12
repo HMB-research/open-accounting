@@ -204,6 +204,28 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 	return current, nil
 }
 
+// UpdateLatePaymentInterestRate updates the tenant's late payment interest rate.
+func (s *Service) UpdateLatePaymentInterestRate(ctx context.Context, tenantID string, rate float64) (*Tenant, error) {
+	current, err := s.GetTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	current.Settings.LatePaymentInterestRate = rate
+	current.UpdatedAt = time.Now()
+
+	settingsJSON, err := json.Marshal(current.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("marshal settings: %w", err)
+	}
+
+	if err := s.repo.UpdateTenant(ctx, tenantID, current.Name, settingsJSON, current.UpdatedAt); err != nil {
+		return nil, err
+	}
+
+	return current, nil
+}
+
 // ListUserTenants retrieves all tenants a user belongs to
 func (s *Service) ListUserTenants(ctx context.Context, userID string) ([]TenantMembership, error) {
 	return s.repo.ListUserTenants(ctx, userID)

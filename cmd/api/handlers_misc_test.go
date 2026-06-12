@@ -872,18 +872,77 @@ func TestInterestAndPluginValidationHandlers(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.GetInterestSettings(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+	var settings invoicing.InterestSettings
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&settings)) {
+		assert.False(t, settings.IsEnabled)
+		assert.Equal(t, 0.0, settings.Rate)
+		assert.Equal(t, "Interest calculation disabled", settings.Description)
+	}
 
 	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/"+tenantRecord.ID+"/settings/interest", map[string]interface{}{"rate": 0.001}, claims)
 	req = withURLParams(req, map[string]string{"tenantID": tenantRecord.ID})
 	rr = httptest.NewRecorder()
 	h.UpdateInterestSettings(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&settings)) {
+		assert.True(t, settings.IsEnabled)
+		assert.Equal(t, 0.001, settings.Rate)
+		assert.Equal(t, 0.365, settings.AnnualRate)
+		assert.Equal(t, "0.100% daily (36.5% annually)", settings.Description)
+	}
+	assert.Equal(t, 0.001, tenantRepo.tenants[tenantRecord.ID].Settings.LatePaymentInterestRate)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/settings/interest", nil), map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.GetInterestSettings(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&settings)) {
+		assert.True(t, settings.IsEnabled)
+		assert.Equal(t, 0.001, settings.Rate)
+	}
+
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/"+tenantRecord.ID+"/settings/interest", map[string]interface{}{"rate": 0}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.UpdateInterestSettings(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&settings)) {
+		assert.False(t, settings.IsEnabled)
+		assert.Equal(t, 0.0, settings.Rate)
+		assert.Equal(t, "Interest calculation disabled", settings.Description)
+	}
+	assert.Equal(t, 0.0, tenantRepo.tenants[tenantRecord.ID].Settings.LatePaymentInterestRate)
 
 	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/"+tenantRecord.ID+"/settings/interest", map[string]interface{}{"rate": -1}, claims)
 	req = withURLParams(req, map[string]string{"tenantID": tenantRecord.ID})
 	rr = httptest.NewRecorder()
 	h.UpdateInterestSettings(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = httptest.NewRequest(http.MethodPut, "/tenants/"+tenantRecord.ID+"/settings/interest", strings.NewReader("{"))
+	req = withURLParams(req, map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.UpdateInterestSettings(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/missing/settings/interest", nil), map[string]string{"tenantID": "missing"})
+	rr = httptest.NewRecorder()
+	h.GetInterestSettings(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/missing/settings/interest", map[string]interface{}{"rate": 0.001}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "missing"})
+	rr = httptest.NewRecorder()
+	h.UpdateInterestSettings(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	tenantRepo.updateTenantErr = errors.New("settings store unavailable")
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/"+tenantRecord.ID+"/settings/interest", map[string]interface{}{"rate": 0.0005}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.UpdateInterestSettings(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	tenantRepo.updateTenantErr = nil
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/missing/invoices/inv-1/interest", nil), map[string]string{
 		"tenantID":  "missing",
