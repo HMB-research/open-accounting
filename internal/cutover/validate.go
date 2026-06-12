@@ -35,6 +35,7 @@ type bundleIndexes struct {
 	contacts          map[string]bool
 	employees         map[string]bool
 	invoices          map[string]bool
+	quotes            map[string]bool
 	costCenters       map[string]bool
 	productCategories map[string]bool
 	products          map[string]bool
@@ -311,6 +312,7 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindQuotes: {
 		aliases: mergeAliases(commercialDocumentAliases(), map[string]string{
+			"quote_id":         "id",
 			"quote_number":     "quote_number",
 			"quotation_number": "quote_number",
 			"offer_number":     "quote_number",
@@ -773,6 +775,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 		contacts:          map[string]bool{},
 		employees:         map[string]bool{},
 		invoices:          map[string]bool{},
+		quotes:            map[string]bool{},
 		costCenters:       map[string]bool{},
 		productCategories: map[string]bool{},
 		products:          map[string]bool{},
@@ -799,6 +802,8 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 				addIndexValue(indexes.invoices, row.values["invoice_number"])
 				addIndexValue(indexes.invoices, row.values["invoice_id"])
 				addIndexValue(indexes.invoices, row.values["id"])
+			case KindQuotes:
+				addIndexValue(indexes.quotes, row.values["id"])
 			case KindCostCenters:
 				addIndexValue(indexes.costCenters, row.values["code"])
 				addIndexValue(indexes.costCenters, row.values["id"])
@@ -839,11 +844,18 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindEInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
-		case KindQuotes, KindOrders, KindRecurringInvoices:
+		case KindQuotes, KindRecurringInvoices:
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
+		case KindOrders:
+			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
+				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
+			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
+				[]string{"product_id", "product_code"})
+			checkTargetReference(report, indexes.files[KindQuotes], indexes.quotes, file, row, KindQuotes,
+				[]string{"quote_id"})
 		case KindPayments:
 			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 				[]string{"invoice_id", "invoice_number"})

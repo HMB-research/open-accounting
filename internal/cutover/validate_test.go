@@ -599,6 +599,71 @@ func TestValidateBundleReportsCommercialDocumentProductReferenceIssues(t *testin
 	assert.Equal(t, "SKU-404", report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsOrderQuoteReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindQuotes,
+			FileName:   "quotes.csv",
+			CSVContent: "id,quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate\n11111111-1111-1111-1111-111111111111,Q-1,2026-05-30,CUST-1,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindOrders,
+			FileName:   "orders.csv",
+			CSVContent: "order_number,order_date,contact_code,quote_id,line_description,quantity,unit_price,vat_rate\nSO-1,2026-05-31,CUST-1,22222222-2222-2222-2222-222222222222,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindOrders, report.Issues[0].Kind)
+	assert.Equal(t, KindQuotes, report.Issues[0].TargetKind)
+	assert.Equal(t, "quote_id", report.Issues[0].Field)
+	assert.Equal(t, "22222222-2222-2222-2222-222222222222", report.Issues[0].Value)
+}
+
+func TestValidateBundleAcceptsOrderQuoteIDReferences(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindQuotes,
+			FileName:   "quotes.csv",
+			CSVContent: "quote_id,quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate\n11111111-1111-1111-1111-111111111111,Q-1,2026-05-30,CUST-1,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindOrders,
+			FileName:   "orders.csv",
+			CSVContent: "order_number,order_date,contact_code,quote_id,line_description,quantity,unit_price,vat_rate\nSO-1,2026-05-31,CUST-1,11111111-1111-1111-1111-111111111111,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+
+	var quoteValidation FileValidation
+	for _, file := range report.Files {
+		if file.Kind == KindQuotes {
+			quoteValidation = file
+		}
+	}
+	require.Equal(t, KindQuotes, quoteValidation.Kind)
+	assert.Contains(t, quoteValidation.Headers, "id")
+}
+
 func TestValidateBundleReportsFixedAssetAccountReferenceIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
