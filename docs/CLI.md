@@ -348,7 +348,7 @@ go run ./cmd/oa contacts delete --id <contact-id>
 go run ./cmd/oa contacts import --file ./contacts.csv
 ```
 
-Use `--json` on contacts list/create/get/update/delete/import commands for automation. Contact CSV import accepts optional `id` or `contact_id` UUID columns and preserves those IDs for cutover references from `contact_id` or `supplier_id` fields. Importer-compatible aliases include `company` or `company_name` for `name`, `type` or `role` for `contact_type`, `vat` or `vat_no` for `vat_number`, `telephone` for `phone`, `address`, `street`, or `street_address` for `address_line1`, `postcode`, `zip`, or `zip_code` for `postal_code`, `country` for `country_code`, and `payment_days` or `terms_days` for `payment_terms_days`. Contact list filters and create/update fields are trimmed before API requests; contact type and country code inputs are normalized to uppercase.
+Use `--json` on contacts list/create/get/update/delete/import commands for automation. Contact CSV import accepts optional `id` or `contact_id` UUID columns and preserves those IDs for cutover references from `contact_id` or `supplier_id` fields. Importer-compatible aliases include `company` or `company_name` for `name`, `type` or `role` for `contact_type`, `vat` or `vat_no` for `vat_number`, `telephone` for `phone`, `address`, `street`, or `street_address` for `address_line1`, `postcode`, `zip`, or `zip_code` for `postal_code`, `country` for `country_code`, and `payment_days` or `terms_days` for `payment_terms_days`. `credit_limit` accepts comma decimals such as `1500,50` and thousands separators such as `1,500.50`. Contact list filters and create/update fields are trimmed before API requests; contact type and country code inputs are normalized to uppercase.
 
 ## Employees
 

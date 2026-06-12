@@ -19,7 +19,7 @@ func TestService_ImportCSV(t *testing.T) {
 			FileName: "contacts.csv",
 			CSVContent: "contact_id;company_name;type;email;payment_days;credit_limit\n" +
 				legacyContactID + ";Northwind OU;customer;northwind@example.com;;1500,50\n" +
-				";Supply Partner;tarnija;supplier@example.com;30;2500.00\n",
+				";Supply Partner;tarnija;supplier@example.com;30;1,500.50\n",
 		}
 
 		result, err := service.ImportCSV(ctx, "tenant-1", "tenant_tenant_1", req)
@@ -84,6 +84,9 @@ func TestService_ImportCSV(t *testing.T) {
 		}
 		if importedSupplier.PaymentTermsDays != 30 {
 			t.Fatalf("supplier PaymentTermsDays = %d, want 30", importedSupplier.PaymentTermsDays)
+		}
+		if !importedSupplier.CreditLimit.Equal(decimal.RequireFromString("1500.50")) {
+			t.Fatalf("supplier CreditLimit = %s, want 1500.50", importedSupplier.CreditLimit)
 		}
 	})
 
