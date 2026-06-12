@@ -334,7 +334,7 @@ go run ./cmd/oa accounts delete --id <account-id>
 go run ./cmd/oa accounts import --file ./accounts.csv
 ```
 
-`accounts hierarchy` shows the parent-child chart of accounts using existing `parent_id` relationships. `accounts update` and `accounts delete` only apply to custom accounts; system accounts are immutable, and delete deactivates the account instead of removing ledger history. Account CSV imports can set parent accounts with `parent_code`.
+`accounts hierarchy` shows the parent-child chart of accounts using existing `parent_id` relationships. `accounts update` and `accounts delete` only apply to custom accounts; system accounts are immutable, and delete deactivates the account instead of removing ledger history. Account CSV imports can set parent accounts with `parent_code`; importer-compatible aliases include `number` for `code`, `category` for `account_type`, and `parent` or `parent_account` for `parent_code`.
 
 ## Contacts
 
