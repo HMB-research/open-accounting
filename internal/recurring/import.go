@@ -517,6 +517,10 @@ func parseRecurringImportLine(row recurringImportRow, productLookup importrefs.P
 	if err != nil {
 		return recurringImportLine{}, err
 	}
+	accountID, err := parseOptionalRecurringImportUUID("account_id", row.values["account_id"])
+	if err != nil {
+		return recurringImportLine{}, err
+	}
 	return recurringImportLine{
 		description:     description,
 		quantity:        quantity,
@@ -524,7 +528,7 @@ func parseRecurringImportLine(row recurringImportRow, productLookup importrefs.P
 		unitPrice:       unitPrice,
 		discountPercent: discountPercent,
 		vatRate:         vatRate,
-		accountID:       optionalRecurringImportString(row.values["account_id"]),
+		accountID:       accountID,
 		productID:       productID,
 	}, nil
 }
@@ -796,12 +800,17 @@ func mergeRecurringImportOptionalDateValue(target *time.Time, next time.Time, fi
 	return ""
 }
 
-func optionalRecurringImportString(value string) *string {
+func parseOptionalRecurringImportUUID(field, value string) (*string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return nil
+		return nil, nil
 	}
-	return &trimmed
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", field)
+	}
+	canonicalID := parsedID.String()
+	return &canonicalID, nil
 }
 
 func canonicalRecurringImportHeader(value string) string {

@@ -346,8 +346,8 @@ func TestService_ImportCSV(t *testing.T) {
 		svc := NewServiceWithRepository(repo)
 
 		csvContent := `order_number,contact_code,order_date,expected_delivery,status,currency,exchange_rate,notes,quote_id,line_description,quantity,unit,unit_price,discount_percent,vat_rate,product_code
-ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,quote-1,Consulting,2,hour,100,10,22,SERV-001
-ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,quote-1,Support,1,hour,50,0,22,
+ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,33333333-3333-4333-8333-333333333333,Consulting,2,hour,100,10,22,SERV-001
+ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,33333333-3333-4333-8333-333333333333,Support,1,hour,50,0,22,
 `
 
 		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
@@ -379,7 +379,7 @@ ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,quote-1,Su
 			assert.Equal(t, "contact-1", order.ContactID)
 			assert.Equal(t, OrderStatusConfirmed, order.Status)
 			require.NotNil(t, order.QuoteID)
-			assert.Equal(t, "quote-1", *order.QuoteID)
+			assert.Equal(t, "33333333-3333-4333-8333-333333333333", *order.QuoteID)
 			assert.True(t, order.Subtotal.Equal(decimal.RequireFromString("230.00")))
 			assert.True(t, order.VATAmount.Equal(decimal.RequireFromString("50.60")))
 			require.Len(t, order.Lines, 2)
@@ -422,6 +422,30 @@ ORD-BAD,contact-1,2026-03-15,Bad quantity,0,10,22
 		assert.Contains(t, joinedMessages, "already exists")
 		assert.Contains(t, joinedMessages, "contact_id")
 		assert.Contains(t, joinedMessages, "quantity must be greater than zero")
+	})
+
+	t.Run("skips invalid uuid references", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `order_number,contact_id,order_date,quote_id,line_description,quantity,unit_price,vat_rate,product_id
+ORD-BAD-QUOTE,contact-1,2026-03-15,legacy-quote,Bad quote,1,10,22,
+ORD-BAD-PRODUCT,contact-1,2026-03-15,,Bad product,1,10,22,legacy-product
+`
+
+		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:       "contact-1",
+			TenantID: "tenant-1",
+			Name:     "Acme",
+		}}, nil, &ImportOrdersRequest{CSVContent: csvContent})
+
+		require.NoError(t, err)
+		assert.Equal(t, 2, result.RowsProcessed)
+		assert.Zero(t, result.OrdersCreated)
+		assert.Equal(t, 2, result.RowsSkipped)
+		require.Len(t, result.Errors, 2)
+		assert.Contains(t, result.Errors[0].Message, "quote_id must be a valid UUID")
+		assert.Contains(t, result.Errors[1].Message, "product_id must be a valid UUID")
 	})
 }
 

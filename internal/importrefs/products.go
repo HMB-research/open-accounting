@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/HMB-research/open-accounting/internal/inventory"
 )
 
@@ -36,7 +38,12 @@ func NewProductLookup(products []inventory.Product) ProductLookup {
 // ResolveID returns an explicit product ID, or resolves productCode when productID is empty.
 func (l ProductLookup) ResolveID(productID, productCode string) (*string, error) {
 	if id := strings.TrimSpace(productID); id != "" {
-		return &id, nil
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, fmt.Errorf("product_id must be a valid UUID")
+		}
+		canonicalID := parsedID.String()
+		return &canonicalID, nil
 	}
 
 	code := strings.TrimSpace(productCode)

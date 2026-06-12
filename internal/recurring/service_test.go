@@ -1422,7 +1422,7 @@ func TestService_ImportCSV(t *testing.T) {
 	}
 
 	csvContent := `name,contact_code,frequency,start_date,end_date,next_generation_date,payment_terms_days,is_active,generated_count,send_email_on_generation,recipient_email,attach_pdf,line_description,quantity,unit,unit_price,discount_percent,vat_rate,account_id,product_code
-Monthly Retainer,CUST-1,MONTHLY,2026-03-01,2026-12-31,2026-04-01,21,true,2,true,billing@example.com,true,Consulting,2,hour,100,10,22,acc-1,SERV-001
+Monthly Retainer,CUST-1,MONTHLY,2026-03-01,2026-12-31,2026-04-01,21,true,2,true,billing@example.com,true,Consulting,2,hour,100,10,22,44444444-4444-4444-8444-444444444444,SERV-001
 Monthly Retainer,CUST-1,MONTHLY,2026-03-01,2026-12-31,2026-04-01,21,true,2,true,billing@example.com,true,Support,1,hour,50,0,22,,
 `
 
@@ -1502,8 +1502,8 @@ Monthly Retainer,CUST-1,MONTHLY,2026-03-01,2026-12-31,2026-04-01,21,true,2,true,
 	if !lines[0].DiscountPercent.Equal(decimal.NewFromInt(10)) {
 		t.Errorf("first discount = %s, want 10", lines[0].DiscountPercent)
 	}
-	if lines[0].AccountID == nil || *lines[0].AccountID != "acc-1" {
-		t.Errorf("first AccountID = %#v, want acc-1", lines[0].AccountID)
+	if lines[0].AccountID == nil || *lines[0].AccountID != "44444444-4444-4444-8444-444444444444" {
+		t.Errorf("first AccountID = %#v, want valid UUID", lines[0].AccountID)
 	}
 	if lines[0].ProductID == nil || *lines[0].ProductID != "prod-1" {
 		t.Errorf("first ProductID = %#v, want prod-1", lines[0].ProductID)
@@ -1573,6 +1573,48 @@ Bad Quantity,contact-1,MONTHLY,2026-03-01,Bad,0,10,22
 	}
 	if len(repo.recurring) != 1 {
 		t.Errorf("repo.recurring length = %d, want only existing template", len(repo.recurring))
+	}
+}
+
+func TestService_ImportCSVSkipsInvalidUUIDReferences(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
+	contact := contacts.Contact{
+		ID:       "contact-1",
+		TenantID: "tenant-1",
+		Name:     "Acme",
+	}
+
+	csvContent := `name,contact_id,frequency,start_date,line_description,quantity,unit_price,vat_rate,account_id,product_id
+Bad Account,contact-1,MONTHLY,2026-03-01,Bad account,1,10,22,legacy-account,
+Bad Product,contact-1,MONTHLY,2026-03-01,Bad product,1,10,22,,legacy-product
+`
+
+	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, nil, &ImportRecurringInvoicesRequest{
+		CSVContent: csvContent,
+		UserID:     "user-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RowsProcessed != 2 {
+		t.Errorf("RowsProcessed = %d, want 2", result.RowsProcessed)
+	}
+	if result.TemplatesCreated != 0 {
+		t.Errorf("TemplatesCreated = %d, want 0", result.TemplatesCreated)
+	}
+	if result.RowsSkipped != 2 {
+		t.Errorf("RowsSkipped = %d, want 2", result.RowsSkipped)
+	}
+	if len(result.Errors) != 2 {
+		t.Fatalf("Errors length = %d, want 2: %#v", len(result.Errors), result.Errors)
+	}
+	if !strings.Contains(result.Errors[0].Message, "account_id must be a valid UUID") {
+		t.Errorf("first error = %q, want account_id UUID message", result.Errors[0].Message)
+	}
+	if !strings.Contains(result.Errors[1].Message, "product_id must be a valid UUID") {
+		t.Errorf("second error = %q, want product_id UUID message", result.Errors[1].Message)
 	}
 }
 
