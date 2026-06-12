@@ -137,7 +137,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Historical TSD Import**      | CSV import of prior TSD declarations and Annex 1 rows through API and CLI                                                                                                                   |
 | **Leave Balance Import**       | CSV import of employee leave balances for migration cutovers through API, web UI, and CLI                                                                                                   |
 | **Leave Evidence**             | Approved supporting documents can be required before approving documented leave/absence records                                                                                             |
-| **Migration Preflight**        | Non-mutating CSV/XML bundle validation for required columns, duplicate identifiers, account, contact, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, and bank-transaction row values, grouped document consistency, and cross-file references before cutover imports, including e-invoice XML, expenses, commercial history, inventory, banking, tax, cost allocations, and fixed assets |
+| **Migration Preflight**        | Non-mutating CSV/XML bundle validation for required columns, duplicate identifiers, account, contact, employee, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, and bank-transaction row values, grouped document consistency, and cross-file references before cutover imports, including e-invoice XML, expenses, commercial history, inventory, banking, tax, cost allocations, and fixed assets |
 
 ### Estonian Compliance
 
@@ -359,7 +359,7 @@ open-accounting/
 - [x] Tenant admin security-event visibility for member auth activity
 - [x] Tenant admin suspension/restoration of member tenant access with session revocation and audit events
 - [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank accounts, bank transactions, cost centers, cost allocations, product categories/warehouses/products/stock, fixed assets, payroll/TSD tax history, opening balances, and historical journals
-- [x] Migration bundle validation for cutover imports with API and CLI coverage across e-invoice XML, expenses, commercial history, inventory, banking, payroll/TSD tax history, cost allocations, and fixed assets, including duplicate identifiers, account, contact, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, and bank-transaction row values, and grouped document consistency
+- [x] Migration bundle validation for cutover imports with API and CLI coverage across e-invoice XML, expenses, commercial history, inventory, banking, payroll/TSD tax history, cost allocations, and fixed assets, including duplicate identifiers, account, contact, employee, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, and bank-transaction row values, and grouped document consistency
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow

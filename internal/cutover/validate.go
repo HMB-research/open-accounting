@@ -113,17 +113,50 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindEmployees: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
-			"employee_number":       "employee_number",
-			"employee_no":           "employee_number",
-			"employee_code":         "employee_number",
-			"employee_id":           "employee_number",
-			"personal_code":         "personal_code",
-			"isikukood":             "personal_code",
-			"e_mail":                "email",
-			"base_salary":           "base_salary",
-			"salary_effective_from": "salary_effective_from",
+			"employee_number":        "employee_number",
+			"number":                 "employee_number",
+			"employee_no":            "employee_number",
+			"employee_code":          "employee_number",
+			"employee_id":            "employee_number",
+			"first_name":             "first_name",
+			"firstname":              "first_name",
+			"given_name":             "first_name",
+			"last_name":              "last_name",
+			"lastname":               "last_name",
+			"surname":                "last_name",
+			"family_name":            "last_name",
+			"personal_code":          "personal_code",
+			"isikukood":              "personal_code",
+			"e_mail":                 "email",
+			"phone":                  "phone",
+			"telephone":              "phone",
+			"address":                "address",
+			"bank_account":           "bank_account",
+			"iban":                   "bank_account",
+			"start_date":             "start_date",
+			"employment_start":       "start_date",
+			"end_date":               "end_date",
+			"employment_end":         "end_date",
+			"position":               "position",
+			"title":                  "position",
+			"department":             "department",
+			"team":                   "department",
+			"employment_type":        "employment_type",
+			"type":                   "employment_type",
+			"apply_basic_exemption":  "apply_basic_exemption",
+			"basic_exemption":        "apply_basic_exemption",
+			"basic_exemption_amount": "basic_exemption_amount",
+			"funded_pension_rate":    "funded_pension_rate",
+			"pension_rate":           "funded_pension_rate",
+			"base_salary":            "base_salary",
+			"salary":                 "base_salary",
+			"gross_salary":           "base_salary",
+			"salary_effective_from":  "salary_effective_from",
+			"effective_from":         "salary_effective_from",
+			"is_active":              "is_active",
+			"active":                 "is_active",
 		}),
-		requiredGroups: [][]string{{"first_name", "name"}, {"last_name", "name"}},
+		requiredGroups: [][]string{{"first_name"}, {"last_name"}, {"start_date"}},
 	},
 	KindExpenses: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
@@ -726,6 +759,34 @@ var cutoverContactTypeAliases = map[string]string{
 	"tarnija":  "SUPPLIER",
 	"both":     "BOTH",
 	"molemad":  "BOTH",
+}
+
+var cutoverEmployeeEmploymentTypeAliases = map[string]string{
+	"":               "FULL_TIME",
+	"full_time":      "FULL_TIME",
+	"full time":      "FULL_TIME",
+	"tais":           "FULL_TIME",
+	"part_time":      "PART_TIME",
+	"part time":      "PART_TIME",
+	"osaline":        "PART_TIME",
+	"contract":       "CONTRACT",
+	"contractor":     "CONTRACT",
+	"work_order":     "CONTRACT",
+	"too_vott":       "CONTRACT",
+	"too_votuleping": "CONTRACT",
+}
+
+var cutoverEmployeeBoolAliases = map[string]bool{
+	"1":     true,
+	"0":     false,
+	"true":  true,
+	"false": false,
+	"yes":   true,
+	"no":    false,
+	"y":     true,
+	"n":     false,
+	"ja":    true,
+	"ei":    false,
 }
 
 var groupedDocumentPreflightSpecs = map[FileKind]groupedDocumentSpec{
@@ -1481,6 +1542,8 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkAccountRows(report, file)
 	case KindContacts:
 		checkContactRows(report, file)
+	case KindEmployees:
+		checkEmployeeRows(report, file)
 	case KindInvoices, KindQuotes, KindOrders, KindRecurringInvoices:
 		checkCommercialDocumentRows(report, file)
 	case KindExpenses:
@@ -1587,6 +1650,224 @@ func checkContactCreditLimit(report *BundleValidationReport, file parsedFile, ro
 	if _, issue := parseCutoverRequiredImportDecimal(row.values["credit_limit"], "credit_limit"); issue != nil {
 		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
 	}
+}
+
+func checkEmployeeRows(report *BundleValidationReport, file parsedFile) {
+	hasFirstName := fileHasHeaders(file, "first_name")
+	hasLastName := fileHasHeaders(file, "last_name")
+	hasStartDate := fileHasHeaders(file, "start_date")
+	for _, row := range file.rows {
+		if hasFirstName {
+			checkRequiredCutoverField(report, file, row, "first_name")
+		}
+		if hasLastName {
+			checkRequiredCutoverField(report, file, row, "last_name")
+		}
+
+		var startDate time.Time
+		startOK := false
+		if hasStartDate {
+			startDate, startOK = checkEmployeeRequiredDate(report, file, row, "start_date")
+		}
+		endDate, endOK := checkEmployeeOptionalDate(report, file, row, "end_date")
+		if startOK && endOK && endDate.Before(startDate) {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "end_date",
+				Value:    strings.TrimSpace(row.values["end_date"]),
+				Message:  "end_date cannot be before start_date",
+			})
+		}
+
+		checkEmployeeEmploymentType(report, file, row)
+		checkEmployeeBool(report, file, row, "apply_basic_exemption")
+		checkEmployeeBool(report, file, row, "is_active")
+		checkEmployeeBasicExemptionAmount(report, file, row)
+		checkEmployeeFundedPensionRate(report, file, row)
+		baseSalaryProvided := checkEmployeeBaseSalary(report, file, row)
+		checkEmployeeSalaryEffectiveFrom(report, file, row, baseSalaryProvided)
+	}
+}
+
+func checkEmployeeEmploymentType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "employment_type") {
+		return
+	}
+	value := strings.TrimSpace(row.values["employment_type"])
+	key := strings.ReplaceAll(normalizedValue(value), "-", "_")
+	if _, ok := cutoverEmployeeEmploymentTypeAliases[key]; ok {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "employment_type",
+		Value:    value,
+		Message:  fmt.Sprintf("invalid employment_type %q", value),
+	})
+}
+
+func checkEmployeeBool(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	if _, ok := cutoverEmployeeBoolAliases[normalizedValue(value)]; ok {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    value,
+		Message:  fmt.Sprintf("%s must be true or false", field),
+	})
+}
+
+func checkEmployeeBasicExemptionAmount(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	amount, provided, ok := checkEmployeeOptionalDecimal(report, file, row, "basic_exemption_amount")
+	if !provided || !ok {
+		return
+	}
+	if amount.IsNegative() {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "basic_exemption_amount",
+			Value:    strings.TrimSpace(row.values["basic_exemption_amount"]),
+			Message:  "basic_exemption_amount must be zero or greater",
+		})
+	}
+}
+
+func checkEmployeeFundedPensionRate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	rate, provided, ok := checkEmployeeOptionalDecimal(report, file, row, "funded_pension_rate")
+	if !provided || !ok {
+		return
+	}
+	if rate.IsNegative() || rate.GreaterThan(decimal.NewFromInt(1)) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "funded_pension_rate",
+			Value:    strings.TrimSpace(row.values["funded_pension_rate"]),
+			Message:  "funded_pension_rate must be between 0 and 1",
+		})
+	}
+}
+
+func checkEmployeeBaseSalary(report *BundleValidationReport, file parsedFile, row parsedRow) bool {
+	baseSalary, provided, ok := checkEmployeeOptionalDecimal(report, file, row, "base_salary")
+	if !provided || !ok {
+		return provided
+	}
+	if !baseSalary.GreaterThan(decimal.Zero) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "base_salary",
+			Value:    strings.TrimSpace(row.values["base_salary"]),
+			Message:  "base_salary must be greater than zero",
+		})
+	}
+	return true
+}
+
+func checkEmployeeSalaryEffectiveFrom(report *BundleValidationReport, file parsedFile, row parsedRow, baseSalaryProvided bool) {
+	if !fileHasHeaders(file, "salary_effective_from") || strings.TrimSpace(row.values["salary_effective_from"]) == "" {
+		return
+	}
+	if !baseSalaryProvided {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "salary_effective_from",
+			Value:    strings.TrimSpace(row.values["salary_effective_from"]),
+			Message:  "salary_effective_from requires base_salary",
+		})
+	}
+	checkEmployeeOptionalDate(report, file, row, "salary_effective_from")
+}
+
+func checkEmployeeOptionalDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (decimal.Decimal, bool, bool) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return decimal.Zero, false, true
+	}
+	amount, issue := parseCutoverRequiredImportDecimal(row.values[field], field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return decimal.Zero, true, false
+	}
+	return amount, true, true
+}
+
+func checkEmployeeRequiredDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (time.Time, bool) {
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Message:  fmt.Sprintf("%s is required", field),
+		})
+		return time.Time{}, false
+	}
+	return checkEmployeeDateValue(report, file, row, field, value)
+}
+
+func checkEmployeeOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (time.Time, bool) {
+	if !fileHasHeaders(file, field) {
+		return time.Time{}, false
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return time.Time{}, false
+	}
+	return checkEmployeeDateValue(report, file, row, field, value)
+}
+
+func checkEmployeeDateValue(report *BundleValidationReport, file parsedFile, row parsedRow, field, value string) (time.Time, bool) {
+	if parsed, ok := parseEmployeeCutoverDate(value); ok {
+		return parsed, true
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    value,
+		Message:  fmt.Sprintf("%s must be in YYYY-MM-DD format", field),
+	})
+	return time.Time{}, false
+}
+
+func parseEmployeeCutoverDate(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	for _, layout := range []string{"2006-01-02", time.RFC3339, "02.01.2006"} {
+		parsed, err := time.Parse(layout, trimmed)
+		if err == nil {
+			return normalizeCutoverDateOnly(parsed), true
+		}
+	}
+	return time.Time{}, false
 }
 
 func checkAccountRows(report *BundleValidationReport, file parsedFile) {
