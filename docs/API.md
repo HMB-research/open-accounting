@@ -1087,7 +1087,7 @@ Content-Type: application/json
 }
 ```
 
-Supported header aliases include `id` / `contact_id`, `name` / `company` / `company_name`, `type` / `role`, `payment_terms_days` / `payment_days` / `terms_days`, `country` / `country_code`, `vat_number` / `vat` / `vat_no`, `phone` / `telephone`, `address` / `street` / `street_address`, and `postal_code` / `postcode` / `zip` / `zip_code`. Optional imported IDs must be valid UUIDs and are preserved so cutover files can refer to contacts through `contact_id` or `supplier_id`.
+Supported header aliases include `id` / `contact_id`, `name` / `company` / `company_name`, `type` / `role`, `payment_terms_days` / `payment_days` / `terms_days`, `country` / `country_code`, `vat_number` / `vat` / `vat_no`, `phone` / `telephone`, `address` / `street` / `street_address`, and `postal_code` / `postcode` / `zip` / `zip_code`. `credit_limit` accepts comma decimals such as `1500,50` and thousands separators such as `1,500.50`. Optional imported IDs must be valid UUIDs and are preserved so cutover files can refer to contacts through `contact_id` or `supplier_id`.
 
 ---
 

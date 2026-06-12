@@ -1790,12 +1790,25 @@ func checkContactCountryCode(report *BundleValidationReport, file parsedFile, ro
 }
 
 func checkContactCreditLimit(report *BundleValidationReport, file parsedFile, row parsedRow) {
-	if !fileHasHeaders(file, "credit_limit") || strings.TrimSpace(row.values["credit_limit"]) == "" {
+	if !fileHasHeaders(file, "credit_limit") {
 		return
 	}
-	if _, issue := parseCutoverRequiredImportDecimal(row.values["credit_limit"], "credit_limit"); issue != nil {
-		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+	value := strings.TrimSpace(row.values["credit_limit"])
+	if value == "" {
+		return
 	}
+	if _, err := decimal.NewFromString(normalizeCutoverDecimal(value)); err == nil {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "credit_limit",
+		Value:    value,
+		Message:  "credit_limit must be a decimal",
+	})
 }
 
 func checkEmployeeRows(report *BundleValidationReport, file parsedFile) {

@@ -562,6 +562,21 @@ func TestValidateBundleReportsContactImporterAliasRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindContacts, "credit_limit", "credit_limit must be a decimal")
 }
 
+func TestValidateBundleAcceptsContactImportThousandsCreditLimit(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "name,credit_limit\nCustomer One,\"1,500.50\"\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Empty(t, report.Issues)
+}
+
 func TestValidateBundleReportsEmployeeRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
