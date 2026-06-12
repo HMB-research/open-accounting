@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -253,24 +254,33 @@ func buildCreateCostCenterRequestFromImportRow(row costCenterImportRow) (*Create
 	if err != nil {
 		return nil, "", err
 	}
+	parentID, err := optionalCostCenterImportParentID(row.values["parent_id"])
+	if err != nil {
+		return nil, "", err
+	}
 
 	return &CreateCostCenterRequest{
 		Code:         code,
 		Name:         name,
 		Description:  strings.TrimSpace(row.values["description"]),
-		ParentID:     optionalCostCenterImportParentID(row.values["parent_id"]),
+		ParentID:     parentID,
 		IsActive:     isActive,
 		BudgetAmount: budgetAmount,
 		BudgetPeriod: budgetPeriod,
 	}, parentCode, nil
 }
 
-func optionalCostCenterImportParentID(value string) *string {
+func optionalCostCenterImportParentID(value string) (*string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return nil
+		return nil, nil
 	}
-	return &trimmed
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("parent_id must be a valid UUID")
+	}
+	canonicalID := parsedID.String()
+	return &canonicalID, nil
 }
 
 func parseCostCenterImportBudgetAmount(value string) (*decimal.Decimal, error) {
