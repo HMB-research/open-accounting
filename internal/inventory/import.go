@@ -310,6 +310,10 @@ func buildProductFromImportRow(
 	if err != nil {
 		return nil, err
 	}
+	supplierID, err := parseOptionalProductImportUUID("supplier_id", row.values["supplier_id"])
+	if err != nil {
+		return nil, err
+	}
 
 	if purchasePrice.IsNegative() {
 		return nil, fmt.Errorf("purchase_price cannot be negative")
@@ -350,7 +354,7 @@ func buildProductFromImportRow(
 		TrackInventory:     trackInventory,
 		IsActive:           isActive,
 		Barcode:            strings.TrimSpace(row.values["barcode"]),
-		SupplierID:         strings.TrimSpace(row.values["supplier_id"]),
+		SupplierID:         supplierID,
 		LeadTimeDays:       leadTimeDays,
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -361,6 +365,18 @@ func buildProductFromImportRow(
 	}
 
 	return product, nil
+}
+
+func parseOptionalProductImportUUID(field, value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("%s must be a valid UUID", field)
+	}
+	return parsedID.String(), nil
 }
 
 func (s *Service) productImportAccountIDsByCode(ctx context.Context, schemaName, tenantID string, rows []productImportRow) (map[string]string, error) {
