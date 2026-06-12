@@ -1036,6 +1036,58 @@ func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 	assert.Equal(t, "5999", report.Issues[2].Value)
 }
 
+func TestValidateBundleReportsInventoryRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindProducts,
+			FileName: "products.csv",
+			CSVContent: "code,name,product_type,sales_price,purchase_price,vat_rate,min_stock_level,reorder_point,track_inventory,status,is_active,lead_time_days\n" +
+				"SKU-1,,asset,-1,nope,-22,-5,-1,sometimes,archived,maybe,-3\n",
+		},
+		{
+			Kind:     KindWarehouses,
+			FileName: "warehouses.csv",
+			CSVContent: "code,name,is_default,status,is_active\n" +
+				",Main,sometimes,closed,maybe\n" +
+				"W-2,,true,,maybe\n",
+		},
+		{
+			Kind:     KindStockAdjustments,
+			FileName: "stock.csv",
+			CSVContent: "product_code,warehouse_code,quantity,unit_cost,expiry_date\n" +
+				",,0,-1,2026/01/01\n" +
+				"SKU-1,W-2,nope,abc,not-date\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 23, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindProducts, "name", "name is required")
+	assertValidationIssue(t, report, KindProducts, "product_type", "invalid product_type")
+	assertValidationIssue(t, report, KindProducts, "sales_price", "sales_price cannot be negative")
+	assertValidationIssue(t, report, KindProducts, "purchase_price", "purchase_price must be a decimal")
+	assertValidationIssue(t, report, KindProducts, "vat_rate", "vat_rate cannot be negative")
+	assertValidationIssue(t, report, KindProducts, "min_stock_level", "min_stock_level cannot be negative")
+	assertValidationIssue(t, report, KindProducts, "reorder_point", "reorder_point cannot be negative")
+	assertValidationIssue(t, report, KindProducts, "track_inventory", "track_inventory must be true or false")
+	assertValidationIssue(t, report, KindProducts, "status", "invalid status")
+	assertValidationIssue(t, report, KindProducts, "lead_time_days", "lead_time_days cannot be negative")
+	assertValidationIssue(t, report, KindWarehouses, "code", "code is required")
+	assertValidationIssue(t, report, KindWarehouses, "name", "name is required")
+	assertValidationIssue(t, report, KindWarehouses, "is_default", "is_default must be true or false")
+	assertValidationIssue(t, report, KindWarehouses, "status", "invalid status")
+	assertValidationIssue(t, report, KindWarehouses, "is_active", "is_active must be true or false")
+	assertValidationIssue(t, report, KindStockAdjustments, "product_id/product_code", "product_id or product_code is required")
+	assertValidationIssue(t, report, KindStockAdjustments, "warehouse_id/warehouse_code", "warehouse_id or warehouse_code is required")
+	assertValidationIssue(t, report, KindStockAdjustments, "quantity", "quantity must not be zero")
+	assertValidationIssue(t, report, KindStockAdjustments, "quantity", "quantity must be a decimal")
+	assertValidationIssue(t, report, KindStockAdjustments, "unit_cost", "unit_cost cannot be negative")
+	assertValidationIssue(t, report, KindStockAdjustments, "unit_cost", "unit_cost must be a decimal")
+	assertValidationIssue(t, report, KindStockAdjustments, "expiry_date", "expiry_date must use YYYY-MM-DD")
+}
+
 func TestValidateBundleReportsCommercialDocumentProductReferenceIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

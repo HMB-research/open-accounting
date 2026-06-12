@@ -1451,6 +1451,12 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkPaymentRows(report, file)
 	case KindBankTransactions:
 		checkBankTransactionRows(report, file)
+	case KindProducts:
+		checkProductRows(report, file)
+	case KindWarehouses:
+		checkWarehouseRows(report, file)
+	case KindStockAdjustments:
+		checkStockAdjustmentRows(report, file)
 	case KindOpeningBalances:
 		checkOpeningBalanceTotals(report, file)
 	case KindJournalEntries:
@@ -1895,6 +1901,208 @@ func checkCommercialBool(report *BundleValidationReport, file parsedFile, row pa
 			Field:    field,
 			Value:    strings.TrimSpace(row.values[field]),
 			Message:  fmt.Sprintf("%s must be true or false", field),
+		})
+	}
+}
+
+func checkProductRows(report *BundleValidationReport, file parsedFile) {
+	hasName := fileHasHeaders(file, "name")
+	hasSalesPrice := fileHasHeaders(file, "sales_price")
+	for _, row := range file.rows {
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		if fileHasHeaders(file, "product_type") {
+			checkProductType(report, file, row)
+		}
+		if hasSalesPrice {
+			checkInventoryNonNegativeDecimal(report, file, row, "sales_price", true)
+		}
+		checkInventoryNonNegativeDecimal(report, file, row, "purchase_price", false)
+		checkInventoryNonNegativeDecimal(report, file, row, "vat_rate", false)
+		checkInventoryNonNegativeDecimal(report, file, row, "min_stock_level", false)
+		checkInventoryNonNegativeDecimal(report, file, row, "reorder_point", false)
+		checkCutoverBoolField(report, file, row, "track_inventory")
+		checkCutoverStatusOrActive(report, file, row)
+		checkCutoverNonNegativeIntField(report, file, row, "lead_time_days")
+	}
+}
+
+func checkProductType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["product_type"])
+	if value == "" {
+		return
+	}
+	switch normalizeCutoverUpper(value) {
+	case "GOODS", "SERVICE":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "product_type",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid product_type %q", value),
+		})
+	}
+}
+
+func checkWarehouseRows(report *BundleValidationReport, file parsedFile) {
+	hasCode := fileHasHeaders(file, "code")
+	hasName := fileHasHeaders(file, "name")
+	for _, row := range file.rows {
+		if hasCode {
+			checkRequiredCutoverField(report, file, row, "code")
+		}
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		checkCutoverBoolField(report, file, row, "is_default")
+		checkCutoverStatusOrActive(report, file, row)
+	}
+}
+
+func checkStockAdjustmentRows(report *BundleValidationReport, file parsedFile) {
+	hasQuantity := fileHasHeaders(file, "quantity")
+	for _, row := range file.rows {
+		checkRequiredCutoverFieldGroup(report, file, row, "product_id", "product_code")
+		checkRequiredCutoverFieldGroup(report, file, row, "warehouse_id", "warehouse_code")
+		if hasQuantity {
+			checkStockAdjustmentQuantity(report, file, row)
+		}
+		checkInventoryNonNegativeDecimal(report, file, row, "unit_cost", false)
+		checkCutoverOptionalDate(report, file, row, "expiry_date")
+	}
+}
+
+func checkStockAdjustmentQuantity(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	quantity, issue := parseCutoverRequiredDecimal(row.values["quantity"], "quantity")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if quantity.IsZero() {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   "quantity",
+			value:   strings.TrimSpace(row.values["quantity"]),
+			message: "quantity must not be zero",
+		}))
+	}
+}
+
+func checkInventoryNonNegativeDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string, required bool) {
+	if !fileHasHeaders(file, field) {
+		return
+	}
+	trimmed := strings.TrimSpace(row.values[field])
+	if trimmed == "" && !required {
+		return
+	}
+	value, issue := parseCutoverRequiredDecimal(trimmed, field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if value.IsNegative() {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   field,
+			value:   trimmed,
+			message: fmt.Sprintf("%s cannot be negative", field),
+		}))
+	}
+}
+
+func checkCutoverStatusOrActive(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "status") {
+		status := strings.TrimSpace(row.values["status"])
+		if status != "" {
+			switch normalizeCutoverUpper(status) {
+			case "ACTIVE", "INACTIVE":
+				return
+			default:
+				report.addIssue(ValidationIssue{
+					Severity: SeverityError,
+					Kind:     file.kind,
+					FileName: file.fileName,
+					Row:      row.number,
+					Field:    "status",
+					Value:    status,
+					Message:  fmt.Sprintf("invalid status %q", status),
+				})
+				return
+			}
+		}
+	}
+	checkCutoverBoolField(report, file, row, "is_active")
+}
+
+func checkCutoverBoolField(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	switch normalizeCutoverBoolComparable(row.values[field]) {
+	case "true", "false":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    strings.TrimSpace(row.values[field]),
+			Message:  fmt.Sprintf("%s must be true or false", field),
+		})
+	}
+}
+
+func checkCutoverNonNegativeIntField(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be an integer", field),
+		})
+		return
+	}
+	if parsed < 0 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s cannot be negative", field),
+		})
+	}
+}
+
+func checkCutoverOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	if _, err := time.Parse("2006-01-02", value); err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must use YYYY-MM-DD", field),
 		})
 	}
 }
