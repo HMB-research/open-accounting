@@ -95,6 +95,26 @@ func (s *Service) CreateProduct(ctx context.Context, tenantID, schemaName string
 	if unit == "" {
 		unit = "pcs"
 	}
+	categoryID, err := normalizeOptionalInventoryUUIDString(req.CategoryID, "category_id")
+	if err != nil {
+		return nil, err
+	}
+	saleAccountID, err := normalizeOptionalInventoryUUIDString(req.SaleAccountID, "sale_account_id")
+	if err != nil {
+		return nil, err
+	}
+	purchaseAccountID, err := normalizeOptionalInventoryUUIDString(req.PurchaseAccountID, "purchase_account_id")
+	if err != nil {
+		return nil, err
+	}
+	inventoryAccountID, err := normalizeOptionalInventoryUUIDString(req.InventoryAccountID, "inventory_account_id")
+	if err != nil {
+		return nil, err
+	}
+	supplierID, err := normalizeOptionalInventoryUUIDString(req.SupplierID, "supplier_id")
+	if err != nil {
+		return nil, err
+	}
 
 	product := &Product{
 		ID:                 uuid.New().String(),
@@ -103,7 +123,7 @@ func (s *Service) CreateProduct(ctx context.Context, tenantID, schemaName string
 		Name:               req.Name,
 		Description:        req.Description,
 		ProductType:        productType,
-		CategoryID:         req.CategoryID,
+		CategoryID:         categoryID,
 		Unit:               unit,
 		PurchasePrice:      purchasePrice,
 		SalesPrice:         salesPrice,
@@ -111,13 +131,13 @@ func (s *Service) CreateProduct(ctx context.Context, tenantID, schemaName string
 		MinStockLevel:      minStockLevel,
 		CurrentStock:       decimal.Zero,
 		ReorderPoint:       reorderPoint,
-		SaleAccountID:      req.SaleAccountID,
-		PurchaseAccountID:  req.PurchaseAccountID,
-		InventoryAccountID: req.InventoryAccountID,
+		SaleAccountID:      saleAccountID,
+		PurchaseAccountID:  purchaseAccountID,
+		InventoryAccountID: inventoryAccountID,
 		TrackInventory:     req.TrackInventory,
 		IsActive:           true,
 		Barcode:            req.Barcode,
-		SupplierID:         req.SupplierID,
+		SupplierID:         supplierID,
 		LeadTimeDays:       req.LeadTimeDays,
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
@@ -145,6 +165,15 @@ func (s *Service) GetProductByID(ctx context.Context, tenantID, schemaName, prod
 
 // ListProducts retrieves products with optional filtering
 func (s *Service) ListProducts(ctx context.Context, tenantID, schemaName string, filter *ProductFilter) ([]Product, error) {
+	if filter != nil {
+		categoryID, err := normalizeOptionalInventoryUUIDString(filter.CategoryID, "category_id")
+		if err != nil {
+			return nil, err
+		}
+		filterCopy := *filter
+		filterCopy.CategoryID = categoryID
+		filter = &filterCopy
+	}
 	products, err := s.repo.ListProducts(ctx, schemaName, tenantID, filter)
 	if err != nil {
 		return nil, fmt.Errorf("list products: %w", err)
@@ -158,17 +187,37 @@ func (s *Service) UpdateProduct(ctx context.Context, tenantID, schemaName, produ
 	if err != nil {
 		return nil, fmt.Errorf("get product: %w", err)
 	}
+	categoryID, err := normalizeOptionalInventoryUUIDString(req.CategoryID, "category_id")
+	if err != nil {
+		return nil, err
+	}
+	saleAccountID, err := normalizeOptionalInventoryUUIDString(req.SaleAccountID, "sale_account_id")
+	if err != nil {
+		return nil, err
+	}
+	purchaseAccountID, err := normalizeOptionalInventoryUUIDString(req.PurchaseAccountID, "purchase_account_id")
+	if err != nil {
+		return nil, err
+	}
+	inventoryAccountID, err := normalizeOptionalInventoryUUIDString(req.InventoryAccountID, "inventory_account_id")
+	if err != nil {
+		return nil, err
+	}
+	supplierID, err := normalizeOptionalInventoryUUIDString(req.SupplierID, "supplier_id")
+	if err != nil {
+		return nil, err
+	}
 
 	existing.Name = req.Name
 	existing.Description = req.Description
-	existing.CategoryID = req.CategoryID
+	existing.CategoryID = categoryID
 	existing.Unit = req.Unit
 	existing.Barcode = req.Barcode
-	existing.SupplierID = req.SupplierID
+	existing.SupplierID = supplierID
 	existing.LeadTimeDays = req.LeadTimeDays
-	existing.SaleAccountID = req.SaleAccountID
-	existing.PurchaseAccountID = req.PurchaseAccountID
-	existing.InventoryAccountID = req.InventoryAccountID
+	existing.SaleAccountID = saleAccountID
+	existing.PurchaseAccountID = purchaseAccountID
+	existing.InventoryAccountID = inventoryAccountID
 	existing.TrackInventory = req.TrackInventory
 	existing.IsActive = req.IsActive
 	existing.UpdatedAt = time.Now()

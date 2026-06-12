@@ -633,12 +633,22 @@ func (f fakeInventoryAccountLister) ListAccounts(_ context.Context, _, _ string,
 func TestService_CreateProduct(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
+	categoryID := "11111111-1111-4111-8111-111111111111"
+	saleAccountID := "22222222-2222-4222-8222-222222222222"
+	purchaseAccountID := "33333333-3333-4333-8333-333333333333"
+	inventoryAccountID := "44444444-4444-4444-8444-444444444444"
+	supplierID := "55555555-5555-4555-8555-555555555555"
 
 	req := &CreateProductRequest{
-		Name:        "Test Widget",
-		ProductType: "GOODS",
-		SalesPrice:  "99.99",
-		VATRate:     "20",
+		Name:               "Test Widget",
+		ProductType:        "GOODS",
+		CategoryID:         " " + categoryID + " ",
+		SalesPrice:         "99.99",
+		VATRate:            "20",
+		SaleAccountID:      " " + saleAccountID + " ",
+		PurchaseAccountID:  " " + purchaseAccountID + " ",
+		InventoryAccountID: " " + inventoryAccountID + " ",
+		SupplierID:         " " + supplierID + " ",
 	}
 
 	product, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", req)
@@ -649,6 +659,11 @@ func TestService_CreateProduct(t *testing.T) {
 	assert.Equal(t, ProductTypeGoods, product.ProductType)
 	assert.True(t, product.SalesPrice.Equal(decimal.RequireFromString("99.99")))
 	assert.True(t, product.VATRate.Equal(decimal.NewFromInt(20)))
+	assert.Equal(t, categoryID, product.CategoryID)
+	assert.Equal(t, saleAccountID, product.SaleAccountID)
+	assert.Equal(t, purchaseAccountID, product.PurchaseAccountID)
+	assert.Equal(t, inventoryAccountID, product.InventoryAccountID)
+	assert.Equal(t, supplierID, product.SupplierID)
 	assert.True(t, product.IsActive)
 }
 
@@ -686,15 +701,19 @@ func TestService_CreateProduct_Defaults(t *testing.T) {
 
 func TestService_ImportProductsCSV(t *testing.T) {
 	ts := newTestService()
+	categoryID := "11111111-1111-4111-8111-111111111111"
+	saleAccountID := "22222222-2222-4222-8222-222222222222"
+	purchaseAccountID := "33333333-3333-4333-8333-333333333333"
+	inventoryAccountID := "44444444-4444-4444-8444-444444444444"
 	ts.svc.accounts = fakeInventoryAccountLister{accounts: []accounting.Account{
-		{ID: "sales-account", Code: "4000", AccountType: accounting.AccountTypeRevenue},
-		{ID: "purchase-account", Code: "5000", AccountType: accounting.AccountTypeExpense},
-		{ID: "inventory-account", Code: "1400", AccountType: accounting.AccountTypeAsset},
+		{ID: saleAccountID, Code: "4000", AccountType: accounting.AccountTypeRevenue},
+		{ID: purchaseAccountID, Code: "5000", AccountType: accounting.AccountTypeExpense},
+		{ID: inventoryAccountID, Code: "1400", AccountType: accounting.AccountTypeAsset},
 	}}
 	ctx := context.Background()
 
-	ts.repo.Categories["cat-1"] = &ProductCategory{
-		ID:       "cat-1",
+	ts.repo.Categories[categoryID] = &ProductCategory{
+		ID:       categoryID,
 		TenantID: "tenant-1",
 		Name:     "Parts",
 	}
@@ -730,10 +749,10 @@ func TestService_ImportProductsCSV(t *testing.T) {
 	require.NotNil(t, widget)
 	assert.Equal(t, "SKU-001", widget.Code)
 	assert.Equal(t, ProductTypeGoods, widget.ProductType)
-	assert.Equal(t, "cat-1", widget.CategoryID)
-	assert.Equal(t, "sales-account", widget.SaleAccountID)
-	assert.Equal(t, "purchase-account", widget.PurchaseAccountID)
-	assert.Equal(t, "inventory-account", widget.InventoryAccountID)
+	assert.Equal(t, categoryID, widget.CategoryID)
+	assert.Equal(t, saleAccountID, widget.SaleAccountID)
+	assert.Equal(t, purchaseAccountID, widget.PurchaseAccountID)
+	assert.Equal(t, inventoryAccountID, widget.InventoryAccountID)
 	assert.True(t, widget.TrackInventory)
 	assert.True(t, widget.IsActive)
 	assert.True(t, widget.SalesPrice.Equal(decimal.RequireFromString("15.00")))
@@ -771,7 +790,7 @@ func TestService_ImportProductsCSV_DuplicateCode(t *testing.T) {
 func TestService_ImportProductsCSVReportsMissingAccountCode(t *testing.T) {
 	repo := NewMockRepository()
 	svc := NewServiceWithRepositoryAndAccounting(repo, fakeInventoryAccountLister{accounts: []accounting.Account{
-		{ID: "sales-account", Code: "4000", AccountType: accounting.AccountTypeRevenue},
+		{ID: "22222222-2222-4222-8222-222222222222", Code: "4000", AccountType: accounting.AccountTypeRevenue},
 	}})
 	ctx := context.Background()
 
@@ -785,6 +804,24 @@ func TestService_ImportProductsCSVReportsMissingAccountCode(t *testing.T) {
 	assert.Equal(t, 1, result.RowsSkipped)
 	require.Len(t, result.Errors, 1)
 	assert.Contains(t, result.Errors[0].Message, `account code "5999" was not found for purchase_account_code`)
+}
+
+func TestService_ImportProductsCSVReportsInvalidAccountID(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		FileName:   "products.csv",
+		CSVContent: "code,name,sales_price,sale_account_id\nSKU-001,Widget,15.00,legacy-account\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 0, result.ProductsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 2, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, "sale_account_id must be a valid UUID")
 }
 
 func TestService_ImportProductsCSVResolvesCategoryID(t *testing.T) {
@@ -1101,6 +1138,67 @@ func TestService_CreateProduct_ValidationError(t *testing.T) {
 	assert.Contains(t, err.Error(), "name is required")
 }
 
+func TestService_CreateProduct_InvalidReferenceID(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		mutate  func(*CreateProductRequest)
+		wantErr string
+	}{
+		{
+			name: "category",
+			mutate: func(req *CreateProductRequest) {
+				req.CategoryID = "legacy-category"
+			},
+			wantErr: "category_id must be a valid UUID",
+		},
+		{
+			name: "sale account",
+			mutate: func(req *CreateProductRequest) {
+				req.SaleAccountID = "legacy-account"
+			},
+			wantErr: "sale_account_id must be a valid UUID",
+		},
+		{
+			name: "purchase account",
+			mutate: func(req *CreateProductRequest) {
+				req.PurchaseAccountID = "legacy-account"
+			},
+			wantErr: "purchase_account_id must be a valid UUID",
+		},
+		{
+			name: "inventory account",
+			mutate: func(req *CreateProductRequest) {
+				req.InventoryAccountID = "legacy-account"
+			},
+			wantErr: "inventory_account_id must be a valid UUID",
+		},
+		{
+			name: "supplier",
+			mutate: func(req *CreateProductRequest) {
+				req.SupplierID = "legacy-supplier"
+			},
+			wantErr: "supplier_id must be a valid UUID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &CreateProductRequest{
+				Name:       "Bad Reference",
+				SalesPrice: "100",
+			}
+			tt.mutate(req)
+
+			_, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", req)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
 func TestService_GetProductByID(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
@@ -1130,6 +1228,10 @@ func TestService_ListProducts(t *testing.T) {
 	products, err := ts.svc.ListProducts(ctx, "tenant-1", "test_schema", nil)
 	require.NoError(t, err)
 	assert.Len(t, products, 2)
+
+	_, err = ts.svc.ListProducts(ctx, "tenant-1", "test_schema", &ProductFilter{CategoryID: "legacy-category"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "category_id must be a valid UUID")
 }
 
 func TestService_UpdateProduct(t *testing.T) {
@@ -1146,14 +1248,73 @@ func TestService_UpdateProduct(t *testing.T) {
 
 	req := &UpdateProductRequest{
 		Name:       "Updated",
+		CategoryID: "11111111-1111-4111-8111-111111111111",
 		SalesPrice: "150",
+		SupplierID: "22222222-2222-4222-8222-222222222222",
 		IsActive:   true,
 	}
 
 	product, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", req)
 	require.NoError(t, err)
 	assert.Equal(t, "Updated", product.Name)
+	assert.Equal(t, "11111111-1111-4111-8111-111111111111", product.CategoryID)
+	assert.Equal(t, "22222222-2222-4222-8222-222222222222", product.SupplierID)
 	assert.True(t, product.SalesPrice.Equal(decimal.NewFromInt(150)))
+
+	for _, tt := range []struct {
+		name    string
+		mutate  func(*UpdateProductRequest)
+		wantErr string
+	}{
+		{
+			name: "category",
+			mutate: func(req *UpdateProductRequest) {
+				req.CategoryID = "legacy-category"
+			},
+			wantErr: "category_id must be a valid UUID",
+		},
+		{
+			name: "sale account",
+			mutate: func(req *UpdateProductRequest) {
+				req.SaleAccountID = "legacy-account"
+			},
+			wantErr: "sale_account_id must be a valid UUID",
+		},
+		{
+			name: "purchase account",
+			mutate: func(req *UpdateProductRequest) {
+				req.PurchaseAccountID = "legacy-account"
+			},
+			wantErr: "purchase_account_id must be a valid UUID",
+		},
+		{
+			name: "inventory account",
+			mutate: func(req *UpdateProductRequest) {
+				req.InventoryAccountID = "legacy-account"
+			},
+			wantErr: "inventory_account_id must be a valid UUID",
+		},
+		{
+			name: "supplier",
+			mutate: func(req *UpdateProductRequest) {
+				req.SupplierID = "legacy-supplier"
+			},
+			wantErr: "supplier_id must be a valid UUID",
+		},
+	} {
+		t.Run("invalid reference "+tt.name, func(t *testing.T) {
+			req := &UpdateProductRequest{
+				Name:       "Updated",
+				SalesPrice: "150",
+				IsActive:   true,
+			}
+			tt.mutate(req)
+
+			_, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", req)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
 }
 
 func TestService_DeleteProduct(t *testing.T) {

@@ -435,7 +435,11 @@ func resolveProductImportCategoryID(row productImportRow, categoryNameToID map[s
 
 func resolveOptionalProductImportAccountID(row productImportRow, idField, codeField string, accountIDsByCode map[string]string) (string, error) {
 	if accountID := strings.TrimSpace(row.values[idField]); accountID != "" {
-		return accountID, nil
+		parsedID, err := uuid.Parse(accountID)
+		if err != nil {
+			return "", fmt.Errorf("%s must be a valid UUID", idField)
+		}
+		return parsedID.String(), nil
 	}
 	accountCode := strings.TrimSpace(row.values[codeField])
 	if accountCode == "" {

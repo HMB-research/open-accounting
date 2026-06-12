@@ -7746,11 +7746,15 @@ func (a *cliApp) runInventoryProducts(ctx context.Context, cfg *cliConfig, clien
 		if err != nil {
 			return err
 		}
+		categoryIDValue, err := optionalUUIDStringValue("category-id", *categoryID)
+		if err != nil {
+			return err
+		}
 
 		products, err := client.listProducts(ctx, cfg.TenantID, inventory.ProductFilter{
 			ProductType: productType,
 			Status:      status,
-			CategoryID:  strings.TrimSpace(*categoryID),
+			CategoryID:  categoryIDValue,
 			Search:      strings.TrimSpace(*search),
 			LowStock:    *lowStock,
 		})
@@ -7819,25 +7823,45 @@ func (a *cliApp) runInventoryProducts(ctx context.Context, cfg *cliConfig, clien
 		if err != nil {
 			return err
 		}
+		categoryIDValue, err := optionalUUIDStringValue("category-id", *categoryID)
+		if err != nil {
+			return err
+		}
+		saleAccountIDValue, err := optionalUUIDStringValue("sale-account-id", *saleAccountID)
+		if err != nil {
+			return err
+		}
+		purchaseAccountIDValue, err := optionalUUIDStringValue("purchase-account-id", *purchaseAccountID)
+		if err != nil {
+			return err
+		}
+		inventoryAccountIDValue, err := optionalUUIDStringValue("inventory-account-id", *inventoryAccountID)
+		if err != nil {
+			return err
+		}
+		supplierIDValue, err := optionalUUIDStringValue("supplier-id", *supplierID)
+		if err != nil {
+			return err
+		}
 
 		product, err := client.createProduct(ctx, cfg.TenantID, &inventory.CreateProductRequest{
 			Code:               strings.TrimSpace(*code),
 			Name:               strings.TrimSpace(*name),
 			Description:        strings.TrimSpace(*description),
 			ProductType:        string(productType),
-			CategoryID:         strings.TrimSpace(*categoryID),
+			CategoryID:         categoryIDValue,
 			Unit:               strings.TrimSpace(*unit),
 			PurchasePrice:      purchasePrice.String(),
 			SalesPrice:         salesPrice.String(),
 			VATRate:            vatRate.String(),
 			MinStockLevel:      minStockLevel.String(),
 			ReorderPoint:       reorderPoint.String(),
-			SaleAccountID:      strings.TrimSpace(*saleAccountID),
-			PurchaseAccountID:  strings.TrimSpace(*purchaseAccountID),
-			InventoryAccountID: strings.TrimSpace(*inventoryAccountID),
+			SaleAccountID:      saleAccountIDValue,
+			PurchaseAccountID:  purchaseAccountIDValue,
+			InventoryAccountID: inventoryAccountIDValue,
 			TrackInventory:     *trackInventory,
 			Barcode:            strings.TrimSpace(*barcode),
-			SupplierID:         strings.TrimSpace(*supplierID),
+			SupplierID:         supplierIDValue,
 			LeadTimeDays:       leadTimeDays,
 		})
 		if err != nil {
@@ -7955,24 +7979,44 @@ func (a *cliApp) runInventoryProducts(ctx context.Context, cfg *cliConfig, clien
 		if err != nil {
 			return err
 		}
+		categoryIDValue, err := optionalUUIDStringValue("category-id", *categoryID)
+		if err != nil {
+			return err
+		}
+		saleAccountIDValue, err := optionalUUIDStringValue("sale-account-id", *saleAccountID)
+		if err != nil {
+			return err
+		}
+		purchaseAccountIDValue, err := optionalUUIDStringValue("purchase-account-id", *purchaseAccountID)
+		if err != nil {
+			return err
+		}
+		inventoryAccountIDValue, err := optionalUUIDStringValue("inventory-account-id", *inventoryAccountID)
+		if err != nil {
+			return err
+		}
+		supplierIDValue, err := optionalUUIDStringValue("supplier-id", *supplierID)
+		if err != nil {
+			return err
+		}
 
 		product, err := client.updateProduct(ctx, cfg.TenantID, strings.TrimSpace(*productID), &inventory.UpdateProductRequest{
 			Name:               strings.TrimSpace(*name),
 			Description:        strings.TrimSpace(*description),
-			CategoryID:         strings.TrimSpace(*categoryID),
+			CategoryID:         categoryIDValue,
 			Unit:               strings.TrimSpace(*unit),
 			PurchasePrice:      purchasePrice.String(),
 			SalesPrice:         salesPrice.String(),
 			VATRate:            vatRate.String(),
 			MinStockLevel:      minStockLevel.String(),
 			ReorderPoint:       reorderPoint.String(),
-			SaleAccountID:      strings.TrimSpace(*saleAccountID),
-			PurchaseAccountID:  strings.TrimSpace(*purchaseAccountID),
-			InventoryAccountID: strings.TrimSpace(*inventoryAccountID),
+			SaleAccountID:      saleAccountIDValue,
+			PurchaseAccountID:  purchaseAccountIDValue,
+			InventoryAccountID: inventoryAccountIDValue,
 			TrackInventory:     *trackInventory,
 			IsActive:           *active,
 			Barcode:            strings.TrimSpace(*barcode),
-			SupplierID:         strings.TrimSpace(*supplierID),
+			SupplierID:         supplierIDValue,
 			LeadTimeDays:       leadTimeDays,
 		})
 		if err != nil {
@@ -12600,6 +12644,17 @@ func optionalUUIDStringPtr(name, value string) (*string, error) {
 	}
 	id := parsedID.String()
 	return &id, nil
+}
+
+func optionalUUIDStringValue(name, value string) (string, error) {
+	parsedID, err := optionalUUIDStringPtr(name, value)
+	if err != nil {
+		return "", err
+	}
+	if parsedID == nil {
+		return "", nil
+	}
+	return *parsedID, nil
 }
 
 func optionalUpperStringPtr(value string) *string {
