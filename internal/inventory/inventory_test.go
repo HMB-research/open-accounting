@@ -787,6 +787,76 @@ func TestService_ImportProductsCSVReportsMissingAccountCode(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, `account code "5999" was not found for purchase_account_code`)
 }
 
+func TestService_ImportProductsCSVResolvesCategoryID(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	categoryID := "11111111-1111-1111-1111-111111111111"
+	ts.repo.Categories[categoryID] = &ProductCategory{
+		ID:       categoryID,
+		TenantID: "tenant-1",
+		Name:     "Parts",
+	}
+
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		CSVContent: "code,name,sales_price,category_id\nSKU-001,Widget,15.00,11111111-1111-1111-1111-111111111111\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.ProductsCreated)
+	assert.Equal(t, 0, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+
+	var imported *Product
+	for _, product := range ts.repo.Products {
+		if product.Code == "SKU-001" {
+			imported = product
+		}
+	}
+	require.NotNil(t, imported)
+	assert.Equal(t, categoryID, imported.CategoryID)
+}
+
+func TestService_ImportProductsCSVReportsInvalidCategoryID(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		CSVContent: "code,name,sales_price,category_id\nSKU-001,Widget,15.00,legacy-id\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 0, result.ProductsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, "category_id must be a valid UUID")
+}
+
+func TestService_ImportProductsCSVReportsMissingCategoryID(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Categories["11111111-1111-1111-1111-111111111111"] = &ProductCategory{
+		ID:       "11111111-1111-1111-1111-111111111111",
+		TenantID: "tenant-1",
+		Name:     "Parts",
+	}
+
+	missingCategoryID := "22222222-2222-2222-2222-222222222222"
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		CSVContent: "code,name,sales_price,category_id\nSKU-001,Widget,15.00," + missingCategoryID + "\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 0, result.ProductsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `category_id "`+missingCategoryID+`" was not found`)
+}
+
 func TestService_ImportProductCategoriesCSV(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()

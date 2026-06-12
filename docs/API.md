@@ -2299,7 +2299,7 @@ Content-Type: application/json
 }
 ```
 
-Required CSV columns are `name` and `sales_price`. Optional columns include `code`, `product_type`, `category_id`, `category_name`, `description`, `unit`, purchase/VAT/reorder prices, account IDs or account-code columns, `track_inventory`, `status` or `is_active`, `barcode`, `supplier_id`, and `lead_time_days`. Account-code columns are `sale_account_code`, `purchase_account_code`, and `inventory_account_code`. Omitted codes are generated; supplied codes are preserved and checked for duplicates. Use inventory stock adjustment commands or APIs after product import to load opening quantities.
+Required CSV columns are `name` and `sales_price`. Optional columns include `code`, `product_type`, `category_id`, `category_name`, `description`, `unit`, purchase/VAT/reorder prices, account IDs or account-code columns, `track_inventory`, `status` or `is_active`, `barcode`, `supplier_id`, and `lead_time_days`. `category_id` values must be valid UUIDs for existing or already imported product categories; invalid or missing category IDs are returned as row-level errors. Account-code columns are `sale_account_code`, `purchase_account_code`, and `inventory_account_code`. Omitted codes are generated; supplied codes are preserved and checked for duplicates. Use inventory stock adjustment commands or APIs after product import to load opening quantities.
 
 ### Get, Update, and Delete Product
 

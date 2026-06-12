@@ -3288,6 +3288,7 @@ func checkProductRows(report *BundleValidationReport, file parsedFile) {
 		checkInventoryNonNegativeDecimal(report, file, row, "vat_rate", false)
 		checkInventoryNonNegativeDecimal(report, file, row, "min_stock_level", false)
 		checkInventoryNonNegativeDecimal(report, file, row, "reorder_point", false)
+		checkOptionalUUID(report, file, row, "category_id")
 		checkCutoverBoolField(report, file, row, "track_inventory")
 		checkCutoverStatusOrActive(report, file, row)
 		checkCutoverNonNegativeIntField(report, file, row, "lead_time_days")
