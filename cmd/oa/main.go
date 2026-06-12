@@ -4839,10 +4839,14 @@ func (a *cliApp) runBankMatchRules(ctx context.Context, cfg *cliConfig, client *
 		if err != nil {
 			return err
 		}
+		parsedBankAccountID, err := optionalUUIDStringPtr("bank-account-id", *bankAccountID)
+		if err != nil {
+			return err
+		}
 		activeValue := *isActive
 
 		rule, err := client.createBankMatchRule(ctx, cfg.TenantID, &banking.CreateBankMatchRuleRequest{
-			BankAccountID:      optionalStringPtr(*bankAccountID),
+			BankAccountID:      parsedBankAccountID,
 			Name:               strings.TrimSpace(*name),
 			Priority:           *priority,
 			MatchField:         banking.BankMatchField(strings.ToUpper(strings.TrimSpace(*matchField))),
@@ -4910,7 +4914,11 @@ func (a *cliApp) runBankMatchRules(ctx context.Context, cfg *cliConfig, client *
 
 		req := &banking.UpdateBankMatchRuleRequest{ClearBankAccount: *global}
 		if strings.TrimSpace(*bankAccountID) != "" {
-			req.BankAccountID = optionalStringPtr(*bankAccountID)
+			parsedBankAccountID, err := optionalUUIDStringPtr("bank-account-id", *bankAccountID)
+			if err != nil {
+				return err
+			}
+			req.BankAccountID = parsedBankAccountID
 		}
 		if strings.TrimSpace(*name) != "" {
 			trimmed := strings.TrimSpace(*name)
