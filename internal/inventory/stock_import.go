@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -244,7 +245,7 @@ func buildStockAdjustmentFromImportRow(row stockImportRow, userID string, produc
 
 func resolveStockImportProductID(row stockImportRow, productCodeToID map[string]string) (string, error) {
 	if productID := strings.TrimSpace(row.values["product_id"]); productID != "" {
-		return productID, nil
+		return parseStockImportUUID("product_id", productID)
 	}
 	productCode := strings.TrimSpace(row.values["product_code"])
 	if productCode == "" {
@@ -259,7 +260,7 @@ func resolveStockImportProductID(row stockImportRow, productCodeToID map[string]
 
 func resolveStockImportWarehouseID(row stockImportRow, warehouseCodeToID map[string]string) (string, error) {
 	if warehouseID := strings.TrimSpace(row.values["warehouse_id"]); warehouseID != "" {
-		return warehouseID, nil
+		return parseStockImportUUID("warehouse_id", warehouseID)
 	}
 	warehouseCode := strings.TrimSpace(row.values["warehouse_code"])
 	if warehouseCode == "" {
@@ -270,6 +271,14 @@ func resolveStockImportWarehouseID(row stockImportRow, warehouseCodeToID map[str
 		return "", fmt.Errorf("warehouse_code %q was not found", warehouseCode)
 	}
 	return warehouseID, nil
+}
+
+func parseStockImportUUID(field, value string) (string, error) {
+	parsedID, err := uuid.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return "", fmt.Errorf("%s must be a valid UUID", field)
+	}
+	return parsedID.String(), nil
 }
 
 func detectStockImportDelimiter(content string) rune {

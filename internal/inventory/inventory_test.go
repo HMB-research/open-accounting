@@ -1050,6 +1050,27 @@ func TestService_ImportStockAdjustmentsCSV(t *testing.T) {
 	assert.Equal(t, "user-1", movement.CreatedBy)
 }
 
+func TestService_ImportStockAdjustmentsCSVReportsInvalidUUIDReferences(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportStockAdjustmentsCSV(ctx, "tenant-1", "test_schema", &ImportStockAdjustmentsRequest{
+		FileName: "stock.csv",
+		UserID:   "user-1",
+		CSVContent: "product_id,warehouse_id,quantity\n" +
+			"legacy-product,11111111-1111-4111-8111-111111111111,1\n" +
+			"11111111-1111-4111-8111-111111111111,legacy-warehouse,1\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Zero(t, result.AdjustmentsImported)
+	assert.Equal(t, 2, result.RowsSkipped)
+	require.Len(t, result.Errors, 2)
+	assert.Contains(t, result.Errors[0].Message, "product_id must be a valid UUID")
+	assert.Contains(t, result.Errors[1].Message, "warehouse_id must be a valid UUID")
+}
+
 func TestService_CreateProduct_InvalidSalesPrice(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
