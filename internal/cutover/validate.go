@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/HMB-research/open-accounting/internal/invoicing/mappers/einvoice"
+	"github.com/google/uuid"
 )
 
 type fileSpec struct {
@@ -118,6 +119,7 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindInvoices: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
+			"invoice_id":         "id",
 			"invoice_number":     "invoice_number",
 			"number":             "invoice_number",
 			"invoice_no":         "invoice_number",
@@ -837,6 +839,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"payment_account_code"})
 		case KindInvoices:
+			checkOptionalUUID(report, file, row, "id")
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
@@ -976,6 +979,26 @@ func checkSelfReference(report *BundleValidationReport, file parsedFile, row par
 		Value:      value,
 		TargetKind: file.kind,
 		Message:    fmt.Sprintf("%s cannot reference the same row's %s", field, identityField),
+	})
+}
+
+func checkOptionalUUID(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return
+	}
+	if _, err := uuid.Parse(value); err == nil {
+		return
+	}
+
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    value,
+		Message:  fmt.Sprintf("%s must be a valid UUID", field),
 	})
 }
 

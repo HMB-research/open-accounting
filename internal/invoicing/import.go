@@ -40,6 +40,7 @@ type invoiceImportLine struct {
 }
 
 type invoiceImportHeader struct {
+	id                  string
 	invoiceNumber       string
 	invoiceType         InvoiceType
 	contactRef          invoiceImportContactRef
@@ -76,6 +77,8 @@ type invoiceImportContactLookup struct {
 }
 
 var invoiceImportHeaderAliases = map[string]string{
+	"id":                 "id",
+	"invoice_id":         "id",
 	"invoice_number":     "invoice_number",
 	"number":             "invoice_number",
 	"invoice_no":         "invoice_number",
@@ -187,8 +190,12 @@ func (s *Service) ImportCSV(
 	}
 
 	existingKeys := make(map[string]struct{}, len(existingInvoices))
+	existingIDs := make(map[string]struct{}, len(existingInvoices))
 	for _, invoice := range existingInvoices {
 		existingKeys[normalizedInvoiceImportGroupKey(invoice.InvoiceNumber, invoice.InvoiceType)] = struct{}{}
+		if key := normalizedInvoiceImportKey(invoice.ID); key != "" {
+			existingIDs[key] = struct{}{}
+		}
 	}
 
 	result := &ImportInvoicesResult{
@@ -256,6 +263,17 @@ func (s *Service) ImportCSV(
 			})
 			continue
 		}
+		if idKey := normalizedInvoiceImportKey(group.header.id); idKey != "" {
+			if _, exists := existingIDs[idKey]; exists {
+				result.RowsSkipped += group.rowCount
+				result.Errors = append(result.Errors, ImportInvoicesRowError{
+					Row:           group.firstRow,
+					InvoiceNumber: group.header.invoiceNumber,
+					Message:       fmt.Sprintf("id %q already exists", group.header.id),
+				})
+				continue
+			}
+		}
 
 		contact, err := contactLookup.find(group.header.contactRef)
 		if err != nil {
@@ -302,6 +320,9 @@ func (s *Service) ImportCSV(
 		}
 
 		existingKeys[key] = struct{}{}
+		if idKey := normalizedInvoiceImportKey(invoice.ID); idKey != "" {
+			existingIDs[idKey] = struct{}{}
+		}
 		result.InvoicesCreated++
 		result.LinesImported += len(invoice.Lines)
 	}
@@ -412,6 +433,15 @@ func parseInvoiceImportDataRow(row invoiceImportRow, productLookup importrefs.Pr
 	invoiceNumber := strings.TrimSpace(row.values["invoice_number"])
 	if invoiceNumber == "" {
 		return nil, fmt.Errorf("invoice_number is required")
+	}
+
+	id := strings.TrimSpace(row.values["id"])
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, fmt.Errorf("invalid id")
+		}
+		id = parsedID.String()
 	}
 
 	invoiceType, err := parseInvoiceImportType(row.values["invoice_type"])
@@ -529,6 +559,7 @@ func parseInvoiceImportDataRow(row invoiceImportRow, productLookup importrefs.Pr
 
 	return &invoiceImportParsedRow{
 		header: invoiceImportHeader{
+			id:                  id,
 			invoiceNumber:       invoiceNumber,
 			invoiceType:         invoiceType,
 			contactRef:          contactRef,
@@ -556,6 +587,9 @@ func parseInvoiceImportDataRow(row invoiceImportRow, productLookup importrefs.Pr
 }
 
 func mergeInvoiceImportGroup(group *invoiceImportGroup, next invoiceImportHeader, rowNumber int) string {
+	if conflict := mergeInvoiceImportOptionalString(&group.header.id, next.id, "id"); conflict != "" {
+		return conflict
+	}
 	if group.header.invoiceType != next.invoiceType {
 		return "invoice_type must be consistent for each invoice_number"
 	}
@@ -634,8 +668,13 @@ func buildImportedInvoice(
 	group *invoiceImportGroup,
 	now time.Time,
 ) (*Invoice, error) {
+	invoiceID := group.header.id
+	if invoiceID == "" {
+		invoiceID = uuid.New().String()
+	}
+
 	invoice := &Invoice{
-		ID:            uuid.New().String(),
+		ID:            invoiceID,
 		TenantID:      tenantID,
 		InvoiceNumber: group.header.invoiceNumber,
 		InvoiceType:   group.header.invoiceType,
