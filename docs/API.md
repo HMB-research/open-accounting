@@ -2077,7 +2077,7 @@ Content-Type: application/json
 }
 ```
 
-Expense imports create unposted expense claims and return row-level errors for invalid rows. Account references can use `expense_account_id`/`payment_account_id` or chart codes via `expense_account_code`/`payment_account_code`. Supported imported statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, and `REJECTED`; `POSTED` must be reached through the normal approval/posting workflow so ledger entries are created consistently. If the tenant period is locked, locked expense-date rows are skipped in the import result.
+Expense imports create unposted expense claims and return row-level errors for invalid rows. ID columns such as `employee_id`, `contact_id`, `expense_account_id`, and `payment_account_id` must be valid UUIDs. Account references can also use chart codes via `expense_account_code`/`payment_account_code`. Supported imported statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, and `REJECTED`; `POSTED` must be reached through the normal approval/posting workflow so ledger entries are created consistently. If the tenant period is locked, locked expense-date rows are skipped in the import result.
 
 ### Receipt Evidence
 

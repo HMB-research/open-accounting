@@ -126,6 +126,14 @@ func (s *Service) buildExpenseFromImportRow(
 	if err != nil {
 		return nil, err
 	}
+	employeeID, err := parseOptionalExpenseImportUUID("employee_id", row.values["employee_id"])
+	if err != nil {
+		return nil, err
+	}
+	contactID, err := parseOptionalExpenseImportUUID("contact_id", row.values["contact_id"])
+	if err != nil {
+		return nil, err
+	}
 
 	amount, err := parseExpenseImportDecimal(row.values["amount"], "amount")
 	if err != nil {
@@ -184,8 +192,8 @@ func (s *Service) buildExpenseFromImportRow(
 		ExpenseDate:      expenseDate,
 		Merchant:         merchant,
 		Description:      strings.TrimSpace(row.values["description"]),
-		EmployeeID:       stringPtrOrNil(row.values["employee_id"]),
-		ContactID:        stringPtrOrNil(row.values["contact_id"]),
+		EmployeeID:       employeeID,
+		ContactID:        contactID,
 		ExpenseAccountID: expenseAccountID,
 		PaymentAccountID: paymentAccountID,
 		Amount:           amount,
@@ -282,7 +290,7 @@ func (s *Service) expenseImportAccountIDsByCode(ctx context.Context, schemaName,
 func resolveExpenseImportAccountID(row expenseImportRow, idField, codeField string, accountIDsByCode map[string]string) (string, error) {
 	accountID := strings.TrimSpace(row.values[idField])
 	if accountID != "" {
-		return accountID, nil
+		return parseExpenseImportUUID(idField, accountID)
 	}
 	accountCode := strings.TrimSpace(row.values[codeField])
 	if accountCode == "" {
@@ -293,6 +301,26 @@ func resolveExpenseImportAccountID(row expenseImportRow, idField, codeField stri
 		return "", fmt.Errorf("account code %q was not found for %s", accountCode, codeField)
 	}
 	return accountID, nil
+}
+
+func parseOptionalExpenseImportUUID(field, value string) (*string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsedID, err := parseExpenseImportUUID(field, trimmed)
+	if err != nil {
+		return nil, err
+	}
+	return &parsedID, nil
+}
+
+func parseExpenseImportUUID(field, value string) (string, error) {
+	parsedID, err := uuid.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return "", fmt.Errorf("%s must be a valid UUID", field)
+	}
+	return parsedID.String(), nil
 }
 
 func parseExpenseImportRows(content string) ([]expenseImportRow, error) {
@@ -463,12 +491,4 @@ func normalizedExpenseImportKey(value string) string {
 
 func normalizeExpenseImportDecimal(value string) string {
 	return strings.ReplaceAll(strings.TrimSpace(value), ",", ".")
-}
-
-func stringPtrOrNil(value string) *string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
 }

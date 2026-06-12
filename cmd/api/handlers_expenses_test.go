@@ -175,7 +175,7 @@ func TestExpenseHandlersImport(t *testing.T) {
 	req := withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/expenses/import", expenses.ImportExpensesRequest{
 		FileName: "expenses.csv",
 		CSVContent: "expense_number,expense_date,merchant,expense_account_id,payment_account_id,amount,status\n" +
-			"EXP-IMP-1,2026-05-30,Office Store,expense-account,cash-account,120.50,DRAFT\n",
+			"EXP-IMP-1,2026-05-30,Office Store,99999999-9999-4999-8999-999999999999,aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa,120.50,DRAFT\n",
 	}, claims), map[string]string{"tenantID": "tenant-1"})
 
 	w := httptest.NewRecorder()
