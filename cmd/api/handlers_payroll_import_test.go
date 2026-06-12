@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/pdf"
 )
 
 func TestPayrollImportHandlers(t *testing.T) {
@@ -341,6 +342,104 @@ func TestPayrollBusinessHandlersRunLifecycleAndTSD(t *testing.T) {
 	require.True(t, tsd.TotalPayments.Equal(decimal.RequireFromString("3000.00")))
 }
 
+func TestPayrollBusinessHandlersPayslipPDFAndTSDExports(t *testing.T) {
+	h, repo, _ := setupPayrollImportHandlerTest(t)
+	h.pdfService = pdf.NewService()
+
+	tenantRecord, err := h.tenantService.GetTenant(context.Background(), "tenant-1")
+	require.NoError(t, err)
+	tenantRecord.Settings.RegCode = "12345678"
+	tenantRecord.Settings.Email = "payroll@example.com"
+
+	employee := payrollImportEmployee("emp-650", "EMP-650")
+	employee.FirstName = "Kati"
+	employee.LastName = "Kuusk"
+	employee.PersonalCode = "49001010025"
+	employee.ApplyBasicExemption = true
+	employee.BasicExemptionAmount = payroll.DefaultBasicExemption
+	employee.FundedPensionRate = decimal.RequireFromString("0.02")
+	repo.seedEmployee(employee)
+	repo.salaryComponents = append(repo.salaryComponents, payroll.SalaryComponent{
+		ID:            "salary-650",
+		TenantID:      "tenant-1",
+		EmployeeID:    employee.ID,
+		ComponentType: payroll.SalaryComponentBaseSalary,
+		Name:          "Base salary",
+		Amount:        decimal.RequireFromString("3250.00"),
+		IsTaxable:     true,
+		IsRecurring:   true,
+		EffectiveFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+
+	run := invokePayrollImportJSON[payroll.PayrollRun](t, http.StatusCreated, h.CreatePayrollRun, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/payroll-runs",
+		payroll.CreatePayrollRunRequest{
+			PeriodYear:  2026,
+			PeriodMonth: 5,
+		},
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	processed := invokePayrollImportJSON[payroll.PayrollRunProcessResult](t, http.StatusOK, h.ProcessPayrollRun, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/payroll-runs/"+run.ID+"/process",
+		payroll.ProcessPayrollRunRequest{Approve: true},
+		map[string]string{"tenantID": "tenant-1", "runID": run.ID},
+	))
+	require.True(t, processed.Approved)
+	require.Equal(t, payroll.PayrollApproved, processed.PayrollRun.Status)
+
+	payslips := invokePayrollImportJSON[[]payroll.Payslip](t, http.StatusOK, h.GetPayslips, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/payroll-runs/"+run.ID+"/payslips",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "runID": run.ID},
+	))
+	require.Len(t, payslips, 1)
+
+	pdfResp := invokePayrollImportRaw(t, http.StatusOK, h.GetPayslipPDF, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/payroll-runs/"+run.ID+"/payslips/"+payslips[0].ID+"/pdf",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "runID": run.ID, "payslipID": payslips[0].ID},
+	))
+	require.Equal(t, "application/pdf", pdfResp.Header().Get("Content-Type"))
+	require.Contains(t, pdfResp.Header().Get("Content-Disposition"), "payslip-2026-05-"+payslips[0].ID+".pdf")
+	requirePDF(t, pdfResp.Body.Bytes())
+
+	tsd := invokePayrollImportJSON[payroll.TSDDeclaration](t, http.StatusOK, h.GenerateTSD, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/payroll-runs/"+run.ID+"/tsd",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "runID": run.ID},
+	))
+	require.Equal(t, 2026, tsd.PeriodYear)
+	require.Equal(t, 5, tsd.PeriodMonth)
+	require.Len(t, tsd.Rows, 1)
+
+	xmlResp := invokePayrollImportRaw(t, http.StatusOK, h.ExportTSDXML, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tsd/2026/5/xml",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "5"},
+	))
+	require.Equal(t, "application/xml", xmlResp.Header().Get("Content-Type"))
+	require.Contains(t, xmlResp.Header().Get("Content-Disposition"), "TSD_12345678_202605_")
+	require.Contains(t, xmlResp.Body.String(), "<rpiMkIsikKood>12345678</rpiMkIsikKood>")
+	require.Contains(t, xmlResp.Body.String(), "<l1Isikukood>49001010025</l1Isikukood>")
+
+	csvResp := invokePayrollImportRaw(t, http.StatusOK, h.ExportTSDCSV, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tsd/2026/5/csv",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "5"},
+	))
+	require.Equal(t, "text/csv", csvResp.Header().Get("Content-Type"))
+	require.Contains(t, csvResp.Header().Get("Content-Disposition"), "TSD_12345678_202605_")
+	require.Contains(t, csvResp.Body.String(), "row_number;personal_code;first_name;last_name")
+	require.Contains(t, csvResp.Body.String(), "1;49001010025;Kati;Kuusk;10;3250.00;")
+}
+
 func TestPayrollBusinessHandlersTSDPeriodActions(t *testing.T) {
 	h, repo, _ := setupPayrollImportHandlerTest(t)
 	repo.tsdDeclarations["tsd-1"] = &payroll.TSDDeclaration{
@@ -608,6 +707,15 @@ func invokePayrollImportJSON[T any](t *testing.T, wantStatus int, handler func(h
 	var result T
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
 	return result
+}
+
+func invokePayrollImportRaw(t *testing.T, wantStatus int, handler func(http.ResponseWriter, *http.Request), req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	require.Equal(t, wantStatus, rec.Code, rec.Body.String())
+	return rec
 }
 
 func payrollImportHandlerByName(h *Handlers, name string) func(http.ResponseWriter, *http.Request) {
