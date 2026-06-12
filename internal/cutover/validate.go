@@ -139,8 +139,10 @@ var fileSpecs = map[FileKind]fileSpec{
 			"employee_id":          "employee_id",
 			"contact_id":           "contact_id",
 			"expense_account_id":   "expense_account_id",
+			"expense_account":      "expense_account_id",
 			"expense_account_code": "expense_account_code",
 			"payment_account_id":   "payment_account_id",
+			"payment_account":      "payment_account_id",
 			"payment_account_code": "payment_account_code",
 			"requires_receipt":     "requires_receipt",
 			"receipt_required":     "requires_receipt",
@@ -652,6 +654,9 @@ var duplicateIdentifierPreflightSpecs = map[FileKind][]duplicateIdentifierSpec{
 		{field: "employee_number"},
 		{field: "personal_code"},
 		{field: "email"},
+	},
+	KindExpenses: {
+		{field: "expense_number"},
 	},
 	KindEInvoices: {
 		{field: "invoice_id"},
@@ -1437,6 +1442,8 @@ func normalizeCutoverBoolComparable(value string) string {
 
 func validateAccountingPreflight(report *BundleValidationReport, file parsedFile) {
 	switch file.kind {
+	case KindExpenses:
+		checkExpenseRows(report, file)
 	case KindPayments:
 		checkPaymentRows(report, file)
 	case KindBankTransactions:
@@ -1446,6 +1453,200 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 	case KindJournalEntries:
 		checkJournalEntryGroups(report, file)
 	}
+}
+
+func checkExpenseRows(report *BundleValidationReport, file parsedFile) {
+	hasExpenseDate := fileHasHeaders(file, "expense_date")
+	hasMerchant := fileHasHeaders(file, "merchant")
+	hasAmount := fileHasHeaders(file, "amount")
+	for _, row := range file.rows {
+		if hasExpenseDate {
+			checkExpenseDate(report, file, row)
+		}
+		if hasMerchant {
+			checkRequiredCutoverField(report, file, row, "merchant")
+		}
+		checkRequiredCutoverFieldGroup(report, file, row, "expense_account_id", "expense_account_code")
+		checkRequiredCutoverFieldGroup(report, file, row, "payment_account_id", "payment_account_code")
+		if hasAmount {
+			checkExpenseAmount(report, file, row)
+		}
+		checkExpenseExchangeRate(report, file, row)
+		checkExpenseRequiresReceipt(report, file, row)
+		status, statusOK := checkExpenseStatus(report, file, row)
+		if statusOK {
+			checkExpenseStatusMetadata(report, file, row, status)
+		}
+	}
+}
+
+func checkExpenseDate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["expense_date"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "expense_date",
+			Message:  "expense_date is required",
+		})
+		return
+	}
+	if isCutoverDateOrRFC3339(value) {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "expense_date",
+		Value:    value,
+		Message:  "expense_date must be YYYY-MM-DD or RFC3339",
+	})
+}
+
+func checkExpenseAmount(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if _, issue := parseCutoverPositiveNormalizedDecimal(row.values["amount"], "amount"); issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+	}
+}
+
+func checkExpenseExchangeRate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["exchange_rate"]) == "" {
+		return
+	}
+	if _, issue := parseCutoverPositiveNormalizedDecimal(row.values["exchange_rate"], "exchange_rate"); issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+	}
+}
+
+func checkExpenseRequiresReceipt(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["requires_receipt"])
+	if value == "" {
+		return
+	}
+	switch normalizeCutoverBoolComparable(value) {
+	case "true", "false":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "requires_receipt",
+			Value:    value,
+			Message:  "invalid requires_receipt",
+		})
+	}
+}
+
+func checkExpenseStatus(report *BundleValidationReport, file parsedFile, row parsedRow) (string, bool) {
+	value := strings.TrimSpace(row.values["status"])
+	switch normalizedCutoverStatus(value) {
+	case "", "draft":
+		return "draft", true
+	case "submitted":
+		return "submitted", true
+	case "approved":
+		return "approved", true
+	case "rejected":
+		return "rejected", true
+	case "posted":
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    value,
+			Message:  "posted expenses must be imported as approved and posted through the expense workflow",
+		})
+		return "", false
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid status %q", value),
+		})
+		return "", false
+	}
+}
+
+func checkExpenseStatusMetadata(report *BundleValidationReport, file parsedFile, row parsedRow, status string) {
+	switch status {
+	case "submitted":
+		checkExpenseOptionalTimestamp(report, file, row, "submitted_at")
+	case "approved":
+		checkExpenseOptionalTimestamp(report, file, row, "submitted_at")
+		checkExpenseOptionalTimestamp(report, file, row, "approved_at")
+	case "rejected":
+		checkRequiredCutoverField(report, file, row, "rejection_reason")
+		checkExpenseOptionalTimestamp(report, file, row, "submitted_at")
+		checkExpenseOptionalTimestamp(report, file, row, "rejected_at")
+	}
+}
+
+func checkExpenseOptionalTimestamp(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return
+	}
+	if isCutoverDateOrRFC3339(value) {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    value,
+		Message:  fmt.Sprintf("%s must be YYYY-MM-DD or RFC3339", field),
+	})
+}
+
+func checkRequiredCutoverField(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if strings.TrimSpace(row.values[field]) != "" {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Message:  fmt.Sprintf("%s is required", field),
+	})
+}
+
+func checkRequiredCutoverFieldGroup(report *BundleValidationReport, file parsedFile, row parsedRow, fields ...string) {
+	hasHeader := false
+	for _, field := range fields {
+		if fileHasHeaders(file, field) {
+			hasHeader = true
+		}
+		if strings.TrimSpace(row.values[field]) != "" {
+			return
+		}
+	}
+	if !hasHeader {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    strings.Join(fields, "/"),
+		Message:  strings.Join(fields, " or ") + " is required",
+	})
 }
 
 func checkPaymentRows(report *BundleValidationReport, file parsedFile) {
@@ -1864,6 +2065,21 @@ func parseCutoverRequiredDecimal(value, fieldName string) (decimal.Decimal, *cut
 	return parsed, nil
 }
 
+func parseCutoverPositiveNormalizedDecimal(value, fieldName string) (decimal.Decimal, *cutoverAmountIssue) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, message: fmt.Sprintf("%s is required", fieldName)}
+	}
+	parsed, err := decimal.NewFromString(strings.ReplaceAll(trimmed, ",", "."))
+	if err != nil {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be a decimal", fieldName)}
+	}
+	if parsed.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be positive", fieldName)}
+	}
+	return parsed, nil
+}
+
 func parseCutoverEntryDate(value string) (string, *cutoverAmountIssue) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -1906,6 +2122,20 @@ func normalizeCutoverDecimal(value string) string {
 		return strings.ReplaceAll(value, ",", ".")
 	}
 	return strings.ReplaceAll(value, ",", "")
+}
+
+func isCutoverDateOrRFC3339(value string) bool {
+	if _, err := time.Parse("2006-01-02", value); err == nil {
+		return true
+	}
+	if _, err := time.Parse(time.RFC3339, value); err == nil {
+		return true
+	}
+	return false
+}
+
+func normalizedCutoverStatus(value string) string {
+	return strings.ReplaceAll(normalizedValue(value), " ", "_")
 }
 
 func debitCreditRowValue(row parsedRow) string {
