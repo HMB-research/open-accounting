@@ -17,16 +17,19 @@ type categoryImportRow struct {
 }
 
 var categoryImportHeaderAliases = map[string]string{
-	"name":               "name",
-	"category":           "name",
-	"category_name":      "name",
-	"product_category":   "name",
-	"description":        "description",
-	"parent_id":          "parent_id",
-	"parent_category_id": "parent_id",
-	"parent":             "parent_name",
-	"parent_name":        "parent_name",
-	"parent_category":    "parent_name",
+	"id":                  "id",
+	"category_id":         "id",
+	"product_category_id": "id",
+	"name":                "name",
+	"category":            "name",
+	"category_name":       "name",
+	"product_category":    "name",
+	"description":         "description",
+	"parent_id":           "parent_id",
+	"parent_category_id":  "parent_id",
+	"parent":              "parent_name",
+	"parent_name":         "parent_name",
+	"parent_category":     "parent_name",
 }
 
 // ImportProductCategoriesCSV imports product category master data from CSV content.
@@ -176,6 +179,16 @@ func buildCategoryFromImportRow(row categoryImportRow, tenantID string, nameToID
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	id := strings.TrimSpace(row.values["id"])
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, fmt.Errorf("invalid id")
+		}
+		id = parsedID.String()
+	} else {
+		id = uuid.New().String()
+	}
 
 	parentID, err := resolveCategoryImportParentID(row, nameToID)
 	if err != nil {
@@ -184,7 +197,7 @@ func buildCategoryFromImportRow(row categoryImportRow, tenantID string, nameToID
 
 	now := time.Now()
 	return &ProductCategory{
-		ID:          uuid.New().String(),
+		ID:          id,
 		TenantID:    tenantID,
 		Name:        name,
 		Description: strings.TrimSpace(row.values["description"]),

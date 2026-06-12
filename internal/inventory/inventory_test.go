@@ -799,10 +799,10 @@ func TestService_ImportProductCategoriesCSV(t *testing.T) {
 
 	result, err := ts.svc.ImportProductCategoriesCSV(ctx, "tenant-1", "test_schema", &ImportProductCategoriesRequest{
 		FileName: "categories.csv",
-		CSVContent: "category_name,description,parent_name\n" +
-			"Parts,Spare parts,\n" +
-			"Fasteners,Bolts and screws,Parts\n" +
-			"Existing,Duplicate,\n",
+		CSVContent: "category_id,category_name,description,parent_name,parent_category_id\n" +
+			"11111111-1111-1111-1111-111111111111,Parts,Spare parts,,\n" +
+			"22222222-2222-2222-2222-222222222222,Fasteners,Bolts and screws,,11111111-1111-1111-1111-111111111111\n" +
+			",Existing,Duplicate,,\n",
 	})
 
 	require.NoError(t, err)
@@ -826,10 +826,12 @@ func TestService_ImportProductCategoriesCSV(t *testing.T) {
 	}
 
 	require.NotNil(t, parts)
+	assert.Equal(t, "11111111-1111-1111-1111-111111111111", parts.ID)
 	assert.Equal(t, "Spare parts", parts.Description)
 	assert.Empty(t, parts.ParentID)
 
 	require.NotNil(t, fasteners)
+	assert.Equal(t, "22222222-2222-2222-2222-222222222222", fasteners.ID)
 	assert.Equal(t, "Bolts and screws", fasteners.Description)
 	assert.Equal(t, parts.ID, fasteners.ParentID)
 }

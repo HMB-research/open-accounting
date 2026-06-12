@@ -1512,13 +1512,13 @@ func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 		{
 			Kind:       KindProductCategories,
 			FileName:   "categories.csv",
-			CSVContent: "id,name\ncat-1,Hardware\n",
+			CSVContent: "id,name\n11111111-1111-1111-1111-111111111111,Hardware\n",
 		},
 		{
 			Kind:     KindProducts,
 			FileName: "products.csv",
 			CSVContent: "code,name,category_id,sales_price,sale_account_id,purchase_account_code,inventory_account_code\n" +
-				"SKU-1,Widget,cat-missing,10,missing-sales,5999,4000\n",
+				"SKU-1,Widget,33333333-3333-3333-3333-333333333333,10,missing-sales,5999,4000\n",
 		},
 	}})
 
@@ -1529,7 +1529,7 @@ func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 	require.Len(t, report.Issues, 3)
 	assert.Equal(t, KindProductCategories, report.Issues[0].TargetKind)
 	assert.Equal(t, "category_id/category_name", report.Issues[0].Field)
-	assert.Equal(t, "cat-missing", report.Issues[0].Value)
+	assert.Equal(t, "33333333-3333-3333-3333-333333333333", report.Issues[0].Value)
 	assert.Equal(t, KindAccounts, report.Issues[1].TargetKind)
 	assert.Equal(t, "sale_account_id/sale_account_code", report.Issues[1].Field)
 	assert.Equal(t, "missing-sales", report.Issues[1].Value)
@@ -1557,6 +1557,82 @@ func TestValidateBundleReportsProductCategoryRowValueIssues(t *testing.T) {
 	assert.Equal(t, 2, report.Summary.ErrorCount)
 	assertValidationIssue(t, report, KindProductCategories, "name", "name is required")
 	assertValidationIssue(t, report, KindProductCategories, "parent_name", "parent_name must reference an earlier product category row")
+}
+
+func TestValidateBundleAcceptsProductCategoryPreservedIDReferences(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindProductCategories,
+			FileName: "categories.csv",
+			CSVContent: "category_id,category_name,parent_category_id\n" +
+				"11111111-1111-1111-1111-111111111111,Hardware,\n" +
+				"22222222-2222-2222-2222-222222222222,Widgets,11111111-1111-1111-1111-111111111111\n",
+		},
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,category_id,sales_price\nSKU-1,Widget,22222222-2222-2222-2222-222222222222,10\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Empty(t, report.Issues)
+
+	var categoriesValidation FileValidation
+	for _, file := range report.Files {
+		if file.Kind == KindProductCategories {
+			categoriesValidation = file
+		}
+	}
+	require.Equal(t, KindProductCategories, categoriesValidation.Kind)
+	assert.Contains(t, categoriesValidation.Headers, "id")
+	assert.Contains(t, categoriesValidation.Headers, "parent_id")
+	assert.NotContains(t, categoriesValidation.Headers, "category_id")
+	assert.NotContains(t, categoriesValidation.Headers, "parent_category_id")
+}
+
+func TestValidateBundleReportsInvalidProductCategoryImportID(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProductCategories,
+			FileName:   "categories.csv",
+			CSVContent: "category_id,name\nlegacy-id,Hardware\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindProductCategories, report.Issues[0].Kind)
+	assert.Equal(t, "id", report.Issues[0].Field)
+	assert.Equal(t, "legacy-id", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, "valid UUID")
+}
+
+func TestValidateBundleReportsProductCategoryParentIDReferenceIssue(t *testing.T) {
+	missingParentID := "33333333-3333-3333-3333-333333333333"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProductCategories,
+			FileName:   "categories.csv",
+			CSVContent: "category_id,name,parent_category_id\n11111111-1111-1111-1111-111111111111,Hardware," + missingParentID + "\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindProductCategories, report.Issues[0].Kind)
+	assert.Equal(t, KindProductCategories, report.Issues[0].TargetKind)
+	assert.Equal(t, "parent_id/parent_name", report.Issues[0].Field)
+	assert.Equal(t, missingParentID, report.Issues[0].Value)
 }
 
 func TestValidateBundleReportsInventoryRowValueIssues(t *testing.T) {
