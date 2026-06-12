@@ -399,7 +399,11 @@ go run ./cmd/oa payroll import-leave-balances --file ./leave-balances.csv
 
 Import employees first so payroll history rows can match existing employees by `employee_number`, `personal_code`, `email`, `name`, or `first_name` + `last_name`. Existing payroll periods are skipped rather than overwritten; migration preflight reports duplicate employee rows inside the same payroll period. Use `--json` when you need row-level import errors for automation.
 
+Historical payroll imports require `period_year`, `period_month`, `gross_salary`, and an employee identifier. Migration aliases include `year`/`payroll_year`, `month`/`payroll_month`, `run_status`, `pay_date`, `employee_no`/`employee_id`, `isikukood`, `gross`, `unemployment_employee`/`unemployment_insurance_ee`, `pension`, `net`, `unemployment_employer`/`unemployment_insurance_er`, and `employer_cost`. Dates accept `YYYY-MM-DD`, RFC3339, or `DD.MM.YYYY`; decimal fields accept comma decimals. `status` defaults to `PAID`; `payment_status` defaults to `PENDING` for approved runs and `PAID` otherwise.
+
 Leave balance imports create or update balances by employee + absence type + year. Match absence types with `absence_type_code`, `absence_type`, or a UUID `absence_type_id`; migration preflight reports duplicate employee + absence type rows inside the same year.
+
+Leave balance aliases include `period_year`, `employee_no`/`employee_id`, `isikukood`, `absence_code`, `leave_type_code`, `type_code`, `absence_type_name`, `leave_type`, `leave_type_name`, `type`, `entitlement`, `annual_entitlement`, `carry_over_days`, `carried_forward_days`, `taken_days`, and `reserved_days`. If `entitled_days` is omitted, the absence type default is used; carryover, used, and pending days default to zero.
 
 ## Leave management
 
@@ -456,7 +460,7 @@ go run ./cmd/oa tsd mark-rejected --year 2026 --month 3
 
 `tsd list` accepts optional `--year` and `--month` filters; `--month` must be between 1 and 12 when provided. TSD period commands require `--year` and `--month`; `--month` must be between 1 and 12. Omit `--output` on export commands to write the raw XML or CSV to stdout. Use `--json` on list/get/generate/import-history/mark-submitted/mark-accepted/mark-rejected for automation.
 
-Historical TSD imports use one CSV row per employee declaration row and group rows by `year` + `month`. Required columns are `year`, `month`, `gross_payment`, and an employee identifier (`employee_number`, `personal_code`, `email`, `name`, or `first_name` + `last_name`). Optional columns include `status`, `submitted_at`, `emta_reference`, `payment_type`, `basic_exemption`, `taxable_amount`, `income_tax`, `social_tax`, `unemployment_insurance_employer`, `unemployment_insurance_employee`, and `funded_pension`. Migration preflight checks period bounds, supported statuses, submitted-date format, positive gross payment, non-negative tax/pension amounts, duplicate employee-period rows, and consistent status, submitted date, and EMTA reference inside each TSD period. Existing TSD declaration periods are skipped instead of overwritten.
+Historical TSD imports use one CSV row per employee declaration row and group rows by `year` + `month`. Required columns are `year`, `month`, `gross_payment`, and an employee identifier (`employee_number`, `personal_code`, `email`, `name`, or `first_name` + `last_name`). Optional columns include `status`, `submitted_at`, `emta_reference`, `payment_type`, `basic_exemption`, `taxable_amount`, `income_tax`, `social_tax`, `unemployment_insurance_employer`, `unemployment_insurance_employee`, and `funded_pension`. Migration aliases include `declaration_year`/`tsd_year`, `declaration_month`/`tsd_month`, `declaration_status`, `submitted_date`/`submission_date`, `emta_ref`/`submission_reference`, `employee_no`/`employee_id`, `isikukood`, `e_mail`, `payment_code`/`tsd_payment_type`, `gross_salary`/`gross`, `basic_exemption_applied`, `taxable_income`, `unemployment_employer`/`unemployment_insurance_er`, `unemployment_employee`/`unemployment_insurance_ee`, and `pension`. `FILED` maps to `SUBMITTED`; `APPROVED` and `CONFIRMED` map to `ACCEPTED`. Migration preflight checks period bounds, supported statuses, submitted-date format, positive gross payment, non-negative tax/pension amounts, duplicate employee-period rows, and consistent status, submitted date, and EMTA reference inside each TSD period. Existing TSD declaration periods are skipped instead of overwritten.
 
 ## KMD declarations
 
@@ -1173,6 +1177,8 @@ period_year,period_month,status,payment_date,notes,employee_number,gross_salary,
 2025,12,PAID,2026-01-05,Imported December payroll,EMP-002,2800.00,420.00,44.80,56.00,10.00,2269.20,924.00,22.40,3746.40,40.00,PAID,2026-01-05
 ```
 
+Payroll history accepts incumbent aliases such as `payroll_year`, `payroll_month`, `employee_no`, `isikukood`, `gross`, `pension`, `net`, and `employer_cost`. It derives omitted `taxable_income`, `net_salary`, and `total_employer_cost` from the supplied salary and tax columns.
+
 ### Leave balances
 
 ```csv
@@ -1180,6 +1186,8 @@ year,employee_number,absence_type_code,entitled_days,carryover_days,used_days,pe
 2025,EMP-001,ANNUAL_LEAVE,28,2,4,0,Imported leave balance
 2025,EMP-002,ANNUAL_LEAVE,28,0,10,1,Imported leave balance
 ```
+
+Leave balance imports can use `period_year`, `employee_no`, `isikukood`, `leave_type_code`, `leave_type`, `entitlement`, `carried_forward_days`, `taken_days`, and `reserved_days` aliases.
 
 ### Opening balances
 

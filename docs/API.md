@@ -1351,6 +1351,8 @@ Employee matching supports:
 - `name`
 - `first_name` + `last_name`
 
+Accepted payroll-history aliases include `year` or `payroll_year` for `period_year`, `month` or `payroll_month` for `period_month`, `run_status` for `status`, `pay_date` for `payment_date`, `employee_no` or `employee_id` for `employee_number`, `isikukood` for `personal_code`, `gross` for `gross_salary`, `unemployment_employee` or `unemployment_insurance_ee` for `unemployment_insurance_employee`, `pension` for `funded_pension`, `net` for `net_salary`, `unemployment_employer` or `unemployment_insurance_er` for `unemployment_insurance_employer`, and `employer_cost` for `total_employer_cost`.
+
 Supported statuses:
 
 - `APPROVED`
@@ -1359,7 +1361,7 @@ Supported statuses:
 
 `status` defaults to `PAID` when omitted. `payment_status` defaults to `PENDING` for `APPROVED` runs and `PAID` for `PAID`/`DECLARED` runs.
 
-If `taxable_income`, `net_salary`, or `total_employer_cost` is omitted, the importer derives it from the supplied gross salary and deduction/tax columns. Existing payroll periods are not overwritten; rows for periods that already have payroll runs are skipped and returned as row errors. Migration preflight also reports duplicate employee rows inside the same payroll period before import.
+Dates use the same `YYYY-MM-DD`, RFC3339, or `DD.MM.YYYY` formats as employee import. Decimal fields accept comma decimals and must be zero or greater, except `gross_salary`, which must be greater than zero. `payment_status` accepts `PENDING`, `PAID`, `CANCELLED`, or `CANCELED`. If `taxable_income`, `net_salary`, or `total_employer_cost` is omitted, the importer derives it from the supplied gross salary and deduction/tax columns. Existing payroll periods are not overwritten; rows for periods that already have payroll runs are skipped and returned as row errors. Migration preflight also reports duplicate employee rows inside the same payroll period before import.
 
 This importer records historical payroll runs and payslips only. Use the leave-balance and TSD history importers for those separate migration records. Accounting journal entries and incumbent-system audit logs remain separate cutover work.
 
@@ -1398,6 +1400,8 @@ Required columns:
 
 Employee matching supports the same identifiers as historical payroll import. Absence types can be matched by code, name, Estonian name, or id. If `entitled_days` is omitted, the absence type default is used. `carryover_days`, `used_days`, and `pending_days` default to zero. Migration preflight reports duplicate employee + absence type rows inside the same year before import.
 
+Accepted leave-balance aliases include `period_year` for `year`, `employee_no` or `employee_id` for `employee_number`, `isikukood` for `personal_code`, `absence_code`, `leave_type_code`, or `type_code` for `absence_type_code`, `absence_type_name`, `leave_type`, `leave_type_name`, or `type` for `absence_type`, `entitlement` or `annual_entitlement` for `entitled_days`, `carry_over_days` or `carried_forward_days` for `carryover_days`, `taken_days` for `used_days`, and `reserved_days` for `pending_days`. Day values accept comma decimals and must be zero or greater.
+
 **Response (200 OK):**
 
 ```json
@@ -1432,7 +1436,9 @@ Required columns:
 - `gross_payment`
 - at least one employee identifier per row
 
-Employee matching supports the same identifiers as historical payroll import. Supported statuses are `DRAFT`, `SUBMITTED`, `ACCEPTED`, and `REJECTED`; status defaults to `DRAFT` when omitted. Existing TSD declaration periods are skipped rather than overwritten. `payment_type` defaults to `10` when omitted, and `gross_salary` is accepted as an alias for `gross_payment`. Migration preflight checks the same period, status, submitted-date, gross-payment, tax amount, duplicate employee-period keys, and same-period metadata rules before import.
+Employee matching supports the same identifiers as historical payroll import. Supported statuses are `DRAFT`, `SUBMITTED`, `ACCEPTED`, and `REJECTED`; `FILED` aliases to `SUBMITTED`, and `APPROVED` or `CONFIRMED` alias to `ACCEPTED`. Status defaults to `DRAFT` when omitted. Existing TSD declaration periods are skipped rather than overwritten. `payment_type` defaults to `10` when omitted.
+
+Accepted TSD-history aliases include `declaration_year`, `tsd_year`, or `year` for `period_year`, `declaration_month`, `tsd_month`, or `month` for `period_month`, `declaration_status` for `status`, `submitted_date` or `submission_date` for `submitted_at`, `emta_ref` or `submission_reference` for `emta_reference`, `employee_no` or `employee_id` for `employee_number`, `isikukood` for `personal_code`, `e_mail` for `email`, `payment_code` or `tsd_payment_type` for `payment_type`, `gross_salary` or `gross` for `gross_payment`, `basic_exemption_applied` for `basic_exemption`, `taxable_income` for `taxable_amount`, `unemployment_employer` or `unemployment_insurance_er` for `unemployment_insurance_employer`, `unemployment_employee` or `unemployment_insurance_ee` for `unemployment_insurance_employee`, and `pension` for `funded_pension`. Dates and decimals use the same formats as payroll history; `gross_payment` must be greater than zero, and tax/pension amounts must be zero or greater. Migration preflight checks the same period, status, submitted-date, gross-payment, tax amount, duplicate employee-period keys, and same-period metadata rules before import.
 
 **Response (200 OK):**
 
