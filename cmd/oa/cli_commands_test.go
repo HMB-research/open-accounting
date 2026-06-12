@@ -15612,7 +15612,7 @@ func TestCLIBankingCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
-	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number,bank_name,swift_code,currency,gl_account_id,is_default,is_active\nReserve bank,EE999,LHV,LHVBEE22,EUR,acc-bank,false,true\n")
+	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number,bank_name,swift_code,currency,gl_account_code,is_default,is_active\nReserve bank,EE999,LHV,LHVBEE22,EUR,1000,false,true\n")
 	importFile := writeTempCSV(t, "lhv-bank.csv", "Client account;Document number;Date;Beneficiary's/remitter's account;Beneficiary's/remitter's name;Debit/Credit (D/C);Amount;Reference number;Archival ID;Details;Currency;Personal identification code or registry code;Beneficiary's/remitter's bank's BIC;Payment initiator's name;Entry reference;Account service provider's reference\nEE457700771000676899;123;2026-03-15;EE111;Acme;C;100,00;REF-1;202603150001;Client payment;EUR;12345678;LHVBEE22;;ENTRY-1;ext-1\n")
 	glAccountID := "acc-bank"
 	accountPayload := func(active bool) map[string]any {
@@ -15715,7 +15715,8 @@ func TestCLIBankingCommands(t *testing.T) {
 			require.Len(t, req.Rows, 1)
 			assert.Equal(t, "Reserve bank", req.Rows[0].Name)
 			assert.Equal(t, "EE999", req.Rows[0].AccountNumber)
-			assert.Equal(t, "acc-bank", req.Rows[0].GLAccountID)
+			assert.Empty(t, req.Rows[0].GLAccountID)
+			assert.Equal(t, "1000", req.Rows[0].GLAccountCode)
 			_ = json.NewEncoder(w).Encode(banking.ImportBankAccountsResult{
 				FileName:         "bank-accounts.csv",
 				RowsProcessed:    1,
@@ -22722,12 +22723,13 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bank transaction CSV is empty")
 
-	bankAccountRows, err := parseBankAccountCSVRows("account_name;iban;bank;bic;currency;gl_account_id;default;active\nMain bank;EE123;LHV;LHVBEE22;eur;acc-bank;yes;true\n")
+	bankAccountRows, err := parseBankAccountCSVRows("account_name;iban;bank;bic;currency;gl_account_id;ledger_account_code;default;active\nMain bank;EE123;LHV;LHVBEE22;eur;acc-bank;1000;yes;true\n")
 	require.NoError(t, err)
 	require.Len(t, bankAccountRows, 1)
 	assert.Equal(t, "Main bank", bankAccountRows[0].Name)
 	assert.Equal(t, "EE123", bankAccountRows[0].AccountNumber)
 	assert.Equal(t, "acc-bank", bankAccountRows[0].GLAccountID)
+	assert.Equal(t, "1000", bankAccountRows[0].GLAccountCode)
 	assert.Equal(t, "yes", bankAccountRows[0].IsDefault)
 
 	_, err = parseBankAccountCSVRows("name,bank_name\nNo number,LHV\n")

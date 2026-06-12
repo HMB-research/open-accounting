@@ -2969,7 +2969,7 @@ Import bank account master data:
       "bank_name": "LHV",
       "swift_code": "LHVBEE22",
       "currency": "EUR",
-      "gl_account_id": "uuid",
+      "gl_account_code": "1000",
       "is_default": "true",
       "is_active": "true"
     }
@@ -2977,7 +2977,7 @@ Import bank account master data:
 }
 ```
 
-Bank account imports require `name` and `account_number`, skip duplicate account numbers when `skip_duplicates` is true, and report invalid or duplicate rows without creating placeholder accounts.
+Bank account imports require `name` and `account_number`, can link the cash/ledger account by `gl_account_id` or `gl_account_code`, skip duplicate account numbers when `skip_duplicates` is true, and report invalid or duplicate rows without creating placeholder accounts.
 
 ### Bank Auto-Match Rules
 

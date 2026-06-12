@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/shopspring/decimal"
 )
@@ -57,6 +58,14 @@ func NewMockRepository() *MockRepository {
 		imports:         make(map[string]*BankStatementImport),
 		matchRules:      make(map[string]*BankMatchRule),
 	}
+}
+
+type fakeBankingAccountLister struct {
+	accounts []accounting.Account
+}
+
+func (f fakeBankingAccountLister) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	return f.accounts, nil
 }
 
 func (m *MockRepository) CreateBankAccount(ctx context.Context, schemaName string, account *BankAccount) error {
@@ -634,7 +643,9 @@ func TestService_ImportBankAccounts(t *testing.T) {
 		IsDefault:     true,
 		IsActive:      true,
 	}
-	service := NewServiceWithRepository(repo)
+	service := NewServiceWithRepositoryAndAccounting(repo, fakeBankingAccountLister{accounts: []accounting.Account{
+		{ID: "gl-bank", Code: "1000", AccountType: accounting.AccountTypeAsset},
+	}})
 
 	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
 		FileName:       "bank-accounts.csv",
@@ -646,7 +657,7 @@ func TestService_ImportBankAccounts(t *testing.T) {
 				BankName:      "LHV",
 				SwiftCode:     "lhvbee22",
 				Currency:      "eur",
-				GLAccountID:   "gl-bank",
+				GLAccountCode: "1000",
 				IsDefault:     "yes",
 			},
 			{
@@ -716,6 +727,38 @@ func TestService_ImportBankAccounts(t *testing.T) {
 	}
 	if closed.Currency != "USD" {
 		t.Errorf("expected uppercase currency USD, got %q", closed.Currency)
+	}
+}
+
+func TestService_ImportBankAccountsReportsMissingAccountCode(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepositoryAndAccounting(repo, fakeBankingAccountLister{accounts: []accounting.Account{
+		{ID: "gl-bank", Code: "1000", AccountType: accounting.AccountTypeAsset},
+	}})
+
+	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
+		Rows: []CSVBankAccountRow{
+			{
+				Name:          "Main bank",
+				AccountNumber: "EE471000001020145685",
+				GLAccountCode: "9999",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportBankAccounts() error = %v", err)
+	}
+	if result.RowsProcessed != 1 {
+		t.Errorf("expected 1 processed row, got %d", result.RowsProcessed)
+	}
+	if result.AccountsImported != 0 {
+		t.Errorf("expected 0 imported accounts, got %d", result.AccountsImported)
+	}
+	if result.RowsSkipped != 1 {
+		t.Errorf("expected 1 skipped row, got %d", result.RowsSkipped)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], `account code "9999" was not found for gl_account_code`) {
+		t.Fatalf("expected missing account code error, got %#v", result.Errors)
 	}
 }
 

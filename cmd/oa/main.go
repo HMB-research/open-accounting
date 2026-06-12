@@ -13194,6 +13194,7 @@ func parseBankAccountCSVRows(content string) ([]banking.CSVBankAccountRow, error
 			SwiftCode:     get(record, "swift_code", "swift", "bic"),
 			Currency:      get(record, "currency"),
 			GLAccountID:   get(record, "gl_account_id", "ledger_account_id"),
+			GLAccountCode: get(record, "gl_account_code", "ledger_account_code", "cash_account_code"),
 			IsDefault:     get(record, "is_default", "default"),
 			IsActive:      get(record, "is_active", "active"),
 		}
