@@ -343,12 +343,29 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindLeaveBalances: {
 		aliases: mergeAliases(employeeReferenceAliases(), map[string]string{
-			"year":              "year",
-			"absence_type":      "absence_type",
-			"absence_type_code": "absence_type_code",
-			"type_code":         "absence_type_code",
-			"entitled":          "entitled_days",
-			"entitled_days":     "entitled_days",
+			"year":                 "year",
+			"period_year":          "year",
+			"absence_type_id":      "absence_type_id",
+			"absence_type":         "absence_type",
+			"absence_type_name":    "absence_type",
+			"leave_type":           "absence_type",
+			"leave_type_name":      "absence_type",
+			"type":                 "absence_type",
+			"absence_type_code":    "absence_type_code",
+			"absence_code":         "absence_type_code",
+			"leave_type_code":      "absence_type_code",
+			"type_code":            "absence_type_code",
+			"entitled":             "entitled_days",
+			"entitlement":          "entitled_days",
+			"entitled_days":        "entitled_days",
+			"annual_entitlement":   "entitled_days",
+			"carryover_days":       "carryover_days",
+			"carry_over_days":      "carryover_days",
+			"carried_forward_days": "carryover_days",
+			"used_days":            "used_days",
+			"taken_days":           "used_days",
+			"pending_days":         "pending_days",
+			"reserved_days":        "pending_days",
 		}),
 		requiredGroups: leaveBalanceRequiredGroups(),
 	},
@@ -1589,6 +1606,8 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkEmployeeRows(report, file)
 	case KindPayrollHistory:
 		checkPayrollHistoryRows(report, file)
+	case KindLeaveBalances:
+		checkLeaveBalanceRows(report, file)
 	case KindInvoices, KindQuotes, KindOrders, KindRecurringInvoices:
 		checkCommercialDocumentRows(report, file)
 	case KindExpenses:
@@ -1929,6 +1948,37 @@ func checkPayrollHistoryRows(report *BundleValidationReport, file parsedFile) {
 		if yearOK && monthOK && statusOK && paymentDateOK {
 			checkPayrollHistoryGroupConsistency(report, file, row, groups, periodYear, periodMonth, status, paymentDate)
 		}
+	}
+}
+
+func checkLeaveBalanceRows(report *BundleValidationReport, file parsedFile) {
+	for _, row := range file.rows {
+		checkLeaveBalanceYear(report, file, row)
+		for _, field := range []string{"entitled_days", "carryover_days", "used_days", "pending_days"} {
+			if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+				continue
+			}
+			checkPayrollHistoryNonNegativeDecimal(report, file, row, field)
+		}
+	}
+}
+
+func checkLeaveBalanceYear(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "year") {
+		return
+	}
+	value := strings.TrimSpace(row.values["year"])
+	year, err := strconv.Atoi(value)
+	if err != nil || year < 2020 || year > 2100 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "year",
+			Value:    value,
+			Message:  "year must be between 2020 and 2100",
+		})
 	}
 }
 
