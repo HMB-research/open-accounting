@@ -884,10 +884,11 @@ func TestParseQuoteImportRows(t *testing.T) {
 
 func TestParseQuoteImportDataRow(t *testing.T) {
 	t.Run("parses valid row", func(t *testing.T) {
+		productID := "22222222-2222-4222-8222-222222222222"
 		row := quoteImportRowForTest(map[string]string{
 			"status":     "approved",
 			"currency":   "usd",
-			"product_id": "product-1",
+			"product_id": productID,
 		})
 
 		parsed, err := parseQuoteImportDataRow(row, importrefs.ProductLookup{})
@@ -897,7 +898,7 @@ func TestParseQuoteImportDataRow(t *testing.T) {
 		assert.Equal(t, "USD", parsed.header.currency)
 		assert.Equal(t, QuoteStatusAccepted, parsed.header.explicitStatus)
 		require.NotNil(t, parsed.line.productID)
-		assert.Equal(t, "product-1", *parsed.line.productID)
+		assert.Equal(t, productID, *parsed.line.productID)
 	})
 
 	tests := []struct {

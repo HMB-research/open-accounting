@@ -411,7 +411,12 @@ func parseOrderImportDataRow(row orderImportRow, productLookup importrefs.Produc
 
 	var quoteID *string
 	if value := strings.TrimSpace(row.values["quote_id"]); value != "" {
-		quoteID = &value
+		parsedID, err := uuid.Parse(value)
+		if err != nil {
+			return nil, fmt.Errorf("quote_id must be a valid UUID")
+		}
+		canonicalID := parsedID.String()
+		quoteID = &canonicalID
 	}
 
 	description := strings.TrimSpace(row.values["line_description"])
