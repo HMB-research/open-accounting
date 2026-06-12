@@ -512,6 +512,56 @@ func TestValidateBundleReportsContactRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindContacts, "credit_limit", "credit_limit must be a decimal")
 }
 
+func TestValidateBundleAcceptsContactImporterAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindContacts,
+			FileName: "contacts.csv",
+			CSVContent: "contact_id,company,role,payment_days,country,vat,telephone,address,address_line_2,postcode,credit_limit\n" +
+				"11111111-1111-1111-1111-111111111111,Supplier One,vendor,21,EE,EE123456789,+3725550100,Main 1,Suite 2,10115,\"1500,50\"\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Empty(t, report.Issues)
+	require.Len(t, report.Files, 1)
+	assert.Contains(t, report.Files[0].Headers, "id")
+	assert.Contains(t, report.Files[0].Headers, "name")
+	assert.Contains(t, report.Files[0].Headers, "contact_type")
+	assert.Contains(t, report.Files[0].Headers, "payment_terms_days")
+	assert.Contains(t, report.Files[0].Headers, "country_code")
+	assert.Contains(t, report.Files[0].Headers, "vat_number")
+	assert.Contains(t, report.Files[0].Headers, "phone")
+	assert.Contains(t, report.Files[0].Headers, "address_line1")
+	assert.Contains(t, report.Files[0].Headers, "address_line2")
+	assert.Contains(t, report.Files[0].Headers, "postal_code")
+	assert.NotContains(t, report.Files[0].Headers, "company")
+	assert.NotContains(t, report.Files[0].Headers, "role")
+	assert.NotContains(t, report.Files[0].Headers, "payment_days")
+}
+
+func TestValidateBundleReportsContactImporterAliasRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindContacts,
+			FileName: "contacts.csv",
+			CSVContent: "company,role,payment_days,country,credit_limit\n" +
+				"Bad Contact,partner,-1,EST,not-a-number\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 4, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindContacts, "contact_type", `invalid contact_type "partner"`)
+	assertValidationIssue(t, report, KindContacts, "payment_terms_days", "payment_terms_days must be a non-negative integer")
+	assertValidationIssue(t, report, KindContacts, "country_code", "country_code must be a 2-letter code")
+	assertValidationIssue(t, report, KindContacts, "credit_limit", "credit_limit must be a decimal")
+}
+
 func TestValidateBundleReportsEmployeeRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
