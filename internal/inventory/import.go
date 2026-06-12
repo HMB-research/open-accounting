@@ -19,45 +19,49 @@ type productImportRow struct {
 }
 
 var productImportHeaderAliases = map[string]string{
-	"code":                 "code",
-	"product_code":         "code",
-	"sku":                  "code",
-	"item_code":            "code",
-	"name":                 "name",
-	"product_name":         "name",
-	"item_name":            "name",
-	"description":          "description",
-	"product_type":         "product_type",
-	"type":                 "product_type",
-	"category_id":          "category_id",
-	"category":             "category_name",
-	"category_name":        "category_name",
-	"unit":                 "unit",
-	"unit_of_measure":      "unit",
-	"purchase_price":       "purchase_price",
-	"cost_price":           "purchase_price",
-	"cost":                 "purchase_price",
-	"sales_price":          "sales_price",
-	"sale_price":           "sales_price",
-	"selling_price":        "sales_price",
-	"price":                "sales_price",
-	"vat_rate":             "vat_rate",
-	"vat":                  "vat_rate",
-	"min_stock_level":      "min_stock_level",
-	"minimum_stock":        "min_stock_level",
-	"reorder_point":        "reorder_point",
-	"sale_account_id":      "sale_account_id",
-	"sales_account_id":     "sale_account_id",
-	"purchase_account_id":  "purchase_account_id",
-	"inventory_account_id": "inventory_account_id",
-	"track_inventory":      "track_inventory",
-	"track_stock":          "track_inventory",
-	"status":               "status",
-	"is_active":            "is_active",
-	"active":               "is_active",
-	"barcode":              "barcode",
-	"supplier_id":          "supplier_id",
-	"lead_time_days":       "lead_time_days",
+	"code":                   "code",
+	"product_code":           "code",
+	"sku":                    "code",
+	"item_code":              "code",
+	"name":                   "name",
+	"product_name":           "name",
+	"item_name":              "name",
+	"description":            "description",
+	"product_type":           "product_type",
+	"type":                   "product_type",
+	"category_id":            "category_id",
+	"category":               "category_name",
+	"category_name":          "category_name",
+	"unit":                   "unit",
+	"unit_of_measure":        "unit",
+	"purchase_price":         "purchase_price",
+	"cost_price":             "purchase_price",
+	"cost":                   "purchase_price",
+	"sales_price":            "sales_price",
+	"sale_price":             "sales_price",
+	"selling_price":          "sales_price",
+	"price":                  "sales_price",
+	"vat_rate":               "vat_rate",
+	"vat":                    "vat_rate",
+	"min_stock_level":        "min_stock_level",
+	"minimum_stock":          "min_stock_level",
+	"reorder_point":          "reorder_point",
+	"sale_account_id":        "sale_account_id",
+	"sales_account_id":       "sale_account_id",
+	"sale_account_code":      "sale_account_code",
+	"sales_account_code":     "sale_account_code",
+	"purchase_account_id":    "purchase_account_id",
+	"purchase_account_code":  "purchase_account_code",
+	"inventory_account_id":   "inventory_account_id",
+	"inventory_account_code": "inventory_account_code",
+	"track_inventory":        "track_inventory",
+	"track_stock":            "track_inventory",
+	"status":                 "status",
+	"is_active":              "is_active",
+	"active":                 "is_active",
+	"barcode":                "barcode",
+	"supplier_id":            "supplier_id",
+	"lead_time_days":         "lead_time_days",
 }
 
 // ImportProductsCSV imports product master data from CSV content.
@@ -96,6 +100,11 @@ func (s *Service) ImportProductsCSV(ctx context.Context, tenantID, schemaName st
 		categoryNameToID[normalizedProductImportKey(category.Name)] = category.ID
 	}
 
+	accountIDsByCode, err := s.productImportAccountIDsByCode(ctx, schemaName, tenantID, rows)
+	if err != nil {
+		return nil, err
+	}
+
 	result := &ImportProductsResult{
 		FileName: req.FileName,
 		Errors:   []ImportProductsRowError{},
@@ -104,7 +113,7 @@ func (s *Service) ImportProductsCSV(ctx context.Context, tenantID, schemaName st
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		product, err := buildProductFromImportRow(row, tenantID, categoryNameToID)
+		product, err := buildProductFromImportRow(row, tenantID, categoryNameToID, accountIDsByCode)
 		if err != nil {
 			appendProductImportRowError(result, row, err)
 			continue
@@ -235,7 +244,12 @@ func parseProductImportRows(content string) ([]productImportRow, error) {
 	return rows, nil
 }
 
-func buildProductFromImportRow(row productImportRow, tenantID string, categoryNameToID map[string]string) (*Product, error) {
+func buildProductFromImportRow(
+	row productImportRow,
+	tenantID string,
+	categoryNameToID map[string]string,
+	accountIDsByCode map[string]string,
+) (*Product, error) {
 	name := strings.TrimSpace(row.values["name"])
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
@@ -281,6 +295,18 @@ func buildProductFromImportRow(row productImportRow, tenantID string, categoryNa
 	if err != nil {
 		return nil, err
 	}
+	saleAccountID, err := resolveOptionalProductImportAccountID(row, "sale_account_id", "sale_account_code", accountIDsByCode)
+	if err != nil {
+		return nil, err
+	}
+	purchaseAccountID, err := resolveOptionalProductImportAccountID(row, "purchase_account_id", "purchase_account_code", accountIDsByCode)
+	if err != nil {
+		return nil, err
+	}
+	inventoryAccountID, err := resolveOptionalProductImportAccountID(row, "inventory_account_id", "inventory_account_code", accountIDsByCode)
+	if err != nil {
+		return nil, err
+	}
 
 	if purchasePrice.IsNegative() {
 		return nil, fmt.Errorf("purchase_price cannot be negative")
@@ -315,9 +341,9 @@ func buildProductFromImportRow(row productImportRow, tenantID string, categoryNa
 		MinStockLevel:      minStockLevel,
 		CurrentStock:       decimal.Zero,
 		ReorderPoint:       reorderPoint,
-		SaleAccountID:      strings.TrimSpace(row.values["sale_account_id"]),
-		PurchaseAccountID:  strings.TrimSpace(row.values["purchase_account_id"]),
-		InventoryAccountID: strings.TrimSpace(row.values["inventory_account_id"]),
+		SaleAccountID:      saleAccountID,
+		PurchaseAccountID:  purchaseAccountID,
+		InventoryAccountID: inventoryAccountID,
 		TrackInventory:     trackInventory,
 		IsActive:           isActive,
 		Barcode:            strings.TrimSpace(row.values["barcode"]),
@@ -334,6 +360,37 @@ func buildProductFromImportRow(row productImportRow, tenantID string, categoryNa
 	return product, nil
 }
 
+func (s *Service) productImportAccountIDsByCode(ctx context.Context, schemaName, tenantID string, rows []productImportRow) (map[string]string, error) {
+	usesAccountCodes := false
+	for _, row := range rows {
+		if strings.TrimSpace(row.values["sale_account_code"]) != "" ||
+			strings.TrimSpace(row.values["purchase_account_code"]) != "" ||
+			strings.TrimSpace(row.values["inventory_account_code"]) != "" {
+			usesAccountCodes = true
+			break
+		}
+	}
+	if !usesAccountCodes {
+		return nil, nil
+	}
+	if s.accounts == nil {
+		return nil, fmt.Errorf("accounting service is required to resolve product account codes")
+	}
+
+	accounts, err := s.accounts.ListAccounts(ctx, schemaName, tenantID, false)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts for product import: %w", err)
+	}
+	accountIDsByCode := make(map[string]string, len(accounts))
+	for _, account := range accounts {
+		key := normalizedProductImportKey(account.Code)
+		if key != "" {
+			accountIDsByCode[key] = account.ID
+		}
+	}
+	return accountIDsByCode, nil
+}
+
 func resolveProductImportCategoryID(row productImportRow, categoryNameToID map[string]string) (string, error) {
 	if categoryID := strings.TrimSpace(row.values["category_id"]); categoryID != "" {
 		return categoryID, nil
@@ -347,6 +404,21 @@ func resolveProductImportCategoryID(row productImportRow, categoryNameToID map[s
 		return "", fmt.Errorf("category_name %q was not found", categoryName)
 	}
 	return categoryID, nil
+}
+
+func resolveOptionalProductImportAccountID(row productImportRow, idField, codeField string, accountIDsByCode map[string]string) (string, error) {
+	if accountID := strings.TrimSpace(row.values[idField]); accountID != "" {
+		return accountID, nil
+	}
+	accountCode := strings.TrimSpace(row.values[codeField])
+	if accountCode == "" {
+		return "", nil
+	}
+	accountID, ok := accountIDsByCode[normalizedProductImportKey(accountCode)]
+	if !ok {
+		return "", fmt.Errorf("account code %q was not found for %s", accountCode, codeField)
+	}
+	return accountID, nil
 }
 
 func parseProductImportType(value string) (ProductType, error) {
