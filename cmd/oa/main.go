@@ -8525,10 +8525,26 @@ func (a *cliApp) runCostCenterAllocations(ctx context.Context, client *apiClient
 		if startDateValue != nil && endDateValue != nil && endDateValue.Before(*startDateValue) {
 			return errors.New("end must be on or after start")
 		}
+		costCenterFilter, err := optionalUUIDStringPtr("cost-center-id", *costCenterID)
+		if err != nil {
+			return err
+		}
+		journalEntryLineFilter, err := optionalUUIDStringPtr("journal-entry-line-id", *journalEntryLineID)
+		if err != nil {
+			return err
+		}
+		costCenterFilterValue := ""
+		if costCenterFilter != nil {
+			costCenterFilterValue = *costCenterFilter
+		}
+		journalEntryLineFilterValue := ""
+		if journalEntryLineFilter != nil {
+			journalEntryLineFilterValue = *journalEntryLineFilter
+		}
 
 		allocations, err := client.listCostAllocations(ctx, tenantID, accounting.CostAllocationFilters{
-			CostCenterID:       strings.TrimSpace(*costCenterID),
-			JournalEntryLineID: strings.TrimSpace(*journalEntryLineID),
+			CostCenterID:       costCenterFilterValue,
+			JournalEntryLineID: journalEntryLineFilterValue,
 			StartDate:          startDateValue,
 			EndDate:            endDateValue,
 		})
@@ -8560,6 +8576,14 @@ func (a *cliApp) runCostCenterAllocations(ctx context.Context, client *apiClient
 		if strings.TrimSpace(*journalEntryLineID) == "" {
 			return errors.New("journal-entry-line-id is required")
 		}
+		parsedCostCenterID, err := optionalUUIDStringPtr("cost-center-id", *costCenterID)
+		if err != nil {
+			return err
+		}
+		parsedJournalEntryLineID, err := optionalUUIDStringPtr("journal-entry-line-id", *journalEntryLineID)
+		if err != nil {
+			return err
+		}
 		amount, err := parseRequiredPositiveDecimal("amount", *amountFlag)
 		if err != nil {
 			return err
@@ -8577,8 +8601,8 @@ func (a *cliApp) runCostCenterAllocations(ctx context.Context, client *apiClient
 		}
 
 		allocation, err := client.createCostAllocation(ctx, tenantID, &accounting.CreateCostAllocationRequest{
-			CostCenterID:         strings.TrimSpace(*costCenterID),
-			JournalEntryLineID:   strings.TrimSpace(*journalEntryLineID),
+			CostCenterID:         *parsedCostCenterID,
+			JournalEntryLineID:   *parsedJournalEntryLineID,
 			Amount:               amount,
 			AllocationPercentage: allocationPercentage,
 			AllocationDate:       allocationDateValue,

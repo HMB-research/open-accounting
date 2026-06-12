@@ -598,16 +598,37 @@ func normalizeOptionalCostCenterUUIDPtr(value *string, field string) (*string, e
 	if value == nil {
 		return nil, nil
 	}
-	trimmed := strings.TrimSpace(*value)
-	if trimmed == "" {
+	id, err := normalizeOptionalCostCenterUUID(*value, field)
+	if err != nil {
+		return nil, err
+	}
+	if id == "" {
 		return nil, nil
+	}
+	return &id, nil
+}
+
+func normalizeRequiredCostCenterUUID(value string, field string) (string, error) {
+	id, err := normalizeOptionalCostCenterUUID(value, field)
+	if err != nil {
+		return "", err
+	}
+	if id == "" {
+		return "", fmt.Errorf("%s is required", field)
+	}
+	return id, nil
+}
+
+func normalizeOptionalCostCenterUUID(value string, field string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
 	}
 	parsedID, err := uuid.Parse(trimmed)
 	if err != nil {
-		return nil, fmt.Errorf("%s must be a valid UUID", field)
+		return "", fmt.Errorf("%s must be a valid UUID", field)
 	}
-	id := parsedID.String()
-	return &id, nil
+	return parsedID.String(), nil
 }
 
 // DeleteCostCenter deletes a cost center
@@ -669,13 +690,13 @@ func (s *CostCenterService) GetCostCenterReport(ctx context.Context, schemaName,
 
 // CreateCostAllocation assigns a journal entry line amount to a cost center.
 func (s *CostCenterService) CreateCostAllocation(ctx context.Context, schemaName, tenantID string, req *CreateCostAllocationRequest) (*CostAllocation, error) {
-	costCenterID := strings.TrimSpace(req.CostCenterID)
-	if costCenterID == "" {
-		return nil, fmt.Errorf("cost_center_id is required")
+	costCenterID, err := normalizeRequiredCostCenterUUID(req.CostCenterID, "cost_center_id")
+	if err != nil {
+		return nil, err
 	}
-	journalEntryLineID := strings.TrimSpace(req.JournalEntryLineID)
-	if journalEntryLineID == "" {
-		return nil, fmt.Errorf("journal_entry_line_id is required")
+	journalEntryLineID, err := normalizeRequiredCostCenterUUID(req.JournalEntryLineID, "journal_entry_line_id")
+	if err != nil {
+		return nil, err
 	}
 	if !req.Amount.GreaterThan(decimal.Zero) {
 		return nil, fmt.Errorf("amount must be greater than zero")
@@ -712,8 +733,16 @@ func (s *CostCenterService) ListCostAllocations(ctx context.Context, schemaName,
 	if filters.StartDate != nil && filters.EndDate != nil && filters.EndDate.Before(*filters.StartDate) {
 		return nil, fmt.Errorf("end_date must be on or after start_date")
 	}
-	filters.CostCenterID = strings.TrimSpace(filters.CostCenterID)
-	filters.JournalEntryLineID = strings.TrimSpace(filters.JournalEntryLineID)
+	costCenterID, err := normalizeOptionalCostCenterUUID(filters.CostCenterID, "cost_center_id")
+	if err != nil {
+		return nil, err
+	}
+	journalEntryLineID, err := normalizeOptionalCostCenterUUID(filters.JournalEntryLineID, "journal_entry_line_id")
+	if err != nil {
+		return nil, err
+	}
+	filters.CostCenterID = costCenterID
+	filters.JournalEntryLineID = journalEntryLineID
 	return s.repo.ListAllocations(ctx, schemaName, tenantID, filters)
 }
 

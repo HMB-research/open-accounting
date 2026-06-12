@@ -127,8 +127,10 @@ func TestCostCenterServiceValidation(t *testing.T) {
 
 func TestCostCenterAllocationService(t *testing.T) {
 	repo := NewMockCostCenterRepository()
-	repo.CostCenters["cc-1"] = &CostCenter{
-		ID:       "cc-1",
+	costCenterID := "11111111-1111-4111-8111-111111111111"
+	journalEntryLineID := "22222222-2222-4222-8222-222222222222"
+	repo.CostCenters[costCenterID] = &CostCenter{
+		ID:       costCenterID,
 		TenantID: "tenant-1",
 		Code:     "OPS",
 		Name:     "Operations",
@@ -139,27 +141,38 @@ func TestCostCenterAllocationService(t *testing.T) {
 	allocationDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
 
 	allocation, err := service.CreateCostAllocation(context.Background(), "tenant_1", "tenant-1", &CreateCostAllocationRequest{
-		CostCenterID:         " cc-1 ",
-		JournalEntryLineID:   " line-1 ",
+		CostCenterID:         " " + costCenterID + " ",
+		JournalEntryLineID:   " " + journalEntryLineID + " ",
 		Amount:               decimal.NewFromFloat(125.50),
 		AllocationPercentage: &percentage,
 		AllocationDate:       allocationDate,
 		Notes:                "  Shared hosting  ",
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "cc-1", allocation.CostCenterID)
-	assert.Equal(t, "line-1", allocation.JournalEntryLineID)
+	assert.Equal(t, costCenterID, allocation.CostCenterID)
+	assert.Equal(t, journalEntryLineID, allocation.JournalEntryLineID)
 	assert.Equal(t, "Shared hosting", allocation.Notes)
 	assert.True(t, allocation.Amount.Equal(decimal.NewFromFloat(125.50)))
 
 	allocations, err := service.ListCostAllocations(context.Background(), "tenant_1", "tenant-1", CostAllocationFilters{
-		CostCenterID: "cc-1",
-		StartDate:    ptrTime(allocationDate.AddDate(0, 0, -1)),
-		EndDate:      ptrTime(allocationDate.AddDate(0, 0, 1)),
+		CostCenterID:       " " + costCenterID + " ",
+		JournalEntryLineID: " " + journalEntryLineID + " ",
+		StartDate:          ptrTime(allocationDate.AddDate(0, 0, -1)),
+		EndDate:            ptrTime(allocationDate.AddDate(0, 0, 1)),
 	})
 	assert.NoError(t, err)
 	assert.Len(t, allocations, 1)
 	assert.Equal(t, "OPS", allocations[0].CostCenterCode)
+
+	_, err = service.ListCostAllocations(context.Background(), "tenant_1", "tenant-1", CostAllocationFilters{
+		CostCenterID: "legacy-cc",
+	})
+	assert.ErrorContains(t, err, "cost_center_id must be a valid UUID")
+
+	_, err = service.ListCostAllocations(context.Background(), "tenant_1", "tenant-1", CostAllocationFilters{
+		JournalEntryLineID: "legacy-line",
+	})
+	assert.ErrorContains(t, err, "journal_entry_line_id must be a valid UUID")
 
 	_, err = service.ListCostAllocations(context.Background(), "tenant_1", "tenant-1", CostAllocationFilters{
 		StartDate: ptrTime(allocationDate),
@@ -171,6 +184,8 @@ func TestCostCenterAllocationService(t *testing.T) {
 func TestCostCenterAllocationServiceValidation(t *testing.T) {
 	service := NewCostCenterServiceWithRepository(NewMockCostCenterRepository())
 	validDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	validCostCenterID := "11111111-1111-4111-8111-111111111111"
+	validJournalEntryLineID := "22222222-2222-4222-8222-222222222222"
 	tooHighPercentage := decimal.NewFromInt(101)
 
 	for _, tt := range []struct {
@@ -181,26 +196,46 @@ func TestCostCenterAllocationServiceValidation(t *testing.T) {
 		{
 			name: "missing cost center",
 			req: CreateCostAllocationRequest{
-				JournalEntryLineID: "line-1",
+				JournalEntryLineID: validJournalEntryLineID,
 				Amount:             decimal.NewFromInt(10),
 				AllocationDate:     validDate,
 			},
 			want: "cost_center_id is required",
 		},
 		{
+			name: "invalid cost center",
+			req: CreateCostAllocationRequest{
+				CostCenterID:       "legacy-cc",
+				JournalEntryLineID: validJournalEntryLineID,
+				Amount:             decimal.NewFromInt(10),
+				AllocationDate:     validDate,
+			},
+			want: "cost_center_id must be a valid UUID",
+		},
+		{
 			name: "missing line",
 			req: CreateCostAllocationRequest{
-				CostCenterID:   "cc-1",
+				CostCenterID:   validCostCenterID,
 				Amount:         decimal.NewFromInt(10),
 				AllocationDate: validDate,
 			},
 			want: "journal_entry_line_id is required",
 		},
 		{
+			name: "invalid line",
+			req: CreateCostAllocationRequest{
+				CostCenterID:       validCostCenterID,
+				JournalEntryLineID: "legacy-line",
+				Amount:             decimal.NewFromInt(10),
+				AllocationDate:     validDate,
+			},
+			want: "journal_entry_line_id must be a valid UUID",
+		},
+		{
 			name: "zero amount",
 			req: CreateCostAllocationRequest{
-				CostCenterID:       "cc-1",
-				JournalEntryLineID: "line-1",
+				CostCenterID:       validCostCenterID,
+				JournalEntryLineID: validJournalEntryLineID,
 				AllocationDate:     validDate,
 			},
 			want: "amount must be greater than zero",
@@ -208,8 +243,8 @@ func TestCostCenterAllocationServiceValidation(t *testing.T) {
 		{
 			name: "missing date",
 			req: CreateCostAllocationRequest{
-				CostCenterID:       "cc-1",
-				JournalEntryLineID: "line-1",
+				CostCenterID:       validCostCenterID,
+				JournalEntryLineID: validJournalEntryLineID,
 				Amount:             decimal.NewFromInt(10),
 			},
 			want: "allocation_date is required",
@@ -217,8 +252,8 @@ func TestCostCenterAllocationServiceValidation(t *testing.T) {
 		{
 			name: "invalid percentage",
 			req: CreateCostAllocationRequest{
-				CostCenterID:         "cc-1",
-				JournalEntryLineID:   "line-1",
+				CostCenterID:         validCostCenterID,
+				JournalEntryLineID:   validJournalEntryLineID,
 				Amount:               decimal.NewFromInt(10),
 				AllocationDate:       validDate,
 				AllocationPercentage: &tooHighPercentage,

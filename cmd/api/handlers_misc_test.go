@@ -520,8 +520,11 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	budget := decimal.NewFromInt(1000)
-	costCenterRepo.CostCenters["cc-1"] = &accounting.CostCenter{
-		ID:           "cc-1",
+	costCenterID := "11111111-1111-4111-8111-111111111111"
+	missingCostCenterID := "33333333-3333-4333-8333-333333333333"
+	journalEntryLineID := "22222222-2222-4222-8222-222222222222"
+	costCenterRepo.CostCenters[costCenterID] = &accounting.CostCenter{
+		ID:           costCenterID,
 		TenantID:     "tenant-1",
 		Code:         "ADMIN",
 		Name:         "Administration",
@@ -529,10 +532,10 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 		BudgetAmount: &budget,
 		BudgetPeriod: accounting.BudgetPeriodAnnual,
 	}
-	costCenterRepo.Allocations["cc-1"] = []accounting.CostAllocation{{
+	costCenterRepo.Allocations[costCenterID] = []accounting.CostAllocation{{
 		ID:             "alloc-1",
 		TenantID:       "tenant-1",
-		CostCenterID:   "cc-1",
+		CostCenterID:   costCenterID,
 		Amount:         decimal.NewFromInt(300),
 		AllocationDate: time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
 	}}
@@ -542,9 +545,9 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	h.ListCostCenters(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/cc-1", nil), map[string]string{
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/"+costCenterID, nil), map[string]string{
 		"tenantID":     "tenant-1",
-		"costCenterID": "cc-1",
+		"costCenterID": costCenterID,
 	})
 	rr = httptest.NewRecorder()
 	h.GetCostCenter(rr, req)
@@ -579,15 +582,21 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	h.ImportCostCenters(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/allocations?cost_center_id=cc-1&start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/allocations?cost_center_id="+costCenterID+"&start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.ListCostAllocations(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), "alloc-1")
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/allocations?cost_center_id=legacy-cc", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ListCostAllocations(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "cost_center_id must be a valid UUID")
+
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations", map[string]interface{}{
-		"cost_center_id":        "cc-1",
-		"journal_entry_line_id": "line-2",
+		"cost_center_id":        costCenterID,
+		"journal_entry_line_id": journalEntryLineID,
 		"amount":                "125.50",
 		"allocation_percentage": "50.00",
 		"allocation_date":       "2026-01-20T00:00:00Z",
@@ -615,8 +624,20 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations", map[string]interface{}{
-		"cost_center_id":        "missing",
-		"journal_entry_line_id": "line-3",
+		"cost_center_id":        "legacy-cc",
+		"journal_entry_line_id": journalEntryLineID,
+		"amount":                "10.00",
+		"allocation_date":       "2026-01-20T00:00:00Z",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateCostAllocation(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "cost_center_id must be a valid UUID")
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations", map[string]interface{}{
+		"cost_center_id":        missingCostCenterID,
+		"journal_entry_line_id": journalEntryLineID,
 		"amount":                "10.00",
 		"allocation_date":       "2026-01-20T00:00:00Z",
 	}, nil)
@@ -625,22 +646,22 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	h.CreateCostAllocation(rr, req)
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 
-	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/cc-1", map[string]interface{}{
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/"+costCenterID, map[string]interface{}{
 		"code":      "ADMIN",
 		"name":      "Admin Updated",
 		"parent_id": "legacy-parent",
 	}, nil)
-	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": "cc-1"})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": costCenterID})
 	rr = httptest.NewRecorder()
 	h.UpdateCostCenter(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Contains(t, rr.Body.String(), "parent_id must be a valid UUID")
 
-	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/cc-1", map[string]interface{}{
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/"+costCenterID, map[string]interface{}{
 		"code": "ADMIN",
 		"name": "Admin Updated",
 	}, nil)
-	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": "cc-1"})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": costCenterID})
 	rr = httptest.NewRecorder()
 	h.UpdateCostCenter(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
@@ -682,8 +703,8 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	h.GetBudgetVsActualReport(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
-	req = makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/cost-centers/cc-1", nil, nil)
-	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": "cc-1"})
+	req = makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/cost-centers/"+costCenterID, nil, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": costCenterID})
 	rr = httptest.NewRecorder()
 	h.DeleteCostCenter(rr, req)
 	assert.Equal(t, http.StatusNoContent, rr.Code)

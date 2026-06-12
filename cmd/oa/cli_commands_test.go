@@ -10692,8 +10692,10 @@ func TestCLICostCenterCommands(t *testing.T) {
 	}))
 
 	costCenterParentID := "11111111-1111-4111-8111-111111111111"
+	costCenterID := "22222222-2222-4222-8222-222222222222"
+	journalEntryLineID := "33333333-3333-4333-8333-333333333333"
 	costCenterPayload := map[string]any{
-		"id":            "cc-1",
+		"id":            costCenterID,
 		"tenant_id":     "tenant-1",
 		"code":          "CC001",
 		"name":          "Sales",
@@ -10725,8 +10727,8 @@ func TestCLICostCenterCommands(t *testing.T) {
 	allocationPayload := map[string]any{
 		"id":                    "alloc-1",
 		"tenant_id":             "tenant-1",
-		"cost_center_id":        "cc-1",
-		"journal_entry_line_id": "line-1",
+		"cost_center_id":        costCenterID,
+		"journal_entry_line_id": journalEntryLineID,
 		"amount":                "125.50",
 		"allocation_percentage": "50.00",
 		"allocation_date":       "2026-03-20T00:00:00Z",
@@ -10736,7 +10738,7 @@ func TestCLICostCenterCommands(t *testing.T) {
 		"created_at":            "2026-03-20T12:00:00Z",
 	}
 	importFile := writeTempCSV(t, "cost-centers.csv", "code,name,budget_amount\nCC001,Sales,1000.00\n")
-	allocationImportFile := writeTempCSV(t, "cost-allocations.csv", "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\nCC001,line-1,125.50,50,2026-03-20,Shared rent\n")
+	allocationImportFile := writeTempCSV(t, "cost-allocations.csv", "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\nCC001,"+journalEntryLineID+",125.50,50,2026-03-20,Shared rent\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -10770,16 +10772,16 @@ func TestCLICostCenterCommands(t *testing.T) {
 				"rows_skipped":         0,
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/allocations":
-			require.Equal(t, "cc-1", r.URL.Query().Get("cost_center_id"))
-			require.Equal(t, "line-1", r.URL.Query().Get("journal_entry_line_id"))
+			require.Equal(t, costCenterID, r.URL.Query().Get("cost_center_id"))
+			require.Equal(t, journalEntryLineID, r.URL.Query().Get("journal_entry_line_id"))
 			require.Equal(t, "2026-03-01", r.URL.Query().Get("start_date"))
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("end_date"))
 			_ = json.NewEncoder(w).Encode([]map[string]any{allocationPayload})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/allocations":
 			var req accounting.CreateCostAllocationRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			assert.Equal(t, "cc-1", req.CostCenterID)
-			assert.Equal(t, "line-1", req.JournalEntryLineID)
+			assert.Equal(t, costCenterID, req.CostCenterID)
+			assert.Equal(t, journalEntryLineID, req.JournalEntryLineID)
 			assert.True(t, req.Amount.Equal(decimal.RequireFromString("125.50")))
 			if req.AllocationPercentage != nil {
 				assert.True(t, req.AllocationPercentage.Equal(decimal.RequireFromString("50.00")))
@@ -10799,9 +10801,9 @@ func TestCLICostCenterCommands(t *testing.T) {
 				"allocations_imported": 1,
 				"rows_skipped":         0,
 			})
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/"+costCenterID:
 			_ = json.NewEncoder(w).Encode(costCenterPayload)
-		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/"+costCenterID:
 			var req accounting.UpdateCostCenterRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "CC002", req.Code)
@@ -10836,7 +10838,7 @@ func TestCLICostCenterCommands(t *testing.T) {
 				return
 			}
 			_ = json.NewEncoder(w).Encode(reportPayload)
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-1":
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/"+costCenterID:
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -10868,7 +10870,7 @@ func TestCLICostCenterCommands(t *testing.T) {
 		"--budget-period", "monthly",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "Created cost center CC001 Sales (cc-1)")
+	assert.Contains(t, stdout.String(), "Created cost center CC001 Sales ("+costCenterID+")")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
@@ -10895,25 +10897,25 @@ func TestCLICostCenterCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"cost_centers_created": 1`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"cost-centers", "allocations", "list", "--cost-center-id", "cc-1", "--journal-entry-line-id", "line-1", "--start", "2026-03-01", "--end", "2026-03-31"})
+	err = app.run(context.Background(), []string{"cost-centers", "allocations", "list", "--cost-center-id", costCenterID, "--journal-entry-line-id", journalEntryLineID, "--start", "2026-03-01", "--end", "2026-03-31"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "CC001 Sales")
 	assert.Contains(t, stdout.String(), "Shared rent")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"cost-centers", "allocations", "list", "--cost-center-id", "cc-1", "--journal-entry-line-id", "line-1", "--start", "2026-03-01", "--end", "2026-03-31", "--json"})
+	err = app.run(context.Background(), []string{"cost-centers", "allocations", "list", "--cost-center-id", costCenterID, "--journal-entry-line-id", journalEntryLineID, "--start", "2026-03-01", "--end", "2026-03-31", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"cost_center_code": "CC001"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"cost-centers", "allocations", "create", "--cost-center-id", "cc-1", "--journal-entry-line-id", "line-1", "--amount", "125.50", "--allocation-percentage", "50.00", "--allocation-date", "2026-03-20", "--notes", "Shared rent"})
+	err = app.run(context.Background(), []string{"cost-centers", "allocations", "create", "--cost-center-id", costCenterID, "--journal-entry-line-id", journalEntryLineID, "--amount", "125.50", "--allocation-percentage", "50.00", "--allocation-date", "2026-03-20", "--notes", "Shared rent"})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "Created cost allocation alloc-1 for cost center cc-1")
+	assert.Contains(t, stdout.String(), "Created cost allocation alloc-1 for cost center "+costCenterID)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"cost-centers", "allocations", "create", "--cost-center-id", "cc-1", "--journal-entry-line-id", "line-1", "--amount", "125.50", "--allocation-date", "2026-03-20", "--json"})
+	err = app.run(context.Background(), []string{"cost-centers", "allocations", "create", "--cost-center-id", costCenterID, "--journal-entry-line-id", journalEntryLineID, "--amount", "125.50", "--allocation-date", "2026-03-20", "--json"})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), `"journal_entry_line_id": "line-1"`)
+	assert.Contains(t, stdout.String(), `"journal_entry_line_id": "`+journalEntryLineID+`"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"cost-centers", "allocations", "import", "--file", allocationImportFile})
@@ -10926,19 +10928,19 @@ func TestCLICostCenterCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"allocations_imported": 1`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"cost-centers", "get", "--id", "cc-1"})
+	err = app.run(context.Background(), []string{"cost-centers", "get", "--id", costCenterID})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Cost center CC001 Sales")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"cost-centers", "get", "--id", "cc-1", "--json"})
+	err = app.run(context.Background(), []string{"cost-centers", "get", "--id", costCenterID, "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"name": "Sales"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
 		"cost-centers", "update",
-		"--id", "cc-1",
+		"--id", costCenterID,
 		"--code", "CC002",
 		"--name", "Sales updated",
 		"--parent-id", costCenterParentID,
@@ -10951,7 +10953,7 @@ func TestCLICostCenterCommands(t *testing.T) {
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
 		"cost-centers", "update",
-		"--id", "cc-1",
+		"--id", costCenterID,
 		"--code", "CC002",
 		"--name", "Sales updated",
 		"--parent-id", costCenterParentID,
@@ -10995,14 +10997,14 @@ func TestCLICostCenterCommands(t *testing.T) {
 	assert.Contains(t, string(outputContent), "%PDF cost center report")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"cost-centers", "delete", "--id", "cc-1", "--json"})
+	err = app.run(context.Background(), []string{"cost-centers", "delete", "--id", costCenterID, "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "deleted"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"cost-centers", "delete", "--id", "cc-1"})
+	err = app.run(context.Background(), []string{"cost-centers", "delete", "--id", costCenterID})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "Deleted cost center cc-1")
+	assert.Contains(t, stdout.String(), "Deleted cost center "+costCenterID)
 }
 
 func TestCLICostCenterValidationBranches(t *testing.T) {
@@ -11119,6 +11121,16 @@ func TestCLICostCenterValidationBranches(t *testing.T) {
 			want: "end must be on or after start",
 		},
 		{
+			name: "allocations list invalid cost center id",
+			args: []string{"allocations", "list", "--cost-center-id", "legacy-cc"},
+			want: "cost-center-id must be a valid UUID",
+		},
+		{
+			name: "allocations list invalid journal line id",
+			args: []string{"allocations", "list", "--journal-entry-line-id", "legacy-line"},
+			want: "journal-entry-line-id must be a valid UUID",
+		},
+		{
 			name: "allocations create bad flag",
 			args: []string{"allocations", "create", "--unknown"},
 			want: "flag provided but not defined",
@@ -11134,23 +11146,33 @@ func TestCLICostCenterValidationBranches(t *testing.T) {
 			want: "journal-entry-line-id is required",
 		},
 		{
+			name: "allocations create invalid cost center id",
+			args: []string{"allocations", "create", "--cost-center-id", "legacy-cc", "--journal-entry-line-id", "22222222-2222-4222-8222-222222222222", "--amount", "10.00", "--allocation-date", "2026-03-20"},
+			want: "cost-center-id must be a valid UUID",
+		},
+		{
+			name: "allocations create invalid journal line id",
+			args: []string{"allocations", "create", "--cost-center-id", "11111111-1111-4111-8111-111111111111", "--journal-entry-line-id", "legacy-line", "--amount", "10.00", "--allocation-date", "2026-03-20"},
+			want: "journal-entry-line-id must be a valid UUID",
+		},
+		{
 			name: "allocations create invalid amount",
-			args: []string{"allocations", "create", "--cost-center-id", "cc-1", "--journal-entry-line-id", "line-1", "--amount", "0", "--allocation-date", "2026-03-20"},
+			args: []string{"allocations", "create", "--cost-center-id", "11111111-1111-4111-8111-111111111111", "--journal-entry-line-id", "22222222-2222-4222-8222-222222222222", "--amount", "0", "--allocation-date", "2026-03-20"},
 			want: "amount must be positive",
 		},
 		{
 			name: "allocations create invalid percentage",
-			args: []string{"allocations", "create", "--cost-center-id", "cc-1", "--journal-entry-line-id", "line-1", "--amount", "10.00", "--allocation-percentage", "101", "--allocation-date", "2026-03-20"},
+			args: []string{"allocations", "create", "--cost-center-id", "11111111-1111-4111-8111-111111111111", "--journal-entry-line-id", "22222222-2222-4222-8222-222222222222", "--amount", "10.00", "--allocation-percentage", "101", "--allocation-date", "2026-03-20"},
 			want: "allocation-percentage must be between 0 and 100",
 		},
 		{
 			name: "allocations create negative percentage",
-			args: []string{"allocations", "create", "--cost-center-id", "cc-1", "--journal-entry-line-id", "line-1", "--amount", "10.00", "--allocation-percentage", "-1", "--allocation-date", "2026-03-20"},
+			args: []string{"allocations", "create", "--cost-center-id", "11111111-1111-4111-8111-111111111111", "--journal-entry-line-id", "22222222-2222-4222-8222-222222222222", "--amount", "10.00", "--allocation-percentage", "-1", "--allocation-date", "2026-03-20"},
 			want: "allocation-percentage must be non-negative",
 		},
 		{
 			name: "allocations create missing date",
-			args: []string{"allocations", "create", "--cost-center-id", "cc-1", "--journal-entry-line-id", "line-1", "--amount", "10.00"},
+			args: []string{"allocations", "create", "--cost-center-id", "11111111-1111-4111-8111-111111111111", "--journal-entry-line-id", "22222222-2222-4222-8222-222222222222", "--amount", "10.00"},
 			want: "allocation-date is required",
 		},
 		{
@@ -11271,8 +11293,10 @@ func TestCLICostCenterAPIErrorBranches(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
+	costCenterID := "11111111-1111-4111-8111-111111111111"
+	journalEntryLineID := "22222222-2222-4222-8222-222222222222"
 	importFile := writeTempCSV(t, "cost-centers-error.csv", "code,name,budget_amount\nCC001,Sales,1000.00\n")
-	allocationImportFile := writeTempCSV(t, "cost-allocations-error.csv", "cost_center_code,journal_entry_line_id,amount,allocation_date\nCC001,line-error,10.00,2026-03-20\n")
+	allocationImportFile := writeTempCSV(t, "cost-allocations-error.csv", "cost_center_code,journal_entry_line_id,amount,allocation_date\nCC001,"+journalEntryLineID+",10.00,2026-03-20\n")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -11292,17 +11316,17 @@ func TestCLICostCenterAPIErrorBranches(t *testing.T) {
 			assert.Equal(t, "cost-centers-error.csv", req.FileName)
 			assert.Contains(t, req.CSVContent, "CC001")
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/allocations":
-			assert.Equal(t, "cc-error", r.URL.Query().Get("cost_center_id"))
+			assert.Equal(t, costCenterID, r.URL.Query().Get("cost_center_id"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/allocations":
 			var req accounting.CreateCostAllocationRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			assert.Equal(t, "cc-error", req.CostCenterID)
-			assert.Equal(t, "line-error", req.JournalEntryLineID)
+			assert.Equal(t, costCenterID, req.CostCenterID)
+			assert.Equal(t, journalEntryLineID, req.JournalEntryLineID)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/allocations/import":
 			var req accounting.ImportCostAllocationsRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "cost-allocations-error.csv", req.FileName)
-			assert.Contains(t, req.CSVContent, "line-error")
+			assert.Contains(t, req.CSVContent, journalEntryLineID)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-error":
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/cost-centers/cc-error":
 			var req accounting.UpdateCostCenterRequest
@@ -11333,8 +11357,8 @@ func TestCLICostCenterAPIErrorBranches(t *testing.T) {
 		{name: "list API error", args: []string{"cost-centers", "list", "--active-only"}},
 		{name: "create API error", args: []string{"cost-centers", "create", "--code", "CC001", "--name", "Sales"}},
 		{name: "import API error", args: []string{"cost-centers", "import", "--file", importFile}},
-		{name: "allocation list API error", args: []string{"cost-centers", "allocations", "list", "--cost-center-id", "cc-error"}},
-		{name: "allocation create API error", args: []string{"cost-centers", "allocations", "create", "--cost-center-id", "cc-error", "--journal-entry-line-id", "line-error", "--amount", "10.00", "--allocation-date", "2026-03-20"}},
+		{name: "allocation list API error", args: []string{"cost-centers", "allocations", "list", "--cost-center-id", costCenterID}},
+		{name: "allocation create API error", args: []string{"cost-centers", "allocations", "create", "--cost-center-id", costCenterID, "--journal-entry-line-id", journalEntryLineID, "--amount", "10.00", "--allocation-date", "2026-03-20"}},
 		{name: "allocation import API error", args: []string{"cost-centers", "allocations", "import", "--file", allocationImportFile}},
 		{name: "get API error", args: []string{"cost-centers", "get", "--id", "cc-error"}},
 		{name: "update API error", args: []string{"cost-centers", "update", "--id", "cc-error", "--code", "CC002", "--name", "Sales updated", "--active=false"}},
