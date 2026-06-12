@@ -716,6 +716,18 @@ var cutoverAccountTypeAliases = map[string]string{
 	"kulu":        "EXPENSE",
 }
 
+var cutoverContactTypeAliases = map[string]string{
+	"":         "CUSTOMER",
+	"customer": "CUSTOMER",
+	"client":   "CUSTOMER",
+	"klient":   "CUSTOMER",
+	"supplier": "SUPPLIER",
+	"vendor":   "SUPPLIER",
+	"tarnija":  "SUPPLIER",
+	"both":     "BOTH",
+	"molemad":  "BOTH",
+}
+
 var groupedDocumentPreflightSpecs = map[FileKind]groupedDocumentSpec{
 	KindInvoices: {
 		keyLabel: "invoice_number/invoice_type",
@@ -1467,6 +1479,8 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 	switch file.kind {
 	case KindAccounts:
 		checkAccountRows(report, file)
+	case KindContacts:
+		checkContactRows(report, file)
 	case KindInvoices, KindQuotes, KindOrders, KindRecurringInvoices:
 		checkCommercialDocumentRows(report, file)
 	case KindExpenses:
@@ -1493,6 +1507,85 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkOpeningBalanceTotals(report, file)
 	case KindJournalEntries:
 		checkJournalEntryGroups(report, file)
+	}
+}
+
+func checkContactRows(report *BundleValidationReport, file parsedFile) {
+	hasName := fileHasHeaders(file, "name")
+	for _, row := range file.rows {
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		checkContactType(report, file, row)
+		checkContactPaymentTerms(report, file, row)
+		checkContactCountryCode(report, file, row)
+		checkContactCreditLimit(report, file, row)
+	}
+}
+
+func checkContactType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "contact_type") {
+		return
+	}
+	value := strings.TrimSpace(row.values["contact_type"])
+	if _, ok := cutoverContactTypeAliases[normalizedValue(value)]; ok {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "contact_type",
+		Value:    value,
+		Message:  fmt.Sprintf("invalid contact_type %q", value),
+	})
+}
+
+func checkContactPaymentTerms(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "payment_terms_days") || strings.TrimSpace(row.values["payment_terms_days"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["payment_terms_days"])
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "payment_terms_days",
+			Value:    value,
+			Message:  "payment_terms_days must be a non-negative integer",
+		})
+	}
+}
+
+func checkContactCountryCode(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "country_code") {
+		return
+	}
+	value := strings.TrimSpace(row.values["country_code"])
+	if value == "" || len(value) == 2 {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "country_code",
+		Value:    value,
+		Message:  "country_code must be a 2-letter code",
+	})
+}
+
+func checkContactCreditLimit(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "credit_limit") || strings.TrimSpace(row.values["credit_limit"]) == "" {
+		return
+	}
+	if _, issue := parseCutoverRequiredImportDecimal(row.values["credit_limit"], "credit_limit"); issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
 	}
 }
 

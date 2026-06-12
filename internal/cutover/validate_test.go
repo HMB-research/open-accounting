@@ -467,6 +467,33 @@ func TestValidateBundleReportsAccountRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindAccounts, "account_type", `invalid account_type "SALES"`)
 }
 
+func TestValidateBundleReportsContactRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindContacts,
+			FileName: "contacts.csv",
+			CSVContent: "name,contact_type,payment_terms_days,country_code,credit_limit\n" +
+				",customer,14,EE,100\n" +
+				"Bad Type,partner,14,EE,100\n" +
+				"Bad Terms,SUPPLIER,net30,EE,100\n" +
+				"Negative Terms,both,-1,EE,100\n" +
+				"Bad Country,client,14,EST,100\n" +
+				"Bad Credit,vendor,14,EE,not-a-number\n" +
+				"Valid Supplier,tarnija,30,ee,\"1500,50\"\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 6, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindContacts, "name", "name is required")
+	assertValidationIssue(t, report, KindContacts, "contact_type", `invalid contact_type "partner"`)
+	assertValidationIssue(t, report, KindContacts, "payment_terms_days", "payment_terms_days must be a non-negative integer")
+	assertValidationIssue(t, report, KindContacts, "country_code", "country_code must be a 2-letter code")
+	assertValidationIssue(t, report, KindContacts, "credit_limit", "credit_limit must be a decimal")
+}
+
 func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
