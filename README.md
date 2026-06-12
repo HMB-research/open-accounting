@@ -358,8 +358,8 @@ open-accounting/
 - [x] Tenant admin controls for member API-token inspection and revocation
 - [x] Tenant admin security-event visibility for member auth activity
 - [x] Tenant admin suspension/restoration of member tenant access with session revocation and audit events
-- [x] CSV import for chart of accounts, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank accounts, bank transactions, cost centers, cost allocations, product categories/warehouses/products/stock, fixed assets, payroll/TSD tax history, opening balances, and historical journals
-- [x] Migration bundle validation for cutover imports with API and CLI coverage across e-invoice XML, expenses, commercial history, inventory, banking, payroll/TSD tax history, cost allocations, and fixed assets, including duplicate identifiers and history keys, account, contact, employee, payroll-history, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, and bank-transaction row values, and grouped document/preserved-ID consistency
+- [x] CSV import for chart of accounts with optional preserved UUIDs, contacts, employees, invoices, quotes, orders, recurring invoice templates, payments, expenses, bank accounts, bank transactions, cost centers, cost allocations, product categories/warehouses/products/stock, fixed assets, payroll/TSD tax history, opening balances, and historical journals
+- [x] Migration bundle validation for cutover imports with API and CLI coverage across e-invoice XML, expenses, commercial history, inventory, banking, payroll/TSD tax history, cost allocations, and fixed assets, including duplicate identifiers and history keys, account, contact, employee, payroll-history, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, and bank-transaction row values, recurring line account references, and grouped document/preserved-ID consistency
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow

@@ -518,6 +518,25 @@ func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
 	assertValidationIssue(t, report, KindExpenses, "expense_number", `expense_number "EXP-1" duplicates row 2`)
 }
 
+func TestValidateBundleReportsPreservedAccountIDIssues(t *testing.T) {
+	accountID := "11111111-1111-1111-1111-111111111111"
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{{
+		Kind:     KindAccounts,
+		FileName: "accounts.csv",
+		CSVContent: "id,account_code,account_name,type\n" +
+			accountID + ",1000,Cash,ASSET\n" +
+			accountID + ",1010,Duplicate Cash,ASSET\n" +
+			"not-a-uuid,1020,Bad ID,ASSET\n",
+	}}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindAccounts, "id", "duplicates row")
+	assertValidationIssue(t, report, KindAccounts, "id", "id must be a valid UUID")
+}
+
 func TestValidateBundleAcceptsBankAccountAccountNumberAlias(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -1235,6 +1254,33 @@ func TestValidateBundleReportsBankTransactionSourceAccountReferenceIssues(t *tes
 	assert.Equal(t, "EE999", report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsRecurringInvoiceAccountReferenceIssues(t *testing.T) {
+	accountID := "11111111-1111-1111-1111-111111111111"
+	missingAccountID := "22222222-2222-2222-2222-222222222222"
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "id,account_code,account_name,type\n" + accountID + ",4000,Sales,REVENUE\n",
+		},
+		{
+			Kind:     KindRecurringInvoices,
+			FileName: "recurring.csv",
+			CSVContent: "name,frequency,start_date,contact_code,line_description,quantity,unit_price,vat_rate,account_id\n" +
+				"Monthly,MONTHLY,2026-06-01,CUST-1,Setup,1,100,22," + accountID + "\n" +
+				"Monthly,MONTHLY,2026-06-01,CUST-1,Missing,1,100,22," + missingAccountID + "\n" +
+				"Monthly,MONTHLY,2026-06-01,CUST-1,Bad ID,1,100,22,not-a-uuid\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindRecurringInvoices, "account_id", "reference")
+	assertValidationIssue(t, report, KindRecurringInvoices, "account_id", "account_id must be a valid UUID")
+}
+
 func TestValidateBundleReportsBankTransactionCurrencyMismatch(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -1621,11 +1667,12 @@ func TestValidateBundleReportsInventoryReferenceIssues(t *testing.T) {
 }
 
 func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
+	accountID := "22222222-2222-2222-2222-222222222222"
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
 			Kind:       KindAccounts,
 			FileName:   "accounts.csv",
-			CSVContent: "id,account_code,account_name,type\nacc-sales,4000,Sales,REVENUE\n",
+			CSVContent: "id,account_code,account_name,type\n" + accountID + ",4000,Sales,REVENUE\n",
 		},
 		{
 			Kind:       KindProductCategories,

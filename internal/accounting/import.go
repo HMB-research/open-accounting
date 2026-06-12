@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 type accountImportRow struct {
@@ -20,6 +22,9 @@ type accountImportPending struct {
 }
 
 var accountImportHeaderAliases = map[string]string{
+	"id":             "id",
+	"account_id":     "id",
+	"account_uuid":   "id",
 	"code":           "code",
 	"account_code":   "code",
 	"number":         "code",
@@ -72,13 +77,15 @@ func (s *Service) ImportAccountsCSV(ctx context.Context, schemaName, tenantID st
 
 	codeToID := make(map[string]string, len(existingAccounts))
 	usedCodes := make(map[string]string, len(existingAccounts))
+	usedIDs := make(map[string]string, len(existingAccounts))
 	for _, account := range existingAccounts {
-		key := normalizedAccountImportKey(account.Code)
-		if key == "" {
-			continue
+		if idKey := normalizedAccountImportKey(account.ID); idKey != "" {
+			usedIDs[idKey] = account.Code
 		}
-		codeToID[key] = account.ID
-		usedCodes[key] = account.Name
+		if key := normalizedAccountImportKey(account.Code); key != "" {
+			codeToID[key] = account.ID
+			usedCodes[key] = account.Name
+		}
 	}
 
 	result := &ImportAccountsResult{
@@ -112,6 +119,19 @@ func (s *Service) ImportAccountsCSV(ctx context.Context, schemaName, tenantID st
 				Message: fmt.Sprintf("duplicate code %q matches existing account %q", createReq.Code, existingName),
 			})
 			continue
+		}
+		if idKey := normalizedAccountImportKey(createReq.ID); idKey != "" {
+			if existingCode, exists := usedIDs[idKey]; exists {
+				result.RowsSkipped++
+				result.Errors = append(result.Errors, ImportAccountsRowError{
+					Row:     row.rowNumber,
+					Code:    createReq.Code,
+					Name:    createReq.Name,
+					Message: fmt.Sprintf("duplicate id %q matches existing account code %q", createReq.ID, existingCode),
+				})
+				continue
+			}
+			usedIDs[idKey] = createReq.Code
 		}
 
 		usedCodes[codeKey] = createReq.Name
@@ -259,6 +279,15 @@ func parseAccountImportRows(content string) ([]accountImportRow, error) {
 }
 
 func buildCreateAccountRequestFromImportRow(row accountImportRow) (*CreateAccountRequest, string, error) {
+	id := strings.TrimSpace(row.values["id"])
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, "", fmt.Errorf("id must be a valid UUID")
+		}
+		id = parsedID.String()
+	}
+
 	code := strings.TrimSpace(row.values["code"])
 	if code == "" {
 		return nil, "", fmt.Errorf("code is required")
@@ -280,6 +309,7 @@ func buildCreateAccountRequestFromImportRow(row accountImportRow) (*CreateAccoun
 	}
 
 	return &CreateAccountRequest{
+		ID:          id,
 		Code:        code,
 		Name:        name,
 		AccountType: accountType,

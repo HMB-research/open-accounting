@@ -35,6 +35,7 @@ type parsedRow struct {
 type bundleIndexes struct {
 	files             map[FileKind]bool
 	accounts          map[string]bool
+	accountIDs        map[string]bool
 	bankAccounts      map[string]string
 	contacts          map[string]bool
 	employees         map[string]bool
@@ -1438,6 +1439,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 	indexes := bundleIndexes{
 		files:             map[FileKind]bool{},
 		accounts:          map[string]bool{},
+		accountIDs:        map[string]bool{},
 		bankAccounts:      map[string]string{},
 		contacts:          map[string]bool{},
 		employees:         map[string]bool{},
@@ -1455,6 +1457,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 			case KindAccounts:
 				addIndexValue(indexes.accounts, row.values["code"])
 				addIndexValue(indexes.accounts, row.values["id"])
+				addIndexValue(indexes.accountIDs, row.values["id"])
 			case KindBankAccounts:
 				addBankAccountIndexValue(indexes.bankAccounts, row.values["account_number"], row.values["currency"])
 			case KindContacts:
@@ -1496,6 +1499,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 	for _, row := range file.rows {
 		switch file.kind {
 		case KindAccounts:
+			checkOptionalUUID(report, file, row, "id")
 			checkSelfReference(report, file, row, "parent_code", "code")
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"parent_code"})
@@ -1523,6 +1527,10 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
 				[]string{"product_id", "product_code"})
 		case KindRecurringInvoices:
+			if checkOptionalUUID(report, file, row, "account_id") {
+				checkTargetReference(report, indexes.files[KindAccounts], indexes.accountIDs, file, row, KindAccounts,
+					[]string{"account_id"})
+			}
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 				commercialDocumentContactReferenceFields())
 			checkTargetReference(report, indexes.files[KindProducts], indexes.products, file, row, KindProducts,
@@ -5182,13 +5190,13 @@ func checkSelfReference(report *BundleValidationReport, file parsedFile, row par
 	})
 }
 
-func checkOptionalUUID(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+func checkOptionalUUID(report *BundleValidationReport, file parsedFile, row parsedRow, field string) bool {
 	value := strings.TrimSpace(row.values[field])
 	if value == "" {
-		return
+		return true
 	}
 	if _, err := uuid.Parse(value); err == nil {
-		return
+		return true
 	}
 
 	report.addIssue(ValidationIssue{
@@ -5200,6 +5208,7 @@ func checkOptionalUUID(report *BundleValidationReport, file parsedFile, row pars
 		Value:    value,
 		Message:  fmt.Sprintf("%s must be a valid UUID", field),
 	})
+	return false
 }
 
 func checkTargetReference(
