@@ -117,3 +117,47 @@ func TestParsePlaywrightSpecTimesScript(t *testing.T) {
 		t.Fatalf("unexpected Playwright spec times:\nwant:\n%s\ngot:\n%s", expected, output)
 	}
 }
+
+func TestRunAffectedTestsScriptSelectsBackendDependants(t *testing.T) {
+	cmd := exec.Command("../scripts/run-affected-tests.sh", "--list", "--changed-file", "internal/cutover/validate.go")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("list affected backend tests: %v\n%s", err, output)
+	}
+
+	text := string(output)
+	for _, snippet := range []string{
+		"go test -count=1 -race",
+		"./internal/cutover",
+	} {
+		if !strings.Contains(text, snippet) {
+			t.Fatalf("affected backend output missing %q:\n%s", snippet, text)
+		}
+	}
+}
+
+func TestRunAffectedTestsScriptSelectsDocsForScriptChanges(t *testing.T) {
+	cmd := exec.Command("../scripts/run-affected-tests.sh", "--list", "--changed-file", "scripts/run-affected-tests.sh")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("list affected script tests: %v\n%s", err, output)
+	}
+
+	expected := "go test -timeout=3m ./docs -count=1"
+	if strings.TrimSpace(string(output)) != expected {
+		t.Fatalf("unexpected script affected tests:\nwant: %s\ngot:\n%s", expected, output)
+	}
+}
+
+func TestRunAffectedTestsScriptSelectsFrontendChangedTests(t *testing.T) {
+	cmd := exec.Command("../scripts/run-affected-tests.sh", "--list", "--base", "HEAD", "--changed-file", "frontend/src/lib/api.ts")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("list affected frontend tests: %v\n%s", err, output)
+	}
+
+	expected := "cd frontend && bun run paraglide && bun run test:prepared -- --changed HEAD"
+	if strings.TrimSpace(string(output)) != expected {
+		t.Fatalf("unexpected frontend affected tests:\nwant: %s\ngot:\n%s", expected, output)
+	}
+}
