@@ -2,6 +2,7 @@ package payroll
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -85,6 +86,185 @@ func TestImportLeaveBalancesCSV_CreatesAndUpdatesBalances(t *testing.T) {
 	assert.Equal(t, "balance-existing", updated.ID)
 	assert.True(t, updated.RemainingDays.Equal(decimal.NewFromInt(23)))
 	assert.Equal(t, "Updated balance", updated.Notes)
+}
+
+func TestImportLeaveBalancesCSV_MatchesAbsenceTypesByIDAndNameWithDefaults(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockAbsenceRepository()
+	annualTypeID := "11111111-1111-4111-8111-111111111111"
+	sickTypeID := "22222222-2222-4222-8222-222222222222"
+	repo.Employees["emp-personal"] = &Employee{
+		ID:             "emp-personal",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-200",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		PersonalCode:   "49001010001",
+		Email:          "mari@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-email"] = &Employee{
+		ID:             "emp-email",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-201",
+		FirstName:      "Liis",
+		LastName:       "Lepp",
+		PersonalCode:   "49001010002",
+		Email:          "liis@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-name"] = &Employee{
+		ID:             "emp-name",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-202",
+		FirstName:      "Kati",
+		LastName:       "Kask",
+		PersonalCode:   "49001010003",
+		Email:          "kati@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.AbsenceTypes[annualTypeID] = &AbsenceType{
+		ID:                 annualTypeID,
+		TenantID:           "tenant-1",
+		Code:               "ANNUAL_LEAVE",
+		Name:               "Annual leave",
+		NameET:             "Pohipuhkus",
+		DefaultDaysPerYear: decimal.NewFromInt(28),
+		IsActive:           true,
+	}
+	repo.AbsenceTypes[sickTypeID] = &AbsenceType{
+		ID:                 sickTypeID,
+		TenantID:           "tenant-1",
+		Code:               "SICK_LEAVE",
+		Name:               "Sick leave",
+		NameET:             "Haigusleht",
+		DefaultDaysPerYear: decimal.NewFromInt(10),
+		IsActive:           true,
+	}
+	service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+	result, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", &ImportLeaveBalancesRequest{
+		FileName: "leave-balances.csv",
+		CSVContent: "year,personal_code,email,first_name,last_name,absence_type_id,absence_type,entitled_days,carryover_days,used_days,pending_days,notes\n" +
+			"2025,49001010001,,,," + annualTypeID + ",,,2,4,1,Matched by type id\n" +
+			"2025,,liis@example.com,,, ,Sick leave,12,1,2,0,Matched by English name\n" +
+			"2025,,,Kati,Kask,,Haigusleht,,0,1,1,Matched by Estonian name\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, result.RowsProcessed)
+	assert.Equal(t, 3, result.LeaveBalancesCreated)
+	assert.Zero(t, result.LeaveBalancesUpdated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+
+	annual := repo.LeaveBalances["tenant-1-emp-personal-"+annualTypeID+"-2025"]
+	require.NotNil(t, annual)
+	assert.True(t, annual.EntitledDays.Equal(decimal.NewFromInt(28)))
+	assert.True(t, annual.RemainingDays.Equal(decimal.NewFromInt(25)))
+	assert.Equal(t, "Matched by type id", annual.Notes)
+
+	sickByName := repo.LeaveBalances["tenant-1-emp-email-"+sickTypeID+"-2025"]
+	require.NotNil(t, sickByName)
+	assert.True(t, sickByName.EntitledDays.Equal(decimal.NewFromInt(12)))
+	assert.True(t, sickByName.RemainingDays.Equal(decimal.NewFromInt(11)))
+
+	sickByNameET := repo.LeaveBalances["tenant-1-emp-name-"+sickTypeID+"-2025"]
+	require.NotNil(t, sickByNameET)
+	assert.True(t, sickByNameET.EntitledDays.Equal(decimal.NewFromInt(10)))
+	assert.True(t, sickByNameET.RemainingDays.Equal(decimal.NewFromInt(8)))
+}
+
+func TestImportLeaveBalancesCSV_RejectsAmbiguousAndMismatchedAbsenceTypes(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockAbsenceRepository()
+	repo.Employees["emp-1"] = &Employee{
+		ID:             "emp-1",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.AbsenceTypes["type-annual"] = &AbsenceType{
+		ID:                 "type-annual",
+		TenantID:           "tenant-1",
+		Code:               "ANNUAL_LEAVE",
+		Name:               "Leave",
+		DefaultDaysPerYear: decimal.NewFromInt(28),
+		IsActive:           true,
+	}
+	repo.AbsenceTypes["type-sick"] = &AbsenceType{
+		ID:                 "type-sick",
+		TenantID:           "tenant-1",
+		Code:               "SICK_LEAVE",
+		Name:               "Leave",
+		NameET:             "Sick Leave",
+		DefaultDaysPerYear: decimal.NewFromInt(10),
+		IsActive:           true,
+	}
+	service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+	result, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", &ImportLeaveBalancesRequest{
+		CSVContent: "year,employee_number,absence_type_code,absence_type,entitled_days\n" +
+			"2025,EMP-100,,Leave,28\n" +
+			"2025,EMP-100,ANNUAL_LEAVE,Sick Leave,28\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Zero(t, result.LeaveBalancesCreated)
+	assert.Zero(t, result.LeaveBalancesUpdated)
+	assert.Equal(t, 2, result.RowsSkipped)
+	require.Len(t, result.Errors, 2)
+	assert.Contains(t, result.Errors[0].Message, "absence_type \"Leave\" matches multiple types")
+	assert.Contains(t, result.Errors[1].Message, "absence type identifiers do not match the same type")
+}
+
+func TestImportLeaveBalancesCSV_ReportsRepositoryWriteErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockAbsenceRepository()
+	repo.Employees["emp-1"] = &Employee{
+		ID:             "emp-1",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.AbsenceTypes["type-annual"] = &AbsenceType{
+		ID:                 "type-annual",
+		TenantID:           "tenant-1",
+		Code:               "ANNUAL_LEAVE",
+		Name:               "Annual leave",
+		DefaultDaysPerYear: decimal.NewFromInt(28),
+		IsActive:           true,
+	}
+	repo.CreateLeaveBalanceErr = errors.New("write failed")
+	service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+	result, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", &ImportLeaveBalancesRequest{
+		CSVContent: "year,employee_number,absence_type_code,entitled_days\n" +
+			"2025,EMP-100,ANNUAL_LEAVE,28\n",
+	})
+	require.NoError(t, err)
+
+	assert.Zero(t, result.LeaveBalancesCreated)
+	assert.Zero(t, result.LeaveBalancesUpdated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, "create leave balance: write failed")
 }
 
 func TestImportLeaveBalancesCSV_SkipsInvalidRows(t *testing.T) {
