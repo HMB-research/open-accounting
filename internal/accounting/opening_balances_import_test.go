@@ -188,6 +188,82 @@ func TestParseOpeningBalanceAmounts(t *testing.T) {
 	})
 }
 
+func TestParseOpeningBalanceImportRows(t *testing.T) {
+	t.Run("parses aliased semicolon headers and skips blank rows", func(t *testing.T) {
+		rows, err := parseOpeningBalanceImportRows("\ufeff Account ; Debit Amount ; credit_amount ; line_description ; custom field\n" +
+			" 1000 ; 1,250.50 ; ; Cash opening ; ignored\n" +
+			" ; ; ; ; \n" +
+			"3000; ; 1,250.50 ; Equity opening ; ignored\n")
+
+		require.NoError(t, err)
+		require.Len(t, rows, 2)
+
+		assert.Equal(t, 2, rows[0].rowNumber)
+		assert.Equal(t, "1000", rows[0].values["account_code"])
+		assert.Equal(t, "1,250.50", rows[0].values["debit"])
+		assert.Empty(t, rows[0].values["credit"])
+		assert.Equal(t, "Cash opening", rows[0].values["description"])
+		assert.Equal(t, "ignored", rows[0].values["custom_field"])
+
+		assert.Equal(t, 4, rows[1].rowNumber)
+		assert.Equal(t, "3000", rows[1].values["account_code"])
+		assert.Empty(t, rows[1].values["debit"])
+		assert.Equal(t, "1,250.50", rows[1].values["credit"])
+		assert.Equal(t, "Equity opening", rows[1].values["description"])
+	})
+
+	t.Run("allows header-only csv", func(t *testing.T) {
+		rows, err := parseOpeningBalanceImportRows("account_code,debit,credit\n")
+
+		require.NoError(t, err)
+		assert.Empty(t, rows)
+	})
+
+	t.Run("ignores blank header columns", func(t *testing.T) {
+		rows, err := parseOpeningBalanceImportRows("account_code,debit,credit,\n1000,10.00,,ignored\n")
+
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		assert.Equal(t, "1000", rows[0].values["account_code"])
+		assert.Equal(t, "10.00", rows[0].values["debit"])
+		assert.Empty(t, rows[0].values["credit"])
+		_, ok := rows[0].values[""]
+		assert.False(t, ok)
+	})
+
+	t.Run("requires content", func(t *testing.T) {
+		rows, err := parseOpeningBalanceImportRows(" \t\n ")
+
+		require.Error(t, err)
+		assert.Nil(t, rows)
+		assert.Contains(t, err.Error(), "csv_content is required")
+	})
+
+	t.Run("requires account debit and credit columns", func(t *testing.T) {
+		rows, err := parseOpeningBalanceImportRows("account_code,debit,description\n1000,10.00,Cash\n")
+
+		require.Error(t, err)
+		assert.Nil(t, rows)
+		assert.Contains(t, err.Error(), "missing required columns")
+	})
+
+	t.Run("reports malformed csv headers", func(t *testing.T) {
+		rows, err := parseOpeningBalanceImportRows("\"account_code,debit,credit\n")
+
+		require.Error(t, err)
+		assert.Nil(t, rows)
+		assert.Contains(t, err.Error(), "parse csv header")
+	})
+
+	t.Run("reports malformed csv rows", func(t *testing.T) {
+		rows, err := parseOpeningBalanceImportRows("account_code,debit,credit\n1000,\"10.00,0\n")
+
+		require.Error(t, err)
+		assert.Nil(t, rows)
+		assert.Contains(t, err.Error(), "parse csv row 2")
+	})
+}
+
 func TestOpeningBalanceImportHeaderAndDecimalNormalization(t *testing.T) {
 	t.Run("canonicalizes opening balance header aliases", func(t *testing.T) {
 		assert.Equal(t, "account_code", canonicalOpeningBalanceHeader(" Account "))
