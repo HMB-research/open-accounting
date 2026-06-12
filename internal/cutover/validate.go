@@ -55,6 +55,10 @@ type duplicateIdentifierValue struct {
 	row int
 }
 
+type duplicateCompositeValue struct {
+	row int
+}
+
 type groupedDocumentSpec struct {
 	keyLabel string
 	key      []groupedFieldSpec
@@ -1141,6 +1145,7 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 	for _, file := range parsed {
 		validateReferences(report, indexes, file, eInvoiceContactMode)
 		validateDuplicateIdentifierPreflight(report, file)
+		validateCompositeDuplicatePreflight(report, file)
 		validateGroupedDocumentPreflight(report, file)
 		validateAccountingPreflight(report, file)
 	}
@@ -1629,6 +1634,200 @@ func normalizedDuplicateIdentifierValue(spec duplicateIdentifierSpec, value stri
 		return spec.normalize(value)
 	}
 	return normalizedValue(value)
+}
+
+func validateCompositeDuplicatePreflight(report *BundleValidationReport, file parsedFile) {
+	switch file.kind {
+	case KindPayrollHistory:
+		validatePayrollHistoryDuplicateEmployees(report, file)
+	case KindLeaveBalances:
+		validateLeaveBalanceDuplicates(report, file)
+	case KindTSDHistory:
+		validateTSDHistoryDuplicateEmployees(report, file)
+	case KindKMDHistory:
+		validateKMDHistoryDuplicateRows(report, file)
+	}
+}
+
+func validatePayrollHistoryDuplicateEmployees(report *BundleValidationReport, file parsedFile) {
+	seen := map[string]duplicateCompositeValue{}
+	for _, row := range file.rows {
+		periodKey, periodDisplay, ok := duplicatePeriodKey(row.values, "period_year", "period_month")
+		if !ok {
+			continue
+		}
+		employeeKey, employeeDisplay, ok := duplicateEmployeeKey(row.values)
+		if !ok {
+			continue
+		}
+
+		key := strings.Join([]string{periodKey, employeeKey}, "\x00")
+		if first, exists := seen[key]; exists {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "period_year/period_month/employee",
+				Value:    periodDisplay + "/" + employeeDisplay,
+				Message:  fmt.Sprintf("employee %q duplicates row %d in payroll period %s", employeeDisplay, first.row, periodDisplay),
+			})
+			continue
+		}
+		seen[key] = duplicateCompositeValue{row: row.number}
+	}
+}
+
+func validateLeaveBalanceDuplicates(report *BundleValidationReport, file parsedFile) {
+	seen := map[string]duplicateCompositeValue{}
+	for _, row := range file.rows {
+		yearKey, yearDisplay, ok := duplicateYearKey(row.values, "year")
+		if !ok {
+			continue
+		}
+		employeeKey, employeeDisplay, ok := duplicateEmployeeKey(row.values)
+		if !ok {
+			continue
+		}
+		absenceTypeKey, absenceTypeDisplay, ok := duplicateAbsenceTypeKey(row.values)
+		if !ok {
+			continue
+		}
+
+		key := strings.Join([]string{yearKey, employeeKey, absenceTypeKey}, "\x00")
+		if first, exists := seen[key]; exists {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "year/employee/absence_type",
+				Value:    yearDisplay + "/" + employeeDisplay + "/" + absenceTypeDisplay,
+				Message: fmt.Sprintf(
+					"employee %q absence type %q duplicates row %d in leave-balance year %s",
+					employeeDisplay,
+					absenceTypeDisplay,
+					first.row,
+					yearDisplay,
+				),
+			})
+			continue
+		}
+		seen[key] = duplicateCompositeValue{row: row.number}
+	}
+}
+
+func validateTSDHistoryDuplicateEmployees(report *BundleValidationReport, file parsedFile) {
+	seen := map[string]duplicateCompositeValue{}
+	for _, row := range file.rows {
+		periodKey, periodDisplay, ok := duplicatePeriodKey(row.values, "period_year", "period_month")
+		if !ok {
+			continue
+		}
+		employeeKey, employeeDisplay, ok := duplicateEmployeeKey(row.values)
+		if !ok {
+			continue
+		}
+
+		key := strings.Join([]string{periodKey, employeeKey}, "\x00")
+		if first, exists := seen[key]; exists {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "period_year/period_month/employee",
+				Value:    periodDisplay + "/" + employeeDisplay,
+				Message:  fmt.Sprintf("employee %q duplicates row %d in TSD period %s", employeeDisplay, first.row, periodDisplay),
+			})
+			continue
+		}
+		seen[key] = duplicateCompositeValue{row: row.number}
+	}
+}
+
+func validateKMDHistoryDuplicateRows(report *BundleValidationReport, file parsedFile) {
+	seen := map[string]duplicateCompositeValue{}
+	for _, row := range file.rows {
+		periodKey, periodDisplay, ok := duplicatePeriodKey(row.values, "year", "month")
+		if !ok {
+			continue
+		}
+		rowCode := normalizeKMDHistoryRowCode(row.values["row_code"])
+		if rowCode == "" {
+			continue
+		}
+
+		key := strings.Join([]string{periodKey, rowCode}, "\x00")
+		if first, exists := seen[key]; exists {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "year/month/row_code",
+				Value:    periodDisplay + "/" + rowCode,
+				Message:  fmt.Sprintf("row_code %q duplicates row %d in KMD period %s", rowCode, first.row, periodDisplay),
+			})
+			continue
+		}
+		seen[key] = duplicateCompositeValue{row: row.number}
+	}
+}
+
+func duplicatePeriodKey(values map[string]string, yearField, monthField string) (string, string, bool) {
+	yearKey, yearDisplay, ok := duplicateYearKey(values, yearField)
+	if !ok {
+		return "", "", false
+	}
+	monthValue := strings.TrimSpace(values[monthField])
+	if monthValue == "" {
+		return "", "", false
+	}
+	monthKey := normalizedCutoverIntegerPart(monthValue)
+	return yearKey + "-" + monthKey, yearDisplay + "-" + monthKey, true
+}
+
+func duplicateYearKey(values map[string]string, field string) (string, string, bool) {
+	value := strings.TrimSpace(values[field])
+	if value == "" {
+		return "", "", false
+	}
+	key := normalizedCutoverIntegerPart(value)
+	return key, key, true
+}
+
+func normalizedCutoverIntegerPart(value string) string {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return normalizedValue(value)
+	}
+	return strconv.Itoa(parsed)
+}
+
+func duplicateEmployeeKey(values map[string]string) (string, string, bool) {
+	for _, field := range []string{"employee_number", "personal_code", "email", "name"} {
+		value := strings.TrimSpace(values[field])
+		if value == "" {
+			continue
+		}
+		return field + ":" + normalizedValue(value), value, true
+	}
+	if name := employeeName(values); strings.TrimSpace(name) != "" {
+		return "name:" + normalizedValue(name), strings.TrimSpace(name), true
+	}
+	return "", "", false
+}
+
+func duplicateAbsenceTypeKey(values map[string]string) (string, string, bool) {
+	for _, field := range []string{"absence_type_id", "absence_type_code", "absence_type"} {
+		value := strings.TrimSpace(values[field])
+		if value == "" {
+			continue
+		}
+		return field + ":" + normalizedValue(value), value, true
+	}
+	return "", "", false
 }
 
 func validateGroupedDocumentPreflight(report *BundleValidationReport, file parsedFile) {
