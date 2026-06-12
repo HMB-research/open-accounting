@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -180,7 +181,13 @@ func parseCostAllocationImportRows(content string) ([]costAllocationImportRow, e
 func buildCreateCostAllocationRequestFromImportRow(row costAllocationImportRow, costCenterCodeToID map[string]string) (*CreateCostAllocationRequest, error) {
 	costCenterID := strings.TrimSpace(row.values["cost_center_id"])
 	costCenterCode := strings.TrimSpace(row.values["cost_center_code"])
-	if costCenterID == "" {
+	if costCenterID != "" {
+		parsedID, err := uuid.Parse(costCenterID)
+		if err != nil {
+			return nil, fmt.Errorf("cost_center_id must be a valid UUID")
+		}
+		costCenterID = parsedID.String()
+	} else {
 		if costCenterCode == "" {
 			return nil, fmt.Errorf("cost_center_id or cost_center_code is required")
 		}

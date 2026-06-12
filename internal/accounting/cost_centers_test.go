@@ -373,9 +373,10 @@ func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
 func TestCostCenterService_ImportCostAllocationsCSVByID(t *testing.T) {
 	ts := newTestCostCenterService()
 	ctx := context.Background()
+	costCenterID := "11111111-1111-1111-1111-111111111111"
 
-	ts.repo.CostCenters["cc-direct"] = &CostCenter{
-		ID:       "cc-direct",
+	ts.repo.CostCenters[costCenterID] = &CostCenter{
+		ID:       costCenterID,
 		TenantID: "tenant-1",
 		Code:     "DIRECT",
 		Name:     "Direct costs",
@@ -384,7 +385,7 @@ func TestCostCenterService_ImportCostAllocationsCSVByID(t *testing.T) {
 
 	result, err := ts.svc.ImportCostAllocationsCSV(ctx, "test_schema", "tenant-1", &ImportCostAllocationsRequest{
 		CSVContent: "cost_center_id,journal_entry_line_id,amount,allocation_date\n" +
-			"cc-direct,line-1,42.00,2026-04-01\n",
+			costCenterID + ",line-1,42.00,2026-04-01\n",
 	})
 
 	require.NoError(t, err)
@@ -392,8 +393,27 @@ func TestCostCenterService_ImportCostAllocationsCSVByID(t *testing.T) {
 	assert.Equal(t, 1, result.AllocationsImported)
 	assert.Zero(t, result.RowsSkipped)
 	assert.Nil(t, result.Errors)
-	assert.Len(t, ts.repo.Allocations["cc-direct"], 1)
-	assert.Equal(t, "line-1", ts.repo.Allocations["cc-direct"][0].JournalEntryLineID)
+	assert.Len(t, ts.repo.Allocations[costCenterID], 1)
+	assert.Equal(t, "line-1", ts.repo.Allocations[costCenterID][0].JournalEntryLineID)
+}
+
+func TestCostCenterService_ImportCostAllocationsCSVRejectsInvalidCostCenterID(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportCostAllocationsCSV(ctx, "test_schema", "tenant-1", &ImportCostAllocationsRequest{
+		CSVContent: "cost_center_id,journal_entry_line_id,amount,allocation_date\n" +
+			"legacy-cc,line-1,42.00,2026-04-01\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.AllocationsImported)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 2, result.Errors[0].Row)
+	assert.Equal(t, "legacy-cc", result.Errors[0].CostCenterID)
+	assert.Contains(t, result.Errors[0].Message, "cost_center_id must be a valid UUID")
 }
 
 func TestCostCenterService_GetCostCenter(t *testing.T) {
