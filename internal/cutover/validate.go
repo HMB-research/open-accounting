@@ -6,10 +6,12 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/HMB-research/open-accounting/internal/invoicing/mappers/einvoice"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 type fileSpec struct {
@@ -561,24 +563,42 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindOpeningBalances: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
-			"account_code": "account_code",
-			"account":      "account_code",
-			"description":  "description",
+			"account_code":     "account_code",
+			"code":             "account_code",
+			"account":          "account_code",
+			"description":      "description",
+			"line_description": "description",
+			"debit_amount":     "debit",
+			"credit_amount":    "credit",
 		}),
-		requiredGroups: [][]string{{"account_code"}, {"debit", "credit"}},
+		requiredGroups: [][]string{{"account_code"}, {"debit"}, {"credit"}},
 	},
 	KindJournalEntries: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
-			"entry_reference":   "entry_reference",
-			"reference":         "entry_reference",
-			"entry_date":        "entry_date",
-			"date":              "entry_date",
-			"account_code":      "account_code",
-			"account":           "account_code",
-			"entry_description": "entry_description",
-			"line_description":  "line_description",
+			"entry_reference":     "entry_reference",
+			"reference":           "entry_reference",
+			"document_number":     "entry_reference",
+			"voucher_number":      "entry_reference",
+			"journal_number":      "entry_reference",
+			"entry_date":          "entry_date",
+			"date":                "entry_date",
+			"posting_date":        "entry_date",
+			"account_code":        "account_code",
+			"code":                "account_code",
+			"account":             "account_code",
+			"entry_description":   "entry_description",
+			"journal_description": "entry_description",
+			"entry_memo":          "entry_description",
+			"line_description":    "line_description",
+			"description":         "line_description",
+			"memo":                "line_description",
+			"debit_amount":        "debit",
+			"credit_amount":       "credit",
+			"exchange_rate":       "exchange_rate",
+			"source_type":         "source_type",
+			"source_id":           "source_id",
 		}),
-		requiredGroups: [][]string{{"entry_reference"}, {"entry_date"}, {"account_code"}, {"debit", "credit"}},
+		requiredGroups: [][]string{{"entry_reference"}, {"entry_date"}, {"account_code"}, {"debit"}, {"credit"}},
 	},
 }
 
@@ -632,6 +652,7 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 	indexes := buildIndexes(parsed)
 	for _, file := range parsed {
 		validateReferences(report, indexes, file, eInvoiceContactMode)
+		validateAccountingPreflight(report, file)
 	}
 
 	sort.SliceStable(report.Issues, func(i, j int) bool {
@@ -949,6 +970,305 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"invoice_id"})
 		}
 	}
+}
+
+type cutoverAmountIssue struct {
+	field   string
+	value   string
+	message string
+}
+
+type journalValidationGroup struct {
+	firstRow  int
+	reference string
+	rows      []parsedRow
+}
+
+func validateAccountingPreflight(report *BundleValidationReport, file parsedFile) {
+	switch file.kind {
+	case KindOpeningBalances:
+		checkOpeningBalanceTotals(report, file)
+	case KindJournalEntries:
+		checkJournalEntryGroups(report, file)
+	}
+}
+
+func checkOpeningBalanceTotals(report *BundleValidationReport, file parsedFile) {
+	if !fileHasHeaders(file, "debit", "credit") {
+		return
+	}
+
+	totalDebit := decimal.Zero
+	totalCredit := decimal.Zero
+	for _, row := range file.rows {
+		debit, credit, amountIssue := parseCutoverDebitCredit(row)
+		if amountIssue != nil {
+			report.addIssue(cutoverAmountValidationIssue(file, row, *amountIssue))
+			return
+		}
+		totalDebit = totalDebit.Add(debit)
+		totalCredit = totalCredit.Add(credit)
+	}
+
+	if len(file.rows) == 0 {
+		return
+	}
+	if totalDebit.IsZero() || totalCredit.IsZero() {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Field:    "debit/credit",
+			Value:    debitCreditTotalsValue(totalDebit, totalCredit),
+			Message:  "opening balances must include both debit and credit totals",
+		})
+		return
+	}
+	if !totalDebit.Equal(totalCredit) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Field:    "debit/credit",
+			Value:    debitCreditTotalsValue(totalDebit, totalCredit),
+			Message:  fmt.Sprintf("opening balances do not balance: debits=%s credits=%s", totalDebit.String(), totalCredit.String()),
+		})
+	}
+}
+
+func checkJournalEntryGroups(report *BundleValidationReport, file parsedFile) {
+	if !fileHasHeaders(file, "entry_reference", "entry_date", "debit", "credit") {
+		return
+	}
+
+	for _, group := range groupJournalRows(file.rows) {
+		checkJournalEntryGroup(report, file, group)
+	}
+}
+
+func groupJournalRows(rows []parsedRow) []*journalValidationGroup {
+	groupByReference := make(map[string]*journalValidationGroup)
+	groups := make([]*journalValidationGroup, 0)
+	for _, row := range rows {
+		reference := strings.TrimSpace(row.values["entry_reference"])
+		key := normalizedValue(reference)
+		if key == "" {
+			key = fmt.Sprintf("row-%d", row.number)
+		}
+		group, ok := groupByReference[key]
+		if !ok {
+			group = &journalValidationGroup{
+				firstRow:  row.number,
+				reference: reference,
+			}
+			groupByReference[key] = group
+			groups = append(groups, group)
+		}
+		group.rows = append(group.rows, row)
+	}
+	return groups
+}
+
+func checkJournalEntryGroup(report *BundleValidationReport, file parsedFile, group *journalValidationGroup) {
+	if strings.TrimSpace(group.reference) == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      group.firstRow,
+			Field:    "entry_reference",
+			Message:  "entry_reference is required",
+		})
+		return
+	}
+
+	groupDate := ""
+	hasIssue := false
+	totalDebit := decimal.Zero
+	totalCredit := decimal.Zero
+	for _, row := range group.rows {
+		rowDate, dateIssue := parseCutoverEntryDate(row.values["entry_date"])
+		if dateIssue != nil {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "entry_date",
+				Value:    strings.TrimSpace(row.values["entry_date"]),
+				Message:  dateIssue.message,
+			})
+			hasIssue = true
+			continue
+		}
+		if groupDate == "" {
+			groupDate = rowDate
+		} else if rowDate != groupDate {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "entry_date",
+				Value:    rowDate,
+				Message:  fmt.Sprintf("entry_date must match the group date %s", groupDate),
+			})
+			hasIssue = true
+		}
+
+		debit, credit, amountIssue := parseCutoverDebitCredit(row)
+		if amountIssue != nil {
+			report.addIssue(cutoverAmountValidationIssue(file, row, *amountIssue))
+			hasIssue = true
+			continue
+		}
+		exchangeRate, exchangeIssue := parseCutoverExchangeRate(row.values["exchange_rate"])
+		if exchangeIssue != nil {
+			report.addIssue(cutoverAmountValidationIssue(file, row, *exchangeIssue))
+			hasIssue = true
+			continue
+		}
+		totalDebit = totalDebit.Add(debit.Mul(exchangeRate))
+		totalCredit = totalCredit.Add(credit.Mul(exchangeRate))
+	}
+	if hasIssue {
+		return
+	}
+
+	if len(group.rows) < 2 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      group.firstRow,
+			Field:    "entry_reference",
+			Value:    group.reference,
+			Message:  fmt.Sprintf("journal entry %q must have at least two lines", group.reference),
+		})
+		return
+	}
+	if totalDebit.IsZero() {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      group.firstRow,
+			Field:    "entry_reference/debit/credit",
+			Value:    group.reference,
+			Message:  fmt.Sprintf("journal entry %q cannot have zero amounts", group.reference),
+		})
+		return
+	}
+	if !totalDebit.Equal(totalCredit) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      group.firstRow,
+			Field:    "entry_reference/debit/credit",
+			Value:    group.reference,
+			Message:  fmt.Sprintf("journal entry %q does not balance: debits=%s credits=%s", group.reference, totalDebit.String(), totalCredit.String()),
+		})
+	}
+}
+
+func parseCutoverDebitCredit(row parsedRow) (decimal.Decimal, decimal.Decimal, *cutoverAmountIssue) {
+	debit, err := parseCutoverDecimal(row.values["debit"], "debit")
+	if err != nil {
+		return decimal.Zero, decimal.Zero, &cutoverAmountIssue{field: "debit", value: strings.TrimSpace(row.values["debit"]), message: err.Error()}
+	}
+	credit, err := parseCutoverDecimal(row.values["credit"], "credit")
+	if err != nil {
+		return decimal.Zero, decimal.Zero, &cutoverAmountIssue{field: "credit", value: strings.TrimSpace(row.values["credit"]), message: err.Error()}
+	}
+	if debit.LessThan(decimal.Zero) || credit.LessThan(decimal.Zero) {
+		return decimal.Zero, decimal.Zero, &cutoverAmountIssue{field: "debit/credit", value: debitCreditRowValue(row), message: "amounts cannot be negative"}
+	}
+	if debit.IsZero() && credit.IsZero() {
+		return decimal.Zero, decimal.Zero, &cutoverAmountIssue{field: "debit/credit", value: debitCreditRowValue(row), message: "either debit or credit is required"}
+	}
+	if debit.GreaterThan(decimal.Zero) && credit.GreaterThan(decimal.Zero) {
+		return decimal.Zero, decimal.Zero, &cutoverAmountIssue{field: "debit/credit", value: debitCreditRowValue(row), message: "row cannot contain both debit and credit amounts"}
+	}
+	return debit, credit, nil
+}
+
+func parseCutoverExchangeRate(value string) (decimal.Decimal, *cutoverAmountIssue) {
+	exchangeRate, err := parseCutoverDecimal(value, "exchange_rate")
+	if err != nil {
+		return decimal.Zero, &cutoverAmountIssue{field: "exchange_rate", value: strings.TrimSpace(value), message: err.Error()}
+	}
+	if exchangeRate.IsZero() {
+		return decimal.NewFromInt(1), nil
+	}
+	if exchangeRate.LessThan(decimal.Zero) {
+		return decimal.Zero, &cutoverAmountIssue{field: "exchange_rate", value: strings.TrimSpace(value), message: "exchange_rate cannot be negative"}
+	}
+	return exchangeRate, nil
+}
+
+func parseCutoverDecimal(value, fieldName string) (decimal.Decimal, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, nil
+	}
+	parsed, err := decimal.NewFromString(normalizeCutoverDecimal(trimmed))
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("invalid %s", fieldName)
+	}
+	return parsed, nil
+}
+
+func parseCutoverEntryDate(value string) (string, *cutoverAmountIssue) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", &cutoverAmountIssue{field: "entry_date", message: "entry_date is required"}
+	}
+	parsed, err := time.Parse("2006-01-02", trimmed)
+	if err != nil {
+		return "", &cutoverAmountIssue{field: "entry_date", value: trimmed, message: "entry_date must be in YYYY-MM-DD format"}
+	}
+	return parsed.Format("2006-01-02"), nil
+}
+
+func cutoverAmountValidationIssue(file parsedFile, row parsedRow, amountIssue cutoverAmountIssue) ValidationIssue {
+	return ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    amountIssue.field,
+		Value:    amountIssue.value,
+		Message:  amountIssue.message,
+	}
+}
+
+func fileHasHeaders(file parsedFile, headers ...string) bool {
+	present := make(map[string]bool, len(file.headers))
+	for _, header := range file.headers {
+		present[header] = true
+	}
+	for _, header := range headers {
+		if !present[header] {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeCutoverDecimal(value string) string {
+	if strings.Contains(value, ",") && !strings.Contains(value, ".") {
+		return strings.ReplaceAll(value, ",", ".")
+	}
+	return strings.ReplaceAll(value, ",", "")
+}
+
+func debitCreditRowValue(row parsedRow) string {
+	return fmt.Sprintf("debit=%s credit=%s", strings.TrimSpace(row.values["debit"]), strings.TrimSpace(row.values["credit"]))
+}
+
+func debitCreditTotalsValue(totalDebit, totalCredit decimal.Decimal) string {
+	return fmt.Sprintf("debits=%s credits=%s", totalDebit.String(), totalCredit.String())
 }
 
 func checkEInvoiceContactReferences(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, mode EInvoiceContactMode) {
