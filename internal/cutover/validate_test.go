@@ -842,6 +842,45 @@ func TestValidateBundleReportsCostAllocationReferenceIssues(t *testing.T) {
 	assert.Equal(t, "MISSING", report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsCostCenterRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindCostCenters,
+			FileName: "cost-centers.csv",
+			CSVContent: "code,name,budget_amount,budget_period,status,is_active\n" +
+				",,nope,WEEKLY,archived,maybe\n" +
+				"OPS,Operations,-1,MONTHLY,,maybe\n",
+		},
+		{
+			Kind:     KindCostAllocations,
+			FileName: "cost-allocations.csv",
+			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date\n" +
+				",,0,101,2026/05/30\n" +
+				"OPS,line-1,nope,nope,\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 15, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindCostCenters, "code", "code is required")
+	assertValidationIssue(t, report, KindCostCenters, "name", "name is required")
+	assertValidationIssue(t, report, KindCostCenters, "budget_amount", "budget_amount must be a decimal")
+	assertValidationIssue(t, report, KindCostCenters, "budget_amount", "budget_amount cannot be negative")
+	assertValidationIssue(t, report, KindCostCenters, "budget_period", "invalid budget_period")
+	assertValidationIssue(t, report, KindCostCenters, "status", "invalid status")
+	assertValidationIssue(t, report, KindCostCenters, "is_active", "is_active must be true or false")
+	assertValidationIssue(t, report, KindCostAllocations, "cost_center_id/cost_center_code", "cost_center_id or cost_center_code is required")
+	assertValidationIssue(t, report, KindCostAllocations, "journal_entry_line_id", "journal_entry_line_id is required")
+	assertValidationIssue(t, report, KindCostAllocations, "amount", "amount must be greater than zero")
+	assertValidationIssue(t, report, KindCostAllocations, "amount", "amount must be a decimal")
+	assertValidationIssue(t, report, KindCostAllocations, "allocation_percentage", "allocation_percentage must be between 0 and 100")
+	assertValidationIssue(t, report, KindCostAllocations, "allocation_percentage", "allocation_percentage must be a decimal")
+	assertValidationIssue(t, report, KindCostAllocations, "allocation_date", "allocation_date must use YYYY-MM-DD")
+	assertValidationIssue(t, report, KindCostAllocations, "allocation_date", "allocation_date is required")
+}
+
 func TestValidateBundleReportsTSDHistoryEmployeeReferenceIssue(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
