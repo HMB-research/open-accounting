@@ -1,4 +1,4 @@
-.PHONY: all build run test test-coverage test-backend-coverage test-integration test-integration-coverage test-cli-coverage verify-cli-coverage clean docker-build docker-up docker-down migrate help
+.PHONY: all build run test test-coverage test-affected test-backend-coverage test-integration test-integration-coverage test-cli-coverage verify-cli-coverage clean docker-build docker-up docker-down migrate help
 
 # Variables
 BINARY_API=api
@@ -32,6 +32,10 @@ test:
 test-coverage:
 	$(GO) test -v -coverprofile=$(COVERAGE_PROFILE) ./...
 	$(GO) tool cover -html=$(COVERAGE_PROFILE) -o coverage.html
+
+# Run tests selected from the changed files in the current branch/worktree.
+test-affected:
+	scripts/run-affected-tests.sh
 
 # Run the backend gate once and enforce the operator CLI coverage invariant
 # from the same profile. This avoids rerunning cmd/oa after the full test pass.
@@ -161,6 +165,7 @@ help:
 	@echo "  make run            - Run API server locally"
 	@echo "  make test           - Run tests"
 	@echo "  make test-coverage  - Run tests with coverage report"
+	@echo "  make test-affected  - Run tests selected from changed files"
 	@echo "  make test-backend-coverage - Run backend tests and enforce CLI coverage"
 	@echo "  make test-cli-coverage - Enforce 100% cmd/oa coverage"
 	@echo "  make lint           - Run linter"

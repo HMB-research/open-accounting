@@ -1,5 +1,26 @@
 # Open Accounting Scripts
 
+## Affected Tests
+
+Use the affected-test runner for a fast local check before the broader stage
+gate. It compares the current branch/worktree to `origin/main` by default,
+selects changed Go packages plus in-repo reverse dependants, runs docs tests for
+documentation/script workflow changes, uses Vitest's changed-file selection for
+frontend unit tests, and runs touched Playwright demo specs directly.
+
+```bash
+make test-affected
+
+# Inspect the selected commands without running them:
+scripts/run-affected-tests.sh --list
+
+# Compare against a specific base:
+scripts/run-affected-tests.sh --base origin/main
+```
+
+This is an inner-loop accelerator. Keep using the broader stage gates, such as
+`make test-backend-coverage`, before committing a completed stage.
+
 ## Database Migrations
 
 ### Running Migrations
