@@ -149,6 +149,19 @@ func TestRunAffectedTestsScriptSelectsDocsForScriptChanges(t *testing.T) {
 	}
 }
 
+func TestRunAffectedTestsScriptSelectsMigrationTests(t *testing.T) {
+	cmd := exec.Command("../scripts/run-affected-tests.sh", "--list", "--changed-file", "migrations/053_quote_order_email_template_types.up.sql")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("list affected migration tests: %v\n%s", err, output)
+	}
+
+	expected := "go test -timeout=5m -tags=integration ./cmd/migrate -count=1"
+	if strings.TrimSpace(string(output)) != expected {
+		t.Fatalf("unexpected migration affected tests:\nwant: %s\ngot:\n%s", expected, output)
+	}
+}
+
 func TestRunAffectedTestsScriptSelectsFrontendChangedTests(t *testing.T) {
 	cmd := exec.Command("../scripts/run-affected-tests.sh", "--list", "--base", "HEAD", "--changed-file", "frontend/src/lib/api.ts")
 	output, err := cmd.CombinedOutput()

@@ -109,7 +109,7 @@ if [ "$explicit_changed" = false ]; then
 	fi
 	git diff --name-only >> "$changed_files_tmp"
 	git diff --cached --name-only >> "$changed_files_tmp"
-	git ls-files --others --exclude-standard -- .github cmd docs frontend internal scripts Makefile README.md go.mod go.sum 2>/dev/null >> "$changed_files_tmp"
+	git ls-files --others --exclude-standard -- .github cmd docs frontend internal migrations scripts Makefile README.md go.mod go.sum 2>/dev/null >> "$changed_files_tmp"
 fi
 
 sort -u "$changed_files_tmp" | sed '/^$/d' > "$changed_files_tmp.sorted"
@@ -163,11 +163,15 @@ docs_required=false
 frontend_changed=false
 frontend_full=false
 cli_coverage_required=false
+migration_required=false
 
 while IFS= read -r file; do
 	case "$file" in
 		go.mod|go.sum)
 			full_backend=true
+			;;
+		migrations/*.sql)
+			migration_required=true
 			;;
 		README.md|docs/*|scripts/README.md|Makefile)
 			docs_required=true
@@ -240,6 +244,10 @@ fi
 
 if [ "$cli_coverage_required" = true ]; then
 	add_command "make test-cli-coverage"
+fi
+
+if [ "$migration_required" = true ]; then
+	add_command "go test -timeout=5m -tags=integration ./cmd/migrate -count=1"
 fi
 
 if [ "$frontend_full" = true ]; then

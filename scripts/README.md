@@ -6,7 +6,8 @@ Use the affected-test runner for a fast local check before the broader stage
 gate. It compares the current branch/worktree to `origin/main` by default,
 selects changed Go packages plus in-repo reverse dependants, runs docs tests for
 documentation/script workflow changes, uses Vitest's changed-file selection for
-frontend unit tests, and runs touched Playwright demo specs directly.
+frontend unit tests, runs touched Playwright demo specs directly, and runs the
+tagged migration test package when SQL migration files change.
 
 ```bash
 make test-affected
