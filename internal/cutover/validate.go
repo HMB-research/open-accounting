@@ -1665,6 +1665,8 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkBankAccountRows(report, file)
 	case KindBankTransactions:
 		checkBankTransactionRows(report, file)
+	case KindProductCategories:
+		checkProductCategoryRows(report, file)
 	case KindProducts:
 		checkProductRows(report, file)
 	case KindWarehouses:
@@ -3157,6 +3159,63 @@ func checkCommercialBool(report *BundleValidationReport, file parsedFile, row pa
 			Message:  fmt.Sprintf("%s must be true or false", field),
 		})
 	}
+}
+
+func checkProductCategoryRows(report *BundleValidationReport, file parsedFile) {
+	allNames := map[string]bool{}
+	for _, row := range file.rows {
+		addIndexValue(allNames, row.values["name"])
+	}
+
+	seenNames := map[string]bool{}
+	for _, row := range file.rows {
+		checkProductCategoryName(report, file, row)
+		checkProductCategoryParentNameOrder(report, file, row, allNames, seenNames)
+		addIndexValue(seenNames, row.values["name"])
+	}
+}
+
+func checkProductCategoryName(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "name") || strings.TrimSpace(row.values["name"]) != "" {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "name",
+		Message:  "name is required",
+	})
+}
+
+func checkProductCategoryParentNameOrder(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	allNames map[string]bool,
+	seenNames map[string]bool,
+) {
+	if !fileHasHeaders(file, "parent_name") {
+		return
+	}
+	parentName := strings.TrimSpace(row.values["parent_name"])
+	if parentName == "" {
+		return
+	}
+	parentKey := normalizedValue(parentName)
+	if parentKey == "" || parentKey == normalizedValue(row.values["name"]) || !allNames[parentKey] || seenNames[parentKey] {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "parent_name",
+		Value:    parentName,
+		Message:  "parent_name must reference an earlier product category row",
+	})
 }
 
 func checkProductRows(report *BundleValidationReport, file parsedFile) {

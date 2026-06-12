@@ -1376,6 +1376,27 @@ func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 	assert.Equal(t, "5999", report.Issues[2].Value)
 }
 
+func TestValidateBundleReportsProductCategoryRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindProductCategories,
+			FileName: "categories.csv",
+			CSVContent: "category_name,parent_name,description\n" +
+				",,Missing name\n" +
+				"Child,Parent,\n" +
+				"Parent,,\n" +
+				"Grandchild,Parent,\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindProductCategories, "name", "name is required")
+	assertValidationIssue(t, report, KindProductCategories, "parent_name", "parent_name must reference an earlier product category row")
+}
+
 func TestValidateBundleReportsInventoryRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
