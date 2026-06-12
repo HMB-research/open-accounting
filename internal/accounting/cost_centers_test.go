@@ -223,6 +223,38 @@ func (costCenterImportCreateErrorRepository) Create(_ context.Context, _ string,
 	return errors.New("create unavailable")
 }
 
+type costCenterUpdateErrorRepository struct {
+	*MockCostCenterRepository
+}
+
+func (costCenterUpdateErrorRepository) Update(_ context.Context, _ string, _ *CostCenter) error {
+	return errors.New("update unavailable")
+}
+
+type costCenterReportListErrorRepository struct {
+	CostCenterRepository
+}
+
+func (costCenterReportListErrorRepository) List(_ context.Context, _, _ string, _ bool) ([]CostCenter, error) {
+	return nil, errors.New("list unavailable")
+}
+
+type costCenterReportExpenseErrorRepository struct {
+	*MockCostCenterRepository
+}
+
+func (costCenterReportExpenseErrorRepository) GetExpensesByPeriod(_ context.Context, _, _, _ string, _, _ time.Time) (decimal.Decimal, error) {
+	return decimal.Zero, errors.New("expenses unavailable")
+}
+
+type costAllocationCreateErrorRepository struct {
+	*MockCostCenterRepository
+}
+
+func (costAllocationCreateErrorRepository) CreateAllocation(_ context.Context, _ string, _ *CostAllocation) error {
+	return errors.New("allocation create unavailable")
+}
+
 func TestCostCenterService_CreateCostCenter(t *testing.T) {
 	ts := newTestCostCenterService()
 	ctx := context.Background()
@@ -1054,6 +1086,18 @@ func TestCostCenterService_UpdateCostCenter(t *testing.T) {
 	assert.Equal(t, parentID, *cc.ParentID)
 	assert.False(t, cc.IsActive)
 
+	// Blank parent IDs are normalized to nil so users can clear hierarchy links.
+	blankParentID := " "
+	cc, err = ts.svc.UpdateCostCenter(ctx, "test_schema", "tenant-1", "cc-123", &UpdateCostCenterRequest{
+		Code:     "CC001-ROOT",
+		Name:     "Rooted",
+		ParentID: &blankParentID,
+		IsActive: true,
+	})
+	require.NoError(t, err)
+	assert.Nil(t, cc.ParentID)
+	assert.True(t, cc.IsActive)
+
 	// Test invalid parent id
 	badParentID := "legacy-parent"
 	_, err = ts.svc.UpdateCostCenter(ctx, "test_schema", "tenant-1", "cc-123", &UpdateCostCenterRequest{
@@ -1067,6 +1111,22 @@ func TestCostCenterService_UpdateCostCenter(t *testing.T) {
 	// Test update nonexistent
 	_, err = ts.svc.UpdateCostCenter(ctx, "test_schema", "tenant-1", "nonexistent", req)
 	assert.Error(t, err)
+
+	repoWithUpdateError := NewMockCostCenterRepository()
+	repoWithUpdateError.CostCenters["cc-fail"] = &CostCenter{
+		ID:       "cc-fail",
+		TenantID: "tenant-1",
+		Code:     "CC-FAIL",
+		Name:     "Fails",
+		IsActive: true,
+	}
+	svcWithUpdateError := NewCostCenterServiceWithRepository(costCenterUpdateErrorRepository{MockCostCenterRepository: repoWithUpdateError})
+	_, err = svcWithUpdateError.UpdateCostCenter(ctx, "test_schema", "tenant-1", "cc-fail", &UpdateCostCenterRequest{
+		Code:     "CC-FAIL-NEW",
+		Name:     "Still Fails",
+		IsActive: true,
+	})
+	assert.ErrorContains(t, err, "update unavailable")
 }
 
 func TestCostCenterService_DeleteCostCenter(t *testing.T) {
@@ -1171,4 +1231,54 @@ func TestCostCenterService_GetCostCenterReport_NoBudget(t *testing.T) {
 	summary := report.CostCenters[0]
 	assert.False(t, summary.IsOverBudget) // No budget = never over budget
 	assert.True(t, summary.BudgetUsed.IsZero())
+}
+
+func TestCostCenterService_GetCostCenterReportErrors(t *testing.T) {
+	ctx := context.Background()
+	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)
+
+	t.Run("propagates list error", func(t *testing.T) {
+		svc := NewCostCenterServiceWithRepository(costCenterReportListErrorRepository{})
+
+		_, err := svc.GetCostCenterReport(ctx, "test_schema", "tenant-1", start, end)
+		assert.ErrorContains(t, err, "list unavailable")
+	})
+
+	t.Run("propagates expenses error", func(t *testing.T) {
+		repo := NewMockCostCenterRepository()
+		repo.CostCenters["cc-1"] = &CostCenter{
+			ID:       "cc-1",
+			TenantID: "tenant-1",
+			Code:     "CC001",
+			Name:     "Sales",
+			IsActive: true,
+		}
+		svc := NewCostCenterServiceWithRepository(costCenterReportExpenseErrorRepository{MockCostCenterRepository: repo})
+
+		_, err := svc.GetCostCenterReport(ctx, "test_schema", "tenant-1", start, end)
+		assert.ErrorContains(t, err, "expenses unavailable")
+	})
+}
+
+func TestCostCenterService_CreateCostAllocationRepositoryError(t *testing.T) {
+	repo := NewMockCostCenterRepository()
+	costCenterID := "11111111-1111-4111-8111-111111111111"
+	journalEntryLineID := "22222222-2222-4222-8222-222222222222"
+	repo.CostCenters[costCenterID] = &CostCenter{
+		ID:       costCenterID,
+		TenantID: "tenant-1",
+		Code:     "OPS",
+		Name:     "Operations",
+		IsActive: true,
+	}
+	svc := NewCostCenterServiceWithRepository(costAllocationCreateErrorRepository{MockCostCenterRepository: repo})
+
+	_, err := svc.CreateCostAllocation(context.Background(), "test_schema", "tenant-1", &CreateCostAllocationRequest{
+		CostCenterID:       costCenterID,
+		JournalEntryLineID: journalEntryLineID,
+		Amount:             decimal.NewFromInt(10),
+		AllocationDate:     time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+	})
+	assert.ErrorContains(t, err, "allocation create unavailable")
 }
