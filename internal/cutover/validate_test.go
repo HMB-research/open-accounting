@@ -23,7 +23,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindEmployees,
 			FileName:   "employees.csv",
-			CSVContent: "employee_number,first_name,last_name,email\nEMP-1,Mari,Maasikas,mari@example.com\n",
+			CSVContent: "employee_number,first_name,last_name,email,start_date\nEMP-1,Mari,Maasikas,mari@example.com,2026-01-15\n",
 		},
 		{
 			Kind:       KindExpenses,
@@ -492,6 +492,76 @@ func TestValidateBundleReportsContactRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindContacts, "payment_terms_days", "payment_terms_days must be a non-negative integer")
 	assertValidationIssue(t, report, KindContacts, "country_code", "country_code must be a 2-letter code")
 	assertValidationIssue(t, report, KindContacts, "credit_limit", "credit_limit must be a decimal")
+}
+
+func TestValidateBundleReportsEmployeeRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindEmployees,
+			FileName: "employees.csv",
+			CSVContent: "first_name,last_name,start_date,end_date,employment_type,apply_basic_exemption,basic_exemption_amount,funded_pension_rate,base_salary,salary_effective_from,is_active\n" +
+				",Maasikas,2026-01-15,2026-02-01,FULL_TIME,true,700,0.02,3200,2026-01-15,true\n" +
+				"Mari,,2026-01-15,2026-02-01,FULL_TIME,true,700,0.02,3200,2026-01-15,true\n" +
+				"Bad,Start,not-date,,FULL_TIME,true,700,0.02,3200,2026-01-15,true\n" +
+				"Bad,End,2026-02-01,2026-01-31,FULL_TIME,true,700,0.02,3200,2026-02-01,true\n" +
+				"Bad,Type,2026-01-15,,intern,true,700,0.02,3200,2026-01-15,true\n" +
+				"Bad,Bool,2026-01-15,,FULL_TIME,maybe,700,0.02,3200,2026-01-15,nope\n" +
+				"Bad,Basic,2026-01-15,,FULL_TIME,true,nope,0.02,3200,2026-01-15,true\n" +
+				"Bad,Negative,2026-01-15,,FULL_TIME,true,-1,0.02,3200,2026-01-15,true\n" +
+				"Bad,Pension,2026-01-15,,FULL_TIME,true,700,1.2,3200,2026-01-15,true\n" +
+				"Bad,Salary,2026-01-15,,FULL_TIME,true,700,0.02,0,2026-01-15,true\n" +
+				"Bad,Effective,2026-01-15,,FULL_TIME,true,700,0.02,,2026-01-15,true\n" +
+				"Bad,EffectiveDate,2026-01-15,,FULL_TIME,true,700,0.02,3200,not-date,true\n" +
+				"Jaan,Tamm,01.02.2026,,too_votuleping,ja,\"700,50\",\"0,02\",\"3 200,00\",2026-02-01,ei\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 13, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindEmployees, "first_name", "first_name is required")
+	assertValidationIssue(t, report, KindEmployees, "last_name", "last_name is required")
+	assertValidationIssue(t, report, KindEmployees, "start_date", "start_date must be in YYYY-MM-DD format")
+	assertValidationIssue(t, report, KindEmployees, "end_date", "end_date cannot be before start_date")
+	assertValidationIssue(t, report, KindEmployees, "employment_type", `invalid employment_type "intern"`)
+	assertValidationIssue(t, report, KindEmployees, "apply_basic_exemption", "apply_basic_exemption must be true or false")
+	assertValidationIssue(t, report, KindEmployees, "is_active", "is_active must be true or false")
+	assertValidationIssue(t, report, KindEmployees, "basic_exemption_amount", "basic_exemption_amount must be a decimal")
+	assertValidationIssue(t, report, KindEmployees, "basic_exemption_amount", "basic_exemption_amount must be zero or greater")
+	assertValidationIssue(t, report, KindEmployees, "funded_pension_rate", "funded_pension_rate must be between 0 and 1")
+	assertValidationIssue(t, report, KindEmployees, "base_salary", "base_salary must be greater than zero")
+	assertValidationIssue(t, report, KindEmployees, "salary_effective_from", "salary_effective_from requires base_salary")
+	assertValidationIssue(t, report, KindEmployees, "salary_effective_from", "salary_effective_from must be in YYYY-MM-DD format")
+}
+
+func TestValidateBundleRequiresEmployeeImportColumns(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindEmployees,
+			FileName:   "employees.csv",
+			CSVContent: "employee_number,name\nEMP-1,Mari Maasikas\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 1)
+	assert.ElementsMatch(t, []string{"first_name", "last_name", "start_date"}, report.Files[0].MissingColumns)
+	require.Len(t, report.Issues, 3)
+	messages := make([]string, 0, len(report.Issues))
+	for _, issue := range report.Issues {
+		assert.Equal(t, KindEmployees, issue.Kind)
+		assert.Empty(t, issue.Field)
+		messages = append(messages, issue.Message)
+	}
+	assert.ElementsMatch(t, []string{
+		"missing required column group: first_name",
+		"missing required column group: last_name",
+		"missing required column group: start_date",
+	}, messages)
 }
 
 func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
@@ -963,7 +1033,7 @@ func TestValidateBundleReportsTSDHistoryEmployeeReferenceIssue(t *testing.T) {
 		{
 			Kind:       KindEmployees,
 			FileName:   "employees.csv",
-			CSVContent: "employee_number,first_name,last_name\nEMP-1,Mari,Maasikas\n",
+			CSVContent: "employee_number,first_name,last_name,start_date\nEMP-1,Mari,Maasikas,2026-01-15\n",
 		},
 		{
 			Kind:       KindTSDHistory,
