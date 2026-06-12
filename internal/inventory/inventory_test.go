@@ -834,6 +834,22 @@ func TestService_ImportProductsCSVReportsInvalidCategoryID(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, "category_id must be a valid UUID")
 }
 
+func TestService_ImportProductsCSVReportsInvalidSupplierID(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		CSVContent: "code,name,sales_price,supplier_id\nSKU-001,Widget,15.00,legacy-supplier\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.ProductsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, "supplier_id must be a valid UUID")
+}
+
 func TestService_ImportProductsCSVReportsMissingCategoryID(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
