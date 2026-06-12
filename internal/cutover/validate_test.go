@@ -1924,6 +1924,39 @@ func TestValidateBundleReportsInvalidProductCategoryID(t *testing.T) {
 	assert.Contains(t, report.Issues[0].Message, "valid UUID")
 }
 
+func TestValidateBundleReportsProductAndWarehouseIDValuesThatMatchCodes(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "product_code,name,sales_price\nSKU-1,Widget,10\n",
+		},
+		{
+			Kind:       KindWarehouses,
+			FileName:   "warehouses.csv",
+			CSVContent: "warehouse_code,warehouse_name\nMAIN,Main warehouse\n",
+		},
+		{
+			Kind:       KindQuotes,
+			FileName:   "quotes.csv",
+			CSVContent: "quote_number,quote_date,contact_name,line_description,quantity,unit_price,vat_rate,product_id\nQ-1,2026-05-30,Customer One,Work,1,100,22,SKU-1\n",
+		},
+		{
+			Kind:       KindStockAdjustments,
+			FileName:   "stock.csv",
+			CSVContent: "product_id,warehouse_id,quantity\nSKU-1,MAIN,5\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindQuotes, "product_id", "product_id must be a valid UUID")
+	assertValidationIssue(t, report, KindStockAdjustments, "product_id", "product_id must be a valid UUID")
+	assertValidationIssue(t, report, KindStockAdjustments, "warehouse_id", "warehouse_id must be a valid UUID")
+}
+
 func TestValidateBundleCanonicalizesImporterDescriptionMemoAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -1999,7 +2032,7 @@ func TestValidateBundleReportsCommercialDocumentProductReferenceIssues(t *testin
 	require.Len(t, report.Issues, 1)
 	assert.Equal(t, KindQuotes, report.Issues[0].Kind)
 	assert.Equal(t, KindProducts, report.Issues[0].TargetKind)
-	assert.Equal(t, "product_id/product_code", report.Issues[0].Field)
+	assert.Equal(t, "product_code", report.Issues[0].Field)
 	assert.Equal(t, "SKU-404", report.Issues[0].Value)
 }
 
