@@ -1439,6 +1439,8 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 	switch file.kind {
 	case KindPayments:
 		checkPaymentRows(report, file)
+	case KindBankTransactions:
+		checkBankTransactionRows(report, file)
 	case KindOpeningBalances:
 		checkOpeningBalanceTotals(report, file)
 	case KindJournalEntries:
@@ -1560,6 +1562,52 @@ func checkPaymentAllocation(report *BundleValidationReport, file parsedFile, row
 			Value:    allocationValue,
 			Message:  "allocation_amount exceeds payment amount",
 		})
+	}
+}
+
+func checkBankTransactionRows(report *BundleValidationReport, file parsedFile) {
+	hasDate := fileHasHeaders(file, "date")
+	hasAmount := fileHasHeaders(file, "amount")
+	for _, row := range file.rows {
+		if hasDate {
+			checkBankTransactionDate(report, file, row)
+		}
+		if hasAmount {
+			checkBankTransactionAmount(report, file, row)
+		}
+	}
+}
+
+func checkBankTransactionDate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["date"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "date",
+			Message:  "date is required",
+		})
+		return
+	}
+	if _, err := time.Parse("2006-01-02", value); err == nil {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "date",
+		Value:    value,
+		Message:  "date must be YYYY-MM-DD",
+	})
+}
+
+func checkBankTransactionAmount(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if _, issue := parseCutoverRequiredDecimal(row.values["amount"], "amount"); issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
 	}
 }
 
@@ -1800,6 +1848,18 @@ func parseCutoverPositiveDecimal(value, fieldName string) (decimal.Decimal, *cut
 	}
 	if parsed.LessThanOrEqual(decimal.Zero) {
 		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be positive", fieldName)}
+	}
+	return parsed, nil
+}
+
+func parseCutoverRequiredDecimal(value, fieldName string) (decimal.Decimal, *cutoverAmountIssue) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, message: fmt.Sprintf("%s is required", fieldName)}
+	}
+	parsed, err := decimal.NewFromString(trimmed)
+	if err != nil {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be a decimal", fieldName)}
 	}
 	return parsed, nil
 }
