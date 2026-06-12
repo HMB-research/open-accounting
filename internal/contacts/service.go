@@ -38,8 +38,13 @@ func (s *Service) Create(ctx context.Context, tenantID string, schemaName string
 		return nil, err
 	}
 
+	contactID := req.ID
+	if contactID == "" {
+		contactID = uuid.New().String()
+	}
+
 	contact := &Contact{
-		ID:               uuid.New().String(),
+		ID:               contactID,
 		TenantID:         tenantID,
 		Code:             req.Code,
 		Name:             req.Name,
@@ -79,6 +84,11 @@ func (s *Service) Create(ctx context.Context, tenantID string, schemaName string
 
 // validateCreateRequest validates the create contact request
 func validateCreateRequest(req *CreateContactRequest) error {
+	if req.ID != "" {
+		if _, err := uuid.Parse(req.ID); err != nil {
+			return fmt.Errorf("id must be a valid UUID")
+		}
+	}
 	if req.Name == "" {
 		return fmt.Errorf("name is required")
 	}
