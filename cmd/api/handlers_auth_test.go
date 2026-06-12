@@ -38,6 +38,7 @@ type mockTenantRepository struct {
 	getUserRoleErr           error
 	addUserToTenantErr       error
 	completeOnboardingErr    error
+	updateTenantErr          error
 	updateTenantWithEventErr error
 	listPeriodCloseEventsErr error
 	getLatestCloseEventErr   error
@@ -100,6 +101,9 @@ func (m *mockTenantRepository) GetTenantBySlug(ctx context.Context, slug string)
 }
 
 func (m *mockTenantRepository) UpdateTenant(ctx context.Context, tenantID, name string, settingsJSON []byte, updatedAt time.Time) error {
+	if m.updateTenantErr != nil {
+		return m.updateTenantErr
+	}
 	t, ok := m.tenants[tenantID]
 	if !ok {
 		return tenant.ErrTenantNotFound

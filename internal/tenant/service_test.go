@@ -850,6 +850,50 @@ func TestService_UpdateTenantAllowsUnchangedPeriodLockDate(t *testing.T) {
 	assert.Equal(t, "updated@example.com", updatedTenant.Settings.Email)
 }
 
+func TestService_UpdateLatePaymentInterestRate(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.Email = "billing@example.com"
+	initialSettings.LatePaymentInterestRate = 0.001
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	updatedTenant, err := svc.UpdateLatePaymentInterestRate(context.Background(), "tenant-123", 0)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, updatedTenant.Settings.LatePaymentInterestRate)
+	assert.Equal(t, "billing@example.com", updatedTenant.Settings.Email)
+	assert.Equal(t, 0.0, repo.tenants["tenant-123"].Settings.LatePaymentInterestRate)
+
+	updatedTenant, err = svc.UpdateLatePaymentInterestRate(context.Background(), "tenant-123", 0.0005)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0005, updatedTenant.Settings.LatePaymentInterestRate)
+	assert.Equal(t, "billing@example.com", updatedTenant.Settings.Email)
+	assert.Equal(t, 0.0005, repo.tenants["tenant-123"].Settings.LatePaymentInterestRate)
+}
+
+func TestService_UpdateLatePaymentInterestRateErrors(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, err := svc.UpdateLatePaymentInterestRate(context.Background(), "missing", 0.0005)
+	require.Error(t, err)
+
+	repo.updateTenantErr = errors.New("db error")
+	_, err = svc.UpdateLatePaymentInterestRate(context.Background(), "tenant-123", 0.0005)
+	require.Error(t, err)
+}
+
 func TestService_ClosePeriod(t *testing.T) {
 	repo := NewMockRepository()
 	initialSettings := DefaultSettings()
