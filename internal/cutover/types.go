@@ -37,6 +37,14 @@ const (
 	SeverityWarning IssueSeverity = "WARNING"
 )
 
+type EInvoiceContactMode string
+
+const (
+	EInvoiceContactModeSupplier EInvoiceContactMode = "supplier"
+	EInvoiceContactModeCustomer EInvoiceContactMode = "customer"
+	EInvoiceContactModeBoth     EInvoiceContactMode = "both"
+)
+
 type BundleFile struct {
 	Kind       FileKind `json:"kind"`
 	FileName   string   `json:"file_name"`
@@ -45,7 +53,8 @@ type BundleFile struct {
 }
 
 type ValidateBundleRequest struct {
-	Files []BundleFile `json:"files"`
+	Files               []BundleFile        `json:"files"`
+	EInvoiceContactMode EInvoiceContactMode `json:"e_invoice_contact_mode,omitempty"`
 }
 
 type BundleValidationReport struct {

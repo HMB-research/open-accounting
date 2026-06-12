@@ -160,8 +160,10 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 
 	require.Equal(t, KindEInvoices, eInvoiceValidation.Kind)
 	assert.Equal(t, 1, eInvoiceValidation.Rows)
+	assert.Contains(t, eInvoiceValidation.Headers, "invoice_id")
 	assert.Contains(t, eInvoiceValidation.Headers, "invoice_number")
 	assert.Contains(t, eInvoiceValidation.Headers, "contact_reg_code")
+	assert.Contains(t, eInvoiceValidation.Headers, "buyer_reg_code")
 }
 
 func TestValidateBundleReportsExpenseAccountReferenceIssues(t *testing.T) {
@@ -740,6 +742,54 @@ func TestValidateBundleAcceptsEInvoiceXMLAndPaymentReference(t *testing.T) {
 	assert.Empty(t, report.Issues)
 }
 
+func TestValidateBundleAcceptsEInvoiceCustomerContactMode(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		EInvoiceContactMode: EInvoiceContactModeCustomer,
+		Files: []BundleFile{
+			{
+				Kind:       KindContacts,
+				FileName:   "contacts.csv",
+				CSVContent: "name,reg_code\nBuyer OÜ,87654321\n",
+			},
+			{
+				Kind:       KindEInvoices,
+				FileName:   "e-invoices.xml",
+				XMLContent: cutoverEInvoiceXML("INV-2026-001", "Seller OÜ", "12345678"),
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleAcceptsEInvoiceBothContactMode(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		EInvoiceContactMode: EInvoiceContactModeBoth,
+		Files: []BundleFile{
+			{
+				Kind:       KindContacts,
+				FileName:   "contacts.csv",
+				CSVContent: "name,reg_code\nSupplier OÜ,12345678\nBuyer OÜ,87654321\n",
+			},
+			{
+				Kind:       KindEInvoices,
+				FileName:   "e-invoices.xml",
+				XMLContent: cutoverEInvoiceXML("INV-2026-001", "Supplier OÜ", "12345678"),
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
 func TestValidateBundleAcceptsPaymentInvoiceIDReference(t *testing.T) {
 	legacyInvoiceID := "11111111-1111-1111-1111-111111111111"
 
@@ -946,6 +996,51 @@ func TestValidateBundleReportsEInvoiceContactReferenceIssues(t *testing.T) {
 	assert.Equal(t, KindEInvoices, report.Issues[0].Kind)
 	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
 	assert.Equal(t, "12345678", report.Issues[0].Value)
+}
+
+func TestValidateBundleReportsEInvoiceCustomerContactReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		EInvoiceContactMode: EInvoiceContactModeCustomer,
+		Files: []BundleFile{
+			{
+				Kind:       KindContacts,
+				FileName:   "contacts.csv",
+				CSVContent: "name,reg_code\nSupplier OÜ,12345678\n",
+			},
+			{
+				Kind:       KindEInvoices,
+				FileName:   "e-invoices.xml",
+				XMLContent: cutoverEInvoiceXML("INV-2026-001", "Supplier OÜ", "12345678"),
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindEInvoices, report.Issues[0].Kind)
+	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
+	assert.Equal(t, "buyer_reg_code/buyer_vat_number/buyer_contact_email/buyer_contact_name", report.Issues[0].Field)
+	assert.Equal(t, "87654321", report.Issues[0].Value)
+}
+
+func TestValidateBundleRejectsUnsupportedEInvoiceContactMode(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		EInvoiceContactMode: "partner",
+		Files: []BundleFile{
+			{
+				Kind:       KindContacts,
+				FileName:   "contacts.csv",
+				CSVContent: "name\nSupplier OÜ\n",
+			},
+		},
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, report)
+	assert.Contains(t, err.Error(), "unsupported e_invoice_contact_mode")
 }
 
 func TestValidateBundleReportsInvalidEInvoiceXML(t *testing.T) {
