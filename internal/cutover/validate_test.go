@@ -253,6 +253,50 @@ func TestValidateBundleAcceptsSmartAccountsProviderPresetAliases(t *testing.T) {
 	assert.Contains(t, report.Files[4].Headers, "entry_reference")
 }
 
+func TestValidateBundleAcceptsMeritPayrollProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetMerit,
+		Files: []BundleFile{
+			{
+				Kind:       KindEmployees,
+				FileName:   "merit-employees.csv",
+				CSVContent: "ImportCode,FirstName,SurName,PersonalCode,StartDate,Amount\nEMP-1,Mari,Maasikas,48901010001,2026-01-15,3200\n",
+			},
+			{
+				Kind:       KindPayrollHistory,
+				FileName:   "merit-salary-report.csv",
+				CSVContent: "ContractCode,EmployeeFullName,Month6,Sum,SocialTax,EmployerUnempInsurance\nEMP-1,Mari Maasikas,202605,2500,825,20\n",
+			},
+			{
+				Kind:       KindLeaveBalances,
+				FileName:   "merit-vacation-balance.csv",
+				CSVContent: "ContractCode,Date,TypeCode,Days,InitBalance,DaysAcquired\nEMP-1,2026-12-31,1,28,4,6\n",
+			},
+			{
+				Kind:       KindTSDHistory,
+				FileName:   "merit-tsd-history.csv",
+				CSVContent: "PersonalCode,Month6,Sum,IncomeTax,SocialTax\n48901010001,202605,2500,500,825\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 4)
+	assert.Contains(t, report.Files[0].Headers, "employee_number")
+	assert.Contains(t, report.Files[0].Headers, "base_salary")
+	assert.Contains(t, report.Files[1].Headers, "period_year")
+	assert.Contains(t, report.Files[1].Headers, "period_month")
+	assert.Contains(t, report.Files[1].Headers, "gross_salary")
+	assert.Contains(t, report.Files[2].Headers, "year")
+	assert.Contains(t, report.Files[2].Headers, "absence_type_code")
+	assert.Contains(t, report.Files[2].Headers, "carryover_days")
+	assert.Contains(t, report.Files[3].Headers, "period_year")
+	assert.Contains(t, report.Files[3].Headers, "gross_payment")
+}
+
 func TestValidateBundleRejectsUnsupportedProviderPreset(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: "legacy-system",

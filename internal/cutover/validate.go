@@ -1221,6 +1221,7 @@ func parseBundleFile(file BundleFile, spec fileSpec) (parsedFile, FileValidation
 			validation.Headers = append(validation.Headers, canonical)
 		}
 	}
+	validation.Headers = applyDerivedMigrationHeaders(file.Kind, headerSet, validation.Headers)
 	validation.MissingColumns = missingRequiredGroups(spec.requiredGroups, headerSet)
 
 	rows := []parsedRow{}
@@ -1253,6 +1254,7 @@ func parseBundleFile(file BundleFile, spec fileSpec) (parsedFile, FileValidation
 		if blank {
 			continue
 		}
+		applyDerivedMigrationValues(file.Kind, values)
 		rows = append(rows, parsedRow{number: rowNumber, values: values})
 	}
 
@@ -1294,6 +1296,116 @@ func parseEInvoiceBundleFile(file BundleFile) (parsedFile, FileValidation, error
 
 	validation.Rows = len(rows)
 	return parsedFile{kind: file.Kind, fileName: fileName, headers: validation.Headers, rows: rows}, validation, nil
+}
+
+func applyDerivedMigrationHeaders(kind FileKind, headerSet map[string]bool, headers []string) []string {
+	addHeader := func(header string) {
+		if headerSet[header] {
+			return
+		}
+		headerSet[header] = true
+		headers = append(headers, header)
+	}
+
+	switch kind {
+	case KindPayrollHistory, KindTSDHistory:
+		if hasAnyHeader(headerSet, "period_code", "month6", "period", "accounting_period") {
+			addHeader("period_year")
+			addHeader("period_month")
+		}
+	case KindKMDHistory:
+		if hasAnyHeader(headerSet, "period_code", "month6", "period", "accounting_period") {
+			addHeader("year")
+			addHeader("month")
+		}
+	case KindLeaveBalances:
+		if hasAnyHeader(headerSet, "balance_date") {
+			addHeader("year")
+		}
+	}
+
+	return headers
+}
+
+func applyDerivedMigrationValues(kind FileKind, values map[string]string) {
+	switch kind {
+	case KindPayrollHistory, KindTSDHistory:
+		if year, month, ok := migrationPeriodYearMonth(values); ok {
+			setDerivedValue(values, "period_year", year)
+			setDerivedValue(values, "period_month", month)
+		}
+	case KindKMDHistory:
+		if year, month, ok := migrationPeriodYearMonth(values); ok {
+			setDerivedValue(values, "year", year)
+			setDerivedValue(values, "month", month)
+		}
+	case KindLeaveBalances:
+		if year, ok := migrationYearFromBalanceDate(values); ok {
+			setDerivedValue(values, "year", year)
+		}
+	}
+}
+
+func hasAnyHeader(headerSet map[string]bool, headers ...string) bool {
+	for _, header := range headers {
+		if headerSet[header] {
+			return true
+		}
+	}
+	return false
+}
+
+func migrationPeriodYearMonth(values map[string]string) (string, string, bool) {
+	value := firstMigrationValue(values, "period_code", "month6", "period", "accounting_period")
+	if value == "" {
+		return "", "", false
+	}
+	if parsed, ok := parseEmployeeCutoverDate(value); ok {
+		return strconv.Itoa(parsed.Year()), fmt.Sprintf("%02d", int(parsed.Month())), true
+	}
+
+	var digits strings.Builder
+	for _, r := range value {
+		if unicode.IsDigit(r) {
+			digits.WriteRune(r)
+		}
+	}
+	compact := digits.String()
+	if len(compact) < 6 {
+		return "", "", false
+	}
+	return compact[:4], compact[4:6], true
+}
+
+func migrationYearFromBalanceDate(values map[string]string) (string, bool) {
+	value := firstMigrationValue(values, "balance_date")
+	if value == "" {
+		return "", false
+	}
+	if parsed, ok := parseEmployeeCutoverDate(value); ok {
+		return strconv.Itoa(parsed.Year()), true
+	}
+	if len(value) == 4 {
+		if _, err := strconv.Atoi(value); err == nil {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func firstMigrationValue(values map[string]string, fields ...string) string {
+	for _, field := range fields {
+		if value := strings.TrimSpace(values[field]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func setDerivedValue(values map[string]string, field, value string) {
+	if strings.TrimSpace(values[field]) == "" {
+		values[field] = value
+	}
 }
 
 func eInvoiceValidationHeaders() []string {
