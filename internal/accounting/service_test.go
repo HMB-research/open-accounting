@@ -938,6 +938,26 @@ func TestService_CreateJournalEntry(t *testing.T) {
 		assert.Equal(t, &sourceID, result.SourceID)
 	})
 
+	t.Run("ignores blank source ID", func(t *testing.T) {
+		sourceID := " \t "
+		req := &CreateJournalEntryRequest{
+			EntryDate:   time.Now(),
+			Description: "Manual adjustment",
+			SourceType:  "MANUAL",
+			SourceID:    &sourceID,
+			Lines: []CreateJournalEntryLineReq{
+				{AccountID: "acc-1", DebitAmount: decimal.NewFromFloat(100)},
+				{AccountID: "acc-2", CreditAmount: decimal.NewFromFloat(100)},
+			},
+			UserID: "user-1",
+		}
+
+		result, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
+		require.NoError(t, err)
+		assert.Equal(t, "MANUAL", result.SourceType)
+		assert.Nil(t, result.SourceID)
+	})
+
 	t.Run("rejects invalid source ID", func(t *testing.T) {
 		sourceID := "legacy-invoice"
 		req := &CreateJournalEntryRequest{
