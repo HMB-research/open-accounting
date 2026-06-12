@@ -605,6 +605,34 @@ func TestValidateBundleReportsPayrollHistoryRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindPayrollHistory, "notes", "notes must be consistent for each payroll period")
 }
 
+func TestValidateBundleReportsLeaveBalanceRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindLeaveBalances,
+			FileName: "leave-balances.csv",
+			CSVContent: "period_year,employee_number,absence_code,entitlement,carry_over_days,taken_days,reserved_days\n" +
+				"2019,EMP-1,ANNUAL,28,0,0,0\n" +
+				"2026,EMP-2,ANNUAL,nope,0,0,0\n" +
+				"2026,EMP-3,ANNUAL,-1,0,0,0\n" +
+				"2026,EMP-4,ANNUAL,28,-1,0,0\n" +
+				"2026,EMP-5,ANNUAL,28,0,-0.5,0\n" +
+				"2026,EMP-6,ANNUAL,28,0,0,-1\n" +
+				"2026,EMP-7,ANNUAL,\"28,5\",\"1 000,5\",10,2\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 6, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindLeaveBalances, "year", "year must be between 2020 and 2100")
+	assertValidationIssue(t, report, KindLeaveBalances, "entitled_days", "entitled_days must be a decimal")
+	assertValidationIssue(t, report, KindLeaveBalances, "entitled_days", "entitled_days must be zero or greater")
+	assertValidationIssue(t, report, KindLeaveBalances, "carryover_days", "carryover_days must be zero or greater")
+	assertValidationIssue(t, report, KindLeaveBalances, "used_days", "used_days must be zero or greater")
+	assertValidationIssue(t, report, KindLeaveBalances, "pending_days", "pending_days must be zero or greater")
+}
+
 func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
