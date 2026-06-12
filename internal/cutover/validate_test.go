@@ -1522,6 +1522,22 @@ func TestValidateBundleReportsCostAllocationIDsThatMatchGeneratedCostCenterImpor
 	assertValidationIssue(t, report, KindCostAllocations, "cost_center_id", "cost_center_id must be a valid UUID")
 }
 
+func TestValidateBundleReportsInvalidExistingCostCenterParentIDs(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindCostCenters,
+			FileName:   "cost-centers.csv",
+			CSVContent: "code,name,parent_id,parent_code\nSALES,Sales,legacy-parent,\nONLINE,Online,,SALES\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindCostCenters, "parent_id", "parent_id must be a valid UUID")
+}
+
 func TestValidateBundleReportsCostCenterRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
