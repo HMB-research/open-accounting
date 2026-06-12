@@ -65,6 +65,9 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 }
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("assets repository database is not configured")
+	}
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
