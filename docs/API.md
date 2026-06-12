@@ -2403,7 +2403,7 @@ Content-Type: application/json
 }
 ```
 
-Stock CSV imports require `quantity`, a product identifier (`product_id` or `product_code`), and a warehouse identifier (`warehouse_id` or `warehouse_code`). Quantities are signed adjustments; use positive quantities for opening stock or inbound counts and negative quantities for reductions. Optional lot metadata columns are `lot_number`, `serial_number`, and `expiry_date`; aliases include `lot`, `batch`, `serial`, `expiration_date`, and `description` for `reason`.
+Stock CSV imports require `quantity`, a product identifier (`product_id` or `product_code`), and a warehouse identifier (`warehouse_id` or `warehouse_code`). Direct `product_id` and `warehouse_id` values must be valid UUIDs. Quantities are signed adjustments; use positive quantities for opening stock or inbound counts and negative quantities for reductions. Optional lot metadata columns are `lot_number`, `serial_number`, and `expiry_date`; aliases include `lot`, `batch`, `serial`, `expiration_date`, and `description` for `reason`.
 
 ```http
 POST /tenants/{tenantId}/inventory/transfer
