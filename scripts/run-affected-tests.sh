@@ -173,7 +173,7 @@ while IFS= read -r file; do
 		migrations/*.sql)
 			migration_required=true
 			;;
-		README.md|docs/*|scripts/README.md|Makefile)
+		README.md|docs/*|scripts/README.md|scripts/integration-package-weights.tsv|Makefile)
 			docs_required=true
 			;;
 		.github/workflows/*|scripts/*.sh|scripts/*.mjs)

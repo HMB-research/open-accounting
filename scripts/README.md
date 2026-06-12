@@ -8,6 +8,8 @@ selects changed Go packages plus in-repo reverse dependants, runs docs tests for
 documentation/script workflow changes, uses Vitest's changed-file selection for
 frontend unit tests, runs touched Playwright demo specs directly, and runs the
 tagged migration test package when SQL migration files change.
+CI helper inputs such as `scripts/integration-package-weights.tsv` are treated
+as script workflow changes so local selection keeps matching the workflow.
 
 ```bash
 make test-affected
