@@ -1650,7 +1650,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-Imports one CSV row per quote line and groups rows by `quote_number`. Required columns are `quote_number`, `quote_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `id` or `quote_id` for a valid UUID to preserve during cutover, `valid_until`, `status`, `currency`, `exchange_rate`, `notes`, `unit`, `discount_percent`, and `product_id` or `product_code`; `product_id` values must be valid UUIDs, and `sku` and `item_code` are accepted as `product_code` aliases. Duplicate quote numbers or imported IDs are skipped.
+Imports one CSV row per quote line and groups rows by `quote_number`. Required columns are `quote_number`, `quote_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `id` or `quote_id` for a valid UUID to preserve during cutover, `valid_until`, `status`, `currency`, `exchange_rate`, `notes`, `unit`, `discount_percent`, and `product_id` or `product_code`; direct `contact_id` and `product_id` values must be valid UUIDs, and `sku` and `item_code` are accepted as `product_code` aliases. Duplicate quote numbers or imported IDs are skipped.
 
 ### Get Quote
 
@@ -1786,7 +1786,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-Imports one CSV row per order line and groups rows by `order_number`. Required columns are `order_number`, `order_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `expected_delivery`, `status`, `currency`, `exchange_rate`, `notes`, `quote_id`, `unit`, `discount_percent`, and `product_id` or `product_code`; `product_id` and `quote_id` values must be valid UUIDs, and `quote_id` can point at a quote UUID preserved by a quote import `id` or `quote_id` column. `sku` and `item_code` are accepted as `product_code` aliases. Duplicate order numbers are skipped.
+Imports one CSV row per order line and groups rows by `order_number`. Required columns are `order_number`, `order_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `expected_delivery`, `status`, `currency`, `exchange_rate`, `notes`, `quote_id`, `unit`, `discount_percent`, and `product_id` or `product_code`; direct `contact_id`, `product_id`, and `quote_id` values must be valid UUIDs, and `quote_id` can point at a quote UUID preserved by a quote import `id` or `quote_id` column. `sku` and `item_code` are accepted as `product_code` aliases. Duplicate order numbers are skipped.
 
 ### Get Order
 
@@ -1985,7 +1985,7 @@ Content-Type: application/json
 }
 ```
 
-Imports one CSV row per recurring template line and groups rows by `name`. Required columns are `name`, `frequency`, `start_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `invoice_type`, `currency`, `end_date`, `next_generation_date`, `payment_terms_days`, `reference`, `notes`, active/generation/email settings, `unit`, `discount_percent`, `account_id`, and `product_id` or `product_code`; `product_id` and `account_id` values must be valid UUIDs, and `sku` and `item_code` are accepted as `product_code` aliases. In migration bundle preflight, recurring line `account_id` values can reference preserved account IDs from the same accounts file. Duplicate template names are skipped.
+Imports one CSV row per recurring template line and groups rows by `name`. Required columns are `name`, `frequency`, `start_date`, a contact identifier (`contact_id`, `contact_code`, `contact_reg_code`, `contact_email`, or `contact_name`), `line_description`, `quantity`, `unit_price`, and `vat_rate`. Optional columns include `invoice_type`, `currency`, `end_date`, `next_generation_date`, `payment_terms_days`, `reference`, `notes`, active/generation/email settings, `unit`, `discount_percent`, `account_id`, and `product_id` or `product_code`; direct `contact_id`, `product_id`, and `account_id` values must be valid UUIDs, and `sku` and `item_code` are accepted as `product_code` aliases. In migration bundle preflight, recurring line `account_id` values can reference preserved account IDs from the same accounts file. Duplicate template names are skipped.
 
 ### Create From Existing Invoice
 

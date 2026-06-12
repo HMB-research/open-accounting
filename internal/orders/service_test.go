@@ -398,13 +398,13 @@ ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,33333333-3
 		svc := NewServiceWithRepository(repo)
 
 		csvContent := `order_number,contact_id,order_date,line_description,quantity,unit_price,vat_rate
-ORD-EXISTING,contact-1,2026-03-15,Duplicate,1,10,22
-ORD-MISSING,missing-contact,2026-03-15,Unknown contact,1,10,22
-ORD-BAD,contact-1,2026-03-15,Bad quantity,0,10,22
+ORD-EXISTING,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,Duplicate,1,10,22
+ORD-MISSING,cccccccc-cccc-4ccc-8ccc-cccccccccccc,2026-03-15,Unknown contact,1,10,22
+ORD-BAD,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,Bad quantity,0,10,22
 `
 
 		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
-			ID:       "contact-1",
+			ID:       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 			TenantID: "tenant-1",
 			Name:     "Acme",
 		}}, nil, &ImportOrdersRequest{CSVContent: csvContent})
@@ -429,23 +429,25 @@ ORD-BAD,contact-1,2026-03-15,Bad quantity,0,10,22
 		svc := NewServiceWithRepository(repo)
 
 		csvContent := `order_number,contact_id,order_date,quote_id,line_description,quantity,unit_price,vat_rate,product_id
-ORD-BAD-QUOTE,contact-1,2026-03-15,legacy-quote,Bad quote,1,10,22,
-ORD-BAD-PRODUCT,contact-1,2026-03-15,,Bad product,1,10,22,legacy-product
+ORD-BAD-CONTACT,legacy-contact,2026-03-15,,Bad contact,1,10,22,
+ORD-BAD-QUOTE,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,legacy-quote,Bad quote,1,10,22,
+ORD-BAD-PRODUCT,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,,Bad product,1,10,22,legacy-product
 `
 
 		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
-			ID:       "contact-1",
+			ID:       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 			TenantID: "tenant-1",
 			Name:     "Acme",
 		}}, nil, &ImportOrdersRequest{CSVContent: csvContent})
 
 		require.NoError(t, err)
-		assert.Equal(t, 2, result.RowsProcessed)
+		assert.Equal(t, 3, result.RowsProcessed)
 		assert.Zero(t, result.OrdersCreated)
-		assert.Equal(t, 2, result.RowsSkipped)
-		require.Len(t, result.Errors, 2)
-		assert.Contains(t, result.Errors[0].Message, "quote_id must be a valid UUID")
-		assert.Contains(t, result.Errors[1].Message, "product_id must be a valid UUID")
+		assert.Equal(t, 3, result.RowsSkipped)
+		require.Len(t, result.Errors, 3)
+		assert.Contains(t, result.Errors[0].Message, "contact_id must be a valid UUID")
+		assert.Contains(t, result.Errors[1].Message, "quote_id must be a valid UUID")
+		assert.Contains(t, result.Errors[2].Message, "product_id must be a valid UUID")
 	})
 }
 

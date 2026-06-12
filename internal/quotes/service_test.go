@@ -358,13 +358,13 @@ func TestService_ImportCSV(t *testing.T) {
 		svc := NewServiceWithRepository(repo)
 
 		csvContent := `quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate
-QT-EXISTING,contact-1,2026-03-15,Duplicate,1,10,22
-QT-MISSING,missing-contact,2026-03-15,Unknown contact,1,10,22
-QT-BAD,contact-1,2026-03-15,Bad quantity,0,10,22
+QT-EXISTING,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,Duplicate,1,10,22
+QT-MISSING,cccccccc-cccc-4ccc-8ccc-cccccccccccc,2026-03-15,Unknown contact,1,10,22
+QT-BAD,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,Bad quantity,0,10,22
 `
 
 		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
-			ID:       "contact-1",
+			ID:       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 			TenantID: "tenant-1",
 			Name:     "Acme",
 		}}, nil, &ImportQuotesRequest{CSVContent: csvContent})
@@ -389,11 +389,11 @@ QT-BAD,contact-1,2026-03-15,Bad quantity,0,10,22
 		svc := NewServiceWithRepository(repo)
 
 		csvContent := `quote_id,quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate
-legacy-id,QT-BAD-ID,contact-1,2026-03-15,Consulting,1,10,22
+legacy-id,QT-BAD-ID,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,Consulting,1,10,22
 `
 
 		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
-			ID:       "contact-1",
+			ID:       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 			TenantID: "tenant-1",
 			Name:     "Acme",
 		}}, nil, &ImportQuotesRequest{CSVContent: csvContent})
@@ -422,7 +422,7 @@ func TestService_ImportCSVValidationFailures(t *testing.T) {
 		svc := NewServiceWithRepository(NewMockRepository())
 
 		_, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", nil, nil, &ImportQuotesRequest{
-			CSVContent: "quote_number,contact_id\nQ-1,contact-1\n",
+			CSVContent: "quote_number,contact_id\nQ-1,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\n",
 		})
 
 		require.Error(t, err)
@@ -436,7 +436,7 @@ func TestService_ImportCSVValidationFailures(t *testing.T) {
 
 		_, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", nil, nil, &ImportQuotesRequest{
 			CSVContent: `quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate
-QT-1,contact-1,2026-03-15,Consulting,1,10,22
+QT-1,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,Consulting,1,10,22
 `,
 		})
 
@@ -489,12 +489,12 @@ func TestService_ImportCSVSkipsGroupConflictsAndCreateFailures(t *testing.T) {
 		svc := NewServiceWithRepository(repo)
 
 		csvContent := `quote_number,contact_id,quote_date,currency,line_description,quantity,unit_price,vat_rate
-QT-CONFLICT,contact-1,2026-03-15,EUR,Consulting,1,10,22
-QT-CONFLICT,contact-1,2026-03-15,USD,Support,1,10,22
+QT-CONFLICT,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,EUR,Consulting,1,10,22
+QT-CONFLICT,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,USD,Support,1,10,22
 `
 
 		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
-			ID:       "contact-1",
+			ID:       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 			TenantID: "tenant-1",
 		}}, nil, &ImportQuotesRequest{CSVContent: csvContent})
 
@@ -1124,7 +1124,7 @@ func TestQuoteImportHelpers(t *testing.T) {
 func quoteImportRowForTest(overrides map[string]string) quoteImportRow {
 	values := map[string]string{
 		"quote_number":     "QT-1",
-		"contact_id":       "contact-1",
+		"contact_id":       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 		"quote_date":       "2026-03-15",
 		"valid_until":      "",
 		"currency":         "EUR",

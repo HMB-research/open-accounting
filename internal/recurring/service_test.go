@@ -1523,15 +1523,15 @@ func TestService_ImportCSVSkipsDuplicateAndInvalidGroups(t *testing.T) {
 	}
 	service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
 	contact := contacts.Contact{
-		ID:       "contact-1",
+		ID:       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 		TenantID: "tenant-1",
 		Name:     "Acme",
 	}
 
 	csvContent := `name,contact_id,frequency,start_date,line_description,quantity,unit_price,vat_rate
-Existing Template,contact-1,MONTHLY,2026-03-01,Duplicate,1,10,22
-Missing Contact,missing-contact,MONTHLY,2026-03-01,Unknown,1,10,22
-Bad Quantity,contact-1,MONTHLY,2026-03-01,Bad,0,10,22
+Existing Template,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,MONTHLY,2026-03-01,Duplicate,1,10,22
+Missing Contact,cccccccc-cccc-4ccc-8ccc-cccccccccccc,MONTHLY,2026-03-01,Unknown,1,10,22
+Bad Quantity,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,MONTHLY,2026-03-01,Bad,0,10,22
 `
 
 	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, nil, &ImportRecurringInvoicesRequest{
@@ -1581,14 +1581,15 @@ func TestService_ImportCSVSkipsInvalidUUIDReferences(t *testing.T) {
 	repo := NewMockRepository()
 	service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
 	contact := contacts.Contact{
-		ID:       "contact-1",
+		ID:       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 		TenantID: "tenant-1",
 		Name:     "Acme",
 	}
 
 	csvContent := `name,contact_id,frequency,start_date,line_description,quantity,unit_price,vat_rate,account_id,product_id
-Bad Account,contact-1,MONTHLY,2026-03-01,Bad account,1,10,22,legacy-account,
-Bad Product,contact-1,MONTHLY,2026-03-01,Bad product,1,10,22,,legacy-product
+Bad Contact,legacy-contact,MONTHLY,2026-03-01,Bad contact,1,10,22,,
+Bad Account,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,MONTHLY,2026-03-01,Bad account,1,10,22,legacy-account,
+Bad Product,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,MONTHLY,2026-03-01,Bad product,1,10,22,,legacy-product
 `
 
 	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, nil, &ImportRecurringInvoicesRequest{
@@ -1598,23 +1599,26 @@ Bad Product,contact-1,MONTHLY,2026-03-01,Bad product,1,10,22,,legacy-product
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.RowsProcessed != 2 {
-		t.Errorf("RowsProcessed = %d, want 2", result.RowsProcessed)
+	if result.RowsProcessed != 3 {
+		t.Errorf("RowsProcessed = %d, want 3", result.RowsProcessed)
 	}
 	if result.TemplatesCreated != 0 {
 		t.Errorf("TemplatesCreated = %d, want 0", result.TemplatesCreated)
 	}
-	if result.RowsSkipped != 2 {
-		t.Errorf("RowsSkipped = %d, want 2", result.RowsSkipped)
+	if result.RowsSkipped != 3 {
+		t.Errorf("RowsSkipped = %d, want 3", result.RowsSkipped)
 	}
-	if len(result.Errors) != 2 {
-		t.Fatalf("Errors length = %d, want 2: %#v", len(result.Errors), result.Errors)
+	if len(result.Errors) != 3 {
+		t.Fatalf("Errors length = %d, want 3: %#v", len(result.Errors), result.Errors)
 	}
-	if !strings.Contains(result.Errors[0].Message, "account_id must be a valid UUID") {
-		t.Errorf("first error = %q, want account_id UUID message", result.Errors[0].Message)
+	if !strings.Contains(result.Errors[0].Message, "contact_id must be a valid UUID") {
+		t.Errorf("first error = %q, want contact_id UUID message", result.Errors[0].Message)
 	}
-	if !strings.Contains(result.Errors[1].Message, "product_id must be a valid UUID") {
-		t.Errorf("second error = %q, want product_id UUID message", result.Errors[1].Message)
+	if !strings.Contains(result.Errors[1].Message, "account_id must be a valid UUID") {
+		t.Errorf("second error = %q, want account_id UUID message", result.Errors[1].Message)
+	}
+	if !strings.Contains(result.Errors[2].Message, "product_id must be a valid UUID") {
+		t.Errorf("third error = %q, want product_id UUID message", result.Errors[2].Message)
 	}
 }
 
