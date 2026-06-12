@@ -6428,6 +6428,10 @@ func (h *Handlers) CreateProductCategory(w http.ResponseWriter, r *http.Request)
 
 	category, err := h.inventoryService.CreateCategory(r.Context(), tenantID, schemaName, &req)
 	if err != nil {
+		if strings.Contains(err.Error(), "must be a valid UUID") {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		respondError(w, http.StatusInternalServerError, "Failed to create category")
 		return
 	}

@@ -2233,7 +2233,7 @@ DELETE /tenants/{tenantId}/product-categories/{categoryId}
 Authorization: Bearer <token>
 ```
 
-Create category payloads accept `name`, optional `description`, and optional `parent_id`.
+Create category payloads accept `name`, optional `description`, and optional `parent_id`; direct `parent_id` values must be valid UUIDs.
 
 ```http
 POST /tenants/{tenantId}/product-categories/import
