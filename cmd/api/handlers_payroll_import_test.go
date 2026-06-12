@@ -140,6 +140,272 @@ func TestPayrollImportHandlersRejectBadRequests(t *testing.T) {
 	}
 }
 
+func TestPayrollBusinessHandlersEmployeesAndSalaryComponents(t *testing.T) {
+	h, _, _ := setupPayrollImportHandlerTest(t)
+	startDate := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+
+	created := invokePayrollImportJSON[payroll.Employee](t, http.StatusCreated, h.CreateEmployee, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/employees",
+		payroll.CreateEmployeeRequest{
+			EmployeeNumber:      "EMP-500",
+			FirstName:           "Mari",
+			LastName:            "Maasikas",
+			PersonalCode:        "49001010500",
+			Email:               "mari.handler@example.com",
+			StartDate:           startDate,
+			EmploymentType:      payroll.EmploymentFullTime,
+			ApplyBasicExemption: true,
+			FundedPensionRate:   decimal.RequireFromString("0.02"),
+		},
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "payroll-1", created.ID)
+	require.Equal(t, payroll.DefaultBasicExemption.String(), created.BasicExemptionAmount.String())
+
+	activeEmployees := invokePayrollImportJSON[[]payroll.Employee](t, http.StatusOK, h.ListEmployees, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/employees?active_only=true",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Len(t, activeEmployees, 1)
+	require.Equal(t, created.ID, activeEmployees[0].ID)
+
+	got := invokePayrollImportJSON[payroll.Employee](t, http.StatusOK, h.GetEmployee, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/employees/"+created.ID,
+		nil,
+		map[string]string{"tenantID": "tenant-1", "employeeID": created.ID},
+	))
+	require.Equal(t, "Mari", got.FirstName)
+
+	inactive := false
+	updated := invokePayrollImportJSON[payroll.Employee](t, http.StatusOK, h.UpdateEmployee, payrollHandlerRequest(
+		http.MethodPut,
+		"/tenants/tenant-1/employees/"+created.ID,
+		payroll.UpdateEmployeeRequest{
+			LastName: "Kask",
+			IsActive: &inactive,
+		},
+		map[string]string{"tenantID": "tenant-1", "employeeID": created.ID},
+	))
+	require.Equal(t, "Kask", updated.LastName)
+	require.False(t, updated.IsActive)
+
+	salaryResponse := invokePayrollImportJSON[map[string]string](t, http.StatusOK, h.SetBaseSalary, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/employees/"+created.ID+"/salary",
+		map[string]any{
+			"amount":         "3200.00",
+			"effective_from": startDate,
+		},
+		map[string]string{"tenantID": "tenant-1", "employeeID": created.ID},
+	))
+	require.Equal(t, "salary updated", salaryResponse["status"])
+
+	oneOff := false
+	component := invokePayrollImportJSON[payroll.SalaryComponent](t, http.StatusCreated, h.AddSalaryComponent, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/employees/"+created.ID+"/salary-components",
+		payroll.CreateSalaryComponentRequest{
+			ComponentType: payroll.SalaryComponentBonus,
+			Name:          "Quarterly bonus",
+			Amount:        decimal.RequireFromString("450.00"),
+			IsRecurring:   &oneOff,
+			EffectiveFrom: startDate,
+		},
+		map[string]string{"tenantID": "tenant-1", "employeeID": created.ID},
+	))
+	require.Equal(t, "payroll-3", component.ID)
+	require.Equal(t, payroll.SalaryComponentBonus, component.ComponentType)
+	require.False(t, component.IsRecurring)
+
+	components := invokePayrollImportJSON[[]payroll.SalaryComponent](t, http.StatusOK, h.ListSalaryComponents, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/employees/"+created.ID+"/salary-components?active_on=2026-03-01",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "employeeID": created.ID},
+	))
+	require.Len(t, components, 2)
+	require.Equal(t, payroll.SalaryComponentBaseSalary, components[0].ComponentType)
+	require.Equal(t, payroll.SalaryComponentBonus, components[1].ComponentType)
+}
+
+func TestPayrollBusinessHandlersRunLifecycleAndTSD(t *testing.T) {
+	h, repo, _ := setupPayrollImportHandlerTest(t)
+	employee := payrollImportEmployee("emp-600", "EMP-600")
+	employee.ApplyBasicExemption = true
+	employee.BasicExemptionAmount = payroll.DefaultBasicExemption
+	employee.FundedPensionRate = decimal.RequireFromString("0.02")
+	repo.seedEmployee(employee)
+	repo.salaryComponents = append(repo.salaryComponents, payroll.SalaryComponent{
+		ID:            "salary-1",
+		TenantID:      "tenant-1",
+		EmployeeID:    employee.ID,
+		ComponentType: payroll.SalaryComponentBaseSalary,
+		Name:          "Base salary",
+		Amount:        decimal.RequireFromString("3000.00"),
+		IsTaxable:     true,
+		IsRecurring:   true,
+		EffectiveFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+
+	createdRun := invokePayrollImportJSON[payroll.PayrollRun](t, http.StatusCreated, h.CreatePayrollRun, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/payroll-runs",
+		payroll.CreatePayrollRunRequest{
+			PeriodYear:  2026,
+			PeriodMonth: 3,
+			Notes:       "March payroll",
+		},
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "payroll-1", createdRun.ID)
+	require.Equal(t, payroll.PayrollDraft, createdRun.Status)
+
+	runs := invokePayrollImportJSON[[]payroll.PayrollRun](t, http.StatusOK, h.ListPayrollRuns, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/payroll-runs?year=2026",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Len(t, runs, 1)
+	require.Equal(t, createdRun.ID, runs[0].ID)
+
+	gotRun := invokePayrollImportJSON[payroll.PayrollRun](t, http.StatusOK, h.GetPayrollRun, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/payroll-runs/"+createdRun.ID,
+		nil,
+		map[string]string{"tenantID": "tenant-1", "runID": createdRun.ID},
+	))
+	require.Equal(t, "March payroll", gotRun.Notes)
+
+	calculated := invokePayrollImportJSON[payroll.PayrollRun](t, http.StatusOK, h.CalculatePayroll, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/payroll-runs/"+createdRun.ID+"/calculate",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "runID": createdRun.ID},
+	))
+	require.Equal(t, payroll.PayrollCalculated, calculated.Status)
+	require.Len(t, calculated.Payslips, 1)
+	require.True(t, calculated.TotalGross.Equal(decimal.RequireFromString("3000.00")))
+
+	payslips := invokePayrollImportJSON[[]payroll.Payslip](t, http.StatusOK, h.GetPayslips, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/payroll-runs/"+createdRun.ID+"/payslips",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "runID": createdRun.ID},
+	))
+	require.Len(t, payslips, 1)
+	require.Equal(t, employee.ID, payslips[0].EmployeeID)
+
+	approvalResponse := invokePayrollImportJSON[map[string]string](t, http.StatusOK, h.ApprovePayroll, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/payroll-runs/"+createdRun.ID+"/approve",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "runID": createdRun.ID},
+	))
+	require.Equal(t, "approved", approvalResponse["status"])
+
+	processedRun := invokePayrollImportJSON[payroll.PayrollRun](t, http.StatusCreated, h.CreatePayrollRun, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/payroll-runs",
+		payroll.CreatePayrollRunRequest{
+			PeriodYear:  2026,
+			PeriodMonth: 4,
+			Notes:       "April payroll",
+		},
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	processResult := invokePayrollImportJSON[payroll.PayrollRunProcessResult](t, http.StatusOK, h.ProcessPayrollRun, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/payroll-runs/"+processedRun.ID+"/process",
+		payroll.ProcessPayrollRunRequest{Approve: true},
+		map[string]string{"tenantID": "tenant-1", "runID": processedRun.ID},
+	))
+	require.True(t, processResult.Approved)
+	require.Equal(t, 1, processResult.PayslipCount)
+	require.Equal(t, payroll.PayrollApproved, processResult.PayrollRun.Status)
+
+	tsd := invokePayrollImportJSON[payroll.TSDDeclaration](t, http.StatusOK, h.GenerateTSD, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/payroll-runs/"+processedRun.ID+"/tsd",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "runID": processedRun.ID},
+	))
+	require.Equal(t, payroll.TSDDraft, tsd.Status)
+	require.Equal(t, 2026, tsd.PeriodYear)
+	require.Equal(t, 4, tsd.PeriodMonth)
+	require.Len(t, tsd.Rows, 1)
+	require.True(t, tsd.TotalPayments.Equal(decimal.RequireFromString("3000.00")))
+}
+
+func TestPayrollBusinessHandlersTSDPeriodActions(t *testing.T) {
+	h, repo, _ := setupPayrollImportHandlerTest(t)
+	repo.tsdDeclarations["tsd-1"] = &payroll.TSDDeclaration{
+		ID:            "tsd-1",
+		TenantID:      "tenant-1",
+		PeriodYear:    2026,
+		PeriodMonth:   3,
+		Status:        payroll.TSDDraft,
+		TotalPayments: decimal.RequireFromString("3000.00"),
+	}
+
+	declarations := invokePayrollImportJSON[[]payroll.TSDDeclaration](t, http.StatusOK, h.ListTSD, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tsd?year=2026&month=3",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Len(t, declarations, 1)
+	require.Equal(t, "tsd-1", declarations[0].ID)
+
+	got := invokePayrollImportJSON[payroll.TSDDeclaration](t, http.StatusOK, h.GetTSD, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tsd/2026/3",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Equal(t, payroll.TSDDraft, got.Status)
+
+	submitted := invokePayrollImportJSON[map[string]string](t, http.StatusOK, h.MarkTSDSubmitted, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tsd/2026/3/submit",
+		map[string]any{"emta_reference": "EMTA-2026-03"},
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Equal(t, "submitted", submitted["status"])
+	require.Equal(t, payroll.TSDSubmitted, repo.tsdDeclarations["tsd-1"].Status)
+	require.Equal(t, "EMTA-2026-03", repo.tsdDeclarations["tsd-1"].EMTAReference)
+
+	accepted := invokePayrollImportJSON[map[string]string](t, http.StatusOK, h.MarkTSDAccepted, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tsd/2026/3/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Equal(t, "accepted", accepted["status"])
+	require.Equal(t, payroll.TSDAccepted, repo.tsdDeclarations["tsd-1"].Status)
+
+	rejected := invokePayrollImportJSON[map[string]string](t, http.StatusOK, h.MarkTSDRejected, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tsd/2026/3/reject",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Equal(t, "rejected", rejected["status"])
+	require.Equal(t, payroll.TSDRejected, repo.tsdDeclarations["tsd-1"].Status)
+
+	errorBody := invokePayrollImportJSON[map[string]string](t, http.StatusBadRequest, h.ListTSD, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tsd?month=13",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "invalid month", errorBody["error"])
+}
+
 func setupPayrollImportHandlerTest(t *testing.T) (*Handlers, *payrollImportHandlerRepository, *payroll.MockAbsenceRepository) {
 	t.Helper()
 
@@ -158,6 +424,11 @@ func setupPayrollImportHandlerTest(t *testing.T) (*Handlers, *payrollImportHandl
 func payrollImportRequest(method, path string, body any) *http.Request {
 	req := makeAuthenticatedRequest(method, path, body, createTestClaims("user-1", "user@example.com", "tenant-1", "owner"))
 	return withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+}
+
+func payrollHandlerRequest(method, path string, body any, params map[string]string) *http.Request {
+	req := makeAuthenticatedRequest(method, path, body, createTestClaims("user-1", "user@example.com", "tenant-1", "owner"))
+	return withURLParams(req, params)
 }
 
 func invokePayrollImportJSON[T any](t *testing.T, wantStatus int, handler func(http.ResponseWriter, *http.Request), req *http.Request) T {
@@ -341,6 +612,9 @@ func (r *payrollImportHandlerRepository) GetPayslipsWithEmployees(ctx context.Co
 	payslips := make([]payroll.Payslip, 0)
 	for _, payslip := range r.payslips {
 		if payslip.TenantID == tenantID && payslip.PayrollRunID == payrollRunID {
+			if payslip.Employee == nil {
+				payslip.Employee = r.employees[payslip.EmployeeID]
+			}
 			payslips = append(payslips, payslip)
 		}
 	}
