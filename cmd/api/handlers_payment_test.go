@@ -586,7 +586,7 @@ func TestImportPayments(t *testing.T) {
 
 	body := map[string]interface{}{
 		"file_name":   "payments.csv",
-		"csv_content": "payment_number,payment_type,payment_date,amount,invoice_id,allocation_amount\nPAY-001,RECEIVED,2026-03-15,100.00,inv-1,60.00\n",
+		"csv_content": "payment_number,payment_type,payment_date,amount,invoice_id,allocation_amount\nPAY-001,RECEIVED,2026-03-15,100.00,88888888-8888-4888-8888-888888888888,60.00\n",
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -613,7 +613,7 @@ func TestImportPayments(t *testing.T) {
 		assert.Equal(t, "user-1", payment.CreatedBy)
 		assert.True(t, payment.Amount.Equal(decimal.RequireFromString("100.00")))
 		require.Len(t, repo.allocations[payment.ID], 1)
-		assert.Equal(t, "inv-1", repo.allocations[payment.ID][0].InvoiceID)
+		assert.Equal(t, "88888888-8888-4888-8888-888888888888", repo.allocations[payment.ID][0].InvoiceID)
 	}
 }
 
