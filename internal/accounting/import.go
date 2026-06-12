@@ -323,16 +323,16 @@ func parseAccountImportType(value string) (AccountType, error) {
 		return "", fmt.Errorf("account_type is required")
 	}
 
+	switch AccountType(strings.ToUpper(strings.TrimSpace(value))) {
+	case AccountTypeAsset, AccountTypeLiability, AccountTypeEquity, AccountTypeRevenue, AccountTypeExpense:
+		return AccountType(strings.ToUpper(strings.TrimSpace(value))), nil
+	}
+
 	if accountType, ok := accountImportTypeAliases[normalized]; ok {
 		return accountType, nil
 	}
 
-	switch AccountType(strings.ToUpper(strings.TrimSpace(value))) {
-	case AccountTypeAsset, AccountTypeLiability, AccountTypeEquity, AccountTypeRevenue, AccountTypeExpense:
-		return AccountType(strings.ToUpper(strings.TrimSpace(value))), nil
-	default:
-		return "", fmt.Errorf("invalid account_type %q", value)
-	}
+	return "", fmt.Errorf("invalid account_type %q", value)
 }
 
 func detectAccountImportDelimiter(content string) rune {
