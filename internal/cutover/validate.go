@@ -278,6 +278,7 @@ var fileSpecs = map[FileKind]fileSpec{
 			"iban":                "account_number",
 			"bank_account":        "account_number",
 			"account_no":          "account_number",
+			"account":             "account_number",
 			"bank":                "bank_name",
 			"bank_name":           "bank_name",
 			"bic":                 "swift_code",
