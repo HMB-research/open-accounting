@@ -24,6 +24,15 @@ func TestBudgetPeriodConstants(t *testing.T) {
 	assert.Equal(t, BudgetPeriod("ANNUAL"), BudgetPeriodAnnual)
 }
 
+func TestNewCostCenterService(t *testing.T) {
+	svc := NewCostCenterService(nil)
+
+	require.NotNil(t, svc)
+	repo, ok := svc.repo.(*CostCenterGORMRepository)
+	require.True(t, ok)
+	assert.Nil(t, repo.db)
+}
+
 func TestMockCostCenterRepository_Create(t *testing.T) {
 	repo := NewMockCostCenterRepository()
 	ctx := context.Background()
@@ -187,6 +196,68 @@ func TestMockCostCenterRepository_GetExpensesByPeriod(t *testing.T) {
 	total, err = repo.GetExpensesByPeriod(ctx, "test_schema", "tenant-1", "cc-empty", start, end)
 	require.NoError(t, err)
 	assert.True(t, total.IsZero())
+}
+
+func TestMockCostCenterRepository_ListAllocationsFilters(t *testing.T) {
+	repo := NewMockCostCenterRepository()
+	ctx := context.Background()
+
+	opsCostCenterID := "11111111-1111-4111-8111-111111111111"
+	adminCostCenterID := "22222222-2222-4222-8222-222222222222"
+	unknownCostCenterID := "33333333-3333-4333-8333-333333333333"
+	lineID := "44444444-4444-4444-8444-444444444444"
+	otherLineID := "55555555-5555-4555-8555-555555555555"
+	allocationDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+
+	repo.CostCenters[opsCostCenterID] = &CostCenter{ID: opsCostCenterID, TenantID: "tenant-1", Code: "OPS", Name: "Operations"}
+	repo.CostCenters[adminCostCenterID] = &CostCenter{ID: adminCostCenterID, TenantID: "tenant-1", Code: "ADMIN", Name: "Administration"}
+	repo.Allocations[opsCostCenterID] = []CostAllocation{
+		{ID: "match", TenantID: "tenant-1", CostCenterID: opsCostCenterID, JournalEntryLineID: lineID, Amount: decimal.NewFromInt(100), AllocationDate: allocationDate},
+		{ID: "wrong-tenant", TenantID: "tenant-2", CostCenterID: opsCostCenterID, JournalEntryLineID: lineID, Amount: decimal.NewFromInt(999), AllocationDate: allocationDate},
+		{ID: "other-line", TenantID: "tenant-1", CostCenterID: opsCostCenterID, JournalEntryLineID: otherLineID, Amount: decimal.NewFromInt(50), AllocationDate: allocationDate},
+		{ID: "before-start", TenantID: "tenant-1", CostCenterID: opsCostCenterID, JournalEntryLineID: lineID, Amount: decimal.NewFromInt(25), AllocationDate: allocationDate.AddDate(0, 0, -1)},
+		{ID: "after-end", TenantID: "tenant-1", CostCenterID: opsCostCenterID, JournalEntryLineID: lineID, Amount: decimal.NewFromInt(75), AllocationDate: allocationDate.AddDate(0, 0, 1)},
+	}
+	repo.Allocations[adminCostCenterID] = []CostAllocation{
+		{ID: "other-cost-center", TenantID: "tenant-1", CostCenterID: adminCostCenterID, JournalEntryLineID: lineID, Amount: decimal.NewFromInt(40), AllocationDate: allocationDate},
+	}
+	repo.Allocations[unknownCostCenterID] = []CostAllocation{
+		{ID: "unknown-cost-center", TenantID: "tenant-1", CostCenterID: unknownCostCenterID, JournalEntryLineID: lineID, Amount: decimal.NewFromInt(30), AllocationDate: allocationDate},
+	}
+
+	allocationIDs := func(filters CostAllocationFilters) ([]string, []CostAllocation) {
+		allocations, err := repo.ListAllocations(ctx, "test_schema", "tenant-1", filters)
+		require.NoError(t, err)
+		ids := make([]string, 0, len(allocations))
+		for _, allocation := range allocations {
+			ids = append(ids, allocation.ID)
+		}
+		return ids, allocations
+	}
+
+	ids, allocations := allocationIDs(CostAllocationFilters{})
+	assert.ElementsMatch(t, []string{"match", "other-line", "before-start", "after-end", "other-cost-center", "unknown-cost-center"}, ids)
+
+	byID := make(map[string]CostAllocation, len(allocations))
+	for _, allocation := range allocations {
+		byID[allocation.ID] = allocation
+	}
+	assert.Equal(t, "OPS", byID["match"].CostCenterCode)
+	assert.Equal(t, "Operations", byID["match"].CostCenterName)
+	assert.Empty(t, byID["unknown-cost-center"].CostCenterCode)
+	assert.Empty(t, byID["unknown-cost-center"].CostCenterName)
+
+	ids, _ = allocationIDs(CostAllocationFilters{CostCenterID: opsCostCenterID})
+	assert.ElementsMatch(t, []string{"match", "other-line", "before-start", "after-end"}, ids)
+
+	ids, _ = allocationIDs(CostAllocationFilters{JournalEntryLineID: lineID})
+	assert.ElementsMatch(t, []string{"match", "before-start", "after-end", "other-cost-center", "unknown-cost-center"}, ids)
+
+	ids, _ = allocationIDs(CostAllocationFilters{StartDate: ptrTime(allocationDate)})
+	assert.ElementsMatch(t, []string{"match", "other-line", "after-end", "other-cost-center", "unknown-cost-center"}, ids)
+
+	ids, _ = allocationIDs(CostAllocationFilters{EndDate: ptrTime(allocationDate)})
+	assert.ElementsMatch(t, []string{"match", "other-line", "before-start", "other-cost-center", "unknown-cost-center"}, ids)
 }
 
 // Test CostCenterService with mock repository
