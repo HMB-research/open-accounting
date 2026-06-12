@@ -28,6 +28,17 @@ func TestParseTransactionsAutoDetectsLHVCSV(t *testing.T) {
 	assert.Equal(t, "LHV-UNIQUE-1", rows[0].ExternalID)
 }
 
+func TestParseTransactionsAutoDetectsCAMT053XML(t *testing.T) {
+	content, err := os.ReadFile("../lhv/testdata/account_statement_camt053_official.xml")
+	require.NoError(t, err)
+
+	rows, err := ParseTransactions(string(content), "auto")
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	assert.Equal(t, "GB12LHVB04031312345678", rows[0].SourceAccount)
+	assert.Equal(t, "C0924B9E44C044D39A828B7E34F4D145", rows[0].ExternalID)
+}
+
 func TestParseTransactionsRoutesExplicitFormats(t *testing.T) {
 	t.Run("generic", func(t *testing.T) {
 		rows, err := ParseTransactions("date;amount;description\n2026-03-15;42.00;Generic payment\n", "GENERIC")
@@ -43,6 +54,15 @@ func TestParseTransactionsRoutesExplicitFormats(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, rows, 1)
 		assert.Equal(t, "12.5", rows[0].Amount)
+	})
+
+	t.Run("camt053", func(t *testing.T) {
+		content, err := os.ReadFile("../lhv/testdata/account_statement_camt053_official.xml")
+		require.NoError(t, err)
+		rows, err := ParseTransactions(string(content), "CAMT053")
+		require.NoError(t, err)
+		require.Len(t, rows, 2)
+		assert.Equal(t, "GB12LHVB04031312345678", rows[0].SourceAccount)
 	})
 
 	t.Run("lhv camt", func(t *testing.T) {

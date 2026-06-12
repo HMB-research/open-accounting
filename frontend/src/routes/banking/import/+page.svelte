@@ -184,6 +184,7 @@
 						<option value="auto">Auto</option>
 						<option value="generic">{m.bankingImport_genericCsv()}</option>
 						<option value="lhv">{m.bankingImport_lhvEstonia()}</option>
+						<option value="camt053">{m.bankingImport_standardCamt053()}</option>
 						<option value="lhv-camt">LHV CAMT.053</option>
 					</select>
 				</div>

@@ -5037,7 +5037,7 @@ func (a *cliApp) runBankTransactions(ctx context.Context, cfg *cliConfig, client
 		fs.SetOutput(a.stderr)
 		accountID := fs.String("account-id", "", "Bank account id")
 		filePath := fs.String("file", "", "CSV file path, or - for stdin")
-		format := fs.String("format", string(mappers.FormatAuto), "Statement format: auto, generic, lhv, or lhv-camt")
+		format := fs.String("format", string(mappers.FormatAuto), "Statement format: auto, generic, lhv, camt053, or lhv-camt")
 		skipDuplicates := fs.Bool("skip-duplicates", true, "Skip duplicate transactions")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {

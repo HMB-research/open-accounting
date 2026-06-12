@@ -1465,6 +1465,28 @@ func TestImportBankTransactions(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
+			name: "raw camt053 XML content",
+			body: map[string]interface{}{
+				"file_name": "statement.xml",
+				"format":    "camt053",
+				"csv_content": `<Document>
+  <BkToCstmrStmt>
+    <Stmt>
+      <Acct><Id><IBAN>EE457700771000676899</IBAN></Id><Ccy>EUR</Ccy></Acct>
+      <Ntry>
+        <Amt Ccy="EUR">42.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-03-15</Dt></BookgDt>
+        <AcctSvcrRef>CAMT-API-1</AcctSvcrRef>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>`,
+				"skip_duplicates": true,
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
 			name:       "invalid JSON",
 			body:       nil,
 			wantStatus: http.StatusBadRequest,

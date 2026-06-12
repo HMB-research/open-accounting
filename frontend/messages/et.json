@@ -854,6 +854,7 @@
   "bankingImport_csvFile": "CSV fail",
   "bankingImport_bankFormatPreset": "Panga formaadi eelseade",
   "bankingImport_genericCsv": "Üldine CSV",
+  "bankingImport_standardCamt053": "CAMT.053 (ISO 20022)",
   "bankingImport_swedbankEstonia": "Swedbank (Eesti)",
   "bankingImport_sebEstonia": "SEB (Eesti)",
   "bankingImport_lhvEstonia": "LHV (Eesti)",

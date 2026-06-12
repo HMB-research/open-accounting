@@ -854,6 +854,7 @@
   "bankingImport_csvFile": "CSV File",
   "bankingImport_bankFormatPreset": "Bank Format Preset",
   "bankingImport_genericCsv": "Generic CSV",
+  "bankingImport_standardCamt053": "CAMT.053 (ISO 20022)",
   "bankingImport_swedbankEstonia": "Swedbank (Estonia)",
   "bankingImport_sebEstonia": "SEB (Estonia)",
   "bankingImport_lhvEstonia": "LHV (Estonia)",

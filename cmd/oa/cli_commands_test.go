@@ -22721,6 +22721,26 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	assert.Equal(t, "EE457700771000676899", lhvRows[0].SourceAccount)
 	assert.Equal(t, "EUR", lhvRows[0].Currency)
 
+	camtRows, err := parseBankTransactionCSVRowsWithFormat(`<Document>
+  <BkToCstmrStmt>
+    <Stmt>
+      <Acct><Id><IBAN>EE457700771000676899</IBAN></Id><Ccy>EUR</Ccy></Acct>
+      <Ntry>
+        <Amt Ccy="EUR">42.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-03-15</Dt></BookgDt>
+        <AcctSvcrRef>CAMT-CLI-1</AcctSvcrRef>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>`, "camt053")
+	require.NoError(t, err)
+	require.Len(t, camtRows, 1)
+	assert.Equal(t, "2026-03-15", camtRows[0].Date)
+	assert.Equal(t, "42", camtRows[0].Amount)
+	assert.Equal(t, "EE457700771000676899", camtRows[0].SourceAccount)
+	assert.Equal(t, "CAMT-CLI-1", camtRows[0].ExternalID)
+
 	_, err = parseBankTransactionCSVRows("")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bank transaction CSV is empty")
