@@ -2,6 +2,7 @@ package accounting
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -202,6 +203,26 @@ func newTestCostCenterService() *testCostCenterService {
 	return &testCostCenterService{repo: repo, svc: svc}
 }
 
+type costCenterImportListErrorRepository struct {
+	CostCenterRepository
+}
+
+func (costCenterImportListErrorRepository) List(_ context.Context, _, _ string, _ bool) ([]CostCenter, error) {
+	return nil, errors.New("list unavailable")
+}
+
+type costCenterImportCreateErrorRepository struct {
+	CostCenterRepository
+}
+
+func (costCenterImportCreateErrorRepository) List(_ context.Context, _, _ string, _ bool) ([]CostCenter, error) {
+	return nil, nil
+}
+
+func (costCenterImportCreateErrorRepository) Create(_ context.Context, _ string, _ *CostCenter) error {
+	return errors.New("create unavailable")
+}
+
 func TestCostCenterService_CreateCostCenter(t *testing.T) {
 	ts := newTestCostCenterService()
 	ctx := context.Background()
@@ -265,6 +286,13 @@ func TestCostCenterService_ImportCostCentersCSV(t *testing.T) {
 		TenantID: "tenant-1",
 		Code:     "CC999",
 		Name:     "Existing",
+		IsActive: true,
+	}
+	ts.repo.CostCenters["cc-empty-code"] = &CostCenter{
+		ID:       "cc-empty-code",
+		TenantID: "tenant-1",
+		Code:     " \t ",
+		Name:     "Incomplete existing row",
 		IsActive: true,
 	}
 
@@ -365,6 +393,457 @@ func TestCostCenterService_ImportCostCentersCSVParsesActiveAliases(t *testing.T)
 	assert.True(t, active.IsActive)
 	require.NotNil(t, inactive)
 	assert.False(t, inactive.IsActive)
+}
+
+func TestCostCenterService_ImportCostCentersCSVImportsWithoutErrors(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportCostCentersCSV(ctx, "test_schema", "tenant-1", &ImportCostCentersRequest{
+		FileName: "clean-cost-centers.csv",
+		CSVContent: "code,name,description,budget_amount,budget_period,status\n" +
+			"CC-MKT,Marketing,Marketing team,1000.00,MONTHLY,ACTIVE\n" +
+			"CC-SALES,Sales,Sales team,,ANNUAL,INACTIVE\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "clean-cost-centers.csv", result.FileName)
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Equal(t, 2, result.CostCentersCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+}
+
+func TestCostCenterService_ImportCostCentersCSVRejectsMissingContent(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportCostCentersCSV(ctx, "test_schema", "tenant-1", nil)
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "csv_content is required")
+}
+
+func TestCostCenterService_ImportCostCentersCSVReturnsParserErrors(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportCostCentersCSV(ctx, "test_schema", "tenant-1", &ImportCostCentersRequest{
+		CSVContent: "\"code,name\n",
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "parse csv header")
+}
+
+func TestCostCenterService_ImportCostCentersCSVRejectsHeaderOnlyCSV(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportCostCentersCSV(ctx, "test_schema", "tenant-1", &ImportCostCentersRequest{
+		CSVContent: "code,name\n",
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "no cost centers found in CSV")
+}
+
+func TestCostCenterService_ImportCostCentersCSVWrapsListErrors(t *testing.T) {
+	svc := NewCostCenterServiceWithRepository(costCenterImportListErrorRepository{})
+
+	result, err := svc.ImportCostCentersCSV(context.Background(), "test_schema", "tenant-1", &ImportCostCentersRequest{
+		CSVContent: "code,name\nCC-OPS,Operations\n",
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "list existing cost centers: list unavailable")
+}
+
+func TestCostCenterService_ImportCostCentersCSVRecordsCreateErrors(t *testing.T) {
+	svc := NewCostCenterServiceWithRepository(costCenterImportCreateErrorRepository{})
+
+	result, err := svc.ImportCostCentersCSV(context.Background(), "test_schema", "tenant-1", &ImportCostCentersRequest{
+		CSVContent: "code,name\nCC-OPS,Operations\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.CostCentersCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 2, result.Errors[0].Row)
+	assert.Equal(t, "CC-OPS", result.Errors[0].Code)
+	assert.Contains(t, result.Errors[0].Message, "create unavailable")
+}
+
+func TestCostCenterService_ImportCostCentersCSVRejectsUnresolvedParentCode(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportCostCentersCSV(ctx, "test_schema", "tenant-1", &ImportCostCentersRequest{
+		CSVContent: "code,name,parent_code\nCC-CHILD,Child,CC-MISSING\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.CostCentersCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 2, result.Errors[0].Row)
+	assert.Equal(t, "CC-CHILD", result.Errors[0].Code)
+	assert.Contains(t, result.Errors[0].Message, "parent_code \"CC-MISSING\" was not found")
+}
+
+func TestParseCostCenterImportRows(t *testing.T) {
+	t.Run("parses aliased semicolon headers and skips blank rows", func(t *testing.T) {
+		rows, err := parseCostCenterImportRows("\ufeff Cost Center Code ; CC Name ; Description ; Parent ; Budget ; Budget Period ; Active ; custom field\n" +
+			" CC-MKT ; Marketing ; Marketing team ; CC-ROOT ; 1,250.00 ; MONTHLY ; yes ; ignored\n" +
+			" ; ; ; ; ; ; ; \n" +
+			"CC-SALES ; Sales ; ; ; ; ; no ; ignored\n")
+
+		require.NoError(t, err)
+		require.Len(t, rows, 2)
+
+		assert.Equal(t, 2, rows[0].rowNumber)
+		assert.Equal(t, "CC-MKT", rows[0].values["code"])
+		assert.Equal(t, "Marketing", rows[0].values["name"])
+		assert.Equal(t, "Marketing team", rows[0].values["description"])
+		assert.Equal(t, "CC-ROOT", rows[0].values["parent_code"])
+		assert.Equal(t, "1,250.00", rows[0].values["budget_amount"])
+		assert.Equal(t, "MONTHLY", rows[0].values["budget_period"])
+		assert.Equal(t, "yes", rows[0].values["is_active"])
+		assert.Equal(t, "ignored", rows[0].values["custom_field"])
+
+		assert.Equal(t, 4, rows[1].rowNumber)
+		assert.Equal(t, "CC-SALES", rows[1].values["code"])
+		assert.Equal(t, "Sales", rows[1].values["name"])
+		assert.Empty(t, rows[1].values["description"])
+		assert.Empty(t, rows[1].values["parent_code"])
+		assert.Empty(t, rows[1].values["budget_amount"])
+		assert.Empty(t, rows[1].values["budget_period"])
+		assert.Equal(t, "no", rows[1].values["is_active"])
+	})
+
+	t.Run("allows header-only csv", func(t *testing.T) {
+		rows, err := parseCostCenterImportRows("code,name\n")
+
+		require.NoError(t, err)
+		assert.Empty(t, rows)
+	})
+
+	t.Run("ignores blank header columns", func(t *testing.T) {
+		rows, err := parseCostCenterImportRows("code,name,\nCC-OPS,Operations,ignored\n")
+
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		assert.Equal(t, "CC-OPS", rows[0].values["code"])
+		assert.Equal(t, "Operations", rows[0].values["name"])
+		_, ok := rows[0].values[""]
+		assert.False(t, ok)
+	})
+
+	t.Run("requires content", func(t *testing.T) {
+		rows, err := parseCostCenterImportRows(" \t\n ")
+
+		require.Error(t, err)
+		assert.Nil(t, rows)
+		assert.Contains(t, err.Error(), "csv_content is required")
+	})
+
+	t.Run("requires code and name columns", func(t *testing.T) {
+		rows, err := parseCostCenterImportRows("code,description\nCC-OPS,Operations\n")
+
+		require.Error(t, err)
+		assert.Nil(t, rows)
+		assert.Contains(t, err.Error(), "missing required columns: code, name")
+	})
+
+	t.Run("reports malformed csv headers", func(t *testing.T) {
+		rows, err := parseCostCenterImportRows("\"code,name\n")
+
+		require.Error(t, err)
+		assert.Nil(t, rows)
+		assert.Contains(t, err.Error(), "parse csv header")
+	})
+
+	t.Run("reports malformed csv rows", func(t *testing.T) {
+		rows, err := parseCostCenterImportRows("code,name\nCC-OPS,\"Operations\n")
+
+		require.Error(t, err)
+		assert.Nil(t, rows)
+		assert.Contains(t, err.Error(), "parse csv row 2")
+	})
+}
+
+func TestBuildCreateCostCenterRequestFromImportRow(t *testing.T) {
+	t.Run("normalizes request fields and returns parent code", func(t *testing.T) {
+		req, parentCode, err := buildCreateCostCenterRequestFromImportRow(costCenterImportRow{
+			values: map[string]string{
+				"code":          " CC-MKT ",
+				"name":          " Marketing ",
+				"description":   "  Marketing team  ",
+				"parent_code":   " CC-ROOT ",
+				"budget_amount": " 123.45 ",
+				"budget_period": " quarterly ",
+				"status":        " inactive ",
+			},
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "CC-MKT", req.Code)
+		assert.Equal(t, "Marketing", req.Name)
+		assert.Equal(t, "Marketing team", req.Description)
+		assert.Nil(t, req.ParentID)
+		assert.Equal(t, "CC-ROOT", parentCode)
+		require.NotNil(t, req.BudgetAmount)
+		assert.True(t, decimal.RequireFromString("123.45").Equal(*req.BudgetAmount))
+		assert.Equal(t, BudgetPeriodQuarterly, req.BudgetPeriod)
+		assert.False(t, req.IsActive)
+	})
+
+	t.Run("parses parent id and defaults optional fields", func(t *testing.T) {
+		parentID := "11111111-1111-4111-8111-111111111111"
+		req, parentCode, err := buildCreateCostCenterRequestFromImportRow(costCenterImportRow{
+			values: map[string]string{
+				"code":      "CC-OPS",
+				"name":      "Operations",
+				"parent_id": " " + parentID + " ",
+			},
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, req.ParentID)
+		assert.Equal(t, parentID, *req.ParentID)
+		assert.Empty(t, parentCode)
+		assert.Nil(t, req.BudgetAmount)
+		assert.Equal(t, BudgetPeriodAnnual, req.BudgetPeriod)
+		assert.True(t, req.IsActive)
+	})
+
+	t.Run("requires code", func(t *testing.T) {
+		req, parentCode, err := buildCreateCostCenterRequestFromImportRow(costCenterImportRow{
+			values: map[string]string{"name": "Operations"},
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, req)
+		assert.Empty(t, parentCode)
+		assert.Contains(t, err.Error(), "code is required")
+	})
+
+	t.Run("requires name", func(t *testing.T) {
+		req, parentCode, err := buildCreateCostCenterRequestFromImportRow(costCenterImportRow{
+			values: map[string]string{"code": "CC-OPS"},
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, req)
+		assert.Empty(t, parentCode)
+		assert.Contains(t, err.Error(), "name is required")
+	})
+
+	t.Run("rejects self parent code", func(t *testing.T) {
+		req, parentCode, err := buildCreateCostCenterRequestFromImportRow(costCenterImportRow{
+			values: map[string]string{"code": "CC-OPS", "name": "Operations", "parent_code": " cc-ops "},
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, req)
+		assert.Empty(t, parentCode)
+		assert.Contains(t, err.Error(), "parent_code cannot match code")
+	})
+
+	t.Run("rejects invalid budget amount", func(t *testing.T) {
+		req, parentCode, err := buildCreateCostCenterRequestFromImportRow(costCenterImportRow{
+			values: map[string]string{"code": "CC-OPS", "name": "Operations", "budget_amount": "bad"},
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, req)
+		assert.Empty(t, parentCode)
+		assert.Contains(t, err.Error(), "budget_amount must be a decimal")
+	})
+
+	t.Run("rejects invalid budget period", func(t *testing.T) {
+		req, parentCode, err := buildCreateCostCenterRequestFromImportRow(costCenterImportRow{
+			values: map[string]string{"code": "CC-OPS", "name": "Operations", "budget_period": "WEEKLY"},
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, req)
+		assert.Empty(t, parentCode)
+		assert.Contains(t, err.Error(), "invalid budget_period")
+	})
+
+	t.Run("rejects invalid status", func(t *testing.T) {
+		req, parentCode, err := buildCreateCostCenterRequestFromImportRow(costCenterImportRow{
+			values: map[string]string{"code": "CC-OPS", "name": "Operations", "status": "paused"},
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, req)
+		assert.Empty(t, parentCode)
+		assert.Contains(t, err.Error(), "invalid status")
+	})
+
+	t.Run("rejects invalid parent id", func(t *testing.T) {
+		req, parentCode, err := buildCreateCostCenterRequestFromImportRow(costCenterImportRow{
+			values: map[string]string{"code": "CC-OPS", "name": "Operations", "parent_id": "legacy-parent"},
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, req)
+		assert.Empty(t, parentCode)
+		assert.Contains(t, err.Error(), "parent_id must be a valid UUID")
+	})
+}
+
+func TestCostCenterImportHelpers(t *testing.T) {
+	t.Run("parses optional parent id", func(t *testing.T) {
+		parentID, err := optionalCostCenterImportParentID(" 11111111-1111-4111-8111-111111111111 ")
+
+		require.NoError(t, err)
+		require.NotNil(t, parentID)
+		assert.Equal(t, "11111111-1111-4111-8111-111111111111", *parentID)
+	})
+
+	t.Run("allows blank parent id", func(t *testing.T) {
+		parentID, err := optionalCostCenterImportParentID(" \t ")
+
+		require.NoError(t, err)
+		assert.Nil(t, parentID)
+	})
+
+	t.Run("rejects invalid parent id", func(t *testing.T) {
+		parentID, err := optionalCostCenterImportParentID("legacy-parent")
+
+		require.Error(t, err)
+		assert.Nil(t, parentID)
+		assert.Contains(t, err.Error(), "parent_id must be a valid UUID")
+	})
+
+	t.Run("allows blank budget amount", func(t *testing.T) {
+		amount, err := parseCostCenterImportBudgetAmount(" \t ")
+
+		require.NoError(t, err)
+		assert.Nil(t, amount)
+	})
+
+	t.Run("parses budget amount", func(t *testing.T) {
+		amount, err := parseCostCenterImportBudgetAmount(" 1000.50 ")
+
+		require.NoError(t, err)
+		require.NotNil(t, amount)
+		assert.True(t, decimal.RequireFromString("1000.50").Equal(*amount))
+	})
+
+	t.Run("rejects invalid budget amount", func(t *testing.T) {
+		amount, err := parseCostCenterImportBudgetAmount("bad")
+
+		require.Error(t, err)
+		assert.Nil(t, amount)
+		assert.Contains(t, err.Error(), "budget_amount must be a decimal")
+	})
+
+	t.Run("rejects negative budget amount", func(t *testing.T) {
+		amount, err := parseCostCenterImportBudgetAmount("-1")
+
+		require.Error(t, err)
+		assert.Nil(t, amount)
+		assert.Contains(t, err.Error(), "budget_amount cannot be negative")
+	})
+
+	t.Run("defaults blank budget period to annual", func(t *testing.T) {
+		period, err := parseCostCenterImportBudgetPeriod(" \t ")
+
+		require.NoError(t, err)
+		assert.Equal(t, BudgetPeriodAnnual, period)
+	})
+
+	t.Run("parses supported budget periods", func(t *testing.T) {
+		for _, tt := range []struct {
+			value string
+			want  BudgetPeriod
+		}{
+			{value: "monthly", want: BudgetPeriodMonthly},
+			{value: "QUARTERLY", want: BudgetPeriodQuarterly},
+			{value: " Annual ", want: BudgetPeriodAnnual},
+		} {
+			period, err := parseCostCenterImportBudgetPeriod(tt.value)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, period)
+		}
+	})
+
+	t.Run("rejects invalid budget period", func(t *testing.T) {
+		period, err := parseCostCenterImportBudgetPeriod("WEEKLY")
+
+		require.Error(t, err)
+		assert.Empty(t, period)
+		assert.Contains(t, err.Error(), "invalid budget_period")
+	})
+
+	t.Run("parses status before active flag", func(t *testing.T) {
+		active, err := parseCostCenterImportActive(" INACTIVE ", "yes")
+
+		require.NoError(t, err)
+		assert.False(t, active)
+	})
+
+	t.Run("parses active status", func(t *testing.T) {
+		active, err := parseCostCenterImportActive("active", "")
+
+		require.NoError(t, err)
+		assert.True(t, active)
+	})
+
+	t.Run("rejects invalid status", func(t *testing.T) {
+		active, err := parseCostCenterImportActive("paused", "")
+
+		require.Error(t, err)
+		assert.False(t, active)
+		assert.Contains(t, err.Error(), "invalid status")
+	})
+
+	t.Run("defaults blank active values to true", func(t *testing.T) {
+		active, err := parseCostCenterImportActive("", " \t ")
+
+		require.NoError(t, err)
+		assert.True(t, active)
+	})
+
+	t.Run("parses boolean aliases", func(t *testing.T) {
+		active, err := parseCostCenterImportBool("is_active", "t")
+		require.NoError(t, err)
+		assert.True(t, active)
+
+		active, err = parseCostCenterImportBool("is_active", "N")
+		require.NoError(t, err)
+		assert.False(t, active)
+	})
+
+	t.Run("rejects invalid boolean aliases", func(t *testing.T) {
+		active, err := parseCostCenterImportBool("is_active", "maybe")
+
+		require.Error(t, err)
+		assert.False(t, active)
+		assert.Contains(t, err.Error(), "is_active must be true or false")
+	})
+
+	t.Run("canonicalizes cost center header aliases", func(t *testing.T) {
+		assert.Equal(t, "code", canonicalCostCenterImportHeader("Cost Center Code"))
+		assert.Equal(t, "name", canonicalCostCenterImportHeader("cc_name"))
+		assert.Equal(t, "parent_code", canonicalCostCenterImportHeader("Parent Cost Center Code"))
+		assert.Equal(t, "budget_amount", canonicalCostCenterImportHeader("Budget"))
+		assert.Equal(t, "is_active", canonicalCostCenterImportHeader("active"))
+		assert.Equal(t, "status", canonicalCostCenterImportHeader("Status"))
+		assert.Equal(t, "custom_field", canonicalCostCenterImportHeader("Custom Field"))
+	})
 }
 
 func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
