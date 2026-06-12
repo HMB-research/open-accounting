@@ -820,7 +820,7 @@ Content-Type: application/json
 }
 ```
 
-Supported header aliases include `code` / `account_code`, `name` / `account_name`, and `account_type` / `type`.
+Supported header aliases include `code` / `account_code` / `number`, `name` / `account_name`, `account_type` / `type` / `category`, and `parent_code` / `parent` / `parent_account`.
 
 ---
 

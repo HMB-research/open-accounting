@@ -1140,6 +1140,53 @@ func TestValidateBundleReportsAccountParentReferenceIssues(t *testing.T) {
 	assert.Contains(t, report.Issues[1].Message, "cannot reference")
 }
 
+func TestValidateBundleAcceptsAccountImporterAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "number,name,category,parent_account\n" +
+				"1000,Cash,assets,\n" +
+				"1100,Petty Cash,asset,1000\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.RowsValidated)
+	assert.Empty(t, report.Issues)
+	require.Len(t, report.Files, 1)
+	assert.Contains(t, report.Files[0].Headers, "code")
+	assert.Contains(t, report.Files[0].Headers, "account_type")
+	assert.Contains(t, report.Files[0].Headers, "parent_code")
+	assert.NotContains(t, report.Files[0].Headers, "number")
+	assert.NotContains(t, report.Files[0].Headers, "category")
+	assert.NotContains(t, report.Files[0].Headers, "parent_account")
+}
+
+func TestValidateBundleReportsAccountParentAliasReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "number,name,category,parent\n" +
+				"1000,Cash,asset,\n" +
+				"1100,Petty Cash,asset,9999\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindAccounts, report.Issues[0].Kind)
+	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
+	assert.Equal(t, "parent_code", report.Issues[0].Field)
+	assert.Equal(t, "9999", report.Issues[0].Value)
+}
+
 func TestValidateBundleReportsHierarchySelfReferenceIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

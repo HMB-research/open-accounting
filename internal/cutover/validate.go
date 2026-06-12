@@ -103,11 +103,15 @@ type kmdHistoryPreflightGroup struct {
 var fileSpecs = map[FileKind]fileSpec{
 	KindAccounts: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
-			"account_code": "code",
-			"account_name": "name",
-			"account_type": "account_type",
-			"type":         "account_type",
-			"parent_code":  "parent_code",
+			"account_code":   "code",
+			"number":         "code",
+			"account_name":   "name",
+			"account_type":   "account_type",
+			"type":           "account_type",
+			"category":       "account_type",
+			"parent_code":    "parent_code",
+			"parent":         "parent_code",
+			"parent_account": "parent_code",
 		}),
 		requiredGroups: [][]string{{"code"}, {"name"}, {"account_type"}},
 	},
