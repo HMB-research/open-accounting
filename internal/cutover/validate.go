@@ -1464,6 +1464,10 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkStockAdjustmentRows(report, file)
 	case KindFixedAssets:
 		checkFixedAssetRows(report, file)
+	case KindCostCenters:
+		checkCostCenterRows(report, file)
+	case KindCostAllocations:
+		checkCostAllocationRows(report, file)
 	case KindOpeningBalances:
 		checkOpeningBalanceTotals(report, file)
 	case KindJournalEntries:
@@ -2423,6 +2427,151 @@ func checkFixedAssetDisposalProceeds(report *BundleValidationReport, file parsed
 		Value:    strings.TrimSpace(row.values["disposal_proceeds"]),
 		Message:  "disposal_proceeds cannot be negative",
 	})
+}
+
+func checkCostCenterRows(report *BundleValidationReport, file parsedFile) {
+	hasCode := fileHasHeaders(file, "code")
+	hasName := fileHasHeaders(file, "name")
+	for _, row := range file.rows {
+		if hasCode {
+			checkRequiredCutoverField(report, file, row, "code")
+		}
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		checkCostCenterBudgetAmount(report, file, row)
+		checkCostCenterBudgetPeriod(report, file, row)
+		checkCutoverStatusOrActive(report, file, row)
+	}
+}
+
+func checkCostCenterBudgetAmount(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "budget_amount") || strings.TrimSpace(row.values["budget_amount"]) == "" {
+		return
+	}
+	value, issue := parseCutoverRequiredDecimal(row.values["budget_amount"], "budget_amount")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if value.IsNegative() {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "budget_amount",
+			Value:    strings.TrimSpace(row.values["budget_amount"]),
+			Message:  "budget_amount cannot be negative",
+		})
+	}
+}
+
+func checkCostCenterBudgetPeriod(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "budget_period") || strings.TrimSpace(row.values["budget_period"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["budget_period"])
+	switch normalizeCutoverUpper(value) {
+	case "MONTHLY", "QUARTERLY", "ANNUAL":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "budget_period",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid budget_period %q", value),
+		})
+	}
+}
+
+func checkCostAllocationRows(report *BundleValidationReport, file parsedFile) {
+	hasJournalLine := fileHasHeaders(file, "journal_entry_line_id")
+	hasAmount := fileHasHeaders(file, "amount")
+	hasAllocationDate := fileHasHeaders(file, "allocation_date")
+	for _, row := range file.rows {
+		checkRequiredCutoverFieldGroup(report, file, row, "cost_center_id", "cost_center_code")
+		if hasJournalLine {
+			checkRequiredCutoverField(report, file, row, "journal_entry_line_id")
+		}
+		if hasAmount {
+			checkCostAllocationAmount(report, file, row)
+		}
+		checkCostAllocationPercentage(report, file, row)
+		if hasAllocationDate {
+			checkCostAllocationDate(report, file, row)
+		}
+	}
+}
+
+func checkCostAllocationAmount(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	amount, issue := parseCutoverRequiredDecimal(row.values["amount"], "amount")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if !amount.GreaterThan(decimal.Zero) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "amount",
+			Value:    strings.TrimSpace(row.values["amount"]),
+			Message:  "amount must be greater than zero",
+		})
+	}
+}
+
+func checkCostAllocationPercentage(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "allocation_percentage") || strings.TrimSpace(row.values["allocation_percentage"]) == "" {
+		return
+	}
+	percentage, issue := parseCutoverRequiredDecimal(row.values["allocation_percentage"], "allocation_percentage")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if percentage.LessThan(decimal.Zero) || percentage.GreaterThan(decimal.NewFromInt(100)) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "allocation_percentage",
+			Value:    strings.TrimSpace(row.values["allocation_percentage"]),
+			Message:  "allocation_percentage must be between 0 and 100",
+		})
+	}
+}
+
+func checkCostAllocationDate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["allocation_date"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "allocation_date",
+			Message:  "allocation_date is required",
+		})
+		return
+	}
+	if _, err := time.Parse("2006-01-02", value); err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "allocation_date",
+			Value:    value,
+			Message:  "allocation_date must use YYYY-MM-DD",
+		})
+	}
 }
 
 func checkExpenseRows(report *BundleValidationReport, file parsedFile) {
