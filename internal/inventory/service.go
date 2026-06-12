@@ -210,12 +210,17 @@ func (s *Service) DeleteProduct(ctx context.Context, tenantID, schemaName, produ
 
 // CreateCategory creates a new category
 func (s *Service) CreateCategory(ctx context.Context, tenantID, schemaName string, req *CreateCategoryRequest) (*ProductCategory, error) {
+	parentID, err := normalizeOptionalInventoryUUIDString(req.ParentID, "parent_id")
+	if err != nil {
+		return nil, err
+	}
+
 	cat := &ProductCategory{
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
 		Name:        req.Name,
 		Description: req.Description,
-		ParentID:    req.ParentID,
+		ParentID:    parentID,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -225,6 +230,18 @@ func (s *Service) CreateCategory(ctx context.Context, tenantID, schemaName strin
 	}
 
 	return cat, nil
+}
+
+func normalizeOptionalInventoryUUIDString(value string, field string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("%s must be a valid UUID", field)
+	}
+	return parsedID.String(), nil
 }
 
 // GetCategoryByID retrieves a category by ID

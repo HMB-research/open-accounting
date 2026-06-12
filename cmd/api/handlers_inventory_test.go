@@ -1321,6 +1321,15 @@ func TestProductCategoryCRUD(t *testing.T) {
 		SchemaName: "tenant_test",
 	}
 
+	invalidParentReq := newInventoryJSONRequest(t, http.MethodPost, "/tenants/tenant-1/product-categories", map[string]interface{}{
+		"name":      "Invalid parent",
+		"parent_id": "legacy-parent",
+	}, map[string]string{"tenantID": "tenant-1"})
+	invalidParentRR := httptest.NewRecorder()
+	h.CreateProductCategory(invalidParentRR, invalidParentReq)
+	require.Equal(t, http.StatusBadRequest, invalidParentRR.Code)
+	assert.Contains(t, invalidParentRR.Body.String(), "parent_id must be a valid UUID")
+
 	createReq := newInventoryJSONRequest(t, http.MethodPost, "/tenants/tenant-1/product-categories", map[string]interface{}{
 		"name":        "Spare parts",
 		"description": "Replacement inventory",

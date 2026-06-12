@@ -7619,11 +7619,19 @@ func (a *cliApp) runInventoryCategories(ctx context.Context, cfg *cliConfig, cli
 		if strings.TrimSpace(*name) == "" {
 			return errors.New("name is required")
 		}
+		parsedParentID, err := optionalUUIDStringPtr("parent-id", *parentID)
+		if err != nil {
+			return err
+		}
+		parentIDValue := ""
+		if parsedParentID != nil {
+			parentIDValue = *parsedParentID
+		}
 
 		category, err := client.createProductCategory(ctx, cfg.TenantID, &inventory.CreateCategoryRequest{
 			Name:        strings.TrimSpace(*name),
 			Description: strings.TrimSpace(*description),
-			ParentID:    strings.TrimSpace(*parentID),
+			ParentID:    parentIDValue,
 		})
 		if err != nil {
 			return err

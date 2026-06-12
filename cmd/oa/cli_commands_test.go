@@ -8883,12 +8883,13 @@ func TestCLIInventoryCommands(t *testing.T) {
 		APIToken:   "oa_saved_token",
 	}))
 
+	categoryParentID := "11111111-1111-1111-1111-111111111111"
 	categoryPayload := map[string]any{
 		"id":          "cat-1",
 		"tenant_id":   "tenant-1",
 		"name":        "Parts",
 		"description": "Spare parts",
-		"parent_id":   "parent-1",
+		"parent_id":   categoryParentID,
 		"created_at":  "2026-03-15T12:00:00Z",
 		"updated_at":  "2026-03-15T12:00:00Z",
 	}
@@ -8998,7 +8999,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "Parts", req.Name)
 			assert.Equal(t, "Spare parts", req.Description)
-			assert.Equal(t, "parent-1", req.ParentID)
+			assert.Equal(t, categoryParentID, req.ParentID)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(categoryPayload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/import":
@@ -9181,14 +9182,14 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Parts")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "categories", "create", "--name", "Parts", "--description", "Spare parts", "--parent-id", "parent-1"})
+	err = app.run(context.Background(), []string{"inventory", "categories", "create", "--name", "Parts", "--description", "Spare parts", "--parent-id", categoryParentID})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created product category Parts (cat-1)")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "categories", "create", "--name", "Parts", "--description", "Spare parts", "--parent-id", "parent-1", "--json"})
+	err = app.run(context.Background(), []string{"inventory", "categories", "create", "--name", "Parts", "--description", "Spare parts", "--parent-id", categoryParentID, "--json"})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), `"parent_id": "parent-1"`)
+	assert.Contains(t, stdout.String(), `"parent_id": "`+categoryParentID+`"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "categories", "import", "--file", categoryImportFile})
@@ -9530,6 +9531,11 @@ func TestCLIInventoryValidationBranches(t *testing.T) {
 			want: "name is required",
 		},
 		{
+			name: "categories create invalid parent id",
+			args: []string{"create", "--name", "Parts", "--parent-id", "legacy-parent"},
+			want: "parent-id must be a valid UUID",
+		},
+		{
 			name: "categories import missing file",
 			args: []string{"import"},
 			want: "file is required",
@@ -9627,6 +9633,7 @@ func TestCLIInventoryCategoryFlagsAndAPIErrorBranches(t *testing.T) {
 	}
 
 	importFile := writeTempCSV(t, "categories.csv", "name,description\nParts,Spare parts\n")
+	categoryParentID := "22222222-2222-2222-2222-222222222222"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
@@ -9638,7 +9645,7 @@ func TestCLIInventoryCategoryFlagsAndAPIErrorBranches(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "Parts", req.Name)
 			assert.Equal(t, "Spare parts", req.Description)
-			assert.Equal(t, "parent-1", req.ParentID)
+			assert.Equal(t, categoryParentID, req.ParentID)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/product-categories/import":
 			var req inventory.ImportProductCategoriesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -9667,7 +9674,7 @@ func TestCLIInventoryCategoryFlagsAndAPIErrorBranches(t *testing.T) {
 				"inventory", "categories", "create",
 				"--name", " Parts ",
 				"--description", " Spare parts ",
-				"--parent-id", " parent-1 ",
+				"--parent-id", " " + categoryParentID + " ",
 			},
 		},
 		{name: "import API error", args: []string{"inventory", "categories", "import", "--file", importFile}},

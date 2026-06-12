@@ -1177,15 +1177,25 @@ func TestService_CreateCategory(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
+	parentID := "11111111-1111-1111-1111-111111111111"
 	req := &CreateCategoryRequest{
 		Name:        "Electronics",
 		Description: "Electronic products",
+		ParentID:    " " + parentID + " ",
 	}
 
 	cat, err := ts.svc.CreateCategory(ctx, "tenant-1", "test_schema", req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, cat.ID)
 	assert.Equal(t, "Electronics", cat.Name)
+	assert.Equal(t, parentID, cat.ParentID)
+
+	_, err = ts.svc.CreateCategory(ctx, "tenant-1", "test_schema", &CreateCategoryRequest{
+		Name:     "Bad parent",
+		ParentID: "legacy-parent",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parent_id must be a valid UUID")
 }
 
 func TestService_GetCategoryByID(t *testing.T) {
