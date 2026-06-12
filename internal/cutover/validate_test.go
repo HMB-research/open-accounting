@@ -1499,6 +1499,60 @@ func TestValidateBundleReportsInventoryRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindStockAdjustments, "expiry_date", "expiry_date must use YYYY-MM-DD")
 }
 
+func TestValidateBundleCanonicalizesImporterDescriptionMemoAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindCostCenters,
+			FileName:   "cost-centers.csv",
+			CSVContent: "cost_center_code,name\nSALES,Sales\n",
+		},
+		{
+			Kind:       KindCostAllocations,
+			FileName:   "cost-allocations.csv",
+			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_date,description\nSALES,line-1,125.50,2026-05-31,Shared rent\n",
+		},
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "product_code,name,sales_price\nSKU-1,Widget,10\n",
+		},
+		{
+			Kind:       KindWarehouses,
+			FileName:   "warehouses.csv",
+			CSVContent: "warehouse_code,warehouse_name\nMAIN,Main warehouse\n",
+		},
+		{
+			Kind:       KindStockAdjustments,
+			FileName:   "stock.csv",
+			CSVContent: "product_code,warehouse_code,quantity,description\nSKU-1,MAIN,5,Opening stock\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Empty(t, report.Issues)
+
+	var allocationValidation FileValidation
+	var stockValidation FileValidation
+	for _, file := range report.Files {
+		switch file.Kind {
+		case KindCostAllocations:
+			allocationValidation = file
+		case KindStockAdjustments:
+			stockValidation = file
+		}
+	}
+
+	require.Equal(t, KindCostAllocations, allocationValidation.Kind)
+	assert.Contains(t, allocationValidation.Headers, "notes")
+	assert.NotContains(t, allocationValidation.Headers, "description")
+
+	require.Equal(t, KindStockAdjustments, stockValidation.Kind)
+	assert.Contains(t, stockValidation.Headers, "reason")
+	assert.NotContains(t, stockValidation.Headers, "description")
+}
+
 func TestValidateBundleReportsCommercialDocumentProductReferenceIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
