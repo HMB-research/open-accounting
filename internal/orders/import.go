@@ -360,8 +360,12 @@ func parseOrderImportDataRow(row orderImportRow, productLookup importrefs.Produc
 		return nil, fmt.Errorf("order_number is required")
 	}
 
+	contactID, err := parseOptionalOrderImportUUID("contact_id", row.values["contact_id"])
+	if err != nil {
+		return nil, err
+	}
 	contactRef := orderImportContactRef{
-		id:      strings.TrimSpace(row.values["contact_id"]),
+		id:      contactID,
 		code:    strings.TrimSpace(row.values["contact_code"]),
 		regCode: strings.TrimSpace(row.values["contact_reg_code"]),
 		email:   strings.TrimSpace(row.values["contact_email"]),
@@ -727,6 +731,18 @@ func parseOrderImportDecimal(value, field string) (decimal.Decimal, error) {
 		return decimal.Zero, fmt.Errorf("invalid %s", field)
 	}
 	return parsed, nil
+}
+
+func parseOptionalOrderImportUUID(field, value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("%s must be a valid UUID", field)
+	}
+	return parsedID.String(), nil
 }
 
 func canonicalOrderImportHeader(value string) string {

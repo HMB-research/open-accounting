@@ -403,8 +403,12 @@ func parseQuoteImportDataRow(row quoteImportRow, productLookup importrefs.Produc
 		id = parsedID.String()
 	}
 
+	contactID, err := parseOptionalQuoteImportUUID("contact_id", row.values["contact_id"])
+	if err != nil {
+		return nil, err
+	}
 	contactRef := quoteImportContactRef{
-		id:      strings.TrimSpace(row.values["contact_id"]),
+		id:      contactID,
 		code:    strings.TrimSpace(row.values["contact_code"]),
 		regCode: strings.TrimSpace(row.values["contact_reg_code"]),
 		email:   strings.TrimSpace(row.values["contact_email"]),
@@ -760,6 +764,18 @@ func parseQuoteImportDecimal(value, field string) (decimal.Decimal, error) {
 		return decimal.Zero, fmt.Errorf("invalid %s", field)
 	}
 	return parsed, nil
+}
+
+func parseOptionalQuoteImportUUID(field, value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("%s must be a valid UUID", field)
+	}
+	return parsedID.String(), nil
 }
 
 func canonicalQuoteImportHeader(value string) string {

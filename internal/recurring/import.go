@@ -368,8 +368,16 @@ func parseRecurringImportDataRow(row recurringImportRow, productLookup importref
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	contactID, err := parseOptionalRecurringImportUUID("contact_id", row.values["contact_id"])
+	if err != nil {
+		return nil, err
+	}
+	contactIDValue := ""
+	if contactID != nil {
+		contactIDValue = *contactID
+	}
 	contactRef := recurringImportContactRef{
-		id:      strings.TrimSpace(row.values["contact_id"]),
+		id:      contactIDValue,
 		code:    strings.TrimSpace(row.values["contact_code"]),
 		regCode: strings.TrimSpace(row.values["contact_reg_code"]),
 		email:   strings.TrimSpace(row.values["contact_email"]),
