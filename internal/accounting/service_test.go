@@ -36,6 +36,15 @@ type MockRepository struct {
 	trialBalanceErr     error
 	periodBalanceErr    error
 	voidJournalEntryErr error
+	listTemplatesErr    error
+	getTemplateErr      error
+	dueTemplatesErr     error
+	updateTemplateErr   error
+	dueTemplateIDs      []string
+}
+
+type repositoryWithoutJournalTemplates struct {
+	RepositoryInterface
 }
 
 func NewMockRepository() *MockRepository {
@@ -155,6 +164,9 @@ func (m *MockRepository) CreateJournalEntryTemplate(ctx context.Context, schemaN
 }
 
 func (m *MockRepository) ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]JournalEntryTemplate, error) {
+	if m.listTemplatesErr != nil {
+		return nil, m.listTemplatesErr
+	}
 	result := make([]JournalEntryTemplate, 0, len(m.templates))
 	for _, template := range m.templates {
 		if template.TenantID != tenantID {
@@ -169,6 +181,9 @@ func (m *MockRepository) ListJournalEntryTemplates(ctx context.Context, schemaNa
 }
 
 func (m *MockRepository) GetJournalEntryTemplateByID(ctx context.Context, schemaName, tenantID, templateID string) (*JournalEntryTemplate, error) {
+	if m.getTemplateErr != nil {
+		return nil, m.getTemplateErr
+	}
 	template, ok := m.templates[templateID]
 	if !ok || template.TenantID != tenantID {
 		return nil, errors.New("journal entry template not found")
@@ -177,6 +192,12 @@ func (m *MockRepository) GetJournalEntryTemplateByID(ctx context.Context, schema
 }
 
 func (m *MockRepository) GetDueJournalEntryTemplateIDs(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]string, error) {
+	if m.dueTemplatesErr != nil {
+		return nil, m.dueTemplatesErr
+	}
+	if m.dueTemplateIDs != nil {
+		return append([]string(nil), m.dueTemplateIDs...), nil
+	}
 	var ids []string
 	for _, template := range m.templates {
 		if template.TenantID != tenantID || !template.IsActive || !template.IsRecurring() || template.NextGenerationDate == nil {
@@ -194,6 +215,9 @@ func (m *MockRepository) GetDueJournalEntryTemplateIDs(ctx context.Context, sche
 }
 
 func (m *MockRepository) UpdateJournalEntryTemplateAfterGeneration(ctx context.Context, schemaName, tenantID, templateID string, nextDate time.Time, generatedAt time.Time) error {
+	if m.updateTemplateErr != nil {
+		return m.updateTemplateErr
+	}
 	template, ok := m.templates[templateID]
 	if !ok || template.TenantID != tenantID {
 		return errors.New("journal entry template not found")
@@ -946,6 +970,461 @@ func TestService_RecurringJournalEntryTemplateGeneration(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, dueResults, 1)
 	assert.Equal(t, "generated", dueResults[0].Status)
+}
+
+func TestJournalEntryTemplateScheduleHelpers(t *testing.T) {
+	from := time.Date(2026, 1, 15, 12, 30, 0, 0, time.UTC)
+
+	nextDateCases := []struct {
+		name      string
+		frequency JournalEntryTemplateFrequency
+		want      string
+	}{
+		{name: "weekly", frequency: JournalEntryTemplateFrequencyWeekly, want: "2026-01-22"},
+		{name: "biweekly", frequency: JournalEntryTemplateFrequencyBiweekly, want: "2026-01-29"},
+		{name: "monthly", frequency: JournalEntryTemplateFrequencyMonthly, want: "2026-02-15"},
+		{name: "quarterly", frequency: JournalEntryTemplateFrequencyQuarterly, want: "2026-04-15"},
+		{name: "yearly", frequency: JournalEntryTemplateFrequencyYearly, want: "2027-01-15"},
+		{name: "default monthly", frequency: JournalEntryTemplateFrequency("CUSTOM"), want: "2026-02-15"},
+	}
+
+	for _, tt := range nextDateCases {
+		t.Run("calculate next date "+tt.name, func(t *testing.T) {
+			template := &JournalEntryTemplate{Frequency: tt.frequency}
+
+			nextDate := template.CalculateNextDate(from)
+
+			assert.Equal(t, tt.want, nextDate.Format("2006-01-02"))
+		})
+	}
+
+	assert.True(t, isValidJournalEntryTemplateFrequency(JournalEntryTemplateFrequencyWeekly))
+	assert.True(t, isValidJournalEntryTemplateFrequency(JournalEntryTemplateFrequencyYearly))
+	assert.False(t, isValidJournalEntryTemplateFrequency(JournalEntryTemplateFrequency("CUSTOM")))
+
+	startDate := time.Date(2026, 4, 30, 15, 45, 0, 0, time.UTC)
+	nextDate := time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+	beforeStart := time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC)
+
+	scheduleCases := []struct {
+		name    string
+		setup   func() *JournalEntryTemplate
+		wantErr string
+	}{
+		{
+			name: "invalid frequency",
+			setup: func() *JournalEntryTemplate {
+				return &JournalEntryTemplate{Frequency: JournalEntryTemplateFrequency("CUSTOM"), StartDate: &startDate, NextGenerationDate: &nextDate}
+			},
+			wantErr: "invalid journal entry template frequency",
+		},
+		{
+			name: "missing start",
+			setup: func() *JournalEntryTemplate {
+				return &JournalEntryTemplate{Frequency: JournalEntryTemplateFrequencyMonthly, NextGenerationDate: &nextDate}
+			},
+			wantErr: "start_date is required",
+		},
+		{
+			name: "end before start",
+			setup: func() *JournalEntryTemplate {
+				return &JournalEntryTemplate{Frequency: JournalEntryTemplateFrequencyMonthly, StartDate: &startDate, EndDate: &beforeStart, NextGenerationDate: &startDate}
+			},
+			wantErr: "end_date cannot be before start_date",
+		},
+		{
+			name: "missing next",
+			setup: func() *JournalEntryTemplate {
+				return &JournalEntryTemplate{Frequency: JournalEntryTemplateFrequencyMonthly, StartDate: &startDate}
+			},
+			wantErr: "next_generation_date is required",
+		},
+		{
+			name: "next before start",
+			setup: func() *JournalEntryTemplate {
+				return &JournalEntryTemplate{Frequency: JournalEntryTemplateFrequencyMonthly, StartDate: &startDate, NextGenerationDate: &beforeStart}
+			},
+			wantErr: "next_generation_date cannot be before start_date",
+		},
+	}
+
+	for _, tt := range scheduleCases {
+		t.Run("validates schedule "+tt.name, func(t *testing.T) {
+			err := validateJournalEntryTemplateSchedule(tt.setup())
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+
+	t.Run("rejects missing account ids", func(t *testing.T) {
+		err := validateJournalEntryTemplate(&JournalEntryTemplate{
+			Lines: []JournalEntryTemplateLine{
+				{DebitAmount: decimal.RequireFromString("10.00"), ExchangeRate: decimal.NewFromInt(1)},
+				{AccountID: "accruals", CreditAmount: decimal.RequireFromString("10.00"), ExchangeRate: decimal.NewFromInt(1)},
+			},
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "line account_id is required")
+	})
+
+	t.Run("returns schedule validation errors", func(t *testing.T) {
+		err := validateJournalEntryTemplate(&JournalEntryTemplate{
+			Frequency: JournalEntryTemplateFrequency("CUSTOM"),
+			Lines: []JournalEntryTemplateLine{
+				{AccountID: "expense", DebitAmount: decimal.RequireFromString("10.00"), ExchangeRate: decimal.NewFromInt(1)},
+				{AccountID: "accruals", CreditAmount: decimal.RequireFromString("10.00"), ExchangeRate: decimal.NewFromInt(1)},
+			},
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid journal entry template frequency")
+	})
+
+	recurringTemplate := &JournalEntryTemplate{
+		Frequency:          JournalEntryTemplateFrequencyMonthly,
+		StartDate:          &startDate,
+		EndDate:            &endDate,
+		NextGenerationDate: &nextDate,
+	}
+
+	t.Run("uses requested recurring date", func(t *testing.T) {
+		requested := time.Date(2026, 6, 15, 18, 10, 0, 0, time.UTC)
+
+		entryDate, err := recurringTemplateEntryDate(recurringTemplate, &requested)
+
+		require.NoError(t, err)
+		assert.Equal(t, "2026-06-15", entryDate.Format("2006-01-02"))
+		assert.Equal(t, 0, entryDate.Hour())
+	})
+
+	t.Run("falls back to start date without next date", func(t *testing.T) {
+		template := &JournalEntryTemplate{
+			Frequency: JournalEntryTemplateFrequencyMonthly,
+			StartDate: &startDate,
+		}
+
+		entryDate, err := recurringTemplateEntryDate(template, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, "2026-04-30", entryDate.Format("2006-01-02"))
+	})
+
+	t.Run("rejects non recurring template", func(t *testing.T) {
+		_, err := recurringTemplateEntryDate(&JournalEntryTemplate{}, nil)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not recurring")
+	})
+
+	t.Run("rejects recurring template without a date", func(t *testing.T) {
+		_, err := recurringTemplateEntryDate(&JournalEntryTemplate{Frequency: JournalEntryTemplateFrequencyMonthly}, nil)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no next generation date")
+	})
+
+	t.Run("rejects requested dates after the end date", func(t *testing.T) {
+		requested := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+
+		_, err := recurringTemplateEntryDate(recurringTemplate, &requested)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ended on 2026-12-31")
+	})
+}
+
+func TestService_JournalEntryTemplateErrorPaths(t *testing.T) {
+	ctx := context.Background()
+	schemaName := "tenant_test"
+	tenantID := "tenant-1"
+	userID := "user-1"
+	startDate := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
+
+	balancedLines := func(amount string) []CreateJournalEntryLineReq {
+		return []CreateJournalEntryLineReq{
+			{AccountID: "expense", Description: "Expense", DebitAmount: decimal.RequireFromString(amount)},
+			{AccountID: "accruals", Description: "Accrual", CreditAmount: decimal.RequireFromString(amount)},
+		}
+	}
+	createTemplate := func(t *testing.T, repo *MockRepository, req *CreateJournalEntryTemplateRequest) *JournalEntryTemplate {
+		t.Helper()
+		svc := NewServiceWithRepository(repo)
+		template, err := svc.CreateJournalEntryTemplate(ctx, schemaName, tenantID, req)
+		require.NoError(t, err)
+		return template
+	}
+
+	t.Run("rejects missing name and lines", func(t *testing.T) {
+		svc := NewServiceWithRepository(NewMockRepository())
+
+		_, err := svc.CreateJournalEntryTemplate(ctx, schemaName, tenantID, &CreateJournalEntryTemplateRequest{
+			Lines:  balancedLines("10.00"),
+			UserID: userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "name is required")
+
+		_, err = svc.CreateJournalEntryTemplate(ctx, schemaName, tenantID, &CreateJournalEntryTemplateRequest{
+			Name:   "Incomplete",
+			Lines:  balancedLines("10.00")[:1],
+			UserID: userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "at least two lines are required")
+	})
+
+	t.Run("rejects repositories without template support", func(t *testing.T) {
+		svc := NewServiceWithRepository(repositoryWithoutJournalTemplates{RepositoryInterface: NewMockRepository()})
+
+		_, err := svc.CreateJournalEntryTemplate(ctx, schemaName, tenantID, &CreateJournalEntryTemplateRequest{
+			Name:   "Unsupported",
+			Lines:  balancedLines("10.00"),
+			UserID: userID,
+		})
+		require.ErrorIs(t, err, errJournalEntryTemplatesUnsupported)
+
+		_, err = svc.ListJournalEntryTemplates(ctx, schemaName, tenantID, true)
+		require.ErrorIs(t, err, errJournalEntryTemplatesUnsupported)
+
+		_, err = svc.GetJournalEntryTemplate(ctx, schemaName, tenantID, "template-1")
+		require.ErrorIs(t, err, errJournalEntryTemplatesUnsupported)
+
+		_, err = svc.GenerateJournalEntryTemplate(ctx, schemaName, tenantID, "template-1", &GenerateJournalEntryTemplateRequest{
+			UserID: userID,
+		})
+		require.ErrorIs(t, err, errJournalEntryTemplatesUnsupported)
+
+		_, err = svc.GenerateDueJournalEntryTemplates(ctx, schemaName, tenantID, &GenerateDueJournalEntryTemplatesRequest{
+			UserID: userID,
+		})
+		require.ErrorIs(t, err, errJournalEntryTemplatesUnsupported)
+	})
+
+	t.Run("wraps template repository errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.createJournalErr = errors.New("insert failed")
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.CreateJournalEntryTemplate(ctx, schemaName, tenantID, &CreateJournalEntryTemplateRequest{
+			Name:   "Repository failure",
+			Lines:  balancedLines("10.00"),
+			UserID: userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "create journal entry template")
+		assert.Contains(t, err.Error(), "insert failed")
+
+		repo = NewMockRepository()
+		repo.listTemplatesErr = errors.New("list failed")
+		svc = NewServiceWithRepository(repo)
+		_, err = svc.ListJournalEntryTemplates(ctx, schemaName, tenantID, true)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list failed")
+
+		repo = NewMockRepository()
+		repo.getTemplateErr = errors.New("get failed")
+		svc = NewServiceWithRepository(repo)
+		_, err = svc.GetJournalEntryTemplate(ctx, schemaName, tenantID, "template-1")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get failed")
+	})
+
+	t.Run("applies template defaults to a draft entry", func(t *testing.T) {
+		repo := NewMockRepository()
+		template := createTemplate(t, repo, &CreateJournalEntryTemplateRequest{
+			Name:        "Monthly accrual",
+			Description: "Default description",
+			Reference:   "ACCRUAL",
+			Lines:       balancedLines("10.00"),
+			UserID:      userID,
+		})
+		svc := NewServiceWithRepository(repo)
+
+		entry, err := svc.ApplyJournalEntryTemplate(ctx, schemaName, tenantID, template.ID, &ApplyJournalEntryTemplateRequest{
+			UserID: userID,
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, StatusDraft, entry.Status)
+		assert.False(t, entry.EntryDate.IsZero())
+		assert.Equal(t, "Default description", entry.Description)
+		assert.Equal(t, "ACCRUAL", entry.Reference)
+	})
+
+	t.Run("rejects inactive templates", func(t *testing.T) {
+		repo := NewMockRepository()
+		template := createTemplate(t, repo, &CreateJournalEntryTemplateRequest{
+			Name:   "Inactive",
+			Lines:  balancedLines("10.00"),
+			UserID: userID,
+		})
+		repo.templates[template.ID].IsActive = false
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.ApplyJournalEntryTemplate(ctx, schemaName, tenantID, template.ID, &ApplyJournalEntryTemplateRequest{
+			UserID: userID,
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "journal entry template is inactive")
+	})
+
+	t.Run("propagates missing template errors on apply", func(t *testing.T) {
+		svc := NewServiceWithRepository(NewMockRepository())
+
+		_, err := svc.ApplyJournalEntryTemplate(ctx, schemaName, tenantID, "missing-template", &ApplyJournalEntryTemplateRequest{
+			UserID: userID,
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "journal entry template not found")
+	})
+
+	t.Run("propagates apply create and post errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		template := createTemplate(t, repo, &CreateJournalEntryTemplateRequest{
+			Name:   "Apply create failure",
+			Lines:  balancedLines("10.00"),
+			UserID: userID,
+		})
+		repo.createJournalErr = errors.New("entry insert failed")
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.ApplyJournalEntryTemplate(ctx, schemaName, tenantID, template.ID, &ApplyJournalEntryTemplateRequest{
+			UserID: userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "entry insert failed")
+
+		repo = NewMockRepository()
+		template = createTemplate(t, repo, &CreateJournalEntryTemplateRequest{
+			Name:   "Apply post failure",
+			Lines:  balancedLines("10.00"),
+			UserID: userID,
+		})
+		repo.updateStatusErr = errors.New("post failed")
+		svc = NewServiceWithRepository(repo)
+
+		_, err = svc.ApplyJournalEntryTemplate(ctx, schemaName, tenantID, template.ID, &ApplyJournalEntryTemplateRequest{
+			Post:   true,
+			UserID: userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "post failed")
+	})
+
+	t.Run("rejects locked ended and non recurring generation", func(t *testing.T) {
+		repo := NewMockRepository()
+		nonRecurring := createTemplate(t, repo, &CreateJournalEntryTemplateRequest{
+			Name:   "Manual only",
+			Lines:  balancedLines("10.00"),
+			UserID: userID,
+		})
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.GenerateJournalEntryTemplate(ctx, schemaName, tenantID, nonRecurring.ID, &GenerateJournalEntryTemplateRequest{
+			UserID: userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not recurring")
+
+		recurring := createTemplate(t, repo, &CreateJournalEntryTemplateRequest{
+			Name:      "Locked recurring",
+			Frequency: JournalEntryTemplateFrequencyMonthly,
+			StartDate: &startDate,
+			Lines:     balancedLines("10.00"),
+			UserID:    userID,
+		})
+		_, err = svc.GenerateJournalEntryTemplate(ctx, schemaName, tenantID, recurring.ID, &GenerateJournalEntryTemplateRequest{
+			PeriodLockDate: &startDate,
+			UserID:         userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "period locked through 2026-04-30")
+
+		endDate := startDate
+		nextAfterEnd := startDate.AddDate(0, 1, 0)
+		ended := createTemplate(t, repo, &CreateJournalEntryTemplateRequest{
+			Name:               "Ended recurring",
+			Frequency:          JournalEntryTemplateFrequencyMonthly,
+			StartDate:          &startDate,
+			EndDate:            &endDate,
+			NextGenerationDate: &nextAfterEnd,
+			Lines:              balancedLines("10.00"),
+			UserID:             userID,
+		})
+		_, err = svc.GenerateJournalEntryTemplate(ctx, schemaName, tenantID, ended.ID, &GenerateJournalEntryTemplateRequest{
+			UserID: userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ended on 2026-04-30")
+	})
+
+	t.Run("wraps generation apply and schedule update errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		template := createTemplate(t, repo, &CreateJournalEntryTemplateRequest{
+			Name:      "Generate apply failure",
+			Frequency: JournalEntryTemplateFrequencyMonthly,
+			StartDate: &startDate,
+			Lines:     balancedLines("10.00"),
+			UserID:    userID,
+		})
+		repo.createJournalErr = errors.New("entry insert failed")
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.GenerateJournalEntryTemplate(ctx, schemaName, tenantID, template.ID, &GenerateJournalEntryTemplateRequest{
+			UserID: userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "entry insert failed")
+
+		repo = NewMockRepository()
+		template = createTemplate(t, repo, &CreateJournalEntryTemplateRequest{
+			Name:      "Generate update failure",
+			Frequency: JournalEntryTemplateFrequencyMonthly,
+			StartDate: &startDate,
+			Lines:     balancedLines("10.00"),
+			UserID:    userID,
+		})
+		repo.updateTemplateErr = errors.New("schedule update failed")
+		svc = NewServiceWithRepository(repo)
+
+		_, err = svc.GenerateJournalEntryTemplate(ctx, schemaName, tenantID, template.ID, &GenerateJournalEntryTemplateRequest{
+			UserID: userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update recurring journal template")
+		assert.Contains(t, err.Error(), "schedule update failed")
+	})
+
+	t.Run("reports due generation list and per-template errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.dueTemplatesErr = errors.New("query failed")
+		svc := NewServiceWithRepository(repo)
+
+		_, err := svc.GenerateDueJournalEntryTemplates(ctx, schemaName, tenantID, &GenerateDueJournalEntryTemplatesRequest{
+			UserID: userID,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list due recurring journal templates")
+		assert.Contains(t, err.Error(), "query failed")
+
+		repo = NewMockRepository()
+		repo.dueTemplateIDs = []string{"missing-template"}
+		svc = NewServiceWithRepository(repo)
+
+		results, err := svc.GenerateDueJournalEntryTemplates(ctx, schemaName, tenantID, &GenerateDueJournalEntryTemplatesRequest{
+			UserID: userID,
+		})
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		assert.Equal(t, "missing-template", results[0].TemplateID)
+		assert.Equal(t, "error", results[0].Status)
+		assert.Contains(t, results[0].Error, "journal entry template not found")
+	})
 }
 
 func TestService_PostJournalEntry(t *testing.T) {
