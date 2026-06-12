@@ -293,6 +293,14 @@ func normalizeOptionalInventoryUUIDString(value string, field string) (string, e
 	return parsedID.String(), nil
 }
 
+func normalizeRequiredInventoryUUIDString(value string, field string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", fmt.Errorf("%s is required", field)
+	}
+	return normalizeOptionalInventoryUUIDString(trimmed, field)
+}
+
 // GetCategoryByID retrieves a category by ID
 func (s *Service) GetCategoryByID(ctx context.Context, tenantID, schemaName, categoryID string) (*ProductCategory, error) {
 	cat, err := s.repo.GetCategoryByID(ctx, schemaName, tenantID, categoryID)
@@ -866,15 +874,24 @@ func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, 
 		return nil, err
 	}
 
-	product, err := s.repo.GetProductByID(ctx, schemaName, tenantID, req.ProductID)
+	productID, err := normalizeRequiredInventoryUUIDString(req.ProductID, "product_id")
+	if err != nil {
+		return nil, err
+	}
+	warehouseID, err := normalizeRequiredInventoryUUIDString(req.WarehouseID, "warehouse_id")
+	if err != nil {
+		return nil, err
+	}
+
+	product, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID)
 	if err != nil {
 		return nil, fmt.Errorf("get product: %w", err)
 	}
-	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, req.WarehouseID); err != nil {
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, warehouseID); err != nil {
 		return nil, fmt.Errorf("get warehouse: %w", err)
 	}
 
-	currentLevel, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, req.ProductID, req.WarehouseID)
+	currentLevel, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, productID, warehouseID)
 	if err != nil {
 		return nil, fmt.Errorf("get stock level: %w", err)
 	}
@@ -901,8 +918,8 @@ func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, 
 	movement := &InventoryMovement{
 		ID:           uuid.New().String(),
 		TenantID:     tenantID,
-		ProductID:    req.ProductID,
-		WarehouseID:  req.WarehouseID,
+		ProductID:    productID,
+		WarehouseID:  warehouseID,
 		MovementType: movementType,
 		Quantity:     quantity.Abs(),
 		UnitCost:     unitCost,
@@ -921,7 +938,7 @@ func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, 
 		return nil, fmt.Errorf("create movement: %w", err)
 	}
 
-	if err := s.repo.UpdateProductStock(ctx, schemaName, tenantID, req.ProductID, newProductStock); err != nil {
+	if err := s.repo.UpdateProductStock(ctx, schemaName, tenantID, productID, newProductStock); err != nil {
 		return nil, fmt.Errorf("update product stock: %w", err)
 	}
 
@@ -961,28 +978,40 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 	if quantity.LessThanOrEqual(decimal.Zero) {
 		return fmt.Errorf("quantity must be positive")
 	}
-	if req.FromWarehouseID == req.ToWarehouseID {
+	productID, err := normalizeRequiredInventoryUUIDString(req.ProductID, "product_id")
+	if err != nil {
+		return err
+	}
+	fromWarehouseID, err := normalizeRequiredInventoryUUIDString(req.FromWarehouseID, "from_warehouse_id")
+	if err != nil {
+		return err
+	}
+	toWarehouseID, err := normalizeRequiredInventoryUUIDString(req.ToWarehouseID, "to_warehouse_id")
+	if err != nil {
+		return err
+	}
+	if fromWarehouseID == toWarehouseID {
 		return fmt.Errorf("source and destination warehouses must differ")
 	}
 	lotNumber, serialNumber, expiryDate, err := normalizeMovementTrackingMetadataValues(req.LotNumber, req.SerialNumber, req.ExpiryDate)
 	if err != nil {
 		return err
 	}
-	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, req.ProductID); err != nil {
+	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID); err != nil {
 		return fmt.Errorf("get product: %w", err)
 	}
-	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, req.FromWarehouseID); err != nil {
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, fromWarehouseID); err != nil {
 		return fmt.Errorf("get source warehouse: %w", err)
 	}
-	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, req.ToWarehouseID); err != nil {
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, toWarehouseID); err != nil {
 		return fmt.Errorf("get destination warehouse: %w", err)
 	}
 
-	sourceLevel, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, req.ProductID, req.FromWarehouseID)
+	sourceLevel, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, productID, fromWarehouseID)
 	if err != nil {
 		return fmt.Errorf("get source stock level: %w", err)
 	}
-	destinationLevel, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, req.ProductID, req.ToWarehouseID)
+	destinationLevel, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, productID, toWarehouseID)
 	if err != nil {
 		return fmt.Errorf("get destination stock level: %w", err)
 	}
@@ -993,8 +1022,8 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 	outMovement := &InventoryMovement{
 		ID:            uuid.New().String(),
 		TenantID:      tenantID,
-		ProductID:     req.ProductID,
-		WarehouseID:   req.FromWarehouseID,
+		ProductID:     productID,
+		WarehouseID:   fromWarehouseID,
 		MovementType:  MovementTypeOut,
 		Quantity:      quantity,
 		UnitCost:      decimal.Zero,
@@ -1002,8 +1031,8 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 		LotNumber:     lotNumber,
 		SerialNumber:  serialNumber,
 		ExpiryDate:    expiryDate,
-		Reference:     "Transfer to " + req.ToWarehouseID,
-		ToWarehouseID: req.ToWarehouseID,
+		Reference:     "Transfer to " + toWarehouseID,
+		ToWarehouseID: toWarehouseID,
 		Notes:         req.Notes,
 		MovementDate:  time.Now(),
 		CreatedAt:     time.Now(),
@@ -1017,8 +1046,8 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 	inMovement := &InventoryMovement{
 		ID:           uuid.New().String(),
 		TenantID:     tenantID,
-		ProductID:    req.ProductID,
-		WarehouseID:  req.ToWarehouseID,
+		ProductID:    productID,
+		WarehouseID:  toWarehouseID,
 		MovementType: MovementTypeIn,
 		Quantity:     quantity,
 		UnitCost:     decimal.Zero,
@@ -1026,7 +1055,7 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 		LotNumber:    lotNumber,
 		SerialNumber: serialNumber,
 		ExpiryDate:   expiryDate,
-		Reference:    "Transfer from " + req.FromWarehouseID,
+		Reference:    "Transfer from " + fromWarehouseID,
 		Notes:        req.Notes,
 		MovementDate: time.Now(),
 		CreatedAt:    time.Now(),
@@ -1060,14 +1089,22 @@ func (s *Service) ReserveStock(ctx context.Context, tenantID, schemaName string,
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, req.ProductID); err != nil {
+	productID, err := normalizeRequiredInventoryUUIDString(req.ProductID, "product_id")
+	if err != nil {
+		return nil, err
+	}
+	warehouseID, err := normalizeRequiredInventoryUUIDString(req.WarehouseID, "warehouse_id")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID); err != nil {
 		return nil, fmt.Errorf("get product: %w", err)
 	}
-	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, req.WarehouseID); err != nil {
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, warehouseID); err != nil {
 		return nil, fmt.Errorf("get warehouse: %w", err)
 	}
 
-	level, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, req.ProductID, req.WarehouseID)
+	level, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, productID, warehouseID)
 	if err != nil {
 		return nil, fmt.Errorf("get stock level: %w", err)
 	}
@@ -1091,14 +1128,22 @@ func (s *Service) ReleaseStock(ctx context.Context, tenantID, schemaName string,
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, req.ProductID); err != nil {
+	productID, err := normalizeRequiredInventoryUUIDString(req.ProductID, "product_id")
+	if err != nil {
+		return nil, err
+	}
+	warehouseID, err := normalizeRequiredInventoryUUIDString(req.WarehouseID, "warehouse_id")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID); err != nil {
 		return nil, fmt.Errorf("get product: %w", err)
 	}
-	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, req.WarehouseID); err != nil {
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, warehouseID); err != nil {
 		return nil, fmt.Errorf("get warehouse: %w", err)
 	}
 
-	level, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, req.ProductID, req.WarehouseID)
+	level, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, productID, warehouseID)
 	if err != nil {
 		return nil, fmt.Errorf("get stock level: %w", err)
 	}

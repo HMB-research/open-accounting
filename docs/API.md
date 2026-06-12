@@ -2398,7 +2398,7 @@ Content-Type: application/json
 }
 ```
 
-`quantity` is signed: positive quantities add stock and negative quantities remove stock. Adjustments update both the product total stock and the selected warehouse stock level; reductions cannot drive that warehouse below zero or below reserved quantity. `lot_number`, `serial_number`, and `expiry_date` are optional movement metadata fields; `expiry_date` must use `YYYY-MM-DD`.
+`product_id` and `warehouse_id` must be valid UUIDs. `quantity` is signed: positive quantities add stock and negative quantities remove stock. Adjustments update both the product total stock and the selected warehouse stock level; reductions cannot drive that warehouse below zero or below reserved quantity. `lot_number`, `serial_number`, and `expiry_date` are optional movement metadata fields; `expiry_date` must use `YYYY-MM-DD`.
 
 ```http
 POST /tenants/{tenantId}/inventory/stock-import
@@ -2430,7 +2430,7 @@ Content-Type: application/json
 }
 ```
 
-Transfers require a positive quantity and enough available stock in the source warehouse. `lot_number`, `serial_number`, and `expiry_date` are optional movement metadata fields; `expiry_date` must use `YYYY-MM-DD`. Successful transfers create an outbound movement for the source warehouse, an inbound movement for the destination warehouse, copy any lot metadata to both movements, and update both warehouse stock levels without changing total product stock.
+`product_id`, `from_warehouse_id`, and `to_warehouse_id` must be valid UUIDs. Transfers require a positive quantity and enough available stock in the source warehouse. `lot_number`, `serial_number`, and `expiry_date` are optional movement metadata fields; `expiry_date` must use `YYYY-MM-DD`. Successful transfers create an outbound movement for the source warehouse, an inbound movement for the destination warehouse, copy any lot metadata to both movements, and update both warehouse stock levels without changing total product stock.
 
 ```http
 POST /tenants/{tenantId}/inventory/reserve
@@ -2445,7 +2445,7 @@ Content-Type: application/json
 }
 ```
 
-Reservations require a positive quantity and sufficient warehouse available stock. A successful reservation increases `reserved_qty` and decreases `available_qty` without changing on-hand quantity or product total stock.
+`product_id` and `warehouse_id` must be valid UUIDs. Reservations require a positive quantity and sufficient warehouse available stock. A successful reservation increases `reserved_qty` and decreases `available_qty` without changing on-hand quantity or product total stock.
 
 ```http
 POST /tenants/{tenantId}/inventory/release
@@ -2460,7 +2460,7 @@ Content-Type: application/json
 }
 ```
 
-Releases require a positive quantity no greater than current reserved stock. A successful release decreases `reserved_qty` and increases `available_qty` without changing on-hand quantity or product total stock.
+`product_id` and `warehouse_id` must be valid UUIDs. Releases require a positive quantity no greater than current reserved stock. A successful release decreases `reserved_qty` and increases `available_qty` without changing on-hand quantity or product total stock.
 
 ---
 

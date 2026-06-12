@@ -13,6 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	inventoryStockProductID    = "11111111-1111-4111-8111-111111111111"
+	inventoryStockWarehouseID  = "22222222-2222-4222-8222-222222222222"
+	inventoryStockWarehouseID2 = "33333333-3333-4333-8333-333333333333"
+)
+
+func inventoryStockLevelKey(productID, warehouseID string) string {
+	return productID + "-" + warehouseID
+}
+
 // MockRepository is a mock implementation of Repository for testing
 type MockRepository struct {
 	mu             sync.RWMutex
@@ -1034,16 +1044,16 @@ func TestService_ImportStockAdjustmentsCSV(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
-	ts.repo.Products["prod-1"] = &Product{
-		ID:           "prod-1",
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:           inventoryStockProductID,
 		TenantID:     "tenant-1",
 		Code:         "SKU-001",
 		Name:         "Widget",
 		ProductType:  ProductTypeGoods,
 		CurrentStock: decimal.Zero,
 	}
-	ts.repo.Warehouses["wh-1"] = &Warehouse{
-		ID:       "wh-1",
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Code:     "MAIN",
 		Name:     "Main",
@@ -1067,16 +1077,16 @@ func TestService_ImportStockAdjustmentsCSV(t *testing.T) {
 	assert.Equal(t, 3, result.Errors[0].Row)
 	assert.Contains(t, result.Errors[0].Message, "product_code")
 
-	product := ts.repo.Products["prod-1"]
+	product := ts.repo.Products[inventoryStockProductID]
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(12)))
 
-	level := ts.repo.StockLevels["prod-1-wh-1"]
+	level := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
 	require.NotNil(t, level)
 	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(12)))
 	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(12)))
 
-	require.Len(t, ts.repo.Movements["prod-1"], 1)
-	movement := ts.repo.Movements["prod-1"][0]
+	require.Len(t, ts.repo.Movements[inventoryStockProductID], 1)
+	movement := ts.repo.Movements[inventoryStockProductID][0]
 	assert.Equal(t, MovementTypeIn, movement.MovementType)
 	assert.True(t, movement.Quantity.Equal(decimal.NewFromInt(12)))
 	assert.True(t, movement.UnitCost.Equal(decimal.RequireFromString("10.50")))
@@ -1494,22 +1504,22 @@ func TestService_AdjustStock(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
-	ts.repo.Products["p1"] = &Product{
-		ID:           "p1",
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:           inventoryStockProductID,
 		TenantID:     "tenant-1",
 		Name:         "Widget",
 		CurrentStock: decimal.NewFromInt(100),
 	}
-	ts.repo.Warehouses["wh-1"] = &Warehouse{
-		ID:       "wh-1",
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Name:     "Main",
 		IsActive: true,
 	}
 
 	req := &AdjustStockRequest{
-		ProductID:    "p1",
-		WarehouseID:  "wh-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
 		Quantity:     "50",
 		UnitCost:     "10",
 		LotNumber:    " LOT-2026-01 ",
@@ -1528,10 +1538,10 @@ func TestService_AdjustStock(t *testing.T) {
 	assert.Equal(t, "2027-01-31", movement.ExpiryDate)
 
 	// Check product stock updated
-	product, _ := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
+	product, _ := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", inventoryStockProductID)
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(150)))
 
-	level := ts.repo.StockLevels["p1-wh-1"]
+	level := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
 	require.NotNil(t, level)
 	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(50)))
 	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(50)))
@@ -1541,31 +1551,31 @@ func TestService_AdjustStock_Negative(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
-	ts.repo.Products["p1"] = &Product{
-		ID:           "p1",
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:           inventoryStockProductID,
 		TenantID:     "tenant-1",
 		Name:         "Widget",
 		CurrentStock: decimal.NewFromInt(100),
 	}
-	ts.repo.Warehouses["wh-1"] = &Warehouse{
-		ID:       "wh-1",
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Name:     "Main",
 		IsActive: true,
 	}
-	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
 		ID:           "sl-1",
 		TenantID:     "tenant-1",
-		ProductID:    "p1",
-		WarehouseID:  "wh-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
 		Quantity:     decimal.NewFromInt(40),
 		ReservedQty:  decimal.NewFromInt(5),
 		AvailableQty: decimal.NewFromInt(35),
 	}
 
 	req := &AdjustStockRequest{
-		ProductID:   "p1",
-		WarehouseID: "wh-1",
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
 		Quantity:    "-30",
 		Reason:      "Damaged goods",
 		UserID:      "user-1",
@@ -1577,10 +1587,10 @@ func TestService_AdjustStock_Negative(t *testing.T) {
 	assert.True(t, movement.Quantity.Equal(decimal.NewFromInt(30))) // Absolute value
 
 	// Check product stock updated
-	product, _ := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
+	product, _ := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", inventoryStockProductID)
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(70)))
 
-	level := ts.repo.StockLevels["p1-wh-1"]
+	level := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
 	require.NotNil(t, level)
 	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(10)))
 	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(5)))
@@ -1591,22 +1601,22 @@ func TestService_AdjustStock_WarehouseStockCannotGoNegative(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
-	ts.repo.Products["p1"] = &Product{
-		ID:           "p1",
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:           inventoryStockProductID,
 		TenantID:     "tenant-1",
 		Name:         "Widget",
 		CurrentStock: decimal.NewFromInt(100),
 	}
-	ts.repo.Warehouses["wh-1"] = &Warehouse{
-		ID:       "wh-1",
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Name:     "Main",
 		IsActive: true,
 	}
 
 	_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", &AdjustStockRequest{
-		ProductID:   "p1",
-		WarehouseID: "wh-1",
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
 		Quantity:    "-1",
 		UserID:      "user-1",
 	})
@@ -1643,51 +1653,87 @@ func TestService_AdjustStock_InvalidExpiryDate(t *testing.T) {
 	assert.Contains(t, err.Error(), "expiry_date must use YYYY-MM-DD")
 }
 
+func TestService_AdjustStock_InvalidReferenceID(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	for _, tt := range []struct {
+		name    string
+		req     AdjustStockRequest
+		wantErr string
+	}{
+		{
+			name: "product",
+			req: AdjustStockRequest{
+				ProductID:   "legacy-product",
+				WarehouseID: inventoryStockWarehouseID,
+				Quantity:    "1",
+			},
+			wantErr: "product_id must be a valid UUID",
+		},
+		{
+			name: "warehouse",
+			req: AdjustStockRequest{
+				ProductID:   inventoryStockProductID,
+				WarehouseID: "legacy-warehouse",
+				Quantity:    "1",
+			},
+			wantErr: "warehouse_id must be a valid UUID",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", &tt.req)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
 func TestService_TransferStock(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
-	ts.repo.Products["p1"] = &Product{
-		ID:           "p1",
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:           inventoryStockProductID,
 		TenantID:     "tenant-1",
 		Name:         "Widget",
 		CurrentStock: decimal.NewFromInt(100),
 	}
-	ts.repo.Warehouses["wh-1"] = &Warehouse{
-		ID:       "wh-1",
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Name:     "Main",
 		IsActive: true,
 	}
-	ts.repo.Warehouses["wh-2"] = &Warehouse{
-		ID:       "wh-2",
+	ts.repo.Warehouses[inventoryStockWarehouseID2] = &Warehouse{
+		ID:       inventoryStockWarehouseID2,
 		TenantID: "tenant-1",
 		Name:     "Branch",
 		IsActive: true,
 	}
-	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
 		ID:           "sl-1",
 		TenantID:     "tenant-1",
-		ProductID:    "p1",
-		WarehouseID:  "wh-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
 		Quantity:     decimal.NewFromInt(60),
 		ReservedQty:  decimal.NewFromInt(10),
 		AvailableQty: decimal.NewFromInt(50),
 	}
-	ts.repo.StockLevels["p1-wh-2"] = &StockLevel{
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID2)] = &StockLevel{
 		ID:           "sl-2",
 		TenantID:     "tenant-1",
-		ProductID:    "p1",
-		WarehouseID:  "wh-2",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID2,
 		Quantity:     decimal.NewFromInt(40),
 		ReservedQty:  decimal.Zero,
 		AvailableQty: decimal.NewFromInt(40),
 	}
 
 	req := &TransferStockRequest{
-		ProductID:       "p1",
-		FromWarehouseID: "wh-1",
-		ToWarehouseID:   "wh-2",
+		ProductID:       inventoryStockProductID,
+		FromWarehouseID: inventoryStockWarehouseID,
+		ToWarehouseID:   inventoryStockWarehouseID2,
 		Quantity:        "25",
 		LotNumber:       " LOT-2026-01 ",
 		SerialNumber:    " SN-001 ",
@@ -1700,7 +1746,7 @@ func TestService_TransferStock(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check movements created
-	movements := ts.repo.Movements["p1"]
+	movements := ts.repo.Movements[inventoryStockProductID]
 	assert.Len(t, movements, 2) // OUT and IN movements
 	assert.Equal(t, MovementTypeOut, movements[0].MovementType)
 	assert.Equal(t, MovementTypeIn, movements[1].MovementType)
@@ -1710,18 +1756,18 @@ func TestService_TransferStock(t *testing.T) {
 		assert.Equal(t, "2027-01-31", movement.ExpiryDate)
 	}
 
-	sourceLevel := ts.repo.StockLevels["p1-wh-1"]
+	sourceLevel := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
 	require.NotNil(t, sourceLevel)
 	assert.True(t, sourceLevel.Quantity.Equal(decimal.NewFromInt(35)))
 	assert.True(t, sourceLevel.ReservedQty.Equal(decimal.NewFromInt(10)))
 	assert.True(t, sourceLevel.AvailableQty.Equal(decimal.NewFromInt(25)))
 
-	destinationLevel := ts.repo.StockLevels["p1-wh-2"]
+	destinationLevel := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID2)]
 	require.NotNil(t, destinationLevel)
 	assert.True(t, destinationLevel.Quantity.Equal(decimal.NewFromInt(65)))
 	assert.True(t, destinationLevel.AvailableQty.Equal(decimal.NewFromInt(65)))
 
-	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
+	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", inventoryStockProductID)
 	require.NoError(t, err)
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(100)))
 }
@@ -1730,31 +1776,31 @@ func TestService_ReserveStock(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
-	ts.repo.Products["p1"] = &Product{
-		ID:           "p1",
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:           inventoryStockProductID,
 		TenantID:     "tenant-1",
 		Name:         "Widget",
 		CurrentStock: decimal.NewFromInt(20),
 	}
-	ts.repo.Warehouses["wh-1"] = &Warehouse{
-		ID:       "wh-1",
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Name:     "Main",
 		IsActive: true,
 	}
-	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
 		ID:           "sl-1",
 		TenantID:     "tenant-1",
-		ProductID:    "p1",
-		WarehouseID:  "wh-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
 		Quantity:     decimal.NewFromInt(20),
 		ReservedQty:  decimal.NewFromInt(5),
 		AvailableQty: decimal.NewFromInt(15),
 	}
 
 	level, err := ts.svc.ReserveStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
-		ProductID:   "p1",
-		WarehouseID: "wh-1",
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
 		Quantity:    "4",
 		Reason:      "Sales order allocation",
 		UserID:      "user-1",
@@ -1763,9 +1809,9 @@ func TestService_ReserveStock(t *testing.T) {
 	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(20)))
 	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(9)))
 	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(11)))
-	assert.Empty(t, ts.repo.Movements["p1"])
+	assert.Empty(t, ts.repo.Movements[inventoryStockProductID])
 
-	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
+	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", inventoryStockProductID)
 	require.NoError(t, err)
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(20)))
 }
@@ -1774,28 +1820,28 @@ func TestService_ReserveStock_InsufficientAvailableStock(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
-	ts.repo.Products["p1"] = &Product{ID: "p1", TenantID: "tenant-1", Name: "Widget"}
-	ts.repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Name: "Main", IsActive: true}
-	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+	ts.repo.Products[inventoryStockProductID] = &Product{ID: inventoryStockProductID, TenantID: "tenant-1", Name: "Widget"}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
 		ID:           "sl-1",
 		TenantID:     "tenant-1",
-		ProductID:    "p1",
-		WarehouseID:  "wh-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
 		Quantity:     decimal.NewFromInt(8),
 		ReservedQty:  decimal.NewFromInt(6),
 		AvailableQty: decimal.NewFromInt(2),
 	}
 
 	_, err := ts.svc.ReserveStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
-		ProductID:   "p1",
-		WarehouseID: "wh-1",
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
 		Quantity:    "3",
 		UserID:      "user-1",
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "insufficient available stock")
 
-	level := ts.repo.StockLevels["p1-wh-1"]
+	level := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
 	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(6)))
 	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(2)))
 }
@@ -1804,31 +1850,31 @@ func TestService_ReleaseStock(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
-	ts.repo.Products["p1"] = &Product{
-		ID:           "p1",
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:           inventoryStockProductID,
 		TenantID:     "tenant-1",
 		Name:         "Widget",
 		CurrentStock: decimal.NewFromInt(20),
 	}
-	ts.repo.Warehouses["wh-1"] = &Warehouse{
-		ID:       "wh-1",
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
 		TenantID: "tenant-1",
 		Name:     "Main",
 		IsActive: true,
 	}
-	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
 		ID:           "sl-1",
 		TenantID:     "tenant-1",
-		ProductID:    "p1",
-		WarehouseID:  "wh-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
 		Quantity:     decimal.NewFromInt(20),
 		ReservedQty:  decimal.NewFromInt(8),
 		AvailableQty: decimal.NewFromInt(12),
 	}
 
 	level, err := ts.svc.ReleaseStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
-		ProductID:   "p1",
-		WarehouseID: "wh-1",
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
 		Quantity:    "5",
 		Reason:      "Order canceled",
 		UserID:      "user-1",
@@ -1837,9 +1883,9 @@ func TestService_ReleaseStock(t *testing.T) {
 	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(20)))
 	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(3)))
 	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(17)))
-	assert.Empty(t, ts.repo.Movements["p1"])
+	assert.Empty(t, ts.repo.Movements[inventoryStockProductID])
 
-	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", "p1")
+	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", inventoryStockProductID)
 	require.NoError(t, err)
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(20)))
 }
@@ -1848,28 +1894,28 @@ func TestService_ReleaseStock_TooMuch(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
-	ts.repo.Products["p1"] = &Product{ID: "p1", TenantID: "tenant-1", Name: "Widget"}
-	ts.repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Name: "Main", IsActive: true}
-	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+	ts.repo.Products[inventoryStockProductID] = &Product{ID: inventoryStockProductID, TenantID: "tenant-1", Name: "Widget"}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
 		ID:           "sl-1",
 		TenantID:     "tenant-1",
-		ProductID:    "p1",
-		WarehouseID:  "wh-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
 		Quantity:     decimal.NewFromInt(8),
 		ReservedQty:  decimal.NewFromInt(2),
 		AvailableQty: decimal.NewFromInt(6),
 	}
 
 	_, err := ts.svc.ReleaseStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
-		ProductID:   "p1",
-		WarehouseID: "wh-1",
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
 		Quantity:    "3",
 		UserID:      "user-1",
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot release more than reserved stock")
 
-	level := ts.repo.StockLevels["p1-wh-1"]
+	level := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
 	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(2)))
 	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(6)))
 }
@@ -1878,29 +1924,29 @@ func TestService_TransferStock_InsufficientSourceStock(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
 
-	ts.repo.Products["p1"] = &Product{ID: "p1", TenantID: "tenant-1", Name: "Widget"}
-	ts.repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Name: "Main", IsActive: true}
-	ts.repo.Warehouses["wh-2"] = &Warehouse{ID: "wh-2", TenantID: "tenant-1", Name: "Branch", IsActive: true}
-	ts.repo.StockLevels["p1-wh-1"] = &StockLevel{
+	ts.repo.Products[inventoryStockProductID] = &Product{ID: inventoryStockProductID, TenantID: "tenant-1", Name: "Widget"}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+	ts.repo.Warehouses[inventoryStockWarehouseID2] = &Warehouse{ID: inventoryStockWarehouseID2, TenantID: "tenant-1", Name: "Branch", IsActive: true}
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
 		ID:           "sl-1",
 		TenantID:     "tenant-1",
-		ProductID:    "p1",
-		WarehouseID:  "wh-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
 		Quantity:     decimal.NewFromInt(10),
 		ReservedQty:  decimal.NewFromInt(4),
 		AvailableQty: decimal.NewFromInt(6),
 	}
 
 	err := ts.svc.TransferStock(ctx, "tenant-1", "test_schema", &TransferStockRequest{
-		ProductID:       "p1",
-		FromWarehouseID: "wh-1",
-		ToWarehouseID:   "wh-2",
+		ProductID:       inventoryStockProductID,
+		FromWarehouseID: inventoryStockWarehouseID,
+		ToWarehouseID:   inventoryStockWarehouseID2,
 		Quantity:        "7",
 		UserID:          "user-1",
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "insufficient available stock")
-	assert.Empty(t, ts.repo.Movements["p1"])
+	assert.Empty(t, ts.repo.Movements[inventoryStockProductID])
 }
 
 func TestService_TransferStock_InvalidExpiryDate(t *testing.T) {
@@ -1908,9 +1954,9 @@ func TestService_TransferStock_InvalidExpiryDate(t *testing.T) {
 	ctx := context.Background()
 
 	err := ts.svc.TransferStock(ctx, "tenant-1", "test_schema", &TransferStockRequest{
-		ProductID:       "p1",
-		FromWarehouseID: "wh-1",
-		ToWarehouseID:   "wh-2",
+		ProductID:       inventoryStockProductID,
+		FromWarehouseID: inventoryStockWarehouseID,
+		ToWarehouseID:   inventoryStockWarehouseID2,
 		Quantity:        "5",
 		ExpiryDate:      "2027/01/31",
 	})
@@ -1949,6 +1995,123 @@ func TestService_TransferStock_NegativeQuantity(t *testing.T) {
 	err := ts.svc.TransferStock(ctx, "tenant-1", "test_schema", req)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "quantity must be positive")
+}
+
+func TestService_TransferStock_InvalidReferenceID(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	for _, tt := range []struct {
+		name    string
+		req     TransferStockRequest
+		wantErr string
+	}{
+		{
+			name: "product",
+			req: TransferStockRequest{
+				ProductID:       "legacy-product",
+				FromWarehouseID: inventoryStockWarehouseID,
+				ToWarehouseID:   inventoryStockWarehouseID2,
+				Quantity:        "1",
+			},
+			wantErr: "product_id must be a valid UUID",
+		},
+		{
+			name: "source warehouse",
+			req: TransferStockRequest{
+				ProductID:       inventoryStockProductID,
+				FromWarehouseID: "legacy-warehouse",
+				ToWarehouseID:   inventoryStockWarehouseID2,
+				Quantity:        "1",
+			},
+			wantErr: "from_warehouse_id must be a valid UUID",
+		},
+		{
+			name: "destination warehouse",
+			req: TransferStockRequest{
+				ProductID:       inventoryStockProductID,
+				FromWarehouseID: inventoryStockWarehouseID,
+				ToWarehouseID:   "legacy-warehouse",
+				Quantity:        "1",
+			},
+			wantErr: "to_warehouse_id must be a valid UUID",
+		},
+		{
+			name: "same warehouse",
+			req: TransferStockRequest{
+				ProductID:       inventoryStockProductID,
+				FromWarehouseID: inventoryStockWarehouseID,
+				ToWarehouseID:   " " + inventoryStockWarehouseID + " ",
+				Quantity:        "1",
+			},
+			wantErr: "source and destination warehouses must differ",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ts.svc.TransferStock(ctx, "tenant-1", "test_schema", &tt.req)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestService_StockReservation_InvalidReferenceID(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	for _, tt := range []struct {
+		name    string
+		req     StockReservationRequest
+		call    func(context.Context, string, string, *StockReservationRequest) (*StockLevel, error)
+		wantErr string
+	}{
+		{
+			name: "reserve product",
+			req: StockReservationRequest{
+				ProductID:   "legacy-product",
+				WarehouseID: inventoryStockWarehouseID,
+				Quantity:    "1",
+			},
+			call:    ts.svc.ReserveStock,
+			wantErr: "product_id must be a valid UUID",
+		},
+		{
+			name: "reserve warehouse",
+			req: StockReservationRequest{
+				ProductID:   inventoryStockProductID,
+				WarehouseID: "legacy-warehouse",
+				Quantity:    "1",
+			},
+			call:    ts.svc.ReserveStock,
+			wantErr: "warehouse_id must be a valid UUID",
+		},
+		{
+			name: "release product",
+			req: StockReservationRequest{
+				ProductID:   "legacy-product",
+				WarehouseID: inventoryStockWarehouseID,
+				Quantity:    "1",
+			},
+			call:    ts.svc.ReleaseStock,
+			wantErr: "product_id must be a valid UUID",
+		},
+		{
+			name: "release warehouse",
+			req: StockReservationRequest{
+				ProductID:   inventoryStockProductID,
+				WarehouseID: "legacy-warehouse",
+				Quantity:    "1",
+			},
+			call:    ts.svc.ReleaseStock,
+			wantErr: "warehouse_id must be a valid UUID",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.call(ctx, "tenant-1", "test_schema", &tt.req)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
 }
 
 func TestService_GetStockLevels(t *testing.T) {
