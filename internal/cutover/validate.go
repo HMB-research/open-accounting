@@ -381,6 +381,27 @@ var fileSpecs = map[FileKind]fileSpec{
 		}),
 		requiredGroups: [][]string{{"code"}, {"name"}},
 	},
+	KindCostAllocations: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"cost_center_id":        "cost_center_id",
+			"cost_center":           "cost_center_code",
+			"cost_center_code":      "cost_center_code",
+			"cc_code":               "cost_center_code",
+			"journal_entry_line_id": "journal_entry_line_id",
+			"journal_line_id":       "journal_entry_line_id",
+			"line_id":               "journal_entry_line_id",
+			"allocation_amount":     "amount",
+			"allocation_percentage": "allocation_percentage",
+			"percentage":            "allocation_percentage",
+			"allocation_percent":    "allocation_percentage",
+			"allocation_date":       "allocation_date",
+			"date":                  "allocation_date",
+			"notes":                 "notes",
+			"note":                  "notes",
+			"memo":                  "notes",
+		}),
+		requiredGroups: [][]string{{"cost_center_id", "cost_center_code"}, {"journal_entry_line_id"}, {"amount"}, {"allocation_date"}},
+	},
 	KindProductCategories: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
 			"category":         "name",
@@ -804,6 +825,9 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindCostCenters:
 			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenters, file, row, KindCostCenters,
 				[]string{"parent_code"})
+		case KindCostAllocations:
+			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenters, file, row, KindCostCenters,
+				[]string{"cost_center_id", "cost_center_code"})
 		case KindProductCategories:
 			checkTargetReference(report, indexes.files[KindProductCategories], indexes.productCategories, file, row, KindProductCategories,
 				[]string{"parent_name"})

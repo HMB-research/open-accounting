@@ -300,6 +300,7 @@ go run ./cmd/oa migration validate \
   --orders ./orders.csv \
   --recurring-invoices ./recurring-invoices.csv \
   --cost-centers ./cost-centers.csv \
+  --cost-allocations ./cost-allocations.csv \
   --product-categories ./product-categories.csv \
   --warehouses ./warehouses.csv \
   --products ./products.csv \
@@ -310,7 +311,7 @@ go run ./cmd/oa migration validate \
 go run ./cmd/oa migration validate --contacts ./contacts.csv --invoices ./invoices.csv --e-invoices ./supplier-einvoices.xml --json
 ```
 
-`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups, Estonian e-invoice XML payloads, and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, e-invoices, payments, bank accounts, bank transactions, payroll history, leave balances, TSD history, KMD history, quotes, orders, recurring invoice templates, cost centers, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
+`migration validate` is a non-mutating cutover preflight. It checks required CSV column groups, Estonian e-invoice XML payloads, and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, e-invoices, payments, bank accounts, bank transactions, payroll history, leave balances, TSD history, KMD history, quotes, orders, recurring invoice templates, cost centers, cost allocations, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Cost-allocation validation checks required `journal_entry_line_id`, `amount`, `allocation_date`, and `cost_center_id` or `cost_center_code` columns, plus same-bundle cost-center references when a cost center file is included. Stock-adjustment validation recognizes optional lot metadata columns such as `lot_number`, `serial_number`, and `expiry_date`, plus aliases including `batch`, `serial`, and `expiration_date`.
 
 ## Accounts
 

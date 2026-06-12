@@ -90,6 +90,11 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 			CSVContent: "code,name,parent_code\nCC-ROOT,Root,\nCC-SALES,Sales,CC-ROOT\n",
 		},
 		{
+			Kind:       KindCostAllocations,
+			FileName:   "cost-allocations.csv",
+			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\nCC-SALES,line-1,125.50,50,2026-05-31,Shared rent\n",
+		},
+		{
 			Kind:       KindProductCategories,
 			FileName:   "categories.csv",
 			CSVContent: "category_name,parent_name\nRoot Cat,\nWidgets,Root Cat\n",
@@ -130,7 +135,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	require.NotNil(t, report)
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 0, report.Summary.ErrorCount)
-	assert.Equal(t, 27, report.Summary.RowsValidated)
+	assert.Equal(t, 28, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
 
 	var stockValidation FileValidation
@@ -152,6 +157,30 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	assert.Equal(t, 1, eInvoiceValidation.Rows)
 	assert.Contains(t, eInvoiceValidation.Headers, "invoice_number")
 	assert.Contains(t, eInvoiceValidation.Headers, "contact_reg_code")
+}
+
+func TestValidateBundleReportsCostAllocationReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindCostCenters,
+			FileName:   "cost-centers.csv",
+			CSVContent: "code,name\nOPS,Operations\n",
+		},
+		{
+			Kind:       KindCostAllocations,
+			FileName:   "cost-allocations.csv",
+			CSVContent: "cc_code,journal_line_id,allocation_amount,allocation_date\nMISSING,line-1,125.50,2026-05-31\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindCostAllocations, report.Issues[0].Kind)
+	assert.Equal(t, KindCostCenters, report.Issues[0].TargetKind)
+	assert.Equal(t, "MISSING", report.Issues[0].Value)
 }
 
 func TestValidateBundleReportsTSDHistoryEmployeeReferenceIssue(t *testing.T) {

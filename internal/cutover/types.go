@@ -20,6 +20,7 @@ const (
 	KindOrders            FileKind = "orders"
 	KindRecurringInvoices FileKind = "recurring_invoices"
 	KindCostCenters       FileKind = "cost_centers"
+	KindCostAllocations   FileKind = "cost_allocations"
 	KindProductCategories FileKind = "product_categories"
 	KindWarehouses        FileKind = "warehouses"
 	KindProducts          FileKind = "products"

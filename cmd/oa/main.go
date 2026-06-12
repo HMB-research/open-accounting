@@ -2019,6 +2019,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		ordersFile := fs.String("orders", "", "Orders CSV file")
 		recurringInvoicesFile := fs.String("recurring-invoices", "", "Recurring invoice templates CSV file")
 		costCentersFile := fs.String("cost-centers", "", "Cost centers CSV file")
+		costAllocationsFile := fs.String("cost-allocations", "", "Cost allocations CSV file")
 		productCategoriesFile := fs.String("product-categories", "", "Product categories CSV file")
 		warehousesFile := fs.String("warehouses", "", "Warehouses CSV file")
 		productsFile := fs.String("products", "", "Products CSV file")
@@ -2049,6 +2050,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			{kind: cutover.KindOrders, path: *ordersFile},
 			{kind: cutover.KindRecurringInvoices, path: *recurringInvoicesFile},
 			{kind: cutover.KindCostCenters, path: *costCentersFile},
+			{kind: cutover.KindCostAllocations, path: *costAllocationsFile},
 			{kind: cutover.KindProductCategories, path: *productCategoriesFile},
 			{kind: cutover.KindWarehouses, path: *warehousesFile},
 			{kind: cutover.KindProducts, path: *productsFile},

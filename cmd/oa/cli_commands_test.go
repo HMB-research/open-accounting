@@ -3919,6 +3919,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 	ordersFile := writeTempCSV(t, "orders.csv", "order_number,order_date,contact_code,line_description,quantity,unit_price,vat_rate\nSO-1,2026-05-30,CUST-1,Work,1,100,22\n")
 	recurringFile := writeTempCSV(t, "recurring.csv", "name,frequency,start_date,contact_code,line_description,quantity,unit_price,vat_rate\nMonthly,MONTHLY,2026-06-01,CUST-1,Work,1,100,22\n")
 	costCentersFile := writeTempCSV(t, "cost-centers.csv", "code,name\nCC-1,Sales\n")
+	costAllocationsFile := writeTempCSV(t, "cost-allocations.csv", "cost_center_code,journal_entry_line_id,amount,allocation_date\nCC-1,line-1,125.50,2026-05-31\n")
 	categoriesFile := writeTempCSV(t, "categories.csv", "category_name\nWidgets\n")
 	warehousesFile := writeTempCSV(t, "warehouses.csv", "warehouse_code,warehouse_name\nMAIN,Main warehouse\n")
 	productsFile := writeTempCSV(t, "products.csv", "product_code,name,category_name,sales_price\nSKU-1,Widget,Widgets,10\n")
@@ -3962,6 +3963,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 				assert.True(t, kinds[cutover.KindOrders])
 				assert.True(t, kinds[cutover.KindRecurringInvoices])
 				assert.True(t, kinds[cutover.KindCostCenters])
+				assert.True(t, kinds[cutover.KindCostAllocations])
 				assert.True(t, kinds[cutover.KindProductCategories])
 				assert.True(t, kinds[cutover.KindWarehouses])
 				assert.True(t, kinds[cutover.KindProducts])
@@ -4014,6 +4016,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 		"--orders", ordersFile,
 		"--recurring-invoices", recurringFile,
 		"--cost-centers", costCentersFile,
+		"--cost-allocations", costAllocationsFile,
 		"--product-categories", categoriesFile,
 		"--warehouses", warehousesFile,
 		"--products", productsFile,
