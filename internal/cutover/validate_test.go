@@ -633,6 +633,49 @@ func TestValidateBundleReportsLeaveBalanceRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindLeaveBalances, "pending_days", "pending_days must be zero or greater")
 }
 
+func TestValidateBundleReportsTSDHistoryRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindTSDHistory,
+			FileName: "tsd-history.csv",
+			CSVContent: "declaration_year,declaration_month,declaration_status,submitted_date,emta_ref,employee_number,gross_salary,basic_exemption_applied,taxable_income,income_tax,social_tax,unemployment_employer,unemployment_employee,pension,tsd_payment_type\n" +
+				"2019,5,ACCEPTED,2026-01-10,EMTA-MAY,EMP-1,3200,0,3200,0,0,0,0,0,10\n" +
+				"2026,13,ACCEPTED,2026-01-10,EMTA-BAD-MONTH,EMP-2,3200,0,3200,0,0,0,0,0,10\n" +
+				"2026,5,BAD,2026-01-10,EMTA-BAD-STATUS,EMP-3,3200,0,3200,0,0,0,0,0,10\n" +
+				"2026,6,ACCEPTED,bad-date,EMTA-BAD-DATE,EMP-4,3200,0,3200,0,0,0,0,0,10\n" +
+				"2026,7,ACCEPTED,2026-01-10,EMTA-MISSING-GROSS,EMP-5,,0,0,0,0,0,0,0,10\n" +
+				"2026,8,ACCEPTED,2026-01-10,EMTA-ZERO-GROSS,EMP-6,0,0,0,0,0,0,0,0,10\n" +
+				"2026,9,ACCEPTED,2026-01-10,EMTA-BAD-DECIMAL,EMP-7,3200,nope,3200,0,0,0,0,0,10\n" +
+				"2026,10,ACCEPTED,2026-01-10,EMTA-NEGATIVE,EMP-8,3200,-1,-1,-1,-1,-1,-1,-1,10\n" +
+				"2026,11,ACCEPTED,2026-01-10,EMTA-NOV,EMP-9,3200,0,3200,0,0,0,0,0,10\n" +
+				"2026,11,SUBMITTED,2026-01-11,EMTA-CHANGED,EMP-10,3200,0,3200,0,0,0,0,0,10\n" +
+				"2026,12,filed,31.12.2026,EMTA-DEC,EMP-11,\"3 200,50\",\"50,50\",\"3 150,00\",0,0,0,0,0,10\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 17, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindTSDHistory, "period_year", "period_year must be between 2020 and 2100")
+	assertValidationIssue(t, report, KindTSDHistory, "period_month", "period_month must be between 1 and 12")
+	assertValidationIssue(t, report, KindTSDHistory, "status", "status must be DRAFT, SUBMITTED, ACCEPTED, or REJECTED")
+	assertValidationIssue(t, report, KindTSDHistory, "submitted_at", "submitted_at must be in YYYY-MM-DD format")
+	assertValidationIssue(t, report, KindTSDHistory, "gross_payment", "gross_payment is required")
+	assertValidationIssue(t, report, KindTSDHistory, "gross_payment", "gross_payment must be greater than zero")
+	assertValidationIssue(t, report, KindTSDHistory, "basic_exemption", "basic_exemption must be a decimal")
+	assertValidationIssue(t, report, KindTSDHistory, "basic_exemption", "basic_exemption must be zero or greater")
+	assertValidationIssue(t, report, KindTSDHistory, "taxable_amount", "taxable_amount must be zero or greater")
+	assertValidationIssue(t, report, KindTSDHistory, "income_tax", "income_tax must be zero or greater")
+	assertValidationIssue(t, report, KindTSDHistory, "social_tax", "social_tax must be zero or greater")
+	assertValidationIssue(t, report, KindTSDHistory, "unemployment_insurance_employer", "unemployment_insurance_employer must be zero or greater")
+	assertValidationIssue(t, report, KindTSDHistory, "unemployment_insurance_employee", "unemployment_insurance_employee must be zero or greater")
+	assertValidationIssue(t, report, KindTSDHistory, "funded_pension", "funded_pension must be zero or greater")
+	assertValidationIssue(t, report, KindTSDHistory, "status", "status must be consistent for each TSD period")
+	assertValidationIssue(t, report, KindTSDHistory, "submitted_at", "submitted_at must be consistent for each TSD period")
+	assertValidationIssue(t, report, KindTSDHistory, "emta_reference", "emta_reference must be consistent for each TSD period")
+}
+
 func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

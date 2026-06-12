@@ -84,6 +84,12 @@ type payrollHistoryPreflightGroup struct {
 	notes       string
 }
 
+type tsdHistoryPreflightGroup struct {
+	status        string
+	submittedAt   string
+	emtaReference string
+}
+
 var fileSpecs = map[FileKind]fileSpec{
 	KindAccounts: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
@@ -384,14 +390,20 @@ var fileSpecs = map[FileKind]fileSpec{
 			"submitted_date":                  "submitted_at",
 			"submission_date":                 "submitted_at",
 			"emta_reference":                  "emta_reference",
+			"emta_ref":                        "emta_reference",
 			"submission_reference":            "emta_reference",
 			"payment_type":                    "payment_type",
 			"payment_code":                    "payment_type",
+			"tsd_payment_type":                "payment_type",
 			"gross":                           "gross_payment",
 			"gross_salary":                    "gross_payment",
 			"gross_payment":                   "gross_payment",
+			"basic_exemption":                 "basic_exemption",
 			"basic_exemption_applied":         "basic_exemption",
+			"taxable_amount":                  "taxable_amount",
 			"taxable_income":                  "taxable_amount",
+			"income_tax":                      "income_tax",
+			"social_tax":                      "social_tax",
 			"unemployment_insurance_employee": "unemployment_insurance_employee",
 			"unemployment_employee":           "unemployment_insurance_employee",
 			"unemployment_insurance_ee":       "unemployment_insurance_employee",
@@ -847,6 +859,17 @@ var cutoverPayrollHistoryPaymentStatusAliases = map[string]string{
 	"paid":      "PAID",
 	"cancelled": "CANCELLED", //nolint:misspell // External payment status values use existing API/database spelling.
 	"canceled":  "CANCELLED", //nolint:misspell // External payment status values use existing API/database spelling.
+}
+
+var cutoverTSDHistoryStatusAliases = map[string]string{
+	"":          "DRAFT",
+	"draft":     "DRAFT",
+	"submitted": "SUBMITTED",
+	"filed":     "SUBMITTED",
+	"accepted":  "ACCEPTED",
+	"approved":  "ACCEPTED",
+	"confirmed": "ACCEPTED",
+	"rejected":  "REJECTED",
 }
 
 var groupedDocumentPreflightSpecs = map[FileKind]groupedDocumentSpec{
@@ -1608,6 +1631,8 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkPayrollHistoryRows(report, file)
 	case KindLeaveBalances:
 		checkLeaveBalanceRows(report, file)
+	case KindTSDHistory:
+		checkTSDHistoryRows(report, file)
 	case KindInvoices, KindQuotes, KindOrders, KindRecurringInvoices:
 		checkCommercialDocumentRows(report, file)
 	case KindExpenses:
@@ -1978,6 +2003,144 @@ func checkLeaveBalanceYear(report *BundleValidationReport, file parsedFile, row 
 			Field:    "year",
 			Value:    value,
 			Message:  "year must be between 2020 and 2100",
+		})
+	}
+}
+
+func checkTSDHistoryRows(report *BundleValidationReport, file parsedFile) {
+	groups := map[string]tsdHistoryPreflightGroup{}
+	for _, row := range file.rows {
+		periodYear, yearOK := checkPayrollHistoryPeriodYear(report, file, row)
+		periodMonth, monthOK := checkPayrollHistoryPeriodMonth(report, file, row)
+		status, statusOK := checkTSDHistoryStatus(report, file, row)
+		submittedAt, submittedAtOK := checkTSDHistorySubmittedAt(report, file, row, status)
+		checkPayrollHistoryRequiredPositiveDecimal(report, file, row, "gross_payment")
+		checkTSDHistoryOptionalAmountFields(report, file, row)
+		if yearOK && monthOK && statusOK && submittedAtOK {
+			checkTSDHistoryGroupConsistency(report, file, row, groups, periodYear, periodMonth, status, submittedAt)
+		}
+	}
+}
+
+func checkTSDHistoryStatus(report *BundleValidationReport, file parsedFile, row parsedRow) (string, bool) {
+	if !fileHasHeaders(file, "status") {
+		return "DRAFT", true
+	}
+	value := strings.TrimSpace(row.values["status"])
+	if status, ok := cutoverTSDHistoryStatusAliases[normalizedValue(value)]; ok {
+		return status, true
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "status",
+		Value:    value,
+		Message:  "status must be DRAFT, SUBMITTED, ACCEPTED, or REJECTED",
+	})
+	return "", false
+}
+
+func checkTSDHistorySubmittedAt(report *BundleValidationReport, file parsedFile, row parsedRow, status string) (string, bool) {
+	if !fileHasHeaders(file, "submitted_at") {
+		if status == "SUBMITTED" || status == "ACCEPTED" {
+			return "__default_submitted_at__", true
+		}
+		return "", true
+	}
+	value := strings.TrimSpace(row.values["submitted_at"])
+	if value == "" {
+		if status == "SUBMITTED" || status == "ACCEPTED" {
+			return "__default_submitted_at__", true
+		}
+		return "", true
+	}
+	parsed, ok := parseEmployeeCutoverDate(value)
+	if !ok {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "submitted_at",
+			Value:    value,
+			Message:  "submitted_at must be in YYYY-MM-DD format",
+		})
+		return "", false
+	}
+	return parsed.Format("2006-01-02"), true
+}
+
+func checkTSDHistoryOptionalAmountFields(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	for _, field := range []string{
+		"basic_exemption",
+		"taxable_amount",
+		"income_tax",
+		"social_tax",
+		"unemployment_insurance_employer",
+		"unemployment_insurance_employee",
+		"funded_pension",
+	} {
+		if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+			continue
+		}
+		checkPayrollHistoryNonNegativeDecimal(report, file, row, field)
+	}
+}
+
+func checkTSDHistoryGroupConsistency(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	groups map[string]tsdHistoryPreflightGroup,
+	periodYear int,
+	periodMonth int,
+	status string,
+	submittedAt string,
+) {
+	key := fmt.Sprintf("%04d-%02d", periodYear, periodMonth)
+	current := tsdHistoryPreflightGroup{
+		status:        status,
+		submittedAt:   submittedAt,
+		emtaReference: strings.TrimSpace(row.values["emta_reference"]),
+	}
+	group, exists := groups[key]
+	if !exists {
+		groups[key] = current
+		return
+	}
+	if group.status != current.status {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    strings.TrimSpace(row.values["status"]),
+			Message:  "status must be consistent for each TSD period",
+		})
+	}
+	if group.submittedAt != current.submittedAt {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "submitted_at",
+			Value:    strings.TrimSpace(row.values["submitted_at"]),
+			Message:  "submitted_at must be consistent for each TSD period",
+		})
+	}
+	if group.emtaReference != current.emtaReference {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "emta_reference",
+			Value:    strings.TrimSpace(row.values["emta_reference"]),
+			Message:  "emta_reference must be consistent for each TSD period",
 		})
 	}
 }
