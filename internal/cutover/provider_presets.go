@@ -43,6 +43,9 @@ var providerPresetAliases = map[MigrationProviderPreset]map[FileKind]map[string]
 			"arve_number":  "invoice_number",
 			"arve_kuupäev": "issue_date",
 			"arve_kuupaev": "issue_date",
+			"arve_tüüp":    "invoice_type",
+			"arve_tyyp":    "invoice_type",
+			"arve_liik":    "invoice_type",
 		}),
 		KindQuotes: mergeAliases(meritCommercialDocumentAliases("quote_number", "quote_date"), map[string]string{
 			"pakkumise_nr":      "quote_number",
@@ -307,6 +310,8 @@ func smartAccountsCommercialDocumentAliases(numberField, dateField string) map[s
 		aliases["invoice_no"] = numberField
 		aliases["invoice_number"] = numberField
 		aliases["invoice_date"] = dateField
+		aliases["document_type"] = "invoice_type"
+		aliases["invoice_type"] = "invoice_type"
 	}
 	return aliases
 }

@@ -24,7 +24,7 @@ func TestValidateMigrationBundleHandler(t *testing.T) {
 			{
 				Kind:       cutover.KindInvoices,
 				FileName:   "invoices.csv",
-				CSVContent: "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-404,2026-05-30,Work,1,100,22\n",
+				CSVContent: "invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-404,2026-05-30,Work,1,100,22\n",
 			},
 		},
 	}, claims), map[string]string{"tenantID": "tenant-1"})

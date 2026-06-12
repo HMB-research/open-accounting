@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -43,6 +44,38 @@ type bundleIndexes struct {
 	productCategories map[string]bool
 	products          map[string]bool
 	warehouses        map[string]bool
+}
+
+type duplicateIdentifierSpec struct {
+	field     string
+	normalize func(string) string
+}
+
+type duplicateIdentifierValue struct {
+	row int
+}
+
+type groupedDocumentSpec struct {
+	keyLabel string
+	key      []groupedFieldSpec
+	fields   []groupedFieldSpec
+}
+
+type groupedFieldSpec struct {
+	field        string
+	optional     bool
+	defaultValue string
+	defaultFrom  string
+	normalize    func(string) string
+}
+
+type groupedComparableValue struct {
+	normalized string
+	display    string
+}
+
+type groupedSeenValue struct {
+	normalized string
 }
 
 var fileSpecs = map[FileKind]fileSpec{
@@ -154,6 +187,7 @@ var fileSpecs = map[FileKind]fileSpec{
 		}),
 		requiredGroups: [][]string{
 			{"invoice_number"},
+			{"invoice_type"},
 			{"issue_date"},
 			{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"},
 			{"line_description"},
@@ -602,6 +636,215 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 }
 
+var duplicateIdentifierPreflightSpecs = map[FileKind][]duplicateIdentifierSpec{
+	KindAccounts: {
+		{field: "id"},
+		{field: "code"},
+	},
+	KindContacts: {
+		{field: "id"},
+		{field: "code"},
+		{field: "reg_code"},
+		{field: "vat_number"},
+		{field: "email"},
+	},
+	KindEmployees: {
+		{field: "employee_number"},
+		{field: "personal_code"},
+		{field: "email"},
+	},
+	KindEInvoices: {
+		{field: "invoice_id"},
+		{field: "invoice_number"},
+	},
+	KindPayments: {
+		{field: "payment_number"},
+	},
+	KindBankAccounts: {
+		{field: "account_number", normalize: bankAccountIndexKey},
+	},
+	KindBankTransactions: {
+		{field: "external_id"},
+	},
+	KindCostCenters: {
+		{field: "id"},
+		{field: "code"},
+	},
+	KindProductCategories: {
+		{field: "id"},
+		{field: "name"},
+	},
+	KindWarehouses: {
+		{field: "id"},
+		{field: "code"},
+	},
+	KindProducts: {
+		{field: "id"},
+		{field: "code"},
+	},
+	KindFixedAssets: {
+		{field: "id"},
+		{field: "asset_number"},
+	},
+}
+
+var groupedDocumentPreflightSpecs = map[FileKind]groupedDocumentSpec{
+	KindInvoices: {
+		keyLabel: "invoice_number/invoice_type",
+		key: []groupedFieldSpec{
+			{field: "invoice_number"},
+			{field: "invoice_type", normalize: normalizeCutoverInvoiceType},
+		},
+		fields: []groupedFieldSpec{
+			{field: "id", optional: true},
+			{field: "issue_date", normalize: normalizeCutoverDate},
+			{field: "due_date", optional: true, normalize: normalizeCutoverDate},
+			{field: "currency", defaultValue: "EUR", normalize: normalizeCutoverUpper},
+			{field: "exchange_rate", defaultValue: "1", normalize: normalizeCutoverDecimalComparable},
+			{field: "contact_code", optional: true},
+			{field: "contact_reg_code", optional: true},
+			{field: "contact_vat_number", optional: true},
+			{field: "contact_email", optional: true},
+			{field: "contact_name", optional: true},
+			{field: "reference", optional: true},
+			{field: "notes", optional: true},
+			{field: "status", optional: true, normalize: normalizeCutoverInvoiceStatus},
+			{field: "amount_paid", optional: true, normalize: normalizeCutoverDecimalComparable},
+		},
+	},
+	KindQuotes: {
+		keyLabel: "quote_number",
+		key:      []groupedFieldSpec{{field: "quote_number"}},
+		fields: []groupedFieldSpec{
+			{field: "id", optional: true},
+			{field: "quote_date", normalize: normalizeCutoverDate},
+			{field: "valid_until", optional: true, normalize: normalizeCutoverDate},
+			{field: "currency", defaultValue: "EUR", normalize: normalizeCutoverUpper},
+			{field: "exchange_rate", defaultValue: "1", normalize: normalizeCutoverDecimalComparable},
+			{field: "contact_id", optional: true},
+			{field: "contact_code", optional: true},
+			{field: "contact_reg_code", optional: true},
+			{field: "contact_vat_number", optional: true},
+			{field: "contact_email", optional: true},
+			{field: "contact_name", optional: true},
+			{field: "notes", optional: true},
+			{field: "status", optional: true, normalize: normalizeCutoverQuoteStatus},
+		},
+	},
+	KindOrders: {
+		keyLabel: "order_number",
+		key:      []groupedFieldSpec{{field: "order_number"}},
+		fields: []groupedFieldSpec{
+			{field: "order_date", normalize: normalizeCutoverDate},
+			{field: "expected_delivery", optional: true, normalize: normalizeCutoverDate},
+			{field: "currency", defaultValue: "EUR", normalize: normalizeCutoverUpper},
+			{field: "exchange_rate", defaultValue: "1", normalize: normalizeCutoverDecimalComparable},
+			{field: "contact_id", optional: true},
+			{field: "contact_code", optional: true},
+			{field: "contact_reg_code", optional: true},
+			{field: "contact_vat_number", optional: true},
+			{field: "contact_email", optional: true},
+			{field: "contact_name", optional: true},
+			{field: "notes", optional: true},
+			{field: "quote_id", optional: true},
+			{field: "status", optional: true, normalize: normalizeCutoverOrderStatus},
+		},
+	},
+	KindRecurringInvoices: {
+		keyLabel: "template",
+		key:      []groupedFieldSpec{{field: "name"}},
+		fields: []groupedFieldSpec{
+			{field: "contact_id", optional: true},
+			{field: "contact_code", optional: true},
+			{field: "contact_reg_code", optional: true},
+			{field: "contact_vat_number", optional: true},
+			{field: "contact_email", optional: true},
+			{field: "contact_name", optional: true},
+			{field: "invoice_type", defaultValue: "SALES", normalize: normalizeCutoverUpper},
+			{field: "currency", defaultValue: "EUR", normalize: normalizeCutoverUpper},
+			{field: "frequency", normalize: normalizeCutoverUpper},
+			{field: "start_date", normalize: normalizeCutoverDate},
+			{field: "end_date", optional: true, normalize: normalizeCutoverDate},
+			{field: "next_generation_date", defaultFrom: "start_date", normalize: normalizeCutoverDate},
+			{field: "payment_terms_days", defaultValue: "14", normalize: normalizeCutoverIntComparable},
+			{field: "reference", optional: true},
+			{field: "notes", optional: true},
+			{field: "is_active", defaultValue: "true", normalize: normalizeCutoverBoolComparable},
+			{field: "last_generated_at", optional: true, normalize: normalizeCutoverDate},
+			{field: "generated_count", defaultValue: "0", normalize: normalizeCutoverIntComparable},
+			{field: "send_email_on_generation", defaultValue: "false", normalize: normalizeCutoverBoolComparable},
+			{field: "email_template_type", defaultValue: "INVOICE_SEND", normalize: normalizeCutoverUpper},
+			{field: "recipient_email_override", optional: true},
+			{field: "attach_pdf_to_email", defaultValue: "true", normalize: normalizeCutoverBoolComparable},
+			{field: "email_subject_override", optional: true},
+			{field: "email_message", optional: true},
+		},
+	},
+}
+
+var cutoverInvoiceTypeAliases = map[string]string{
+	"sales":            "SALES",
+	"sale":             "SALES",
+	"salesinvoice":     "SALES",
+	"sales_invoice":    "SALES",
+	"sales invoice":    "SALES",
+	"myygiarve":        "SALES",
+	"purchase":         "PURCHASE",
+	"purchaseinvoice":  "PURCHASE",
+	"purchase_invoice": "PURCHASE",
+	"purchase invoice": "PURCHASE",
+	"bill":             "PURCHASE",
+	"ostuarve":         "PURCHASE",
+	"credit_note":      "CREDIT_NOTE",
+	"creditnote":       "CREDIT_NOTE",
+	"credit note":      "CREDIT_NOTE",
+	"kreeditarve":      "CREDIT_NOTE",
+}
+
+var cutoverInvoiceStatusAliases = map[string]string{
+	"draft":            "DRAFT",
+	"mustand":          "DRAFT",
+	"sent":             "SENT",
+	"issued":           "SENT",
+	"open":             "SENT",
+	"saadetud":         "SENT",
+	"partially_paid":   "PARTIALLY_PAID",
+	"partial":          "PARTIALLY_PAID",
+	"osaline":          "PARTIALLY_PAID",
+	"paid":             "PAID",
+	"makstud":          "PAID",
+	"overdue":          "OVERDUE",
+	"tahtaja_uletanud": "OVERDUE",
+	"voided":           "VOIDED",
+	"void":             "VOIDED",
+	"tuhistatud":       "VOIDED",
+}
+
+var cutoverQuoteStatusAliases = map[string]string{
+	"draft":       "DRAFT",
+	"mustand":     "DRAFT",
+	"sent":        "SENT",
+	"issued":      "SENT",
+	"saadetud":    "SENT",
+	"accepted":    "ACCEPTED",
+	"approved":    "ACCEPTED",
+	"rejected":    "REJECTED",
+	"declined":    "REJECTED",
+	"expired":     "EXPIRED",
+	"converted":   "CONVERTED",
+	"convertedto": "CONVERTED",
+}
+
+var cutoverOrderStatusAliases = map[string]string{
+	"pending":    "PENDING",
+	"open":       "PENDING",
+	"confirmed":  "CONFIRMED",
+	"processing": "PROCESSING",
+	"shipped":    "SHIPPED",
+	"delivered":  "DELIVERED",
+	"canceled":   "CANCELED",
+}
+
 func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error) {
 	if req == nil || len(req.Files) == 0 {
 		return nil, fmt.Errorf("at least one migration file is required")
@@ -656,6 +899,8 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 	indexes := buildIndexes(parsed)
 	for _, file := range parsed {
 		validateReferences(report, indexes, file, eInvoiceContactMode)
+		validateDuplicateIdentifierPreflight(report, file)
+		validateGroupedDocumentPreflight(report, file)
 		validateAccountingPreflight(report, file)
 	}
 
@@ -986,6 +1231,208 @@ type journalValidationGroup struct {
 	firstRow  int
 	reference string
 	rows      []parsedRow
+}
+
+func validateDuplicateIdentifierPreflight(report *BundleValidationReport, file parsedFile) {
+	specs := duplicateIdentifierPreflightSpecs[file.kind]
+	if len(specs) == 0 {
+		return
+	}
+
+	for _, spec := range specs {
+		seen := map[string]duplicateIdentifierValue{}
+		for _, row := range file.rows {
+			value := strings.TrimSpace(row.values[spec.field])
+			if value == "" {
+				continue
+			}
+			key := normalizedDuplicateIdentifierValue(spec, value)
+			if key == "" {
+				continue
+			}
+			first, ok := seen[key]
+			if !ok {
+				seen[key] = duplicateIdentifierValue{row: row.number}
+				continue
+			}
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    spec.field,
+				Value:    value,
+				Message:  fmt.Sprintf("%s %q duplicates row %d in %s file", spec.field, value, first.row, file.kind),
+			})
+		}
+	}
+}
+
+func normalizedDuplicateIdentifierValue(spec duplicateIdentifierSpec, value string) string {
+	if spec.normalize != nil {
+		return spec.normalize(value)
+	}
+	return normalizedValue(value)
+}
+
+func validateGroupedDocumentPreflight(report *BundleValidationReport, file parsedFile) {
+	spec, ok := groupedDocumentPreflightSpecs[file.kind]
+	if !ok {
+		return
+	}
+
+	groups := map[string]map[string]groupedSeenValue{}
+	groupDisplays := map[string]string{}
+	for _, row := range file.rows {
+		key, displayKey, ok := groupedDocumentKey(row, spec)
+		if !ok {
+			continue
+		}
+		fieldValues, ok := groups[key]
+		if !ok {
+			fieldValues = map[string]groupedSeenValue{}
+			groups[key] = fieldValues
+			groupDisplays[key] = displayKey
+		}
+		for _, field := range spec.fields {
+			value, ok := groupedComparableFieldValue(row, field)
+			if !ok {
+				continue
+			}
+			seen, exists := fieldValues[field.field]
+			if !exists {
+				fieldValues[field.field] = groupedSeenValue{
+					normalized: value.normalized,
+				}
+				continue
+			}
+			if seen.normalized == value.normalized {
+				continue
+			}
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    field.field,
+				Value:    value.display,
+				Message:  fmt.Sprintf("%s must be consistent for each %s %q", field.field, spec.keyLabel, groupDisplays[key]),
+			})
+		}
+	}
+}
+
+func groupedDocumentKey(row parsedRow, spec groupedDocumentSpec) (string, string, bool) {
+	keyParts := make([]string, 0, len(spec.key))
+	displayParts := make([]string, 0, len(spec.key))
+	for _, field := range spec.key {
+		value, ok := groupedComparableFieldValue(row, field)
+		if !ok || value.normalized == "" {
+			return "", "", false
+		}
+		keyParts = append(keyParts, normalizedValue(value.normalized))
+		displayParts = append(displayParts, value.display)
+	}
+	return strings.Join(keyParts, "\x00"), strings.Join(displayParts, "/"), true
+}
+
+func groupedComparableFieldValue(row parsedRow, field groupedFieldSpec) (groupedComparableValue, bool) {
+	display := strings.TrimSpace(row.values[field.field])
+	value := display
+	if value == "" && field.defaultFrom != "" {
+		value = strings.TrimSpace(row.values[field.defaultFrom])
+		display = value
+	}
+	if value == "" && field.defaultValue != "" {
+		value = field.defaultValue
+		display = field.defaultValue
+	}
+	if value == "" && field.optional {
+		return groupedComparableValue{}, false
+	}
+
+	normalize := field.normalize
+	if normalize == nil {
+		normalize = strings.TrimSpace
+	}
+	return groupedComparableValue{
+		normalized: normalize(value),
+		display:    display,
+	}, true
+}
+
+func normalizeCutoverInvoiceType(value string) string {
+	normalized := normalizedValue(value)
+	if canonical, ok := cutoverInvoiceTypeAliases[normalized]; ok {
+		return canonical
+	}
+	return normalizeCutoverUpper(value)
+}
+
+func normalizeCutoverInvoiceStatus(value string) string {
+	normalized := normalizedValue(value)
+	if canonical, ok := cutoverInvoiceStatusAliases[normalized]; ok {
+		return canonical
+	}
+	return normalizeCutoverUpper(value)
+}
+
+func normalizeCutoverQuoteStatus(value string) string {
+	normalized := normalizedValue(value)
+	if canonical, ok := cutoverQuoteStatusAliases[normalized]; ok {
+		return canonical
+	}
+	return normalizeCutoverUpper(value)
+}
+
+func normalizeCutoverOrderStatus(value string) string {
+	normalized := normalizedValue(value)
+	if canonical, ok := cutoverOrderStatusAliases[normalized]; ok {
+		return canonical
+	}
+	return normalizeCutoverUpper(value)
+}
+
+func normalizeCutoverUpper(value string) string {
+	return strings.ToUpper(strings.TrimSpace(value))
+}
+
+func normalizeCutoverDate(value string) string {
+	trimmed := strings.TrimSpace(value)
+	parsed, err := time.Parse("2006-01-02", trimmed)
+	if err != nil {
+		return trimmed
+	}
+	return parsed.Format("2006-01-02")
+}
+
+func normalizeCutoverDecimalComparable(value string) string {
+	trimmed := strings.TrimSpace(value)
+	parsed, err := parseCutoverDecimal(trimmed, "amount")
+	if err != nil {
+		return trimmed
+	}
+	return parsed.String()
+}
+
+func normalizeCutoverIntComparable(value string) string {
+	trimmed := strings.TrimSpace(value)
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return trimmed
+	}
+	return strconv.Itoa(parsed)
+}
+
+func normalizeCutoverBoolComparable(value string) string {
+	switch normalizedValue(value) {
+	case "true", "t", "yes", "y", "1":
+		return "true"
+	case "false", "f", "no", "n", "0":
+		return "false"
+	default:
+		return strings.TrimSpace(value)
+	}
 }
 
 func validateAccountingPreflight(report *BundleValidationReport, file parsedFile) {
