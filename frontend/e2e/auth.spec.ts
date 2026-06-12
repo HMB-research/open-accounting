@@ -18,6 +18,8 @@ test.describe('Authentication - Login Page', () => {
 	const submitButton = (page: Page) => page.locator('form button[type="submit"]');
 	const registerToggleButton = (page: Page) =>
 		page.locator('.toggle-mode').getByRole('button', { name: /create account|register|loo konto/i });
+	const loginToggleButton = (page: Page) =>
+		page.locator('.toggle-mode').getByRole('button', { name: /login|sign in|logi/i });
 
 	test('validates login controls, invalid credentials, and demo password constraints', async ({ page }) => {
 		await openLoginPage(page);
@@ -36,17 +38,20 @@ test.describe('Authentication - Login Page', () => {
 
 		await registerToggleButton(page).click();
 
-		await expect(page.getByRole('heading', { name: /create account|register|loo konto/i })).toBeVisible();
 		await expect(nameInput(page)).toBeVisible();
 		await expect(passwordInput(page)).toHaveAttribute('minlength', '8');
 		await expect(submitButton(page)).toContainText(/create account|register|loo konto/i);
 
-		await openLoginPage(page);
+		await loginToggleButton(page).click();
+		await expect(nameInput(page)).toBeHidden();
+		await expect(passwordInput(page)).not.toHaveAttribute('minlength', /.+/);
+		await expect(submitButton(page)).toContainText(/login|sign in|logi/i);
 
 		await emailInput(page).fill('invalid@example.com');
 		await passwordInput(page).fill('wrongpassword');
 		await expect(emailInput(page)).toHaveValue('invalid@example.com');
 		await expect(passwordInput(page)).toHaveValue('wrongpassword');
+		await expect(submitButton(page)).toBeEnabled();
 
 		const [response] = await Promise.all([
 			page.waitForResponse(
