@@ -42,7 +42,7 @@ type bundleIndexes struct {
 	employees          map[string]bool
 	invoices           map[string]bool
 	quotes             map[string]bool
-	costCenters        map[string]bool
+	costCenterCodes    map[string]bool
 	productCategoryIDs map[string]bool
 	productCategories  map[string]bool
 	productCodes       map[string]bool
@@ -830,7 +830,6 @@ var duplicateIdentifierPreflightSpecs = map[FileKind][]duplicateIdentifierSpec{
 		{field: "external_id"},
 	},
 	KindCostCenters: {
-		{field: "id"},
 		{field: "code"},
 	},
 	KindProductCategories: {
@@ -1446,7 +1445,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 		employees:          map[string]bool{},
 		invoices:           map[string]bool{},
 		quotes:             map[string]bool{},
-		costCenters:        map[string]bool{},
+		costCenterCodes:    map[string]bool{},
 		productCategoryIDs: map[string]bool{},
 		productCategories:  map[string]bool{},
 		productCodes:       map[string]bool{},
@@ -1477,8 +1476,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 			case KindQuotes:
 				addIndexValue(indexes.quotes, row.values["id"])
 			case KindCostCenters:
-				addIndexValue(indexes.costCenters, row.values["code"])
-				addIndexValue(indexes.costCenters, row.values["id"])
+				addIndexValue(indexes.costCenterCodes, row.values["code"])
 			case KindProductCategories:
 				addIndexValue(indexes.productCategories, row.values["name"])
 				addIndexValue(indexes.productCategoryIDs, row.values["id"])
@@ -1541,11 +1539,10 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"account_code"})
 		case KindCostCenters:
 			checkSelfReference(report, file, row, "parent_code", "code")
-			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenters, file, row, KindCostCenters,
+			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenterCodes, file, row, KindCostCenters,
 				[]string{"parent_code"})
 		case KindCostAllocations:
-			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenters, file, row, KindCostCenters,
-				[]string{"cost_center_id", "cost_center_code"})
+			checkCostAllocationReference(report, indexes, file, row)
 		case KindProductCategories:
 			checkOptionalUUID(report, file, row, "id")
 			checkOptionalUUID(report, file, row, "parent_id")
@@ -5174,6 +5171,16 @@ func checkCommercialDocumentContactReference(report *BundleValidationReport, ind
 	}
 	checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
 		commercialDocumentContactLookupFields())
+}
+
+func checkCostAllocationReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	costCenterID := strings.TrimSpace(row.values["cost_center_id"])
+	if costCenterID != "" {
+		checkOptionalUUID(report, file, row, "cost_center_id")
+		return
+	}
+	checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenterCodes, file, row, KindCostCenters,
+		[]string{"cost_center_code"})
 }
 
 func checkProductCategoryReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, idField, nameField string) {
