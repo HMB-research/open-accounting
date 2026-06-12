@@ -845,6 +845,48 @@ func TestValidateBundleReportsKMDHistoryRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindKMDHistory, "total_input_vat", "total_input_vat must be consistent for each KMD period")
 }
 
+func TestValidateBundleReportsHistoryCompositeDuplicateIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindPayrollHistory,
+			FileName: "payroll-history.csv",
+			CSVContent: "period_year,period_month,employee_number,gross_salary\n" +
+				"2026,5,EMP-1,2500\n" +
+				"2026,05,EMP-1,2600\n",
+		},
+		{
+			Kind:     KindLeaveBalances,
+			FileName: "leave-balances.csv",
+			CSVContent: "year,employee_number,absence_type_code,entitled_days\n" +
+				"2026,EMP-1,ANNUAL,28\n" +
+				"2026,EMP-1,ANNUAL,30\n",
+		},
+		{
+			Kind:     KindTSDHistory,
+			FileName: "tsd-history.csv",
+			CSVContent: "period_year,period_month,employee_number,gross_payment\n" +
+				"2026,5,EMP-1,2500\n" +
+				"2026,05,EMP-1,2600\n",
+		},
+		{
+			Kind:     KindKMDHistory,
+			FileName: "kmd-history.csv",
+			CSVContent: "year,month,row_code,tax_base,tax_amount\n" +
+				"2026,5,row_1,100,22\n" +
+				"2026,05,1,200,44\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 4, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindPayrollHistory, "period_year/period_month/employee", "duplicates row")
+	assertValidationIssue(t, report, KindLeaveBalances, "year/employee/absence_type", "duplicates row")
+	assertValidationIssue(t, report, KindTSDHistory, "period_year/period_month/employee", "duplicates row")
+	assertValidationIssue(t, report, KindKMDHistory, "year/month/row_code", "duplicates row")
+}
+
 func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
