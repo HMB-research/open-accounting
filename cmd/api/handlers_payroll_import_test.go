@@ -406,6 +406,173 @@ func TestPayrollBusinessHandlersTSDPeriodActions(t *testing.T) {
 	require.Equal(t, "invalid month", errorBody["error"])
 }
 
+func TestLeaveBusinessHandlersBalanceAndRecordWorkflow(t *testing.T) {
+	h, _, absenceRepo := setupPayrollImportHandlerTest(t)
+	employee := payrollImportEmployee("emp-700", "EMP-700")
+	absenceRepo.Employees[employee.ID] = employee
+	absenceRepo.AbsenceTypes["type-annual"] = &payroll.AbsenceType{
+		ID:                 "type-annual",
+		TenantID:           "tenant-1",
+		Code:               "ANNUAL_LEAVE",
+		Name:               "Annual leave",
+		DefaultDaysPerYear: decimal.NewFromInt(28),
+		IsActive:           true,
+	}
+	absenceRepo.LeaveBalances["tenant-1-emp-700-type-annual-2026"] = &payroll.LeaveBalance{
+		ID:            "balance-2026",
+		TenantID:      "tenant-1",
+		EmployeeID:    employee.ID,
+		AbsenceTypeID: "type-annual",
+		Year:          2026,
+		EntitledDays:  decimal.NewFromInt(28),
+		CarryoverDays: decimal.NewFromInt(2),
+		UsedDays:      decimal.NewFromInt(4),
+		PendingDays:   decimal.Zero,
+		RemainingDays: decimal.NewFromInt(26),
+	}
+
+	types := invokePayrollImportJSON[[]payroll.AbsenceType](t, http.StatusOK, h.ListAbsenceTypes, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/absence-types?active_only=true",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Len(t, types, 1)
+	require.Equal(t, "ANNUAL_LEAVE", types[0].Code)
+
+	absenceType := invokePayrollImportJSON[payroll.AbsenceType](t, http.StatusOK, h.GetAbsenceType, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/absence-types/type-annual",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "typeID": "type-annual"},
+	))
+	require.Equal(t, "Annual leave", absenceType.Name)
+
+	balances := invokePayrollImportJSON[[]payroll.LeaveBalance](t, http.StatusOK, h.ListLeaveBalances, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/employees/emp-700/leave-balances?year=2026",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "employeeID": employee.ID},
+	))
+	require.Len(t, balances, 1)
+	require.True(t, balances[0].RemainingDays.Equal(decimal.NewFromInt(26)))
+
+	balancesByYear := invokePayrollImportJSON[[]payroll.LeaveBalance](t, http.StatusOK, h.GetLeaveBalancesByYear, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/employees/emp-700/leave-balances/2026",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "employeeID": employee.ID, "year": "2026"},
+	))
+	require.Len(t, balancesByYear, 1)
+
+	entitled := decimal.NewFromInt(30)
+	carryover := decimal.NewFromInt(3)
+	updated := invokePayrollImportJSON[payroll.LeaveBalance](t, http.StatusOK, h.UpdateLeaveBalance, payrollHandlerRequest(
+		http.MethodPut,
+		"/tenants/tenant-1/employees/emp-700/leave-balances/2026/type-annual",
+		payroll.UpdateLeaveBalanceRequest{
+			EntitledDays:  &entitled,
+			CarryoverDays: &carryover,
+			Notes:         "Adjusted entitlement",
+		},
+		map[string]string{"tenantID": "tenant-1", "employeeID": employee.ID, "year": "2026", "typeID": "type-annual"},
+	))
+	require.True(t, updated.RemainingDays.Equal(decimal.NewFromInt(29)))
+	require.Equal(t, "Adjusted entitlement", updated.Notes)
+
+	initialized := invokePayrollImportJSON[[]payroll.LeaveBalance](t, http.StatusOK, h.InitializeLeaveBalances, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/employees/emp-700/leave-balances/2027/initialize",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "employeeID": employee.ID, "year": "2027"},
+	))
+	require.Len(t, initialized, 1)
+	require.Equal(t, "leave-1", initialized[0].ID)
+	require.True(t, initialized[0].RemainingDays.Equal(decimal.NewFromInt(28)))
+
+	start := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 6, 16, 0, 0, 0, 0, time.UTC)
+	createdRecord := invokePayrollImportJSON[payroll.LeaveRecord](t, http.StatusCreated, h.CreateLeaveRecord, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/leave-records",
+		payroll.CreateLeaveRecordRequest{
+			EmployeeID:    employee.ID,
+			AbsenceTypeID: "type-annual",
+			StartDate:     start,
+			EndDate:       end,
+			TotalDays:     decimal.NewFromInt(2),
+			WorkingDays:   decimal.NewFromInt(2),
+			Notes:         "Summer leave",
+		},
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "leave-2", createdRecord.ID)
+	require.Equal(t, payroll.LeavePending, createdRecord.Status)
+	require.Equal(t, "user-1", createdRecord.RequestedBy)
+	require.True(t, absenceRepo.LeaveBalances["tenant-1-emp-700-type-annual-2026"].PendingDays.Equal(decimal.NewFromInt(2)))
+
+	records := invokePayrollImportJSON[[]payroll.LeaveRecord](t, http.StatusOK, h.ListLeaveRecords, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/leave-records?employee_id=emp-700&year=2026",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Len(t, records, 1)
+	require.Equal(t, createdRecord.ID, records[0].ID)
+
+	gotRecord := invokePayrollImportJSON[payroll.LeaveRecord](t, http.StatusOK, h.GetLeaveRecord, payrollHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/leave-records/"+createdRecord.ID,
+		nil,
+		map[string]string{"tenantID": "tenant-1", "recordID": createdRecord.ID},
+	))
+	require.Equal(t, "Summer leave", gotRecord.Notes)
+
+	approved := invokePayrollImportJSON[payroll.LeaveRecord](t, http.StatusOK, h.ApproveLeaveRecord, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/leave-records/"+createdRecord.ID+"/approve",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "recordID": createdRecord.ID},
+	))
+	require.Equal(t, payroll.LeaveApproved, approved.Status)
+	require.Equal(t, "user-1", approved.ApprovedBy)
+	require.True(t, absenceRepo.LeaveBalances["tenant-1-emp-700-type-annual-2026"].PendingDays.IsZero())
+	require.True(t, absenceRepo.LeaveBalances["tenant-1-emp-700-type-annual-2026"].UsedDays.Equal(decimal.NewFromInt(6)))
+
+	canceled := invokePayrollImportJSON[payroll.LeaveRecord](t, http.StatusOK, h.CancelLeaveRecord, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/leave-records/"+createdRecord.ID+"/cancel",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "recordID": createdRecord.ID},
+	))
+	require.Equal(t, payroll.LeaveCanceled, canceled.Status)
+	require.True(t, absenceRepo.LeaveBalances["tenant-1-emp-700-type-annual-2026"].UsedDays.Equal(decimal.NewFromInt(4)))
+
+	rejectRecord := invokePayrollImportJSON[payroll.LeaveRecord](t, http.StatusCreated, h.CreateLeaveRecord, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/leave-records",
+		payroll.CreateLeaveRecordRequest{
+			EmployeeID:    employee.ID,
+			AbsenceTypeID: "type-annual",
+			StartDate:     time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+			EndDate:       time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+			TotalDays:     decimal.NewFromInt(1),
+			WorkingDays:   decimal.NewFromInt(1),
+		},
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	rejected := invokePayrollImportJSON[payroll.LeaveRecord](t, http.StatusOK, h.RejectLeaveRecord, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/leave-records/"+rejectRecord.ID+"/reject",
+		payroll.RejectLeaveRequest{Reason: "Coverage conflict"},
+		map[string]string{"tenantID": "tenant-1", "recordID": rejectRecord.ID},
+	))
+	require.Equal(t, payroll.LeaveRejected, rejected.Status)
+	require.Equal(t, "user-1", rejected.RejectedBy)
+	require.Equal(t, "Coverage conflict", rejected.RejectionReason)
+	require.True(t, absenceRepo.LeaveBalances["tenant-1-emp-700-type-annual-2026"].PendingDays.IsZero())
+}
+
 func setupPayrollImportHandlerTest(t *testing.T) (*Handlers, *payrollImportHandlerRepository, *payroll.MockAbsenceRepository) {
 	t.Helper()
 
