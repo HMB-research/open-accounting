@@ -543,13 +543,17 @@ func (s *CostCenterService) CreateCostCenter(ctx context.Context, schemaName, te
 	if req.Name == "" {
 		return nil, fmt.Errorf("cost center name is required")
 	}
+	parentID, err := normalizeOptionalCostCenterUUIDPtr(req.ParentID, "parent_id")
+	if err != nil {
+		return nil, err
+	}
 
 	cc := &CostCenter{
 		TenantID:     tenantID,
 		Code:         req.Code,
 		Name:         req.Name,
 		Description:  req.Description,
-		ParentID:     req.ParentID,
+		ParentID:     parentID,
 		IsActive:     req.IsActive,
 		BudgetAmount: req.BudgetAmount,
 		BudgetPeriod: req.BudgetPeriod,
@@ -571,11 +575,15 @@ func (s *CostCenterService) UpdateCostCenter(ctx context.Context, schemaName, te
 	if err != nil {
 		return nil, err
 	}
+	parentID, err := normalizeOptionalCostCenterUUIDPtr(req.ParentID, "parent_id")
+	if err != nil {
+		return nil, err
+	}
 
 	cc.Code = req.Code
 	cc.Name = req.Name
 	cc.Description = req.Description
-	cc.ParentID = req.ParentID
+	cc.ParentID = parentID
 	cc.IsActive = req.IsActive
 	cc.BudgetAmount = req.BudgetAmount
 	cc.BudgetPeriod = req.BudgetPeriod
@@ -584,6 +592,22 @@ func (s *CostCenterService) UpdateCostCenter(ctx context.Context, schemaName, te
 		return nil, err
 	}
 	return cc, nil
+}
+
+func normalizeOptionalCostCenterUUIDPtr(value *string, field string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", field)
+	}
+	id := parsedID.String()
+	return &id, nil
 }
 
 // DeleteCostCenter deletes a cost center

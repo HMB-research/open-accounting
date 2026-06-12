@@ -208,10 +208,13 @@ func TestCostCenterService_CreateCostCenter(t *testing.T) {
 
 	// Test successful creation
 	budget := decimal.NewFromInt(10000)
+	parentID := "11111111-1111-4111-8111-111111111111"
+	parentIDWithSpaces := " " + parentID + " "
 	req := &CreateCostCenterRequest{
 		Code:         "CC001",
 		Name:         "Marketing",
 		Description:  "Marketing department",
+		ParentID:     &parentIDWithSpaces,
 		IsActive:     true,
 		BudgetAmount: &budget,
 		BudgetPeriod: BudgetPeriodMonthly,
@@ -222,6 +225,8 @@ func TestCostCenterService_CreateCostCenter(t *testing.T) {
 	assert.NotEmpty(t, cc.ID)
 	assert.Equal(t, "CC001", cc.Code)
 	assert.Equal(t, "Marketing", cc.Name)
+	require.NotNil(t, cc.ParentID)
+	assert.Equal(t, parentID, *cc.ParentID)
 	assert.Equal(t, BudgetPeriodMonthly, cc.BudgetPeriod)
 
 	// Test missing code
@@ -233,6 +238,16 @@ func TestCostCenterService_CreateCostCenter(t *testing.T) {
 	_, err = ts.svc.CreateCostCenter(ctx, "test_schema", "tenant-1", &CreateCostCenterRequest{Code: "CC"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "name is required")
+
+	// Test invalid parent id
+	badParentID := "legacy-parent"
+	_, err = ts.svc.CreateCostCenter(ctx, "test_schema", "tenant-1", &CreateCostCenterRequest{
+		Code:     "CCBAD",
+		Name:     "Invalid Parent",
+		ParentID: &badParentID,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parent_id must be a valid UUID")
 
 	// Test default budget period
 	req2 := &CreateCostCenterRequest{Code: "CC002", Name: "Sales", IsActive: true}
@@ -505,9 +520,11 @@ func TestCostCenterService_UpdateCostCenter(t *testing.T) {
 	}
 
 	// Update it
+	parentID := "22222222-2222-4222-8222-222222222222"
 	req := &UpdateCostCenterRequest{
 		Code:     "CC001-NEW",
 		Name:     "Updated Name",
+		ParentID: &parentID,
 		IsActive: false,
 	}
 
@@ -515,7 +532,19 @@ func TestCostCenterService_UpdateCostCenter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "CC001-NEW", cc.Code)
 	assert.Equal(t, "Updated Name", cc.Name)
+	require.NotNil(t, cc.ParentID)
+	assert.Equal(t, parentID, *cc.ParentID)
 	assert.False(t, cc.IsActive)
+
+	// Test invalid parent id
+	badParentID := "legacy-parent"
+	_, err = ts.svc.UpdateCostCenter(ctx, "test_schema", "tenant-1", "cc-123", &UpdateCostCenterRequest{
+		Code:     "CC001-NEW",
+		Name:     "Updated Name",
+		ParentID: &badParentID,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parent_id must be a valid UUID")
 
 	// Test update nonexistent
 	_, err = ts.svc.UpdateCostCenter(ctx, "test_schema", "tenant-1", "nonexistent", req)

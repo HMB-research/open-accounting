@@ -3339,7 +3339,7 @@ func (h *Handlers) CreateCostCenter(w http.ResponseWriter, r *http.Request) {
 
 	cc, err := h.costCenterService.CreateCostCenter(r.Context(), schemaName, tenantID, &req)
 	if err != nil {
-		if strings.Contains(err.Error(), "required") {
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "valid UUID") {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -3542,6 +3542,10 @@ func (h *Handlers) UpdateCostCenter(w http.ResponseWriter, r *http.Request) {
 
 	cc, err := h.costCenterService.UpdateCostCenter(r.Context(), schemaName, tenantID, costCenterID, &req)
 	if err != nil {
+		if strings.Contains(err.Error(), "valid UUID") {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		if strings.Contains(err.Error(), "not found") {
 			respondError(w, http.StatusNotFound, err.Error())
 			return
