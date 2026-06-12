@@ -33,7 +33,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate,product_code\nINV-1,SALES,CUST-1,2026-05-30,Work,1,100,22,SKU-1\n",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate,product_code\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,Work,1,100,22,SKU-1\n",
 		},
 		{
 			Kind:       KindEInvoices,
@@ -184,7 +184,7 @@ func TestValidateBundleAcceptsMeritProviderPresetAliases(t *testing.T) {
 			{
 				Kind:       KindInvoices,
 				FileName:   "merit-invoices.csv",
-				CSVContent: "arve_nr,arve_tüüp,arve_kuupäev,kliendi_kood,rea_kirjeldus,kogus,ühiku_hind,käibemaks\nINV-1,SALES,2026-05-30,CUST-1,Implementation,1,100,22\n",
+				CSVContent: "arve_nr,arve_tüüp,arve_kuupäev,due_date,kliendi_kood,rea_kirjeldus,kogus,ühiku_hind,käibemaks\nINV-1,SALES,2026-05-30,2026-06-14,CUST-1,Implementation,1,100,22\n",
 			},
 			{
 				Kind:       KindOpeningBalances,
@@ -227,7 +227,7 @@ func TestValidateBundleAcceptsSmartAccountsProviderPresetAliases(t *testing.T) {
 			{
 				Kind:       KindInvoices,
 				FileName:   "smartaccounts-invoices.csv",
-				CSVContent: "document_no,document_type,document_date,client_no,item_description,qty,unit_price,vat_percent\nINV-1,SALES,2026-05-30,CUST-1,Implementation,1,100,22\n",
+				CSVContent: "document_no,document_type,document_date,due_date,client_no,item_description,qty,unit_price,vat_percent\nINV-1,SALES,2026-05-30,2026-06-14,CUST-1,Implementation,1,100,22\n",
 			},
 			{
 				Kind:       KindOpeningBalances,
@@ -275,7 +275,7 @@ func TestValidateBundleRequiresInvoiceTypeForCSVInvoices(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-1,2026-05-30,Work,1,100,22\n",
+			CSVContent: "invoice_number,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-1,2026-05-30,2026-06-14,Work,1,100,22\n",
 		},
 	}})
 
@@ -293,9 +293,9 @@ func TestValidateBundleReportsGroupedInvoiceHeaderConflicts(t *testing.T) {
 		{
 			Kind:     KindInvoices,
 			FileName: "invoices.csv",
-			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\n" +
-				"INV-1,SALES,CUST-1,2026-05-30,Setup,1,100,22\n" +
-				"INV-1,sale,CUST-2,2026-05-30,Support,2,50,22\n",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-1,SALES,CUST-1,2026-05-30,2026-06-14,Setup,1,100,22\n" +
+				"INV-1,sale,CUST-2,2026-05-30,2026-06-14,Support,2,50,22\n",
 		},
 	}})
 
@@ -342,6 +342,70 @@ func TestValidateBundleReportsGroupedCommercialDocumentHeaderConflicts(t *testin
 	assertValidationIssue(t, report, KindQuotes, "quote_date", "quote_date must be consistent for each quote_number")
 	assertValidationIssue(t, report, KindOrders, "order_date", "order_date must be consistent for each order_number")
 	assertValidationIssue(t, report, KindRecurringInvoices, "frequency", "frequency must be consistent for each template")
+}
+
+func TestValidateBundleReportsCommercialDocumentRowValueIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,discount_percent,vat_rate,exchange_rate,status,amount_paid,vat_treatment,reverse_charge\n" +
+				"INV-BAD,REFUND,,bad-date,2026-05-01,,0,-1,101,-22,0,UNKNOWN,-1,bad,maybe\n" +
+				"INV-RC,SALES,CUST-1,2026-05-30,2026-06-14,EU service,\"1 000,5\",100,0,0,1,SENT,0,,true\n",
+		},
+		{
+			Kind:     KindQuotes,
+			FileName: "quotes.csv",
+			CSVContent: "quote_number,quote_date,valid_until,contact_code,line_description,quantity,unit_price,discount_percent,vat_rate,exchange_rate,status\n" +
+				"Q-BAD,2026-06-10,2026-06-01,,Work,abc,-1,-1,-5,abc,NOPE\n",
+		},
+		{
+			Kind:     KindOrders,
+			FileName: "orders.csv",
+			CSVContent: "order_number,order_date,expected_delivery,contact_code,line_description,quantity,unit_price,discount_percent,vat_rate,exchange_rate,status\n" +
+				"SO-BAD,bad-date,bad-date,, ,0,-1,101,-5,0,NOPE\n",
+		},
+		{
+			Kind:     KindRecurringInvoices,
+			FileName: "recurring.csv",
+			CSVContent: "name,frequency,start_date,end_date,next_generation_date,last_generated_at,contact_code,line_description,quantity,unit_price,discount_percent,vat_rate,payment_terms_days,generated_count,is_active,send_email_on_generation,attach_pdf_to_email\n" +
+				",DAILY,bad-date,2026-05-01,bad-date,bad-date,, ,0,-1,101,-5,-1,nope,maybe,perhaps,nah\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 47, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindInvoices, "invoice_type", `invalid invoice_type "REFUND"`)
+	assertValidationIssue(t, report, KindInvoices, "contact_code/contact_reg_code/contact_vat_number/contact_email/contact_name", "contact_code or contact_reg_code or contact_vat_number or contact_email or contact_name is required")
+	assertValidationIssue(t, report, KindInvoices, "issue_date", "issue_date must use YYYY-MM-DD")
+	assertValidationIssue(t, report, KindInvoices, "line_description", "line_description is required")
+	assertValidationIssue(t, report, KindInvoices, "quantity", "quantity must be positive")
+	assertValidationIssue(t, report, KindInvoices, "unit_price", "unit_price cannot be negative")
+	assertValidationIssue(t, report, KindInvoices, "discount_percent", "discount_percent must be between 0 and 100")
+	assertValidationIssue(t, report, KindInvoices, "vat_rate", "vat_rate cannot be negative")
+	assertValidationIssue(t, report, KindInvoices, "exchange_rate", "exchange_rate must be positive")
+	assertValidationIssue(t, report, KindInvoices, "status", `invalid status "UNKNOWN"`)
+	assertValidationIssue(t, report, KindInvoices, "amount_paid", "amount_paid cannot be negative")
+	assertValidationIssue(t, report, KindInvoices, "reverse_charge", "invalid reverse_charge")
+	assertValidationIssue(t, report, KindInvoices, "vat_rate", "reverse charge VAT rate must be positive")
+	assertValidationIssue(t, report, KindQuotes, "valid_until", "valid_until cannot be before quote_date")
+	assertValidationIssue(t, report, KindQuotes, "quantity", "quantity must be a decimal")
+	assertValidationIssue(t, report, KindQuotes, "status", `invalid status "NOPE"`)
+	assertValidationIssue(t, report, KindOrders, "order_date", "order_date must use YYYY-MM-DD")
+	assertValidationIssue(t, report, KindOrders, "expected_delivery", "expected_delivery must use YYYY-MM-DD")
+	assertValidationIssue(t, report, KindOrders, "status", `invalid status "NOPE"`)
+	assertValidationIssue(t, report, KindRecurringInvoices, "name", "name is required")
+	assertValidationIssue(t, report, KindRecurringInvoices, "frequency", `invalid frequency "DAILY"`)
+	assertValidationIssue(t, report, KindRecurringInvoices, "start_date", "start_date must use YYYY-MM-DD")
+	assertValidationIssue(t, report, KindRecurringInvoices, "next_generation_date", "next_generation_date must use YYYY-MM-DD")
+	assertValidationIssue(t, report, KindRecurringInvoices, "last_generated_at", "last_generated_at must use YYYY-MM-DD")
+	assertValidationIssue(t, report, KindRecurringInvoices, "payment_terms_days", "payment_terms_days must be a non-negative integer")
+	assertValidationIssue(t, report, KindRecurringInvoices, "generated_count", "generated_count must be a non-negative integer")
+	assertValidationIssue(t, report, KindRecurringInvoices, "is_active", "is_active must be true or false")
+	assertValidationIssue(t, report, KindRecurringInvoices, "send_email_on_generation", "send_email_on_generation must be true or false")
+	assertValidationIssue(t, report, KindRecurringInvoices, "attach_pdf_to_email", "attach_pdf_to_email must be true or false")
 }
 
 func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
@@ -1097,7 +1161,7 @@ func TestValidateBundleReportsMissingColumnsAndReferences(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,vat_rate\nINV-1,SALES,CUST-404,2026-05-30,Work,1,22\n",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,vat_rate\nINV-1,SALES,CUST-404,2026-05-30,2026-06-14,Work,1,22\n",
 		},
 	}})
 
@@ -1198,7 +1262,7 @@ func TestValidateBundleAcceptsPaymentInvoiceIDReference(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,SALES,CUST-1,2026-05-30,Work,1,100,22\n",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,SALES,CUST-1,2026-05-30,2026-06-14,Work,1,100,22\n",
 		},
 		{
 			Kind:       KindPayments,
@@ -1246,7 +1310,7 @@ func TestValidateBundleAcceptsPreservedContactIDReferences(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,SALES,SUP-1,2026-05-30,Work,1,100,22\n",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,SALES,SUP-1,2026-05-30,2026-06-14,Work,1,100,22\n",
 		},
 		{
 			Kind:       KindPayments,
@@ -1354,7 +1418,7 @@ func TestValidateBundleReportsInvalidInvoiceImportID(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nlegacy-id,INV-1,SALES,CUST-1,2026-05-30,Work,1,100,22\n",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nlegacy-id,INV-1,SALES,CUST-1,2026-05-30,2026-06-14,Work,1,100,22\n",
 		},
 	}})
 

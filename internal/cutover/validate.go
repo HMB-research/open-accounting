@@ -191,6 +191,7 @@ var fileSpecs = map[FileKind]fileSpec{
 			{"invoice_number"},
 			{"invoice_type"},
 			{"issue_date"},
+			{"due_date"},
 			{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"},
 			{"line_description"},
 			{"quantity"},
@@ -1442,6 +1443,8 @@ func normalizeCutoverBoolComparable(value string) string {
 
 func validateAccountingPreflight(report *BundleValidationReport, file parsedFile) {
 	switch file.kind {
+	case KindInvoices, KindQuotes, KindOrders, KindRecurringInvoices:
+		checkCommercialDocumentRows(report, file)
 	case KindExpenses:
 		checkExpenseRows(report, file)
 	case KindPayments:
@@ -1452,6 +1455,447 @@ func validateAccountingPreflight(report *BundleValidationReport, file parsedFile
 		checkOpeningBalanceTotals(report, file)
 	case KindJournalEntries:
 		checkJournalEntryGroups(report, file)
+	}
+}
+
+func checkCommercialDocumentRows(report *BundleValidationReport, file parsedFile) {
+	hasLineDescription := fileHasHeaders(file, "line_description")
+	hasQuantity := fileHasHeaders(file, "quantity")
+	hasUnitPrice := fileHasHeaders(file, "unit_price")
+	hasDiscountPercent := fileHasHeaders(file, "discount_percent")
+	hasVATRate := fileHasHeaders(file, "vat_rate")
+	hasExchangeRate := fileHasHeaders(file, "exchange_rate")
+	for _, row := range file.rows {
+		if hasLineDescription {
+			checkRequiredCutoverField(report, file, row, "line_description")
+		}
+		if hasQuantity {
+			checkCommercialQuantity(report, file, row)
+		}
+		if hasUnitPrice {
+			checkCommercialNonNegativeDecimal(report, file, row, "unit_price")
+		}
+		if hasDiscountPercent {
+			checkCommercialDiscountPercent(report, file, row)
+		}
+		if hasVATRate {
+			checkCommercialNonNegativeDecimal(report, file, row, "vat_rate")
+		}
+		if hasExchangeRate {
+			checkCommercialOptionalPositiveDecimal(report, file, row, "exchange_rate")
+		}
+
+		switch file.kind {
+		case KindInvoices:
+			checkInvoiceDocumentRow(report, file, row)
+		case KindQuotes:
+			checkQuoteDocumentRow(report, file, row)
+		case KindOrders:
+			checkOrderDocumentRow(report, file, row)
+		case KindRecurringInvoices:
+			checkRecurringDocumentRow(report, file, row)
+		}
+	}
+}
+
+func checkInvoiceDocumentRow(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "invoice_number") {
+		checkRequiredCutoverField(report, file, row, "invoice_number")
+	}
+	if fileHasHeaders(file, "invoice_type") {
+		checkInvoiceDocumentType(report, file, row)
+	}
+	checkRequiredCutoverFieldGroup(report, file, row, "contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name")
+	issueDate, issueOK := checkCommercialRequiredDate(report, file, row, "issue_date")
+	dueDate, dueOK := checkCommercialRequiredDate(report, file, row, "due_date")
+	if issueOK && dueOK && dueDate.Before(issueDate) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "due_date",
+			Value:    strings.TrimSpace(row.values["due_date"]),
+			Message:  "due_date cannot be before issue_date",
+		})
+	}
+	checkCommercialStatus(report, file, row, "status", normalizeCutoverInvoiceStatus,
+		"DRAFT", "SENT", "PARTIALLY_PAID", "PAID", "OVERDUE", "VOIDED")
+	checkCommercialNonNegativeOptionalDecimal(report, file, row, "amount_paid")
+	checkInvoiceVATTreatment(report, file, row)
+}
+
+func checkQuoteDocumentRow(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "quote_number") {
+		checkRequiredCutoverField(report, file, row, "quote_number")
+	}
+	checkRequiredCutoverFieldGroup(report, file, row, commercialDocumentContactReferenceFields()...)
+	quoteDate, quoteOK := checkCommercialRequiredDate(report, file, row, "quote_date")
+	validUntil, validOK := checkCommercialOptionalDate(report, file, row, "valid_until")
+	if quoteOK && validOK && validUntil.Before(quoteDate) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "valid_until",
+			Value:    strings.TrimSpace(row.values["valid_until"]),
+			Message:  "valid_until cannot be before quote_date",
+		})
+	}
+	checkCommercialStatus(report, file, row, "status", normalizeCutoverQuoteStatus,
+		"DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CONVERTED")
+}
+
+func checkOrderDocumentRow(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "order_number") {
+		checkRequiredCutoverField(report, file, row, "order_number")
+	}
+	checkRequiredCutoverFieldGroup(report, file, row, commercialDocumentContactReferenceFields()...)
+	checkCommercialRequiredDate(report, file, row, "order_date")
+	checkCommercialOptionalDate(report, file, row, "expected_delivery")
+	checkCommercialStatus(report, file, row, "status", normalizeCutoverOrderStatus,
+		"PENDING", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELED")
+}
+
+func checkRecurringDocumentRow(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "name") {
+		checkRequiredCutoverField(report, file, row, "name")
+	}
+	checkRequiredCutoverFieldGroup(report, file, row, commercialDocumentContactReferenceFields()...)
+	checkRecurringFrequency(report, file, row)
+	startDate, startOK := checkCommercialRequiredDate(report, file, row, "start_date")
+	endDate, endOK := checkCommercialOptionalDate(report, file, row, "end_date")
+	if startOK && endOK && endDate.Before(startDate) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "end_date",
+			Value:    strings.TrimSpace(row.values["end_date"]),
+			Message:  "end_date cannot be before start_date",
+		})
+	}
+	checkCommercialOptionalDate(report, file, row, "next_generation_date")
+	checkCommercialOptionalDate(report, file, row, "last_generated_at")
+	checkCommercialNonNegativeInt(report, file, row, "payment_terms_days")
+	checkCommercialNonNegativeInt(report, file, row, "generated_count")
+	checkCommercialBool(report, file, row, "is_active")
+	checkCommercialBool(report, file, row, "send_email_on_generation")
+	checkCommercialBool(report, file, row, "attach_pdf_to_email")
+}
+
+func checkInvoiceDocumentType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["invoice_type"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "invoice_type",
+			Message:  "invoice_type is required",
+		})
+		return
+	}
+	switch normalizeCutoverInvoiceType(value) {
+	case "SALES", "PURCHASE", "CREDIT_NOTE":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "invoice_type",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid invoice_type %q", value),
+		})
+	}
+}
+
+func checkCommercialRequiredDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (time.Time, bool) {
+	if !fileHasHeaders(file, field) {
+		return time.Time{}, false
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Message:  fmt.Sprintf("%s is required", field),
+		})
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must use YYYY-MM-DD", field),
+		})
+		return time.Time{}, false
+	}
+	return normalizeCutoverDateOnly(parsed), true
+}
+
+func checkCommercialOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (time.Time, bool) {
+	if !fileHasHeaders(file, field) {
+		return time.Time{}, false
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must use YYYY-MM-DD", field),
+		})
+		return time.Time{}, false
+	}
+	return normalizeCutoverDateOnly(parsed), true
+}
+
+func checkCommercialStatus(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	field string,
+	normalize func(string) string,
+	allowed ...string,
+) {
+	if !fileHasHeaders(file, field) {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return
+	}
+	normalized := normalize(value)
+	for _, candidate := range allowed {
+		if normalized == candidate {
+			return
+		}
+	}
+	if len(allowed) == 0 && normalized != "" {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    value,
+		Message:  fmt.Sprintf("invalid %s %q", field, value),
+	})
+}
+
+func checkRecurringFrequency(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "frequency") {
+		return
+	}
+	value := strings.TrimSpace(row.values["frequency"])
+	switch normalizeCutoverUpper(value) {
+	case "WEEKLY", "BIWEEKLY", "MONTHLY", "QUARTERLY", "YEARLY":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "frequency",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid frequency %q", value),
+		})
+	}
+}
+
+func checkCommercialQuantity(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	quantity, issue := parseCutoverRequiredImportDecimal(row.values["quantity"], "quantity")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if quantity.LessThanOrEqual(decimal.Zero) {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   "quantity",
+			value:   strings.TrimSpace(row.values["quantity"]),
+			message: "quantity must be positive",
+		}))
+	}
+}
+
+func checkCommercialNonNegativeDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	value, issue := parseCutoverRequiredImportDecimal(row.values[field], field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if value.IsNegative() {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   field,
+			value:   strings.TrimSpace(row.values[field]),
+			message: fmt.Sprintf("%s cannot be negative", field),
+		}))
+	}
+}
+
+func checkCommercialNonNegativeOptionalDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	checkCommercialNonNegativeDecimal(report, file, row, field)
+}
+
+func checkCommercialOptionalPositiveDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value, issue := parseCutoverRequiredImportDecimal(row.values[field], field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if value.LessThanOrEqual(decimal.Zero) {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   field,
+			value:   strings.TrimSpace(row.values[field]),
+			message: fmt.Sprintf("%s must be positive", field),
+		}))
+	}
+}
+
+func checkCommercialDiscountPercent(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["discount_percent"]) == "" {
+		return
+	}
+	discountPercent, issue := parseCutoverRequiredImportDecimal(row.values["discount_percent"], "discount_percent")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if discountPercent.IsNegative() || discountPercent.GreaterThan(decimal.NewFromInt(100)) {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   "discount_percent",
+			value:   strings.TrimSpace(row.values["discount_percent"]),
+			message: "discount_percent must be between 0 and 100",
+		}))
+	}
+}
+
+func checkInvoiceVATTreatment(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "reverse_charge") && strings.TrimSpace(row.values["reverse_charge"]) != "" {
+		switch normalizeCutoverBoolComparable(row.values["reverse_charge"]) {
+		case "true":
+			checkInvoiceReverseChargeRate(report, file, row)
+			return
+		case "false":
+			return
+		default:
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "reverse_charge",
+				Value:    strings.TrimSpace(row.values["reverse_charge"]),
+				Message:  "invalid reverse_charge",
+			})
+			return
+		}
+	}
+
+	if !fileHasHeaders(file, "vat_treatment") || strings.TrimSpace(row.values["vat_treatment"]) == "" {
+		return
+	}
+	switch normalizedValue(row.values["vat_treatment"]) {
+	case "standard", "normal":
+		return
+	case "reverse_charge", "reversecharge", "reverse charge", "rc":
+		checkInvoiceReverseChargeRate(report, file, row)
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "vat_treatment",
+			Value:    strings.TrimSpace(row.values["vat_treatment"]),
+			Message:  fmt.Sprintf("invalid vat_treatment %q", strings.TrimSpace(row.values["vat_treatment"])),
+		})
+	}
+}
+
+func checkInvoiceReverseChargeRate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "vat_rate") {
+		return
+	}
+	vatRate, issue := parseCutoverRequiredImportDecimal(row.values["vat_rate"], "vat_rate")
+	if issue != nil {
+		return
+	}
+	if vatRate.LessThanOrEqual(decimal.Zero) {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   "vat_rate",
+			value:   strings.TrimSpace(row.values["vat_rate"]),
+			message: "reverse charge VAT rate must be positive",
+		}))
+	}
+}
+
+func checkCommercialNonNegativeInt(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be a non-negative integer", field),
+		})
+	}
+}
+
+func checkCommercialBool(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	switch normalizeCutoverBoolComparable(row.values[field]) {
+	case "true", "false":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    strings.TrimSpace(row.values[field]),
+			Message:  fmt.Sprintf("%s must be true or false", field),
+		})
 	}
 }
 
@@ -2065,6 +2509,18 @@ func parseCutoverRequiredDecimal(value, fieldName string) (decimal.Decimal, *cut
 	return parsed, nil
 }
 
+func parseCutoverRequiredImportDecimal(value, fieldName string) (decimal.Decimal, *cutoverAmountIssue) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, message: fmt.Sprintf("%s is required", fieldName)}
+	}
+	parsed, err := decimal.NewFromString(normalizeCutoverImportDecimal(trimmed))
+	if err != nil {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be a decimal", fieldName)}
+	}
+	return parsed, nil
+}
+
 func parseCutoverPositiveNormalizedDecimal(value, fieldName string) (decimal.Decimal, *cutoverAmountIssue) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -2078,6 +2534,11 @@ func parseCutoverPositiveNormalizedDecimal(value, fieldName string) (decimal.Dec
 		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be positive", fieldName)}
 	}
 	return parsed, nil
+}
+
+func normalizeCutoverDateOnly(value time.Time) time.Time {
+	utcValue := value.UTC()
+	return time.Date(utcValue.Year(), utcValue.Month(), utcValue.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func parseCutoverEntryDate(value string) (string, *cutoverAmountIssue) {
@@ -2122,6 +2583,13 @@ func normalizeCutoverDecimal(value string) string {
 		return strings.ReplaceAll(value, ",", ".")
 	}
 	return strings.ReplaceAll(value, ",", "")
+}
+
+func normalizeCutoverImportDecimal(value string) string {
+	normalized := strings.TrimSpace(value)
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	normalized = strings.ReplaceAll(normalized, ",", ".")
+	return normalized
 }
 
 func isCutoverDateOrRFC3339(value string) bool {
