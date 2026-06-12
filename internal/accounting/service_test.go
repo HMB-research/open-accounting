@@ -20,6 +20,10 @@ type MockRepository struct {
 	balances       []AccountBalance
 	periodBalances []AccountBalance
 
+	listJournalSchemaName string
+	listJournalTenantID   string
+	listJournalLimit      int
+
 	// Error injection
 	getAccountErr       error
 	listAccountsErr     error
@@ -91,6 +95,10 @@ func (m *MockRepository) UpdateAccount(ctx context.Context, schemaName string, a
 }
 
 func (m *MockRepository) ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error) {
+	m.listJournalSchemaName = schemaName
+	m.listJournalTenantID = tenantID
+	m.listJournalLimit = limit
+
 	if m.getJournalErr != nil {
 		return nil, m.getJournalErr
 	}
@@ -543,6 +551,59 @@ func TestService_GetJournalEntry(t *testing.T) {
 	t.Run("returns error when not found", func(t *testing.T) {
 		_, err := svc.GetJournalEntry(ctx, schemaName, "tenant-1", "nonexistent")
 		assert.Error(t, err)
+	})
+}
+
+func TestService_ListJournalEntries(t *testing.T) {
+	ctx := context.Background()
+	schemaName := "tenant_test"
+
+	t.Run("lists tenant journal entries", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		repo.journalEntries["je-1"] = &JournalEntry{
+			ID:          "je-1",
+			TenantID:    "tenant-1",
+			EntryNumber: "JE-00001",
+			Status:      StatusDraft,
+		}
+		repo.journalEntries["je-2"] = &JournalEntry{
+			ID:          "je-2",
+			TenantID:    "tenant-1",
+			EntryNumber: "JE-00002",
+			Status:      StatusPosted,
+		}
+		repo.journalEntries["other-tenant"] = &JournalEntry{
+			ID:          "other-tenant",
+			TenantID:    "tenant-2",
+			EntryNumber: "JE-99999",
+			Status:      StatusPosted,
+		}
+
+		result, err := svc.ListJournalEntries(ctx, schemaName, "tenant-1", 25)
+
+		require.NoError(t, err)
+		require.Len(t, result, 2)
+		assert.ElementsMatch(t, []string{"je-1", "je-2"}, []string{result[0].ID, result[1].ID})
+		assert.Equal(t, schemaName, repo.listJournalSchemaName)
+		assert.Equal(t, "tenant-1", repo.listJournalTenantID)
+		assert.Equal(t, 25, repo.listJournalLimit)
+	})
+
+	t.Run("returns repository errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+		repo.getJournalErr = errors.New("journal list failed")
+
+		result, err := svc.ListJournalEntries(ctx, schemaName, "tenant-1", 10)
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "journal list failed")
+		assert.Equal(t, schemaName, repo.listJournalSchemaName)
+		assert.Equal(t, "tenant-1", repo.listJournalTenantID)
+		assert.Equal(t, 10, repo.listJournalLimit)
 	})
 }
 
