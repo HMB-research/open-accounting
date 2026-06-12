@@ -104,6 +104,91 @@ func TestService_ImportCSV(t *testing.T) {
 		}
 	})
 
+	t.Run("imports reverse charge boolean aliases", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{
+			{
+				ID:               "supplier-1",
+				TenantID:         tenantID,
+				Code:             "SUP-001",
+				Name:             "EU Supplier",
+				ContactType:      contacts.ContactTypeSupplier,
+				CountryCode:      "DE",
+				PaymentTermsDays: 14,
+				IsActive:         true,
+			},
+		}, nil, &ImportInvoicesRequest{
+			FileName: "reverse-charge-bool.csv",
+			UserID:   "user-1",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate,reverse_charge\n" +
+				"BILL-RC-TRUE,PURCHASE,SUP-001,2026-02-01,2026-02-15,EU service,1,100.00,22,yes\n" +
+				"BILL-RC-FALSE,PURCHASE,SUP-001,2026-02-02,2026-02-16,Local service,1,100.00,22,0\n",
+		}, nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, 2, result.InvoicesCreated)
+		require.Len(t, repo.invoices, 2)
+
+		var reverseChargeInvoice *Invoice
+		var standardInvoice *Invoice
+		for _, invoice := range repo.invoices {
+			switch invoice.InvoiceNumber {
+			case "BILL-RC-TRUE":
+				reverseChargeInvoice = invoice
+			case "BILL-RC-FALSE":
+				standardInvoice = invoice
+			}
+		}
+
+		require.NotNil(t, reverseChargeInvoice)
+		require.Len(t, reverseChargeInvoice.Lines, 1)
+		assert.Equal(t, VATTreatmentReverseCharge, reverseChargeInvoice.Lines[0].VATTreatment)
+		assert.True(t, reverseChargeInvoice.VATAmount.IsZero())
+		assert.True(t, reverseChargeInvoice.Total.Equal(decimal.RequireFromString("100")))
+
+		require.NotNil(t, standardInvoice)
+		require.Len(t, standardInvoice.Lines, 1)
+		assert.Equal(t, VATTreatmentStandard, standardInvoice.Lines[0].VATTreatment)
+		assert.True(t, standardInvoice.VATAmount.Equal(decimal.RequireFromString("22")))
+		assert.True(t, standardInvoice.Total.Equal(decimal.RequireFromString("122")))
+	})
+
+	t.Run("skips invalid reverse charge boolean", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{
+			{
+				ID:               "supplier-1",
+				TenantID:         tenantID,
+				Code:             "SUP-001",
+				Name:             "EU Supplier",
+				ContactType:      contacts.ContactTypeSupplier,
+				CountryCode:      "DE",
+				PaymentTermsDays: 14,
+				IsActive:         true,
+			},
+		}, nil, &ImportInvoicesRequest{
+			FileName: "reverse-charge-bad.csv",
+			UserID:   "user-1",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate,reverse_charge\n" +
+				"BILL-RC-BAD,PURCHASE,SUP-001,2026-02-01,2026-02-15,EU service,1,100.00,22,maybe\n",
+		}, nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, 1, result.RowsProcessed)
+		assert.Zero(t, result.InvoicesCreated)
+		assert.Zero(t, result.LinesImported)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Equal(t, 2, result.Errors[0].Row)
+		assert.Equal(t, "BILL-RC-BAD", result.Errors[0].InvoiceNumber)
+		assert.Contains(t, result.Errors[0].Message, "invalid reverse_charge")
+		assert.Empty(t, repo.invoices)
+	})
+
 	t.Run("skips rows when contact is missing or invoice number already exists", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.invoices["existing"] = &Invoice{

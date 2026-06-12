@@ -330,6 +330,43 @@ func TestCostCenterService_ImportCostCentersCSVRejectsInvalidParentID(t *testing
 	assert.Contains(t, result.Errors[0].Message, "parent_id must be a valid UUID")
 }
 
+func TestCostCenterService_ImportCostCentersCSVParsesActiveAliases(t *testing.T) {
+	ts := newTestCostCenterService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportCostCentersCSV(ctx, "test_schema", "tenant-1", &ImportCostCentersRequest{
+		CSVContent: "code,name,is_active\n" +
+			"CC-ACTIVE,Active,yes\n" +
+			"CC-INACTIVE,Inactive,0\n" +
+			"CC-BAD,Bad,maybe\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, result.RowsProcessed)
+	assert.Equal(t, 2, result.CostCentersCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 4, result.Errors[0].Row)
+	assert.Equal(t, "CC-BAD", result.Errors[0].Code)
+	assert.Contains(t, result.Errors[0].Message, "is_active must be true or false")
+
+	var active *CostCenter
+	var inactive *CostCenter
+	for _, costCenter := range ts.repo.CostCenters {
+		switch costCenter.Code {
+		case "CC-ACTIVE":
+			active = costCenter
+		case "CC-INACTIVE":
+			inactive = costCenter
+		}
+	}
+
+	require.NotNil(t, active)
+	assert.True(t, active.IsActive)
+	require.NotNil(t, inactive)
+	assert.False(t, inactive.IsActive)
+}
+
 func TestCostCenterService_ImportCostAllocationsCSV(t *testing.T) {
 	ts := newTestCostCenterService()
 	ctx := context.Background()
