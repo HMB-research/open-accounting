@@ -742,7 +742,7 @@ Content-Type: application/json
 
 {
   "file_name": "invoices.csv",
-  "csv_content": "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,vat_treatment,product_code\nINV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22,standard,SERV-001\nBILL-RC-001,PURCHASE,SUP-001,2026-02-01,2026-02-15,SENT,0,,Reverse-charge supplier invoice,EU service,1,hour,100.00,0,22,reverse_charge,EU-SERV"
+  "csv_content": "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,reference,notes,line_description,quantity,unit,unit_price,discount_percent,vat_rate,vat_treatment,product_code\n11111111-1111-1111-1111-111111111111,INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,SENT,0,PO-12345,Imported migration invoice,Implementation work,1,hour,100.00,0,22,standard,SERV-001\n22222222-2222-2222-2222-222222222222,BILL-RC-001,PURCHASE,SUP-001,2026-02-01,2026-02-15,SENT,0,,Reverse-charge supplier invoice,EU service,1,hour,100.00,0,22,reverse_charge,EU-SERV"
 }
 ```
 
@@ -754,6 +754,8 @@ Rows are grouped by `invoice_number` and `invoice_type`. Contacts are resolved b
 - `contact_name`
 
 Invoice line product references may use `product_id` or `product_code`; `sku` and `item_code` are accepted as `product_code` aliases.
+
+Invoice imports accept an optional valid UUID in `id` or `invoice_id`. Supplied invoice IDs are preserved, must be consistent across grouped rows, and are skipped when the ID already exists. Preserved IDs let payment imports and migration preflight target imported invoices by `invoice_id`.
 
 **Response (200 OK):**
 
@@ -2607,7 +2609,7 @@ Content-Type: application/json
 }
 ```
 
-Payment CSV imports require `payment_type`, `payment_date`, and `amount`. Optional columns include `payment_number`, `contact_id`, `currency`, `exchange_rate`, `payment_method`, `bank_account`, `reference`, `notes`, `invoice_id`, `invoice_number`, and `allocation_amount`. Omitted payment numbers are generated; supplied numbers are preserved and checked for duplicates. Payment allocations can target `invoice_id` directly or resolve `invoice_number` through the tenant invoice list.
+Payment CSV imports require `payment_type`, `payment_date`, and `amount`. Optional columns include `payment_number`, `contact_id`, `currency`, `exchange_rate`, `payment_method`, `bank_account`, `reference`, `notes`, `invoice_id`, `invoice_number`, and `allocation_amount`. Omitted payment numbers are generated; supplied numbers are preserved and checked for duplicates. Payment allocations can target `invoice_id` directly, including UUIDs preserved by invoice import, or resolve `invoice_number` through the tenant invoice list.
 
 ### Export SEPA Payment XML
 

@@ -22,6 +22,7 @@ func TestService_ImportCSV(t *testing.T) {
 	t.Run("imports grouped invoice lines and preserves invoice number", func(t *testing.T) {
 		repo := NewMockRepository()
 		service := NewServiceWithRepository(repo, nil)
+		legacyInvoiceID := "11111111-1111-1111-1111-111111111111"
 
 		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{
 			{
@@ -43,9 +44,9 @@ func TestService_ImportCSV(t *testing.T) {
 		}, &ImportInvoicesRequest{
 			FileName: "invoices.csv",
 			UserID:   "user-1",
-			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,status,line_description,quantity,unit_price,vat_rate,product_code,amount_paid\n" +
-				"INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,PAID,Implementation work,1,100.00,22,SERV-001,183.00\n" +
-				"INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,PAID,Support retainer,1,50.00,22,,183.00\n",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,status,line_description,quantity,unit_price,vat_rate,product_code,amount_paid\n" +
+				"11111111-1111-1111-1111-111111111111,INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,PAID,Implementation work,1,100.00,22,SERV-001,183.00\n" +
+				"11111111-1111-1111-1111-111111111111,INV-EXT-001,SALES,CUST-001,2026-02-01,2026-02-15,PAID,Support retainer,1,50.00,22,,183.00\n",
 		}, nil)
 		require.NoError(t, err)
 
@@ -57,14 +58,16 @@ func TestService_ImportCSV(t *testing.T) {
 		assert.Empty(t, result.Errors)
 
 		require.Len(t, repo.invoices, 1)
-		for _, invoice := range repo.invoices {
-			assert.Equal(t, "INV-EXT-001", invoice.InvoiceNumber)
-			assert.Equal(t, StatusPaid, invoice.Status)
-			assert.True(t, invoice.AmountPaid.Equal(invoice.Total))
-			assert.Len(t, invoice.Lines, 2)
-			require.NotNil(t, invoice.Lines[0].ProductID)
-			assert.Equal(t, "prod-1", *invoice.Lines[0].ProductID)
-		}
+		invoice := repo.invoices[legacyInvoiceID]
+		require.NotNil(t, invoice)
+		assert.Equal(t, legacyInvoiceID, invoice.ID)
+		assert.Equal(t, "INV-EXT-001", invoice.InvoiceNumber)
+		assert.Equal(t, StatusPaid, invoice.Status)
+		assert.True(t, invoice.AmountPaid.Equal(invoice.Total))
+		require.Len(t, invoice.Lines, 2)
+		assert.Equal(t, legacyInvoiceID, invoice.Lines[0].InvoiceID)
+		require.NotNil(t, invoice.Lines[0].ProductID)
+		assert.Equal(t, "prod-1", *invoice.Lines[0].ProductID)
 	})
 
 	t.Run("imports reverse charge purchase invoice lines", func(t *testing.T) {
@@ -135,6 +138,34 @@ func TestService_ImportCSV(t *testing.T) {
 		require.Len(t, result.Errors, 2)
 		assert.Contains(t, result.Errors[0].Message, "already exists")
 		assert.Contains(t, result.Errors[1].Message, "was not found")
+	})
+
+	t.Run("skips invalid imported invoice id", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{
+			{
+				ID:               "contact-1",
+				TenantID:         tenantID,
+				Code:             "CUST-001",
+				Name:             "Acme Corp",
+				ContactType:      contacts.ContactTypeCustomer,
+				CountryCode:      "EE",
+				PaymentTermsDays: 14,
+				IsActive:         true,
+			},
+		}, nil, &ImportInvoicesRequest{
+			CSVContent: "id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"legacy-id,INV-BAD-ID,SALES,CUST-001,2026-02-01,2026-02-15,Implementation work,1,100.00,22\n",
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Zero(t, result.InvoicesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Equal(t, 2, result.Errors[0].Row)
+		assert.Contains(t, result.Errors[0].Message, "invalid id")
 	})
 
 	t.Run("skips invoice groups blocked by period validation", func(t *testing.T) {

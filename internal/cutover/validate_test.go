@@ -741,6 +741,8 @@ func TestValidateBundleAcceptsEInvoiceXMLAndPaymentReference(t *testing.T) {
 }
 
 func TestValidateBundleAcceptsPaymentInvoiceIDReference(t *testing.T) {
+	legacyInvoiceID := "11111111-1111-1111-1111-111111111111"
+
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
 			Kind:       KindContacts,
@@ -750,12 +752,12 @@ func TestValidateBundleAcceptsPaymentInvoiceIDReference(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "id,invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\ninv-1,INV-1,CUST-1,2026-05-30,Work,1,100,22\n",
+			CSVContent: "invoice_id,invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,CUST-1,2026-05-30,Work,1,100,22\n",
 		},
 		{
 			Kind:       KindPayments,
 			FileName:   "payments.csv",
-			CSVContent: "payment_type,payment_date,amount,invoice_id\nRECEIVED,2026-05-31,100,inv-1\n",
+			CSVContent: "payment_type,payment_date,amount,invoice_id\nRECEIVED,2026-05-31,100," + legacyInvoiceID + "\n",
 		},
 	}})
 
@@ -764,6 +766,41 @@ func TestValidateBundleAcceptsPaymentInvoiceIDReference(t *testing.T) {
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 3, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
+
+	var invoiceValidation FileValidation
+	for _, file := range report.Files {
+		if file.Kind == KindInvoices {
+			invoiceValidation = file
+		}
+	}
+	require.Equal(t, KindInvoices, invoiceValidation.Kind)
+	assert.Contains(t, invoiceValidation.Headers, "id")
+}
+
+func TestValidateBundleReportsInvalidInvoiceImportID(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_id,invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nlegacy-id,INV-1,CUST-1,2026-05-30,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindInvoices, report.Issues[0].Kind)
+	assert.Equal(t, 2, report.Issues[0].Row)
+	assert.Equal(t, "id", report.Issues[0].Field)
+	assert.Equal(t, "legacy-id", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, "valid UUID")
 }
 
 func TestValidateBundleReportsEInvoiceContactReferenceIssues(t *testing.T) {
