@@ -58,7 +58,7 @@ var accountImportTypeAliases = map[string]AccountType{
 
 // ImportAccountsCSV imports chart-of-account rows from CSV content.
 func (s *Service) ImportAccountsCSV(ctx context.Context, schemaName, tenantID string, req *ImportAccountsRequest) (*ImportAccountsResult, error) {
-	if strings.TrimSpace(req.CSVContent) == "" {
+	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
 		return nil, fmt.Errorf("csv_content is required")
 	}
 
@@ -210,9 +210,6 @@ func parseAccountImportRows(content string) ([]accountImportRow, error) {
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("csv file is empty")
-		}
 		return nil, fmt.Errorf("parse csv header: %w", err)
 	}
 
