@@ -58,11 +58,15 @@ var assetImportHeaderAliases = map[string]string{
 	"disposal_proceeds":                     "disposal_proceeds",
 	"disposal_notes":                        "disposal_notes",
 	"asset_account_id":                      "asset_account_id",
+	"asset_account_code":                    "asset_account_code",
 	"depreciation_expense_account_id":       "depreciation_expense_account_id",
+	"depreciation_expense_account_code":     "depreciation_expense_account_code",
 	"accumulated_depreciation_account_id":   "accumulated_depreciation_account_id",
 	"accumulated_depreciation_acct_id":      "accumulated_depreciation_account_id",
 	"accumulated_depreciation_account":      "accumulated_depreciation_account_id",
 	"accumulated_depreciation_account_uuid": "accumulated_depreciation_account_id",
+	"accumulated_depreciation_account_code": "accumulated_depreciation_account_code",
+	"accumulated_depreciation_acct_code":    "accumulated_depreciation_account_code",
 }
 
 // ImportAssetsCSV imports fixed assets from CSV content.
@@ -101,6 +105,11 @@ func (s *Service) ImportAssetsCSV(ctx context.Context, tenantID, schemaName stri
 		categoryNameToID[normalizedAssetImportKey(category.Name)] = category.ID
 	}
 
+	accountIDsByCode, err := s.assetImportAccountIDsByCode(ctx, schemaName, tenantID, rows)
+	if err != nil {
+		return nil, err
+	}
+
 	result := &ImportAssetsResult{
 		FileName: req.FileName,
 		Errors:   []ImportAssetsRowError{},
@@ -109,7 +118,7 @@ func (s *Service) ImportAssetsCSV(ctx context.Context, tenantID, schemaName stri
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		asset, err := buildFixedAssetFromImportRow(row, tenantID, req.UserID, categoryNameToID)
+		asset, err := buildFixedAssetFromImportRow(row, tenantID, req.UserID, categoryNameToID, accountIDsByCode)
 		if err != nil {
 			appendAssetImportRowError(result, row, err)
 			continue
@@ -243,7 +252,12 @@ func parseAssetImportRows(content string) ([]assetImportRow, error) {
 	return rows, nil
 }
 
-func buildFixedAssetFromImportRow(row assetImportRow, tenantID, userID string, categoryNameToID map[string]string) (*FixedAsset, error) {
+func buildFixedAssetFromImportRow(
+	row assetImportRow,
+	tenantID, userID string,
+	categoryNameToID map[string]string,
+	accountIDsByCode map[string]string,
+) (*FixedAsset, error) {
 	name := strings.TrimSpace(row.values["name"])
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
@@ -321,6 +335,18 @@ func buildFixedAssetFromImportRow(row assetImportRow, tenantID, userID string, c
 	if err != nil {
 		return nil, err
 	}
+	assetAccountID, err := resolveOptionalAssetImportAccountID(row, "asset_account_id", "asset_account_code", accountIDsByCode)
+	if err != nil {
+		return nil, err
+	}
+	depreciationExpenseAccountID, err := resolveOptionalAssetImportAccountID(row, "depreciation_expense_account_id", "depreciation_expense_account_code", accountIDsByCode)
+	if err != nil {
+		return nil, err
+	}
+	accumulatedDepreciationAccountID, err := resolveOptionalAssetImportAccountID(row, "accumulated_depreciation_account_id", "accumulated_depreciation_account_code", accountIDsByCode)
+	if err != nil {
+		return nil, err
+	}
 
 	now := time.Now()
 	asset := &FixedAsset{
@@ -348,9 +374,9 @@ func buildFixedAssetFromImportRow(row assetImportRow, tenantID, userID string, c
 		DisposalMethod:                disposalMethod,
 		DisposalProceeds:              disposalProceeds,
 		DisposalNotes:                 strings.TrimSpace(row.values["disposal_notes"]),
-		AssetAccountID:                optionalAssetImportString(row.values["asset_account_id"]),
-		DepreciationExpenseAccountID:  optionalAssetImportString(row.values["depreciation_expense_account_id"]),
-		AccumulatedDepreciationAcctID: optionalAssetImportString(row.values["accumulated_depreciation_account_id"]),
+		AssetAccountID:                assetAccountID,
+		DepreciationExpenseAccountID:  depreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: accumulatedDepreciationAccountID,
 		CreatedAt:                     now,
 		CreatedBy:                     userID,
 		UpdatedAt:                     now,
@@ -366,6 +392,37 @@ func buildFixedAssetFromImportRow(row assetImportRow, tenantID, userID string, c
 	return asset, nil
 }
 
+func (s *Service) assetImportAccountIDsByCode(ctx context.Context, schemaName, tenantID string, rows []assetImportRow) (map[string]string, error) {
+	usesAccountCodes := false
+	for _, row := range rows {
+		if strings.TrimSpace(row.values["asset_account_code"]) != "" ||
+			strings.TrimSpace(row.values["depreciation_expense_account_code"]) != "" ||
+			strings.TrimSpace(row.values["accumulated_depreciation_account_code"]) != "" {
+			usesAccountCodes = true
+			break
+		}
+	}
+	if !usesAccountCodes {
+		return nil, nil
+	}
+	if s.ledger == nil {
+		return nil, fmt.Errorf("accounting service is required to resolve asset account codes")
+	}
+
+	accounts, err := s.ledger.ListAccounts(ctx, schemaName, tenantID, false)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts for asset import: %w", err)
+	}
+	accountIDsByCode := make(map[string]string, len(accounts))
+	for _, account := range accounts {
+		key := normalizedAssetImportKey(account.Code)
+		if key != "" {
+			accountIDsByCode[key] = account.ID
+		}
+	}
+	return accountIDsByCode, nil
+}
+
 func resolveAssetImportCategoryID(row assetImportRow, categoryNameToID map[string]string) (*string, error) {
 	if categoryID := strings.TrimSpace(row.values["category_id"]); categoryID != "" {
 		return &categoryID, nil
@@ -379,6 +436,21 @@ func resolveAssetImportCategoryID(row assetImportRow, categoryNameToID map[strin
 		return nil, fmt.Errorf("category_name %q was not found", categoryName)
 	}
 	return &categoryID, nil
+}
+
+func resolveOptionalAssetImportAccountID(row assetImportRow, idField, codeField string, accountIDsByCode map[string]string) (*string, error) {
+	if accountID := strings.TrimSpace(row.values[idField]); accountID != "" {
+		return &accountID, nil
+	}
+	accountCode := strings.TrimSpace(row.values[codeField])
+	if accountCode == "" {
+		return nil, nil
+	}
+	accountID, ok := accountIDsByCode[normalizedAssetImportKey(accountCode)]
+	if !ok {
+		return nil, fmt.Errorf("account code %q was not found for %s", accountCode, codeField)
+	}
+	return &accountID, nil
 }
 
 func parseAssetImportStatus(value string) (AssetStatus, error) {

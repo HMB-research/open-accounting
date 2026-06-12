@@ -509,43 +509,46 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindFixedAssets: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
-			"asset_number":                        "asset_number",
-			"asset_no":                            "asset_number",
-			"asset_code":                          "asset_number",
-			"code":                                "asset_number",
-			"number":                              "asset_number",
-			"fixed_asset_number":                  "asset_number",
-			"asset_name":                          "name",
-			"category_id":                         "category_id",
-			"category":                            "category_name",
-			"category_name":                       "category_name",
-			"purchase_date":                       "purchase_date",
-			"acquisition_date":                    "purchase_date",
-			"date":                                "purchase_date",
-			"purchase_cost":                       "purchase_cost",
-			"acquisition_cost":                    "purchase_cost",
-			"cost":                                "purchase_cost",
-			"price":                               "purchase_cost",
-			"supplier_id":                         "supplier_id",
-			"invoice_id":                          "invoice_id",
-			"serial_number":                       "serial_number",
-			"serial_no":                           "serial_number",
-			"depreciation_method":                 "depreciation_method",
-			"useful_life_months":                  "useful_life_months",
-			"life_months":                         "useful_life_months",
-			"residual_value":                      "residual_value",
-			"depreciation_start_date":             "depreciation_start_date",
-			"accumulated_depreciation":            "accumulated_depreciation",
-			"book_value":                          "book_value",
-			"carrying_value":                      "book_value",
-			"last_depreciation_date":              "last_depreciation_date",
-			"disposal_date":                       "disposal_date",
-			"disposal_method":                     "disposal_method",
-			"disposal_proceeds":                   "disposal_proceeds",
-			"disposal_notes":                      "disposal_notes",
-			"asset_account_id":                    "asset_account_id",
-			"depreciation_expense_account_id":     "depreciation_expense_account_id",
-			"accumulated_depreciation_account_id": "accumulated_depreciation_account_id",
+			"asset_number":                          "asset_number",
+			"asset_no":                              "asset_number",
+			"asset_code":                            "asset_number",
+			"code":                                  "asset_number",
+			"number":                                "asset_number",
+			"fixed_asset_number":                    "asset_number",
+			"asset_name":                            "name",
+			"category_id":                           "category_id",
+			"category":                              "category_name",
+			"category_name":                         "category_name",
+			"purchase_date":                         "purchase_date",
+			"acquisition_date":                      "purchase_date",
+			"date":                                  "purchase_date",
+			"purchase_cost":                         "purchase_cost",
+			"acquisition_cost":                      "purchase_cost",
+			"cost":                                  "purchase_cost",
+			"price":                                 "purchase_cost",
+			"supplier_id":                           "supplier_id",
+			"invoice_id":                            "invoice_id",
+			"serial_number":                         "serial_number",
+			"serial_no":                             "serial_number",
+			"depreciation_method":                   "depreciation_method",
+			"useful_life_months":                    "useful_life_months",
+			"life_months":                           "useful_life_months",
+			"residual_value":                        "residual_value",
+			"depreciation_start_date":               "depreciation_start_date",
+			"accumulated_depreciation":              "accumulated_depreciation",
+			"book_value":                            "book_value",
+			"carrying_value":                        "book_value",
+			"last_depreciation_date":                "last_depreciation_date",
+			"disposal_date":                         "disposal_date",
+			"disposal_method":                       "disposal_method",
+			"disposal_proceeds":                     "disposal_proceeds",
+			"disposal_notes":                        "disposal_notes",
+			"asset_account_id":                      "asset_account_id",
+			"asset_account_code":                    "asset_account_code",
+			"depreciation_expense_account_id":       "depreciation_expense_account_id",
+			"depreciation_expense_account_code":     "depreciation_expense_account_code",
+			"accumulated_depreciation_account_id":   "accumulated_depreciation_account_id",
+			"accumulated_depreciation_account_code": "accumulated_depreciation_account_code",
 		}),
 		requiredGroups: [][]string{{"name"}, {"purchase_date"}, {"purchase_cost"}},
 	},
@@ -778,6 +781,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 			switch file.kind {
 			case KindAccounts:
 				addIndexValue(indexes.accounts, row.values["code"])
+				addIndexValue(indexes.accounts, row.values["id"])
 			case KindContacts:
 				addIndexValue(indexes.contacts, row.values["code"])
 				addIndexValue(indexes.contacts, row.values["reg_code"])
@@ -862,6 +866,13 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 				[]string{"product_id", "product_code"})
 			checkTargetReference(report, indexes.files[KindWarehouses], indexes.warehouses, file, row, KindWarehouses,
 				[]string{"warehouse_id", "warehouse_code"})
+		case KindFixedAssets:
+			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
+				[]string{"asset_account_id", "asset_account_code"})
+			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
+				[]string{"depreciation_expense_account_id", "depreciation_expense_account_code"})
+			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
+				[]string{"accumulated_depreciation_account_id", "accumulated_depreciation_account_code"})
 		}
 	}
 }

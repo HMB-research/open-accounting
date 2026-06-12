@@ -117,7 +117,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindFixedAssets,
 			FileName:   "assets.csv",
-			CSVContent: "asset_number,name,purchase_date,purchase_cost\nFA-1,Laptop,2026-05-30,1200\n",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,asset_account_code,depreciation_expense_account_code,accumulated_depreciation_account_code\nFA-1,Laptop,2026-05-30,1200,1000,5500,1000\n",
 		},
 		{
 			Kind:       KindOpeningBalances,
@@ -349,6 +349,31 @@ func TestValidateBundleReportsCommercialDocumentProductReferenceIssues(t *testin
 	assert.Equal(t, KindProducts, report.Issues[0].TargetKind)
 	assert.Equal(t, "product_id/product_code", report.Issues[0].Field)
 	assert.Equal(t, "SKU-404", report.Issues[0].Value)
+}
+
+func TestValidateBundleReportsFixedAssetAccountReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,asset_account_code\nFA-1,Laptop,2026-05-30,1200,9999\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindFixedAssets, report.Issues[0].Kind)
+	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
+	assert.Equal(t, "asset_account_id/asset_account_code", report.Issues[0].Field)
+	assert.Equal(t, "9999", report.Issues[0].Value)
 }
 
 func TestValidateBundleReportsMissingColumnsAndReferences(t *testing.T) {
