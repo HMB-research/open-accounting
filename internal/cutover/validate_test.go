@@ -184,6 +184,63 @@ func TestValidateBundleReportsExpenseAccountReferenceIssues(t *testing.T) {
 	assert.Equal(t, "5500", report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsAccountParentReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "account_code,account_name,type,parent_code\n" +
+				"1000,Cash,ASSET,\n" +
+				"1100,Petty Cash,ASSET,9999\n" +
+				"1200,Self Parent,ASSET,1200\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 2)
+	assert.Equal(t, KindAccounts, report.Issues[0].Kind)
+	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
+	assert.Equal(t, "parent_code", report.Issues[0].Field)
+	assert.Equal(t, "9999", report.Issues[0].Value)
+	assert.Equal(t, KindAccounts, report.Issues[1].Kind)
+	assert.Equal(t, KindAccounts, report.Issues[1].TargetKind)
+	assert.Equal(t, "parent_code", report.Issues[1].Field)
+	assert.Equal(t, "1200", report.Issues[1].Value)
+	assert.Contains(t, report.Issues[1].Message, "cannot reference")
+}
+
+func TestValidateBundleReportsHierarchySelfReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindCostCenters,
+			FileName:   "cost-centers.csv",
+			CSVContent: "code,name,parent_code\nOPS,Operations,OPS\n",
+		},
+		{
+			Kind:       KindProductCategories,
+			FileName:   "categories.csv",
+			CSVContent: "name,parent_name\nWidgets,Widgets\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 2)
+	assert.Equal(t, KindProductCategories, report.Issues[0].Kind)
+	assert.Equal(t, "parent_name", report.Issues[0].Field)
+	assert.Equal(t, "Widgets", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, "cannot reference")
+	assert.Equal(t, KindCostCenters, report.Issues[1].Kind)
+	assert.Equal(t, "parent_code", report.Issues[1].Field)
+	assert.Equal(t, "OPS", report.Issues[1].Value)
+	assert.Contains(t, report.Issues[1].Message, "cannot reference")
+}
+
 func TestValidateBundleReportsCostAllocationReferenceIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

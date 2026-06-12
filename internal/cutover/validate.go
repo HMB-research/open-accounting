@@ -808,6 +808,10 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 func validateReferences(report *BundleValidationReport, indexes bundleIndexes, file parsedFile) {
 	for _, row := range file.rows {
 		switch file.kind {
+		case KindAccounts:
+			checkSelfReference(report, file, row, "parent_code", "code")
+			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
+				[]string{"parent_code"})
 		case KindExpenses:
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"expense_account_code"})
@@ -828,12 +832,14 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkTargetReference(report, indexes.files[KindAccounts], indexes.accounts, file, row, KindAccounts,
 				[]string{"account_code"})
 		case KindCostCenters:
+			checkSelfReference(report, file, row, "parent_code", "code")
 			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenters, file, row, KindCostCenters,
 				[]string{"parent_code"})
 		case KindCostAllocations:
 			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenters, file, row, KindCostCenters,
 				[]string{"cost_center_id", "cost_center_code"})
 		case KindProductCategories:
+			checkSelfReference(report, file, row, "parent_name", "name")
 			checkTargetReference(report, indexes.files[KindProductCategories], indexes.productCategories, file, row, KindProductCategories,
 				[]string{"parent_name"})
 		case KindProducts:
@@ -859,6 +865,25 @@ func checkEmployeeReference(report *BundleValidationReport, indexes bundleIndexe
 		employeeName(row.values),
 	}
 	checkReferenceValues(report, indexes.employees, file, row, KindEmployees, "employee", values)
+}
+
+func checkSelfReference(report *BundleValidationReport, file parsedFile, row parsedRow, field, identityField string) {
+	value := strings.TrimSpace(row.values[field])
+	identity := strings.TrimSpace(row.values[identityField])
+	if value == "" || identity == "" || normalizedValue(value) != normalizedValue(identity) {
+		return
+	}
+
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       file.kind,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      field,
+		Value:      value,
+		TargetKind: file.kind,
+		Message:    fmt.Sprintf("%s cannot reference the same row's %s", field, identityField),
+	})
 }
 
 func checkTargetReference(
