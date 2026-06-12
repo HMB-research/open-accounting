@@ -182,9 +182,6 @@ func (s *Service) buildJournalEntryFromImportGroup(
 	if !totalDebit.Equal(totalCredit) {
 		return nil, decimal.Zero, decimal.Zero, fmt.Errorf("journal entry does not balance: debits=%s credits=%s", totalDebit.String(), totalCredit.String())
 	}
-	if totalDebit.IsZero() {
-		return nil, decimal.Zero, decimal.Zero, fmt.Errorf("journal entry cannot have zero amounts")
-	}
 
 	description := strings.TrimSpace(firstValues["entry_description"])
 	if description == "" {
@@ -242,9 +239,6 @@ func parseJournalImportRows(content string) ([]journalImportRow, error) {
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("csv file is empty")
-		}
 		return nil, fmt.Errorf("parse csv header: %w", err)
 	}
 
