@@ -1,6 +1,7 @@
 package cutover
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,7 +33,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate,product_code\nINV-1,CUST-1,2026-05-30,Work,1,100,22,SKU-1\n",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate,product_code\nINV-1,SALES,CUST-1,2026-05-30,Work,1,100,22,SKU-1\n",
 		},
 		{
 			Kind:       KindEInvoices,
@@ -183,7 +184,7 @@ func TestValidateBundleAcceptsMeritProviderPresetAliases(t *testing.T) {
 			{
 				Kind:       KindInvoices,
 				FileName:   "merit-invoices.csv",
-				CSVContent: "arve_nr,arve_kuupäev,kliendi_kood,rea_kirjeldus,kogus,ühiku_hind,käibemaks\nINV-1,2026-05-30,CUST-1,Implementation,1,100,22\n",
+				CSVContent: "arve_nr,arve_tüüp,arve_kuupäev,kliendi_kood,rea_kirjeldus,kogus,ühiku_hind,käibemaks\nINV-1,SALES,2026-05-30,CUST-1,Implementation,1,100,22\n",
 			},
 			{
 				Kind:       KindOpeningBalances,
@@ -226,7 +227,7 @@ func TestValidateBundleAcceptsSmartAccountsProviderPresetAliases(t *testing.T) {
 			{
 				Kind:       KindInvoices,
 				FileName:   "smartaccounts-invoices.csv",
-				CSVContent: "document_no,document_date,client_no,item_description,qty,unit_price,vat_percent\nINV-1,2026-05-30,CUST-1,Implementation,1,100,22\n",
+				CSVContent: "document_no,document_type,document_date,client_no,item_description,qty,unit_price,vat_percent\nINV-1,SALES,2026-05-30,CUST-1,Implementation,1,100,22\n",
 			},
 			{
 				Kind:       KindOpeningBalances,
@@ -267,6 +268,106 @@ func TestValidateBundleRejectsUnsupportedProviderPreset(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, report)
 	assert.Contains(t, err.Error(), "unsupported provider_preset")
+}
+
+func TestValidateBundleRequiresInvoiceTypeForCSVInvoices(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nINV-1,CUST-1,2026-05-30,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindInvoices, report.Issues[0].Kind)
+	assert.Contains(t, report.Issues[0].Message, "missing required column group: invoice_type")
+}
+
+func TestValidateBundleReportsGroupedInvoiceHeaderConflicts(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-1,SALES,CUST-1,2026-05-30,Setup,1,100,22\n" +
+				"INV-1,sale,CUST-2,2026-05-30,Support,2,50,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindInvoices, report.Issues[0].Kind)
+	assert.Equal(t, 3, report.Issues[0].Row)
+	assert.Equal(t, "contact_code", report.Issues[0].Field)
+	assert.Contains(t, report.Issues[0].Message, `contact_code must be consistent for each invoice_number/invoice_type "INV-1/SALES"`)
+}
+
+func TestValidateBundleReportsGroupedCommercialDocumentHeaderConflicts(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindQuotes,
+			FileName: "quotes.csv",
+			CSVContent: "quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate\n" +
+				"Q-1,2026-05-30,CUST-1,Setup,1,100,22\n" +
+				"Q-1,2026-05-31,CUST-1,Support,2,50,22\n",
+		},
+		{
+			Kind:     KindOrders,
+			FileName: "orders.csv",
+			CSVContent: "order_number,order_date,contact_code,line_description,quantity,unit_price,vat_rate\n" +
+				"SO-1,2026-05-30,CUST-1,Setup,1,100,22\n" +
+				"SO-1,2026-05-31,CUST-1,Support,2,50,22\n",
+		},
+		{
+			Kind:     KindRecurringInvoices,
+			FileName: "recurring.csv",
+			CSVContent: "name,frequency,start_date,contact_code,line_description,quantity,unit_price,vat_rate\n" +
+				"Monthly,MONTHLY,2026-06-01,CUST-1,Setup,1,100,22\n" +
+				"Monthly,QUARTERLY,2026-06-01,CUST-1,Support,2,50,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindQuotes, "quote_date", "quote_date must be consistent for each quote_number")
+	assertValidationIssue(t, report, KindOrders, "order_date", "order_date must be consistent for each order_number")
+	assertValidationIssue(t, report, KindRecurringInvoices, "frequency", "frequency must be consistent for each template")
+}
+
+func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "account_code,account_name,type\n" +
+				"1000,Cash,ASSET\n" +
+				"1000,Duplicate cash,ASSET\n",
+		},
+		{
+			Kind:     KindBankAccounts,
+			FileName: "bank-accounts.csv",
+			CSVContent: "name,account_number\n" +
+				"Main bank,EE471000001020145685\n" +
+				"Duplicate main,EE47 1000 0010 2014 5685\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindAccounts, "code", `code "1000" duplicates row 2`)
+	assertValidationIssue(t, report, KindBankAccounts, "account_number", `account_number "EE47 1000 0010 2014 5685" duplicates row 2`)
 }
 
 func TestValidateBundleReportsOpeningBalanceBalanceIssue(t *testing.T) {
@@ -902,7 +1003,7 @@ func TestValidateBundleReportsMissingColumnsAndReferences(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_number,contact_code,issue_date,line_description,quantity,vat_rate\nINV-1,CUST-404,2026-05-30,Work,1,22\n",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,vat_rate\nINV-1,SALES,CUST-404,2026-05-30,Work,1,22\n",
 		},
 	}})
 
@@ -1003,7 +1104,7 @@ func TestValidateBundleAcceptsPaymentInvoiceIDReference(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_id,invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,CUST-1,2026-05-30,Work,1,100,22\n",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,SALES,CUST-1,2026-05-30,Work,1,100,22\n",
 		},
 		{
 			Kind:       KindPayments,
@@ -1051,7 +1152,7 @@ func TestValidateBundleAcceptsPreservedContactIDReferences(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_id,invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,SUP-1,2026-05-30,Work,1,100,22\n",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,SALES,SUP-1,2026-05-30,Work,1,100,22\n",
 		},
 		{
 			Kind:       KindPayments,
@@ -1159,7 +1260,7 @@ func TestValidateBundleReportsInvalidInvoiceImportID(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_id,invoice_number,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nlegacy-id,INV-1,CUST-1,2026-05-30,Work,1,100,22\n",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\nlegacy-id,INV-1,SALES,CUST-1,2026-05-30,Work,1,100,22\n",
 		},
 	}})
 
@@ -1266,6 +1367,16 @@ func TestValidateBundleRejectsUnsupportedKind(t *testing.T) {
 	assert.False(t, report.Summary.Ready)
 	require.Len(t, report.Issues, 1)
 	assert.Contains(t, report.Issues[0].Message, "unsupported migration file kind")
+}
+
+func assertValidationIssue(t *testing.T, report *BundleValidationReport, kind FileKind, field, message string) {
+	t.Helper()
+	for _, issue := range report.Issues {
+		if issue.Kind == kind && issue.Field == field && strings.Contains(issue.Message, message) {
+			return
+		}
+	}
+	assert.Failf(t, "missing validation issue", "kind=%s field=%s message containing %q issues=%v", kind, field, message, report.Issues)
 }
 
 func cutoverEInvoiceXML(number, sellerName, sellerRegCode string) string {
