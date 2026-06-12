@@ -1501,6 +1501,27 @@ func TestValidateBundleReportsCostAllocationReferenceIssues(t *testing.T) {
 	assert.Equal(t, "MISSING", report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsCostAllocationIDsThatMatchGeneratedCostCenterImportIDs(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindCostCenters,
+			FileName:   "cost-centers.csv",
+			CSVContent: "id,cost_center_code,name\nlegacy-cc,SALES,Sales\nlegacy-cc,OPS,Operations\n",
+		},
+		{
+			Kind:       KindCostAllocations,
+			FileName:   "cost-allocations.csv",
+			CSVContent: "cost_center_code,cost_center_id,journal_entry_line_id,amount,allocation_date\nOPS,,line-1,125.50,2026-05-31\n,legacy-cc,line-2,75.00,2026-05-31\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindCostAllocations, "cost_center_id", "cost_center_id must be a valid UUID")
+}
+
 func TestValidateBundleReportsCostCenterRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
