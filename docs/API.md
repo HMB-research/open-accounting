@@ -2988,7 +2988,7 @@ Import bank account master data:
 }
 ```
 
-Bank account imports require `name` and `account_number`, can link the cash/ledger account by `gl_account_id` or `gl_account_code`, skip duplicate account numbers when `skip_duplicates` is true, and report invalid or duplicate rows without creating placeholder accounts.
+Bank account imports require `name` and `account_number`, can link the cash/ledger account by UUID `gl_account_id` or by `gl_account_code`, skip duplicate account numbers when `skip_duplicates` is true, and report invalid or duplicate rows without creating placeholder accounts.
 
 ### Bank Auto-Match Rules
 

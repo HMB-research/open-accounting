@@ -762,6 +762,36 @@ func TestService_ImportBankAccountsReportsMissingAccountCode(t *testing.T) {
 	}
 }
 
+func TestService_ImportBankAccountsRejectsInvalidGLAccountID(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+
+	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
+		Rows: []CSVBankAccountRow{
+			{
+				Name:          "Main bank",
+				AccountNumber: "EE471000001020145685",
+				GLAccountID:   "legacy-account",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportBankAccounts() error = %v", err)
+	}
+	if result.RowsProcessed != 1 {
+		t.Errorf("expected 1 processed row, got %d", result.RowsProcessed)
+	}
+	if result.AccountsImported != 0 {
+		t.Errorf("expected 0 imported accounts, got %d", result.AccountsImported)
+	}
+	if result.RowsSkipped != 1 {
+		t.Errorf("expected 1 skipped row, got %d", result.RowsSkipped)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "gl_account_id must be a valid UUID") {
+		t.Fatalf("expected invalid gl_account_id error, got %#v", result.Errors)
+	}
+}
+
 func TestService_ImportBankAccountsRejectsDuplicateWhenNotSkipping(t *testing.T) {
 	repo := NewMockRepository()
 	service := NewServiceWithRepository(repo)

@@ -225,7 +225,12 @@ func (s *Service) bankAccountImportAccountIDsByCode(ctx context.Context, schemaN
 
 func resolveOptionalBankAccountImportAccountID(row CSVBankAccountRow, accountIDsByCode map[string]string) (*string, error) {
 	if accountID := strings.TrimSpace(row.GLAccountID); accountID != "" {
-		return &accountID, nil
+		parsedID, err := uuid.Parse(accountID)
+		if err != nil {
+			return nil, fmt.Errorf("gl_account_id must be a valid UUID")
+		}
+		id := parsedID.String()
+		return &id, nil
 	}
 	accountCode := strings.TrimSpace(row.GLAccountCode)
 	if accountCode == "" {
