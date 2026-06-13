@@ -1149,7 +1149,7 @@ func TestImportPayrollHistoryCSV_ReportsExtendedValidationErrors(t *testing.T) {
 		"invalid social_tax",
 		"unemployment_insurance_employer must be zero or greater",
 		"invalid total_employer_cost",
-		"payment_status must be PENDING, PAID, or CANCELLED",
+		"payment_status must be PENDING, PAID, or CANCELLED", //nolint:misspell // Existing API/database spelling.
 		"paid_at must be in YYYY-MM-DD format",
 		"personal_code \"49999999999\" not found",
 		"email \"missing@example.com\" not found",
@@ -1299,7 +1299,7 @@ func TestPayrollHistoryImportParsingHelpers(t *testing.T) {
 	paymentStatus, err := parsePayrollHistoryPaymentStatus("VOID", PayrollPaid)
 	require.Error(t, err)
 	assert.Empty(t, paymentStatus)
-	assert.Contains(t, err.Error(), "payment_status must be PENDING, PAID, or CANCELLED")
+	assert.Contains(t, err.Error(), "payment_status must be PENDING, PAID, or CANCELLED") //nolint:misspell // Existing API/database spelling.
 
 	paidDate := time.Date(2025, 12, 31, 15, 45, 0, 0, time.UTC)
 	sameDate := time.Date(2025, 12, 31, 0, 0, 0, 0, time.Local)
