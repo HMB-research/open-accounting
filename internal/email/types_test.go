@@ -16,6 +16,7 @@ func TestTemplateTypeConstants(t *testing.T) {
 		{TemplateOrderConfirm, "ORDER_CONFIRM"},
 		{TemplatePaymentReceipt, "PAYMENT_RECEIPT"},
 		{TemplateOverdueReminder, "OVERDUE_REMINDER"},
+		{TemplateDocumentRetentionReminder, "DOCUMENT_RETENTION_REMINDER"},
 	}
 
 	for _, tt := range tests {
@@ -380,6 +381,7 @@ func TestDefaultTemplates(t *testing.T) {
 		TemplateOrderConfirm,
 		TemplatePaymentReceipt,
 		TemplateOverdueReminder,
+		TemplateDocumentRetentionReminder,
 	}
 
 	for _, tt := range expectedTypes {
@@ -453,6 +455,14 @@ func TestDefaultTemplates_ContainPlaceholders(t *testing.T) {
 	for _, ph := range overduePlaceholders {
 		if !containsString(overdueTemplate.BodyHTML, ph) && !containsString(overdueTemplate.Subject, ph) {
 			t.Errorf("Overdue template missing placeholder: %s", ph)
+		}
+	}
+
+	retentionTemplate := templates[TemplateDocumentRetentionReminder]
+	retentionPlaceholders := []string{"{{.RetentionActionCount}}", "{{.RetentionAsOfDate}}", "{{range .RetentionActions}}"}
+	for _, ph := range retentionPlaceholders {
+		if !containsString(retentionTemplate.BodyHTML, ph) && !containsString(retentionTemplate.Subject, ph) {
+			t.Errorf("Retention template missing placeholder: %s", ph)
 		}
 	}
 }
@@ -790,6 +800,26 @@ func TestService_RenderTemplate(t *testing.T) {
 			expectedSubject: "Overdue: INV-002",
 			checkBodyHTML: func(body string) bool {
 				return containsString(body, "INV-002") && containsString(body, "15")
+			},
+		},
+		{
+			name: "Document retention reminder template",
+			template: EmailTemplate{
+				TemplateType: TemplateDocumentRetentionReminder,
+				Subject:      "Retention: {{.RetentionActionCount}} actions",
+				BodyHTML:     "{{range .RetentionActions}}<p>{{.Action}} {{.FileName}} {{.Message}}</p>{{end}}",
+				BodyText:     "{{range .RetentionActions}}{{.Action}} {{.FileName}}\n{{end}}",
+			},
+			data: TemplateData{
+				RetentionActionCount: 1,
+				RetentionActions: []RetentionReminderTemplateAction{
+					{Action: "expired_retention", FileName: "statement.pdf", Message: "Retention expired"},
+				},
+			},
+			expectError:     false,
+			expectedSubject: "Retention: 1 actions",
+			checkBodyHTML: func(body string) bool {
+				return containsString(body, "expired_retention") && containsString(body, "statement.pdf")
 			},
 		},
 		{

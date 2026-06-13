@@ -4199,7 +4199,7 @@ func (a *cliApp) runEmailTemplates(ctx context.Context, cfg *cliConfig, client *
 	case "update":
 		fs := flag.NewFlagSet("email templates update", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
-		templateTypeFlag := fs.String("type", "", "Template type: INVOICE_SEND, PAYMENT_RECEIPT, OVERDUE_REMINDER")
+		templateTypeFlag := fs.String("type", "", "Template type: INVOICE_SEND, QUOTE_SEND, ORDER_CONFIRM, PAYMENT_RECEIPT, OVERDUE_REMINDER, DOCUMENT_RETENTION_REMINDER")
 		subject := fs.String("subject", "", "Email subject template")
 		bodyHTML := fs.String("body-html", "", "HTML body template")
 		bodyHTMLFile := fs.String("body-html-file", "", "Read HTML body template from file or '-'")
@@ -12657,7 +12657,7 @@ func parseRequiredReminderTriggerType(value string) (invoicing.TriggerType, erro
 func parseRequiredEmailTemplateType(value string) (email.TemplateType, error) {
 	normalized := strings.ToUpper(strings.TrimSpace(value))
 	switch email.TemplateType(normalized) {
-	case email.TemplateInvoiceSend, email.TemplateQuoteSend, email.TemplateOrderConfirm, email.TemplatePaymentReceipt, email.TemplateOverdueReminder:
+	case email.TemplateInvoiceSend, email.TemplateQuoteSend, email.TemplateOrderConfirm, email.TemplatePaymentReceipt, email.TemplateOverdueReminder, email.TemplateDocumentRetentionReminder:
 		return email.TemplateType(normalized), nil
 	default:
 		if normalized == "" {

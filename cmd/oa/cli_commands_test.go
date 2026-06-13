@@ -22911,6 +22911,10 @@ func TestCLIHelperFunctionsAndErrors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, email.TemplateOrderConfirm, emailTemplateType)
 
+	emailTemplateType, err = parseRequiredEmailTemplateType("document_retention_reminder")
+	require.NoError(t, err)
+	assert.Equal(t, email.TemplateDocumentRetentionReminder, emailTemplateType)
+
 	_, err = parseRequiredEmailTemplateType("")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "type is required")

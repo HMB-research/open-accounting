@@ -7352,7 +7352,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Template type (INVOICE_SEND, PAYMENT_RECEIPT, OVERDUE_REMINDER)",
+                        "description": "Template type (INVOICE_SEND, QUOTE_SEND, ORDER_CONFIRM, PAYMENT_RECEIPT, OVERDUE_REMINDER, DOCUMENT_RETENTION_REMINDER)",
                         "name": "templateType",
                         "in": "path",
                         "required": true
@@ -24981,14 +24981,16 @@ const docTemplate = `{
                 "QUOTE_SEND",
                 "ORDER_CONFIRM",
                 "PAYMENT_RECEIPT",
-                "OVERDUE_REMINDER"
+                "OVERDUE_REMINDER",
+                "DOCUMENT_RETENTION_REMINDER"
             ],
             "x-enum-varnames": [
                 "TemplateInvoiceSend",
                 "TemplateQuoteSend",
                 "TemplateOrderConfirm",
                 "TemplatePaymentReceipt",
-                "TemplateOverdueReminder"
+                "TemplateOverdueReminder",
+                "TemplateDocumentRetentionReminder"
             ]
         },
         "github_com_HMB-research_open-accounting_internal_email.TestSMTPRequest": {

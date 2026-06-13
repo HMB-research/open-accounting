@@ -47,14 +47,15 @@ func (r *GORMRepository) ListActiveTenants(ctx context.Context) ([]TenantInfo, e
 			ID:             t.ID,
 			SchemaName:     t.SchemaName,
 			CompanyName:    t.Name,
-			PeriodLockDate: periodLockDateFromSettings(t.Settings),
+			Email:          stringValueFromSettings(t.Settings, "email"),
+			PeriodLockDate: stringValueFromSettings(t.Settings, "period_lock_date"),
 		}
 	}
 
 	return result, nil
 }
 
-func periodLockDateFromSettings(settings []byte) string {
+func stringValueFromSettings(settings []byte, key string) string {
 	if len(settings) == 0 {
 		return ""
 	}
@@ -64,6 +65,6 @@ func periodLockDateFromSettings(settings []byte) string {
 		return ""
 	}
 
-	periodLockDate, _ := values["period_lock_date"].(string)
-	return periodLockDate
+	value, _ := values[key].(string)
+	return value
 }

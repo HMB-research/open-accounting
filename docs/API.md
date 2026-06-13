@@ -2826,7 +2826,7 @@ GET /tenants/{tenantId}/email-log?limit=50
 Authorization: Bearer <token>
 ```
 
-Template types are `INVOICE_SEND`, `QUOTE_SEND`, `ORDER_CONFIRM`, `PAYMENT_RECEIPT`, and `OVERDUE_REMINDER`.
+Template types are `INVOICE_SEND`, `QUOTE_SEND`, `ORDER_CONFIRM`, `PAYMENT_RECEIPT`, `OVERDUE_REMINDER`, and `DOCUMENT_RETENTION_REMINDER`. Scheduled document retention reminder delivery uses the tenant settings `email` value as the recipient and the tenant SMTP configuration for delivery.
 
 Update an email template:
 

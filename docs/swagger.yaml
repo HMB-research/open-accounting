@@ -2522,6 +2522,7 @@ definitions:
     - ORDER_CONFIRM
     - PAYMENT_RECEIPT
     - OVERDUE_REMINDER
+    - DOCUMENT_RETENTION_REMINDER
     type: string
     x-enum-varnames:
     - TemplateInvoiceSend
@@ -2529,6 +2530,7 @@ definitions:
     - TemplateOrderConfirm
     - TemplatePaymentReceipt
     - TemplateOverdueReminder
+    - TemplateDocumentRetentionReminder
   github_com_HMB-research_open-accounting_internal_email.TestSMTPRequest:
     properties:
       recipient_email:
@@ -11405,7 +11407,8 @@ paths:
         name: tenantID
         required: true
         type: string
-      - description: Template type (INVOICE_SEND, PAYMENT_RECEIPT, OVERDUE_REMINDER)
+      - description: Template type (INVOICE_SEND, QUOTE_SEND, ORDER_CONFIRM, PAYMENT_RECEIPT,
+          OVERDUE_REMINDER, DOCUMENT_RETENTION_REMINDER)
         in: path
         name: templateType
         required: true

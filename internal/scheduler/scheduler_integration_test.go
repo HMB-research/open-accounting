@@ -19,7 +19,7 @@ func TestGORMRepository_ListActiveTenants(t *testing.T) {
 	// Create test tenants
 	tenant1 := testutil.CreateTestTenant(t, pool)
 	tenant2 := testutil.CreateTestTenant(t, pool)
-	_, err := pool.Exec(ctx, `UPDATE tenants SET settings = '{"period_lock_date":"2026-05-31"}' WHERE id = $1`, tenant1.ID)
+	_, err := pool.Exec(ctx, `UPDATE tenants SET settings = '{"period_lock_date":"2026-05-31","email":"ops@example.com"}' WHERE id = $1`, tenant1.ID)
 	if err != nil {
 		t.Fatalf("failed to set tenant period lock: %v", err)
 	}
@@ -43,6 +43,9 @@ func TestGORMRepository_ListActiveTenants(t *testing.T) {
 			}
 			if tenant.PeriodLockDate != "2026-05-31" {
 				t.Errorf("expected period lock 2026-05-31, got %s", tenant.PeriodLockDate)
+			}
+			if tenant.Email != "ops@example.com" {
+				t.Errorf("expected tenant email ops@example.com, got %s", tenant.Email)
 			}
 		}
 		if tenant.ID == tenant2.ID {

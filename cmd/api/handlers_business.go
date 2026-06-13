@@ -1353,7 +1353,7 @@ func (h *Handlers) ListEmailTemplates(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
-// @Param templateType path string true "Template type (INVOICE_SEND, PAYMENT_RECEIPT, OVERDUE_REMINDER)"
+// @Param templateType path string true "Template type (INVOICE_SEND, QUOTE_SEND, ORDER_CONFIRM, PAYMENT_RECEIPT, OVERDUE_REMINDER, DOCUMENT_RETENTION_REMINDER)"
 // @Param request body email.UpdateTemplateRequest true "Template content"
 // @Success 200 {object} email.EmailTemplate
 // @Failure 400 {object} object{error=string}

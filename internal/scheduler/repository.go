@@ -7,6 +7,7 @@ type TenantInfo struct {
 	ID             string
 	SchemaName     string
 	CompanyName    string // Needed for email templates
+	Email          string
 	PeriodLockDate string
 }
 
