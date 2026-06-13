@@ -319,6 +319,8 @@ open-accounting/
 | `DOCUMENT_RETENTION_REMINDER_SCHEDULE` | Cron schedule for document retention reminder delivery               | `30 9 * * *`                                 |
 | `DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS` | Retention reminder lookahead horizon in days                    | `30`                                         |
 | `DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING` | Include documents missing retention metadata in reminder digests | `true`                                       |
+| `DOCUMENT_RETENTION_REMINDER_MAX_ATTEMPTS` | Retry failed retention reminder delivery attempts before reporting failure | `3`                                          |
+| `DOCUMENT_RETENTION_REMINDER_ESCALATE_AFTER_ATTEMPTS` | Mark failed retention reminder delivery as escalated after this many attempts | `3`                                          |
 
 ---
 
@@ -367,7 +369,7 @@ open-accounting/
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
-- [x] Document attachments with review, retention dates, retention-year calculation, retention review, reminder actions, and scheduled retention reminder digests for invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, and orders
+- [x] Document attachments with review, retention dates, retention-year calculation, retention review, reminder actions, scheduled retention reminder digests, and configurable reminder retry/escalation controls for invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, and orders
 - [x] Document evidence policy evaluation through API and CLI
 - [x] Optional approved evidence blockers for quote send and order confirmation
 - [x] Purchase-invoice evidence enforcement on send and email paths

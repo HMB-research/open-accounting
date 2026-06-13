@@ -69,6 +69,22 @@ func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
 	assert.True(t, cfg.PasswordReset.SMTPConfig.UseTLS)
 }
 
+func TestLoadDocumentRetentionReminderPolicy(t *testing.T) {
+	t.Setenv("DOCUMENT_RETENTION_REMINDER_MAX_ATTEMPTS", "5")
+	t.Setenv("DOCUMENT_RETENTION_REMINDER_ESCALATE_AFTER_ATTEMPTS", "4")
+
+	policy := loadDocumentRetentionReminderPolicy()
+	assert.Equal(t, 5, policy.MaxAttempts)
+	assert.Equal(t, 4, policy.EscalateAfterAttempts)
+
+	t.Setenv("DOCUMENT_RETENTION_REMINDER_MAX_ATTEMPTS", "0")
+	t.Setenv("DOCUMENT_RETENTION_REMINDER_ESCALATE_AFTER_ATTEMPTS", "bad")
+
+	policy = loadDocumentRetentionReminderPolicy()
+	assert.Zero(t, policy.MaxAttempts)
+	assert.Zero(t, policy.EscalateAfterAttempts)
+}
+
 func TestProductionConfigValidation(t *testing.T) {
 	secret, err := resolveJWTSecret("", true)
 	require.Error(t, err)

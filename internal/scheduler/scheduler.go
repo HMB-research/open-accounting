@@ -411,6 +411,7 @@ func (s *Scheduler) processDocumentRetentionReminders() {
 	totalSent := 0
 	totalSkipped := 0
 	totalFailed := 0
+	totalEscalated := 0
 	totalErrors := 0
 
 	for _, t := range tenants {
@@ -438,14 +439,21 @@ func (s *Scheduler) processDocumentRetentionReminders() {
 				Str("tenant_id", t.ID).
 				Str("recipient_email", result.RecipientEmail).
 				Int("actions", result.ActionsFound).
+				Int("attempts", result.DeliveryAttempts).
 				Str("email_log_id", result.EmailLogID).
 				Msg("Document retention reminder sent")
 		case result.Failed:
 			totalFailed++
+			if result.Escalated {
+				totalEscalated++
+			}
 			log.Warn().
 				Str("tenant_id", t.ID).
 				Str("recipient_email", result.RecipientEmail).
 				Int("actions", result.ActionsFound).
+				Int("attempts", result.DeliveryAttempts).
+				Bool("escalated", result.Escalated).
+				Str("escalation_reason", result.EscalationReason).
 				Str("error", result.ErrorMessage).
 				Msg("Document retention reminder failed")
 		case result.Skipped:
@@ -463,6 +471,7 @@ func (s *Scheduler) processDocumentRetentionReminders() {
 		Int("emails_sent", totalSent).
 		Int("skipped", totalSkipped).
 		Int("failed", totalFailed).
+		Int("escalated", totalEscalated).
 		Int("tenant_errors", totalErrors).
 		Msg("Completed scheduled document retention reminder processing")
 }
