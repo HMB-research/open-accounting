@@ -5046,12 +5046,27 @@ export interface PayrollRun {
   total_net: Decimal;
   total_employer_cost: Decimal;
   notes?: string;
+  remediation_actions?: PayrollRunRemediationAction[];
   created_by?: string;
   approved_by?: string;
   approved_at?: string;
   created_at: string;
   updated_at: string;
   payslips?: Payslip[];
+}
+
+export interface PayrollRunRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  message: string;
+  action: string;
+  period?: string;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
 }
 
 export interface CreatePayrollRunRequest {

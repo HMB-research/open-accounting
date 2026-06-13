@@ -2903,9 +2903,32 @@ func printPayrollRun(w io.Writer, run *payroll.PayrollRun) {
 	if strings.TrimSpace(run.Notes) != "" {
 		_, _ = fmt.Fprintf(w, "Notes: %s\n", run.Notes)
 	}
+	printPayrollRunRemediationActions(w, run.RemediationActions)
 	if len(run.Payslips) > 0 {
 		printPayslipsTable(w, run.Payslips)
 	}
+}
+
+func printPayrollRunRemediationActions(w io.Writer, actions []payroll.PayrollRunRemediationAction) {
+	if len(actions) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "Payroll remediation actions")
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	for _, action := range actions {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			action.Severity,
+			action.Scope,
+			action.OwnerRole,
+			action.Code,
+			action.Action,
+			action.CLICommand,
+		)
+	}
+	_ = tw.Flush()
 }
 
 func printPayslipsTable(w io.Writer, payslips []payroll.Payslip) {

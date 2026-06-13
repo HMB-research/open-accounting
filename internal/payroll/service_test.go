@@ -1095,6 +1095,7 @@ func TestCreatePayrollRun_Success(t *testing.T) {
 	assert.Equal(t, 1, run.PeriodMonth)
 	assert.Equal(t, PayrollDraft, run.Status)
 	assert.Equal(t, "user-1", run.CreatedBy)
+	assert.Equal(t, []string{"payroll_run_calculate"}, payrollRunRemediationCodes(run.RemediationActions))
 }
 
 func TestCreatePayrollRun_ValidationErrors(t *testing.T) {
@@ -1158,6 +1159,7 @@ func TestGetPayrollRun_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "run-1", run.ID)
 	assert.Equal(t, PayrollDraft, run.Status)
+	assert.NotEmpty(t, run.RemediationActions)
 }
 
 func TestGetPayrollRun_NotFound(t *testing.T) {
@@ -1185,6 +1187,8 @@ func TestListPayrollRuns_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, runs, 2)
+	assert.NotEmpty(t, runs[0].RemediationActions)
+	assert.NotEmpty(t, runs[1].RemediationActions)
 }
 
 func TestListPayrollRuns_FilterByYear(t *testing.T) {
@@ -1201,6 +1205,7 @@ func TestListPayrollRuns_FilterByYear(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, runs, 1)
 	assert.Equal(t, 2025, runs[0].PeriodYear)
+	assert.NotEmpty(t, runs[0].RemediationActions)
 }
 
 func TestApprovePayrollRun_Success(t *testing.T) {
@@ -1274,6 +1279,7 @@ func TestCalculatePayroll_Success(t *testing.T) {
 	assert.Equal(t, PayrollCalculated, run.Status)
 	assert.Len(t, run.Payslips, 1)
 	assert.True(t, run.TotalGross.Equal(decimal.NewFromFloat(2000)))
+	assert.Equal(t, []string{"payroll_payment_date_missing", "payroll_run_approve"}, payrollRunRemediationCodes(run.RemediationActions))
 }
 
 func TestProcessPayrollRun_CalculateOnly(t *testing.T) {
@@ -1309,6 +1315,7 @@ func TestProcessPayrollRun_CalculateOnly(t *testing.T) {
 	assert.False(t, result.Approved)
 	assert.Equal(t, PayrollCalculated, result.PayrollRun.Status)
 	assert.True(t, result.PayrollRun.TotalGross.Equal(decimal.NewFromFloat(3200)))
+	assert.Equal(t, []string{"payroll_payment_date_missing", "payroll_run_approve"}, payrollRunRemediationCodes(result.PayrollRun.RemediationActions))
 	assert.True(t, repo.mockTx.CommitCalled)
 }
 
@@ -1347,6 +1354,7 @@ func TestProcessPayrollRun_CalculatesAndApproves(t *testing.T) {
 	assert.Equal(t, "approver-1", result.PayrollRun.ApprovedBy)
 	assert.NotNil(t, result.PayrollRun.ApprovedAt)
 	assert.True(t, result.PayrollRun.TotalNet.GreaterThan(decimal.Zero))
+	assert.Equal(t, []string{"payroll_payment_date_missing", "payroll_generate_tsd"}, payrollRunRemediationCodes(result.PayrollRun.RemediationActions))
 	assert.True(t, repo.mockTx.CommitCalled)
 }
 
@@ -1438,6 +1446,119 @@ func TestCalculatePayroll_SkipsEmployeesWithoutSalary(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, run.Payslips, 0) // No payslips created
+	assert.Equal(t, []string{"payroll_payment_date_missing", "payroll_no_payslips", "payroll_run_approve"}, payrollRunRemediationCodes(run.RemediationActions))
+}
+
+func TestBuildPayrollRunRemediationActions(t *testing.T) {
+	paymentDate := time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name      string
+		run       *PayrollRun
+		wantCodes []string
+	}{
+		{
+			name: "draft with payment date",
+			run: &PayrollRun{
+				ID:          "run-draft",
+				PeriodYear:  2026,
+				PeriodMonth: 3,
+				Status:      PayrollDraft,
+				PaymentDate: &paymentDate,
+			},
+			wantCodes: []string{"payroll_run_calculate"},
+		},
+		{
+			name: "draft missing payment date",
+			run: &PayrollRun{
+				ID:          "run-draft-no-date",
+				PeriodYear:  2026,
+				PeriodMonth: 3,
+				Status:      PayrollDraft,
+			},
+			wantCodes: []string{"payroll_payment_date_missing", "payroll_run_calculate"},
+		},
+		{
+			name: "calculated with payslips",
+			run: &PayrollRun{
+				ID:          "run-calculated",
+				PeriodYear:  2026,
+				PeriodMonth: 4,
+				Status:      PayrollCalculated,
+				PaymentDate: &paymentDate,
+				TotalGross:  decimal.NewFromInt(3200),
+				Payslips:    []Payslip{{ID: "payslip-1"}},
+			},
+			wantCodes: []string{"payroll_run_approve"},
+		},
+		{
+			name: "calculated empty",
+			run: &PayrollRun{
+				ID:          "run-empty",
+				PeriodYear:  2026,
+				PeriodMonth: 5,
+				Status:      PayrollCalculated,
+			},
+			wantCodes: []string{"payroll_payment_date_missing", "payroll_no_payslips", "payroll_run_approve"},
+		},
+		{
+			name: "approved",
+			run: &PayrollRun{
+				ID:          "run-approved",
+				PeriodYear:  2026,
+				PeriodMonth: 6,
+				Status:      PayrollApproved,
+				PaymentDate: &paymentDate,
+			},
+			wantCodes: []string{"payroll_generate_tsd"},
+		},
+		{
+			name: "paid",
+			run: &PayrollRun{
+				ID:          "run-paid",
+				PeriodYear:  2026,
+				PeriodMonth: 7,
+				Status:      PayrollPaid,
+				PaymentDate: &paymentDate,
+			},
+			wantCodes: []string{"payroll_paid_tsd_followup"},
+		},
+		{
+			name: "declared",
+			run: &PayrollRun{
+				ID:          "run-declared",
+				PeriodYear:  2026,
+				PeriodMonth: 8,
+				Status:      PayrollDeclared,
+			},
+			wantCodes: []string{"payroll_declared_archive"},
+		},
+		{
+			name: "unknown",
+			run: &PayrollRun{
+				ID:          "run-unknown",
+				PeriodYear:  2026,
+				PeriodMonth: 9,
+				Status:      PayrollStatus("stale"),
+			},
+			wantCodes: []string{"payroll_payment_date_missing", "payroll_status_review"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actions := BuildPayrollRunRemediationActions(tt.run)
+			assert.Equal(t, tt.wantCodes, payrollRunRemediationCodes(actions))
+			for _, action := range actions {
+				assert.Equal(t, "payroll", action.Scope)
+				assert.Equal(t, "accountant", action.OwnerRole)
+				assert.NotEmpty(t, action.Period)
+				assert.NotEmpty(t, action.Action)
+			}
+		})
+	}
+
+	assert.Nil(t, BuildPayrollRunRemediationActions(nil))
 }
 
 func TestCalculatePayroll_MultipleEmployees(t *testing.T) {
@@ -1878,4 +1999,12 @@ func TestCalculatePayroll_EmployeeWithoutBasicExemption(t *testing.T) {
 	assert.Len(t, run.Payslips, 1)
 	// Without exemption, taxable income equals gross
 	assert.True(t, run.Payslips[0].TaxableIncome.Equal(decimal.NewFromFloat(2000)))
+}
+
+func payrollRunRemediationCodes(actions []PayrollRunRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }

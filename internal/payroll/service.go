@@ -352,6 +352,7 @@ func (s *Service) CreatePayrollRun(ctx context.Context, schemaName, tenantID, us
 		return nil, fmt.Errorf("create payroll run: %w", err)
 	}
 
+	run.RemediationActions = BuildPayrollRunRemediationActions(run)
 	return run, nil
 }
 
@@ -439,6 +440,7 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 	}
 
 	run.Payslips = payslips
+	run.RemediationActions = BuildPayrollRunRemediationActions(run)
 
 	return run, nil
 }
@@ -471,6 +473,7 @@ func (s *Service) ProcessPayrollRun(ctx context.Context, schemaName, tenantID, r
 		run.UpdatedAt = now
 		result.Approved = true
 	}
+	run.RemediationActions = BuildPayrollRunRemediationActions(run)
 
 	return result, nil
 }
@@ -484,6 +487,7 @@ func (s *Service) GetPayrollRun(ctx context.Context, schemaName, tenantID, runID
 	if err != nil {
 		return nil, fmt.Errorf("get payroll run: %w", err)
 	}
+	run.RemediationActions = BuildPayrollRunRemediationActions(run)
 	return run, nil
 }
 
@@ -492,6 +496,9 @@ func (s *Service) ListPayrollRuns(ctx context.Context, schemaName, tenantID stri
 	runs, err := s.repo.ListPayrollRuns(ctx, schemaName, tenantID, year)
 	if err != nil {
 		return nil, fmt.Errorf("list payroll runs: %w", err)
+	}
+	for i := range runs {
+		runs[i].RemediationActions = BuildPayrollRunRemediationActions(&runs[i])
 	}
 	return runs, nil
 }

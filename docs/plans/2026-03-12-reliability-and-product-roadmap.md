@@ -23,7 +23,7 @@ truth for verified capability and test status.
 - PR #62 CI run `27470695729` at commit `77f057c` is green for lint, backend tests with CLI coverage enforcement, integration shards, frontend lint/check/test/build, build, smoke E2E, and all four seeded demo E2E shards
 - the CLI package is enforced at 100.0% statement coverage by the backend gate
 - broad migration imports, migration preflight remediation actions, inventory subledger reconciliation with frontend drill-down, period close/reopen, fiscal-year close, machine-readable close remediation actions, carry-forward/reversal, document evidence/retention workflows, server-side report exports, auth/session hardening, and backup/restore wrappers now exist
-- remaining gaps are narrower: deeper incumbent-system cutover presets/validation, payroll/document accountant remediation plus tax remediation beyond current KMD, close, and migration preflight follow-up, broader document-retention automation, remaining auth/ops hardening, and external-dependency integrations
+- remaining gaps are narrower: deeper incumbent-system cutover presets/validation, document accountant remediation plus remaining tax/payroll edges beyond current payroll run, KMD, close, and migration preflight follow-up, broader document-retention automation, remaining auth/ops hardening, and external-dependency integrations
 
 ## Product Decision
 
@@ -57,7 +57,7 @@ The repository has substantial breadth, but trust and product fit are the main b
 ### Product blockers
 
 - Migration/import coverage is broad, but full incumbent-system cutover still needs provider-specific presets, deeper validation, and pilot-driven edge cases.
-- Fiscal-year close, migration preflight, KMD tax, and carry-forward workflows exist, including approved close evidence, machine-readable close, migration, and KMD remediation actions, and carry-forward reversal; remediation still needs to extend into payroll, document-retention, remaining tax, and accountant-workspace follow-up.
+- Fiscal-year close, migration preflight, KMD tax, payroll run, and carry-forward workflows exist, including approved close evidence, machine-readable close, migration, KMD, and payroll run remediation actions, and carry-forward reversal; remediation still needs to extend into document-retention, remaining tax/payroll edges, and accountant-workspace follow-up.
 - Document and attachment workflows exist; broader retention automation and policy enforcement remain thin.
 - Security and operations have improved, but remaining hardening is still needed for accounting-firm production use.
 - Several parity features are still blocked by external partnerships or compliance requirements.
