@@ -114,7 +114,8 @@ func newAPIClient(baseURL, apiToken string) *apiClient {
 		baseURL:  normalizeBaseURL(baseURL),
 		apiToken: apiToken,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: http.DefaultTransport.(*http.Transport).Clone(), //nolint:errcheck // net/http defines DefaultTransport as *http.Transport.
 		},
 	}
 }
