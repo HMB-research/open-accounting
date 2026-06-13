@@ -544,6 +544,86 @@ func TestValidateBundleAcceptsSmartAccountsCostAllocationProviderPresetAliases(t
 	assert.Contains(t, report.Files[1].Headers, "notes")
 }
 
+func TestValidateBundleAcceptsMeritJournalLineCostAllocationPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetMerit,
+		Files: []BundleFile{
+			{
+				Kind:       KindAccounts,
+				FileName:   "merit-accounts.csv",
+				CSVContent: "konto_kood,konto_nimi,konto_tüüp\n1000,Cash,ASSET\n4000,Sales,REVENUE\n",
+			},
+			{
+				Kind:       KindCostCenters,
+				FileName:   "merit-cost-centers.csv",
+				CSVContent: "kulukoha_kood,kulukoha_nimi\nOPS,Operations\n",
+			},
+			{
+				Kind:     KindJournalEntries,
+				FileName: "merit-journal.csv",
+				CSVContent: "kanne_nr,kuupäev,kanne_rea_id,konto,deebet,kreedit,valuuta,selgitus\n" +
+					"JE-1,2026-05-31," + cutoverJournalLineID1 + ",1000,125.50,0,EUR,Receipt\n" +
+					"JE-1,2026-05-31," + cutoverJournalLineID2 + ",4000,0,125.50,EUR,Receipt\n",
+			},
+			{
+				Kind:     KindCostAllocations,
+				FileName: "merit-cost-allocations.csv",
+				CSVContent: "kulukoht,kanne_rea_id,jaotuse_summa,kuupaev\n" +
+					"OPS," + cutoverJournalLineID1 + ",125.50,2026-05-31\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 4)
+	assert.Contains(t, report.Files[2].Headers, "line_id")
+	assert.Contains(t, report.Files[2].Headers, "currency")
+	assert.Contains(t, report.Files[3].Headers, "journal_entry_line_id")
+}
+
+func TestValidateBundleAcceptsSmartAccountsJournalLineCostAllocationPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{
+			{
+				Kind:       KindAccounts,
+				FileName:   "smartaccounts-accounts.csv",
+				CSVContent: "account_no,account_title,classification\n1000,Cash,ASSET\n4000,Sales,REVENUE\n",
+			},
+			{
+				Kind:       KindCostCenters,
+				FileName:   "smartaccounts-cost-centers.csv",
+				CSVContent: "department_no,department_name\nOPS,Operations\n",
+			},
+			{
+				Kind:     KindJournalEntries,
+				FileName: "smartaccounts-journal.csv",
+				CSVContent: "entry_no,transaction_date,entry_line_id,account_no,debit_amount,credit_amount,currency_code,line_memo\n" +
+					"JE-1,2026-05-31," + cutoverJournalLineID1 + ",1000,125.50,0,EUR,Receipt\n" +
+					"JE-1,2026-05-31," + cutoverJournalLineID2 + ",4000,0,125.50,EUR,Receipt\n",
+			},
+			{
+				Kind:     KindCostAllocations,
+				FileName: "smartaccounts-cost-allocations.csv",
+				CSVContent: "department_no,entry_line_id,allocated_amount,posting_date\n" +
+					"OPS," + cutoverJournalLineID1 + ",125.50,2026-05-31\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 4)
+	assert.Contains(t, report.Files[2].Headers, "line_id")
+	assert.Contains(t, report.Files[2].Headers, "currency")
+	assert.Contains(t, report.Files[3].Headers, "journal_entry_line_id")
+}
+
 func TestValidateBundleAcceptsMeritPaymentAndBankProviderPresetAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: MigrationProviderPresetMerit,
