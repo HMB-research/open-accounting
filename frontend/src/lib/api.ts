@@ -3147,6 +3147,18 @@ export interface DocumentRetentionUpdateRequest {
   clear_retention?: boolean;
 }
 
+export interface RetentionReminderAction {
+  document_id: string;
+  entity_type: DocumentAttachment["entity_type"];
+  entity_id: string;
+  document_type: DocumentAttachment["document_type"];
+  file_name: string;
+  action: string;
+  message: string;
+  days_until_retention?: number;
+  retention_until?: string;
+}
+
 export interface DocumentRetentionReview {
   as_of_date: string;
   cutoff_date: string;
@@ -3157,6 +3169,26 @@ export interface DocumentRetentionReview {
   pending_review_count: number;
   rejected_count: number;
   documents: DocumentAttachment[];
+  reminder_actions?: RetentionReminderAction[];
+  remediation_actions?: DocumentRemediationAction[];
+}
+
+export interface DocumentRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  message: string;
+  action: string;
+  entity_type?: DocumentAttachment["entity_type"];
+  entity_id?: string;
+  document_id?: string;
+  document_type?: DocumentAttachment["document_type"];
+  file_name?: string;
+  due_date?: string;
+  days_until_retention?: number;
+  ui_path?: string;
+  cli_command?: string;
 }
 
 export interface EvidencePolicyRuleResult {
@@ -3189,6 +3221,7 @@ export interface EvidencePolicyResult {
   >;
   rule_results?: EvidencePolicyRuleResult[];
   violations?: EvidencePolicyRuleResult[];
+  remediation_actions?: DocumentRemediationAction[];
 }
 
 export interface TenantMembership {

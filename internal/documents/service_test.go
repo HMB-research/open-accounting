@@ -742,6 +742,9 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	if len(retentionReview.ReminderActions) != 5 {
 		t.Fatalf("expected 5 retention reminder actions, got %#v", retentionReview.ReminderActions)
 	}
+	if len(retentionReview.RemediationActions) != 5 {
+		t.Fatalf("expected 5 retention remediation actions, got %#v", retentionReview.RemediationActions)
+	}
 	actionCounts := map[string]int{}
 	for _, action := range retentionReview.ReminderActions {
 		actionCounts[action.Action]++
@@ -764,6 +767,21 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 		if actionCounts[action] == 0 {
 			t.Fatalf("missing retention reminder action %q in %#v", action, retentionReview.ReminderActions)
 		}
+	}
+	remediationCodes := documentRemediationCodes(retentionReview.RemediationActions)
+	for _, code := range []string{
+		"document_retention_expired",
+		"document_retention_due_soon",
+		"document_retention_missing",
+		"document_review_pending",
+		"document_review_rejected",
+	} {
+		if remediationCodes[code] == 0 {
+			t.Fatalf("missing retention remediation code %q in %#v", code, retentionReview.RemediationActions)
+		}
+	}
+	if retentionReview.RemediationActions[0].Scope != "documents" || retentionReview.RemediationActions[0].OwnerRole != "accountant" {
+		t.Fatalf("unexpected retention remediation ownership: %#v", retentionReview.RemediationActions[0])
 	}
 	if _, err := svc.GetRetentionReview(context.Background(), "tenant_demo", "tenant-1", time.Now(), -1, false); err == nil {
 		t.Fatal("expected negative retention horizon to fail")
@@ -843,11 +861,20 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	if !policyResults[0].Compliant || policyResults[0].ApprovedDocumentTypeCounts[DocumentTypeReceipt] != 1 {
 		t.Fatalf("expected pay-1 policy to pass with approved receipt: %#v", policyResults[0])
 	}
+	if len(policyResults[0].RemediationActions) != 0 {
+		t.Fatalf("expected compliant policy to have no remediation actions: %#v", policyResults[0].RemediationActions)
+	}
 	if policyResults[1].Compliant || len(policyResults[1].Violations) != 1 || policyResults[1].RuleResults[0].AcceptedCount != 0 {
 		t.Fatalf("expected pay-2 policy to fail without an approved receipt: %#v", policyResults[1])
 	}
+	if len(policyResults[1].RemediationActions) != 1 || policyResults[1].RemediationActions[0].Code != "document_evidence_unapproved" {
+		t.Fatalf("expected pay-2 unapproved-evidence remediation action: %#v", policyResults[1].RemediationActions)
+	}
 	if policyResults[2].Compliant || !policyResults[2].MissingEvidence {
 		t.Fatalf("expected pay-3 policy to fail as missing evidence: %#v", policyResults[2])
+	}
+	if len(policyResults[2].RemediationActions) != 1 || policyResults[2].RemediationActions[0].Code != "document_evidence_missing" {
+		t.Fatalf("expected pay-3 missing-evidence remediation action: %#v", policyResults[2].RemediationActions)
 	}
 
 	repo.docs["doc-close-pack"] = &Document{
@@ -875,6 +902,9 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	}
 	if len(closePackResults) != 1 || !closePackResults[0].Compliant || closePackResults[0].ApprovedDocumentTypeCounts[DocumentTypeClosePack] != 1 {
 		t.Fatalf("expected close-pack policy to pass with approved close pack: %#v", closePackResults)
+	}
+	if len(closePackResults[0].RemediationActions) != 0 {
+		t.Fatalf("expected compliant close-pack policy to have no remediation actions: %#v", closePackResults[0].RemediationActions)
 	}
 
 	if err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", doc.ID); err != nil {
@@ -972,4 +1002,12 @@ func TestService_EvaluateEvidencePolicyValidation(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "list failed") {
 		t.Fatalf("expected list error, got %v", err)
 	}
+}
+
+func documentRemediationCodes(actions []DocumentRemediationAction) map[string]int {
+	codes := make(map[string]int, len(actions))
+	for _, action := range actions {
+		codes[action.Code]++
+	}
+	return codes
 }

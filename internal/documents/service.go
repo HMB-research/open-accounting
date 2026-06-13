@@ -248,6 +248,7 @@ func (s *Service) EvaluateEvidencePolicy(ctx context.Context, schemaName, tenant
 			return nil, err
 		}
 		result := evaluateEvidencePolicyForDocuments(normalizedType, entityID, docs, rules)
+		result.RemediationActions = BuildEvidencePolicyRemediationActions(&result)
 		results = append(results, result)
 	}
 
@@ -292,6 +293,7 @@ func (s *Service) GetRetentionReview(ctx context.Context, schemaName, tenantID s
 			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderRejected, "Document was rejected and needs remediation", asOf))
 		}
 	}
+	review.RemediationActions = BuildRetentionReviewRemediationActions(review)
 
 	return review, nil
 }

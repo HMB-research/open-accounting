@@ -262,6 +262,11 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, uploaded.ID, retentionReview.ReminderActions[0].DocumentID)
 	require.Equal(t, documents.RetentionReminderPendingReview, retentionReview.ReminderActions[1].Action)
 	require.Equal(t, uploaded.ID, retentionReview.ReminderActions[1].DocumentID)
+	require.Len(t, retentionReview.RemediationActions, 2)
+	require.Equal(t, "document_retention_due_soon", retentionReview.RemediationActions[0].Code)
+	require.Equal(t, uploaded.ID, retentionReview.RemediationActions[0].DocumentID)
+	require.Equal(t, "document_review_pending", retentionReview.RemediationActions[1].Code)
+	require.Equal(t, uploaded.ID, retentionReview.RemediationActions[1].DocumentID)
 
 	retentionSetReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/retention", map[string]any{
 		"retention_until": "2028-03-31",
@@ -363,6 +368,9 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, "txn-2", policyResults[1].EntityID)
 	require.False(t, policyResults[1].Compliant)
 	require.True(t, policyResults[1].MissingEvidence)
+	require.Len(t, policyResults[1].RemediationActions, 1)
+	require.Equal(t, "document_evidence_missing", policyResults[1].RemediationActions[0].Code)
+	require.Equal(t, "oa documents upload --entity-type bank_transaction --entity-id txn-2 --document-type reconciliation_evidence --file <file>", policyResults[1].RemediationActions[0].CLICommand)
 
 	rejectReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/review", map[string]any{
 		"review_status": "REJECTED",

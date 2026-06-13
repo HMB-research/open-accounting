@@ -1982,6 +1982,11 @@ func printDocumentEvidencePolicy(w io.Writer, results []documents.EvidencePolicy
 			_, _ = fmt.Fprintf(w, "%s:%s rule %d: %s\n", result.EntityType, result.EntityID, violation.RuleIndex, violation.Message)
 		}
 	}
+	var remediationActions []documents.DocumentRemediationAction
+	for _, result := range results {
+		remediationActions = append(remediationActions, result.RemediationActions...)
+	}
+	printDocumentRemediationActions(w, remediationActions)
 }
 
 func printDocumentRetentionReview(w io.Writer, review *documents.RetentionReview) {
@@ -2035,6 +2040,45 @@ func printDocumentRetentionReview(w io.Writer, review *documents.RetentionReview
 			formatDatePtr(action.RetentionUntil),
 			formatIntPtr(action.DaysUntilRetention),
 			action.Message,
+		)
+	}
+	_ = actionWriter.Flush()
+
+	printDocumentRemediationActions(w, review.RemediationActions)
+}
+
+func printDocumentRemediationActions(w io.Writer, actions []documents.DocumentRemediationAction) {
+	if len(actions) == 0 {
+		return
+	}
+
+	_, _ = fmt.Fprintln(w, "Document remediation actions")
+	actionWriter := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(actionWriter, "SEVERITY\tSCOPE\tOWNER\tCODE\tENTITY\tDOCUMENT\tACTION\tCOMMAND")
+	for _, action := range actions {
+		entity := action.EntityType
+		if strings.TrimSpace(action.EntityID) != "" {
+			entity = fmt.Sprintf("%s:%s", action.EntityType, action.EntityID)
+		}
+		document := action.DocumentID
+		if strings.TrimSpace(action.DocumentType) != "" {
+			if strings.TrimSpace(document) == "" {
+				document = action.DocumentType
+			} else {
+				document = fmt.Sprintf("%s:%s", action.DocumentType, action.DocumentID)
+			}
+		}
+		_, _ = fmt.Fprintf(
+			actionWriter,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			action.Severity,
+			action.Scope,
+			action.OwnerRole,
+			action.Code,
+			entity,
+			document,
+			action.Action,
+			action.CLICommand,
 		)
 	}
 	_ = actionWriter.Flush()
