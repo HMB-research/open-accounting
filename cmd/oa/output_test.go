@@ -508,8 +508,18 @@ func TestPrintReportOutputEdgeBranches(t *testing.T) {
 		Status:         "DRAFT",
 		TotalOutputVAT: decimal.NewFromInt(220),
 		TotalInputVAT:  decimal.NewFromInt(80),
+		RemediationActions: []tax.KMDRemediationAction{{
+			Code:       "kmd_payable_review",
+			Severity:   "ACTION",
+			Scope:      "tax",
+			OwnerRole:  "accountant",
+			Action:     "Review output/input VAT totals, generate KMD INF when needed, export XML, and submit the declaration in e-MTA.",
+			CLICommand: "oa tax kmd export-xml --year 2026 --month 3 --output ./kmd-2026-03.xml",
+		}},
 	})
 	assert.Contains(t, buf.String(), "KMD 2026-03")
+	assert.Contains(t, buf.String(), "KMD remediation actions")
+	assert.Contains(t, buf.String(), "kmd_payable_review")
 	assert.NotContains(t, buf.String(), "ROW\tDESCRIPTION")
 
 	buf.Reset()
@@ -2681,6 +2691,14 @@ func TestPrintTaxReports(t *testing.T) {
 		Status:         "DRAFT",
 		TotalOutputVAT: decimal.NewFromInt(220),
 		TotalInputVAT:  decimal.NewFromInt(80),
+		RemediationActions: []tax.KMDRemediationAction{{
+			Code:       "kmd_payable_review",
+			Severity:   "ACTION",
+			Scope:      "tax",
+			OwnerRole:  "accountant",
+			Action:     "Review output/input VAT totals, generate KMD INF when needed, export XML, and submit the declaration in e-MTA.",
+			CLICommand: "oa tax kmd export-xml --year 2026 --month 3 --output ./kmd-2026-03.xml",
+		}},
 		Rows: []tax.KMDRow{{
 			Code:        tax.KMDRow1,
 			Description: "Taxable sales",
@@ -2700,6 +2718,11 @@ func TestPrintTaxReports(t *testing.T) {
 	printKMDDeclaration(&kmdBuf, &kmd)
 	assert.Contains(t, kmdBuf.String(), "KMD 2026-03")
 	assert.Contains(t, kmdBuf.String(), "Taxable sales")
+	assert.Contains(t, kmdBuf.String(), "KMD remediation actions")
+
+	var emptyKMDRemediationBuf bytes.Buffer
+	printKMDRemediationActions(&emptyKMDRemediationBuf, nil)
+	assert.Empty(t, emptyKMDRemediationBuf.String())
 
 	var infBuf bytes.Buffer
 	printKMDINFReport(&infBuf, &tax.KMDINFReport{

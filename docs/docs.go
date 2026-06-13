@@ -31249,6 +31249,12 @@ const docTemplate = `{
                 "month": {
                     "type": "integer"
                 },
+                "remediation_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.KMDRemediationAction"
+                    }
+                },
                 "rows": {
                     "type": "array",
                     "items": {
@@ -31386,6 +31392,44 @@ const docTemplate = `{
                 },
                 "vat_amount": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_tax.KMDRemediationAction": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "cli_command": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "owner_role": {
+                    "type": "string"
+                },
+                "period": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "ui_path": {
+                    "type": "string"
                 }
             }
         },

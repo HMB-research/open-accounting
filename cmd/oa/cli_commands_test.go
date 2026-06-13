@@ -399,6 +399,22 @@ func cliTSDDeclarationPayload(id string, year, month int, status string) map[str
 	}
 }
 
+func cliKMDRemediationPayload() []map[string]any {
+	return []map[string]any{{
+		"code":        "kmd_payable_review",
+		"severity":    "ACTION",
+		"scope":       "tax",
+		"owner_role":  "accountant",
+		"message":     "KMD 2026-03 has VAT payable of 140.00.",
+		"action":      "Review output/input VAT totals, generate KMD INF when needed, export XML, and submit the declaration in e-MTA.",
+		"period":      "2026-03",
+		"entity_type": "kmd_declaration",
+		"entity_id":   "kmd-1",
+		"ui_path":     "/tax/kmd?year=2026&month=3",
+		"cli_command": "oa tax kmd export-xml --year 2026 --month 3 --output ./kmd-2026-03.xml",
+	}}
+}
+
 func tenantPluginPayload(tenantPluginID, tenantID, pluginID, name, displayName string, enabled bool, settings map[string]any) map[string]any {
 	if settings == nil {
 		settings = map[string]any{}
@@ -21069,16 +21085,17 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode([]map[string]any{{
-				"id":               "kmd-1",
-				"tenant_id":        "tenant-1",
-				"year":             2026,
-				"month":            3,
-				"status":           "DRAFT",
-				"total_output_vat": "220.00",
-				"total_input_vat":  "80.00",
-				"rows":             []map[string]any{},
-				"created_at":       "2026-03-31T12:00:00Z",
-				"updated_at":       "2026-03-31T12:00:00Z",
+				"id":                  "kmd-1",
+				"tenant_id":           "tenant-1",
+				"year":                2026,
+				"month":               3,
+				"status":              "DRAFT",
+				"total_output_vat":    "220.00",
+				"total_input_vat":     "80.00",
+				"rows":                []map[string]any{},
+				"remediation_actions": cliKMDRemediationPayload(),
+				"created_at":          "2026-03-31T12:00:00Z",
+				"updated_at":          "2026-03-31T12:00:00Z",
 			}})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd":
 			w.Header().Set("Content-Type", "application/json")
@@ -21087,13 +21104,14 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 			assert.Equal(t, 2026, req["year"])
 			assert.Equal(t, 3, req["month"])
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":               "kmd-1",
-				"tenant_id":        "tenant-1",
-				"year":             2026,
-				"month":            3,
-				"status":           "DRAFT",
-				"total_output_vat": "220.00",
-				"total_input_vat":  "80.00",
+				"id":                  "kmd-1",
+				"tenant_id":           "tenant-1",
+				"year":                2026,
+				"month":               3,
+				"status":              "DRAFT",
+				"total_output_vat":    "220.00",
+				"total_input_vat":     "80.00",
+				"remediation_actions": cliKMDRemediationPayload(),
 				"rows": []map[string]any{{
 					"code":        "1",
 					"description": "Taxable sales",
@@ -21258,6 +21276,8 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "KMD 2026-03")
 	assert.Contains(t, stdout.String(), "Payable: 140")
+	assert.Contains(t, stdout.String(), "KMD remediation actions")
+	assert.Contains(t, stdout.String(), "kmd_payable_review")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"tax", "kmd", "inf", "--year", "2026", "--month", "3", "--threshold", "1000"})

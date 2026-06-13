@@ -9,17 +9,33 @@ import (
 
 // KMDDeclaration represents an Estonian VAT declaration (Käibemaksudeklaratsioon)
 type KMDDeclaration struct {
-	ID             string          `json:"id"`
-	TenantID       string          `json:"tenant_id"`
-	Year           int             `json:"year"`
-	Month          int             `json:"month"`
-	Status         string          `json:"status"` // DRAFT, SUBMITTED, ACCEPTED
-	TotalOutputVAT decimal.Decimal `json:"total_output_vat"`
-	TotalInputVAT  decimal.Decimal `json:"total_input_vat"`
-	Rows           []KMDRow        `json:"rows"`
-	SubmittedAt    *time.Time      `json:"submitted_at,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID                 string                 `json:"id"`
+	TenantID           string                 `json:"tenant_id"`
+	Year               int                    `json:"year"`
+	Month              int                    `json:"month"`
+	Status             string                 `json:"status"` // DRAFT, SUBMITTED, ACCEPTED
+	TotalOutputVAT     decimal.Decimal        `json:"total_output_vat"`
+	TotalInputVAT      decimal.Decimal        `json:"total_input_vat"`
+	Rows               []KMDRow               `json:"rows"`
+	RemediationActions []KMDRemediationAction `json:"remediation_actions,omitempty"`
+	SubmittedAt        *time.Time             `json:"submitted_at,omitempty"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
+}
+
+// KMDRemediationAction describes one operator action for VAT declaration review or submission.
+type KMDRemediationAction struct {
+	Code       string `json:"code"`
+	Severity   string `json:"severity"`
+	Scope      string `json:"scope"`
+	OwnerRole  string `json:"owner_role"`
+	Message    string `json:"message"`
+	Action     string `json:"action"`
+	Period     string `json:"period,omitempty"`
+	EntityType string `json:"entity_type,omitempty"`
+	EntityID   string `json:"entity_id,omitempty"`
+	UIPath     string `json:"ui_path,omitempty"`
+	CLICommand string `json:"cli_command,omitempty"`
 }
 
 // KMDINFPart identifies the sales or purchase side of the KMD INF appendix.
