@@ -124,7 +124,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 		{
 			Kind:       KindStockAdjustments,
 			FileName:   "stock.csv",
-			CSVContent: "product_code,warehouse_code,quantity,batch,serial,expiration_date\nSKU-1,MAIN,5,LOT-1,SN-1,2027-05-30\n",
+			CSVContent: "product_code,warehouse_code,quantity,batch,serial,expiration_date\nSKU-1,MAIN,1,LOT-1,SN-1,2027-05-30\n",
 		},
 		{
 			Kind:       KindFixedAssets,
@@ -2626,6 +2626,36 @@ func TestValidateBundleReportsInventoryRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindStockAdjustments, "unit_cost", "unit_cost cannot be negative")
 	assertValidationIssue(t, report, KindStockAdjustments, "unit_cost", "unit_cost must be a decimal")
 	assertValidationIssue(t, report, KindStockAdjustments, "expiry_date", "expiry_date must use YYYY-MM-DD")
+}
+
+func TestValidateBundleReportsSerializedStockImportIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "product_code,name,sales_price\nSKU-1,Widget,10\n",
+		},
+		{
+			Kind:       KindWarehouses,
+			FileName:   "warehouses.csv",
+			CSVContent: "warehouse_code,warehouse_name\nMAIN,Main warehouse\n",
+		},
+		{
+			Kind:     KindStockAdjustments,
+			FileName: "stock.csv",
+			CSVContent: "product_code,warehouse_code,quantity,serial_number\n" +
+				"SKU-1,MAIN,2,SN-001\n" +
+				"SKU-1,MAIN,1,SN-001\n" +
+				"SKU-1,MAIN,-1,SN-002\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindStockAdjustments, "serial_number", "serial_number requires quantity 1 or -1")
+	assertValidationIssue(t, report, KindStockAdjustments, "product/serial_number", "duplicates row")
 }
 
 func TestValidateBundleReportsInvalidProductCategoryID(t *testing.T) {

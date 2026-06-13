@@ -16,6 +16,10 @@ type stockImportRow struct {
 	values    map[string]string
 }
 
+type stockImportSerialValue struct {
+	row int
+}
+
 var stockImportHeaderAliases = map[string]string{
 	"product_id":      "product_id",
 	"product":         "product_code",
@@ -84,6 +88,7 @@ func (s *Service) ImportStockAdjustmentsCSV(ctx context.Context, tenantID, schem
 		FileName: req.FileName,
 		Errors:   []ImportStockAdjustmentsRowError{},
 	}
+	seenSerials := map[string]stockImportSerialValue{}
 
 	for _, row := range rows {
 		result.RowsProcessed++
@@ -94,9 +99,20 @@ func (s *Service) ImportStockAdjustmentsCSV(ctx context.Context, tenantID, schem
 			continue
 		}
 
+		serialKey := stockImportSerialKey(adjustReq.ProductID, adjustReq.SerialNumber)
+		if serialKey != "" {
+			if first, exists := seenSerials[serialKey]; exists {
+				appendStockImportRowError(result, row, fmt.Errorf("serial_number %q duplicates row %d for the same product", adjustReq.SerialNumber, first.row))
+				continue
+			}
+		}
+
 		if _, err := s.AdjustStock(ctx, tenantID, schemaName, adjustReq); err != nil {
 			appendStockImportRowError(result, row, err)
 			continue
+		}
+		if serialKey != "" {
+			seenSerials[serialKey] = stockImportSerialValue{row: row.rowNumber}
 		}
 
 		result.AdjustmentsImported++
@@ -218,6 +234,10 @@ func buildStockAdjustmentFromImportRow(row stockImportRow, userID string, produc
 	if parsedQuantity.IsZero() {
 		return nil, fmt.Errorf("quantity must not be zero")
 	}
+	serialNumber := strings.TrimSpace(row.values["serial_number"])
+	if serialNumber != "" && !parsedQuantity.Abs().Equal(decimal.NewFromInt(1)) {
+		return nil, fmt.Errorf("serial_number requires quantity 1 or -1")
+	}
 
 	unitCost := strings.TrimSpace(row.values["unit_cost"])
 	if unitCost != "" {
@@ -236,11 +256,19 @@ func buildStockAdjustmentFromImportRow(row stockImportRow, userID string, produc
 		Quantity:     parsedQuantity.String(),
 		UnitCost:     unitCost,
 		LotNumber:    strings.TrimSpace(row.values["lot_number"]),
-		SerialNumber: strings.TrimSpace(row.values["serial_number"]),
+		SerialNumber: serialNumber,
 		ExpiryDate:   strings.TrimSpace(row.values["expiry_date"]),
 		Reason:       strings.TrimSpace(row.values["reason"]),
 		UserID:       userID,
 	}, nil
+}
+
+func stockImportSerialKey(productID, serialNumber string) string {
+	normalizedSerial := normalizedStockImportKey(serialNumber)
+	if productID == "" || normalizedSerial == "" {
+		return ""
+	}
+	return productID + "\x00" + normalizedSerial
 }
 
 func resolveStockImportProductID(row stockImportRow, productCodeToID map[string]string) (string, error) {

@@ -1064,7 +1064,7 @@ func TestService_ImportStockAdjustmentsCSV(t *testing.T) {
 		FileName: "stock.csv",
 		UserID:   "user-1",
 		CSVContent: "product_code,warehouse_code,quantity,unit_cost,lot_number,serial_number,expiry_date,reason\n" +
-			"SKU-001,MAIN,12,10.50,LOT-2026-01,SN-001,2027-01-31,Opening stock\n" +
+			"SKU-001,MAIN,1,10.50,LOT-2026-01,SN-001,2027-01-31,Opening stock\n" +
 			"MISSING,MAIN,5,10.50,,,,Missing product\n",
 	})
 
@@ -1078,23 +1078,68 @@ func TestService_ImportStockAdjustmentsCSV(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, "product_code")
 
 	product := ts.repo.Products[inventoryStockProductID]
-	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(12)))
+	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(1)))
 
 	level := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
 	require.NotNil(t, level)
-	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(12)))
-	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(12)))
+	assert.True(t, level.Quantity.Equal(decimal.NewFromInt(1)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(1)))
 
 	require.Len(t, ts.repo.Movements[inventoryStockProductID], 1)
 	movement := ts.repo.Movements[inventoryStockProductID][0]
 	assert.Equal(t, MovementTypeIn, movement.MovementType)
-	assert.True(t, movement.Quantity.Equal(decimal.NewFromInt(12)))
+	assert.True(t, movement.Quantity.Equal(decimal.NewFromInt(1)))
 	assert.True(t, movement.UnitCost.Equal(decimal.RequireFromString("10.50")))
 	assert.Equal(t, "LOT-2026-01", movement.LotNumber)
 	assert.Equal(t, "SN-001", movement.SerialNumber)
 	assert.Equal(t, "2027-01-31", movement.ExpiryDate)
 	assert.Equal(t, "Opening stock", movement.Notes)
 	assert.Equal(t, "user-1", movement.CreatedBy)
+}
+
+func TestService_ImportStockAdjustmentsCSVReportsSerializedStockIssues(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:           inventoryStockProductID,
+		TenantID:     "tenant-1",
+		Code:         "SKU-001",
+		Name:         "Widget",
+		ProductType:  ProductTypeGoods,
+		CurrentStock: decimal.Zero,
+	}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
+		TenantID: "tenant-1",
+		Code:     "MAIN",
+		Name:     "Main",
+		IsActive: true,
+	}
+
+	result, err := ts.svc.ImportStockAdjustmentsCSV(ctx, "tenant-1", "test_schema", &ImportStockAdjustmentsRequest{
+		FileName: "stock.csv",
+		UserID:   "user-1",
+		CSVContent: "product_code,warehouse_code,quantity,serial_number\n" +
+			"SKU-001,MAIN,2,SN-001\n" +
+			"SKU-001,MAIN,1,SN-002\n" +
+			"SKU-001,MAIN,1,SN-002\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, result.RowsProcessed)
+	assert.Equal(t, 1, result.AdjustmentsImported)
+	assert.Equal(t, 2, result.RowsSkipped)
+	require.Len(t, result.Errors, 2)
+	assert.Equal(t, 2, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, "serial_number requires quantity 1 or -1")
+	assert.Equal(t, 4, result.Errors[1].Row)
+	assert.Contains(t, result.Errors[1].Message, "duplicates row 3")
+
+	product := ts.repo.Products[inventoryStockProductID]
+	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(1)))
+	require.Len(t, ts.repo.Movements[inventoryStockProductID], 1)
+	assert.Equal(t, "SN-002", ts.repo.Movements[inventoryStockProductID][0].SerialNumber)
 }
 
 func TestService_ImportStockAdjustmentsCSVReportsInvalidUUIDReferences(t *testing.T) {
