@@ -3011,6 +3011,7 @@ export interface CreateInvitationRequest {
 export interface ClosePeriodRequest {
   period_end_date: string;
   note?: string;
+  reviewer_sign_off?: boolean;
   inventory_valuation_method?: string;
 }
 

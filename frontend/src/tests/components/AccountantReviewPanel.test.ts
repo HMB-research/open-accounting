@@ -17,6 +17,8 @@ const { apiMock } = vi.hoisted(() => ({
 		submitExpense: vi.fn(),
 		approveExpense: vi.fn(),
 		postExpense: vi.fn(),
+		closePeriod: vi.fn(),
+		createYearEndCarryForward: vi.fn(),
 		sendPaymentReminder: vi.fn(),
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn(),
@@ -360,12 +362,128 @@ describe('AccountantReviewPanel', () => {
 		apiMock.submitExpense.mockResolvedValue({ id: 'expense-draft-1', status: 'SUBMITTED' });
 		apiMock.approveExpense.mockResolvedValue({ id: 'expense-submitted-1', status: 'APPROVED' });
 		apiMock.postExpense.mockResolvedValue({ id: 'expense-approved-1', status: 'POSTED' });
+		apiMock.closePeriod.mockResolvedValue({
+			tenant: createTenant({ settings: { ...createTenant().settings, period_lock_date: '2025-12-31' } }),
+			event: {
+				id: 'evt-year-close',
+				tenant_id: 'tenant-1',
+				action: 'close',
+				close_kind: 'year_end',
+				period_end_date: '2025-12-31',
+				lock_date_after: '2025-12-31',
+				reviewer_sign_off: true,
+				performed_by: 'user-1',
+				created_at: '2026-01-02T09:00:00Z'
+			}
+		});
+		apiMock.createYearEndCarryForward.mockResolvedValue({
+			journal_entry: { id: 'je-carry-forward', entry_number: 'JE-2026-001' },
+			status: { period_end_date: '2025-12-31' }
+		});
 		apiMock.sendPaymentReminder.mockResolvedValue({
 			invoice_id: 'inv-1',
 			invoice_number: 'INV-001',
 			success: true,
 			message: 'Sent',
 			reminder_id: 'rem-1'
+		});
+	});
+
+	it('completes close and carry-forward assignments from the workspace', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.listDocumentReviewSummaries.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-02-11',
+			cutoff_date: '2026-03-13',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: false,
+			has_profit_and_loss_activity: true,
+			carry_forward_needed: true,
+			carry_forward_ready: true,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(1200),
+			remediation_actions: [
+				{
+					code: 'fiscal_year_not_closed',
+					severity: 'BLOCKER',
+					scope: 'close',
+					owner_role: 'accountant',
+					workspace_queue: 'year_end_close',
+					assignment_key: 'year-end-close:fiscal-year-not-closed:close:2025-12-31',
+					priority: 'high',
+					due_in_days: 1,
+					message: 'Fiscal year ending 2025-12-31 is not closed.',
+					action: 'Close the fiscal year with reviewer sign-off before posting carry-forward.',
+					ui_path: '/settings/company#period-history',
+					cli_command: 'oa close period --period-end 2025-12-31 --reviewer-sign-off --note "Fiscal-year close"'
+				},
+				{
+					code: 'ready_to_post_carry_forward',
+					severity: 'ACTION',
+					scope: 'close',
+					owner_role: 'accountant',
+					workspace_queue: 'year_end_close',
+					assignment_key: 'year-end-close:ready-to-post-carry-forward:close:2025-12-31',
+					priority: 'high',
+					due_in_days: 1,
+					message: 'Year-end close is ready for carry-forward posting.',
+					action: 'Post the retained-earnings carry-forward journal.',
+					ui_path: '/settings/company#year-end',
+					cli_command: 'oa close carry-forward --period-end 2025-12-31'
+				}
+			]
+		});
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant({
+				settings: { ...createTenant().settings, inventory_valuation_method: 'fifo' }
+			})
+		});
+
+		await waitFor(() => {
+			expect(screen.getByRole('button', { name: 'Close fiscal year' })).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'Post carry-forward' })).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Close fiscal year' }));
+
+		await waitFor(() => {
+			expect(apiMock.closePeriod).toHaveBeenCalledWith('tenant-1', {
+				period_end_date: '2025-12-31',
+				note: 'Fiscal-year close from accountant workspace',
+				reviewer_sign_off: true,
+				inventory_valuation_method: 'fifo'
+			});
+			expect(screen.getByText('Fiscal year closed from workspace.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Post carry-forward' }));
+
+		await waitFor(() => {
+			expect(apiMock.createYearEndCarryForward).toHaveBeenCalledWith('tenant-1', {
+				period_end_date: '2025-12-31',
+				inventory_valuation_method: 'fifo'
+			});
+			expect(screen.getByText('Carry-forward posted from workspace.')).toBeInTheDocument();
 		});
 	});
 

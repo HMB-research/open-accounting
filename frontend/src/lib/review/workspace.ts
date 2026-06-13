@@ -80,6 +80,7 @@ export type WorkspaceAssignmentAction = {
 	documentId?: string;
 	documentType?: string;
 	period?: string;
+	periodEndDate?: string;
 };
 
 type RemediationActionLike = {
@@ -98,6 +99,12 @@ type RemediationActionLike = {
 	document_id?: string;
 	document_type?: string;
 	period?: string;
+	period_end_date?: string;
+	fiscal_year_end_date?: string;
+};
+
+type AssignmentActionContext = {
+	periodEndDate?: string;
 };
 
 export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantReviewSnapshot> {
@@ -180,7 +187,9 @@ function buildWorkspaceAssignmentActions(input: {
 	const actions: WorkspaceAssignmentAction[] = [];
 
 	actions.push(
-		...normalizeRemediationActions('close', input.closeStatus?.remediation_actions ?? []),
+		...normalizeRemediationActions('close', input.closeStatus?.remediation_actions ?? [], {
+			periodEndDate: input.closeStatus?.period_end_date
+		}),
 		...normalizeRemediationActions(
 			'banking',
 			input.bankExceptions.flatMap((group) =>
@@ -218,16 +227,18 @@ function normalizeRemediationActions(
 		| KMDRemediationAction[]
 		| PayrollRunRemediationAction[]
 		| TSDRemediationAction[]
-		| YearEndCloseRemediationAction[]
+		| YearEndCloseRemediationAction[],
+	context: AssignmentActionContext = {}
 ): WorkspaceAssignmentAction[] {
 	return actions
-		.map((action) => normalizeRemediationAction(source, action))
+		.map((action) => normalizeRemediationAction(source, action, context))
 		.filter((action): action is WorkspaceAssignmentAction => action !== null);
 }
 
 function normalizeRemediationAction(
 	source: WorkspaceAssignmentSource,
-	action: RemediationActionLike
+	action: RemediationActionLike,
+	context: AssignmentActionContext
 ): WorkspaceAssignmentAction | null {
 	const queue = action.workspace_queue?.trim();
 	const assignmentKey = action.assignment_key?.trim();
@@ -252,7 +263,9 @@ function normalizeRemediationAction(
 		entityId: action.entity_id,
 		documentId: action.document_id,
 		documentType: action.document_type,
-		period: action.period
+		period: action.period,
+		periodEndDate:
+			action.period_end_date?.trim() || action.fiscal_year_end_date?.trim() || context.periodEndDate
 	};
 }
 
