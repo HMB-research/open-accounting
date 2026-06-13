@@ -249,6 +249,14 @@
 		return action.source === 'expenses' && action.code === 'expense_post_to_ledger' && Boolean(action.entityId);
 	}
 
+	function canCloseAssignmentFiscalYear(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'close' && action.code === 'fiscal_year_not_closed' && Boolean(action.periodEndDate);
+	}
+
+	function canPostAssignmentCarryForward(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'close' && action.code === 'ready_to_post_carry_forward' && Boolean(action.periodEndDate);
+	}
+
 	function isReviewDirty(transaction: BankTransaction): boolean {
 		const draft = reviewDrafts[transaction.id];
 		if (!draft) {
@@ -421,6 +429,64 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentExpensePostError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function closeAssignmentFiscalYear(action: WorkspaceAssignmentAction) {
+		if (!action.periodEndDate) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.closePeriod(tenant.id, {
+				period_end_date: action.periodEndDate,
+				note: m.dashboard_reviewAssignmentCloseYearNote(),
+				reviewer_sign_off: true,
+				...(tenant.settings?.inventory_valuation_method
+					? { inventory_valuation_method: tenant.settings.inventory_valuation_method }
+					: {})
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentCloseYearClosed();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentCloseYearError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function postAssignmentCarryForward(action: WorkspaceAssignmentAction) {
+		if (!action.periodEndDate) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.createYearEndCarryForward(tenant.id, {
+				period_end_date: action.periodEndDate,
+				...(tenant.settings?.inventory_valuation_method
+					? { inventory_valuation_method: tenant.settings.inventory_valuation_method }
+					: {})
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentCarryForwardPosted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentCarryForwardPostError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -677,6 +743,30 @@
 									<a class="review-action" href={buildTenantScopedHref(action.uiPath)}>
 										{m.dashboard_reviewAssignmentsOpenAction()}
 									</a>
+									{#if canCloseAssignmentFiscalYear(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => closeAssignmentFiscalYear(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsCloseYear()}
+										</button>
+									{/if}
+									{#if canPostAssignmentCarryForward(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => postAssignmentCarryForward(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsPostCarryForward()}
+										</button>
+									{/if}
 									{#if canApproveAssignmentDocument(action)}
 										<button
 											class="review-action review-action-button"
