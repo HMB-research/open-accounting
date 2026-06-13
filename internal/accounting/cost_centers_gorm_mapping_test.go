@@ -12,14 +12,104 @@ import (
 
 func TestCostCenterGORMRepository_NilDatabase(t *testing.T) {
 	repo := NewCostCenterGORMRepository(nil)
+	ctx := context.Background()
+	schemaName := "tenant_schema"
+	tenantID := "tenant-1"
+	costCenterID := "cc-1"
+	startDate := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)
 
 	require.NotNil(t, repo)
 	assert.Nil(t, repo.db)
 
-	costCenter, err := repo.GetByID(context.Background(), "tenant_schema", "tenant-1", "cc-1")
-	require.Error(t, err)
-	assert.Nil(t, costCenter)
-	assert.Contains(t, err.Error(), "cost center repository database is not configured")
+	tests := []struct {
+		name string
+		run  func(t *testing.T) error
+	}{
+		{
+			name: "GetByID",
+			run: func(t *testing.T) error {
+				costCenter, err := repo.GetByID(ctx, schemaName, tenantID, costCenterID)
+				assert.Nil(t, costCenter)
+				return err
+			},
+		},
+		{
+			name: "List",
+			run: func(t *testing.T) error {
+				costCenters, err := repo.List(ctx, schemaName, tenantID, true)
+				assert.Nil(t, costCenters)
+				return err
+			},
+		},
+		{
+			name: "Create",
+			run: func(t *testing.T) error {
+				return repo.Create(ctx, schemaName, &CostCenter{TenantID: tenantID, Code: "OPS", Name: "Operations"})
+			},
+		},
+		{
+			name: "Update",
+			run: func(t *testing.T) error {
+				return repo.Update(ctx, schemaName, &CostCenter{ID: costCenterID, TenantID: tenantID, Code: "OPS", Name: "Operations"})
+			},
+		},
+		{
+			name: "Delete",
+			run: func(t *testing.T) error {
+				return repo.Delete(ctx, schemaName, tenantID, costCenterID)
+			},
+		},
+		{
+			name: "GetExpensesByPeriod",
+			run: func(t *testing.T) error {
+				total, err := repo.GetExpensesByPeriod(ctx, schemaName, tenantID, costCenterID, startDate, endDate)
+				assert.True(t, total.IsZero())
+				return err
+			},
+		},
+		{
+			name: "CreateAllocation",
+			run: func(t *testing.T) error {
+				return repo.CreateAllocation(ctx, schemaName, &CostAllocation{
+					TenantID:           tenantID,
+					CostCenterID:       costCenterID,
+					JournalEntryLineID: "line-1",
+					Amount:             decimal.RequireFromString("100.00"),
+					AllocationDate:     startDate,
+				})
+			},
+		},
+		{
+			name: "ListAllocations",
+			run: func(t *testing.T) error {
+				allocations, err := repo.ListAllocations(ctx, schemaName, tenantID, CostAllocationFilters{
+					CostCenterID:       costCenterID,
+					JournalEntryLineID: "line-1",
+					StartDate:          &startDate,
+					EndDate:            &endDate,
+				})
+				assert.Nil(t, allocations)
+				return err
+			},
+		},
+		{
+			name: "tenantTable",
+			run: func(t *testing.T) error {
+				db, err := repo.tenantTable(ctx, schemaName, "cost_centers")
+				assert.Nil(t, db)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run(t)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "cost center repository database is not configured")
+		})
+	}
 }
 
 func TestCostCenterModelMappingRoundTrip(t *testing.T) {
