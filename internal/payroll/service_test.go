@@ -679,6 +679,68 @@ func TestSetBaseSalary_Error(t *testing.T) {
 	assert.Contains(t, err.Error(), "set base salary")
 }
 
+func TestSetBaseSalary_ValidationErrors(t *testing.T) {
+	repo := NewMockRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "comp"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+	effectiveFrom := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name          string
+		amount        decimal.Decimal
+		effectiveFrom time.Time
+		wantError     string
+	}{
+		{
+			name:          "zero amount",
+			amount:        decimal.Zero,
+			effectiveFrom: effectiveFrom,
+			wantError:     "amount must be positive",
+		},
+		{
+			name:          "negative amount",
+			amount:        decimal.NewFromInt(-1),
+			effectiveFrom: effectiveFrom,
+			wantError:     "amount must be positive",
+		},
+		{
+			name:      "missing effective from",
+			amount:    decimal.NewFromInt(2000),
+			wantError: "effective from date is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := service.SetBaseSalary(ctx, "test_schema", "tenant-1", "emp-1", tt.amount, tt.effectiveFrom)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantError)
+			assert.Empty(t, repo.SalaryComponents["emp-1"])
+		})
+	}
+}
+
+func TestSetBaseSalary_IgnoresEndCurrentBaseSalaryError(t *testing.T) {
+	repo := NewMockRepository()
+	repo.EndCurrentBaseSalaryErr = errors.New("current salary not found")
+	uuidGen := &MockUUIDGenerator{prefix: "comp"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+	effectiveFrom := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+
+	err := service.SetBaseSalary(ctx, "test_schema", "tenant-1", "emp-1", decimal.NewFromInt(2400), effectiveFrom)
+
+	require.NoError(t, err)
+	require.Len(t, repo.SalaryComponents["emp-1"], 1)
+	component := repo.SalaryComponents["emp-1"][0]
+	assert.Equal(t, SalaryComponentBaseSalary, component.ComponentType)
+	assert.True(t, component.Amount.Equal(decimal.NewFromInt(2400)))
+	assert.Equal(t, effectiveFrom, component.EffectiveFrom)
+	assert.Nil(t, component.EffectiveTo)
+}
+
 func TestAddSalaryComponent_DefaultsAndSumsCurrentSalary(t *testing.T) {
 	repo := NewMockRepository()
 	uuidGen := &MockUUIDGenerator{prefix: "comp"}
@@ -1285,6 +1347,54 @@ func TestProcessPayrollRun_CalculatesAndApproves(t *testing.T) {
 	assert.Equal(t, "approver-1", result.PayrollRun.ApprovedBy)
 	assert.NotNil(t, result.PayrollRun.ApprovedAt)
 	assert.True(t, result.PayrollRun.TotalNet.GreaterThan(decimal.Zero))
+	assert.True(t, repo.mockTx.CommitCalled)
+}
+
+func TestProcessPayrollRun_CalculateError(t *testing.T) {
+	repo := NewMockRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "process"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+
+	result, err := service.ProcessPayrollRun(ctx, "test_schema", "tenant-1", "missing", "approver-1", nil)
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "payroll run not found")
+}
+
+func TestProcessPayrollRun_ApproveError(t *testing.T) {
+	repo := NewMockRepository()
+	repo.ApprovePayrollRunErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "process"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+
+	repo.PayrollRuns["run-1"] = &PayrollRun{
+		ID:          "run-1",
+		TenantID:    "tenant-1",
+		PeriodYear:  2026,
+		PeriodMonth: 3,
+		Status:      PayrollDraft,
+	}
+	repo.Employees["emp-1"] = &Employee{
+		ID:                   "emp-1",
+		TenantID:             "tenant-1",
+		FirstName:            "Mari",
+		LastName:             "Maasikas",
+		IsActive:             true,
+		ApplyBasicExemption:  true,
+		BasicExemptionAmount: DefaultBasicExemption,
+		FundedPensionRate:    FundedPensionRateDefault,
+	}
+	repo.Salaries["emp-1"] = decimal.NewFromFloat(3200)
+
+	result, err := service.ProcessPayrollRun(ctx, "test_schema", "tenant-1", "run-1", "approver-1", &ProcessPayrollRunRequest{Approve: true})
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "approve payroll run")
+	assert.Equal(t, PayrollCalculated, repo.PayrollRuns["run-1"].Status)
 	assert.True(t, repo.mockTx.CommitCalled)
 }
 
