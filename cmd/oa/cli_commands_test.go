@@ -9191,6 +9191,9 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, stockProductID, req.ProductID)
 			assert.Equal(t, stockWarehouseID, req.WarehouseID)
 			assert.Equal(t, "3", req.Quantity)
+			assert.Equal(t, "LOT-2026-01", req.LotNumber)
+			assert.Equal(t, "SN-001", req.SerialNumber)
+			assert.Equal(t, "2027-01-31", req.ExpiryDate)
 			assert.Equal(t, "Sales order allocation", req.Reason)
 			_ = json.NewEncoder(w).Encode(reservedStockLevelPayload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/release":
@@ -9199,6 +9202,9 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, stockProductID, req.ProductID)
 			assert.Equal(t, stockWarehouseID, req.WarehouseID)
 			assert.Equal(t, "2", req.Quantity)
+			assert.Equal(t, "LOT-2026-01", req.LotNumber)
+			assert.Equal(t, "SN-001", req.SerialNumber)
+			assert.Equal(t, "2027-01-31", req.ExpiryDate)
 			assert.Equal(t, "Order canceled", req.Reason)
 			_ = json.NewEncoder(w).Encode(releasedStockLevelPayload)
 		default:
@@ -9422,12 +9428,12 @@ func TestCLIInventoryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"status": "transferred"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "reserve", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "3.00", "--reason", "Sales order allocation"})
+	err = app.run(context.Background(), []string{"inventory", "reserve", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "3.00", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--reason", "Sales order allocation"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Reserved 3 of product "+stockProductID+" in warehouse "+stockWarehouseID)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "release", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "2.00", "--reason", "Order canceled", "--json"})
+	err = app.run(context.Background(), []string{"inventory", "release", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "2.00", "--lot-number", "LOT-2026-01", "--serial-number", "SN-001", "--expiry-date", "2027-01-31", "--reason", "Order canceled", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"reserved_qty": "3"`)
 }
@@ -9884,6 +9890,9 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 			assert.Equal(t, stockProductID, req.ProductID)
 			assert.Equal(t, stockWarehouseID, req.WarehouseID)
 			assert.Equal(t, "2", req.Quantity)
+			assert.Equal(t, "LOT-2026-01", req.LotNumber)
+			assert.Equal(t, "SN-001", req.SerialNumber)
+			assert.Equal(t, "2027-01-31", req.ExpiryDate)
 			assert.Equal(t, "Sales order", req.Reason)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":            "stock-1",
@@ -9901,6 +9910,9 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 			assert.Equal(t, stockProductID, req.ProductID)
 			assert.Equal(t, stockWarehouseID, req.WarehouseID)
 			assert.Equal(t, "1", req.Quantity)
+			assert.Equal(t, "LOT-2026-01", req.LotNumber)
+			assert.Equal(t, "SN-001", req.SerialNumber)
+			assert.Equal(t, "2027-01-31", req.ExpiryDate)
 			assert.Equal(t, "Order canceled", req.Reason)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":            "stock-1",
@@ -9925,12 +9937,31 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Transferred 3 of product "+stockProductID+" from "+stockWarehouseID+" to "+stockWarehouseID2)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "reserve", "--product-id", " " + stockProductID + " ", "--warehouse-id", " " + stockWarehouseID + " ", "--quantity", "2.00", "--reason", " Sales order ", "--json"})
+	err = app.run(context.Background(), []string{
+		"inventory", "reserve",
+		"--product-id", " " + stockProductID + " ",
+		"--warehouse-id", " " + stockWarehouseID + " ",
+		"--quantity", "2.00",
+		"--lot-number", " LOT-2026-01 ",
+		"--serial-number", " SN-001 ",
+		"--expiry-date", " 2027-01-31 ",
+		"--reason", " Sales order ",
+		"--json",
+	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"reserved_qty": "4"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"inventory", "release", "--product-id", " " + stockProductID + " ", "--warehouse-id", " " + stockWarehouseID + " ", "--quantity", "1.00", "--reason", " Order canceled "})
+	err = app.run(context.Background(), []string{
+		"inventory", "release",
+		"--product-id", " " + stockProductID + " ",
+		"--warehouse-id", " " + stockWarehouseID + " ",
+		"--quantity", "1.00",
+		"--lot-number", " LOT-2026-01 ",
+		"--serial-number", " SN-001 ",
+		"--expiry-date", " 2027-01-31 ",
+		"--reason", " Order canceled ",
+	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Released 1 of product "+stockProductID+" in warehouse "+stockWarehouseID)
 

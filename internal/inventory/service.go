@@ -876,14 +876,12 @@ func hasInventoryTrackingMetadata(lotNumber, serialNumber, expiryDate string) bo
 	return strings.TrimSpace(lotNumber) != "" || strings.TrimSpace(serialNumber) != "" || strings.TrimSpace(expiryDate) != ""
 }
 
+func inventoryLotKeyHasMetadata(key inventoryLotKey) bool {
+	return hasInventoryTrackingMetadata(key.lotNumber, key.serialNumber, key.expiryDate)
+}
+
 func inventoryLotPositionFromMovements(product Product, movements []InventoryMovement, tenantID, warehouseID, lotNumber, serialNumber, expiryDate string) *inventoryLotAccumulator {
-	positions := make(map[inventoryLotKey]*inventoryLotAccumulator)
-	for _, movement := range movements {
-		if movement.TenantID != tenantID {
-			continue
-		}
-		addInventoryLotReportMovement(positions, product, nil, movement, warehouseID)
-	}
+	positions := inventoryLotPositionsFromMovements(product, movements, tenantID, warehouseID)
 
 	return positions[inventoryLotKey{
 		productID:    product.ID,
@@ -892,6 +890,78 @@ func inventoryLotPositionFromMovements(product Product, movements []InventoryMov
 		serialNumber: strings.TrimSpace(serialNumber),
 		expiryDate:   strings.TrimSpace(expiryDate),
 	}]
+}
+
+func inventoryLotPositionsFromMovements(product Product, movements []InventoryMovement, tenantID, warehouseID string) map[inventoryLotKey]*inventoryLotAccumulator {
+	positions := make(map[inventoryLotKey]*inventoryLotAccumulator)
+	for _, movement := range movements {
+		if movement.TenantID != tenantID {
+			continue
+		}
+		addInventoryLotReportMovement(positions, product, nil, movement, warehouseID)
+	}
+	return positions
+}
+
+func inventoryLotKeyFromReservation(reservation InventoryLotReservation) inventoryLotKey {
+	return inventoryLotKey{
+		productID:    reservation.ProductID,
+		warehouseID:  reservation.WarehouseID,
+		lotNumber:    strings.TrimSpace(reservation.LotNumber),
+		serialNumber: strings.TrimSpace(reservation.SerialNumber),
+		expiryDate:   strings.TrimSpace(reservation.ExpiryDate),
+	}
+}
+
+func inventoryLotReservationQuantities(reservations []InventoryLotReservation) map[inventoryLotKey]decimal.Decimal {
+	quantities := make(map[inventoryLotKey]decimal.Decimal, len(reservations))
+	for _, reservation := range reservations {
+		if reservation.Quantity.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+		key := inventoryLotKeyFromReservation(reservation)
+		quantities[key] = quantities[key].Add(reservation.Quantity)
+	}
+	return quantities
+}
+
+func unallocatedReservedQuantity(totalReserved decimal.Decimal, reservations []InventoryLotReservation) decimal.Decimal {
+	trackedReserved := decimal.Zero
+	for _, reservation := range reservations {
+		if reservation.Quantity.GreaterThan(decimal.Zero) {
+			trackedReserved = trackedReserved.Add(reservation.Quantity)
+		}
+	}
+	unallocated := totalReserved.Sub(trackedReserved)
+	if unallocated.IsNegative() {
+		return decimal.Zero
+	}
+	return unallocated
+}
+
+func sortedInventoryLotKeys(positions map[inventoryLotKey]*inventoryLotAccumulator) []inventoryLotKey {
+	keys := make([]inventoryLotKey, 0, len(positions))
+	for key, position := range positions {
+		if !inventoryLotKeyHasMetadata(key) || position == nil || position.line.Quantity.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		left := keys[i]
+		right := keys[j]
+		leftKey := strings.Join([]string{left.expiryDate, left.lotNumber, left.serialNumber, left.productID, left.warehouseID}, "\x00")
+		rightKey := strings.Join([]string{right.expiryDate, right.lotNumber, right.serialNumber, right.productID, right.warehouseID}, "\x00")
+		return leftKey < rightKey
+	})
+	return keys
+}
+
+func minDecimal(left, right decimal.Decimal) decimal.Decimal {
+	if left.LessThan(right) {
+		return left
+	}
+	return right
 }
 
 // AdjustStock adjusts stock level for a product
@@ -1148,7 +1218,10 @@ func (s *Service) ReserveStock(ctx context.Context, tenantID, schemaName string,
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID); err != nil {
+	req.ProductID = productID
+	req.WarehouseID = warehouseID
+	product, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID)
+	if err != nil {
 		return nil, fmt.Errorf("get product: %w", err)
 	}
 	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, warehouseID); err != nil {
@@ -1161,6 +1234,9 @@ func (s *Service) ReserveStock(ctx context.Context, tenantID, schemaName string,
 	}
 	if level.AvailableQty.LessThan(quantity) {
 		return nil, fmt.Errorf("insufficient available stock to reserve")
+	}
+	if err := s.reserveLotAllocations(ctx, tenantID, schemaName, *product, level, req, quantity); err != nil {
+		return nil, err
 	}
 
 	level.ReservedQty = level.ReservedQty.Add(quantity)
@@ -1187,6 +1263,8 @@ func (s *Service) ReleaseStock(ctx context.Context, tenantID, schemaName string,
 	if err != nil {
 		return nil, err
 	}
+	req.ProductID = productID
+	req.WarehouseID = warehouseID
 	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID); err != nil {
 		return nil, fmt.Errorf("get product: %w", err)
 	}
@@ -1201,6 +1279,9 @@ func (s *Service) ReleaseStock(ctx context.Context, tenantID, schemaName string,
 	if level.ReservedQty.LessThan(quantity) {
 		return nil, fmt.Errorf("cannot release more than reserved stock")
 	}
+	if err := s.releaseLotAllocations(ctx, tenantID, schemaName, req, quantity); err != nil {
+		return nil, err
+	}
 
 	level.ReservedQty = level.ReservedQty.Sub(quantity)
 	level.AvailableQty = level.AvailableQty.Add(quantity)
@@ -1210,6 +1291,131 @@ func (s *Service) ReleaseStock(ctx context.Context, tenantID, schemaName string,
 	}
 
 	return level, nil
+}
+
+func (s *Service) reserveLotAllocations(ctx context.Context, tenantID, schemaName string, product Product, level *StockLevel, req *StockReservationRequest, quantity decimal.Decimal) error {
+	movements, err := s.repo.ListMovements(ctx, schemaName, tenantID, product.ID)
+	if err != nil {
+		return fmt.Errorf("list movements for product %s: %w", product.ID, err)
+	}
+	positions := inventoryLotPositionsFromMovements(product, movements, tenantID, level.WarehouseID)
+	if len(positions) == 0 {
+		if hasInventoryTrackingMetadata(req.LotNumber, req.SerialNumber, req.ExpiryDate) {
+			return fmt.Errorf("insufficient available tracked lot stock to reserve")
+		}
+		return nil
+	}
+
+	reservations, err := s.repo.ListLotReservations(ctx, schemaName, tenantID, product.ID, level.WarehouseID)
+	if err != nil {
+		return fmt.Errorf("list lot reservations: %w", err)
+	}
+	reservedByLot := inventoryLotReservationQuantities(reservations)
+
+	if hasInventoryTrackingMetadata(req.LotNumber, req.SerialNumber, req.ExpiryDate) {
+		key := inventoryLotKey{
+			productID:    product.ID,
+			warehouseID:  level.WarehouseID,
+			lotNumber:    strings.TrimSpace(req.LotNumber),
+			serialNumber: strings.TrimSpace(req.SerialNumber),
+			expiryDate:   strings.TrimSpace(req.ExpiryDate),
+		}
+		position := positions[key]
+		available := decimal.Zero
+		if position != nil {
+			available = position.line.Quantity.Sub(reservedByLot[key])
+			available = available.Sub(unallocatedReservedQuantity(level.ReservedQty, reservations))
+		}
+		if available.LessThan(quantity) {
+			return fmt.Errorf("insufficient available tracked lot stock to reserve")
+		}
+		return s.createLotReservation(ctx, schemaName, tenantID, product.ID, level.WarehouseID, key.lotNumber, key.serialNumber, key.expiryDate, quantity, req.Reason, req.UserID)
+	}
+
+	remaining := quantity
+	for _, key := range sortedInventoryLotKeys(positions) {
+		position := positions[key]
+		available := position.line.Quantity.Sub(reservedByLot[key])
+		if available.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+		reserveQty := minDecimal(available, remaining)
+		if err := s.createLotReservation(ctx, schemaName, tenantID, product.ID, level.WarehouseID, key.lotNumber, key.serialNumber, key.expiryDate, reserveQty, req.Reason, req.UserID); err != nil {
+			return err
+		}
+		remaining = remaining.Sub(reserveQty)
+		if remaining.IsZero() {
+			break
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) createLotReservation(ctx context.Context, schemaName, tenantID, productID, warehouseID, lotNumber, serialNumber, expiryDate string, quantity decimal.Decimal, reason, userID string) error {
+	if quantity.LessThanOrEqual(decimal.Zero) {
+		return nil
+	}
+	now := time.Now()
+	reservation := &InventoryLotReservation{
+		ID:           uuid.New().String(),
+		TenantID:     tenantID,
+		ProductID:    productID,
+		WarehouseID:  warehouseID,
+		LotNumber:    strings.TrimSpace(lotNumber),
+		SerialNumber: strings.TrimSpace(serialNumber),
+		ExpiryDate:   strings.TrimSpace(expiryDate),
+		Quantity:     quantity,
+		Reason:       strings.TrimSpace(reason),
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		CreatedBy:    strings.TrimSpace(userID),
+	}
+	if err := s.repo.UpsertLotReservation(ctx, schemaName, reservation); err != nil {
+		return fmt.Errorf("reserve tracked lot stock: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) releaseLotAllocations(ctx context.Context, tenantID, schemaName string, req *StockReservationRequest, quantity decimal.Decimal) error {
+	reservations, err := s.repo.ListLotReservations(ctx, schemaName, tenantID, req.ProductID, req.WarehouseID)
+	if err != nil {
+		return fmt.Errorf("list lot reservations: %w", err)
+	}
+
+	if hasInventoryTrackingMetadata(req.LotNumber, req.SerialNumber, req.ExpiryDate) {
+		key := inventoryLotKey{
+			productID:    req.ProductID,
+			warehouseID:  req.WarehouseID,
+			lotNumber:    strings.TrimSpace(req.LotNumber),
+			serialNumber: strings.TrimSpace(req.SerialNumber),
+			expiryDate:   strings.TrimSpace(req.ExpiryDate),
+		}
+		reservedByLot := inventoryLotReservationQuantities(reservations)
+		if reservedByLot[key].LessThan(quantity) {
+			return fmt.Errorf("cannot release more than reserved tracked lot stock")
+		}
+		_, err := s.repo.ReleaseLotReservation(ctx, schemaName, tenantID, req.ProductID, req.WarehouseID, key.lotNumber, key.serialNumber, key.expiryDate, quantity, req.Reason, req.UserID)
+		if err != nil {
+			return fmt.Errorf("release tracked lot stock: %w", err)
+		}
+		return nil
+	}
+
+	remaining := quantity
+	for _, reservation := range reservations {
+		if remaining.IsZero() {
+			break
+		}
+		releaseQty := minDecimal(reservation.Quantity, remaining)
+		_, err := s.repo.ReleaseLotReservation(ctx, schemaName, tenantID, req.ProductID, req.WarehouseID, reservation.LotNumber, reservation.SerialNumber, reservation.ExpiryDate, releaseQty, req.Reason, req.UserID)
+		if err != nil {
+			return fmt.Errorf("release tracked lot stock: %w", err)
+		}
+		remaining = remaining.Sub(releaseQty)
+	}
+
+	return nil
 }
 
 func parsePositiveStockQuantity(value string) (decimal.Decimal, error) {

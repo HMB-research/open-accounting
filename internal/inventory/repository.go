@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
@@ -40,6 +41,9 @@ type Repository interface {
 	GetStockLevel(ctx context.Context, schemaName, tenantID, productID, warehouseID string) (*StockLevel, error)
 	GetStockLevelsByProduct(ctx context.Context, schemaName, tenantID, productID string) ([]StockLevel, error)
 	UpsertStockLevel(ctx context.Context, schemaName string, level *StockLevel) error
+	ListLotReservations(ctx context.Context, schemaName, tenantID, productID, warehouseID string) ([]InventoryLotReservation, error)
+	UpsertLotReservation(ctx context.Context, schemaName string, reservation *InventoryLotReservation) error
+	ReleaseLotReservation(ctx context.Context, schemaName, tenantID, productID, warehouseID, lotNumber, serialNumber, expiryDate string, quantity decimal.Decimal, reason, releasedBy string) (*InventoryLotReservation, error)
 
 	// Movements
 	CreateMovement(ctx context.Context, schemaName string, movement *InventoryMovement) error
@@ -406,6 +410,129 @@ func (r *GORMRepository) UpsertStockLevel(ctx context.Context, schemaName string
 		"available_qty": level.AvailableQty,
 		"last_updated":  level.LastUpdated,
 	}).Error
+}
+
+// ListLotReservations retrieves active tracked-lot reservations for one product and warehouse.
+func (r *GORMRepository) ListLotReservations(ctx context.Context, schemaName, tenantID, productID, warehouseID string) ([]InventoryLotReservation, error) {
+	db, err := r.tenantTable(ctx, schemaName, "inventory_lot_reservations")
+	if err != nil {
+		return nil, err
+	}
+
+	var reservations []InventoryLotReservation
+	if err := db.Select(`
+			id, tenant_id, product_id, warehouse_id,
+			COALESCE(lot_number, '') AS lot_number,
+			COALESCE(serial_number, '') AS serial_number,
+			COALESCE(expiry_date, '') AS expiry_date,
+			quantity,
+			COALESCE(reason, '') AS reason,
+			created_at,
+			updated_at,
+			COALESCE(created_by::text, '') AS created_by
+		`).
+		Where("tenant_id = ? AND product_id = ? AND warehouse_id = ? AND quantity > 0", tenantID, productID, warehouseID).
+		Order("NULLIF(expiry_date, '') ASC NULLS LAST, lot_number ASC, serial_number ASC, created_at ASC").
+		Scan(&reservations).Error; err != nil {
+		return nil, err
+	}
+	return reservations, nil
+}
+
+// UpsertLotReservation increases or creates a tracked-lot reservation.
+func (r *GORMRepository) UpsertLotReservation(ctx context.Context, schemaName string, reservation *InventoryLotReservation) error {
+	db, err := r.tenantTable(ctx, schemaName, "inventory_lot_reservations")
+	if err != nil {
+		return err
+	}
+	return db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "tenant_id"},
+			{Name: "product_id"},
+			{Name: "warehouse_id"},
+			{Name: "lot_number"},
+			{Name: "serial_number"},
+			{Name: "expiry_date"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"quantity":   gorm.Expr("inventory_lot_reservations.quantity + EXCLUDED.quantity"),
+			"reason":     gorm.Expr("COALESCE(EXCLUDED.reason, inventory_lot_reservations.reason)"),
+			"updated_at": reservation.UpdatedAt,
+			"created_by": nullableString(reservation.CreatedBy),
+		}),
+	}).Create(map[string]interface{}{
+		"id":            reservation.ID,
+		"tenant_id":     reservation.TenantID,
+		"product_id":    reservation.ProductID,
+		"warehouse_id":  reservation.WarehouseID,
+		"lot_number":    strings.TrimSpace(reservation.LotNumber),
+		"serial_number": strings.TrimSpace(reservation.SerialNumber),
+		"expiry_date":   strings.TrimSpace(reservation.ExpiryDate),
+		"quantity":      reservation.Quantity,
+		"reason":        nullableString(reservation.Reason),
+		"created_at":    reservation.CreatedAt,
+		"updated_at":    reservation.UpdatedAt,
+		"created_by":    nullableString(reservation.CreatedBy),
+	}).Error
+}
+
+// ReleaseLotReservation decreases a tracked-lot reservation.
+func (r *GORMRepository) ReleaseLotReservation(
+	ctx context.Context,
+	schemaName, tenantID, productID, warehouseID, lotNumber, serialNumber, expiryDate string,
+	quantity decimal.Decimal,
+	reason, releasedBy string,
+) (*InventoryLotReservation, error) {
+	db, err := r.tenantTable(ctx, schemaName, "inventory_lot_reservations")
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	result := db.
+		Where(`
+			tenant_id = ? AND product_id = ? AND warehouse_id = ?
+			AND lot_number = ? AND serial_number = ? AND expiry_date = ?
+			AND quantity >= ?
+		`, tenantID, productID, warehouseID, strings.TrimSpace(lotNumber), strings.TrimSpace(serialNumber), strings.TrimSpace(expiryDate), quantity).
+		Updates(map[string]interface{}{
+			"quantity":   gorm.Expr("quantity - ?", quantity),
+			"reason":     nullableString(reason),
+			"updated_at": now,
+			"created_by": nullableString(releasedBy),
+		})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, fmt.Errorf("tracked lot reservation not found")
+	}
+
+	reservations, err := r.ListLotReservations(ctx, schemaName, tenantID, productID, warehouseID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range reservations {
+		reservation := reservations[i]
+		if reservation.LotNumber == strings.TrimSpace(lotNumber) &&
+			reservation.SerialNumber == strings.TrimSpace(serialNumber) &&
+			reservation.ExpiryDate == strings.TrimSpace(expiryDate) {
+			return &reservation, nil
+		}
+	}
+
+	return &InventoryLotReservation{
+		TenantID:     tenantID,
+		ProductID:    productID,
+		WarehouseID:  warehouseID,
+		LotNumber:    strings.TrimSpace(lotNumber),
+		SerialNumber: strings.TrimSpace(serialNumber),
+		ExpiryDate:   strings.TrimSpace(expiryDate),
+		Quantity:     decimal.Zero,
+		Reason:       reason,
+		UpdatedAt:    now,
+		CreatedBy:    releasedBy,
+	}, nil
 }
 
 // CreateMovement creates a new inventory movement

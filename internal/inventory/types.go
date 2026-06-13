@@ -114,6 +114,22 @@ type StockLevel struct {
 	LastUpdated  time.Time       `json:"last_updated"`
 }
 
+// InventoryLotReservation records stock reserved against a tracked lot, serial, or expiry position.
+type InventoryLotReservation struct {
+	ID           string          `json:"id"`
+	TenantID     string          `json:"tenant_id"`
+	ProductID    string          `json:"product_id"`
+	WarehouseID  string          `json:"warehouse_id"`
+	LotNumber    string          `json:"lot_number,omitempty"`
+	SerialNumber string          `json:"serial_number,omitempty"`
+	ExpiryDate   string          `json:"expiry_date,omitempty"`
+	Quantity     decimal.Decimal `json:"quantity"`
+	Reason       string          `json:"reason,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	CreatedBy    string          `json:"created_by,omitempty"`
+}
+
 // InventoryMovement represents a movement of inventory
 type InventoryMovement struct {
 	ID            string          `json:"id"`
@@ -390,11 +406,14 @@ type TransferStockRequest struct {
 
 // StockReservationRequest represents a request to reserve or release warehouse stock.
 type StockReservationRequest struct {
-	ProductID   string `json:"product_id"`
-	WarehouseID string `json:"warehouse_id"`
-	Quantity    string `json:"quantity"`
-	Reason      string `json:"reason,omitempty"`
-	UserID      string `json:"-"`
+	ProductID    string `json:"product_id"`
+	WarehouseID  string `json:"warehouse_id"`
+	Quantity     string `json:"quantity"`
+	LotNumber    string `json:"lot_number,omitempty"`
+	SerialNumber string `json:"serial_number,omitempty"`
+	ExpiryDate   string `json:"expiry_date,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	UserID       string `json:"-"`
 }
 
 // ProductFilter represents filters for listing products
