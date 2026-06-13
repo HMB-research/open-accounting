@@ -244,6 +244,47 @@ func TestImportTSDHistoryCSV_AcceptsDeclarationAliasesAndStatusAliases(t *testin
 	assert.True(t, confirmedRows[0].FundedPension.Equal(decimal.RequireFromString("26.00")))
 }
 
+func TestImportTSDHistoryCSV_DerivesTaxableFloorAndDefaultSubmittedAt(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-330"] = &Employee{
+		ID:             "emp-330",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-330",
+		FirstName:      "Kadri",
+		LastName:       "Kask",
+		PersonalCode:   "49001010330",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+
+	result, err := service.ImportTSDHistoryCSV(ctx, "tenant_schema", "tenant-1", &ImportTSDHistoryRequest{
+		CSVContent: "period_year,period_month,status,employee_number,gross_payment,basic_exemption,taxable_amount,income_tax\n" +
+			"2025,6,ACCEPTED,EMP-330,100.00,120.00,,22.00\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.DeclarationsCreated)
+	assert.Equal(t, 1, result.RowsImported)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+
+	declaration := repo.TSDDeclarations["tsd-1"]
+	require.NotNil(t, declaration)
+	assert.Equal(t, TSDAccepted, declaration.Status)
+	assert.NotNil(t, declaration.SubmittedAt)
+
+	rows := repo.TSDRows["tsd-1"]
+	require.Len(t, rows, 1)
+	assert.True(t, rows[0].TaxableAmount.IsZero())
+	assert.True(t, rows[0].BasicExemption.Equal(decimal.RequireFromString("120.00")))
+	assert.Equal(t, "10", rows[0].PaymentType)
+}
+
 func TestImportTSDHistoryCSV_RejectsMismatchedIdentifiersAndGroupInconsistency(t *testing.T) {
 	t.Parallel()
 
@@ -383,6 +424,53 @@ func TestImportTSDHistoryCSV_SkipsInvalidRowsAndExistingPeriods(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, "employee_number")
 	assert.Contains(t, result.Errors[1].Message, "status must be DRAFT")
 	assert.Contains(t, result.Errors[2].Message, "already exists")
+}
+
+func TestImportTSDHistoryCSV_RejectsMalformedPeriodDateAndAmountRows(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-100"] = &Employee{
+		ID:             "emp-100",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		PersonalCode:   "49001010001",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+
+	result, err := service.ImportTSDHistoryCSV(ctx, "tenant_schema", "tenant-1", &ImportTSDHistoryRequest{
+		CSVContent: "period_year,period_month,status,submitted_at,employee_number,gross_payment,basic_exemption,taxable_amount,income_tax\n" +
+			"twenty,5,ACCEPTED,,EMP-100,1000.00,,,\n" +
+			"2025,13,ACCEPTED,,EMP-100,1000.00,,,\n" +
+			"2025,5,UNKNOWN,,EMP-100,1000.00,,,\n" +
+			"2025,5,ACCEPTED,not-a-date,EMP-100,1000.00,,,\n" +
+			"2025,5,ACCEPTED,,EMP-100,,,,\n" +
+			"2025,5,ACCEPTED,,EMP-100,0.00,,,\n" +
+			"2025,5,ACCEPTED,,EMP-100,1000.00,-1.00,,\n" +
+			"2025,5,ACCEPTED,,EMP-100,1000.00,,not-a-decimal,\n" +
+			"2025,5,ACCEPTED,,EMP-100,1000.00,,,bad-tax\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 9, result.RowsProcessed)
+	assert.Zero(t, result.DeclarationsCreated)
+	assert.Zero(t, result.RowsImported)
+	assert.Equal(t, 9, result.RowsSkipped)
+	require.Len(t, result.Errors, 9)
+	assert.Contains(t, result.Errors[0].Message, "period_year must be between 2020 and 2100")
+	assert.Contains(t, result.Errors[1].Message, "period_month must be between 1 and 12")
+	assert.Contains(t, result.Errors[2].Message, "status must be DRAFT, SUBMITTED, ACCEPTED, or REJECTED")
+	assert.Contains(t, result.Errors[3].Message, "submitted_at must be in YYYY-MM-DD format")
+	assert.Contains(t, result.Errors[4].Message, "gross_payment is required")
+	assert.Contains(t, result.Errors[5].Message, "gross_payment must be greater than zero")
+	assert.Contains(t, result.Errors[6].Message, "basic_exemption must be zero or greater")
+	assert.Contains(t, result.Errors[7].Message, "invalid taxable_amount")
+	assert.Contains(t, result.Errors[8].Message, "invalid income_tax")
 }
 
 func TestImportTSDHistoryCSV_RejectsMissingHeaders(t *testing.T) {
