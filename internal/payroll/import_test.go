@@ -388,6 +388,51 @@ func TestImportPayrollHistoryCSV_AcceptsMigrationAliasesAndCanceledPaymentStatus
 	assert.True(t, payslip.TotalEmployerCost.Equal(decimal.RequireFromString("1605.60")))
 }
 
+func TestImportPayrollHistoryCSV_DefaultsPaidRunWithBlankImporter(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-blank-user"] = &Employee{
+		ID:             "emp-blank-user",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-350",
+		FirstName:      "Marten",
+		LastName:       "Muru",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+	result, err := service.ImportPayrollHistoryCSV(ctx, "tenant_schema", "tenant-1", "", &ImportPayrollHistoryRequest{
+		CSVContent: "period_year,period_month,status,employee_number,gross_salary,basic_exemption_applied,payment_status\n" +
+			"2025,7,,EMP-350,1000.00,1200.00,\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.PayrollRunsCreated)
+	assert.Equal(t, 1, result.PayslipsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+
+	run := repo.PayrollRuns["hist-1"]
+	require.NotNil(t, run)
+	assert.Equal(t, PayrollPaid, run.Status)
+	assert.Empty(t, run.CreatedBy)
+	assert.Empty(t, run.ApprovedBy)
+	assert.Nil(t, run.PaymentDate)
+	assert.NotNil(t, run.ApprovedAt)
+
+	require.Len(t, repo.Payslips, 1)
+	payslip := repo.Payslips[0]
+	assert.Equal(t, "PAID", payslip.PaymentStatus)
+	assert.Nil(t, payslip.PaidAt)
+	assert.True(t, payslip.TaxableIncome.IsZero())
+	assert.True(t, payslip.NetSalary.Equal(decimal.RequireFromString("1000.00")))
+	assert.True(t, payslip.TotalEmployerCost.Equal(decimal.RequireFromString("1000.00")))
+}
+
 func TestImportPayrollHistoryCSV_RejectsMismatchedIdentifiersAndGroupInconsistency(t *testing.T) {
 	t.Parallel()
 
@@ -618,6 +663,48 @@ func TestImportPayrollHistoryCSV_SkipsInvalidRowsAndExistingPeriods(t *testing.T
 	assert.Contains(t, result.Errors[0].Message, "employee_number \"EMP-999\" not found")
 	assert.Contains(t, result.Errors[1].Message, "gross_salary must be zero or greater")
 	assert.Contains(t, result.Errors[2].Message, "payroll run already exists for 2025-12")
+}
+
+func TestImportPayrollHistoryCSV_RejectsMalformedPeriodStatusAndAmountRows(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-100"] = &Employee{
+		ID:             "emp-100",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+	result, err := service.ImportPayrollHistoryCSV(ctx, "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+		CSVContent: "period_year,period_month,status,employee_number,gross_salary,taxable_income,income_tax\n" +
+			"twenty,5,PAID,EMP-100,1000.00,,\n" +
+			"2025,13,PAID,EMP-100,1000.00,,\n" +
+			"2025,5,CALCULATED,EMP-100,1000.00,,\n" +
+			"2025,5,PAID,EMP-100,,,\n" +
+			"2025,5,PAID,EMP-100,0.00,,\n" +
+			"2025,5,PAID,EMP-100,1000.00,,-1.00\n" +
+			"2025,5,PAID,EMP-100,1000.00,not-a-decimal,\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 7, result.RowsProcessed)
+	assert.Zero(t, result.PayrollRunsCreated)
+	assert.Zero(t, result.PayslipsCreated)
+	assert.Equal(t, 7, result.RowsSkipped)
+	require.Len(t, result.Errors, 7)
+	assert.Contains(t, result.Errors[0].Message, "period_year must be between 2020 and 2100")
+	assert.Contains(t, result.Errors[1].Message, "period_month must be between 1 and 12")
+	assert.Contains(t, result.Errors[2].Message, "status must be APPROVED, PAID, or DECLARED")
+	assert.Contains(t, result.Errors[3].Message, "gross_salary is required")
+	assert.Contains(t, result.Errors[4].Message, "gross_salary must be greater than zero")
+	assert.Contains(t, result.Errors[5].Message, "income_tax must be zero or greater")
+	assert.Contains(t, result.Errors[6].Message, "invalid taxable_income")
 }
 
 func TestImportPayrollHistoryCSV_RejectsMissingHeaders(t *testing.T) {
