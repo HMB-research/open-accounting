@@ -11,6 +11,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listBankTransactions: vi.fn(),
 		listDocumentReviewSummaries: vi.fn(),
 		reviewBankTransaction: vi.fn(),
+		reviewDocument: vi.fn(),
 		sendPaymentReminder: vi.fn(),
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn(),
@@ -139,10 +140,26 @@ describe('AccountantReviewPanel', () => {
 				total_count: 1,
 				pending_review_count: 1,
 				reviewed_count: 0,
+				approved_count: 0,
+				rejected_count: 0,
 				missing_evidence: false,
 				has_pending_review: true
 			}
 		]);
+		apiMock.reviewDocument.mockResolvedValue({
+			id: 'doc-1',
+			tenant_id: 'tenant-1',
+			entity_type: 'bank_transaction',
+			entity_id: 'tx-1',
+			document_type: 'reconciliation_evidence',
+			file_name: 'bank-evidence.pdf',
+			file_size: 2048,
+			mime_type: 'application/pdf',
+			storage_path: 'tenant-1/doc-1.pdf',
+			review_status: 'APPROVED',
+			retention_until: '2028-12-31T00:00:00Z',
+			created_at: '2026-02-01T00:00:00Z'
+		});
 		apiMock.listPeriodCloseEvents.mockResolvedValue([
 			{
 				id: 'evt-1',
@@ -191,18 +208,25 @@ describe('AccountantReviewPanel', () => {
 			documents: [],
 			remediation_actions: [
 				{
-					code: 'document_retention_due_soon',
-					severity: 'WARNING',
+					code: 'document_review_pending',
+					severity: 'ACTION',
 					scope: 'documents',
 					owner_role: 'accountant',
 					workspace_queue: 'document_review',
-					assignment_key: 'document-review:document-retention-due-soon:bank-transaction:tx-1:doc-1',
-					priority: 'normal',
-					due_in_days: 3,
-					message: 'Document retention date needs review.',
-					action: 'Extend retention or complete the disposal workflow.',
-					ui_path: '/documents?review_status=PENDING',
-					cli_command: 'oa documents retention --include-missing'
+					assignment_key:
+						'document-review:document-review-pending:bank-transaction:tx-1:reconciliation-evidence:doc-1',
+					priority: 'high',
+					due_in_days: 1,
+					message: 'Document bank-evidence.pdf is still pending review.',
+					action: 'Review the attachment and approve, reject, or mark it reviewed.',
+					entity_type: 'bank_transaction',
+					entity_id: 'tx-1',
+					document_id: 'doc-1',
+					document_type: 'reconciliation_evidence',
+					file_name: 'bank-evidence.pdf',
+					ui_path:
+						'/documents?entity_type=bank_transaction&entity_id=tx-1&document_id=doc-1',
+					cli_command: 'oa documents review --id doc-1 --status approved'
 				}
 			]
 		});
@@ -354,8 +378,10 @@ describe('AccountantReviewPanel', () => {
 		expect(screen.getByText('Assignment queue')).toBeInTheDocument();
 		expect(screen.getByText('Fiscal year ending 2025-12-31 is not closed.')).toBeInTheDocument();
 		expect(screen.getByText('Bank transaction needs matching.')).toBeInTheDocument();
+		expect(screen.getByText('Document bank-evidence.pdf is still pending review.')).toBeInTheDocument();
 		expect(screen.getByText('Expense EXP-001 is submitted and receipt-backed.')).toBeInTheDocument();
 		expect(screen.getByText('Payroll run needs calculation.')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Approve document' })).toBeInTheDocument();
 		expect(screen.getByText(/oa documents review-queue --entity-type expense/)).toBeInTheDocument();
 		expect(screen.getByText(/oa close period --period-end 2025-12-31/)).toBeInTheDocument();
 		expect(
@@ -380,6 +406,15 @@ describe('AccountantReviewPanel', () => {
 		expect(apiMock.listPayrollRuns).toHaveBeenCalledWith('tenant-1');
 		expect(apiMock.listTSD).toHaveBeenCalledWith('tenant-1');
 		expect(apiMock.listKMD).toHaveBeenCalledWith('tenant-1');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Approve document' }));
+
+		await waitFor(() => {
+			expect(apiMock.reviewDocument).toHaveBeenCalledWith('tenant-1', 'doc-1', {
+				review_status: 'APPROVED'
+			});
+			expect(screen.getByText('Document approved from workspace.')).toBeInTheDocument();
+		});
 	});
 
 	it('shows empty-state guidance when no review items are pending', async () => {
