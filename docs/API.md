@@ -3705,6 +3705,8 @@ Optional query parameters:
 | `year`    | int  | Filter declarations by period year |
 | `month`   | int  | Filter declarations by period month (`1`-`12`) |
 
+TSD declaration responses include `remediation_actions` for accountant follow-up: empty rows/totals, draft export/submission, submitted declarations awaiting acceptance, missing submission timestamps, rejected declaration review, accepted declaration archiving, and unsupported status review. Each action includes `code`, `severity`, `scope`, `owner_role`, `message`, `action`, optional entity/period context, UI path, and a suggested CLI command.
+
 ### Get TSD Declaration
 
 ```http

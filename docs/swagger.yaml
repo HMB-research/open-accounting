@@ -5292,6 +5292,10 @@ definitions:
         type: integer
       period_year:
         type: integer
+      remediation_actions:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.TSDRemediationAction'
+        type: array
       rows:
         description: Loaded relations
         items:
@@ -5317,6 +5321,31 @@ definitions:
       total_unemployment_employer:
         type: number
       updated_at:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_payroll.TSDRemediationAction:
+    properties:
+      action:
+        type: string
+      cli_command:
+        type: string
+      code:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        type: string
+      message:
+        type: string
+      owner_role:
+        type: string
+      period:
+        type: string
+      scope:
+        type: string
+      severity:
+        type: string
+      ui_path:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_payroll.TSDRow:

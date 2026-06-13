@@ -2721,8 +2721,16 @@ func TestPrintTaxReports(t *testing.T) {
 		TotalUnemploymentEE: decimal.NewFromFloat(51.2),
 		TotalFundedPension:  decimal.NewFromInt(64),
 		Status:              payroll.TSDDraft,
-		CreatedAt:           now,
-		UpdatedAt:           now,
+		RemediationActions: []payroll.TSDRemediationAction{{
+			Code:       "tsd_export_and_submit",
+			Severity:   "ACTION",
+			Scope:      "tax",
+			OwnerRole:  "accountant",
+			Action:     "Review declaration totals, export XML or CSV, submit through e-MTA, and mark the declaration submitted with the e-MTA reference.",
+			CLICommand: "oa tsd export-xml --year 2026 --month 3 --output ./tsd-2026-03.xml",
+		}},
+		CreatedAt: now,
+		UpdatedAt: now,
 		Rows: []payroll.TSDRow{{
 			FirstName:     "Mari",
 			LastName:      "Maasikas",
@@ -2743,6 +2751,12 @@ func TestPrintTaxReports(t *testing.T) {
 	printTSDDeclaration(&tsdBuf, &tsd)
 	assert.Contains(t, tsdBuf.String(), "TSD 2026-03")
 	assert.Contains(t, tsdBuf.String(), "Mari Maasikas")
+	assert.Contains(t, tsdBuf.String(), "TSD remediation actions")
+	assert.Contains(t, tsdBuf.String(), "tsd_export_and_submit")
+
+	var emptyTSDRemediationBuf bytes.Buffer
+	printTSDRemediationActions(&emptyTSDRemediationBuf, nil)
+	assert.Empty(t, emptyTSDRemediationBuf.String())
 
 	kmd := tax.KMDDeclaration{
 		ID:             "kmd-1",

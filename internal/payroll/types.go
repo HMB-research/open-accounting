@@ -205,11 +205,27 @@ type TSDDeclaration struct {
 	SubmittedAt   *time.Time `json:"submitted_at,omitempty"`
 	EMTAReference string     `json:"emta_reference,omitempty"`
 
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	RemediationActions []TSDRemediationAction `json:"remediation_actions,omitempty"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
 
 	// Loaded relations
 	Rows []TSDRow `json:"rows,omitempty"`
+}
+
+// TSDRemediationAction describes one operator action for TSD declaration follow-up.
+type TSDRemediationAction struct {
+	Code       string `json:"code"`
+	Severity   string `json:"severity"`
+	Scope      string `json:"scope"`
+	OwnerRole  string `json:"owner_role"`
+	Message    string `json:"message"`
+	Action     string `json:"action"`
+	Period     string `json:"period,omitempty"`
+	EntityType string `json:"entity_type,omitempty"`
+	EntityID   string `json:"entity_id,omitempty"`
+	UIPath     string `json:"ui_path,omitempty"`
+	CLICommand string `json:"cli_command,omitempty"`
 }
 
 // TSDListFilter contains optional filters for listing TSD declarations.

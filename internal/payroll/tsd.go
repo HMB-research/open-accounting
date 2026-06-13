@@ -97,6 +97,7 @@ func (s *Service) GenerateTSD(ctx context.Context, schemaName, tenantID, payroll
 	}
 
 	tsd.Rows = rows
+	tsd.RemediationActions = BuildTSDRemediationActions(tsd)
 	return tsd, nil
 }
 
@@ -109,6 +110,7 @@ func (s *Service) GetTSD(ctx context.Context, schemaName, tenantID string, year,
 	if err != nil {
 		return nil, fmt.Errorf("get TSD: %w", err)
 	}
+	tsd.RemediationActions = BuildTSDRemediationActions(tsd)
 	return tsd, nil
 }
 
@@ -126,6 +128,9 @@ func (s *Service) ListTSD(ctx context.Context, schemaName, tenantID string, filt
 	declarations, err := s.repo.ListTSD(ctx, schemaName, tenantID, filter)
 	if err != nil {
 		return nil, fmt.Errorf("list TSD: %w", err)
+	}
+	for i := range declarations {
+		declarations[i].RemediationActions = BuildTSDRemediationActions(&declarations[i])
 	}
 	return declarations, nil
 }
