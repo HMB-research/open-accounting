@@ -4247,6 +4247,409 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"needs_context_count": 1`)
 }
 
+func TestCLIMigrationExecuteCommand(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	files := migrationExecuteTestFiles(t)
+	expectedImportPaths := map[string]bool{
+		"/api/v1/tenants/tenant-1/accounts/import":                         false,
+		"/api/v1/tenants/tenant-1/contacts/import":                         false,
+		"/api/v1/tenants/tenant-1/employees/import":                        false,
+		"/api/v1/tenants/tenant-1/expenses/import":                         false,
+		"/api/v1/tenants/tenant-1/invoices/import":                         false,
+		"/api/v1/tenants/tenant-1/invoices/import-einvoice":                false,
+		"/api/v1/tenants/tenant-1/payments/import":                         false,
+		"/api/v1/tenants/tenant-1/bank-accounts/import":                    false,
+		"/api/v1/tenants/tenant-1/bank-accounts/bank-1/import":             false,
+		"/api/v1/tenants/tenant-1/payroll-runs/import-history":             false,
+		"/api/v1/tenants/tenant-1/leave-balances/import":                   false,
+		"/api/v1/tenants/tenant-1/tsd/import-history":                      false,
+		"/api/v1/tenants/tenant-1/tax/kmd/import-history":                  false,
+		"/api/v1/tenants/tenant-1/quotes/import":                           false,
+		"/api/v1/tenants/tenant-1/orders/import":                           false,
+		"/api/v1/tenants/tenant-1/recurring-invoices/import":               false,
+		"/api/v1/tenants/tenant-1/cost-centers/import":                     false,
+		"/api/v1/tenants/tenant-1/cost-centers/allocations/import":         false,
+		"/api/v1/tenants/tenant-1/product-categories/import":               false,
+		"/api/v1/tenants/tenant-1/warehouses/import":                       false,
+		"/api/v1/tenants/tenant-1/products/import":                         false,
+		"/api/v1/tenants/tenant-1/inventory/stock-import":                  false,
+		"/api/v1/tenants/tenant-1/assets/import":                           false,
+		"/api/v1/tenants/tenant-1/journal-entries/import-opening-balances": false,
+		"/api/v1/tenants/tenant-1/journal-entries/import":                  false,
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		if r.URL.Path == "/api/v1/tenants/tenant-1/migration/execution-plan" {
+			require.Equal(t, http.MethodPost, r.Method)
+			var req cutover.PlanMigrationExecutionRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
+			assert.Equal(t, "bank-1", req.BankTransactionAccountID)
+			assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
+			require.Len(t, req.Files, len(expectedImportPaths))
+			_ = json.NewEncoder(w).Encode(migrationExecuteReadyPlan(req.Files))
+			return
+		}
+
+		seen, ok := expectedImportPaths[r.URL.Path]
+		require.Truef(t, ok, "unexpected import request: %s %s", r.Method, r.URL.Path)
+		require.Falsef(t, seen, "duplicate import request: %s", r.URL.Path)
+		expectedImportPaths[r.URL.Path] = true
+		require.Equal(t, http.MethodPost, r.Method)
+
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/bank-accounts/import":
+			var req banking.ImportBankAccountsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "bank-accounts.csv", req.FileName)
+			require.Len(t, req.Rows, 1)
+			assert.Equal(t, "Main bank", req.Rows[0].Name)
+		case "/api/v1/tenants/tenant-1/bank-accounts/bank-1/import":
+			var req banking.ImportCSVRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "bank-transactions.csv", req.FileName)
+			require.Len(t, req.Transactions, 1)
+		case "/api/v1/tenants/tenant-1/invoices/import-einvoice":
+			var req invoicing.ImportEInvoiceRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "einvoices.xml", req.FileName)
+			assert.Equal(t, invoicing.InvoiceTypePurchase, req.InvoiceType)
+		case "/api/v1/tenants/tenant-1/journal-entries/import-opening-balances":
+			var req accounting.ImportOpeningBalancesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-01-01", req.EntryDate)
+			assert.Equal(t, "OB-2026", req.Reference)
+		default:
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.NotEmpty(t, req["file_name"])
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{
+		"migration", "execute",
+		"--accounts", files[cutover.KindAccounts],
+		"--contacts", files[cutover.KindContacts],
+		"--employees", files[cutover.KindEmployees],
+		"--expenses", files[cutover.KindExpenses],
+		"--invoices", files[cutover.KindInvoices],
+		"--e-invoices", files[cutover.KindEInvoices],
+		"--e-invoice-invoice-type", "purchase",
+		"--payments", files[cutover.KindPayments],
+		"--bank-accounts", files[cutover.KindBankAccounts],
+		"--bank-transactions", files[cutover.KindBankTransactions],
+		"--bank-transaction-account-id", "bank-1",
+		"--bank-transaction-format", "generic",
+		"--payroll-history", files[cutover.KindPayrollHistory],
+		"--leave-balances", files[cutover.KindLeaveBalances],
+		"--tsd-history", files[cutover.KindTSDHistory],
+		"--kmd-history", files[cutover.KindKMDHistory],
+		"--quotes", files[cutover.KindQuotes],
+		"--orders", files[cutover.KindOrders],
+		"--recurring-invoices", files[cutover.KindRecurringInvoices],
+		"--cost-centers", files[cutover.KindCostCenters],
+		"--cost-allocations", files[cutover.KindCostAllocations],
+		"--product-categories", files[cutover.KindProductCategories],
+		"--warehouses", files[cutover.KindWarehouses],
+		"--products", files[cutover.KindProducts],
+		"--stock", files[cutover.KindStockAdjustments],
+		"--fixed-assets", files[cutover.KindFixedAssets],
+		"--opening-balances", files[cutover.KindOpeningBalances],
+		"--opening-balance-entry-date", "2026-01-01",
+		"--journal", files[cutover.KindJournalEntries],
+		"--provider-preset", "smartaccounts",
+		"--confirm",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "succeeded"`)
+	assert.Contains(t, stdout.String(), `"succeeded_step_count": 25`)
+	for path, seen := range expectedImportPaths {
+		assert.Truef(t, seen, "expected import request for %s", path)
+	}
+}
+
+func TestCLIMigrationExecuteSafetyBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	accountsFile := writeTempCSV(t, "accounts.csv", "code,name,account_type\n1000,Cash,ASSET\n")
+	missingFile := filepath.Join(t.TempDir(), "missing.csv")
+
+	app, stdout, _ := newTestCLIApp()
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "bad flag", args: []string{"migration", "execute", "--bad"}, want: "flag provided but not defined"},
+		{name: "no files", args: []string{"migration", "execute"}, want: "at least one migration CSV or XML file is required"},
+		{name: "bad e-invoice type", args: []string{"migration", "execute", "--accounts", accountsFile, "--e-invoice-invoice-type", "memo"}, want: `invalid invoice type "memo"`},
+		{name: "missing file", args: []string{"migration", "execute", "--accounts", missingFile}, want: "read file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	t.Run("remote plan error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "/api/v1/tenants/tenant-1/migration/execution-plan", r.URL.Path)
+			http.Error(w, `{"error":"plan unavailable"}`, http.StatusBadGateway)
+		}))
+		defer server.Close()
+		t.Setenv("OA_BASE_URL", server.URL)
+		stdout.Reset()
+		err := app.run(context.Background(), []string{"migration", "execute", "--accounts", accountsFile})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "plan unavailable")
+	})
+}
+
+func TestCLIMigrationExecuteRequiresConfirmationAndReadyPlan(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	accountsFile := writeTempCSV(t, "accounts.csv", "code,name,account_type\n1000,Cash,ASSET\n")
+	blockedPlan := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "/api/v1/tenants/tenant-1/migration/execution-plan", r.URL.Path)
+		var req cutover.PlanMigrationExecutionRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		plan := migrationExecuteReadyPlan(req.Files)
+		if blockedPlan {
+			plan.Summary.Ready = false
+			plan.Summary.ValidationReady = false
+			plan.Summary.ReadyStepCount = 0
+			plan.Summary.NeedsContextCount = 1
+			plan.Summary.BlockedStepCount = 1
+			plan.Steps = []cutover.MigrationExecutionStep{
+				{StepNumber: 1, Kind: cutover.KindAccounts, FileName: "accounts.csv", Status: cutover.MigrationExecutionStepNeedsContext, Message: "Needs tenant context."},
+				{StepNumber: 2, Kind: cutover.KindInvoices, FileName: "invoices.csv", Status: cutover.MigrationExecutionStepBlocked, Message: "Blocked by validation."},
+			}
+		}
+		_ = json.NewEncoder(w).Encode(plan)
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"migration", "execute", "--accounts", accountsFile})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires --confirm")
+	assert.Contains(t, stdout.String(), "Migration execution: needs_confirmation")
+	assert.Contains(t, stdout.String(), "PLANNED")
+
+	blockedPlan = true
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"migration", "execute", "--accounts", accountsFile, "--confirm"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "plan is not ready")
+	assert.Contains(t, stdout.String(), "Migration execution: blocked")
+	assert.Contains(t, stdout.String(), "SKIPPED")
+}
+
+func TestCLIMigrationExecuteReportsImportFailure(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	accountsFile := writeTempCSV(t, "accounts.csv", "code,name,account_type\n1000,Cash,ASSET\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/migration/execution-plan":
+			var req cutover.PlanMigrationExecutionRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			_ = json.NewEncoder(w).Encode(migrationExecuteReadyPlan(req.Files))
+		case "/api/v1/tenants/tenant-1/accounts/import":
+			http.Error(w, `{"error":"import failed"}`, http.StatusBadRequest)
+		default:
+			t.Fatalf("unexpected request: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"migration", "execute", "--accounts", accountsFile, "--confirm"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "execute migration step 1")
+	assert.Contains(t, stdout.String(), "Migration execution: failed")
+	assert.Contains(t, stdout.String(), "FAILED")
+}
+
+func TestMigrationExecutionRunHelperBranches(t *testing.T) {
+	run, err := executeMigrationRun(context.Background(), nil, "tenant-1", nil, nil, migrationExecuteOptions{Confirm: true})
+	require.Error(t, err)
+	assert.Equal(t, "blocked", run.Summary.Status)
+
+	plan := &cutover.MigrationExecutionPlan{
+		Summary: cutover.MigrationExecutionPlanSummary{ValidationReady: true, Ready: true, StepCount: 1, ReadyStepCount: 1},
+		Steps: []cutover.MigrationExecutionStep{{
+			StepNumber: 1,
+			Kind:       cutover.KindAccounts,
+			FileName:   "missing.csv",
+			Status:     cutover.MigrationExecutionStepReady,
+		}},
+	}
+	run, err = executeMigrationRun(context.Background(), nil, "tenant-1", nil, plan, migrationExecuteOptions{Confirm: true})
+	require.Error(t, err)
+	assert.Equal(t, "failed", run.Summary.Status)
+	assert.Equal(t, migrationExecutionResultFailed, run.Steps[0].Status)
+
+	inconsistentPlan := &cutover.MigrationExecutionPlan{
+		Summary: cutover.MigrationExecutionPlanSummary{ValidationReady: true, Ready: true, StepCount: 1, ReadyStepCount: 1},
+		Steps: []cutover.MigrationExecutionStep{{
+			StepNumber: 1,
+			Kind:       cutover.KindAccounts,
+			FileName:   "accounts.csv",
+			Status:     cutover.MigrationExecutionStepNeedsContext,
+			Message:    "Needs context.",
+		}},
+	}
+	run, err = executeMigrationRun(context.Background(), nil, "tenant-1", []cutover.BundleFile{{Kind: cutover.KindAccounts, FileName: "accounts.csv"}}, inconsistentPlan, migrationExecuteOptions{Confirm: true})
+	require.NoError(t, err)
+	assert.Equal(t, "succeeded", run.Summary.Status)
+	assert.Equal(t, migrationExecutionResultSkipped, run.Steps[0].Status)
+
+	_, err = executeMigrationImportStep(context.Background(), nil, "tenant-1", cutover.MigrationExecutionStep{Kind: cutover.FileKind("unsupported")}, cutover.BundleFile{}, migrationExecuteOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported")
+
+	_, err = executeMigrationImportStep(context.Background(), nil, "tenant-1", cutover.MigrationExecutionStep{Kind: cutover.KindBankAccounts}, cutover.BundleFile{CSVContent: `"`}, migrationExecuteOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read bank account CSV header")
+
+	_, err = executeMigrationImportStep(context.Background(), nil, "tenant-1", cutover.MigrationExecutionStep{Kind: cutover.KindBankTransactions}, cutover.BundleFile{}, migrationExecuteOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bank-transaction-account-id is required")
+
+	_, err = executeMigrationImportStep(context.Background(), nil, "tenant-1", cutover.MigrationExecutionStep{Kind: cutover.KindBankTransactions}, cutover.BundleFile{CSVContent: `"`}, migrationExecuteOptions{BankTransactionAccountID: "bank-1", BankTransactionFormat: "generic"})
+	require.Error(t, err)
+
+	assert.Equal(t, "OB-2026", openingBalanceExecutionReference("2026-01-01"))
+	assert.Equal(t, "OB", openingBalanceExecutionReference("  "))
+}
+
+func TestPrintMigrationExecutionRunBranches(t *testing.T) {
+	var buf strings.Builder
+	printMigrationExecutionRun(&buf, nil)
+	assert.Contains(t, buf.String(), "No migration execution run")
+
+	buf.Reset()
+	printMigrationExecutionRun(&buf, &migrationExecutionRun{
+		Summary: migrationExecutionRunSummary{Status: "succeeded", StepCount: 1, SucceededStepCount: 1},
+		Steps: []migrationExecutionStepRun{{
+			StepNumber: 1,
+			Kind:       cutover.KindAccounts,
+			FileName:   "accounts.csv",
+			Status:     migrationExecutionResultSucceeded,
+		}},
+	})
+	assert.Contains(t, buf.String(), "Migration execution: succeeded")
+	assert.Contains(t, buf.String(), "accounts.csv")
+}
+
+func migrationExecuteTestFiles(t *testing.T) map[cutover.FileKind]string {
+	t.Helper()
+
+	return map[cutover.FileKind]string{
+		cutover.KindAccounts:          writeTempCSV(t, "accounts.csv", "code,name,account_type\n1000,Cash,ASSET\n"),
+		cutover.KindContacts:          writeTempCSV(t, "contacts.csv", "name\nAcme OU\n"),
+		cutover.KindEmployees:         writeTempCSV(t, "employees.csv", "first_name,last_name,start_date\nMari,Mets,2026-01-01\n"),
+		cutover.KindExpenses:          writeTempCSV(t, "expenses.csv", "expense_date,merchant,expense_account_code,payment_account_code,amount\n2026-01-10,Vendor,5000,1000,12.50\n"),
+		cutover.KindInvoices:          writeTempCSV(t, "invoices.csv", "invoice_number,invoice_type,issue_date,due_date,contact_name,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,2026-01-10,2026-01-20,Acme OU,Service,1,100,22\n"),
+		cutover.KindEInvoices:         writeTempCSV(t, "einvoices.xml", "<E_Invoice><Invoice></Invoice></E_Invoice>"),
+		cutover.KindPayments:          writeTempCSV(t, "payments.csv", "payment_date,amount,contact_name\n2026-01-12,100,Acme OU\n"),
+		cutover.KindBankAccounts:      writeTempCSV(t, "bank-accounts.csv", "name,account_number\nMain bank,EE471000001020145685\n"),
+		cutover.KindBankTransactions:  writeTempCSV(t, "bank-transactions.csv", "date,amount,description\n2026-01-12,100,Customer receipt\n"),
+		cutover.KindPayrollHistory:    writeTempCSV(t, "payroll-history.csv", "period_year,period_month,employee_first_name,employee_last_name,gross_pay\n2026,1,Mari,Mets,1000\n"),
+		cutover.KindLeaveBalances:     writeTempCSV(t, "leave-balances.csv", "employee_first_name,employee_last_name,year,absence_type,available_days\nMari,Mets,2026,Annual leave,28\n"),
+		cutover.KindTSDHistory:        writeTempCSV(t, "tsd-history.csv", "year,month,employee_first_name,employee_last_name,gross_amount\n2026,1,Mari,Mets,1000\n"),
+		cutover.KindKMDHistory:        writeTempCSV(t, "kmd-history.csv", "year,month,row_code,tax_amount\n2026,1,1,22\n"),
+		cutover.KindQuotes:            writeTempCSV(t, "quotes.csv", "quote_number,quote_date,contact_name,line_description,quantity,unit_price,vat_rate\nQT-1,2026-01-10,Acme OU,Service,1,100,22\n"),
+		cutover.KindOrders:            writeTempCSV(t, "orders.csv", "order_number,order_date,contact_name,line_description,quantity,unit_price,vat_rate\nORD-1,2026-01-10,Acme OU,Service,1,100,22\n"),
+		cutover.KindRecurringInvoices: writeTempCSV(t, "recurring-invoices.csv", "name,frequency,start_date,contact_name,line_description,quantity,unit_price,vat_rate\nMonthly,MONTHLY,2026-01-01,Acme OU,Service,1,100,22\n"),
+		cutover.KindCostCenters:       writeTempCSV(t, "cost-centers.csv", "code,name\nCC1,Admin\n"),
+		cutover.KindCostAllocations:   writeTempCSV(t, "cost-allocations.csv", "cost_center_code,journal_entry_line_id,amount,allocation_date\nCC1,11111111-1111-1111-1111-111111111111,10,2026-01-10\n"),
+		cutover.KindProductCategories: writeTempCSV(t, "product-categories.csv", "name\nServices\n"),
+		cutover.KindWarehouses:        writeTempCSV(t, "warehouses.csv", "code,name\nMAIN,Main warehouse\n"),
+		cutover.KindProducts:          writeTempCSV(t, "products.csv", "code,name,sales_price\nSKU-1,Service,100\n"),
+		cutover.KindStockAdjustments:  writeTempCSV(t, "stock.csv", "product_code,warehouse_code,quantity\nSKU-1,MAIN,5\n"),
+		cutover.KindFixedAssets:       writeTempCSV(t, "fixed-assets.csv", "asset_number,name,acquisition_date,acquisition_cost\nFA-1,Laptop,2026-01-01,1000\n"),
+		cutover.KindOpeningBalances:   writeTempCSV(t, "opening-balances.csv", "account_code,debit,credit\n1000,100,0\n3000,0,100\n"),
+		cutover.KindJournalEntries:    writeTempCSV(t, "journal.csv", "entry_reference,entry_date,account_code,debit,credit\nJE-1,2026-01-31,1000,100,0\nJE-1,2026-01-31,3000,0,100\n"),
+	}
+}
+
+func migrationExecuteReadyPlan(files []cutover.BundleFile) cutover.MigrationExecutionPlan {
+	steps := make([]cutover.MigrationExecutionStep, 0, len(files))
+	for index, file := range files {
+		steps = append(steps, cutover.MigrationExecutionStep{
+			StepNumber: index + 1,
+			Kind:       file.Kind,
+			FileName:   file.FileName,
+			Status:     cutover.MigrationExecutionStepReady,
+			APIPath:    "/api/v1/tenants/{tenantID}/" + string(file.Kind) + "/import",
+			CLICommand: "oa migration execute --confirm",
+		})
+	}
+	return cutover.MigrationExecutionPlan{
+		Summary: cutover.MigrationExecutionPlanSummary{
+			ValidationReady: true,
+			Ready:           true,
+			StepCount:       len(steps),
+			ReadyStepCount:  len(steps),
+		},
+		Validation: cutover.BundleValidationReport{
+			Summary: cutover.BundleValidationSummary{
+				FilesValidated: len(files),
+				Ready:          true,
+			},
+		},
+		Steps: steps,
+	}
+}
+
 func TestCLIMigrationValidationBranches(t *testing.T) {
 	configureCLIEnv(t)
 

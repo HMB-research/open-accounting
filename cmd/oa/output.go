@@ -174,6 +174,46 @@ func printMigrationExecutionPlan(w io.Writer, plan *cutover.MigrationExecutionPl
 	printMigrationRemediationActions(w, plan.RemediationActions)
 }
 
+func printMigrationExecutionRun(w io.Writer, run *migrationExecutionRun) {
+	if run == nil {
+		_, _ = fmt.Fprintln(w, "No migration execution run")
+		return
+	}
+	_, _ = fmt.Fprintf(
+		w,
+		"Migration execution: %s (%d steps, %d succeeded, %d failed, %d skipped, %d planned)\n",
+		run.Summary.Status,
+		run.Summary.StepCount,
+		run.Summary.SucceededStepCount,
+		run.Summary.FailedStepCount,
+		run.Summary.SkippedStepCount,
+		run.Summary.PlannedStepCount,
+	)
+
+	if len(run.Steps) > 0 {
+		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "STEP\tSTATUS\tKIND\tFILE\tMESSAGE\tERROR\tCOMMAND")
+		for _, step := range run.Steps {
+			message := step.Message
+			if message == "" {
+				message = "-"
+			}
+			errText := step.Error
+			if errText == "" {
+				errText = "-"
+			}
+			command := step.CLICommand
+			if command == "" {
+				command = "-"
+			}
+			_, _ = fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", step.StepNumber, step.Status, step.Kind, step.FileName, message, errText, command)
+		}
+		_ = tw.Flush()
+	}
+
+	printMigrationRemediationActions(w, run.RemediationActions)
+}
+
 func printMigrationRemediationActions(w io.Writer, actions []cutover.MigrationRemediationAction) {
 	if len(actions) == 0 {
 		return

@@ -322,6 +322,7 @@ func collectKnownCLICommandPaths(t *testing.T) map[string]bool {
 		"ops backup offsite-sync":       true,
 		"ops backup restore-drill":      true,
 		"ops backup schedule-systemd":   true,
+		"migration execute":             true,
 		"payroll import-leave-balances": true,
 	}
 	for _, route := range collectAPIRoutesFromSource(t) {
