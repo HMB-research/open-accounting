@@ -24,6 +24,8 @@
 		journalMissingEvidenceCount: number;
 		journalPendingEvidenceCount: number;
 		journalRejectedEvidenceCount: number;
+		assignmentCount: number;
+		highPriorityAssignmentCount: number;
 		needsClose: boolean;
 		suggestedCloseDate: string;
 		lastCloseEvent: PeriodCloseEvent | null;
@@ -178,6 +180,10 @@
 			const journalRejectedEvidenceCount = snapshot.journalEvidence.filter(
 				(item) => item.documentSummary.has_rejected
 			).length;
+			const assignmentCount = snapshot.assignmentActions.length;
+			const highPriorityAssignmentCount = snapshot.assignmentActions.filter(
+				(action) => action.priority.toLowerCase() === 'high'
+			).length;
 			const periodLockDate = snapshot.tenant.settings?.period_lock_date ?? null;
 			const closeIsDue = needsPeriodClose(periodLockDate);
 			const openTasks =
@@ -186,6 +192,7 @@
 				missingEvidenceCount +
 				pendingEvidenceCount +
 				journalEvidenceCount +
+				assignmentCount +
 				(closeIsDue ? 1 : 0) +
 				(snapshot.tenant.onboarding_completed ? 0 : 1);
 			const urgency =
@@ -197,6 +204,8 @@
 				Math.min(5, journalEvidenceCount) +
 				Math.min(3, journalPendingEvidenceCount) +
 				Math.min(2, journalRejectedEvidenceCount) +
+				Math.min(8, assignmentCount) +
+				Math.min(5, highPriorityAssignmentCount) +
 				(closeIsDue ? 3 : 0) +
 				(snapshot.tenant.onboarding_completed ? 0 : 2);
 
@@ -213,6 +222,8 @@
 				journalMissingEvidenceCount,
 				journalPendingEvidenceCount,
 				journalRejectedEvidenceCount,
+				assignmentCount,
+				highPriorityAssignmentCount,
 				needsClose: closeIsDue,
 				suggestedCloseDate: getSuggestedCloseDate(periodLockDate),
 				lastCloseEvent: snapshot.periodCloseEvents[0] ?? null,
@@ -249,6 +260,9 @@
 	);
 	const totalJournalEvidence = $derived(
 		attentionTenants.reduce((sum, item) => sum + item.journalEvidenceCount, 0)
+	);
+	const totalAssignments = $derived(
+		attentionTenants.reduce((sum, item) => sum + item.assignmentCount, 0)
 	);
 	const tenantsNeedingClose = $derived(
 		attentionTenants.filter((item) => item.needsClose).length
@@ -311,6 +325,10 @@
 							<span>{m.dashboard_reviewPortfolioJournalEvidence()}</span>
 						</div>
 						<div>
+							<strong>{totalAssignments}</strong>
+							<span>{m.dashboard_reviewPortfolioAssignments()}</span>
+						</div>
+						<div>
 							<strong>{tenantsNeedingClose}</strong>
 							<span>{m.dashboard_reviewPortfolioCloseDueCount()}</span>
 						</div>
@@ -352,6 +370,9 @@
 											{/if}
 											{#if item.journalEvidenceCount > 0}
 												<span class="portfolio-pill portfolio-pill-alert">{item.journalEvidenceCount} {m.dashboard_reviewPortfolioJournalEvidenceTag()}</span>
+											{/if}
+											{#if item.assignmentCount > 0}
+												<span class="portfolio-pill portfolio-pill-alert">{item.assignmentCount} {m.dashboard_reviewPortfolioAssignmentTag()}</span>
 											{/if}
 											{#if item.needsClose}
 												<span class="portfolio-pill portfolio-pill-alert">{m.dashboard_reviewPortfolioCloseTag()}</span>
@@ -430,6 +451,14 @@
 													})}
 												>
 													{m.dashboard_reviewPortfolioActionJournalEvidence()}
+												</a>
+											{/if}
+											{#if item.assignmentCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/dashboard', item.membership.tenant.id, {}, 'assignment-queue')}
+												>
+													{m.dashboard_reviewPortfolioActionAssignments()}
 												</a>
 											{/if}
 											{#if item.needsClose}

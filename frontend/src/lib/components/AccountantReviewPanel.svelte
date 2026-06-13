@@ -16,7 +16,9 @@
 		getSuggestedCloseDate,
 		loadTenantReviewSnapshot,
 		toDecimal,
-		type BankExceptionGroup
+		type BankExceptionGroup,
+		type WorkspaceAssignmentAction,
+		type WorkspaceAssignmentSource
 	} from '$lib/review/workspace';
 
 	let { tenant }: { tenant: Tenant } = $props();
@@ -27,6 +29,8 @@
 	let bankExceptions = $state<BankExceptionGroup[]>([]);
 	let periodCloseEvents = $state<PeriodCloseEvent[]>([]);
 	let journalEntries = $state<JournalEntry[]>([]);
+	let assignmentActions = $state<WorkspaceAssignmentAction[]>([]);
+	let assignmentErrorCount = $state(0);
 	let reviewDrafts = $state<Record<string, { followUpStatus: FollowUpStatus; reviewNote: string }>>({});
 	let reviewSavingId = $state('');
 	let reviewSavedId = $state('');
@@ -57,6 +61,8 @@
 		periodCloseEvents = snapshot.periodCloseEvents;
 		journalEntries = snapshot.journalEntries;
 		bankExceptions = snapshot.bankExceptions;
+		assignmentActions = snapshot.assignmentActions;
+		assignmentErrorCount = snapshot.assignmentErrorCount;
 		reviewDrafts = buildReviewDrafts(snapshot.bankExceptions);
 		reviewSavedId = '';
 		reviewErrorId = '';
@@ -120,6 +126,16 @@
 	);
 	const topOverdueInvoices = $derived(overdueSummary?.invoices.slice(0, 4) ?? []);
 	const topUnmatchedTransactions = $derived(unmatchedTransactions.slice(0, 4));
+	const topAssignmentActions = $derived(assignmentActions.slice(0, 6));
+	const highPriorityAssignmentCount = $derived(
+		assignmentActions.filter((action) => action.priority.toLowerCase() === 'high').length
+	);
+	const dueNowAssignmentCount = $derived(
+		assignmentActions.filter((action) => action.dueInDays <= 0).length
+	);
+	const cliReadyAssignmentCount = $derived(
+		assignmentActions.filter((action) => Boolean(action.cliCommand)).length
+	);
 	const topJournalEntries = $derived(journalEntries.slice(0, 4));
 	const journalDraftCount = $derived(journalEntries.filter((entry) => entry.status === 'DRAFT').length);
 	const journalPostedCount = $derived(journalEntries.filter((entry) => entry.status === 'POSTED').length);
@@ -164,6 +180,43 @@
 			default:
 				return m.dashboard_reviewFollowUpNone();
 		}
+	}
+
+	function getAssignmentSourceLabel(source: WorkspaceAssignmentSource): string {
+		switch (source) {
+			case 'close':
+				return m.dashboard_reviewAssignmentSourceClose();
+			case 'banking':
+				return m.dashboard_reviewAssignmentSourceBanking();
+			case 'documents':
+				return m.dashboard_reviewAssignmentSourceDocuments();
+			case 'payroll':
+				return m.dashboard_reviewAssignmentSourcePayroll();
+			case 'tsd':
+				return m.dashboard_reviewAssignmentSourceTsd();
+			case 'kmd':
+				return m.dashboard_reviewAssignmentSourceKmd();
+		}
+	}
+
+	function getAssignmentDueLabel(days: number): string {
+		if (days < 0) {
+			return m.dashboard_reviewAssignmentOverdue();
+		}
+		if (days === 0) {
+			return m.dashboard_reviewAssignmentDueToday();
+		}
+		return m.dashboard_reviewAssignmentDueDays({ days });
+	}
+
+	function buildTenantScopedHref(path: string | undefined): string {
+		if (!path) {
+			return `/dashboard?tenant=${tenant.id}`;
+		}
+
+		const url = new URL(path.startsWith('/') ? path : `/${path}`, 'http://open-accounting.local');
+		url.searchParams.set('tenant', tenant.id);
+		return `${url.pathname}${url.search}${url.hash}`;
 	}
 
 	function isReviewDirty(transaction: BankTransaction): boolean {
@@ -400,6 +453,63 @@
 					</ul>
 				{:else}
 					<p class="review-empty">{m.dashboard_reviewNoBankingExceptions()}</p>
+				{/if}
+			</article>
+
+			<article id="assignment-queue" class="review-card">
+				<div class="review-card-topline">
+					<span class="review-card-kicker">{m.dashboard_reviewAssignmentsTitle()}</span>
+					<a href="/documents?tenant={tenant.id}&review_status=PENDING" class="review-action">{m.dashboard_reviewAssignmentsOpenDocuments()}</a>
+				</div>
+				<div class="review-figure">
+					<strong>{assignmentActions.length}</strong>
+					<span>{m.dashboard_reviewAssignmentsCount()}</span>
+				</div>
+				<div class="review-metrics">
+					<div>
+						<strong>{highPriorityAssignmentCount}</strong>
+						<span>{m.dashboard_reviewAssignmentsHighPriority()}</span>
+					</div>
+					<div>
+						<strong>{dueNowAssignmentCount}</strong>
+						<span>{m.dashboard_reviewAssignmentsDueNow()}</span>
+					</div>
+					<div>
+						<strong>{cliReadyAssignmentCount}</strong>
+						<span>{m.dashboard_reviewAssignmentsCliReady()}</span>
+					</div>
+				</div>
+
+				{#if assignmentErrorCount > 0}
+					<p class="review-feedback review-feedback-error">{m.dashboard_reviewAssignmentsPartial()}</p>
+				{/if}
+
+				{#if topAssignmentActions.length > 0}
+					<ul class="review-list review-assignment-list">
+						{#each topAssignmentActions as action (action.id)}
+							<li class="review-list-item-assignment">
+								<div class="review-list-main">
+									<strong>{action.message}</strong>
+									<span>
+										{getAssignmentSourceLabel(action.source)} · {action.queue} · {action.severity}
+									</span>
+									<span>{action.action}</span>
+									{#if action.cliCommand}
+										<code>{m.dashboard_reviewAssignmentCommand()}: {action.cliCommand}</code>
+									{/if}
+								</div>
+								<div class="review-list-meta review-list-meta-assignment">
+									<strong>{action.priority}</strong>
+									<span>{getAssignmentDueLabel(action.dueInDays)}</span>
+									<a class="review-action" href={buildTenantScopedHref(action.uiPath)}>
+										{m.dashboard_reviewAssignmentsOpenAction()}
+									</a>
+								</div>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="review-empty">{m.dashboard_reviewAssignmentsEmpty()}</p>
 				{/if}
 			</article>
 
@@ -683,8 +793,24 @@
 		align-items: flex-start;
 	}
 
+	.review-list li.review-list-item-assignment {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(9rem, auto);
+	}
+
 	.review-list-main {
 		min-width: 0;
+	}
+
+	.review-list-main code {
+		display: block;
+		max-width: 100%;
+		overflow-wrap: anywhere;
+		color: var(--color-text);
+		background: rgba(15, 23, 42, 0.05);
+		border-radius: 0.5rem;
+		padding: 0.4rem 0.5rem;
+		font-size: 0.75rem;
 	}
 
 	.review-list-meta {
@@ -692,6 +818,10 @@
 	}
 
 	.review-list-meta-banking {
+		align-items: flex-end;
+	}
+
+	.review-list-meta-assignment {
 		align-items: flex-end;
 	}
 
@@ -821,12 +951,21 @@
 			grid-template-columns: 1fr;
 		}
 
+		.review-list li.review-list-item-assignment {
+			grid-template-columns: 1fr;
+		}
+
 		.review-invoice-actions {
 			align-items: stretch;
 			width: 100%;
 		}
 
 		.review-list-meta-banking {
+			align-items: flex-start;
+			text-align: left;
+		}
+
+		.review-list-meta-assignment {
 			align-items: flex-start;
 			text-align: left;
 		}

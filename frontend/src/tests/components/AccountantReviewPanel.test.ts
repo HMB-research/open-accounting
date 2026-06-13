@@ -13,7 +13,12 @@ const { apiMock } = vi.hoisted(() => ({
 		reviewBankTransaction: vi.fn(),
 		sendPaymentReminder: vi.fn(),
 		listPeriodCloseEvents: vi.fn(),
-		listJournalEntries: vi.fn()
+		listJournalEntries: vi.fn(),
+		getDocumentRetentionReview: vi.fn(),
+		listPayrollRuns: vi.fn(),
+		listTSD: vi.fn(),
+		listKMD: vi.fn(),
+		getYearEndCloseStatus: vi.fn()
 	}
 }));
 
@@ -107,6 +112,22 @@ describe('AccountantReviewPanel', () => {
 				currency: 'EUR',
 				status: 'UNMATCHED',
 				follow_up_status: 'NONE',
+				remediation_actions: [
+					{
+						code: 'bank_transaction_unmatched',
+						severity: 'ACTION',
+						scope: 'banking',
+						owner_role: 'accountant',
+						workspace_queue: 'banking_followup',
+						assignment_key: 'banking-followup:bank-transaction-unmatched:bank-transaction:tx-1',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'Bank transaction needs matching.',
+						action: 'Match the transaction or mark the needed follow-up.',
+						ui_path: '/banking',
+						cli_command: 'oa banking transactions review --id tx-1 --follow-up-status READY_TO_MATCH'
+					}
+				],
 				created_at: '2026-02-08T00:00:00Z'
 			}
 		]);
@@ -157,6 +178,95 @@ describe('AccountantReviewPanel', () => {
 				created_by: 'user-1'
 			}
 		]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-02-11',
+			cutoff_date: '2026-03-13',
+			total_count: 1,
+			expired_count: 0,
+			due_soon_count: 1,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: [
+				{
+					code: 'document_retention_due_soon',
+					severity: 'WARNING',
+					scope: 'documents',
+					owner_role: 'accountant',
+					workspace_queue: 'document_review',
+					assignment_key: 'document-review:document-retention-due-soon:bank-transaction:tx-1:doc-1',
+					priority: 'normal',
+					due_in_days: 3,
+					message: 'Document retention date needs review.',
+					action: 'Extend retention or complete the disposal workflow.',
+					ui_path: '/documents?review_status=PENDING',
+					cli_command: 'oa documents retention --include-missing'
+				}
+			]
+		});
+		apiMock.listPayrollRuns.mockResolvedValue([
+			{
+				id: 'payroll-1',
+				tenant_id: 'tenant-1',
+				period_year: 2026,
+				period_month: 2,
+				status: 'DRAFT',
+				total_gross: new Decimal(0),
+				total_net: new Decimal(0),
+				total_employer_cost: new Decimal(0),
+				remediation_actions: [
+					{
+						code: 'payroll_run_calculation_required',
+						severity: 'ACTION',
+						scope: 'payroll',
+						owner_role: 'accountant',
+						workspace_queue: 'payroll_runs',
+						assignment_key: 'payroll-runs:payroll-run-calculation-required:payroll-run:payroll-1:2026-02',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'Payroll run needs calculation.',
+						action: 'Calculate payroll before approval.',
+						ui_path: '/payroll',
+						cli_command: 'oa payroll runs calculate --id payroll-1'
+					}
+				],
+				created_at: '2026-02-01T00:00:00Z',
+				updated_at: '2026-02-01T00:00:00Z'
+			}
+		]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: false,
+			has_profit_and_loss_activity: true,
+			carry_forward_needed: true,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(1200),
+			remediation_actions: [
+				{
+					code: 'fiscal_year_not_closed',
+					severity: 'BLOCKER',
+					scope: 'close',
+					owner_role: 'accountant',
+					workspace_queue: 'year_end_close',
+					assignment_key: 'year-end-close:fiscal-year-not-closed:close:2025-12-31',
+					priority: 'high',
+					due_in_days: 1,
+					message: 'Fiscal year ending 2025-12-31 is not closed.',
+					action: 'Close the fiscal year with reviewer sign-off before posting carry-forward.',
+					ui_path: '/settings/company#period-history',
+					cli_command: 'oa close period --period-end 2025-12-31 --reviewer-sign-off --note "Fiscal-year close"'
+				}
+			]
+		});
 		apiMock.reviewBankTransaction.mockResolvedValue({
 			id: 'tx-1',
 			tenant_id: 'tenant-1',
@@ -200,10 +310,27 @@ describe('AccountantReviewPanel', () => {
 		expect(screen.getByText('Unknown transfer')).toBeInTheDocument();
 		expect(screen.getAllByText('Evidence pending review').length).toBeGreaterThan(0);
 		expect(screen.getByText('Month-end accrual')).toBeInTheDocument();
+		expect(screen.getByText('Assignment queue')).toBeInTheDocument();
+		expect(screen.getByText('Fiscal year ending 2025-12-31 is not closed.')).toBeInTheDocument();
+		expect(screen.getByText('Bank transaction needs matching.')).toBeInTheDocument();
+		expect(screen.getByText('Payroll run needs calculation.')).toBeInTheDocument();
+		expect(screen.getByText(/oa close period --period-end 2025-12-31/)).toBeInTheDocument();
+		expect(
+			screen
+				.getAllByRole('link', { name: 'Open action' })
+				.some((link) => link.getAttribute('href') === '/settings/company?tenant=tenant-1#period-history')
+		).toBe(true);
 		expect(screen.getAllByText('Closed').length).toBeGreaterThan(0);
 		expect(screen.getByRole('link', { name: 'Open reminders' })).toHaveAttribute('href', '/invoices/reminders?tenant=tenant-1');
 		expect(apiMock.listBankTransactions).toHaveBeenCalledWith('tenant-1', 'bank-1', { status: 'UNMATCHED' });
 		expect(apiMock.listDocumentReviewSummaries).toHaveBeenCalledWith('tenant-1', 'bank_transaction', ['tx-1']);
+		expect(apiMock.getDocumentRetentionReview).toHaveBeenCalledWith('tenant-1', {
+			horizon_days: 30,
+			include_missing: true
+		});
+		expect(apiMock.listPayrollRuns).toHaveBeenCalledWith('tenant-1');
+		expect(apiMock.listTSD).toHaveBeenCalledWith('tenant-1');
+		expect(apiMock.listKMD).toHaveBeenCalledWith('tenant-1');
 	});
 
 	it('shows empty-state guidance when no review items are pending', async () => {
@@ -219,6 +346,36 @@ describe('AccountantReviewPanel', () => {
 		apiMock.listDocumentReviewSummaries.mockResolvedValue([]);
 		apiMock.listPeriodCloseEvents.mockResolvedValue([]);
 		apiMock.listJournalEntries.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-02-11',
+			cutoff_date: '2026-03-13',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
 
 		render(AccountantReviewPanel, {
 			tenant: createTenant({ settings: { ...createTenant().settings, period_lock_date: null } })
@@ -229,6 +386,7 @@ describe('AccountantReviewPanel', () => {
 		});
 
 		expect(screen.getByText('No unmatched bank transactions are waiting for review.')).toBeInTheDocument();
+		expect(screen.getByText('No assignment-ready remediation actions are waiting right now.')).toBeInTheDocument();
 		expect(screen.getByText('No close or reopen actions have been recorded yet.')).toBeInTheDocument();
 		expect(screen.getByText('No recent journal entries to review yet.')).toBeInTheDocument();
 		expect(screen.getByText('No periods locked yet')).toBeInTheDocument();
