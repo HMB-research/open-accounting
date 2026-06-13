@@ -52,10 +52,10 @@ These local operator commands wrap the backup scripts in `scripts/`. Run them fr
 go run ./cmd/oa ops backup create --backup-dir ./backups --retention-days 30 --dry-run
 go run ./cmd/oa ops backup health --backup-dir ./backups --max-age-hours 26 --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom
 go run ./cmd/oa ops backup offsite-sync --backup-dir ./backups --s3-uri s3://company-backups/open-accounting/prod --dry-run
-go run ./cmd/oa ops backup restore-drill --backup ./backups/openaccounting_20260528T120000Z.dump --restore-url postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable --dry-run
+go run ./cmd/oa ops backup restore-drill --backup ./backups/openaccounting_20260528T120000Z.dump --restore-url postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable --status-file /var/lib/node_exporter/textfile_collector/openaccounting_restore_drill.prom --dry-run
 ```
 
-`ops backup create` delegates to `db-backup.sh`, which requires `DATABASE_URL` unless `--database-url` is passed. `ops backup restore-drill` requires a separate disposable restore database and refuses to restore into the source URL when `DATABASE_URL` or `--source-url` matches. `ops backup offsite-sync` requires exactly one destination: `--s3-uri` or `--rclone-remote`.
+`ops backup create` delegates to `db-backup.sh`, which requires `DATABASE_URL` unless `--database-url` is passed. `ops backup restore-drill` requires a separate disposable restore database, refuses to restore into the source URL when `DATABASE_URL` or `--source-url` matches, and forwards `--status-file` so scheduled drills can publish Prometheus textfile metrics and structured failure codes. `ops backup offsite-sync` requires exactly one destination: `--s3-uri` or `--rclone-remote`.
 The CLI trims and forwards only provided backup flags to the matching local script; `OA_SCRIPT_DIR` can point at a custom scripts directory, otherwise the CLI searches for `scripts/` from the current working tree.
 
 ## Bootstrap a token

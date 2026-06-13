@@ -215,12 +215,14 @@ createdb openaccounting_restore_drill
 
 RESTORE_DATABASE_URL="postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable" \
   DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
-  scripts/db-restore-drill.sh --backup /backups/openaccounting_20260528T120000Z.dump
+  scripts/db-restore-drill.sh \
+    --backup /backups/openaccounting_20260528T120000Z.dump \
+    --status-file /var/lib/node_exporter/textfile_collector/openaccounting_restore_drill.prom
 
 dropdb openaccounting_restore_drill
 ```
 
-`db-restore-drill.sh` refuses to run when the restore URL matches `DATABASE_URL`, checks the checksum when present, requires an empty target database unless `--allow-non-empty` is passed, restores with `pg_restore`, and verifies core Open Accounting tables plus applied migrations.
+`db-restore-drill.sh` refuses to run when the restore URL matches `DATABASE_URL`, checks the checksum when present, requires an empty target database unless `--allow-non-empty` is passed, restores with `pg_restore`, and verifies core Open Accounting tables plus applied migrations. Pass `--status-file` to publish Prometheus textfile metrics for restore-drill health, last success time, restored migration/user/tenant counts, and the structured failure code when a scheduled drill fails.
 
 Monitor backup freshness and checksum status with the health script. It exits non-zero on missing, stale, undersized, or checksum-failing backups and can emit Prometheus textfile metrics:
 
@@ -260,7 +262,7 @@ Recommended production schedule:
 02:00  scripts/db-backup.sh --backup-dir /backups --retention-days 30
 02:20  scripts/db-backup-offsite-sync.sh --backup-dir /backups
 02:30  scripts/db-backup-health.sh --backup-dir /backups --max-age-hours 26 --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom
-Weekly restore drill against the newest synced dump in a disposable database
+Weekly scripts/db-restore-drill.sh --backup <newest-synced-dump> --status-file /var/lib/node_exporter/textfile_collector/openaccounting_restore_drill.prom
 ```
 
 Run `db-restore-drill.sh` from a scheduled job at least weekly against the latest offsite-restored backup copy, not only the local backup directory.

@@ -228,12 +228,14 @@ createdb openaccounting_restore_drill
 
 RESTORE_DATABASE_URL="postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable" \
   DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
-  scripts/db-restore-drill.sh --backup ./backups/openaccounting_20260528T120000Z.dump
+  scripts/db-restore-drill.sh \
+    --backup ./backups/openaccounting_20260528T120000Z.dump \
+    --status-file /var/lib/node_exporter/textfile_collector/openaccounting_restore_drill.prom
 
 dropdb openaccounting_restore_drill
 ```
 
-The restore drill refuses to use the same URL as `DATABASE_URL`, checks the `.sha256` file when present, and verifies that core Open Accounting tables and migrations were restored.
+The restore drill refuses to use the same URL as `DATABASE_URL`, checks the `.sha256` file when present, and verifies that core Open Accounting tables and migrations were restored. Pass `--status-file` to publish Prometheus textfile metrics for restore-drill health, last success time, restored migration/user/tenant counts, and the structured failure code from `ERROR[code]` output when a scheduled drill fails.
 
 Check backup freshness and checksum from cron, systemd timers, or monitoring agents:
 
