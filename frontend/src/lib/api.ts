@@ -3015,6 +3015,7 @@ export interface YearEndCloseStatus {
   close_pack_evidence_entity_id?: string;
   close_pack_evidence?: EvidencePolicyResult | null;
   inventory_costing_review?: YearEndInventoryCostingReview | null;
+  remediation_actions?: YearEndCloseRemediationAction[];
 }
 
 export interface YearEndInventoryCostingReview {
@@ -3031,6 +3032,19 @@ export interface YearEndInventoryCostingReview {
   blocking_exception_line_count: number;
   ready: boolean;
   generated_at: string;
+}
+
+export interface YearEndCloseRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  message: string;
+  action: string;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
 }
 
 export interface CreateYearEndCarryForwardRequest {

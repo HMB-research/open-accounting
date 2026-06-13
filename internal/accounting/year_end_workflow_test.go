@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -236,6 +237,7 @@ func TestService_GetYearEndCloseStatusEdgeCases(t *testing.T) {
 		assert.True(t, status.IsFiscalYearEnd)
 		assert.False(t, status.HasRetainedEarningsAccount)
 		assert.False(t, status.CarryForwardReady)
+		assert.Contains(t, remediationCodes(status.RemediationActions), "retained_earnings_account_missing")
 	})
 
 	t.Run("allows balanced carry-forward readiness without retained earnings account", func(t *testing.T) {
@@ -252,7 +254,88 @@ func TestService_GetYearEndCloseStatusEdgeCases(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, status.HasRetainedEarningsAccount)
 		assert.True(t, status.CarryForwardReady)
+		assert.NotContains(t, remediationCodes(status.RemediationActions), "retained_earnings_account_missing")
+		assert.Contains(t, remediationCodes(status.RemediationActions), "ready_to_post_carry_forward")
 	})
+}
+
+func TestBuildYearEndCloseRemediationActions(t *testing.T) {
+	t.Parallel()
+
+	status := &YearEndCloseStatus{
+		PeriodEndDate:              "2025-12-31",
+		FiscalYearLabel:            "2025",
+		FiscalYearEndDate:          "2025-12-31",
+		IsFiscalYearEnd:            true,
+		PeriodClosed:               false,
+		HasProfitAndLossActivity:   true,
+		CarryForwardNeeded:         true,
+		HasRetainedEarningsAccount: false,
+		NetIncome:                  decimal.NewFromInt(1000),
+		ClosePackEvidenceEntityID:  "year-end-close-tenant-2025-12-31",
+		ClosePackEvidence: &documents.EvidencePolicyResult{
+			EntityType:         documents.EntityTypeYearEndClose,
+			EntityID:           "year-end-close-tenant-2025-12-31",
+			Compliant:          false,
+			TotalCount:         1,
+			PendingReviewCount: 1,
+			ApprovedCount:      0,
+			RejectedCount:      0,
+			MissingEvidence:    false,
+		},
+		InventoryCostingReview: &YearEndInventoryCostingReview{
+			ValuationMethod:            "WEIGHTED_AVERAGE",
+			BlockingExceptionLineCount: 2,
+			NegativeQuantityLineCount:  1,
+			MissingCostLineCount:       1,
+			Ready:                      false,
+		},
+	}
+
+	actions := BuildYearEndCloseRemediationActions(status)
+	codes := remediationCodes(actions)
+
+	assert.Contains(t, codes, "fiscal_year_not_closed")
+	assert.Contains(t, codes, "retained_earnings_account_missing")
+	assert.Contains(t, codes, "close_pack_evidence_not_approved")
+	assert.Contains(t, codes, "inventory_costing_exceptions")
+	assert.NotContains(t, codes, "ready_to_post_carry_forward")
+	assert.Equal(t, "accountant", actions[0].OwnerRole)
+	assert.Contains(t, actions[2].Message, "pending")
+	assert.Contains(t, actions[3].CLICommand, "weighted-average")
+
+	ready := &YearEndCloseStatus{
+		PeriodEndDate:              "2025-12-31",
+		FiscalYearEndDate:          "2025-12-31",
+		IsFiscalYearEnd:            true,
+		PeriodClosed:               true,
+		HasProfitAndLossActivity:   true,
+		CarryForwardNeeded:         true,
+		CarryForwardReady:          true,
+		HasRetainedEarningsAccount: true,
+		NetIncome:                  decimal.NewFromInt(1000),
+	}
+	assert.Equal(t, []string{"ready_to_post_carry_forward"}, remediationCodes(BuildYearEndCloseRemediationActions(ready)))
+
+	posted := *ready
+	posted.CarryForwardReady = false
+	posted.ExistingCarryForward = &JournalEntrySummary{ID: "je-1", EntryNumber: "JE-1"}
+	assert.Equal(t, []string{"carry_forward_already_posted"}, remediationCodes(BuildYearEndCloseRemediationActions(&posted)))
+
+	notYearEnd := &YearEndCloseStatus{
+		PeriodEndDate:     "2025-11-30",
+		FiscalYearEndDate: "2025-12-31",
+		IsFiscalYearEnd:   false,
+	}
+	assert.Equal(t, []string{"period_not_fiscal_year_end"}, remediationCodes(BuildYearEndCloseRemediationActions(notYearEnd)))
+}
+
+func remediationCodes(actions []YearEndCloseRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }
 
 func TestService_GetYearEndClosePackErrorPaths(t *testing.T) {

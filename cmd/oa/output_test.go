@@ -1208,6 +1208,14 @@ func TestPrintCloseOutputs(t *testing.T) {
 			Ready:                      true,
 			GeneratedAt:                now,
 		},
+		RemediationActions: []accounting.YearEndCloseRemediationAction{{
+			Code:       "ready_to_post_carry_forward",
+			Severity:   "ACTION",
+			Scope:      "close",
+			OwnerRole:  "accountant",
+			Action:     "Post the retained-earnings carry-forward journal.",
+			CLICommand: "oa close carry-forward --period-end 2025-12-31",
+		}},
 	}
 	result := accounting.YearEndCarryForwardResult{
 		JournalEntry: &accounting.JournalEntry{ID: "je-1", EntryNumber: "JE-2026-001", Status: accounting.StatusPosted},
@@ -1258,6 +1266,8 @@ func TestPrintCloseOutputs(t *testing.T) {
 	assert.Contains(t, statusBuf.String(), "Carry-forward ready: true")
 	assert.Contains(t, statusBuf.String(), "Close-pack evidence compliant: true")
 	assert.Contains(t, statusBuf.String(), "Inventory costing review: method FIFO, ready true, lines 2, total value 1500")
+	assert.Contains(t, statusBuf.String(), "Close remediation actions")
+	assert.Contains(t, statusBuf.String(), "ready_to_post_carry_forward")
 
 	var inventoryExceptionBuf bytes.Buffer
 	printYearEndInventoryCostingReview(&inventoryExceptionBuf, nil)

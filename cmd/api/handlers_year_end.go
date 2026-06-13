@@ -68,6 +68,7 @@ func (h *Handlers) GetYearEndCloseStatus(w http.ResponseWriter, r *http.Request)
 		respondYearEndCloseError(w, err)
 		return
 	}
+	attachYearEndCloseRemediationActions(status)
 
 	respondJSON(w, http.StatusOK, status)
 }
@@ -123,6 +124,7 @@ func (h *Handlers) GetYearEndClosePack(w http.ResponseWriter, r *http.Request) {
 			respondYearEndCloseError(w, err)
 			return
 		}
+		attachYearEndCloseRemediationActions(pack.Status)
 	}
 
 	respondJSON(w, http.StatusOK, pack)
@@ -283,6 +285,7 @@ func (h *Handlers) CreateYearEndCarryForward(w http.ResponseWriter, r *http.Requ
 			respondYearEndCloseError(w, err)
 			return
 		}
+		attachYearEndCloseRemediationActions(result.Status)
 	}
 
 	respondJSON(w, http.StatusOK, result)
@@ -333,6 +336,7 @@ func (h *Handlers) ReverseYearEndCarryForward(w http.ResponseWriter, r *http.Req
 		respondYearEndCloseError(w, err)
 		return
 	}
+	attachYearEndCloseRemediationActions(result.Status)
 
 	respondJSON(w, http.StatusOK, result)
 }
@@ -379,6 +383,7 @@ func (h *Handlers) buildYearEndCloseAuditEvidence(ctx context.Context, tenantRec
 		if err := h.attachYearEndInventoryCostingReview(ctx, tenantRecord.SchemaName, tenantRecord.ID, inventoryValuationMethod, pack.Status); err != nil {
 			return nil, err
 		}
+		attachYearEndCloseRemediationActions(pack.Status)
 		evidencePolicy = pack.Status.ClosePackEvidence
 		if h.documentsService != nil && strings.TrimSpace(pack.Status.ClosePackEvidenceEntityID) != "" {
 			attachedDocuments, err = h.documentsService.ListDocuments(
@@ -554,6 +559,12 @@ func (h *Handlers) attachYearEndInventoryCostingReview(ctx context.Context, sche
 		status.CarryForwardReady = status.CarryForwardReady && review.Ready
 	}
 	return nil
+}
+
+func attachYearEndCloseRemediationActions(status *accounting.YearEndCloseStatus) {
+	if status != nil {
+		status.RemediationActions = accounting.BuildYearEndCloseRemediationActions(status)
+	}
 }
 
 func (h *Handlers) yearEndInventoryCostingReview(ctx context.Context, schemaName, tenantID, method string) (*accounting.YearEndInventoryCostingReview, error) {

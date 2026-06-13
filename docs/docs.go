@@ -22773,6 +22773,41 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseRemediationAction": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "cli_command": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "owner_role": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "ui_path": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseStatus": {
             "type": "object",
             "properties": {
@@ -22826,6 +22861,12 @@ const docTemplate = `{
                 },
                 "period_end_date": {
                     "type": "string"
+                },
+                "remediation_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndCloseRemediationAction"
+                    }
                 },
                 "retained_earnings_account": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountSummary"

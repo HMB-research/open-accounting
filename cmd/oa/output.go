@@ -2376,6 +2376,7 @@ func printYearEndCloseStatus(w io.Writer, status *accounting.YearEndCloseStatus)
 	if status.InventoryCostingReview != nil {
 		printYearEndInventoryCostingReview(w, status.InventoryCostingReview)
 	}
+	printYearEndCloseRemediationActions(w, status.RemediationActions)
 	if status.RetainedEarningsAccount != nil {
 		_, _ = fmt.Fprintf(w, "Retained earnings: %s %s\n", status.RetainedEarningsAccount.Code, status.RetainedEarningsAccount.Name)
 	}
@@ -2407,6 +2408,28 @@ func printYearEndInventoryCostingReview(w io.Writer, review *accounting.YearEndI
 			review.MissingCostLineCount,
 		)
 	}
+}
+
+func printYearEndCloseRemediationActions(w io.Writer, actions []accounting.YearEndCloseRemediationAction) {
+	if len(actions) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "Close remediation actions")
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	for _, action := range actions {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			action.Severity,
+			action.Scope,
+			action.OwnerRole,
+			action.Code,
+			action.Action,
+			action.CLICommand,
+		)
+	}
+	_ = tw.Flush()
 }
 
 func printYearEndClosePack(w io.Writer, pack *accounting.YearEndClosePack) {
