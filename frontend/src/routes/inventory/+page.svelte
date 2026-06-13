@@ -11,7 +11,9 @@
 		type InventoryMovement,
 		type MovementType,
 		type InventoryValuationReport,
-		type InventoryValuationMethod
+		type InventoryValuationMethod,
+		type InventorySubledgerReconciliationLine,
+		type InventorySubledgerReconciliationReport
 	} from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
@@ -42,11 +44,13 @@
 	let showStockLevels = $state(false);
 	let showStockReservation = $state(false);
 	let showValuation = $state(false);
+	let showSubledgerReconciliation = $state(false);
 	let showMovements = $state(false);
 	let selectedProduct = $state<Product | null>(null);
 	let stockLevels = $state<StockLevel[]>([]);
 	let movements = $state<InventoryMovement[]>([]);
 	let valuationReport = $state<InventoryValuationReport | null>(null);
+	let subledgerReport = $state<InventorySubledgerReconciliationReport | null>(null);
 
 	// New product form
 	let newProductName = $state('');
@@ -96,6 +100,10 @@
 	// Inventory valuation filters
 	let valuationWarehouseId = $state('');
 	let valuationMethod = $state<InventoryValuationMethod>('standard-cost');
+	let subledgerWarehouseId = $state('');
+	let subledgerMethod = $state<InventoryValuationMethod>('standard-cost');
+	let subledgerAsOfDate = $state('');
+	let showSubledgerProductLines = $state(false);
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -111,6 +119,7 @@
 		if (showStockLevels) showStockLevels = false;
 		if (showStockReservation) showStockReservation = false;
 		if (showValuation) showValuation = false;
+		if (showSubledgerReconciliation) showSubledgerReconciliation = false;
 		if (showMovements) showMovements = false;
 	}
 
@@ -431,6 +440,39 @@
 		}
 	}
 
+	async function loadSubledgerReconciliation(tenantId: string) {
+		subledgerReport = await api.getInventorySubledgerReconciliation(tenantId, {
+			warehouse_id: subledgerWarehouseId || undefined,
+			method: subledgerMethod,
+			as_of_date: subledgerAsOfDate || undefined
+		});
+	}
+
+	async function openSubledgerReconciliation() {
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		try {
+			showSubledgerProductLines = false;
+			await loadSubledgerReconciliation(tenantId);
+			showSubledgerReconciliation = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load inventory subledger reconciliation';
+		}
+	}
+
+	async function refreshSubledgerReconciliation(e: Event) {
+		e.preventDefault();
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		try {
+			await loadSubledgerReconciliation(tenantId);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load inventory subledger reconciliation';
+		}
+	}
+
 	async function openMovements(product: Product) {
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (!tenantId) return;
@@ -486,6 +528,39 @@
 			default:
 				return m.inventory_standardCost();
 		}
+	}
+
+	function getSubledgerStatusLabel(status: string): string {
+		switch (status) {
+			case 'MAPPED':
+				return m.inventory_accountStatusMapped();
+			case 'MISSING_INVENTORY_ACCOUNT':
+				return m.inventory_accountStatusMissing();
+			case 'UNKNOWN_INVENTORY_ACCOUNT':
+				return m.inventory_accountStatusUnknown();
+			case 'INVALID_INVENTORY_ACCOUNT_TYPE':
+				return m.inventory_accountStatusInvalidType();
+			default:
+				return status || m.common_notSet();
+		}
+	}
+
+	function getSubledgerProductLabel(line: InventorySubledgerReconciliationLine): string {
+		return `${line.product_code} ${line.product_name}`.trim();
+	}
+
+	function getSubledgerAccountLabel(line: InventorySubledgerReconciliationLine): string {
+		if (!line.account_code && !line.account_name) return m.common_notSet();
+		return `${line.account_code || ''} ${line.account_name || ''}`.trim();
+	}
+
+	function getSubledgerExceptionLines(report: InventorySubledgerReconciliationReport): InventorySubledgerReconciliationLine[] {
+		return report.lines.filter((line) => line.status !== 'MAPPED');
+	}
+
+	function formatReportDate(dateStr: string | undefined): string {
+		if (!dateStr || dateStr.startsWith('0001-')) return '-';
+		return formatDate(dateStr);
 	}
 
 	function getCategoryName(categoryId: string | undefined): string {
@@ -552,6 +627,9 @@
 		<div class="page-actions">
 			<button class="btn btn-secondary" onclick={openValuation}>
 				{m.inventory_inventoryValuation()}
+			</button>
+			<button class="btn btn-secondary" onclick={openSubledgerReconciliation}>
+				{m.inventory_subledgerReconciliation()}
 			</button>
 			<button class="btn btn-primary" onclick={() => (showCreateProduct = true)}>
 				+ {m.inventory_newProduct()}
@@ -1271,6 +1349,195 @@
 	</div>
 {/if}
 
+{#if showSubledgerReconciliation}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={() => (showSubledgerReconciliation = false)} role="presentation">
+		<div
+			class="modal modal-large card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="subledger-reconciliation-title"
+			tabindex="-1"
+		>
+			<h2 id="subledger-reconciliation-title">{m.inventory_subledgerReconciliation()}</h2>
+			<form class="valuation-filters" onsubmit={refreshSubledgerReconciliation}>
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="subledger-warehouse">{m.inventory_warehouses()}</label>
+						<select class="input" id="subledger-warehouse" bind:value={subledgerWarehouseId}>
+							<option value="">{m.inventory_allWarehouses()}</option>
+							{#each warehouses as warehouse (warehouse.id)}
+								<option value={warehouse.id}>{warehouse.name}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="form-group">
+						<label class="label" for="subledger-method">{m.inventory_valuationMethod()}</label>
+						<select class="input" id="subledger-method" bind:value={subledgerMethod}>
+							<option value="standard-cost">{m.inventory_standardCost()}</option>
+							<option value="weighted-average">{m.inventory_weightedAverage()}</option>
+							<option value="fifo">{m.inventory_fifo()}</option>
+						</select>
+					</div>
+					<div class="form-group">
+						<label class="label" for="subledger-as-of">{m.inventory_asOfDate()}</label>
+						<input class="input" type="date" id="subledger-as-of" bind:value={subledgerAsOfDate} />
+					</div>
+				</div>
+				<div class="modal-actions modal-actions-left">
+					<button type="submit" class="btn btn-secondary">{m.inventory_refreshSubledgerReconciliation()}</button>
+				</div>
+			</form>
+
+			{#if subledgerReport}
+				<div class="valuation-summary">
+					<span>{m.inventory_valuationMethod()}: {getValuationMethodLabel(subledgerReport.valuation_method)}</span>
+					<span>{m.inventory_asOfDate()}: {formatReportDate(subledgerReport.as_of_date)}</span>
+					<span>
+						{m.inventory_readyForClose()}:
+						<span class="badge" class:badge-ready={subledgerReport.ready} class:badge-blocked={!subledgerReport.ready}>
+							{subledgerReport.ready ? m.common_yes() : m.common_no()}
+						</span>
+					</span>
+					<span>{m.inventory_subledgerValue()}: {formatCurrency(subledgerReport.total_subledger_value)}</span>
+					<span>{m.inventory_generalLedgerBalance()}: {formatCurrency(subledgerReport.total_general_ledger_balance)}</span>
+					<span>{m.inventory_difference()}: {formatCurrency(subledgerReport.total_difference)}</span>
+					<span>{m.inventory_blockingExceptions()}: {subledgerReport.blocking_exception_line_count + subledgerReport.blocking_exception_account_count}</span>
+				</div>
+
+				<section
+					class="guidance-panel"
+					class:guidance-ready={subledgerReport.ready}
+					class:guidance-blocked={!subledgerReport.ready}
+					aria-labelledby="subledger-guidance-title"
+				>
+					<h3 id="subledger-guidance-title">{m.inventory_closeGuidance()}</h3>
+					<p>{subledgerReport.ready ? m.inventory_closeGuidanceReady() : m.inventory_closeGuidanceBlocked()}</p>
+				</section>
+
+				<h3 class="section-title">{m.inventory_accountExceptions()}</h3>
+				{#if subledgerReport.account_lines.length === 0}
+					<p class="empty-message">{m.inventory_noSubledgerAccounts()}</p>
+				{:else}
+					<div class="table-container">
+						<table class="table">
+							<thead>
+								<tr>
+									<th>{m.inventory_inventoryAccount()}</th>
+									<th class="text-right">{m.inventory_subledgerValue()}</th>
+									<th class="text-right">{m.inventory_generalLedgerBalance()}</th>
+									<th class="text-right">{m.inventory_difference()}</th>
+									<th>{m.inventory_balanced()}</th>
+									<th class="text-right">{m.inventory_productLines()}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each subledgerReport.account_lines as line (line.account_id)}
+									<tr>
+										<td>{line.account_code} {line.account_name}</td>
+										<td class="text-right">{formatCurrency(line.subledger_value)}</td>
+										<td class="text-right">{formatCurrency(line.general_ledger_balance)}</td>
+										<td class="text-right">{formatCurrency(line.difference)}</td>
+										<td>
+											<span class="badge" class:badge-ready={line.balanced} class:badge-blocked={!line.balanced}>
+												{line.balanced ? m.common_yes() : m.common_no()}
+											</span>
+										</td>
+										<td class="text-right">{line.product_line_count}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+
+				<h3 class="section-title">{m.inventory_productAccountExceptions()}</h3>
+				{#if getSubledgerExceptionLines(subledgerReport).length === 0}
+					<p class="empty-message">{m.inventory_noSubledgerExceptions()}</p>
+				{:else}
+					<div class="table-container">
+						<table class="table">
+							<thead>
+								<tr>
+									<th>{m.inventory_productName()}</th>
+									<th>{m.inventory_warehouses()}</th>
+									<th>{m.inventory_inventoryAccount()}</th>
+									<th>{m.common_status()}</th>
+									<th class="text-right">{m.inventory_onHandQty()}</th>
+									<th class="text-right">{m.inventory_totalValue()}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each getSubledgerExceptionLines(subledgerReport) as line (`${line.status}-${line.product_id}-${line.warehouse_id || 'all'}`)}
+									<tr>
+										<td>{getSubledgerProductLabel(line)}</td>
+										<td>{line.warehouse_name || '-'}</td>
+										<td>{getSubledgerAccountLabel(line)}</td>
+										<td><span class="badge badge-blocked">{getSubledgerStatusLabel(line.status)}</span></td>
+										<td class="text-right">{formatNumber(line.quantity)}</td>
+										<td class="text-right">{formatCurrency(line.inventory_value)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+
+				<label class="checkbox-label product-lines-toggle">
+					<input type="checkbox" bind:checked={showSubledgerProductLines} />
+					{m.inventory_showProductLines()}
+				</label>
+
+				{#if showSubledgerProductLines}
+					<h3 class="section-title">{m.inventory_productLines()}</h3>
+					{#if subledgerReport.lines.length === 0}
+						<p class="empty-message">{m.inventory_noValuationLines()}</p>
+					{:else}
+						<div class="table-container">
+							<table class="table">
+								<thead>
+									<tr>
+										<th>{m.inventory_productName()}</th>
+										<th>{m.inventory_warehouses()}</th>
+										<th>{m.inventory_inventoryAccount()}</th>
+										<th>{m.common_status()}</th>
+										<th class="text-right">{m.inventory_onHandQty()}</th>
+										<th class="text-right">{m.inventory_totalValue()}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each subledgerReport.lines as line (`${line.product_id}-${line.warehouse_id || 'all'}-${line.status}`)}
+										<tr>
+											<td>{getSubledgerProductLabel(line)}</td>
+											<td>{line.warehouse_name || '-'}</td>
+											<td>{getSubledgerAccountLabel(line)}</td>
+											<td>
+												<span class="badge" class:badge-ready={line.status === 'MAPPED'} class:badge-blocked={line.status !== 'MAPPED'}>
+													{getSubledgerStatusLabel(line.status)}
+												</span>
+											</td>
+											<td class="text-right">{formatNumber(line.quantity)}</td>
+											<td class="text-right">{formatCurrency(line.inventory_value)}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/if}
+				{/if}
+			{/if}
+
+			<div class="modal-actions">
+				<button type="button" class="btn btn-secondary" onclick={() => (showSubledgerReconciliation = false)}>
+					{m.common_close()}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
 {#if showMovements && selectedProduct}
 	<div
 		class="modal-backdrop"
@@ -1441,6 +1708,16 @@
 		color: #fff;
 	}
 
+	.badge-ready {
+		background-color: #28a745;
+		color: #fff;
+	}
+
+	.badge-blocked {
+		background-color: #dc3545;
+		color: #fff;
+	}
+
 	.modal-large {
 		max-width: 900px;
 	}
@@ -1460,6 +1737,36 @@
 		margin-bottom: 1rem;
 		color: var(--text-secondary);
 		font-size: 0.9rem;
+	}
+
+	.guidance-panel {
+		border: 1px solid var(--border);
+		border-left-width: 4px;
+		padding: 0.75rem 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.guidance-panel h3,
+	.section-title {
+		font-size: 1rem;
+		margin: 0 0 0.75rem;
+	}
+
+	.guidance-panel p {
+		margin: 0;
+		color: var(--text-secondary);
+	}
+
+	.guidance-ready {
+		border-left-color: #28a745;
+	}
+
+	.guidance-blocked {
+		border-left-color: #dc3545;
+	}
+
+	.product-lines-toggle {
+		margin: 1rem 0;
 	}
 
 	.empty-message {
