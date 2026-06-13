@@ -2433,7 +2433,8 @@ func TestValidateBundleReportsInventoryRowValueIssues(t *testing.T) {
 			Kind:     KindProducts,
 			FileName: "products.csv",
 			CSVContent: "code,name,product_type,sales_price,purchase_price,vat_rate,min_stock_level,reorder_point,track_inventory,status,is_active,lead_time_days\n" +
-				"SKU-1,,asset,-1,nope,-22,-5,-1,sometimes,archived,maybe,-3\n",
+				"SKU-1,,asset,-1,nope,-22,-5,-1,sometimes,archived,maybe,-3\n" +
+				"SKU-2,Widget,GOODS,10,5,22,0,0,true,ACTIVE,true,soon\n",
 		},
 		{
 			Kind:     KindWarehouses,
@@ -2454,7 +2455,7 @@ func TestValidateBundleReportsInventoryRowValueIssues(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, report)
 	assert.False(t, report.Summary.Ready)
-	assert.Equal(t, 23, report.Summary.ErrorCount)
+	assert.Equal(t, 24, report.Summary.ErrorCount)
 	assertValidationIssue(t, report, KindProducts, "name", "name is required")
 	assertValidationIssue(t, report, KindProducts, "product_type", "invalid product_type")
 	assertValidationIssue(t, report, KindProducts, "sales_price", "sales_price cannot be negative")
@@ -2465,6 +2466,7 @@ func TestValidateBundleReportsInventoryRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindProducts, "track_inventory", "track_inventory must be true or false")
 	assertValidationIssue(t, report, KindProducts, "status", "invalid status")
 	assertValidationIssue(t, report, KindProducts, "lead_time_days", "lead_time_days cannot be negative")
+	assertValidationIssue(t, report, KindProducts, "lead_time_days", "lead_time_days must be an integer")
 	assertValidationIssue(t, report, KindWarehouses, "code", "code is required")
 	assertValidationIssue(t, report, KindWarehouses, "name", "name is required")
 	assertValidationIssue(t, report, KindWarehouses, "is_default", "is_default must be true or false")
