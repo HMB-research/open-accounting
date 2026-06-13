@@ -54,6 +54,7 @@ type YearEndCloseStatus struct {
 	ClosePackEvidenceEntityID  string                          `json:"close_pack_evidence_entity_id,omitempty"`
 	ClosePackEvidence          *documents.EvidencePolicyResult `json:"close_pack_evidence,omitempty"`
 	InventoryCostingReview     *YearEndInventoryCostingReview  `json:"inventory_costing_review,omitempty"`
+	RemediationActions         []YearEndCloseRemediationAction `json:"remediation_actions,omitempty"`
 }
 
 // YearEndInventoryCostingReview summarizes inventory valuation checks for close readiness.
@@ -71,6 +72,20 @@ type YearEndInventoryCostingReview struct {
 	BlockingExceptionLineCount int             `json:"blocking_exception_line_count"`
 	Ready                      bool            `json:"ready"`
 	GeneratedAt                time.Time       `json:"generated_at"`
+}
+
+// YearEndCloseRemediationAction describes one operator action needed to complete or correct year-end close.
+type YearEndCloseRemediationAction struct {
+	Code       string `json:"code"`
+	Severity   string `json:"severity"`
+	Scope      string `json:"scope"`
+	OwnerRole  string `json:"owner_role"`
+	Message    string `json:"message"`
+	Action     string `json:"action"`
+	EntityType string `json:"entity_type,omitempty"`
+	EntityID   string `json:"entity_id,omitempty"`
+	UIPath     string `json:"ui_path,omitempty"`
+	CLICommand string `json:"cli_command,omitempty"`
 }
 
 // YearEndClosePack bundles close readiness with core year-end financial reports.
@@ -190,8 +205,158 @@ func (s *Service) GetYearEndCloseStatus(ctx context.Context, schemaName, tenantI
 		status.PeriodClosed &&
 		status.CarryForwardNeeded &&
 		(!needsRetainedEarningsAccount || status.HasRetainedEarningsAccount)
+	status.RemediationActions = BuildYearEndCloseRemediationActions(status)
 
 	return status, nil
+}
+
+// BuildYearEndCloseRemediationActions turns close readiness blockers into concrete operator actions.
+func BuildYearEndCloseRemediationActions(status *YearEndCloseStatus) []YearEndCloseRemediationAction {
+	if status == nil {
+		return nil
+	}
+
+	periodEnd := strings.TrimSpace(status.PeriodEndDate)
+	if periodEnd == "" {
+		periodEnd = strings.TrimSpace(status.FiscalYearEndDate)
+	}
+
+	actions := make([]YearEndCloseRemediationAction, 0, 5)
+	add := func(action YearEndCloseRemediationAction) {
+		actions = append(actions, action)
+	}
+
+	if !status.IsFiscalYearEnd {
+		add(YearEndCloseRemediationAction{
+			Code:       "period_not_fiscal_year_end",
+			Severity:   "BLOCKER",
+			Scope:      "close",
+			OwnerRole:  "accountant",
+			Message:    "Selected period is not the fiscal year end.",
+			Action:     "Run year-end close status for the configured fiscal year-end date before preparing carry-forward.",
+			UIPath:     "/settings/company#period-history",
+			CLICommand: fmt.Sprintf("oa close year-end-status --period-end %s", status.FiscalYearEndDate),
+		})
+		return actions
+	}
+
+	if !status.PeriodClosed {
+		add(YearEndCloseRemediationAction{
+			Code:       "fiscal_year_not_closed",
+			Severity:   "BLOCKER",
+			Scope:      "close",
+			OwnerRole:  "accountant",
+			Message:    fmt.Sprintf("Fiscal year ending %s is not closed.", status.FiscalYearEndDate),
+			Action:     "Close the fiscal year with reviewer sign-off before posting carry-forward.",
+			UIPath:     "/settings/company#period-history",
+			CLICommand: fmt.Sprintf("oa close period --period-end %s --reviewer-sign-off --note \"Fiscal-year close\"", periodEnd),
+		})
+	}
+
+	if status.CarryForwardNeeded && !status.HasRetainedEarningsAccount && !status.NetIncome.IsZero() {
+		add(YearEndCloseRemediationAction{
+			Code:       "retained_earnings_account_missing",
+			Severity:   "BLOCKER",
+			Scope:      "ledger",
+			OwnerRole:  "accountant",
+			Message:    "Retained earnings account is missing for the carry-forward journal.",
+			Action:     "Create or map an active equity retained earnings account, then rerun year-end close status.",
+			UIPath:     "/accounts",
+			CLICommand: "oa accounts create --type EQUITY --code 2999 --name \"Retained earnings\"",
+		})
+	}
+
+	if status.ClosePackEvidence != nil && !status.ClosePackEvidence.Compliant {
+		add(YearEndCloseRemediationAction{
+			Code:       "close_pack_evidence_not_approved",
+			Severity:   "BLOCKER",
+			Scope:      "documents",
+			OwnerRole:  "accountant",
+			Message:    closePackEvidenceMessage(status.ClosePackEvidence),
+			Action:     "Upload and approve at least one close_pack document for the year-end close entity.",
+			EntityType: documents.EntityTypeYearEndClose,
+			EntityID:   status.ClosePackEvidenceEntityID,
+			UIPath:     fmt.Sprintf("/documents?entity_type=year_end_close&entity_id=%s&document_type=close_pack", status.ClosePackEvidenceEntityID),
+			CLICommand: "oa documents review-queue --entity-type year_end_close --document-type close_pack --status PENDING",
+		})
+	}
+
+	if status.InventoryCostingReview != nil && !status.InventoryCostingReview.Ready {
+		review := status.InventoryCostingReview
+		add(YearEndCloseRemediationAction{
+			Code:      "inventory_costing_exceptions",
+			Severity:  "BLOCKER",
+			Scope:     "inventory",
+			OwnerRole: "accountant",
+			Message: fmt.Sprintf(
+				"Inventory costing review has %d blocking lines: negative quantity %d, negative available %d, negative value %d, missing cost %d.",
+				review.BlockingExceptionLineCount,
+				review.NegativeQuantityLineCount,
+				review.NegativeAvailableLineCount,
+				review.NegativeValueLineCount,
+				review.MissingCostLineCount,
+			),
+			Action:     "Resolve inventory costing exceptions and rerun year-end close status with the selected valuation method.",
+			UIPath:     "/inventory",
+			CLICommand: fmt.Sprintf("oa inventory valuation --method %s", strings.ToLower(strings.ReplaceAll(review.ValuationMethod, "_", "-"))),
+		})
+	}
+
+	if status.ExistingCarryForward != nil {
+		add(YearEndCloseRemediationAction{
+			Code:       "carry_forward_already_posted",
+			Severity:   "INFO",
+			Scope:      "close",
+			OwnerRole:  "accountant",
+			Message:    fmt.Sprintf("Carry-forward journal %s already exists.", status.ExistingCarryForward.EntryNumber),
+			Action:     "Review the posted carry-forward; reverse it only when approved late corrections require a controlled repost.",
+			EntityType: "journal_entry",
+			EntityID:   status.ExistingCarryForward.ID,
+			UIPath:     "/journal",
+			CLICommand: fmt.Sprintf("oa close reverse-carry-forward --period-end %s --reason \"Approved late correction\"", periodEnd),
+		})
+		return actions
+	}
+
+	if !status.HasProfitAndLossActivity {
+		add(YearEndCloseRemediationAction{
+			Code:      "no_profit_and_loss_activity",
+			Severity:  "INFO",
+			Scope:     "ledger",
+			OwnerRole: "accountant",
+			Message:   "No revenue or expense activity was found for the fiscal year.",
+			Action:    "Confirm no carry-forward journal is required for this year.",
+			UIPath:    "/reports",
+		})
+	}
+
+	if status.CarryForwardReady {
+		add(YearEndCloseRemediationAction{
+			Code:       "ready_to_post_carry_forward",
+			Severity:   "ACTION",
+			Scope:      "close",
+			OwnerRole:  "accountant",
+			Message:    "Year-end close is ready for carry-forward posting.",
+			Action:     "Post the retained-earnings carry-forward journal.",
+			UIPath:     "/settings/company#period-history",
+			CLICommand: fmt.Sprintf("oa close carry-forward --period-end %s", periodEnd),
+		})
+	}
+
+	return actions
+}
+
+func closePackEvidenceMessage(result *documents.EvidencePolicyResult) string {
+	if result == nil || result.TotalCount == 0 {
+		return "Approved close-pack evidence is missing."
+	}
+	if result.ApprovedCount == 0 && result.PendingReviewCount > 0 {
+		return fmt.Sprintf("Close-pack evidence has %d pending document(s) and no approved document.", result.PendingReviewCount)
+	}
+	if result.ApprovedCount == 0 && result.RejectedCount > 0 {
+		return fmt.Sprintf("Close-pack evidence has %d rejected document(s) and no approved document.", result.RejectedCount)
+	}
+	return "Close-pack evidence is not compliant."
 }
 
 // GetYearEndClosePack returns readiness plus core fiscal year-end reports.

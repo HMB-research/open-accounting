@@ -237,6 +237,14 @@ func seedYearEndAccountingReady(accountingRepo *mockYearEndAccountingRepository)
 	}}
 }
 
+func apiRemediationCodes(actions []accounting.YearEndCloseRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
+}
+
 func TestGetYearEndCloseStatus(t *testing.T) {
 	h, repo, accountingRepo := setupTenantAccountingHandlers()
 	settings := tenant.DefaultSettings()
@@ -338,6 +346,7 @@ func TestGetYearEndCloseStatusIncludesClosePackEvidence(t *testing.T) {
 	require.NotNil(t, resp.ClosePackEvidence)
 	assert.False(t, resp.ClosePackEvidence.Compliant)
 	assert.False(t, resp.CarryForwardReady)
+	assert.Contains(t, apiRemediationCodes(resp.RemediationActions), "close_pack_evidence_not_approved")
 }
 
 func TestGetYearEndCloseStatusIncludesInventoryCostingReview(t *testing.T) {
@@ -374,6 +383,40 @@ func TestGetYearEndCloseStatusIncludesInventoryCostingReview(t *testing.T) {
 	assert.True(t, resp.InventoryCostingReview.TotalValue.Equal(decimal.NewFromInt(24)))
 	assert.Equal(t, 0, resp.InventoryCostingReview.BlockingExceptionLineCount)
 	assert.True(t, resp.CarryForwardReady)
+	assert.Contains(t, apiRemediationCodes(resp.RemediationActions), "ready_to_post_carry_forward")
+}
+
+func TestGetYearEndCloseStatusIncludesInventoryRemediationAction(t *testing.T) {
+	h, repo, accountingRepo := setupTenantAccountingHandlers()
+	attachYearEndInventoryFixture(h, decimal.Zero)
+
+	settings := tenant.DefaultSettings()
+	settings.PeriodLockDate = stringPtr("2025-12-31")
+	repo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		Name:       "Tenant",
+		Slug:       "tenant",
+		SchemaName: "tenant_tenant",
+		Settings:   settings,
+	}
+	seedYearEndAccountingReady(accountingRepo)
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/year-end-close-status?period_end_date=2025-12-31&inventory_valuation_method=standard-cost", nil, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.GetYearEndCloseStatus(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp accounting.YearEndCloseStatus
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.NotNil(t, resp.InventoryCostingReview)
+	assert.False(t, resp.InventoryCostingReview.Ready)
+	assert.False(t, resp.CarryForwardReady)
+	assert.Contains(t, apiRemediationCodes(resp.RemediationActions), "inventory_costing_exceptions")
 }
 
 func TestGetYearEndCloseStatusUsesTenantInventoryPolicyWhenOmitted(t *testing.T) {
