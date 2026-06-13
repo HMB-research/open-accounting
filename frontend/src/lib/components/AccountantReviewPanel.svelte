@@ -237,6 +237,18 @@
 		return action.source === 'payroll' && action.code === 'payroll_generate_tsd' && Boolean(action.entityId);
 	}
 
+	function canSubmitAssignmentExpense(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'expenses' && action.code === 'expense_submit_for_approval' && Boolean(action.entityId);
+	}
+
+	function canApproveAssignmentExpense(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'expenses' && action.code === 'expense_approve_or_reject' && Boolean(action.entityId);
+	}
+
+	function canPostAssignmentExpense(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'expenses' && action.code === 'expense_post_to_ledger' && Boolean(action.entityId);
+	}
+
 	function isReviewDirty(transaction: BankTransaction): boolean {
 		const draft = reviewDrafts[transaction.id];
 		if (!draft) {
@@ -340,6 +352,75 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentTsdGenerateError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function submitAssignmentExpense(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.submitExpense(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentExpenseSubmitted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentExpenseSubmitError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function approveAssignmentExpense(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.approveExpense(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentExpenseApproved();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentExpenseApproveError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function postAssignmentExpense(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.postExpense(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentExpensePosted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentExpensePostError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -630,6 +711,42 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: m.dashboard_reviewAssignmentsGenerateTsd()}
+										</button>
+									{/if}
+									{#if canSubmitAssignmentExpense(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => submitAssignmentExpense(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsSubmitExpense()}
+										</button>
+									{/if}
+									{#if canApproveAssignmentExpense(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => approveAssignmentExpense(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsApproveExpense()}
+										</button>
+									{/if}
+									{#if canPostAssignmentExpense(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => postAssignmentExpense(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsPostExpense()}
 										</button>
 									{/if}
 									{#if assignmentCompletionErrorId === action.id}

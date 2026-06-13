@@ -14,6 +14,9 @@ const { apiMock } = vi.hoisted(() => ({
 		reviewDocument: vi.fn(),
 		approvePayroll: vi.fn(),
 		generateTSD: vi.fn(),
+		submitExpense: vi.fn(),
+		approveExpense: vi.fn(),
+		postExpense: vi.fn(),
 		sendPaymentReminder: vi.fn(),
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn(),
@@ -354,6 +357,9 @@ describe('AccountantReviewPanel', () => {
 		});
 		apiMock.approvePayroll.mockResolvedValue({ status: 'approved' });
 		apiMock.generateTSD.mockResolvedValue({ id: 'tsd-1' });
+		apiMock.submitExpense.mockResolvedValue({ id: 'expense-draft-1', status: 'SUBMITTED' });
+		apiMock.approveExpense.mockResolvedValue({ id: 'expense-submitted-1', status: 'APPROVED' });
+		apiMock.postExpense.mockResolvedValue({ id: 'expense-approved-1', status: 'POSTED' });
 		apiMock.sendPaymentReminder.mockResolvedValue({
 			invoice_id: 'inv-1',
 			invoice_number: 'INV-001',
@@ -541,6 +547,188 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(apiMock.generateTSD).toHaveBeenCalledWith('tenant-1', 'payroll-approved-1');
 			expect(screen.getByText('TSD generated from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it('completes expense assignment rows from the workspace', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-02-11',
+			cutoff_date: '2026-03-13',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([
+			{
+				id: 'expense-draft-1',
+				tenant_id: 'tenant-1',
+				expense_number: 'EXP-DRAFT',
+				expense_date: '2026-02-09',
+				merchant: 'Taxi Co',
+				expense_account_id: 'expense-account',
+				payment_account_id: 'cash-account',
+				amount: new Decimal(35),
+				currency: 'EUR',
+				exchange_rate: new Decimal(1),
+				base_amount: new Decimal(35),
+				requires_receipt: false,
+				status: 'DRAFT',
+				remediation_actions: [
+					{
+						code: 'expense_submit_for_approval',
+						severity: 'ACTION',
+						scope: 'expenses',
+						owner_role: 'accountant',
+						workspace_queue: 'expense_claims',
+						assignment_key:
+							'expense-claims:expense-submit-for-approval:expense:expense-draft-1:EXP-DRAFT:DRAFT',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'Expense EXP-DRAFT is still in draft.',
+						action: 'Review the merchant, accounts, amount, and evidence requirements, then submit it for approval.',
+						entity_type: 'expense',
+						entity_id: 'expense-draft-1',
+						expense_number: 'EXP-DRAFT',
+						status: 'DRAFT',
+						ui_path: '/expenses?expense_id=expense-draft-1',
+						cli_command: 'oa expenses submit --id expense-draft-1'
+					}
+				],
+				created_at: '2026-02-09T00:00:00Z',
+				created_by: 'user-1',
+				updated_at: '2026-02-09T00:00:00Z'
+			},
+			{
+				id: 'expense-submitted-1',
+				tenant_id: 'tenant-1',
+				expense_number: 'EXP-SUBMITTED',
+				expense_date: '2026-02-10',
+				merchant: 'Hotel Co',
+				expense_account_id: 'expense-account',
+				payment_account_id: 'cash-account',
+				amount: new Decimal(120),
+				currency: 'EUR',
+				exchange_rate: new Decimal(1),
+				base_amount: new Decimal(120),
+				requires_receipt: false,
+				status: 'SUBMITTED',
+				remediation_actions: [
+					{
+						code: 'expense_approve_or_reject',
+						severity: 'ACTION',
+						scope: 'expenses',
+						owner_role: 'accountant',
+						workspace_queue: 'expense_claims',
+						assignment_key:
+							'expense-claims:expense-approve-or-reject:expense:expense-submitted-1:EXP-SUBMITTED:SUBMITTED',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'Expense EXP-SUBMITTED is awaiting approval.',
+						action: 'Approve the expense when policy evidence is complete, or reject it with a reason for correction.',
+						entity_type: 'expense',
+						entity_id: 'expense-submitted-1',
+						expense_number: 'EXP-SUBMITTED',
+						status: 'SUBMITTED',
+						ui_path: '/expenses?expense_id=expense-submitted-1',
+						cli_command: 'oa expenses approve --id expense-submitted-1'
+					}
+				],
+				created_at: '2026-02-10T00:00:00Z',
+				created_by: 'user-1',
+				updated_at: '2026-02-10T00:00:00Z'
+			},
+			{
+				id: 'expense-approved-1',
+				tenant_id: 'tenant-1',
+				expense_number: 'EXP-APPROVED',
+				expense_date: '2026-02-11',
+				merchant: 'Office Co',
+				expense_account_id: 'expense-account',
+				payment_account_id: 'cash-account',
+				amount: new Decimal(64),
+				currency: 'EUR',
+				exchange_rate: new Decimal(1),
+				base_amount: new Decimal(64),
+				requires_receipt: false,
+				status: 'APPROVED',
+				remediation_actions: [
+					{
+						code: 'expense_post_to_ledger',
+						severity: 'ACTION',
+						scope: 'expenses',
+						owner_role: 'accountant',
+						workspace_queue: 'expense_claims',
+						assignment_key:
+							'expense-claims:expense-post-to-ledger:expense:expense-approved-1:EXP-APPROVED:APPROVED',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'Expense EXP-APPROVED is approved but not posted.',
+						action: 'Post the approved expense to create the balanced ledger entry before closing the period.',
+						entity_type: 'expense',
+						entity_id: 'expense-approved-1',
+						expense_number: 'EXP-APPROVED',
+						status: 'APPROVED',
+						ui_path: '/expenses?expense_id=expense-approved-1',
+						cli_command: 'oa expenses post --id expense-approved-1'
+					}
+				],
+				created_at: '2026-02-11T00:00:00Z',
+				created_by: 'user-1',
+				updated_at: '2026-02-11T00:00:00Z'
+			}
+		]);
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('Expense EXP-DRAFT is still in draft.')).toBeInTheDocument();
+			expect(screen.getByText('Expense EXP-SUBMITTED is awaiting approval.')).toBeInTheDocument();
+			expect(screen.getByText('Expense EXP-APPROVED is approved but not posted.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Submit expense' }));
+
+		await waitFor(() => {
+			expect(apiMock.submitExpense).toHaveBeenCalledWith('tenant-1', 'expense-draft-1');
+			expect(screen.getByText('Expense submitted from workspace.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Approve expense' }));
+
+		await waitFor(() => {
+			expect(apiMock.approveExpense).toHaveBeenCalledWith('tenant-1', 'expense-submitted-1');
+			expect(screen.getByText('Expense approved from workspace.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Post expense' }));
+
+		await waitFor(() => {
+			expect(apiMock.postExpense).toHaveBeenCalledWith('tenant-1', 'expense-approved-1');
+			expect(screen.getByText('Expense posted from workspace.')).toBeInTheDocument();
 		});
 	});
 
