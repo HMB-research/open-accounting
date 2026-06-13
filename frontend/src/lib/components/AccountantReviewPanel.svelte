@@ -40,6 +40,10 @@
 	let reminderSentId = $state('');
 	let reminderErrorId = $state('');
 	let reminderError = $state('');
+	let assignmentCompletingId = $state('');
+	let assignmentCompletedMessage = $state('');
+	let assignmentCompletionErrorId = $state('');
+	let assignmentCompletionError = $state('');
 	let loadedTenantKey = '';
 
 	$effect(() => {
@@ -221,6 +225,10 @@
 		return `${url.pathname}${url.search}${url.hash}`;
 	}
 
+	function canApproveAssignmentDocument(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'documents' && action.code === 'document_review_pending' && Boolean(action.documentId);
+	}
+
 	function isReviewDirty(transaction: BankTransaction): boolean {
 		const draft = reviewDrafts[transaction.id];
 		if (!draft) {
@@ -255,6 +263,31 @@
 			reviewError = err instanceof Error ? err.message : m.dashboard_reviewFollowUpSaveError();
 		} finally {
 			reviewSavingId = '';
+		}
+	}
+
+	async function approveAssignmentDocument(action: WorkspaceAssignmentAction) {
+		if (!action.documentId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.reviewDocument(tenant.id, action.documentId, {
+				review_status: 'APPROVED'
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentDocumentApproved();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentDocumentApproveError();
+		} finally {
+			assignmentCompletingId = '';
 		}
 	}
 
@@ -485,6 +518,9 @@
 				{#if assignmentErrorCount > 0}
 					<p class="review-feedback review-feedback-error">{m.dashboard_reviewAssignmentsPartial()}</p>
 				{/if}
+				{#if assignmentCompletedMessage}
+					<p class="review-feedback review-feedback-success">{assignmentCompletedMessage}</p>
+				{/if}
 
 				{#if topAssignmentActions.length > 0}
 					<ul class="review-list review-assignment-list">
@@ -506,6 +542,21 @@
 									<a class="review-action" href={buildTenantScopedHref(action.uiPath)}>
 										{m.dashboard_reviewAssignmentsOpenAction()}
 									</a>
+									{#if canApproveAssignmentDocument(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => approveAssignmentDocument(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsApproveDocument()}
+										</button>
+									{/if}
+									{#if assignmentCompletionErrorId === action.id}
+										<span class="review-feedback review-feedback-error">{assignmentCompletionError}</span>
+									{/if}
 								</div>
 							</li>
 						{/each}
@@ -711,6 +762,19 @@
 
 	.review-action:hover {
 		text-decoration: underline;
+	}
+
+	.review-action-button {
+		border: none;
+		background: transparent;
+		padding: 0;
+		cursor: pointer;
+	}
+
+	.review-action-button:disabled {
+		cursor: wait;
+		opacity: 0.65;
+		text-decoration: none;
 	}
 
 	.review-figure {

@@ -64,6 +64,7 @@ export type WorkspaceAssignmentSource =
 
 export type WorkspaceAssignmentAction = {
 	id: string;
+	code: string;
 	source: WorkspaceAssignmentSource;
 	queue: string;
 	assignmentKey: string;
@@ -76,6 +77,8 @@ export type WorkspaceAssignmentAction = {
 	cliCommand?: string;
 	entityType?: string;
 	entityId?: string;
+	documentId?: string;
+	documentType?: string;
 	period?: string;
 };
 
@@ -92,6 +95,8 @@ type RemediationActionLike = {
 	cli_command?: string;
 	entity_type?: string;
 	entity_id?: string;
+	document_id?: string;
+	document_type?: string;
 	period?: string;
 };
 
@@ -232,6 +237,7 @@ function normalizeRemediationAction(
 
 	return {
 		id: `${source}:${assignmentKey}`,
+		code: action.code,
 		source,
 		queue,
 		assignmentKey,
@@ -244,6 +250,8 @@ function normalizeRemediationAction(
 		cliCommand: action.cli_command,
 		entityType: action.entity_type,
 		entityId: action.entity_id,
+		documentId: action.document_id,
+		documentType: action.document_type,
 		period: action.period
 	};
 }
