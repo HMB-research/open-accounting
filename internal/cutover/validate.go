@@ -1636,6 +1636,8 @@ func validateCompositeDuplicatePreflight(report *BundleValidationReport, file pa
 		validateTSDHistoryDuplicateEmployees(report, file)
 	case KindKMDHistory:
 		validateKMDHistoryDuplicateRows(report, file)
+	case KindStockAdjustments:
+		validateStockAdjustmentDuplicateSerials(report, file)
 	}
 }
 
@@ -1811,6 +1813,46 @@ func validateKMDHistoryDuplicateRows(report *BundleValidationReport, file parsed
 		}
 		seen[key] = duplicateCompositeValue{row: row.number}
 	}
+}
+
+func validateStockAdjustmentDuplicateSerials(report *BundleValidationReport, file parsedFile) {
+	seen := map[string]duplicateCompositeValue{}
+	for _, row := range file.rows {
+		productKey, productDisplay, ok := stockAdjustmentProductReferenceKey(row.values)
+		if !ok {
+			continue
+		}
+		serialDisplay := strings.TrimSpace(row.values["serial_number"])
+		if serialDisplay == "" {
+			continue
+		}
+
+		key := strings.Join([]string{productKey, normalizedValue(serialDisplay)}, "\x00")
+		if first, exists := seen[key]; exists {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "product/serial_number",
+				Value:    productDisplay + "/" + serialDisplay,
+				Message:  fmt.Sprintf("serial_number %q duplicates row %d for product %q", serialDisplay, first.row, productDisplay),
+			})
+			continue
+		}
+		seen[key] = duplicateCompositeValue{row: row.number}
+	}
+}
+
+func stockAdjustmentProductReferenceKey(values map[string]string) (string, string, bool) {
+	for _, field := range []string{"product_id", "product_code"} {
+		value := strings.TrimSpace(values[field])
+		if value == "" {
+			continue
+		}
+		return normalizedValue(value), value, true
+	}
+	return "", "", false
 }
 
 func duplicatePeriodKey(values map[string]string, yearField, monthField string) (string, string, bool) {
@@ -3707,6 +3749,13 @@ func checkStockAdjustmentQuantity(report *BundleValidationReport, file parsedFil
 			field:   "quantity",
 			value:   strings.TrimSpace(row.values["quantity"]),
 			message: "quantity must not be zero",
+		}))
+	}
+	if strings.TrimSpace(row.values["serial_number"]) != "" && !quantity.Abs().Equal(decimal.NewFromInt(1)) {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   "serial_number",
+			value:   strings.TrimSpace(row.values["serial_number"]),
+			message: "serial_number requires quantity 1 or -1",
 		}))
 	}
 }
