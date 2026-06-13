@@ -480,6 +480,70 @@ func TestValidateBundleAcceptsSmartAccountsExpenseProviderPresetAliases(t *testi
 	assert.Contains(t, report.Files[1].Headers, "approved_at")
 }
 
+func TestValidateBundleAcceptsMeritCostAllocationProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetMerit,
+		Files: []BundleFile{
+			{
+				Kind:       KindCostCenters,
+				FileName:   "merit-cost-centers.csv",
+				CSVContent: "kulukoha_kood,kulukoha_nimi\nOPS,Operations\n",
+			},
+			{
+				Kind:     KindCostAllocations,
+				FileName: "merit-cost-allocations.csv",
+				CSVContent: "kulukoht,kande_rea_id,jaotuse_summa,jaotuse_protsent,kuupaev,selgitus\n" +
+					"OPS," + cutoverJournalLineID1 + ",125.50,50,2026-05-31,Shared rent\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 2)
+	assert.Contains(t, report.Files[0].Headers, "code")
+	assert.Contains(t, report.Files[1].Headers, "cost_center_code")
+	assert.Contains(t, report.Files[1].Headers, "journal_entry_line_id")
+	assert.Contains(t, report.Files[1].Headers, "amount")
+	assert.Contains(t, report.Files[1].Headers, "allocation_percentage")
+	assert.Contains(t, report.Files[1].Headers, "allocation_date")
+	assert.Contains(t, report.Files[1].Headers, "notes")
+}
+
+func TestValidateBundleAcceptsSmartAccountsCostAllocationProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{
+			{
+				Kind:       KindCostCenters,
+				FileName:   "smartaccounts-cost-centers.csv",
+				CSVContent: "department_no,department_name\nOPS,Operations\n",
+			},
+			{
+				Kind:     KindCostAllocations,
+				FileName: "smartaccounts-cost-allocations.csv",
+				CSVContent: "department_no,journal_line_id,allocated_amount,allocated_percent,posting_date,line_memo\n" +
+					"OPS," + cutoverJournalLineID1 + ",125.50,50,2026-05-31,Shared rent\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 2)
+	assert.Contains(t, report.Files[0].Headers, "code")
+	assert.Contains(t, report.Files[1].Headers, "cost_center_code")
+	assert.Contains(t, report.Files[1].Headers, "journal_entry_line_id")
+	assert.Contains(t, report.Files[1].Headers, "amount")
+	assert.Contains(t, report.Files[1].Headers, "allocation_percentage")
+	assert.Contains(t, report.Files[1].Headers, "allocation_date")
+	assert.Contains(t, report.Files[1].Headers, "notes")
+}
+
 func TestValidateBundleDefaultsDisplayFileNames(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
