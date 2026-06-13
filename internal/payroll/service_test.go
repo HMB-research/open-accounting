@@ -709,6 +709,96 @@ func TestAddSalaryComponent_DefaultsAndSumsCurrentSalary(t *testing.T) {
 	assert.True(t, salary.Equal(decimal.NewFromInt(2600)))
 }
 
+func TestAddSalaryComponent_DefaultNamesForSupportedTypes(t *testing.T) {
+	repo := NewMockRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "comp"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+	effectiveFrom := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	repo.Employees["emp-1"] = &Employee{
+		ID:       "emp-1",
+		TenantID: "tenant-1",
+	}
+
+	tests := []struct {
+		name          string
+		componentType string
+		wantType      string
+		wantName      string
+	}{
+		{
+			name:          "base salary",
+			componentType: " base_salary ",
+			wantType:      SalaryComponentBaseSalary,
+			wantName:      "Base Salary",
+		},
+		{
+			name:          "bonus",
+			componentType: SalaryComponentBonus,
+			wantType:      SalaryComponentBonus,
+			wantName:      "Bonus",
+		},
+		{
+			name:          "commission",
+			componentType: SalaryComponentCommission,
+			wantType:      SalaryComponentCommission,
+			wantName:      "Commission",
+		},
+		{
+			name:          "benefit",
+			componentType: SalaryComponentBenefit,
+			wantType:      SalaryComponentBenefit,
+			wantName:      "Benefit",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			component, err := service.AddSalaryComponent(ctx, "test_schema", "tenant-1", "emp-1", &CreateSalaryComponentRequest{
+				ComponentType: tt.componentType,
+				Amount:        decimal.NewFromInt(100),
+				EffectiveFrom: effectiveFrom,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantType, component.ComponentType)
+			assert.Equal(t, tt.wantName, component.Name)
+			assert.True(t, component.IsTaxable)
+			assert.True(t, component.IsRecurring)
+		})
+	}
+}
+
+func TestAddSalaryComponent_UsesProvidedNameAndFlags(t *testing.T) {
+	repo := NewMockRepository()
+	uuidGen := &MockUUIDGenerator{prefix: "comp"}
+	service := NewServiceWithRepository(repo, uuidGen)
+	ctx := context.Background()
+	effectiveFrom := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	effectiveTo := effectiveFrom.AddDate(0, 6, 0)
+	isTaxable := false
+	isRecurring := false
+	repo.Employees["emp-1"] = &Employee{
+		ID:       "emp-1",
+		TenantID: "tenant-1",
+	}
+
+	component, err := service.AddSalaryComponent(ctx, "test_schema", "tenant-1", "emp-1", &CreateSalaryComponentRequest{
+		ComponentType: SalaryComponentBonus,
+		Name:          "  Launch bonus  ",
+		Amount:        decimal.NewFromInt(500),
+		IsTaxable:     &isTaxable,
+		IsRecurring:   &isRecurring,
+		EffectiveFrom: effectiveFrom,
+		EffectiveTo:   &effectiveTo,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "Launch bonus", component.Name)
+	assert.False(t, component.IsTaxable)
+	assert.False(t, component.IsRecurring)
+	assert.Equal(t, &effectiveTo, component.EffectiveTo)
+}
+
 func TestAddSalaryComponent_ValidationErrors(t *testing.T) {
 	repo := NewMockRepository()
 	uuidGen := &MockUUIDGenerator{prefix: "comp"}
@@ -862,6 +952,37 @@ func TestListSalaryComponents_ActiveOn(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, components, 1)
 	assert.Equal(t, "comp-active", components[0].ID)
+}
+
+func TestListSalaryComponents_Errors(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("employee missing", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "comp"})
+
+		components, err := service.ListSalaryComponents(ctx, "test_schema", "tenant-1", "missing", nil)
+
+		require.Error(t, err)
+		assert.Nil(t, components)
+		assert.Contains(t, err.Error(), "employee not found")
+	})
+
+	t.Run("repository error", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.ListSalaryComponentsErr = errors.New("database error")
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "comp"})
+		repo.Employees["emp-1"] = &Employee{
+			ID:       "emp-1",
+			TenantID: "tenant-1",
+		}
+
+		components, err := service.ListSalaryComponents(ctx, "test_schema", "tenant-1", "emp-1", nil)
+
+		require.Error(t, err)
+		assert.Nil(t, components)
+		assert.Contains(t, err.Error(), "list salary components")
+	})
 }
 
 func TestGetCurrentSalary_Success(t *testing.T) {
