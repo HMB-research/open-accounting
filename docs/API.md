@@ -2352,6 +2352,18 @@ Authorization: Bearer <token>
 
 Returns tracked `GOODS` stock valuation. `method` accepts `standard-cost`, `weighted-average`, or `fifo` and overrides the tenant `inventory_valuation_method` policy, which defaults to `STANDARD_COST`. Costed methods fall back to purchase price when no usable movement costs exist. The response includes product and warehouse labels, on-hand/reserved/available quantities, line value, and report totals.
 
+### Inventory Subledger Reconciliation
+
+```http
+GET /tenants/{tenantId}/inventory/subledger-reconciliation
+GET /tenants/{tenantId}/inventory/subledger-reconciliation?warehouse_id={warehouseId}
+GET /tenants/{tenantId}/inventory/subledger-reconciliation?method=weighted-average
+GET /tenants/{tenantId}/inventory/subledger-reconciliation?as_of_date=2026-03-31
+Authorization: Bearer <token>
+```
+
+Compares valued tracked `GOODS` stock to posted general-ledger balances by each product's configured inventory asset account. `method` uses the same `standard-cost`, `weighted-average`, or `fifo` valuation behavior as inventory valuation and falls back to the tenant `inventory_valuation_method` policy when omitted. `as_of_date` controls the GL balance cutoff. The response includes account-level subledger value, GL balance, difference, readiness, and stock-line exceptions for missing, unknown, or non-asset inventory account mappings.
+
 ### Inventory Lot Report
 
 ```http

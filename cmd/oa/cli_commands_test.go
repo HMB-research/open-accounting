@@ -9021,6 +9021,60 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"total_value":     "120.00",
 		"generated_at":    "2026-03-15T12:00:00Z",
 	}
+	subledgerPayload := map[string]any{
+		"tenant_id":                     "tenant-1",
+		"warehouse_id":                  "wh-1",
+		"valuation_method":              "WEIGHTED_AVERAGE",
+		"as_of_date":                    "2026-03-31T00:00:00Z",
+		"total_subledger_value":         "128.00",
+		"total_general_ledger_balance":  "120.00",
+		"total_difference":              "8.00",
+		"missing_account_line_count":    1,
+		"blocking_exception_line_count": 1,
+		"ready":                         false,
+		"generated_at":                  "2026-03-15T12:00:00Z",
+		"account_lines": []map[string]any{
+			{
+				"account_id":             inventoryAccountID,
+				"account_code":           "1300",
+				"account_name":           "Inventory",
+				"account_type":           "ASSET",
+				"product_line_count":     1,
+				"subledger_value":        "120.00",
+				"general_ledger_balance": "120.00",
+				"difference":             "0",
+				"balanced":               true,
+			},
+		},
+		"lines": []map[string]any{
+			{
+				"product_id":           "prod-1",
+				"product_code":         "PRD-001",
+				"product_name":         "Widget",
+				"warehouse_id":         "wh-1",
+				"warehouse_code":       "MAIN",
+				"warehouse_name":       "Main warehouse",
+				"inventory_account_id": inventoryAccountID,
+				"account_code":         "1300",
+				"account_name":         "Inventory",
+				"account_type":         "ASSET",
+				"quantity":             "12.00",
+				"inventory_value":      "120.00",
+				"status":               "MAPPED",
+			},
+			{
+				"product_id":      "prod-2",
+				"product_code":    "PRD-002",
+				"product_name":    "Unmapped widget",
+				"warehouse_id":    "wh-1",
+				"warehouse_code":  "MAIN",
+				"warehouse_name":  "Main warehouse",
+				"quantity":        "1.00",
+				"inventory_value": "8.00",
+				"status":          "MISSING_INVENTORY_ACCOUNT",
+			},
+		},
+	}
 	lotReportPayload := map[string]any{
 		"tenant_id":     "tenant-1",
 		"product_id":    "prod-1",
@@ -9138,6 +9192,11 @@ func TestCLIInventoryCommands(t *testing.T) {
 			require.Equal(t, "wh-1", r.URL.Query().Get("warehouse_id"))
 			require.Equal(t, "weighted-average", r.URL.Query().Get("method"))
 			_ = json.NewEncoder(w).Encode(valuationPayload)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/subledger-reconciliation":
+			require.Equal(t, "wh-1", r.URL.Query().Get("warehouse_id"))
+			require.Equal(t, "weighted-average", r.URL.Query().Get("method"))
+			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
+			_ = json.NewEncoder(w).Encode(subledgerPayload)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/lots":
 			require.Equal(t, "prod-1", r.URL.Query().Get("product_id"))
 			require.Equal(t, "wh-1", r.URL.Query().Get("warehouse_id"))
@@ -9415,6 +9474,19 @@ func TestCLIInventoryCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"valuation_method": "WEIGHTED_AVERAGE"`)
 	assert.Contains(t, stdout.String(), `"total_value": "120"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "subledger-reconciliation", "--warehouse-id", "wh-1", "--method", "weighted-average", "--as-of", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Inventory subledger reconciliation (WEIGHTED_AVERAGE)")
+	assert.Contains(t, stdout.String(), "1300 Inventory")
+	assert.Contains(t, stdout.String(), "MISSING_INVENTORY_ACCOUNT")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"inventory", "subledger-reconciliation", "--warehouse-id", "wh-1", "--method", "weighted-average", "--as-of", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"valuation_method": "WEIGHTED_AVERAGE"`)
+	assert.Contains(t, stdout.String(), `"ready": false`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "lots", "--product-id", "prod-1", "--warehouse-id", "wh-1", "--include-empty"})
@@ -9980,6 +10052,8 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		want string
 	}{
 		{name: "valuation bad flag", args: []string{"inventory", "valuation", "--bad"}, want: "flag provided but not defined"},
+		{name: "subledger reconciliation bad flag", args: []string{"inventory", "subledger-reconciliation", "--bad"}, want: "flag provided but not defined"},
+		{name: "subledger reconciliation bad as-of", args: []string{"inventory", "subledger-reconciliation", "--as-of", "2026/03/31"}, want: "parse as-of"},
 		{name: "lots bad flag", args: []string{"inventory", "lots", "--bad"}, want: "flag provided but not defined"},
 		{name: "adjust bad flag", args: []string{"inventory", "adjust", "--bad"}, want: "flag provided but not defined"},
 		{name: "issue bad flag", args: []string{"inventory", "issue", "--bad"}, want: "flag provided but not defined"},
@@ -10116,6 +10190,7 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		args []string
 	}{
 		{name: "valuation", args: []string{"inventory", "valuation", "--warehouse-id", "wh-1", "--method", "fifo"}},
+		{name: "subledger reconciliation", args: []string{"inventory", "subledger-reconciliation", "--warehouse-id", "wh-1", "--method", "fifo", "--as-of", "2026-03-31"}},
 		{name: "lots", args: []string{"inventory", "lots"}},
 		{name: "adjust", args: []string{"inventory", "adjust", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1", "--unit-cost", "10"}},
 		{name: "issue", args: []string{"inventory", "issue", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1"}},

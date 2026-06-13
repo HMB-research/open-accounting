@@ -1352,6 +1352,120 @@ func inventoryValuationWarehouseLabel(line inventory.InventoryValuationLine) str
 	return line.WarehouseID
 }
 
+func printInventorySubledgerReconciliation(w io.Writer, report *inventory.InventorySubledgerReconciliationReport) {
+	if report == nil {
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "Inventory subledger reconciliation (%s)\n", report.ValuationMethod)
+	if strings.TrimSpace(report.WarehouseID) != "" {
+		_, _ = fmt.Fprintf(w, "Warehouse: %s\n", report.WarehouseID)
+	}
+	_, _ = fmt.Fprintf(w, "As of: %s\n", formatDate(report.AsOfDate))
+	_, _ = fmt.Fprintf(w, "Ready: %t\n", report.Ready)
+	_, _ = fmt.Fprintf(w, "Generated: %s\n\n", formatTime(report.GeneratedAt))
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ACCOUNT\tSUBLEDGER\tGL BALANCE\tDIFFERENCE\tBALANCED\tLINES")
+	for _, line := range report.AccountLines {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%t\t%d\n",
+			inventorySubledgerAccountLabel(line),
+			line.SubledgerValue.String(),
+			line.GeneralLedgerBalance.String(),
+			line.Difference.String(),
+			line.Balanced,
+			line.ProductLineCount,
+		)
+	}
+	_, _ = fmt.Fprintf(
+		tw,
+		"TOTAL\t%s\t%s\t%s\t%t\t\n",
+		report.TotalSubledgerValue.String(),
+		report.TotalGeneralLedgerBalance.String(),
+		report.TotalDifference.String(),
+		report.Ready,
+	)
+	_ = tw.Flush()
+
+	if report.BlockingExceptionLineCount == 0 {
+		return
+	}
+
+	_, _ = fmt.Fprintln(w, "\nInventory subledger exceptions")
+	tw = tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PRODUCT\tWAREHOUSE\tSTATUS\tQTY\tVALUE\tACCOUNT")
+	for _, line := range report.Lines {
+		if line.Status == "MAPPED" {
+			continue
+		}
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			inventorySubledgerProductLabel(line),
+			inventorySubledgerWarehouseLabel(line),
+			line.Status,
+			line.Quantity.String(),
+			line.InventoryValue.String(),
+			inventorySubledgerLineAccountLabel(line),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func inventorySubledgerAccountLabel(line inventory.InventorySubledgerReconciliationAccountLine) string {
+	if strings.TrimSpace(line.AccountCode) != "" && strings.TrimSpace(line.AccountName) != "" {
+		return line.AccountCode + " " + line.AccountName
+	}
+	if strings.TrimSpace(line.AccountCode) != "" {
+		return line.AccountCode
+	}
+	if strings.TrimSpace(line.AccountName) != "" {
+		return line.AccountName
+	}
+	return line.AccountID
+}
+
+func inventorySubledgerProductLabel(line inventory.InventorySubledgerReconciliationLine) string {
+	if strings.TrimSpace(line.ProductCode) != "" && strings.TrimSpace(line.ProductName) != "" {
+		return line.ProductCode + " " + line.ProductName
+	}
+	if strings.TrimSpace(line.ProductCode) != "" {
+		return line.ProductCode
+	}
+	if strings.TrimSpace(line.ProductName) != "" {
+		return line.ProductName
+	}
+	return line.ProductID
+}
+
+func inventorySubledgerWarehouseLabel(line inventory.InventorySubledgerReconciliationLine) string {
+	if strings.TrimSpace(line.WarehouseCode) != "" && strings.TrimSpace(line.WarehouseName) != "" {
+		return line.WarehouseCode + " " + line.WarehouseName
+	}
+	if strings.TrimSpace(line.WarehouseCode) != "" {
+		return line.WarehouseCode
+	}
+	if strings.TrimSpace(line.WarehouseName) != "" {
+		return line.WarehouseName
+	}
+	if strings.TrimSpace(line.WarehouseID) != "" {
+		return line.WarehouseID
+	}
+	return "All warehouses"
+}
+
+func inventorySubledgerLineAccountLabel(line inventory.InventorySubledgerReconciliationLine) string {
+	if strings.TrimSpace(line.AccountCode) != "" && strings.TrimSpace(line.AccountName) != "" {
+		return line.AccountCode + " " + line.AccountName
+	}
+	if strings.TrimSpace(line.InventoryAccountID) != "" {
+		return line.InventoryAccountID
+	}
+	return "-"
+}
+
 func printInventoryLotReport(w io.Writer, report *inventory.InventoryLotReport) {
 	if report == nil {
 		return

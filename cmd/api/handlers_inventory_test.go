@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -354,6 +355,22 @@ func (m *mockInventoryRepository) UpdateProductStock(ctx context.Context, schema
 		return nil
 	}
 	return errProductNotFound
+}
+
+type mockInventoryAccountingBalancer struct {
+	accounts []accounting.Account
+	balances map[string]decimal.Decimal
+}
+
+func (m mockInventoryAccountingBalancer) ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]accounting.Account, error) {
+	return m.accounts, nil
+}
+
+func (m mockInventoryAccountingBalancer) GetAccountBalance(ctx context.Context, schemaName, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error) {
+	if balance, ok := m.balances[accountID]; ok {
+		return balance, nil
+	}
+	return decimal.Zero, nil
 }
 
 func setupInventoryTestHandlers() (*Handlers, *mockInventoryRepository, *mockTenantRepository) {
@@ -1568,6 +1585,79 @@ func TestGetInventoryValuationUsesTenantPolicyWhenMethodOmitted(t *testing.T) {
 	assert.Equal(t, inventory.InventoryValuationMethodFIFO, result.ValuationMethod)
 	require.Len(t, result.Lines, 1)
 	assert.True(t, result.TotalValue.Equal(decimal.RequireFromString("52.00")))
+}
+
+func TestGetInventorySubledgerReconciliationUsesTenantPolicyAndAsOfDate(t *testing.T) {
+	inventoryRepo := newMockInventoryRepository()
+	accountID := "11111111-1111-4111-8111-111111111111"
+	accountingSvc := mockInventoryAccountingBalancer{
+		accounts: []accounting.Account{{ID: accountID, Code: "1300", Name: "Inventory", AccountType: accounting.AccountTypeAsset}},
+		balances: map[string]decimal.Decimal{accountID: decimal.RequireFromString("50.00")},
+	}
+	inventorySvc := inventory.NewServiceWithRepositoryAndAccounting(inventoryRepo, accountingSvc)
+	tenantRepo := newMockTenantRepository()
+	tenantSvc := tenant.NewServiceWithRepository(tenantRepo)
+	h := &Handlers{
+		inventoryService: inventorySvc,
+		tenantService:    tenantSvc,
+	}
+
+	settings := tenant.DefaultSettings()
+	settings.InventoryValuationMethod = tenant.InventoryValuationMethodWeightedAverage
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+		Settings:   settings,
+	}
+	inventoryRepo.products["prod-1"] = &inventory.Product{
+		ID:                 "prod-1",
+		TenantID:           "tenant-1",
+		Code:               "SKU-001",
+		Name:               "Widget",
+		ProductType:        inventory.ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("10.00"),
+		TrackInventory:     true,
+		InventoryAccountID: accountID,
+	}
+	inventoryRepo.warehouses["wh-1"] = &inventory.Warehouse{ID: "wh-1", TenantID: "tenant-1", Code: "MAIN", Name: "Main Warehouse"}
+	inventoryRepo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.RequireFromString("5.00"),
+		AvailableQty: decimal.RequireFromString("5.00"),
+	}
+	inventoryRepo.movements["prod-1"] = []inventory.InventoryMovement{
+		{ID: "mov-1", TenantID: "tenant-1", ProductID: "prod-1", MovementType: inventory.MovementTypeIn, Quantity: decimal.RequireFromString("5.00"), UnitCost: decimal.RequireFromString("10.00"), TotalCost: decimal.RequireFromString("50.00")},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/inventory/subledger-reconciliation?warehouse_id=wh-1&as_of_date=2026-03-31", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.GetInventorySubledgerReconciliation(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, "response body: %s", rr.Body.String())
+	var result inventory.InventorySubledgerReconciliationReport
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+	assert.Equal(t, inventory.InventoryValuationMethodWeightedAverage, result.ValuationMethod)
+	assert.Equal(t, "wh-1", result.WarehouseID)
+	assert.Equal(t, "2026-03-31", result.AsOfDate.Format("2006-01-02"))
+	assert.True(t, result.Ready)
+	assert.True(t, result.TotalSubledgerValue.Equal(decimal.RequireFromString("50.00")))
+	assert.True(t, result.TotalGeneralLedgerBalance.Equal(decimal.RequireFromString("50.00")))
+	require.Len(t, result.AccountLines, 1)
+	assert.True(t, result.AccountLines[0].Balanced)
+
+	badReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/inventory/subledger-reconciliation?as_of_date=31-03-2026", nil)
+	badReq = withURLParams(badReq, map[string]string{"tenantID": "tenant-1"})
+	badReq = badReq.WithContext(contextWithClaims(badReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+	badRR := httptest.NewRecorder()
+	h.GetInventorySubledgerReconciliation(badRR, badReq)
+	assert.Equal(t, http.StatusBadRequest, badRR.Code)
+	assert.Contains(t, badRR.Body.String(), "as_of_date must be in YYYY-MM-DD format")
 }
 
 func TestGetInventoryLotReport(t *testing.T) {
