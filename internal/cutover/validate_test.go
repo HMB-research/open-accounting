@@ -571,6 +571,41 @@ func TestValidateBundleReportsCommercialNonNegativeDecimalParsingIssues(t *testi
 	assertValidationIssue(t, report, KindInvoices, "vat_rate", "vat_rate must be a decimal")
 }
 
+func TestValidateBundleReportsReverseChargeVATRateParsingOnce(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate,reverse_charge\n" +
+				"INV-RC,SALES,CUST-1,2026-05-30,2026-06-14,EU service,1,100,not-a-decimal,true\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindInvoices, "vat_rate", "vat_rate must be a decimal")
+}
+
+func TestCheckInvoiceReverseChargeRateSkipsMissingVATRateColumn(t *testing.T) {
+	report := &BundleValidationReport{}
+
+	checkInvoiceReverseChargeRate(report, parsedFile{
+		kind:     KindInvoices,
+		fileName: "invoices.csv",
+		headers:  []string{"invoice_number", "reverse_charge"},
+	}, parsedRow{
+		number: 2,
+		values: map[string]string{
+			"invoice_number": "INV-RC",
+			"reverse_charge": "true",
+		},
+	})
+
+	assert.Empty(t, report.Issues)
+}
+
 func TestValidateBundleAcceptsInvoiceVATTreatmentAndDiscountEdges(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
