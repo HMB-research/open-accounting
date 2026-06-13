@@ -38,6 +38,8 @@ This guide covers deploying Open Accounting to production environments.
 | `DOCUMENT_RETENTION_REMINDER_SCHEDULE` | No | Cron schedule for document retention reminder delivery | `30 9 * * *` |
 | `DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS` | No | Retention reminder lookahead horizon in days | `30` |
 | `DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING` | No | Include documents missing retention metadata in reminder digests | `true` |
+| `DOCUMENT_RETENTION_REMINDER_MAX_ATTEMPTS` | No | Retry failed document retention reminder delivery attempts before reporting failure | `3` |
+| `DOCUMENT_RETENTION_REMINDER_ESCALATE_AFTER_ATTEMPTS` | No | Mark failed document retention reminder delivery as escalated after this many attempts | `3` |
 
 When `APP_ENV=production`, startup fails if `JWT_SECRET` is missing or shorter than 32 characters, or if `ALLOWED_ORIGINS` is empty. Production mode also uses only the configured origins instead of appending localhost development origins.
 

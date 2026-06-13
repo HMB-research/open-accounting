@@ -14,6 +14,9 @@ type mockRetentionEmailService struct {
 	getTemplateErr    error
 	renderErr         error
 	sendErr           error
+	sendErrs          []error
+	getTemplateCalls  int
+	renderCalls       int
 	templateRequested email.TemplateType
 	templateData      *email.TemplateData
 	sendCalls         int
@@ -22,6 +25,7 @@ type mockRetentionEmailService struct {
 }
 
 func (m *mockRetentionEmailService) GetTemplate(ctx context.Context, schemaName, tenantID string, templateType email.TemplateType) (*email.EmailTemplate, error) {
+	m.getTemplateCalls++
 	m.templateRequested = templateType
 	if m.getTemplateErr != nil {
 		return nil, m.getTemplateErr
@@ -36,6 +40,7 @@ func (m *mockRetentionEmailService) GetTemplate(ctx context.Context, schemaName,
 }
 
 func (m *mockRetentionEmailService) RenderTemplate(tmpl *email.EmailTemplate, data *email.TemplateData) (string, string, string, error) {
+	m.renderCalls++
 	m.templateData = data
 	if m.renderErr != nil {
 		return "", "", "", m.renderErr
@@ -47,6 +52,13 @@ func (m *mockRetentionEmailService) SendEmail(ctx context.Context, schemaName, t
 	m.sendCalls++
 	m.recipientEmail = recipient
 	m.emailType = emailType
+	if len(m.sendErrs) > 0 {
+		err := m.sendErrs[0]
+		m.sendErrs = m.sendErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	if m.sendErr != nil {
 		return nil, m.sendErr
 	}
@@ -79,6 +91,9 @@ func TestRetentionReminderService_ProcessRetentionRemindersForTenant(t *testing.
 
 	if !result.EmailSent || result.EmailLogID != "email-log-1" {
 		t.Fatalf("expected email to be sent with log id, got %#v", result)
+	}
+	if result.DeliveryAttempts != 1 || result.Failed || result.Escalated {
+		t.Fatalf("expected one successful delivery attempt, got %#v", result)
 	}
 	if result.ActionsFound != 2 {
 		t.Fatalf("expected due-soon and pending-review actions, got %#v", result)
@@ -178,5 +193,76 @@ func TestRetentionReminderService_ReportsTemplateRenderAndSendFailures(t *testin
 				t.Fatalf("expected failed result containing %q, got %#v", tt.wantError, result)
 			}
 		})
+	}
+}
+
+func TestRetentionReminderService_RetriesDeliveryUntilSuccess(t *testing.T) {
+	asOf := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	retentionUntil := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	repo := newMockRepository()
+	repo.docs["doc-expired"] = &Document{
+		ID:             "doc-expired",
+		TenantID:       "tenant-1",
+		EntityType:     EntityTypeInvoice,
+		EntityID:       "invoice-1",
+		DocumentType:   DocumentTypeReceipt,
+		FileName:       "receipt.pdf",
+		ReviewStatus:   ReviewStatusApproved,
+		RetentionUntil: &retentionUntil,
+		CreatedAt:      asOf,
+	}
+	emailSvc := &mockRetentionEmailService{sendErrs: []error{fmt.Errorf("temporary smtp outage"), nil}}
+	svc := NewRetentionReminderServiceWithPolicy(
+		NewService(repo, &mockStore{}),
+		emailSvc,
+		RetentionReminderPolicy{MaxAttempts: 3, EscalateAfterAttempts: 3},
+	)
+
+	result, err := svc.ProcessRetentionRemindersForTenant(context.Background(), "tenant-1", "tenant_demo", "Demo OU", "ops@example.com", asOf, 30, true)
+	if err != nil {
+		t.Fatalf("ProcessRetentionRemindersForTenant failed: %v", err)
+	}
+	if !result.EmailSent || result.Failed || result.Escalated || result.DeliveryAttempts != 2 {
+		t.Fatalf("expected second-attempt success, got %#v", result)
+	}
+	if emailSvc.sendCalls != 2 {
+		t.Fatalf("expected 2 send attempts, got %d", emailSvc.sendCalls)
+	}
+}
+
+func TestRetentionReminderService_EscalatesAfterExhaustedDeliveryAttempts(t *testing.T) {
+	asOf := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	retentionUntil := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	repo := newMockRepository()
+	repo.docs["doc-expired"] = &Document{
+		ID:             "doc-expired",
+		TenantID:       "tenant-1",
+		EntityType:     EntityTypeInvoice,
+		EntityID:       "invoice-1",
+		DocumentType:   DocumentTypeReceipt,
+		FileName:       "receipt.pdf",
+		ReviewStatus:   ReviewStatusApproved,
+		RetentionUntil: &retentionUntil,
+		CreatedAt:      asOf,
+	}
+	emailSvc := &mockRetentionEmailService{sendErr: fmt.Errorf("smtp unavailable")}
+	svc := NewRetentionReminderServiceWithPolicy(
+		NewService(repo, &mockStore{}),
+		emailSvc,
+		RetentionReminderPolicy{MaxAttempts: 3, EscalateAfterAttempts: 2},
+	)
+
+	result, err := svc.ProcessRetentionRemindersForTenant(context.Background(), "tenant-1", "tenant_demo", "Demo OU", "ops@example.com", asOf, 30, true)
+	if err != nil {
+		t.Fatalf("ProcessRetentionRemindersForTenant returned unexpected hard error: %v", err)
+	}
+	if !result.Failed || !result.Escalated || result.DeliveryAttempts != 3 {
+		t.Fatalf("expected exhausted attempts with escalation, got %#v", result)
+	}
+	if !strings.Contains(result.EscalationReason, "failed after 3 delivery attempts") {
+		t.Fatalf("expected escalation reason with attempt count, got %q", result.EscalationReason)
+	}
+	if emailSvc.sendCalls != 3 {
+		t.Fatalf("expected 3 send attempts, got %d", emailSvc.sendCalls)
 	}
 }

@@ -149,7 +149,6 @@ func main() {
 	inventoryService := inventory.NewService(pool)
 	reminderService := invoicing.NewReminderService(pool, emailService)
 	automatedReminderService := invoicing.NewAutomatedReminderService(pool, emailService)
-	documentRetentionReminderService := documents.NewRetentionReminderService(documentsService, emailService)
 	costCenterService := accounting.NewCostCenterService(pool)
 	interestService := invoicing.NewInterestService(pool)
 	webhookService := webhooks.NewService(pool)
@@ -199,6 +198,8 @@ func main() {
 	if os.Getenv("SCHEDULER_ENABLED") == "false" {
 		schedulerConfig.Enabled = false
 	}
+	documentRetentionReminderPolicy := loadDocumentRetentionReminderPolicy()
+	documentRetentionReminderService := documents.NewRetentionReminderServiceWithPolicy(documentsService, emailService, documentRetentionReminderPolicy)
 	appScheduler := scheduler.NewScheduler(pool, recurringService, automatedReminderService, schedulerConfig)
 	appScheduler.SetRecurringJournalEntryService(accountingService)
 	appScheduler.SetDocumentRetentionReminderService(documentRetentionReminderService)
@@ -362,6 +363,27 @@ func loadPasswordResetSMTPConfig() *email.SMTPConfig {
 		FromName:  strings.TrimSpace(os.Getenv("PASSWORD_RESET_SMTP_FROM_NAME")),
 		UseTLS:    strings.EqualFold(strings.TrimSpace(os.Getenv("PASSWORD_RESET_SMTP_USE_TLS")), "true"),
 	}
+}
+
+func loadDocumentRetentionReminderPolicy() documents.RetentionReminderPolicy {
+	policy := documents.RetentionReminderPolicy{}
+	if maxAttempts := strings.TrimSpace(os.Getenv("DOCUMENT_RETENTION_REMINDER_MAX_ATTEMPTS")); maxAttempts != "" {
+		parsed, err := strconv.Atoi(maxAttempts)
+		if err != nil || parsed < 1 {
+			log.Warn().Str("max_attempts", maxAttempts).Msg("Invalid DOCUMENT_RETENTION_REMINDER_MAX_ATTEMPTS, using default")
+		} else {
+			policy.MaxAttempts = parsed
+		}
+	}
+	if escalateAttempts := strings.TrimSpace(os.Getenv("DOCUMENT_RETENTION_REMINDER_ESCALATE_AFTER_ATTEMPTS")); escalateAttempts != "" {
+		parsed, err := strconv.Atoi(escalateAttempts)
+		if err != nil || parsed < 1 {
+			log.Warn().Str("escalate_after_attempts", escalateAttempts).Msg("Invalid DOCUMENT_RETENTION_REMINDER_ESCALATE_AFTER_ATTEMPTS, using default")
+		} else {
+			policy.EscalateAfterAttempts = parsed
+		}
+	}
+	return policy
 }
 
 func isProductionEnvironment() bool {

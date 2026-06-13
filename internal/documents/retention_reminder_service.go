@@ -10,7 +10,17 @@ import (
 	"github.com/HMB-research/open-accounting/internal/email"
 )
 
-const DefaultRetentionReminderHorizonDays = 30
+const (
+	DefaultRetentionReminderHorizonDays           = 30
+	DefaultRetentionReminderMaxAttempts           = 3
+	DefaultRetentionReminderEscalateAfterAttempts = 3
+)
+
+// RetentionReminderPolicy controls scheduled retention reminder delivery retries and escalation.
+type RetentionReminderPolicy struct {
+	MaxAttempts           int
+	EscalateAfterAttempts int
+}
 
 // RetentionReminderEmailService captures the email operations needed by scheduled retention reminders.
 type RetentionReminderEmailService interface {
@@ -21,29 +31,38 @@ type RetentionReminderEmailService interface {
 
 // RetentionReminderDeliveryResult summarizes one scheduled retention reminder run for a tenant.
 type RetentionReminderDeliveryResult struct {
-	TenantID       string `json:"tenant_id"`
-	RecipientEmail string `json:"recipient_email,omitempty"`
-	AsOfDate       string `json:"as_of_date"`
-	CutoffDate     string `json:"cutoff_date"`
-	ActionsFound   int    `json:"actions_found"`
-	EmailSent      bool   `json:"email_sent"`
-	Skipped        bool   `json:"skipped"`
-	SkipReason     string `json:"skip_reason,omitempty"`
-	Failed         bool   `json:"failed"`
-	ErrorMessage   string `json:"error_message,omitempty"`
-	EmailLogID     string `json:"email_log_id,omitempty"`
+	TenantID         string `json:"tenant_id"`
+	RecipientEmail   string `json:"recipient_email,omitempty"`
+	AsOfDate         string `json:"as_of_date"`
+	CutoffDate       string `json:"cutoff_date"`
+	ActionsFound     int    `json:"actions_found"`
+	DeliveryAttempts int    `json:"delivery_attempts"`
+	EmailSent        bool   `json:"email_sent"`
+	Skipped          bool   `json:"skipped"`
+	SkipReason       string `json:"skip_reason,omitempty"`
+	Failed           bool   `json:"failed"`
+	ErrorMessage     string `json:"error_message,omitempty"`
+	Escalated        bool   `json:"escalated"`
+	EscalationReason string `json:"escalation_reason,omitempty"`
+	EmailLogID       string `json:"email_log_id,omitempty"`
 }
 
 // RetentionReminderService sends a digest of document retention follow-up actions.
 type RetentionReminderService struct {
 	documents *Service
 	email     RetentionReminderEmailService
+	policy    RetentionReminderPolicy
 }
 
 func NewRetentionReminderService(documentService *Service, emailService RetentionReminderEmailService) *RetentionReminderService {
+	return NewRetentionReminderServiceWithPolicy(documentService, emailService, RetentionReminderPolicy{})
+}
+
+func NewRetentionReminderServiceWithPolicy(documentService *Service, emailService RetentionReminderEmailService, policy RetentionReminderPolicy) *RetentionReminderService {
 	return &RetentionReminderService{
 		documents: documentService,
 		email:     emailService,
+		policy:    normalizeRetentionReminderPolicy(policy),
 	}
 }
 
@@ -76,19 +95,36 @@ func (s *RetentionReminderService) ProcessRetentionRemindersForTenant(ctx contex
 		return result, nil
 	}
 
-	template, err := s.email.GetTemplate(ctx, schemaName, tenantID, email.TemplateDocumentRetentionReminder)
-	if err != nil {
-		result.Failed = true
-		result.ErrorMessage = fmt.Sprintf("get template: %v", err)
-		return result, nil
+	templateData := documentRetentionTemplateData(companyName, review)
+	policy := normalizeRetentionReminderPolicy(s.policy)
+	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
+		result.DeliveryAttempts = attempt
+		emailLogID, errMessage := s.deliverRetentionReminderAttempt(ctx, schemaName, tenantID, companyName, result.RecipientEmail, templateData)
+		if errMessage == "" {
+			result.EmailSent = true
+			result.EmailLogID = emailLogID
+			return result, nil
+		}
+		result.ErrorMessage = errMessage
 	}
 
-	templateData := documentRetentionTemplateData(companyName, review)
+	result.Failed = true
+	if policy.EscalateAfterAttempts > 0 && result.DeliveryAttempts >= policy.EscalateAfterAttempts {
+		result.Escalated = true
+		result.EscalationReason = fmt.Sprintf("document retention reminder failed after %d delivery attempts", result.DeliveryAttempts)
+	}
+	return result, nil
+}
+
+func (s *RetentionReminderService) deliverRetentionReminderAttempt(ctx context.Context, schemaName, tenantID, companyName, recipientEmail string, templateData *email.TemplateData) (string, string) {
+	template, err := s.email.GetTemplate(ctx, schemaName, tenantID, email.TemplateDocumentRetentionReminder)
+	if err != nil {
+		return "", fmt.Sprintf("get template: %v", err)
+	}
+
 	subject, bodyHTML, bodyText, err := s.email.RenderTemplate(template, templateData)
 	if err != nil {
-		result.Failed = true
-		result.ErrorMessage = fmt.Sprintf("render template: %v", err)
-		return result, nil
+		return "", fmt.Sprintf("render template: %v", err)
 	}
 
 	sent, err := s.email.SendEmail(
@@ -96,7 +132,7 @@ func (s *RetentionReminderService) ProcessRetentionRemindersForTenant(ctx contex
 		schemaName,
 		tenantID,
 		string(email.TemplateDocumentRetentionReminder),
-		result.RecipientEmail,
+		recipientEmail,
 		strings.TrimSpace(companyName),
 		subject,
 		bodyHTML,
@@ -105,15 +141,28 @@ func (s *RetentionReminderService) ProcessRetentionRemindersForTenant(ctx contex
 		"",
 	)
 	if err != nil {
-		result.Failed = true
-		result.ErrorMessage = fmt.Sprintf("send email: %v", err)
-		return result, nil
+		return "", fmt.Sprintf("send email: %v", err)
 	}
-	result.EmailSent = true
-	if sent != nil {
-		result.EmailLogID = sent.LogID
+	if sent == nil {
+		return "", ""
 	}
-	return result, nil
+	return sent.LogID, ""
+}
+
+func normalizeRetentionReminderPolicy(policy RetentionReminderPolicy) RetentionReminderPolicy {
+	if policy.MaxAttempts <= 0 {
+		policy.MaxAttempts = DefaultRetentionReminderMaxAttempts
+	}
+	if policy.EscalateAfterAttempts < 0 {
+		policy.EscalateAfterAttempts = 0
+	}
+	if policy.EscalateAfterAttempts == 0 {
+		policy.EscalateAfterAttempts = DefaultRetentionReminderEscalateAfterAttempts
+	}
+	if policy.EscalateAfterAttempts > policy.MaxAttempts {
+		policy.EscalateAfterAttempts = policy.MaxAttempts
+	}
+	return policy
 }
 
 func documentRetentionTemplateData(companyName string, review *RetentionReview) *email.TemplateData {
