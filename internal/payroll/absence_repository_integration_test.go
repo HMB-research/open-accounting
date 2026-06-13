@@ -218,6 +218,34 @@ func TestAbsenceGORMRepository_Integration(t *testing.T) {
 	})
 }
 
+func TestNewAbsenceServiceWithPoolAndEvidence_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	evidence := &fakeLeaveEvidenceEvaluator{}
+
+	service := NewAbsenceServiceWithPoolAndEvidence(pool, evidence)
+	if service == nil {
+		t.Fatal("expected absence service")
+	}
+	if _, ok := service.repo.(*AbsenceGORMRepository); !ok {
+		t.Fatalf("expected AbsenceGORMRepository, got %T", service.repo)
+	}
+	if _, ok := service.uuid.(*DefaultUUIDGenerator); !ok {
+		t.Fatalf("expected DefaultUUIDGenerator, got %T", service.uuid)
+	}
+	if service.evidence != evidence {
+		t.Fatalf("expected evidence evaluator to be preserved")
+	}
+
+	types, err := service.ListAbsenceTypes(context.Background(), tenant.SchemaName, tenant.ID, false)
+	if err != nil {
+		t.Fatalf("ListAbsenceTypes through pool-backed service failed: %v", err)
+	}
+	if types == nil {
+		t.Fatalf("expected non-nil absence type slice")
+	}
+}
+
 func TestAbsenceGORMRepository_FiltersAndNotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
