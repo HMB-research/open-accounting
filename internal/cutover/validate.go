@@ -1528,6 +1528,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkContactIDReference(report, indexes, file, row, "contact_id")
 			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 				[]string{"invoice_id", "invoice_number"})
+			checkPaymentBankAccountReference(report, indexes, file, row)
 		case KindBankAccounts:
 			checkAccountReference(report, indexes, file, row, "gl_account_id", "gl_account_code")
 		case KindBankTransactions:
@@ -5181,6 +5182,48 @@ func checkBankTransactionSourceAccount(report *BundleValidationReport, indexes b
 		Value:      sourceAccount + "/" + rowCurrency,
 		TargetKind: KindBankAccounts,
 		Message:    fmt.Sprintf("source_account %q uses currency %q but %s file has currency %q", sourceAccount, rowCurrency, KindBankAccounts, accountCurrency),
+	})
+}
+
+func checkPaymentBankAccountReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if !indexes.files[KindBankAccounts] {
+		return
+	}
+
+	bankAccount := strings.TrimSpace(row.values["bank_account"])
+	if bankAccount == "" {
+		return
+	}
+
+	accountCurrency, ok := indexes.bankAccounts[bankAccountIndexKey(bankAccount)]
+	if !ok {
+		report.addIssue(ValidationIssue{
+			Severity:   SeverityError,
+			Kind:       file.kind,
+			FileName:   file.fileName,
+			Row:        row.number,
+			Field:      "bank_account",
+			Value:      bankAccount,
+			TargetKind: KindBankAccounts,
+			Message:    fmt.Sprintf("bank_account reference %q was not found in %s file", bankAccount, KindBankAccounts),
+		})
+		return
+	}
+
+	paymentCurrency := strings.ToUpper(strings.TrimSpace(row.values["currency"]))
+	if paymentCurrency == "" || accountCurrency == "" || paymentCurrency == accountCurrency {
+		return
+	}
+
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       file.kind,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "bank_account/currency",
+		Value:      bankAccount + "/" + paymentCurrency,
+		TargetKind: KindBankAccounts,
+		Message:    fmt.Sprintf("bank_account %q uses currency %q but %s file has currency %q", bankAccount, paymentCurrency, KindBankAccounts, accountCurrency),
 	})
 }
 

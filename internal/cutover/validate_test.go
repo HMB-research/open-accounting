@@ -3563,6 +3563,38 @@ func TestValidateBundleReportsPaymentCustomerAliasReferenceIssues(t *testing.T) 
 	assert.Equal(t, missingContactID, report.Issues[0].Value)
 }
 
+func TestValidateBundleReportsPaymentBankAccountReferenceIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "account_name,account_number,currency\nMain bank,EE471000001020145685,EUR\n",
+		},
+		{
+			Kind:     KindPayments,
+			FileName: "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,bank_account,currency\n" +
+				"RECEIVED,2026-05-31,100,EE999,EUR\n" +
+				"MADE,2026-05-31,50,EE471000001020145685,USD\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 2)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, KindBankAccounts, report.Issues[0].TargetKind)
+	assert.Equal(t, "bank_account", report.Issues[0].Field)
+	assert.Equal(t, "EE999", report.Issues[0].Value)
+	assert.Equal(t, KindPayments, report.Issues[1].Kind)
+	assert.Equal(t, KindBankAccounts, report.Issues[1].TargetKind)
+	assert.Equal(t, "bank_account/currency", report.Issues[1].Field)
+	assert.Equal(t, "EE471000001020145685/USD", report.Issues[1].Value)
+	assert.Contains(t, report.Issues[1].Message, `currency "USD"`)
+}
+
 func TestValidateBundleAcceptsPreservedContactIDReferences(t *testing.T) {
 	legacyContactID := "11111111-1111-1111-1111-111111111111"
 	legacyInvoiceID := "22222222-2222-2222-2222-222222222222"
