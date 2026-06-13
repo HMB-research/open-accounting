@@ -686,6 +686,7 @@ func TestValidateBundleReportsEmployeeRowValueIssues(t *testing.T) {
 			CSVContent: "first_name,last_name,start_date,end_date,employment_type,apply_basic_exemption,basic_exemption_amount,funded_pension_rate,base_salary,salary_effective_from,is_active\n" +
 				",Maasikas,2026-01-15,2026-02-01,FULL_TIME,true,700,0.02,3200,2026-01-15,true\n" +
 				"Mari,,2026-01-15,2026-02-01,FULL_TIME,true,700,0.02,3200,2026-01-15,true\n" +
+				"Bad,MissingStart,,,FULL_TIME,true,700,0.02,3200,2026-01-15,true\n" +
 				"Bad,Start,not-date,,FULL_TIME,true,700,0.02,3200,2026-01-15,true\n" +
 				"Bad,End,2026-02-01,2026-01-31,FULL_TIME,true,700,0.02,3200,2026-02-01,true\n" +
 				"Bad,Type,2026-01-15,,intern,true,700,0.02,3200,2026-01-15,true\n" +
@@ -703,9 +704,10 @@ func TestValidateBundleReportsEmployeeRowValueIssues(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, report)
 	assert.False(t, report.Summary.Ready)
-	assert.Equal(t, 13, report.Summary.ErrorCount)
+	assert.Equal(t, 14, report.Summary.ErrorCount)
 	assertValidationIssue(t, report, KindEmployees, "first_name", "first_name is required")
 	assertValidationIssue(t, report, KindEmployees, "last_name", "last_name is required")
+	assertValidationIssue(t, report, KindEmployees, "start_date", "start_date is required")
 	assertValidationIssue(t, report, KindEmployees, "start_date", "start_date must be in YYYY-MM-DD format")
 	assertValidationIssue(t, report, KindEmployees, "end_date", "end_date cannot be before start_date")
 	assertValidationIssue(t, report, KindEmployees, "employment_type", `invalid employment_type "intern"`)
