@@ -33,17 +33,32 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("api token repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *GORMRepository) CreateToken(ctx context.Context, token *APIToken, tokenHash string) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
 	tokenModel := apiTokenToModel(token, tokenHash)
-	if err := r.db.WithContext(ctx).Create(tokenModel).Error; err != nil {
+	if err := db.Create(tokenModel).Error; err != nil {
 		return fmt.Errorf("create api token: %w", err)
 	}
 	return nil
 }
 
 func (r *GORMRepository) ListTokens(ctx context.Context, userID, tenantID string) ([]APIToken, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var tokenModels []models.APIToken
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
 		Where("revoked_at IS NULL").
 		Order("created_at DESC").
@@ -59,7 +74,11 @@ func (r *GORMRepository) ListTokens(ctx context.Context, userID, tenantID string
 }
 
 func (r *GORMRepository) RevokeToken(ctx context.Context, userID, tenantID, tokenID string, revokedAt time.Time) error {
-	result := r.db.WithContext(ctx).Model(&models.APIToken{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	result := db.Model(&models.APIToken{}).
 		Where("id = ? AND user_id = ? AND tenant_id = ? AND revoked_at IS NULL", tokenID, userID, tenantID).
 		Update("revoked_at", revokedAt)
 	if result.Error != nil {
@@ -72,13 +91,17 @@ func (r *GORMRepository) RevokeToken(ctx context.Context, userID, tenantID, toke
 }
 
 func (r *GORMRepository) GetValidationRecord(ctx context.Context, tokenHash string, now time.Time) (*ValidationRecord, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var result struct {
 		models.APIToken
 		Email string
 		Role  string
 	}
 
-	err := r.db.WithContext(ctx).
+	err = db.
 		Table("api_tokens AS at").
 		Select("at.*, u.email, tu.role").
 		Joins("JOIN users AS u ON u.id = at.user_id AND u.is_active = ?", true).
@@ -104,7 +127,11 @@ func (r *GORMRepository) GetValidationRecord(ctx context.Context, tokenHash stri
 }
 
 func (r *GORMRepository) TouchToken(ctx context.Context, tokenID string, lastUsedAt time.Time) error {
-	if err := r.db.WithContext(ctx).Model(&models.APIToken{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	if err := db.Model(&models.APIToken{}).
 		Where("id = ?", tokenID).
 		Update("last_used_at", lastUsedAt).Error; err != nil {
 		return fmt.Errorf("touch api token: %w", err)
