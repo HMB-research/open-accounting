@@ -1230,9 +1230,12 @@ func (c *apiClient) reopenPeriod(ctx context.Context, tenantID string, req *tena
 	return &resp, nil
 }
 
-func (c *apiClient) getYearEndCloseStatus(ctx context.Context, tenantID, periodEndDate string) (*accounting.YearEndCloseStatus, error) {
+func (c *apiClient) getYearEndCloseStatus(ctx context.Context, tenantID, periodEndDate, inventoryValuationMethod string) (*accounting.YearEndCloseStatus, error) {
 	values := url.Values{}
 	values.Set("period_end_date", periodEndDate)
+	if strings.TrimSpace(inventoryValuationMethod) != "" {
+		values.Set("inventory_valuation_method", strings.TrimSpace(inventoryValuationMethod))
+	}
 	var resp accounting.YearEndCloseStatus
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "year-end-close-status")+"?"+values.Encode(), nil, c.apiToken, &resp); err != nil {
 		return nil, err
@@ -1240,9 +1243,12 @@ func (c *apiClient) getYearEndCloseStatus(ctx context.Context, tenantID, periodE
 	return &resp, nil
 }
 
-func (c *apiClient) getYearEndClosePack(ctx context.Context, tenantID, periodEndDate string) (*accounting.YearEndClosePack, error) {
+func (c *apiClient) getYearEndClosePack(ctx context.Context, tenantID, periodEndDate, inventoryValuationMethod string) (*accounting.YearEndClosePack, error) {
 	values := url.Values{}
 	values.Set("period_end_date", periodEndDate)
+	if strings.TrimSpace(inventoryValuationMethod) != "" {
+		values.Set("inventory_valuation_method", strings.TrimSpace(inventoryValuationMethod))
+	}
 	var resp accounting.YearEndClosePack
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "year-end-close-pack")+"?"+values.Encode(), nil, c.apiToken, &resp); err != nil {
 		return nil, err
@@ -1250,9 +1256,12 @@ func (c *apiClient) getYearEndClosePack(ctx context.Context, tenantID, periodEnd
 	return &resp, nil
 }
 
-func (c *apiClient) getYearEndCloseAuditEvidence(ctx context.Context, tenantID, periodEndDate string) (*accounting.YearEndCloseAuditEvidence, error) {
+func (c *apiClient) getYearEndCloseAuditEvidence(ctx context.Context, tenantID, periodEndDate, inventoryValuationMethod string) (*accounting.YearEndCloseAuditEvidence, error) {
 	values := url.Values{}
 	values.Set("period_end_date", periodEndDate)
+	if strings.TrimSpace(inventoryValuationMethod) != "" {
+		values.Set("inventory_valuation_method", strings.TrimSpace(inventoryValuationMethod))
+	}
 	var resp accounting.YearEndCloseAuditEvidence
 	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "year-end-close-audit-evidence")+"?"+values.Encode(), nil, c.apiToken, &resp); err != nil {
 		return nil, err
@@ -1260,9 +1269,12 @@ func (c *apiClient) getYearEndCloseAuditEvidence(ctx context.Context, tenantID, 
 	return &resp, nil
 }
 
-func (c *apiClient) downloadYearEndCloseAuditArchive(ctx context.Context, tenantID, periodEndDate string) ([]byte, error) {
+func (c *apiClient) downloadYearEndCloseAuditArchive(ctx context.Context, tenantID, periodEndDate, inventoryValuationMethod string) ([]byte, error) {
 	values := url.Values{}
 	values.Set("period_end_date", periodEndDate)
+	if strings.TrimSpace(inventoryValuationMethod) != "" {
+		values.Set("inventory_valuation_method", strings.TrimSpace(inventoryValuationMethod))
+	}
 	return c.requestRaw(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "year-end-close-audit-archive")+"?"+values.Encode(), nil, c.apiToken)
 }
 

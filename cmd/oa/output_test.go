@@ -1190,6 +1190,14 @@ func TestPrintCloseOutputs(t *testing.T) {
 			EntityID:   "11111111-1111-5111-8111-111111111111",
 			Compliant:  true,
 		},
+		InventoryCostingReview: &accounting.YearEndInventoryCostingReview{
+			ValuationMethod:            inventory.InventoryValuationMethodFIFO,
+			LineCount:                  2,
+			TotalValue:                 decimal.NewFromInt(1500),
+			BlockingExceptionLineCount: 0,
+			Ready:                      true,
+			GeneratedAt:                now,
+		},
 	}
 	result := accounting.YearEndCarryForwardResult{
 		JournalEntry: &accounting.JournalEntry{ID: "je-1", EntryNumber: "JE-2026-001", Status: accounting.StatusPosted},
@@ -1239,6 +1247,23 @@ func TestPrintCloseOutputs(t *testing.T) {
 	assert.Contains(t, statusBuf.String(), "Year-end close status 2025")
 	assert.Contains(t, statusBuf.String(), "Carry-forward ready: true")
 	assert.Contains(t, statusBuf.String(), "Close-pack evidence compliant: true")
+	assert.Contains(t, statusBuf.String(), "Inventory costing review: method FIFO, ready true, lines 2, total value 1500")
+
+	var inventoryExceptionBuf bytes.Buffer
+	printYearEndInventoryCostingReview(&inventoryExceptionBuf, nil)
+	assert.Empty(t, inventoryExceptionBuf.String())
+	printYearEndInventoryCostingReview(&inventoryExceptionBuf, &accounting.YearEndInventoryCostingReview{
+		ValuationMethod:            inventory.InventoryValuationMethodStandardCost,
+		LineCount:                  1,
+		TotalValue:                 decimal.Zero,
+		NegativeQuantityLineCount:  1,
+		NegativeAvailableLineCount: 1,
+		NegativeValueLineCount:     1,
+		MissingCostLineCount:       1,
+		BlockingExceptionLineCount: 1,
+		Ready:                      false,
+	})
+	assert.Contains(t, inventoryExceptionBuf.String(), "Inventory costing exceptions: blocking lines 1")
 
 	var packBuf bytes.Buffer
 	printYearEndClosePack(&packBuf, &closePack)

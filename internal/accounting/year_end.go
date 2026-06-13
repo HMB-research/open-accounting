@@ -53,6 +53,24 @@ type YearEndCloseStatus struct {
 	ExistingCarryForward       *JournalEntrySummary            `json:"existing_carry_forward,omitempty"`
 	ClosePackEvidenceEntityID  string                          `json:"close_pack_evidence_entity_id,omitempty"`
 	ClosePackEvidence          *documents.EvidencePolicyResult `json:"close_pack_evidence,omitempty"`
+	InventoryCostingReview     *YearEndInventoryCostingReview  `json:"inventory_costing_review,omitempty"`
+}
+
+// YearEndInventoryCostingReview summarizes inventory valuation checks for close readiness.
+type YearEndInventoryCostingReview struct {
+	ValuationMethod            string          `json:"valuation_method"`
+	LineCount                  int             `json:"line_count"`
+	TotalQuantity              decimal.Decimal `json:"total_quantity"`
+	TotalReserved              decimal.Decimal `json:"total_reserved"`
+	TotalAvailable             decimal.Decimal `json:"total_available"`
+	TotalValue                 decimal.Decimal `json:"total_value"`
+	NegativeQuantityLineCount  int             `json:"negative_quantity_line_count"`
+	NegativeAvailableLineCount int             `json:"negative_available_line_count"`
+	NegativeValueLineCount     int             `json:"negative_value_line_count"`
+	MissingCostLineCount       int             `json:"missing_cost_line_count"`
+	BlockingExceptionLineCount int             `json:"blocking_exception_line_count"`
+	Ready                      bool            `json:"ready"`
+	GeneratedAt                time.Time       `json:"generated_at"`
 }
 
 // YearEndClosePack bundles close readiness with core year-end financial reports.
@@ -74,8 +92,9 @@ type YearEndCloseAuditEvidence struct {
 
 // CreateYearEndCarryForwardRequest requests a year-end carry-forward journal.
 type CreateYearEndCarryForwardRequest struct {
-	PeriodEndDate string `json:"period_end_date"`
-	UserID        string `json:"-"`
+	PeriodEndDate            string `json:"period_end_date"`
+	InventoryValuationMethod string `json:"inventory_valuation_method,omitempty"`
+	UserID                   string `json:"-"`
 }
 
 // YearEndCarryForwardResult contains the created journal entry and refreshed status.

@@ -4418,6 +4418,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
 		note := fs.String("note", "", "Close note")
 		reviewerSignOff := fs.Bool("reviewer-sign-off", false, "Confirm reviewer sign-off for fiscal year close")
+		inventoryValuationMethod := fs.String("inventory-valuation-method", "", "Inventory valuation method for fiscal-year close review")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -4427,9 +4428,10 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 		}
 
 		resp, err := client.closePeriod(ctx, cfg.TenantID, &tenant.ClosePeriodRequest{
-			PeriodEndDate:   strings.TrimSpace(*periodEnd),
-			Note:            strings.TrimSpace(*note),
-			ReviewerSignOff: *reviewerSignOff,
+			PeriodEndDate:            strings.TrimSpace(*periodEnd),
+			Note:                     strings.TrimSpace(*note),
+			ReviewerSignOff:          *reviewerSignOff,
+			InventoryValuationMethod: strings.TrimSpace(*inventoryValuationMethod),
 		})
 		if err != nil {
 			return err
@@ -4471,6 +4473,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("close year-end-status", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
 		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		inventoryValuationMethod := fs.String("inventory-valuation-method", "", "Inventory valuation method for close review")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -4479,7 +4482,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 			return errors.New("period-end is required")
 		}
 
-		status, err := client.getYearEndCloseStatus(ctx, cfg.TenantID, strings.TrimSpace(*periodEnd))
+		status, err := client.getYearEndCloseStatus(ctx, cfg.TenantID, strings.TrimSpace(*periodEnd), strings.TrimSpace(*inventoryValuationMethod))
 		if err != nil {
 			return err
 		}
@@ -4492,6 +4495,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("close year-end-pack", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
 		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		inventoryValuationMethod := fs.String("inventory-valuation-method", "", "Inventory valuation method for close review")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -4500,7 +4504,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 			return errors.New("period-end is required")
 		}
 
-		pack, err := client.getYearEndClosePack(ctx, cfg.TenantID, strings.TrimSpace(*periodEnd))
+		pack, err := client.getYearEndClosePack(ctx, cfg.TenantID, strings.TrimSpace(*periodEnd), strings.TrimSpace(*inventoryValuationMethod))
 		if err != nil {
 			return err
 		}
@@ -4513,6 +4517,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("close year-end-audit", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
 		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		inventoryValuationMethod := fs.String("inventory-valuation-method", "", "Inventory valuation method for close review")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -4521,7 +4526,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 			return errors.New("period-end is required")
 		}
 
-		audit, err := client.getYearEndCloseAuditEvidence(ctx, cfg.TenantID, strings.TrimSpace(*periodEnd))
+		audit, err := client.getYearEndCloseAuditEvidence(ctx, cfg.TenantID, strings.TrimSpace(*periodEnd), strings.TrimSpace(*inventoryValuationMethod))
 		if err != nil {
 			return err
 		}
@@ -4534,6 +4539,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("close year-end-archive", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
 		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		inventoryValuationMethod := fs.String("inventory-valuation-method", "", "Inventory valuation method for close review")
 		outputPath := fs.String("output", "", "Output path; defaults to year-end-close-audit-<period-end>.zip, '-' for stdout")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -4543,7 +4549,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 			return errors.New("period-end is required")
 		}
 
-		archive, err := client.downloadYearEndCloseAuditArchive(ctx, cfg.TenantID, normalizedPeriodEnd)
+		archive, err := client.downloadYearEndCloseAuditArchive(ctx, cfg.TenantID, normalizedPeriodEnd, strings.TrimSpace(*inventoryValuationMethod))
 		if err != nil {
 			return err
 		}
@@ -4564,6 +4570,7 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("close carry-forward", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
 		periodEnd := fs.String("period-end", "", "Period end date, YYYY-MM-DD")
+		inventoryValuationMethod := fs.String("inventory-valuation-method", "", "Inventory valuation method for close review")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -4573,7 +4580,8 @@ func (a *cliApp) runClose(ctx context.Context, args []string) error {
 		}
 
 		result, err := client.createYearEndCarryForward(ctx, cfg.TenantID, &accounting.CreateYearEndCarryForwardRequest{
-			PeriodEndDate: strings.TrimSpace(*periodEnd),
+			PeriodEndDate:            strings.TrimSpace(*periodEnd),
+			InventoryValuationMethod: strings.TrimSpace(*inventoryValuationMethod),
 		})
 		if err != nil {
 			return err

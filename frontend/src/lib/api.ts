@@ -596,8 +596,15 @@ class ApiClient {
     );
   }
 
-  async getYearEndCloseStatus(tenantId: string, periodEndDate: string) {
-    const query = buildQuery({ period_end_date: periodEndDate });
+  async getYearEndCloseStatus(
+    tenantId: string,
+    periodEndDate: string,
+    inventoryValuationMethod = "",
+  ) {
+    const query = buildQuery({
+      period_end_date: periodEndDate,
+      inventory_valuation_method: inventoryValuationMethod,
+    });
     return this.request<YearEndCloseStatus>(
       "GET",
       `/api/v1/tenants/${tenantId}/year-end-close-status${query}`,
@@ -768,8 +775,12 @@ class ApiClient {
   async downloadYearEndCloseAuditArchive(
     tenantId: string,
     periodEndDate: string,
+    inventoryValuationMethod = "",
   ) {
-    const query = buildQuery({ period_end_date: periodEndDate });
+    const query = buildQuery({
+      period_end_date: periodEndDate,
+      inventory_valuation_method: inventoryValuationMethod,
+    });
     const response = await fetch(
       `${getApiBase()}/api/v1/tenants/${tenantId}/year-end-close-audit-archive${query}`,
       {
@@ -2936,6 +2947,7 @@ export interface CreateInvitationRequest {
 export interface ClosePeriodRequest {
   period_end_date: string;
   note?: string;
+  inventory_valuation_method?: string;
 }
 
 export interface ReopenPeriodRequest {
@@ -2981,10 +2993,28 @@ export interface YearEndCloseStatus {
   existing_carry_forward?: JournalEntrySummary | null;
   close_pack_evidence_entity_id?: string;
   close_pack_evidence?: EvidencePolicyResult | null;
+  inventory_costing_review?: YearEndInventoryCostingReview | null;
+}
+
+export interface YearEndInventoryCostingReview {
+  valuation_method: string;
+  line_count: number;
+  total_quantity: Decimal;
+  total_reserved: Decimal;
+  total_available: Decimal;
+  total_value: Decimal;
+  negative_quantity_line_count: number;
+  negative_available_line_count: number;
+  negative_value_line_count: number;
+  missing_cost_line_count: number;
+  blocking_exception_line_count: number;
+  ready: boolean;
+  generated_at: string;
 }
 
 export interface CreateYearEndCarryForwardRequest {
   period_end_date: string;
+  inventory_valuation_method?: string;
 }
 
 export interface YearEndCarryForwardResult {

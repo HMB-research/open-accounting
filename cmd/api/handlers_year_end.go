@@ -15,16 +15,18 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tenant"
+	"github.com/shopspring/decimal"
 )
 
 // GetYearEndCloseStatus returns fiscal year-end close readiness.
 // @Summary Get year-end close status
-// @Description Get fiscal year close readiness, retained-earnings mapping, net income, period-lock status, and existing carry-forward state
+// @Description Get fiscal year close readiness, retained-earnings mapping, net income, period-lock status, inventory costing review, and existing carry-forward state
 // @Tags Period Close
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param period_end_date query string true "Fiscal year-end date (YYYY-MM-DD)"
+// @Param inventory_valuation_method query string false "Inventory valuation method for close review: standard-cost, weighted-average, or fifo"
 // @Success 200 {object} accounting.YearEndCloseStatus
 // @Failure 400 {object} object{error=string}
 // @Failure 404 {object} object{error=string}
@@ -34,6 +36,7 @@ import (
 func (h *Handlers) GetYearEndCloseStatus(w http.ResponseWriter, r *http.Request) {
 	routeCtx := h.tenantContextFromRequest(r)
 	periodEndDate := strings.TrimSpace(r.URL.Query().Get("period_end_date"))
+	inventoryValuationMethod := yearEndInventoryValuationMethod(r)
 	if periodEndDate == "" {
 		respondError(w, http.StatusBadRequest, "period end date is required")
 		return
@@ -61,18 +64,23 @@ func (h *Handlers) GetYearEndCloseStatus(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
 		return
 	}
+	if err := h.attachYearEndInventoryCostingReview(r.Context(), routeCtx.schemaName, routeCtx.tenantID, inventoryValuationMethod, status); err != nil {
+		respondYearEndCloseError(w, err)
+		return
+	}
 
 	respondJSON(w, http.StatusOK, status)
 }
 
 // GetYearEndClosePack returns close readiness with year-end financial reports.
 // @Summary Get year-end close pack
-// @Description Get year-end close readiness plus trial balance, balance sheet, and income statement for the fiscal year
+// @Description Get year-end close readiness plus inventory costing review, trial balance, balance sheet, and income statement for the fiscal year
 // @Tags Period Close
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param period_end_date query string true "Fiscal year-end date (YYYY-MM-DD)"
+// @Param inventory_valuation_method query string false "Inventory valuation method for close review: standard-cost, weighted-average, or fifo"
 // @Success 200 {object} accounting.YearEndClosePack
 // @Failure 400 {object} object{error=string}
 // @Failure 404 {object} object{error=string}
@@ -82,6 +90,7 @@ func (h *Handlers) GetYearEndCloseStatus(w http.ResponseWriter, r *http.Request)
 func (h *Handlers) GetYearEndClosePack(w http.ResponseWriter, r *http.Request) {
 	routeCtx := h.tenantContextFromRequest(r)
 	periodEndDate := strings.TrimSpace(r.URL.Query().Get("period_end_date"))
+	inventoryValuationMethod := yearEndInventoryValuationMethod(r)
 	if periodEndDate == "" {
 		respondError(w, http.StatusBadRequest, "period end date is required")
 		return
@@ -110,6 +119,10 @@ func (h *Handlers) GetYearEndClosePack(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
 			return
 		}
+		if err := h.attachYearEndInventoryCostingReview(r.Context(), routeCtx.schemaName, routeCtx.tenantID, inventoryValuationMethod, pack.Status); err != nil {
+			respondYearEndCloseError(w, err)
+			return
+		}
 	}
 
 	respondJSON(w, http.StatusOK, pack)
@@ -117,12 +130,13 @@ func (h *Handlers) GetYearEndClosePack(w http.ResponseWriter, r *http.Request) {
 
 // GetYearEndCloseAuditEvidence returns the year-end close pack plus close-pack reviewer evidence metadata.
 // @Summary Get year-end close audit evidence
-// @Description Get year-end close readiness, core reports, close-pack evidence policy, and attached close-pack document metadata
+// @Description Get year-end close readiness, inventory costing review, core reports, close-pack evidence policy, and attached close-pack document metadata
 // @Tags Period Close
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param period_end_date query string true "Fiscal year-end date (YYYY-MM-DD)"
+// @Param inventory_valuation_method query string false "Inventory valuation method for close review: standard-cost, weighted-average, or fifo"
 // @Success 200 {object} accounting.YearEndCloseAuditEvidence
 // @Failure 400 {object} object{error=string}
 // @Failure 404 {object} object{error=string}
@@ -132,6 +146,7 @@ func (h *Handlers) GetYearEndClosePack(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetYearEndCloseAuditEvidence(w http.ResponseWriter, r *http.Request) {
 	routeCtx := h.tenantContextFromRequest(r)
 	periodEndDate := strings.TrimSpace(r.URL.Query().Get("period_end_date"))
+	inventoryValuationMethod := yearEndInventoryValuationMethod(r)
 	if periodEndDate == "" {
 		respondError(w, http.StatusBadRequest, "period end date is required")
 		return
@@ -143,7 +158,7 @@ func (h *Handlers) GetYearEndCloseAuditEvidence(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	audit, err := h.buildYearEndCloseAuditEvidence(r.Context(), tenantRecord, periodEndDate)
+	audit, err := h.buildYearEndCloseAuditEvidence(r.Context(), tenantRecord, periodEndDate, inventoryValuationMethod)
 	if err != nil {
 		respondYearEndCloseError(w, err)
 		return
@@ -154,12 +169,13 @@ func (h *Handlers) GetYearEndCloseAuditEvidence(w http.ResponseWriter, r *http.R
 
 // DownloadYearEndCloseAuditArchive returns a ZIP archive with close-pack audit manifest and attached evidence files.
 // @Summary Download year-end close audit archive
-// @Description Download a ZIP archive containing year-end close pack metadata, evidence-policy results, and close-pack documents
+// @Description Download a ZIP archive containing year-end close pack metadata, inventory costing review, evidence-policy results, and close-pack documents
 // @Tags Period Close
 // @Produce application/zip
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param period_end_date query string true "Fiscal year-end date (YYYY-MM-DD)"
+// @Param inventory_valuation_method query string false "Inventory valuation method for close review: standard-cost, weighted-average, or fifo"
 // @Success 200 {file} binary
 // @Failure 400 {object} object{error=string}
 // @Failure 404 {object} object{error=string}
@@ -169,6 +185,7 @@ func (h *Handlers) GetYearEndCloseAuditEvidence(w http.ResponseWriter, r *http.R
 func (h *Handlers) DownloadYearEndCloseAuditArchive(w http.ResponseWriter, r *http.Request) {
 	routeCtx := h.tenantContextFromRequest(r)
 	periodEndDate := strings.TrimSpace(r.URL.Query().Get("period_end_date"))
+	inventoryValuationMethod := yearEndInventoryValuationMethod(r)
 	if periodEndDate == "" {
 		respondError(w, http.StatusBadRequest, "period end date is required")
 		return
@@ -184,7 +201,7 @@ func (h *Handlers) DownloadYearEndCloseAuditArchive(w http.ResponseWriter, r *ht
 		return
 	}
 
-	audit, err := h.buildYearEndCloseAuditEvidence(r.Context(), tenantRecord, periodEndDate)
+	audit, err := h.buildYearEndCloseAuditEvidence(r.Context(), tenantRecord, periodEndDate, inventoryValuationMethod)
 	if err != nil {
 		respondYearEndCloseError(w, err)
 		return
@@ -205,7 +222,7 @@ func (h *Handlers) DownloadYearEndCloseAuditArchive(w http.ResponseWriter, r *ht
 
 // CreateYearEndCarryForward creates and posts a fiscal year-end carry-forward journal.
 // @Summary Create year-end carry-forward
-// @Description Create and post retained-earnings carry-forward journal entries after the fiscal year has been closed
+// @Description Create and post retained-earnings carry-forward journal entries after the fiscal year has been closed and inventory costing review has no blocking exceptions
 // @Tags Period Close
 // @Accept json
 // @Produce json
@@ -239,6 +256,10 @@ func (h *Handlers) CreateYearEndCarryForward(w http.ResponseWriter, r *http.Requ
 		respondYearEndCloseError(w, err)
 		return
 	}
+	if err := h.requireYearEndInventoryCostingReady(r.Context(), tenantRecord.SchemaName, tenantID, tenantRecord.Settings.FiscalYearStart, req.PeriodEndDate, req.InventoryValuationMethod); err != nil {
+		respondYearEndCloseError(w, err)
+		return
+	}
 
 	result, err := h.accountingService.CreateYearEndCarryForward(
 		r.Context(),
@@ -255,6 +276,10 @@ func (h *Handlers) CreateYearEndCarryForward(w http.ResponseWriter, r *http.Requ
 	if result.Status != nil {
 		if err := h.attachYearEndCloseEvidenceStatus(r.Context(), tenantRecord.SchemaName, tenantID, result.Status); err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
+			return
+		}
+		if err := h.attachYearEndInventoryCostingReview(r.Context(), tenantRecord.SchemaName, tenantID, req.InventoryValuationMethod, result.Status); err != nil {
+			respondYearEndCloseError(w, err)
 			return
 		}
 	}
@@ -331,7 +356,7 @@ func (h *Handlers) yearEndCarryForwardExists(r *http.Request, tenantRecord *tena
 	return status.IsFiscalYearEnd && status.ExistingCarryForward != nil, nil
 }
 
-func (h *Handlers) buildYearEndCloseAuditEvidence(ctx context.Context, tenantRecord *tenant.Tenant, periodEndDate string) (*accounting.YearEndCloseAuditEvidence, error) {
+func (h *Handlers) buildYearEndCloseAuditEvidence(ctx context.Context, tenantRecord *tenant.Tenant, periodEndDate, inventoryValuationMethod string) (*accounting.YearEndCloseAuditEvidence, error) {
 	pack, err := h.accountingService.GetYearEndClosePack(
 		ctx,
 		tenantRecord.SchemaName,
@@ -349,6 +374,9 @@ func (h *Handlers) buildYearEndCloseAuditEvidence(ctx context.Context, tenantRec
 	if pack.Status != nil {
 		if err := h.attachYearEndCloseEvidenceStatus(ctx, tenantRecord.SchemaName, tenantRecord.ID, pack.Status); err != nil {
 			return nil, fmt.Errorf("evaluate close-pack evidence: %w", err)
+		}
+		if err := h.attachYearEndInventoryCostingReview(ctx, tenantRecord.SchemaName, tenantRecord.ID, inventoryValuationMethod, pack.Status); err != nil {
+			return nil, err
 		}
 		evidencePolicy = pack.Status.ClosePackEvidence
 		if h.documentsService != nil && strings.TrimSpace(pack.Status.ClosePackEvidenceEntityID) != "" {
@@ -487,6 +515,89 @@ func (h *Handlers) attachYearEndCloseEvidenceStatus(ctx context.Context, schemaN
 	return nil
 }
 
+func yearEndInventoryValuationMethod(r *http.Request) string {
+	return strings.TrimSpace(r.URL.Query().Get("inventory_valuation_method"))
+}
+
+func (h *Handlers) requireYearEndInventoryCostingReady(ctx context.Context, schemaName, tenantID string, fiscalYearStartMonth int, rawPeriodEndDate, method string) error {
+	if h.inventoryService == nil {
+		return nil
+	}
+	isYearEnd, err := accounting.IsFiscalYearEndPeriod(rawPeriodEndDate, fiscalYearStartMonth)
+	if err != nil {
+		return err
+	}
+	if !isYearEnd {
+		return nil
+	}
+	review, err := h.yearEndInventoryCostingReview(ctx, schemaName, tenantID, method)
+	if err != nil {
+		return err
+	}
+	if review != nil && !review.Ready {
+		return fmt.Errorf("inventory costing review has %d blocking exception lines", review.BlockingExceptionLineCount)
+	}
+	return nil
+}
+
+func (h *Handlers) attachYearEndInventoryCostingReview(ctx context.Context, schemaName, tenantID, method string, status *accounting.YearEndCloseStatus) error {
+	if h.inventoryService == nil || status == nil || !status.IsFiscalYearEnd {
+		return nil
+	}
+	review, err := h.yearEndInventoryCostingReview(ctx, schemaName, tenantID, method)
+	if err != nil {
+		return err
+	}
+	status.InventoryCostingReview = review
+	if review != nil {
+		status.CarryForwardReady = status.CarryForwardReady && review.Ready
+	}
+	return nil
+}
+
+func (h *Handlers) yearEndInventoryCostingReview(ctx context.Context, schemaName, tenantID, method string) (*accounting.YearEndInventoryCostingReview, error) {
+	if h.inventoryService == nil {
+		return nil, nil
+	}
+	report, err := h.inventoryService.GetInventoryValuation(ctx, tenantID, schemaName, "", method)
+	if err != nil {
+		return nil, err
+	}
+	review := &accounting.YearEndInventoryCostingReview{
+		ValuationMethod: report.ValuationMethod,
+		LineCount:       len(report.Lines),
+		TotalQuantity:   report.TotalQuantity,
+		TotalReserved:   report.TotalReserved,
+		TotalAvailable:  report.TotalAvailable,
+		TotalValue:      report.TotalValue,
+		GeneratedAt:     report.GeneratedAt,
+	}
+	for _, line := range report.Lines {
+		blocking := false
+		if line.Quantity.LessThan(decimal.Zero) {
+			review.NegativeQuantityLineCount++
+			blocking = true
+		}
+		if line.AvailableQty.LessThan(decimal.Zero) {
+			review.NegativeAvailableLineCount++
+			blocking = true
+		}
+		if line.InventoryValue.LessThan(decimal.Zero) {
+			review.NegativeValueLineCount++
+			blocking = true
+		}
+		if line.Quantity.GreaterThan(decimal.Zero) && !line.UnitCost.GreaterThan(decimal.Zero) {
+			review.MissingCostLineCount++
+			blocking = true
+		}
+		if blocking {
+			review.BlockingExceptionLineCount++
+		}
+	}
+	review.Ready = review.BlockingExceptionLineCount == 0
+	return review, nil
+}
+
 func (h *Handlers) yearEndClosePackEvidence(ctx context.Context, schemaName, tenantID, entityID string) ([]documents.EvidencePolicyResult, error) {
 	return h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
 		EntityType: documents.EntityTypeYearEndClose,
@@ -504,6 +615,8 @@ func respondYearEndCloseError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errApprovedClosePackEvidenceRequired):
 		respondError(w, http.StatusConflict, err.Error())
 	case strings.Contains(err.Error(), "period end date"):
+		respondError(w, http.StatusBadRequest, err.Error())
+	case strings.Contains(err.Error(), "invalid valuation method"):
 		respondError(w, http.StatusBadRequest, err.Error())
 	case strings.Contains(err.Error(), "must match the fiscal year end"):
 		respondError(w, http.StatusBadRequest, err.Error())
@@ -524,6 +637,8 @@ func respondYearEndCloseError(w http.ResponseWriter, err error) {
 	case strings.Contains(err.Error(), "retained earnings account is required"):
 		respondError(w, http.StatusConflict, err.Error())
 	case strings.Contains(err.Error(), "no revenue or expense activity found"):
+		respondError(w, http.StatusConflict, err.Error())
+	case strings.Contains(err.Error(), "inventory costing review"):
 		respondError(w, http.StatusConflict, err.Error())
 	default:
 		respondError(w, http.StatusInternalServerError, "Failed to process year-end close workflow")

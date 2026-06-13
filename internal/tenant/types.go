@@ -110,9 +110,10 @@ type TenantAuditEvent struct {
 
 // ClosePeriodRequest closes a month-end or year-end period.
 type ClosePeriodRequest struct {
-	PeriodEndDate   string `json:"period_end_date"`
-	Note            string `json:"note,omitempty"`
-	ReviewerSignOff bool   `json:"reviewer_sign_off,omitempty"`
+	PeriodEndDate            string `json:"period_end_date"`
+	Note                     string `json:"note,omitempty"`
+	ReviewerSignOff          bool   `json:"reviewer_sign_off,omitempty"`
+	InventoryValuationMethod string `json:"inventory_valuation_method,omitempty"`
 }
 
 // ReopenPeriodRequest reopens a previously closed period.

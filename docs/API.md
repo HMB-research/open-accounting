@@ -2946,31 +2946,33 @@ Close or reopen request:
 {
   "period_end_date": "2026-03-31",
   "note": "March close",
-  "reviewer_sign_off": false
+  "reviewer_sign_off": false,
+  "inventory_valuation_method": "fifo"
 }
 ```
 
-Fiscal-year close requests require `reviewer_sign_off=true` and approved `close_pack` evidence attached to the `year_end_close` entity ID returned by year-end status or pack. Reopen requests require a note. The API rejects fiscal-year reopen requests after year-end carry-forward has been posted.
+Fiscal-year close requests require `reviewer_sign_off=true`, approved `close_pack` evidence attached to the `year_end_close` entity ID returned by year-end status or pack, and an inventory costing review with no blocking exception lines when inventory is configured. `inventory_valuation_method` accepts `standard-cost` (default), `weighted-average`, or `fifo` for fiscal-year close review. Reopen requests require a note. The API rejects fiscal-year reopen requests after year-end carry-forward has been posted.
 
 ### Year-End Carry-Forward
 
 ```http
-GET /tenants/{tenantId}/year-end-close-status?period_end_date=2025-12-31
-GET /tenants/{tenantId}/year-end-close-pack?period_end_date=2025-12-31
-GET /tenants/{tenantId}/year-end-close-audit-evidence?period_end_date=2025-12-31
-GET /tenants/{tenantId}/year-end-close-audit-archive?period_end_date=2025-12-31
+GET /tenants/{tenantId}/year-end-close-status?period_end_date=2025-12-31&inventory_valuation_method=fifo
+GET /tenants/{tenantId}/year-end-close-pack?period_end_date=2025-12-31&inventory_valuation_method=fifo
+GET /tenants/{tenantId}/year-end-close-audit-evidence?period_end_date=2025-12-31&inventory_valuation_method=fifo
+GET /tenants/{tenantId}/year-end-close-audit-archive?period_end_date=2025-12-31&inventory_valuation_method=fifo
 POST /tenants/{tenantId}/year-end-carry-forward
 POST /tenants/{tenantId}/year-end-carry-forward/reverse
 Authorization: Bearer <token>
 ```
 
-The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year. The audit evidence endpoint adds the close-pack evidence-policy result and attached close-pack document metadata. The audit archive endpoint returns that evidence as a ZIP with a JSON manifest and attached close-pack files. Year-end carry-forward requires the fiscal year to be closed and the same approved close-pack evidence to be present.
+The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year. Status, pack, audit evidence, and audit archive responses include `inventory_costing_review` when inventory is configured. The review summarizes valuation method, totals, blocking exception counts for negative quantities/availability/value and missing costs, and whether inventory costing is ready; blocking exceptions make carry-forward readiness false. The audit evidence endpoint adds the close-pack evidence-policy result and attached close-pack document metadata. The audit archive endpoint returns that evidence as a ZIP with a JSON manifest and attached close-pack files. Year-end carry-forward requires the fiscal year to be closed, the same approved close-pack evidence to be present, and inventory costing review to be ready when inventory is configured.
 
 Create carry-forward:
 
 ```json
 {
-  "period_end_date": "2025-12-31"
+  "period_end_date": "2025-12-31",
+  "inventory_valuation_method": "fifo"
 }
 ```
 
