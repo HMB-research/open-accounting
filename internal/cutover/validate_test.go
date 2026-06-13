@@ -412,6 +412,74 @@ func TestValidateBundleAcceptsSmartAccountsKMDHistoryProviderPresetAliases(t *te
 	assert.Contains(t, report.Files[0].Headers, "total_input_vat")
 }
 
+func TestValidateBundleAcceptsMeritExpenseProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetMerit,
+		Files: []BundleFile{
+			{
+				Kind:       KindAccounts,
+				FileName:   "merit-accounts.csv",
+				CSVContent: "konto_kood,konto_nimi,konto_tüüp\n5500,Office expenses,EXPENSE\n1000,Cash,ASSET\n",
+			},
+			{
+				Kind:     KindExpenses,
+				FileName: "merit-expenses.csv",
+				CSVContent: "kulu_nr,kulu_kuupaev,hankija,kulu_konto,makse_konto,summa,valuuta,valuutakurss,vajab_tsekki,staatus,esitatud,kinnitatud,selgitus\n" + //nolint:misspell // Estonian CSV header aliases.
+					"EXP-1,2026-05-30,Office Store,5500,1000,42,EUR,1,true,approved,2026-05-30,2026-05-31,Receipt\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 2)
+	assert.Contains(t, report.Files[1].Headers, "expense_number")
+	assert.Contains(t, report.Files[1].Headers, "expense_date")
+	assert.Contains(t, report.Files[1].Headers, "merchant")
+	assert.Contains(t, report.Files[1].Headers, "expense_account_code")
+	assert.Contains(t, report.Files[1].Headers, "payment_account_code")
+	assert.Contains(t, report.Files[1].Headers, "amount")
+	assert.Contains(t, report.Files[1].Headers, "requires_receipt")
+	assert.Contains(t, report.Files[1].Headers, "status")
+	assert.Contains(t, report.Files[1].Headers, "approved_at")
+}
+
+func TestValidateBundleAcceptsSmartAccountsExpenseProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{
+			{
+				Kind:       KindAccounts,
+				FileName:   "smartaccounts-accounts.csv",
+				CSVContent: "account_no,account_title,classification\n5500,Office expenses,EXPENSE\n1000,Cash,ASSET\n",
+			},
+			{
+				Kind:     KindExpenses,
+				FileName: "smartaccounts-expenses.csv",
+				CSVContent: "document_no,document_date,vendor_name,expense_account_no,paid_from_account_no,expense_amount,currency_code,exchange_rate,receipt_required,expense_status,submitted_date,approved_date,memo\n" +
+					"EXP-1,2026-05-30,Office Store,5500,1000,42,EUR,1,true,approved,2026-05-30,2026-05-31,Receipt\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 2)
+	assert.Contains(t, report.Files[1].Headers, "expense_number")
+	assert.Contains(t, report.Files[1].Headers, "expense_date")
+	assert.Contains(t, report.Files[1].Headers, "merchant")
+	assert.Contains(t, report.Files[1].Headers, "expense_account_code")
+	assert.Contains(t, report.Files[1].Headers, "payment_account_code")
+	assert.Contains(t, report.Files[1].Headers, "amount")
+	assert.Contains(t, report.Files[1].Headers, "requires_receipt")
+	assert.Contains(t, report.Files[1].Headers, "status")
+	assert.Contains(t, report.Files[1].Headers, "approved_at")
+}
+
 func TestValidateBundleDefaultsDisplayFileNames(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
