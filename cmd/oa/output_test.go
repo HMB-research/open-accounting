@@ -288,6 +288,10 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 	assert.Empty(t, buf.String())
 
 	buf.Reset()
+	printInventorySubledgerReconciliation(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	buf.Reset()
 	printInventoryLotReport(&buf, nil)
 	assert.Empty(t, buf.String())
 
@@ -1885,6 +1889,60 @@ func TestPrintInventoryOutputs(t *testing.T) {
 		TotalValue:     decimal.NewFromInt(126),
 		GeneratedAt:    now,
 	}
+	subledger := inventory.InventorySubledgerReconciliationReport{
+		TenantID:                  "tenant-1",
+		WarehouseID:               "wh-1",
+		ValuationMethod:           inventory.InventoryValuationMethodStandardCost,
+		AsOfDate:                  now,
+		TotalSubledgerValue:       decimal.NewFromInt(126),
+		TotalGeneralLedgerBalance: decimal.NewFromInt(120),
+		TotalDifference:           decimal.NewFromInt(6),
+		Ready:                     false,
+		GeneratedAt:               now,
+		AccountLines: []inventory.InventorySubledgerReconciliationAccountLine{
+			{
+				AccountID:            "account-1",
+				AccountCode:          "1300",
+				AccountName:          "Inventory",
+				AccountType:          "ASSET",
+				ProductLineCount:     1,
+				SubledgerValue:       decimal.NewFromInt(120),
+				GeneralLedgerBalance: decimal.NewFromInt(120),
+				Difference:           decimal.Zero,
+				Balanced:             true,
+			},
+		},
+		Lines: []inventory.InventorySubledgerReconciliationLine{
+			{
+				ProductID:          "prod-1",
+				ProductCode:        "PRD-001",
+				ProductName:        "Widget",
+				WarehouseID:        "wh-1",
+				WarehouseCode:      "MAIN",
+				WarehouseName:      "Main warehouse",
+				InventoryAccountID: "account-1",
+				AccountCode:        "1300",
+				AccountName:        "Inventory",
+				AccountType:        "ASSET",
+				Quantity:           decimal.NewFromInt(12),
+				InventoryValue:     decimal.NewFromInt(120),
+				Status:             "MAPPED",
+			},
+			{
+				ProductID:      "prod-2",
+				ProductCode:    "PRD-002",
+				ProductName:    "Unmapped",
+				WarehouseID:    "wh-1",
+				WarehouseCode:  "MAIN",
+				WarehouseName:  "Main warehouse",
+				Quantity:       decimal.NewFromInt(1),
+				InventoryValue: decimal.NewFromInt(6),
+				Status:         "MISSING_INVENTORY_ACCOUNT",
+			},
+		},
+		MissingAccountLineCount:    1,
+		BlockingExceptionLineCount: 1,
+	}
 	lotReport := inventory.InventoryLotReport{
 		TenantID:     "tenant-1",
 		ProductID:    "prod-1",
@@ -1968,6 +2026,35 @@ func TestPrintInventoryOutputs(t *testing.T) {
 	assert.Equal(t, "WH", inventoryValuationWarehouseLabel(inventory.InventoryValuationLine{WarehouseCode: "WH", WarehouseID: "wh-2"}))
 	assert.Equal(t, "Warehouse name", inventoryValuationWarehouseLabel(inventory.InventoryValuationLine{WarehouseName: "Warehouse name", WarehouseID: "wh-3"}))
 	assert.Equal(t, "wh-4", inventoryValuationWarehouseLabel(inventory.InventoryValuationLine{WarehouseID: "wh-4"}))
+
+	var subledgerBuf bytes.Buffer
+	printInventorySubledgerReconciliation(&subledgerBuf, &subledger)
+	assert.Contains(t, subledgerBuf.String(), "Inventory subledger reconciliation (STANDARD_COST)")
+	assert.Contains(t, subledgerBuf.String(), "1300 Inventory")
+	assert.Contains(t, subledgerBuf.String(), "MISSING_INVENTORY_ACCOUNT")
+	assert.Contains(t, subledgerBuf.String(), "PRD-002 Unmapped")
+
+	cleanSubledger := subledger
+	cleanSubledger.Ready = true
+	cleanSubledger.BlockingExceptionLineCount = 0
+	cleanSubledger.Lines = []inventory.InventorySubledgerReconciliationLine{subledger.Lines[0]}
+	var cleanSubledgerBuf bytes.Buffer
+	printInventorySubledgerReconciliation(&cleanSubledgerBuf, &cleanSubledger)
+	assert.NotContains(t, cleanSubledgerBuf.String(), "Inventory subledger exceptions")
+
+	assert.Equal(t, "1300", inventorySubledgerAccountLabel(inventory.InventorySubledgerReconciliationAccountLine{AccountCode: "1300", AccountID: "account-2"}))
+	assert.Equal(t, "Inventory", inventorySubledgerAccountLabel(inventory.InventorySubledgerReconciliationAccountLine{AccountName: "Inventory", AccountID: "account-3"}))
+	assert.Equal(t, "account-4", inventorySubledgerAccountLabel(inventory.InventorySubledgerReconciliationAccountLine{AccountID: "account-4"}))
+	assert.Equal(t, "CODE", inventorySubledgerProductLabel(inventory.InventorySubledgerReconciliationLine{ProductCode: "CODE", ProductID: "prod-2"}))
+	assert.Equal(t, "Product name", inventorySubledgerProductLabel(inventory.InventorySubledgerReconciliationLine{ProductName: "Product name", ProductID: "prod-3"}))
+	assert.Equal(t, "prod-4", inventorySubledgerProductLabel(inventory.InventorySubledgerReconciliationLine{ProductID: "prod-4"}))
+	assert.Equal(t, "WH", inventorySubledgerWarehouseLabel(inventory.InventorySubledgerReconciliationLine{WarehouseCode: "WH", WarehouseID: "wh-2"}))
+	assert.Equal(t, "Warehouse name", inventorySubledgerWarehouseLabel(inventory.InventorySubledgerReconciliationLine{WarehouseName: "Warehouse name", WarehouseID: "wh-3"}))
+	assert.Equal(t, "wh-4", inventorySubledgerWarehouseLabel(inventory.InventorySubledgerReconciliationLine{WarehouseID: "wh-4"}))
+	assert.Equal(t, "All warehouses", inventorySubledgerWarehouseLabel(inventory.InventorySubledgerReconciliationLine{}))
+	assert.Equal(t, "1300 Inventory", inventorySubledgerLineAccountLabel(inventory.InventorySubledgerReconciliationLine{InventoryAccountID: "account-1", AccountCode: "1300", AccountName: "Inventory"}))
+	assert.Equal(t, "account-2", inventorySubledgerLineAccountLabel(inventory.InventorySubledgerReconciliationLine{InventoryAccountID: "account-2"}))
+	assert.Equal(t, "-", inventorySubledgerLineAccountLabel(inventory.InventorySubledgerReconciliationLine{}))
 
 	var lotReportBuf bytes.Buffer
 	printInventoryLotReport(&lotReportBuf, &lotReport)

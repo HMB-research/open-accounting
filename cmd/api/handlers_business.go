@@ -6809,6 +6809,62 @@ func (h *Handlers) GetInventoryValuation(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, report)
 }
 
+// GetInventorySubledgerReconciliation returns inventory subledger reconciliation by inventory asset account.
+// @Summary Get inventory subledger reconciliation
+// @Description Compare valued inventory stock against posted general-ledger balances by configured product inventory asset account
+// @Tags Inventory
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param warehouse_id query string false "Warehouse ID"
+// @Param method query string false "Valuation method override: standard-cost, weighted-average, or fifo"
+// @Param as_of_date query string false "GL balance date in YYYY-MM-DD format"
+// @Success 200 {object} inventory.InventorySubledgerReconciliationReport
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/inventory/subledger-reconciliation [get]
+func (h *Handlers) GetInventorySubledgerReconciliation(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+	schemaName := tenantRecord.SchemaName
+	warehouseID := strings.TrimSpace(r.URL.Query().Get("warehouse_id"))
+	method := tenantInventoryValuationMethod(tenantRecord, r.URL.Query().Get("method"))
+	asOfDate, err := inventorySubledgerAsOfDate(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	report, err := h.inventoryService.GetInventorySubledgerReconciliation(r.Context(), tenantID, schemaName, warehouseID, method, asOfDate)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "invalid valuation method") || (warehouseID != "" && strings.Contains(err.Error(), "warehouse")) {
+			status = http.StatusBadRequest
+		}
+		respondError(w, status, fmt.Sprintf("Failed to get inventory subledger reconciliation: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, report)
+}
+
+func inventorySubledgerAsOfDate(r *http.Request) (time.Time, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("as_of_date"))
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	parsed, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("as_of_date must be in YYYY-MM-DD format")
+	}
+	return parsed, nil
+}
+
 // GetInventoryLotReport returns stock grouped by lot, serial, and expiry metadata.
 // @Summary Get inventory lot report
 // @Description Return on-hand tracked goods stock grouped by lot number, serial number, expiry date, and warehouse

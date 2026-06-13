@@ -17,6 +17,11 @@ type accountingLister interface {
 	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]accounting.Account, error)
 }
 
+type accountingBalancer interface {
+	accountingLister
+	GetAccountBalance(ctx context.Context, schemaName, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error)
+}
+
 type accountingPoster interface {
 	accountingLister
 	CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error)
@@ -32,6 +37,11 @@ const (
 	inventoryIssueAccountingRoleCOGS    = "COST_OF_GOODS_SOLD"
 	inventoryIssueAccountingRoleAsset   = "INVENTORY"
 	inventoryIssueAccountingCurrencyEUR = "EUR"
+
+	inventorySubledgerStatusMapped             = "MAPPED"
+	inventorySubledgerStatusMissingAccount     = "MISSING_INVENTORY_ACCOUNT"
+	inventorySubledgerStatusUnknownAccount     = "UNKNOWN_INVENTORY_ACCOUNT"
+	inventorySubledgerStatusInvalidAccountType = "INVALID_INVENTORY_ACCOUNT_TYPE"
 )
 
 // Service provides inventory operations
@@ -666,6 +676,183 @@ func (r *InventoryValuationReport) addValuationLine(line InventoryValuationLine)
 	r.TotalReserved = r.TotalReserved.Add(line.ReservedQty)
 	r.TotalAvailable = r.TotalAvailable.Add(line.AvailableQty)
 	r.TotalValue = r.TotalValue.Add(line.InventoryValue)
+}
+
+// GetInventorySubledgerReconciliation compares valued inventory stock to posted GL balances.
+func (s *Service) GetInventorySubledgerReconciliation(ctx context.Context, tenantID, schemaName, warehouseID, method string, asOfDate time.Time) (*InventorySubledgerReconciliationReport, error) {
+	balancer, ok := s.accounts.(accountingBalancer)
+	if !ok || balancer == nil {
+		return nil, fmt.Errorf("accounting balance service is not configured")
+	}
+	if asOfDate.IsZero() {
+		asOfDate = time.Now()
+	}
+
+	valuation, err := s.GetInventoryValuation(ctx, tenantID, schemaName, warehouseID, method)
+	if err != nil {
+		return nil, err
+	}
+
+	products, err := s.repo.ListProducts(ctx, schemaName, tenantID, &ProductFilter{ProductType: ProductTypeGoods})
+	if err != nil {
+		return nil, fmt.Errorf("list products: %w", err)
+	}
+	productByID := make(map[string]Product, len(products))
+	referencedAccountIDs := make(map[string]struct{})
+	for _, product := range products {
+		if product.ProductType != ProductTypeGoods || !product.TrackInventory {
+			continue
+		}
+		productByID[product.ID] = product
+		if strings.TrimSpace(product.InventoryAccountID) != "" {
+			referencedAccountIDs[product.InventoryAccountID] = struct{}{}
+		}
+	}
+
+	accounts, err := balancer.ListAccounts(ctx, schemaName, tenantID, false)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts: %w", err)
+	}
+	accountByID := make(map[string]accounting.Account, len(accounts))
+	for _, account := range accounts {
+		accountByID[account.ID] = account
+	}
+
+	report := &InventorySubledgerReconciliationReport{
+		TenantID:                  tenantID,
+		WarehouseID:               strings.TrimSpace(warehouseID),
+		ValuationMethod:           valuation.ValuationMethod,
+		AsOfDate:                  asOfDate,
+		Lines:                     []InventorySubledgerReconciliationLine{},
+		AccountLines:              []InventorySubledgerReconciliationAccountLine{},
+		GeneratedAt:               time.Now(),
+		Ready:                     true,
+		TotalSubledgerValue:       decimal.Zero,
+		TotalGeneralLedgerBalance: decimal.Zero,
+		TotalDifference:           decimal.Zero,
+	}
+	accountLines := make(map[string]*InventorySubledgerReconciliationAccountLine)
+
+	for _, valuationLine := range valuation.Lines {
+		product := productByID[valuationLine.ProductID]
+		line := InventorySubledgerReconciliationLine{
+			ProductID:      valuationLine.ProductID,
+			ProductCode:    valuationLine.ProductCode,
+			ProductName:    valuationLine.ProductName,
+			WarehouseID:    valuationLine.WarehouseID,
+			WarehouseCode:  valuationLine.WarehouseCode,
+			WarehouseName:  valuationLine.WarehouseName,
+			Quantity:       valuationLine.Quantity,
+			InventoryValue: valuationLine.InventoryValue,
+			Status:         inventorySubledgerStatusMapped,
+		}
+		report.TotalSubledgerValue = report.TotalSubledgerValue.Add(valuationLine.InventoryValue)
+
+		accountID := strings.TrimSpace(product.InventoryAccountID)
+		if accountID == "" {
+			line.Status = inventorySubledgerStatusMissingAccount
+			if inventorySubledgerLineNeedsAccount(valuationLine) {
+				report.MissingAccountLineCount++
+			}
+			report.Lines = append(report.Lines, line)
+			continue
+		}
+
+		line.InventoryAccountID = accountID
+		account, exists := accountByID[accountID]
+		if !exists {
+			line.Status = inventorySubledgerStatusUnknownAccount
+			if inventorySubledgerLineNeedsAccount(valuationLine) {
+				report.UnknownAccountLineCount++
+			}
+			report.Lines = append(report.Lines, line)
+			continue
+		}
+
+		line.AccountCode = account.Code
+		line.AccountName = account.Name
+		line.AccountType = string(account.AccountType)
+		if account.AccountType != accounting.AccountTypeAsset {
+			line.Status = inventorySubledgerStatusInvalidAccountType
+			if inventorySubledgerLineNeedsAccount(valuationLine) {
+				report.InvalidAccountTypeLineCount++
+			}
+			report.Lines = append(report.Lines, line)
+			continue
+		}
+
+		accountLine := inventorySubledgerAccountLine(accountLines, account)
+		accountLine.ProductLineCount++
+		accountLine.SubledgerValue = accountLine.SubledgerValue.Add(valuationLine.InventoryValue)
+		report.Lines = append(report.Lines, line)
+	}
+
+	for accountID := range referencedAccountIDs {
+		account, exists := accountByID[accountID]
+		if !exists || account.AccountType != accounting.AccountTypeAsset {
+			continue
+		}
+		_ = inventorySubledgerAccountLine(accountLines, account)
+	}
+
+	for accountID, accountLine := range accountLines {
+		balance, err := balancer.GetAccountBalance(ctx, schemaName, tenantID, accountID, asOfDate)
+		if err != nil {
+			return nil, fmt.Errorf("get account balance for inventory account %s: %w", accountID, err)
+		}
+		accountLine.GeneralLedgerBalance = balance
+		accountLine.Difference = accountLine.SubledgerValue.Sub(balance)
+		accountLine.Balanced = accountLine.Difference.IsZero()
+		if !accountLine.Balanced {
+			report.DifferenceAccountCount++
+			report.BlockingExceptionAccountCount++
+		}
+		report.TotalGeneralLedgerBalance = report.TotalGeneralLedgerBalance.Add(balance)
+		report.AccountLines = append(report.AccountLines, *accountLine)
+	}
+
+	report.BlockingExceptionLineCount = report.MissingAccountLineCount + report.UnknownAccountLineCount + report.InvalidAccountTypeLineCount
+	report.TotalDifference = report.TotalSubledgerValue.Sub(report.TotalGeneralLedgerBalance)
+	report.Ready = report.BlockingExceptionLineCount == 0 && report.BlockingExceptionAccountCount == 0
+
+	sort.SliceStable(report.Lines, func(i, j int) bool {
+		left := report.Lines[i]
+		right := report.Lines[j]
+		leftKey := strings.Join([]string{left.Status, left.ProductCode, left.ProductName, left.ProductID, left.WarehouseCode, left.WarehouseName, left.WarehouseID}, "\x00")
+		rightKey := strings.Join([]string{right.Status, right.ProductCode, right.ProductName, right.ProductID, right.WarehouseCode, right.WarehouseName, right.WarehouseID}, "\x00")
+		return leftKey < rightKey
+	})
+	sort.SliceStable(report.AccountLines, func(i, j int) bool {
+		left := report.AccountLines[i]
+		right := report.AccountLines[j]
+		leftKey := strings.Join([]string{left.AccountCode, left.AccountName, left.AccountID}, "\x00")
+		rightKey := strings.Join([]string{right.AccountCode, right.AccountName, right.AccountID}, "\x00")
+		return leftKey < rightKey
+	})
+
+	return report, nil
+}
+
+func inventorySubledgerLineNeedsAccount(line InventoryValuationLine) bool {
+	return !line.Quantity.IsZero() || !line.InventoryValue.IsZero()
+}
+
+func inventorySubledgerAccountLine(lines map[string]*InventorySubledgerReconciliationAccountLine, account accounting.Account) *InventorySubledgerReconciliationAccountLine {
+	if line := lines[account.ID]; line != nil {
+		return line
+	}
+	line := &InventorySubledgerReconciliationAccountLine{
+		AccountID:            account.ID,
+		AccountCode:          account.Code,
+		AccountName:          account.Name,
+		AccountType:          string(account.AccountType),
+		SubledgerValue:       decimal.Zero,
+		GeneralLedgerBalance: decimal.Zero,
+		Difference:           decimal.Zero,
+		Balanced:             true,
+	}
+	lines[account.ID] = line
+	return line
 }
 
 // GetInventoryLotReport returns on-hand stock grouped by lot, serial, and expiry metadata.

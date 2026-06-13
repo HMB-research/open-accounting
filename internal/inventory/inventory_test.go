@@ -797,6 +797,22 @@ func (f *fakeInventoryLedger) PostJournalEntry(_ context.Context, _, _, entryID,
 	return nil
 }
 
+type fakeInventoryBalancer struct {
+	accounts []accounting.Account
+	balances map[string]decimal.Decimal
+}
+
+func (f fakeInventoryBalancer) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	return f.accounts, nil
+}
+
+func (f fakeInventoryBalancer) GetAccountBalance(_ context.Context, _, _, accountID string, _ time.Time) (decimal.Decimal, error) {
+	if balance, ok := f.balances[accountID]; ok {
+		return balance, nil
+	}
+	return decimal.Zero, nil
+}
+
 func TestService_CreateProduct(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
@@ -832,6 +848,127 @@ func TestService_CreateProduct(t *testing.T) {
 	assert.Equal(t, inventoryAccountID, product.InventoryAccountID)
 	assert.Equal(t, supplierID, product.SupplierID)
 	assert.True(t, product.IsActive)
+}
+
+func TestService_GetInventorySubledgerReconciliationFlagsMappingExceptions(t *testing.T) {
+	repo := NewMockRepository()
+	balancer := fakeInventoryBalancer{
+		accounts: []accounting.Account{
+			{ID: "11111111-1111-4111-8111-111111111111", Code: "1300", Name: "Inventory", AccountType: accounting.AccountTypeAsset},
+			{ID: "22222222-2222-4222-8222-222222222222", Code: "5000", Name: "COGS", AccountType: accounting.AccountTypeExpense},
+		},
+		balances: map[string]decimal.Decimal{
+			"11111111-1111-4111-8111-111111111111": decimal.RequireFromString("120.00"),
+		},
+	}
+	svc := NewServiceWithRepositoryAndAccounting(repo, balancer)
+	ctx := context.Background()
+
+	repo.Products["prod-1"] = &Product{
+		ID:                 "prod-1",
+		TenantID:           "tenant-1",
+		Code:               "PRD-001",
+		Name:               "Mapped widget",
+		ProductType:        ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("10.00"),
+		TrackInventory:     true,
+		InventoryAccountID: "11111111-1111-4111-8111-111111111111",
+	}
+	repo.Products["prod-2"] = &Product{
+		ID:             "prod-2",
+		TenantID:       "tenant-1",
+		Code:           "PRD-002",
+		Name:           "Unmapped widget",
+		ProductType:    ProductTypeGoods,
+		PurchasePrice:  decimal.RequireFromString("8.00"),
+		TrackInventory: true,
+	}
+	repo.Products["prod-3"] = &Product{
+		ID:                 "prod-3",
+		TenantID:           "tenant-1",
+		Code:               "PRD-003",
+		Name:               "Expense mapped widget",
+		ProductType:        ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("5.00"),
+		TrackInventory:     true,
+		InventoryAccountID: "22222222-2222-4222-8222-222222222222",
+	}
+	repo.Products["prod-4"] = &Product{
+		ID:                 "prod-4",
+		TenantID:           "tenant-1",
+		Code:               "PRD-004",
+		Name:               "Unknown account widget",
+		ProductType:        ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("4.00"),
+		TrackInventory:     true,
+		InventoryAccountID: "33333333-3333-4333-8333-333333333333",
+	}
+	repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Code: "MAIN", Name: "Main"}
+	repo.StockLevels["prod-1-wh-1"] = &StockLevel{TenantID: "tenant-1", ProductID: "prod-1", WarehouseID: "wh-1", Quantity: decimal.RequireFromString("12.00"), AvailableQty: decimal.RequireFromString("12.00")}
+	repo.StockLevels["prod-2-wh-1"] = &StockLevel{TenantID: "tenant-1", ProductID: "prod-2", WarehouseID: "wh-1", Quantity: decimal.RequireFromString("1.00"), AvailableQty: decimal.RequireFromString("1.00")}
+	repo.StockLevels["prod-3-wh-1"] = &StockLevel{TenantID: "tenant-1", ProductID: "prod-3", WarehouseID: "wh-1", Quantity: decimal.RequireFromString("2.00"), AvailableQty: decimal.RequireFromString("2.00")}
+	repo.StockLevels["prod-4-wh-1"] = &StockLevel{TenantID: "tenant-1", ProductID: "prod-4", WarehouseID: "wh-1", Quantity: decimal.RequireFromString("3.00"), AvailableQty: decimal.RequireFromString("3.00")}
+
+	report, err := svc.GetInventorySubledgerReconciliation(ctx, "tenant-1", "test_schema", "wh-1", InventoryValuationMethodStandardCost, time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	assert.False(t, report.Ready)
+	assert.Equal(t, 1, report.MissingAccountLineCount)
+	assert.Equal(t, 1, report.InvalidAccountTypeLineCount)
+	assert.Equal(t, 1, report.UnknownAccountLineCount)
+	assert.Equal(t, 3, report.BlockingExceptionLineCount)
+	assert.Equal(t, 0, report.DifferenceAccountCount)
+	assert.True(t, report.TotalSubledgerValue.Equal(decimal.RequireFromString("150.00")))
+	assert.True(t, report.TotalGeneralLedgerBalance.Equal(decimal.RequireFromString("120.00")))
+	assert.True(t, report.TotalDifference.Equal(decimal.RequireFromString("30.00")))
+	require.Len(t, report.AccountLines, 1)
+	assert.Equal(t, "1300", report.AccountLines[0].AccountCode)
+	assert.True(t, report.AccountLines[0].Balanced)
+	assert.True(t, report.AccountLines[0].SubledgerValue.Equal(decimal.RequireFromString("120.00")))
+	require.Len(t, report.Lines, 4)
+	statuses := make(map[string]bool)
+	for _, line := range report.Lines {
+		statuses[line.Status] = true
+	}
+	assert.True(t, statuses[inventorySubledgerStatusMapped])
+	assert.True(t, statuses[inventorySubledgerStatusMissingAccount])
+	assert.True(t, statuses[inventorySubledgerStatusInvalidAccountType])
+	assert.True(t, statuses[inventorySubledgerStatusUnknownAccount])
+}
+
+func TestService_GetInventorySubledgerReconciliationFlagsLedgerOnlyBalance(t *testing.T) {
+	repo := NewMockRepository()
+	accountID := "11111111-1111-4111-8111-111111111111"
+	balancer := fakeInventoryBalancer{
+		accounts: []accounting.Account{{ID: accountID, Code: "1300", Name: "Inventory", AccountType: accounting.AccountTypeAsset}},
+		balances: map[string]decimal.Decimal{accountID: decimal.RequireFromString("5.00")},
+	}
+	svc := NewServiceWithRepositoryAndAccounting(repo, balancer)
+	ctx := context.Background()
+
+	repo.Products["prod-1"] = &Product{
+		ID:                 "prod-1",
+		TenantID:           "tenant-1",
+		Code:               "PRD-001",
+		Name:               "Mapped widget",
+		ProductType:        ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("10.00"),
+		TrackInventory:     true,
+		InventoryAccountID: accountID,
+	}
+
+	report, err := svc.GetInventorySubledgerReconciliation(ctx, "tenant-1", "test_schema", "", "", time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	assert.False(t, report.Ready)
+	assert.Equal(t, 1, report.DifferenceAccountCount)
+	assert.Equal(t, 1, report.BlockingExceptionAccountCount)
+	assert.True(t, report.TotalSubledgerValue.IsZero())
+	assert.True(t, report.TotalGeneralLedgerBalance.Equal(decimal.RequireFromString("5.00")))
+	assert.True(t, report.TotalDifference.Equal(decimal.RequireFromString("-5.00")))
+	require.Len(t, report.AccountLines, 1)
+	assert.False(t, report.AccountLines[0].Balanced)
+	assert.True(t, report.AccountLines[0].Difference.Equal(decimal.RequireFromString("-5.00")))
 }
 
 func TestService_CreateProduct_WithCustomCode(t *testing.T) {

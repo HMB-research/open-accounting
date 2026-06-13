@@ -199,6 +199,57 @@ type InventoryValuationReport struct {
 	GeneratedAt     time.Time                `json:"generated_at"`
 }
 
+// InventorySubledgerReconciliationLine represents one valued stock line matched to its configured inventory account.
+type InventorySubledgerReconciliationLine struct {
+	ProductID          string          `json:"product_id"`
+	ProductCode        string          `json:"product_code"`
+	ProductName        string          `json:"product_name"`
+	WarehouseID        string          `json:"warehouse_id,omitempty"`
+	WarehouseCode      string          `json:"warehouse_code,omitempty"`
+	WarehouseName      string          `json:"warehouse_name,omitempty"`
+	InventoryAccountID string          `json:"inventory_account_id,omitempty"`
+	AccountCode        string          `json:"account_code,omitempty"`
+	AccountName        string          `json:"account_name,omitempty"`
+	AccountType        string          `json:"account_type,omitempty"`
+	Quantity           decimal.Decimal `json:"quantity"`
+	InventoryValue     decimal.Decimal `json:"inventory_value"`
+	Status             string          `json:"status"`
+}
+
+// InventorySubledgerReconciliationAccountLine compares one inventory asset account to the stock subledger value mapped to it.
+type InventorySubledgerReconciliationAccountLine struct {
+	AccountID            string          `json:"account_id"`
+	AccountCode          string          `json:"account_code"`
+	AccountName          string          `json:"account_name"`
+	AccountType          string          `json:"account_type"`
+	ProductLineCount     int             `json:"product_line_count"`
+	SubledgerValue       decimal.Decimal `json:"subledger_value"`
+	GeneralLedgerBalance decimal.Decimal `json:"general_ledger_balance"`
+	Difference           decimal.Decimal `json:"difference"`
+	Balanced             bool            `json:"balanced"`
+}
+
+// InventorySubledgerReconciliationReport compares valued stock to posted GL balances by inventory account.
+type InventorySubledgerReconciliationReport struct {
+	TenantID                      string                                        `json:"tenant_id"`
+	WarehouseID                   string                                        `json:"warehouse_id,omitempty"`
+	ValuationMethod               string                                        `json:"valuation_method"`
+	AsOfDate                      time.Time                                     `json:"as_of_date"`
+	Lines                         []InventorySubledgerReconciliationLine        `json:"lines"`
+	AccountLines                  []InventorySubledgerReconciliationAccountLine `json:"account_lines"`
+	TotalSubledgerValue           decimal.Decimal                               `json:"total_subledger_value"`
+	TotalGeneralLedgerBalance     decimal.Decimal                               `json:"total_general_ledger_balance"`
+	TotalDifference               decimal.Decimal                               `json:"total_difference"`
+	MissingAccountLineCount       int                                           `json:"missing_account_line_count"`
+	UnknownAccountLineCount       int                                           `json:"unknown_account_line_count"`
+	InvalidAccountTypeLineCount   int                                           `json:"invalid_account_type_line_count"`
+	DifferenceAccountCount        int                                           `json:"difference_account_count"`
+	BlockingExceptionLineCount    int                                           `json:"blocking_exception_line_count"`
+	BlockingExceptionAccountCount int                                           `json:"blocking_exception_account_count"`
+	Ready                         bool                                          `json:"ready"`
+	GeneratedAt                   time.Time                                     `json:"generated_at"`
+}
+
 // InventoryLotLine represents one lot, serial, expiry, or untracked stock position.
 type InventoryLotLine struct {
 	ProductID        string          `json:"product_id"`

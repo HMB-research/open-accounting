@@ -3081,6 +3081,97 @@ definitions:
       warehouse_id:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_inventory.InventorySubledgerReconciliationAccountLine:
+    properties:
+      account_code:
+        type: string
+      account_id:
+        type: string
+      account_name:
+        type: string
+      account_type:
+        type: string
+      balanced:
+        type: boolean
+      difference:
+        type: number
+      general_ledger_balance:
+        type: number
+      product_line_count:
+        type: integer
+      subledger_value:
+        type: number
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.InventorySubledgerReconciliationLine:
+    properties:
+      account_code:
+        type: string
+      account_name:
+        type: string
+      account_type:
+        type: string
+      inventory_account_id:
+        type: string
+      inventory_value:
+        type: number
+      product_code:
+        type: string
+      product_id:
+        type: string
+      product_name:
+        type: string
+      quantity:
+        type: number
+      status:
+        type: string
+      warehouse_code:
+        type: string
+      warehouse_id:
+        type: string
+      warehouse_name:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.InventorySubledgerReconciliationReport:
+    properties:
+      account_lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventorySubledgerReconciliationAccountLine'
+        type: array
+      as_of_date:
+        type: string
+      blocking_exception_account_count:
+        type: integer
+      blocking_exception_line_count:
+        type: integer
+      difference_account_count:
+        type: integer
+      generated_at:
+        type: string
+      invalid_account_type_line_count:
+        type: integer
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventorySubledgerReconciliationLine'
+        type: array
+      missing_account_line_count:
+        type: integer
+      ready:
+        type: boolean
+      tenant_id:
+        type: string
+      total_difference:
+        type: number
+      total_general_ledger_balance:
+        type: number
+      total_subledger_value:
+        type: number
+      unknown_account_line_count:
+        type: integer
+      valuation_method:
+        type: string
+      warehouse_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationLine:
     properties:
       available_qty:
@@ -12611,6 +12702,62 @@ paths:
       security:
       - BearerAuth: []
       summary: Import stock adjustments
+      tags:
+      - Inventory
+  /tenants/{tenantID}/inventory/subledger-reconciliation:
+    get:
+      description: Compare valued inventory stock against posted general-ledger balances
+        by configured product inventory asset account
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Warehouse ID
+        in: query
+        name: warehouse_id
+        type: string
+      - description: 'Valuation method override: standard-cost, weighted-average,
+          or fifo'
+        in: query
+        name: method
+        type: string
+      - description: GL balance date in YYYY-MM-DD format
+        in: query
+        name: as_of_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventorySubledgerReconciliationReport'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get inventory subledger reconciliation
       tags:
       - Inventory
   /tenants/{tenantID}/inventory/transfer:

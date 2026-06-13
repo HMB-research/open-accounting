@@ -2073,6 +2073,25 @@ func (c *apiClient) getInventoryValuation(ctx context.Context, tenantID, warehou
 	return &resp, nil
 }
 
+func (c *apiClient) getInventorySubledgerReconciliation(ctx context.Context, tenantID, warehouseID, method, asOfDate string) (*inventory.InventorySubledgerReconciliationReport, error) {
+	values := url.Values{}
+	if strings.TrimSpace(warehouseID) != "" {
+		values.Set("warehouse_id", strings.TrimSpace(warehouseID))
+	}
+	if strings.TrimSpace(method) != "" {
+		values.Set("method", strings.TrimSpace(method))
+	}
+	if strings.TrimSpace(asOfDate) != "" {
+		values.Set("as_of_date", strings.TrimSpace(asOfDate))
+	}
+
+	var resp inventory.InventorySubledgerReconciliationReport
+	if err := c.request(ctx, http.MethodGet, withQuery(path.Join("/api/v1/tenants", tenantID, "inventory", "subledger-reconciliation"), values), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) getInventoryLotReport(ctx context.Context, tenantID, productID, warehouseID string, includeEmpty bool) (*inventory.InventoryLotReport, error) {
 	values := url.Values{}
 	if strings.TrimSpace(productID) != "" {

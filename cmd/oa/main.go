@@ -439,6 +439,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  inventory products stock-levels  List product stock levels")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory products movements  List product stock movements")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory valuation       Show inventory valuation")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory subledger-reconciliation  Reconcile inventory subledger to GL")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory lots            Show lot and serial stock report")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses list List warehouses")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses create  Create a warehouse")
@@ -7382,6 +7383,29 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, report)
 		}
 		printInventoryValuation(a.stdout, report)
+		return nil
+	case "subledger-reconciliation":
+		fs := flag.NewFlagSet("inventory subledger-reconciliation", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
+		method := fs.String("method", "", "Valuation method: standard-cost, weighted-average, or fifo")
+		asOf := fs.String("as-of", "", "GL balance date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if _, err := parseOptionalDate("as-of", *asOf); err != nil {
+			return err
+		}
+
+		report, err := client.getInventorySubledgerReconciliation(ctx, cfg.TenantID, strings.TrimSpace(*warehouseID), strings.TrimSpace(*method), strings.TrimSpace(*asOf))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, report)
+		}
+		printInventorySubledgerReconciliation(a.stdout, report)
 		return nil
 	case "lots":
 		fs := flag.NewFlagSet("inventory lots", flag.ContinueOnError)
