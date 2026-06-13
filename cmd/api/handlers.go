@@ -80,6 +80,7 @@ type Handlers struct {
 	interestService          interestManager
 	webhookService           *webhooks.Service
 	expensesService          *expenses.Service
+	migrationExecutor        migrationStepExecutor
 	demoResetService         demoResetter
 	demoStatusReader         demo.StatusReader
 }
@@ -115,6 +116,9 @@ type demoResetter interface {
 
 // getSchemaName returns the schema name for a tenant
 func (h *Handlers) getSchemaName(ctx context.Context, tenantID string) string {
+	if h.tenantService == nil {
+		return "tenant_" + tenantID
+	}
 	t, err := h.tenantService.GetTenant(ctx, tenantID)
 	if err != nil {
 		return "tenant_" + tenantID
