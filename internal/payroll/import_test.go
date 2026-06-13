@@ -167,6 +167,31 @@ func TestImportEmployeesCSV_RejectsMissingHeaders(t *testing.T) {
 	assert.Contains(t, err.Error(), "missing required first_name, last_name, or start_date column")
 }
 
+func TestImportEmployeesCSV_RejectsNilOrEmptyRequest(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	service := NewServiceWithRepository(NewMockRepository(), &MockUUIDGenerator{prefix: "emp"})
+
+	tests := []struct {
+		name string
+		req  *ImportEmployeesRequest
+	}{
+		{name: "nil request"},
+		{name: "empty content", req: &ImportEmployeesRequest{CSVContent: " \n\t "}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", tt.req)
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.Contains(t, err.Error(), "csv_content is required")
+		})
+	}
+}
+
 func TestImportPayrollHistoryCSV_Success(t *testing.T) {
 	t.Parallel()
 
@@ -515,4 +540,29 @@ func TestImportPayrollHistoryCSV_RejectsMissingHeaders(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing required period_year, period_month, or gross_salary column")
+}
+
+func TestImportPayrollHistoryCSV_RejectsNilOrEmptyRequest(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	service := NewServiceWithRepository(NewMockRepository(), &MockUUIDGenerator{prefix: "hist"})
+
+	tests := []struct {
+		name string
+		req  *ImportPayrollHistoryRequest
+	}{
+		{name: "nil request"},
+		{name: "empty content", req: &ImportPayrollHistoryRequest{CSVContent: " \n\t "}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := service.ImportPayrollHistoryCSV(ctx, "tenant_schema", "tenant-1", "user-1", tt.req)
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.Contains(t, err.Error(), "csv_content is required")
+		})
+	}
 }
