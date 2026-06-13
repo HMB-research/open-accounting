@@ -1,7 +1,7 @@
 # Reliability and Product Roadmap
 
 **Date:** 2026-03-12
-**Reviewed:** 2026-06-12
+**Reviewed:** 2026-06-13
 
 This is a historical roadmap. Many March backlog items are now complete; use
 [DEVELOPMENT_STATUS.md](../DEVELOPMENT_STATUS.md) as the current source of
@@ -18,12 +18,12 @@ truth for verified capability and test status.
 - documentation truthfulness cleanup is in place
 - blocking smoke E2E now covers auth setup, invoices, reports, banking, and payroll in CI
 
-**Status update on 2026-06-12:**
+**Status update on 2026-06-13:**
 
-- PR #62 CI run `27385096250` at commit `1737a54` is green for lint, backend tests with CLI coverage enforcement, integration shards, frontend lint/check/test/build, build, smoke E2E, and all four seeded demo E2E shards
+- PR #62 CI run `27469291590` at commit `5a4280f` is green for lint, backend tests with CLI coverage enforcement, integration shards, frontend lint/check/test/build, build, smoke E2E, and all four seeded demo E2E shards
 - the CLI package is enforced at 100.0% statement coverage by the backend gate
-- broad migration imports, period close/reopen, fiscal-year close, carry-forward/reversal, document evidence/retention workflows, server-side report exports, auth/session hardening, and backup/restore wrappers now exist
-- remaining gaps are narrower: deeper incumbent-system cutover presets/validation, more accountant exception actions, broader document-retention automation, remaining auth/ops hardening, and external-dependency integrations
+- broad migration imports, inventory subledger reconciliation with frontend drill-down, period close/reopen, fiscal-year close, carry-forward/reversal, document evidence/retention workflows, server-side report exports, auth/session hardening, and backup/restore wrappers now exist
+- remaining gaps are narrower: deeper incumbent-system cutover presets/validation, cross-subledger close/accountant remediation, broader document-retention automation, remaining auth/ops hardening, and external-dependency integrations
 
 ## Product Decision
 

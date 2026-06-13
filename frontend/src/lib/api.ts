@@ -391,6 +391,9 @@ class ApiClient {
       "reserved_qty",
       "available_qty",
       "inventory_value",
+      "subledger_value",
+      "general_ledger_balance",
+      "difference",
     ];
     if (exactDecimalFields.includes(normalized)) {
       return true;
@@ -1657,6 +1660,22 @@ class ApiClient {
     return this.request<InventoryValuationReport>(
       "GET",
       `/api/v1/tenants/${tenantId}/inventory/valuation${query}`,
+    );
+  }
+
+  async getInventorySubledgerReconciliation(
+    tenantId: string,
+    options: InventorySubledgerReconciliationOptions = {},
+  ) {
+    const params = new URLSearchParams();
+    if (options.warehouse_id) params.set("warehouse_id", options.warehouse_id);
+    if (options.method) params.set("method", options.method);
+    if (options.as_of_date) params.set("as_of_date", options.as_of_date);
+    const query = params.toString() ? `?${params.toString()}` : "";
+
+    return this.request<InventorySubledgerReconciliationReport>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/inventory/subledger-reconciliation${query}`,
     );
   }
 
@@ -4155,6 +4174,60 @@ export interface InventoryValuationReport {
   total_reserved: Decimal;
   total_available: Decimal;
   total_value: Decimal;
+  generated_at: string;
+}
+
+export interface InventorySubledgerReconciliationOptions {
+  warehouse_id?: string;
+  method?: InventoryValuationMethod;
+  as_of_date?: string;
+}
+
+export interface InventorySubledgerReconciliationLine {
+  product_id: string;
+  product_code: string;
+  product_name: string;
+  warehouse_id?: string;
+  warehouse_code?: string;
+  warehouse_name?: string;
+  inventory_account_id?: string;
+  account_code?: string;
+  account_name?: string;
+  account_type?: string;
+  quantity: Decimal;
+  inventory_value: Decimal;
+  status: string;
+}
+
+export interface InventorySubledgerReconciliationAccountLine {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  product_line_count: number;
+  subledger_value: Decimal;
+  general_ledger_balance: Decimal;
+  difference: Decimal;
+  balanced: boolean;
+}
+
+export interface InventorySubledgerReconciliationReport {
+  tenant_id: string;
+  warehouse_id?: string;
+  valuation_method: string;
+  as_of_date: string;
+  lines: InventorySubledgerReconciliationLine[];
+  account_lines: InventorySubledgerReconciliationAccountLine[];
+  total_subledger_value: Decimal;
+  total_general_ledger_balance: Decimal;
+  total_difference: Decimal;
+  missing_account_line_count: number;
+  unknown_account_line_count: number;
+  invalid_account_type_line_count: number;
+  difference_account_count: number;
+  blocking_exception_line_count: number;
+  blocking_exception_account_count: number;
+  ready: boolean;
   generated_at: string;
 }
 

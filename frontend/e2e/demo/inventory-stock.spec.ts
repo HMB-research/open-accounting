@@ -198,5 +198,45 @@ test.describe('Demo Inventory - Stock Workflows', () => {
 		).toBeVisible();
 		await valuationDialog.getByRole('button', { name: 'Close' }).click();
 		await expect(valuationDialog).toBeHidden();
+
+		const initialSubledgerResponse = page.waitForResponse((res) => {
+			const url = new URL(res.url());
+			return res.request().method() === 'GET' && url.pathname.includes('/inventory/subledger-reconciliation');
+		});
+		await page.getByRole('button', { name: 'Subledger Reconciliation' }).click();
+		expect((await initialSubledgerResponse).ok()).toBeTruthy();
+		const subledgerDialog = page.getByRole('dialog', {
+			name: 'Subledger Reconciliation'
+		});
+		await expect(subledgerDialog).toBeVisible();
+		await expect(subledgerDialog.getByText('Close Guidance')).toBeVisible();
+		await expect(subledgerDialog.getByText(product.code)).toBeVisible();
+		await expect(subledgerDialog.getByText('Missing inventory account').first()).toBeVisible();
+
+		await subledgerDialog.getByLabel('Warehouses').selectOption(warehouse.id);
+		await subledgerDialog.getByLabel('Valuation Method').selectOption('weighted-average');
+		await subledgerDialog.getByLabel('As of Date').fill('2026-06-13');
+		const filteredSubledgerResponse = page.waitForResponse((res) => {
+			const url = new URL(res.url());
+			return (
+				res.request().method() === 'GET' &&
+				url.pathname.includes('/inventory/subledger-reconciliation') &&
+				url.searchParams.get('warehouse_id') === warehouse.id &&
+				url.searchParams.get('method') === 'weighted-average' &&
+				url.searchParams.get('as_of_date') === '2026-06-13'
+			);
+		});
+		await subledgerDialog.getByRole('button', { name: 'Refresh Reconciliation' }).click();
+		expect((await filteredSubledgerResponse).ok()).toBeTruthy();
+		await expect(subledgerDialog.getByText('Resolve account differences and product account exceptions')).toBeVisible();
+		await subledgerDialog.getByLabel('Show product-line drill-down').check();
+		await expect(subledgerDialog.getByRole('heading', { name: 'Product Lines' })).toBeVisible();
+		await expect(
+			subledgerDialog.getByRole('row', {
+				name: new RegExp(`${product.code}.*${warehouse.name}.*Missing inventory account`)
+			}).first()
+		).toBeVisible();
+		await subledgerDialog.getByRole('button', { name: 'Close' }).click();
+		await expect(subledgerDialog).toBeHidden();
 	});
 });

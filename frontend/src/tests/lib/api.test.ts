@@ -3959,6 +3959,78 @@ describe("API Client - Core Functionality", () => {
       expect(result.lines[0].available_qty).toBeInstanceOf(Decimal);
       expect(result.lines[0].available_qty.toString()).toBe("3");
     });
+
+    it("should get inventory subledger reconciliation with filters", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tenant_id: "tenant-123",
+          warehouse_id: "warehouse-1",
+          valuation_method: "WEIGHTED_AVERAGE",
+          as_of_date: "2026-06-13T00:00:00Z",
+          lines: [
+            {
+              product_id: "product-1",
+              product_code: "PRD-1",
+              product_name: "Widget",
+              warehouse_id: "warehouse-1",
+              warehouse_name: "Main Warehouse",
+              inventory_account_id: "account-1",
+              account_code: "1210",
+              account_name: "Inventory",
+              account_type: "asset",
+              quantity: "5",
+              inventory_value: "52.50",
+              status: "MAPPED",
+            },
+          ],
+          account_lines: [
+            {
+              account_id: "account-1",
+              account_code: "1210",
+              account_name: "Inventory",
+              account_type: "asset",
+              product_line_count: 1,
+              subledger_value: "52.50",
+              general_ledger_balance: "50.00",
+              difference: "2.50",
+              balanced: false,
+            },
+          ],
+          total_subledger_value: "52.50",
+          total_general_ledger_balance: "50.00",
+          total_difference: "2.50",
+          missing_account_line_count: 0,
+          unknown_account_line_count: 0,
+          invalid_account_type_line_count: 0,
+          difference_account_count: 1,
+          blocking_exception_line_count: 0,
+          blocking_exception_account_count: 1,
+          ready: false,
+          generated_at: "2026-06-13T00:00:00Z",
+        }),
+      });
+
+      const result = await api.getInventorySubledgerReconciliation("tenant-123", {
+        warehouse_id: "warehouse-1",
+        method: "weighted-average",
+        as_of_date: "2026-06-13",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/inventory/subledger-reconciliation?warehouse_id=warehouse-1&method=weighted-average&as_of_date=2026-06-13",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result.total_subledger_value).toBeInstanceOf(Decimal);
+      expect(result.total_subledger_value.toString()).toBe("52.5");
+      expect(result.account_lines[0].difference).toBeInstanceOf(Decimal);
+      expect(result.account_lines[0].difference.toString()).toBe("2.5");
+      expect(result.lines[0].inventory_value).toBeInstanceOf(Decimal);
+      expect(result.lines[0].inventory_value.toString()).toBe("52.5");
+    });
   });
 
   describe("Token Refresh Flow", () => {
