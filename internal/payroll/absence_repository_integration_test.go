@@ -4,6 +4,7 @@ package payroll
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -215,6 +216,143 @@ func TestAbsenceGORMRepository_Integration(t *testing.T) {
 			t.Fatalf("expected unfiltered list to return 1 record, got %d", len(allRecords))
 		}
 	})
+}
+
+func TestAbsenceGORMRepository_FiltersAndNotFound(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	ctx := context.Background()
+	gormDB, err := database.NewGormDBFromPool(ctx, pool)
+	if err != nil {
+		t.Fatalf("failed to create GORM DB: %v", err)
+	}
+	baseRepo := NewGORMRepository(gormDB)
+	repo := NewAbsenceGORMRepository(gormDB)
+
+	if _, err := pool.Exec(ctx, "SELECT add_payroll_tables($1)", tenant.SchemaName); err != nil {
+		t.Fatalf("failed to add payroll tables: %v", err)
+	}
+
+	activeEmployee := testEmployee(tenant.ID, "ABS-FILTER-ACTIVE")
+	activeEmployee.FirstName = "Active"
+	activeEmployee.LastName = "Employee"
+	inactiveEmployee := testEmployee(tenant.ID, "ABS-FILTER-INACTIVE")
+	inactiveEmployee.FirstName = "Inactive"
+	inactiveEmployee.LastName = "Employee"
+	inactiveEmployee.IsActive = false
+	for _, employee := range []*Employee{activeEmployee, inactiveEmployee} {
+		if err := baseRepo.CreateEmployee(ctx, tenant.SchemaName, employee); err != nil {
+			t.Fatalf("failed to create employee %s: %v", employee.EmployeeNumber, err)
+		}
+	}
+
+	activeType := &AbsenceType{
+		ID:                 uuid.New().String(),
+		TenantID:           tenant.ID,
+		Code:               "ACTIVE_LEAVE",
+		Name:               "Active Leave",
+		DefaultDaysPerYear: decimal.NewFromInt(20),
+		IsActive:           true,
+		SortOrder:          1,
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	inactiveType := &AbsenceType{
+		ID:                 uuid.New().String(),
+		TenantID:           tenant.ID,
+		Code:               "INACTIVE_LEAVE",
+		Name:               "Inactive Leave",
+		DefaultDaysPerYear: decimal.NewFromInt(5),
+		IsActive:           false,
+		SortOrder:          2,
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	absenceTypesTable, err := database.TenantTable(gormDB.WithContext(ctx), tenant.SchemaName, "absence_types")
+	if err != nil {
+		t.Fatalf("failed to qualify absence types table: %v", err)
+	}
+	for _, absenceType := range []*AbsenceType{activeType, inactiveType} {
+		if err := absenceTypesTable.Create(absenceTypeToModel(absenceType)).Error; err != nil {
+			t.Fatalf("failed to create absence type %s: %v", absenceType.Code, err)
+		}
+	}
+
+	allEmployees, err := repo.ListEmployees(ctx, tenant.SchemaName, tenant.ID, false)
+	if err != nil {
+		t.Fatalf("ListEmployees failed: %v", err)
+	}
+	if len(allEmployees) != 2 {
+		t.Fatalf("expected 2 employees, got %d", len(allEmployees))
+	}
+	activeEmployees, err := repo.ListEmployees(ctx, tenant.SchemaName, tenant.ID, true)
+	if err != nil {
+		t.Fatalf("ListEmployees active failed: %v", err)
+	}
+	if len(activeEmployees) != 1 || activeEmployees[0].ID != activeEmployee.ID {
+		t.Fatalf("expected active employee %s, got %+v", activeEmployee.ID, activeEmployees)
+	}
+
+	allTypes, err := repo.ListAbsenceTypes(ctx, tenant.SchemaName, tenant.ID, false)
+	if err != nil {
+		t.Fatalf("ListAbsenceTypes failed: %v", err)
+	}
+	if len(allTypes) != 2 {
+		t.Fatalf("expected 2 absence types, got %d", len(allTypes))
+	}
+	activeTypes, err := repo.ListAbsenceTypes(ctx, tenant.SchemaName, tenant.ID, true)
+	if err != nil {
+		t.Fatalf("ListAbsenceTypes active failed: %v", err)
+	}
+	if len(activeTypes) != 1 || activeTypes[0].ID != activeType.ID {
+		t.Fatalf("expected active absence type %s, got %+v", activeType.ID, activeTypes)
+	}
+
+	emptyBalances, err := repo.ListLeaveBalances(ctx, tenant.SchemaName, tenant.ID, activeEmployee.ID, 2099)
+	if err != nil {
+		t.Fatalf("ListLeaveBalances empty failed: %v", err)
+	}
+	if len(emptyBalances) != 0 {
+		t.Fatalf("expected no leave balances, got %d", len(emptyBalances))
+	}
+	emptyRecords, err := repo.ListLeaveRecords(ctx, tenant.SchemaName, tenant.ID, activeEmployee.ID, 2099)
+	if err != nil {
+		t.Fatalf("ListLeaveRecords empty failed: %v", err)
+	}
+	if len(emptyRecords) != 0 {
+		t.Fatalf("expected no leave records, got %d", len(emptyRecords))
+	}
+
+	if _, err := repo.GetAbsenceType(ctx, tenant.SchemaName, tenant.ID, uuid.New().String()); !errors.Is(err, ErrAbsenceTypeNotFound) {
+		t.Fatalf("expected ErrAbsenceTypeNotFound from GetAbsenceType, got %v", err)
+	}
+	if _, err := repo.GetAbsenceTypeByCode(ctx, tenant.SchemaName, tenant.ID, "MISSING_LEAVE"); !errors.Is(err, ErrAbsenceTypeNotFound) {
+		t.Fatalf("expected ErrAbsenceTypeNotFound from GetAbsenceTypeByCode, got %v", err)
+	}
+	if _, err := repo.GetLeaveBalance(ctx, tenant.SchemaName, tenant.ID, activeEmployee.ID, activeType.ID, 2099); !errors.Is(err, ErrLeaveBalanceNotFound) {
+		t.Fatalf("expected ErrLeaveBalanceNotFound from GetLeaveBalance, got %v", err)
+	}
+	if err := repo.UpdateLeaveBalance(ctx, tenant.SchemaName, &LeaveBalance{
+		ID:            uuid.New().String(),
+		TenantID:      tenant.ID,
+		EmployeeID:    activeEmployee.ID,
+		AbsenceTypeID: activeType.ID,
+		Year:          2099,
+		UpdatedAt:     time.Now(),
+	}); !errors.Is(err, ErrLeaveBalanceNotFound) {
+		t.Fatalf("expected ErrLeaveBalanceNotFound from UpdateLeaveBalance, got %v", err)
+	}
+	if _, err := repo.GetLeaveRecord(ctx, tenant.SchemaName, tenant.ID, uuid.New().String()); !errors.Is(err, ErrLeaveRecordNotFound) {
+		t.Fatalf("expected ErrLeaveRecordNotFound from GetLeaveRecord, got %v", err)
+	}
+	if err := repo.UpdateLeaveRecord(ctx, tenant.SchemaName, &LeaveRecord{
+		ID:        uuid.New().String(),
+		TenantID:  tenant.ID,
+		Status:    LeaveApproved,
+		UpdatedAt: time.Now(),
+	}); !errors.Is(err, ErrLeaveRecordNotFound) {
+		t.Fatalf("expected ErrLeaveRecordNotFound from UpdateLeaveRecord, got %v", err)
+	}
 }
 
 func datePtr(t time.Time) *time.Time {
