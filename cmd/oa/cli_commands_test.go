@@ -4017,6 +4017,21 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 						Message:    `contact_code reference "CUST-404" was not found in contacts file`,
 					},
 				},
+				RemediationActions: []cutover.MigrationRemediationAction{
+					{
+						Code:       "missing_reference",
+						Severity:   "BLOCKER",
+						Scope:      "migration",
+						OwnerRole:  "accountant",
+						Kind:       cutover.KindInvoices,
+						FileName:   "invoices.csv",
+						Field:      "contact_code",
+						TargetKind: cutover.KindContacts,
+						IssueCount: 1,
+						Action:     "Add the referenced target file or correct the source row reference before import.",
+						CLICommand: "oa migration validate --invoices <file> --provider-preset generic --json",
+					},
+				},
 			})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -4051,6 +4066,8 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Migration validation: blocked")
+	assert.Contains(t, stdout.String(), "Migration remediation actions")
+	assert.Contains(t, stdout.String(), "missing_reference")
 	assert.Contains(t, stdout.String(), "CUST-404")
 
 	stdout.Reset()

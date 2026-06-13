@@ -87,6 +87,8 @@ func printMigrationValidationReport(w io.Writer, report *cutover.BundleValidatio
 		_ = tw.Flush()
 	}
 
+	printMigrationRemediationActions(w, report.RemediationActions)
+
 	if len(report.Issues) == 0 {
 		return
 	}
@@ -103,6 +105,42 @@ func printMigrationValidationReport(w io.Writer, report *cutover.BundleValidatio
 			field = "-"
 		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", issue.Severity, issue.FileName, row, field, issue.Message)
+	}
+	_ = tw.Flush()
+}
+
+func printMigrationRemediationActions(w io.Writer, actions []cutover.MigrationRemediationAction) {
+	if len(actions) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "Migration remediation actions")
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tKIND\tFILE\tFIELD\tCODE\tISSUES\tACTION\tCOMMAND")
+	for _, action := range actions {
+		kind := string(action.Kind)
+		if kind == "" {
+			kind = "-"
+		}
+		field := action.Field
+		if field == "" {
+			field = "-"
+		}
+		fileName := action.FileName
+		if fileName == "" {
+			fileName = "-"
+		}
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+			action.Severity,
+			kind,
+			fileName,
+			field,
+			action.Code,
+			action.IssueCount,
+			action.Action,
+			action.CLICommand,
+		)
 	}
 	_ = tw.Flush()
 }

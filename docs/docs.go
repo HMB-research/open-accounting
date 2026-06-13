@@ -24539,6 +24539,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.ValidationIssue"
                     }
                 },
+                "remediation_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationRemediationAction"
+                    }
+                },
                 "summary": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleValidationSummary"
                 }
@@ -24683,6 +24689,47 @@ const docTemplate = `{
                 "MigrationProviderPresetMerit",
                 "MigrationProviderPresetSmartAccounts"
             ]
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.MigrationRemediationAction": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "cli_command": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "field": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "issue_count": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "owner_role": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "target_kind": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                }
+            }
         },
         "github_com_HMB-research_open-accounting_internal_cutover.ValidateBundleRequest": {
             "type": "object",

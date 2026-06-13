@@ -67,9 +67,10 @@ type ValidateBundleRequest struct {
 }
 
 type BundleValidationReport struct {
-	Summary BundleValidationSummary `json:"summary"`
-	Files   []FileValidation        `json:"files"`
-	Issues  []ValidationIssue       `json:"issues,omitempty"`
+	Summary            BundleValidationSummary      `json:"summary"`
+	Files              []FileValidation             `json:"files"`
+	Issues             []ValidationIssue            `json:"issues,omitempty"`
+	RemediationActions []MigrationRemediationAction `json:"remediation_actions,omitempty"`
 }
 
 type BundleValidationSummary struct {
@@ -97,4 +98,19 @@ type ValidationIssue struct {
 	Value      string        `json:"value,omitempty"`
 	TargetKind FileKind      `json:"target_kind,omitempty"`
 	Message    string        `json:"message"`
+}
+
+type MigrationRemediationAction struct {
+	Code       string   `json:"code"`
+	Severity   string   `json:"severity"`
+	Scope      string   `json:"scope"`
+	OwnerRole  string   `json:"owner_role"`
+	Message    string   `json:"message"`
+	Action     string   `json:"action"`
+	Kind       FileKind `json:"kind,omitempty"`
+	FileName   string   `json:"file_name,omitempty"`
+	Field      string   `json:"field,omitempty"`
+	TargetKind FileKind `json:"target_kind,omitempty"`
+	IssueCount int      `json:"issue_count"`
+	CLICommand string   `json:"cli_command,omitempty"`
 }

@@ -149,6 +149,9 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	assert.Equal(t, 0, report.Summary.ErrorCount)
 	assert.Equal(t, 32, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
+	require.Len(t, report.RemediationActions, 1)
+	assert.Equal(t, "ready_to_import", report.RemediationActions[0].Code)
+	assert.Equal(t, "ACTION", report.RemediationActions[0].Severity)
 
 	var stockValidation FileValidation
 	var eInvoiceValidation FileValidation
@@ -171,6 +174,66 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	assert.Contains(t, eInvoiceValidation.Headers, "invoice_number")
 	assert.Contains(t, eInvoiceValidation.Headers, "contact_reg_code")
 	assert.Contains(t, eInvoiceValidation.Headers, "buyer_reg_code")
+}
+
+func TestValidateBundleBuildsRemediationActions(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code\nCUST-1\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-404,2026-05-30,2026-06-14,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+
+	codes := migrationRemediationActionCodes(report.RemediationActions)
+	assert.Contains(t, codes, "missing_required_columns")
+	assert.Contains(t, codes, "missing_reference")
+
+	var referenceAction MigrationRemediationAction
+	for _, action := range report.RemediationActions {
+		if action.Code == "missing_reference" {
+			referenceAction = action
+			break
+		}
+	}
+	require.Equal(t, "missing_reference", referenceAction.Code)
+	assert.Equal(t, "BLOCKER", referenceAction.Severity)
+	assert.Equal(t, KindInvoices, referenceAction.Kind)
+	assert.Equal(t, KindContacts, referenceAction.TargetKind)
+	assert.Contains(t, referenceAction.Field, "contact_code")
+	assert.Equal(t, 1, referenceAction.IssueCount)
+	assert.Contains(t, referenceAction.CLICommand, "--invoices")
+}
+
+func TestBuildMigrationRemediationActionsClassifiesWarnings(t *testing.T) {
+	report := &BundleValidationReport{Summary: BundleValidationSummary{Ready: true}}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityWarning,
+		Kind:     KindInvoices,
+		FileName: "invoices.csv",
+		Field:    "currency",
+		Message:  "uses fallback currency",
+	})
+
+	actions := BuildMigrationRemediationActions(report)
+
+	require.Len(t, actions, 1)
+	assert.Equal(t, "warning_review", actions[0].Code)
+	assert.Equal(t, "WARNING", actions[0].Severity)
+	assert.Equal(t, KindInvoices, actions[0].Kind)
+	assert.Equal(t, "currency", actions[0].Field)
+	assert.Equal(t, 1, actions[0].IssueCount)
+	assert.Contains(t, actions[0].Action, "Review the warning")
 }
 
 func TestValidateBundleAcceptsMeritProviderPresetAliases(t *testing.T) {
@@ -4130,6 +4193,14 @@ func TestBundleValidationReportAddIssueTracksWarningsSeparately(t *testing.T) {
 	assert.Equal(t, 1, report.Summary.WarningCount)
 	assert.Equal(t, 1, report.Summary.ErrorCount)
 	require.Len(t, report.Issues, 2)
+}
+
+func migrationRemediationActionCodes(actions []MigrationRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }
 
 func cutoverEInvoiceXML(number, sellerName, sellerRegCode string) string {
