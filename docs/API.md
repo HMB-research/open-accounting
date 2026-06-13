@@ -2424,6 +2424,29 @@ Content-Type: application/json
 Stock CSV imports require `quantity`, a product identifier (`product_id` or `product_code`), and a warehouse identifier (`warehouse_id` or `warehouse_code`). Direct `product_id` and `warehouse_id` values must be valid UUIDs. Quantities are signed adjustments; use positive quantities for opening stock or inbound counts and negative quantities for reductions. Optional lot metadata columns are `lot_number`, `serial_number`, and `expiry_date`; serialized stock rows require quantity `1` or `-1`, and duplicate serial numbers for the same product are skipped as row errors. Aliases include `lot`, `batch`, `serial`, `expiration_date`, and `description` for `reason`.
 
 ```http
+POST /tenants/{tenantId}/inventory/issue
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "product_id": "uuid",
+  "warehouse_id": "uuid",
+  "quantity": "2",
+  "lot_number": "LOT-2026-01",
+  "serial_number": "SN-001",
+  "expiry_date": "2027-01-31",
+  "reference": "Invoice INV-001",
+  "source_type": "SALES_INVOICE",
+  "source_id": "uuid",
+  "reason": "Shipment",
+  "cost_of_goods_sold_account_id": "uuid",
+  "inventory_account_id": "uuid"
+}
+```
+
+`product_id`, `warehouse_id`, optional `source_id`, and optional account IDs must be valid UUIDs. Issues require a positive quantity and enough available warehouse stock. Optional lot metadata consumes only a matching tracked lot/serial/expiry position after tracked and unallocated reservations; without metadata, issue allocation consumes available tracked lots in deterministic expiry/lot/serial order before any untracked remainder. The response includes costed outbound movements, weighted issue cost, the updated stock level, and optional accounting-ready lines that debit cost of goods sold and credit inventory when COGS and inventory asset accounts are available. The service validates supplied COGS accounts as `EXPENSE` and inventory accounts as `ASSET` when accounting account metadata is available.
+
+```http
 POST /tenants/{tenantId}/inventory/transfer
 Authorization: Bearer <token>
 Content-Type: application/json

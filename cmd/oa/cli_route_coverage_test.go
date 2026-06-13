@@ -878,6 +878,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"POST": "inventory adjust"})
 	case "/inventory/stock-import":
 		return commandForMethod(method, map[string]string{"POST": "inventory stock import"})
+	case "/inventory/issue":
+		return commandForMethod(method, map[string]string{"POST": "inventory issue"})
 	case "/inventory/transfer":
 		return commandForMethod(method, map[string]string{"POST": "inventory transfer"})
 	case "/inventory/reserve":

@@ -1973,6 +1973,263 @@ func TestService_TransferStockRejectsInsufficientTrackedLotQuantity(t *testing.T
 	assert.True(t, destinationLevel.Quantity.IsZero())
 }
 
+func TestService_IssueStockConsumesSpecificTrackedLotWithAccountingLines(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	cogsAccountID := "44444444-4444-4444-8444-444444444444"
+	inventoryAccountID := "55555555-5555-4555-8555-555555555555"
+	ts.svc.accounts = fakeInventoryAccountLister{accounts: []accounting.Account{
+		{ID: cogsAccountID, AccountType: accounting.AccountTypeExpense},
+		{ID: inventoryAccountID, AccountType: accounting.AccountTypeAsset},
+	}}
+
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:                 inventoryStockProductID,
+		TenantID:           "tenant-1",
+		Code:               "SKU-001",
+		Name:               "Widget",
+		ProductType:        ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("7.00"),
+		CurrentStock:       decimal.RequireFromString("12.00"),
+		TrackInventory:     true,
+		InventoryAccountID: inventoryAccountID,
+	}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
+		Quantity:     decimal.RequireFromString("12.00"),
+		ReservedQty:  decimal.RequireFromString("2.00"),
+		AvailableQty: decimal.RequireFromString("10.00"),
+	}
+	ts.repo.Movements[inventoryStockProductID] = []InventoryMovement{
+		{
+			ID:           "mov-lot-in",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("12.00"),
+			UnitCost:     decimal.RequireFromString("8.25"),
+			TotalCost:    decimal.RequireFromString("99.00"),
+			LotNumber:    "LOT-2026-01",
+			SerialNumber: "SN-001",
+			ExpiryDate:   "2027-01-31",
+		},
+	}
+	ts.repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-2026-01", "SN-001", "2027-01-31")] = &InventoryLotReservation{
+		TenantID:     "tenant-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
+		LotNumber:    "LOT-2026-01",
+		SerialNumber: "SN-001",
+		ExpiryDate:   "2027-01-31",
+		Quantity:     decimal.RequireFromString("2.00"),
+	}
+
+	result, err := ts.svc.IssueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+		ProductID:                inventoryStockProductID,
+		WarehouseID:              inventoryStockWarehouseID,
+		Quantity:                 "3",
+		LotNumber:                " LOT-2026-01 ",
+		SerialNumber:             " SN-001 ",
+		ExpiryDate:               " 2027-01-31 ",
+		Reference:                "Invoice INV-001",
+		SourceType:               "SALES_INVOICE",
+		SourceID:                 "66666666-6666-4666-8666-666666666666",
+		Reason:                   "Shipped goods",
+		CostOfGoodsSoldAccountID: cogsAccountID,
+		UserID:                   "user-1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Quantity.Equal(decimal.RequireFromString("3")))
+	assert.True(t, result.UnitCost.Equal(decimal.RequireFromString("8.25")))
+	assert.True(t, result.TotalCost.Equal(decimal.RequireFromString("24.75")))
+	require.Len(t, result.Movements, 1)
+	assert.Equal(t, MovementTypeOut, result.Movements[0].MovementType)
+	assert.Equal(t, "LOT-2026-01", result.Movements[0].LotNumber)
+	assert.Equal(t, "SALES_INVOICE", result.Movements[0].SourceType)
+	assert.Equal(t, "66666666-6666-4666-8666-666666666666", result.Movements[0].SourceID)
+	require.NotNil(t, result.Accounting)
+	require.Len(t, result.Accounting.Lines, 2)
+	assert.Equal(t, inventoryIssueAccountingRoleCOGS, result.Accounting.Lines[0].Role)
+	assert.Equal(t, cogsAccountID, result.Accounting.Lines[0].AccountID)
+	assert.True(t, result.Accounting.Lines[0].DebitAmount.Equal(decimal.RequireFromString("24.75")))
+	assert.Equal(t, inventoryIssueAccountingRoleAsset, result.Accounting.Lines[1].Role)
+	assert.Equal(t, inventoryAccountID, result.Accounting.Lines[1].AccountID)
+	assert.True(t, result.Accounting.Lines[1].CreditAmount.Equal(decimal.RequireFromString("24.75")))
+
+	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", inventoryStockProductID)
+	require.NoError(t, err)
+	assert.True(t, product.CurrentStock.Equal(decimal.RequireFromString("9.00")))
+	level := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
+	require.NotNil(t, level)
+	assert.True(t, level.Quantity.Equal(decimal.RequireFromString("9.00")))
+	assert.True(t, level.ReservedQty.Equal(decimal.RequireFromString("2.00")))
+	assert.True(t, level.AvailableQty.Equal(decimal.RequireFromString("7.00")))
+}
+
+func TestService_IssueStockAutoAllocatesTrackedLots(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:             inventoryStockProductID,
+		TenantID:       "tenant-1",
+		Code:           "SKU-001",
+		Name:           "Widget",
+		ProductType:    ProductTypeGoods,
+		PurchasePrice:  decimal.RequireFromString("10.00"),
+		CurrentStock:   decimal.RequireFromString("8.00"),
+		TrackInventory: true,
+	}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
+		Quantity:     decimal.RequireFromString("8.00"),
+		ReservedQty:  decimal.RequireFromString("1.00"),
+		AvailableQty: decimal.RequireFromString("7.00"),
+	}
+	ts.repo.Movements[inventoryStockProductID] = []InventoryMovement{
+		{
+			ID:           "lot-b",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("4.00"),
+			UnitCost:     decimal.RequireFromString("7.00"),
+			TotalCost:    decimal.RequireFromString("28.00"),
+			LotNumber:    "LOT-B",
+			ExpiryDate:   "2027-05-31",
+		},
+		{
+			ID:           "lot-a",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("4.00"),
+			UnitCost:     decimal.RequireFromString("5.00"),
+			TotalCost:    decimal.RequireFromString("20.00"),
+			LotNumber:    "LOT-A",
+			ExpiryDate:   "2027-01-31",
+		},
+	}
+	ts.repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-A", "", "2027-01-31")] = &InventoryLotReservation{
+		TenantID:    "tenant-1",
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
+		LotNumber:   "LOT-A",
+		ExpiryDate:  "2027-01-31",
+		Quantity:    decimal.RequireFromString("1.00"),
+	}
+
+	result, err := ts.svc.IssueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
+		Quantity:    "5",
+		Reference:   "Shipment",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.Movements, 2)
+	assert.Equal(t, "LOT-A", result.Movements[0].LotNumber)
+	assert.True(t, result.Movements[0].Quantity.Equal(decimal.RequireFromString("3.00")))
+	assert.True(t, result.Movements[0].UnitCost.Equal(decimal.RequireFromString("5.00")))
+	assert.Equal(t, "LOT-B", result.Movements[1].LotNumber)
+	assert.True(t, result.Movements[1].Quantity.Equal(decimal.RequireFromString("2.00")))
+	assert.True(t, result.Movements[1].UnitCost.Equal(decimal.RequireFromString("7.00")))
+	assert.True(t, result.TotalCost.Equal(decimal.RequireFromString("29.00")))
+	assert.Nil(t, result.Accounting)
+	level := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
+	require.NotNil(t, level)
+	assert.True(t, level.Quantity.Equal(decimal.RequireFromString("3.00")))
+	assert.True(t, level.ReservedQty.Equal(decimal.RequireFromString("1.00")))
+	assert.True(t, level.AvailableQty.Equal(decimal.RequireFromString("2.00")))
+}
+
+func TestService_IssueStockRejectsReservedTrackedLotAndBadAccountingAccount(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	cogsAccountID := "44444444-4444-4444-8444-444444444444"
+	inventoryAccountID := "55555555-5555-4555-8555-555555555555"
+	ts.svc.accounts = fakeInventoryAccountLister{accounts: []accounting.Account{
+		{ID: cogsAccountID, AccountType: accounting.AccountTypeAsset},
+		{ID: inventoryAccountID, AccountType: accounting.AccountTypeAsset},
+	}}
+
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:                 inventoryStockProductID,
+		TenantID:           "tenant-1",
+		Name:               "Widget",
+		ProductType:        ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("8.00"),
+		CurrentStock:       decimal.RequireFromString("3.00"),
+		TrackInventory:     true,
+		InventoryAccountID: inventoryAccountID,
+	}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
+		Quantity:     decimal.RequireFromString("3.00"),
+		ReservedQty:  decimal.RequireFromString("2.00"),
+		AvailableQty: decimal.RequireFromString("1.00"),
+	}
+	ts.repo.Movements[inventoryStockProductID] = []InventoryMovement{
+		{
+			ID:           "lot-a",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("3.00"),
+			UnitCost:     decimal.RequireFromString("8.00"),
+			TotalCost:    decimal.RequireFromString("24.00"),
+			LotNumber:    "LOT-A",
+			ExpiryDate:   "2027-01-31",
+		},
+	}
+	ts.repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-A", "", "2027-01-31")] = &InventoryLotReservation{
+		TenantID:    "tenant-1",
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
+		LotNumber:   "LOT-A",
+		ExpiryDate:  "2027-01-31",
+		Quantity:    decimal.RequireFromString("2.00"),
+	}
+
+	_, err := ts.svc.IssueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
+		Quantity:    "2",
+		LotNumber:   "LOT-A",
+		ExpiryDate:  "2027-01-31",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "insufficient available")
+
+	_, err = ts.svc.IssueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+		ProductID:                inventoryStockProductID,
+		WarehouseID:              inventoryStockWarehouseID,
+		Quantity:                 "1",
+		LotNumber:                "LOT-A",
+		ExpiryDate:               "2027-01-31",
+		CostOfGoodsSoldAccountID: cogsAccountID,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cost_of_goods_sold_account_id must reference an EXPENSE account")
+}
+
 func TestService_ReserveStock(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
