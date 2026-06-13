@@ -115,7 +115,7 @@ func printMigrationRemediationActions(w io.Writer, actions []cutover.MigrationRe
 	}
 	_, _ = fmt.Fprintln(w, "Migration remediation actions")
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "SEVERITY\tKIND\tFILE\tFIELD\tCODE\tISSUES\tACTION\tCOMMAND")
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tPRIORITY\tDUE\tQUEUE\tKIND\tFILE\tFIELD\tCODE\tISSUES\tASSIGNMENT KEY\tACTION\tCOMMAND")
 	for _, action := range actions {
 		kind := string(action.Kind)
 		if kind == "" {
@@ -129,15 +129,35 @@ func printMigrationRemediationActions(w io.Writer, actions []cutover.MigrationRe
 		if fileName == "" {
 			fileName = "-"
 		}
+		queue := action.WorkspaceQueue
+		if queue == "" {
+			queue = "-"
+		}
+		priority := action.Priority
+		if priority == "" {
+			priority = "-"
+		}
+		due := "-"
+		if action.DueInDays > 0 {
+			due = fmt.Sprintf("%dd", action.DueInDays)
+		}
+		assignmentKey := action.AssignmentKey
+		if assignmentKey == "" {
+			assignmentKey = "-"
+		}
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
 			action.Severity,
+			priority,
+			due,
+			queue,
 			kind,
 			fileName,
 			field,
 			action.Code,
 			action.IssueCount,
+			assignmentKey,
 			action.Action,
 			action.CLICommand,
 		)

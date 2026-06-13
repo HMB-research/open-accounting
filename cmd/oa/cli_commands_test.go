@@ -4054,17 +4054,21 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 				},
 				RemediationActions: []cutover.MigrationRemediationAction{
 					{
-						Code:       "missing_reference",
-						Severity:   "BLOCKER",
-						Scope:      "migration",
-						OwnerRole:  "accountant",
-						Kind:       cutover.KindInvoices,
-						FileName:   "invoices.csv",
-						Field:      "contact_code",
-						TargetKind: cutover.KindContacts,
-						IssueCount: 1,
-						Action:     "Add the referenced target file or correct the source row reference before import.",
-						CLICommand: "oa migration validate --invoices <file> --provider-preset generic --json",
+						Code:           "missing_reference",
+						Severity:       "BLOCKER",
+						Scope:          "migration",
+						OwnerRole:      "accountant",
+						WorkspaceQueue: "migration_cutover",
+						AssignmentKey:  "migration:missing-reference:invoices:invoices-csv:contact-code:contacts",
+						Priority:       "high",
+						DueInDays:      1,
+						Kind:           cutover.KindInvoices,
+						FileName:       "invoices.csv",
+						Field:          "contact_code",
+						TargetKind:     cutover.KindContacts,
+						IssueCount:     1,
+						Action:         "Add the referenced target file or correct the source row reference before import.",
+						CLICommand:     "oa migration validate --invoices <file> --provider-preset generic --json",
 					},
 				},
 			})
@@ -4103,6 +4107,8 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Migration validation: blocked")
 	assert.Contains(t, stdout.String(), "Migration remediation actions")
 	assert.Contains(t, stdout.String(), "missing_reference")
+	assert.Contains(t, stdout.String(), "migration_cutover")
+	assert.Contains(t, stdout.String(), "migration:missing-reference:invoices:invoices-csv:contact-code:contacts")
 	assert.Contains(t, stdout.String(), "CUST-404")
 
 	stdout.Reset()

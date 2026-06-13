@@ -152,6 +152,9 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	require.Len(t, report.RemediationActions, 1)
 	assert.Equal(t, "ready_to_import", report.RemediationActions[0].Code)
 	assert.Equal(t, "ACTION", report.RemediationActions[0].Severity)
+	assert.Equal(t, "migration_cutover", report.RemediationActions[0].WorkspaceQueue)
+	assert.Equal(t, "migration:ready-to-import:-:-:-:-", report.RemediationActions[0].AssignmentKey)
+	assert.Equal(t, "low", report.RemediationActions[0].Priority)
 
 	var stockValidation FileValidation
 	var eInvoiceValidation FileValidation
@@ -212,6 +215,10 @@ func TestValidateBundleBuildsRemediationActions(t *testing.T) {
 	assert.Equal(t, KindContacts, referenceAction.TargetKind)
 	assert.Contains(t, referenceAction.Field, "contact_code")
 	assert.Equal(t, 1, referenceAction.IssueCount)
+	assert.Equal(t, "migration_cutover", referenceAction.WorkspaceQueue)
+	assert.Equal(t, "migration:missing-reference:invoices:invoices-csv:contact-code-contact-reg-code-contact-vat-number-contact-email-contact-name:contacts", referenceAction.AssignmentKey)
+	assert.Equal(t, "high", referenceAction.Priority)
+	assert.Equal(t, 1, referenceAction.DueInDays)
 	assert.Contains(t, referenceAction.CLICommand, "--invoices")
 }
 
@@ -233,6 +240,9 @@ func TestBuildMigrationRemediationActionsClassifiesWarnings(t *testing.T) {
 	assert.Equal(t, KindInvoices, actions[0].Kind)
 	assert.Equal(t, "currency", actions[0].Field)
 	assert.Equal(t, 1, actions[0].IssueCount)
+	assert.Equal(t, "migration_cutover", actions[0].WorkspaceQueue)
+	assert.Equal(t, "normal", actions[0].Priority)
+	assert.Equal(t, 3, actions[0].DueInDays)
 	assert.Contains(t, actions[0].Action, "Review the warning")
 }
 

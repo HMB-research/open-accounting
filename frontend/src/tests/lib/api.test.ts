@@ -732,6 +732,93 @@ describe("API Client - Core Functionality", () => {
       expect(result.due_soon_count).toBe(1);
     });
 
+    it("should validate a migration bundle with assignment-ready remediation actions", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          summary: {
+            files_validated: 1,
+            rows_validated: 1,
+            error_count: 1,
+            warning_count: 0,
+            ready: false,
+          },
+          files: [{ kind: "invoices", file_name: "invoices.csv", rows: 1 }],
+          issues: [
+            {
+              severity: "ERROR",
+              kind: "invoices",
+              file_name: "invoices.csv",
+              row: 2,
+              field: "contact_code",
+              target_kind: "contacts",
+              message: "contact_code reference was not found",
+            },
+          ],
+          remediation_actions: [
+            {
+              code: "missing_reference",
+              severity: "BLOCKER",
+              scope: "migration",
+              owner_role: "accountant",
+              workspace_queue: "migration_cutover",
+              assignment_key:
+                "migration:missing-reference:invoices:invoices-csv:contact-code:contacts",
+              priority: "high",
+              due_in_days: 1,
+              message: "invoices.csv has unresolved references to contacts.",
+              action:
+                "Add the referenced target file or correct the source row reference before import.",
+              kind: "invoices",
+              file_name: "invoices.csv",
+              field: "contact_code",
+              target_kind: "contacts",
+              issue_count: 1,
+              cli_command:
+                "oa migration validate --invoices <file> --provider-preset generic --json",
+            },
+          ],
+        }),
+      });
+
+      const result = await api.validateMigrationBundle("tenant-123", {
+        provider_preset: "merit",
+        e_invoice_contact_mode: "both",
+        files: [
+          {
+            kind: "invoices",
+            file_name: "invoices.csv",
+            csv_content: "invoice_number,contact_code\nINV-1,CUST-404\n",
+          },
+        ],
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/validate",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            provider_preset: "merit",
+            e_invoice_contact_mode: "both",
+            files: [
+              {
+                kind: "invoices",
+                file_name: "invoices.csv",
+                csv_content: "invoice_number,contact_code\nINV-1,CUST-404\n",
+              },
+            ],
+          }),
+        }),
+      );
+      expect(result.remediation_actions?.[0].workspace_queue).toBe(
+        "migration_cutover",
+      );
+      expect(result.remediation_actions?.[0].priority).toBe("high");
+    });
+
     it("should update document retention metadata", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

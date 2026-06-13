@@ -41,6 +41,9 @@ func TestValidateMigrationBundleHandler(t *testing.T) {
 	assert.Equal(t, cutover.KindContacts, report.Issues[0].TargetKind)
 	require.NotEmpty(t, report.RemediationActions)
 	assert.Contains(t, migrationRemediationCodes(report.RemediationActions), "missing_reference")
+	assert.Equal(t, "migration_cutover", report.RemediationActions[0].WorkspaceQueue)
+	assert.Equal(t, "high", report.RemediationActions[0].Priority)
+	assert.NotEmpty(t, report.RemediationActions[0].AssignmentKey)
 }
 
 func TestValidateMigrationBundleHandlerRejectsEmptyRequest(t *testing.T) {

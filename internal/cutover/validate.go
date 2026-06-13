@@ -1185,14 +1185,17 @@ func BuildMigrationRemediationActions(report *BundleValidationReport) []Migratio
 	if len(report.Issues) == 0 {
 		if report.Summary.Ready {
 			return []MigrationRemediationAction{{
-				Code:       "ready_to_import",
-				Severity:   "ACTION",
-				Scope:      "migration",
-				OwnerRole:  "accountant",
-				Message:    "Migration bundle passed preflight validation.",
-				Action:     "Run the relevant import commands in the planned cutover order.",
-				IssueCount: 0,
-				CLICommand: "oa migration validate --provider-preset generic --json",
+				Code:           "ready_to_import",
+				Severity:       "ACTION",
+				Scope:          "migration",
+				OwnerRole:      "accountant",
+				WorkspaceQueue: "migration_cutover",
+				AssignmentKey:  migrationAssignmentKey("ready_to_import", "", "", "", ""),
+				Priority:       "low",
+				Message:        "Migration bundle passed preflight validation.",
+				Action:         "Run the relevant import commands in the planned cutover order.",
+				IssueCount:     0,
+				CLICommand:     "oa migration validate --provider-preset generic --json",
 			}}
 		}
 		return nil
@@ -1221,18 +1224,23 @@ func BuildMigrationRemediationActions(report *BundleValidationReport) []Migratio
 		}
 		remediation, ok := actionsByKey[key]
 		if !ok {
+			priority, dueInDays := migrationAssignmentPriority(key.severity)
 			remediation = &MigrationRemediationAction{
-				Code:       key.code,
-				Severity:   key.severity,
-				Scope:      "migration",
-				OwnerRole:  "accountant",
-				Message:    migrationActionMessage(issue, code),
-				Action:     action,
-				Kind:       key.kind,
-				FileName:   key.fileName,
-				Field:      key.field,
-				TargetKind: key.targetKind,
-				CLICommand: migrationValidationCommand(issue.Kind),
+				Code:           key.code,
+				Severity:       key.severity,
+				Scope:          "migration",
+				OwnerRole:      "accountant",
+				WorkspaceQueue: "migration_cutover",
+				AssignmentKey:  migrationAssignmentKey(key.code, key.kind, key.fileName, key.field, key.targetKind),
+				Priority:       priority,
+				DueInDays:      dueInDays,
+				Message:        migrationActionMessage(issue, code),
+				Action:         action,
+				Kind:           key.kind,
+				FileName:       key.fileName,
+				Field:          key.field,
+				TargetKind:     key.targetKind,
+				CLICommand:     migrationValidationCommand(issue.Kind),
 			}
 			actionsByKey[key] = remediation
 			keys = append(keys, key)
@@ -1266,6 +1274,59 @@ func BuildMigrationRemediationActions(report *BundleValidationReport) []Migratio
 		actions = append(actions, *actionsByKey[key])
 	}
 	return actions
+}
+
+func migrationAssignmentPriority(severity string) (string, int) {
+	switch severity {
+	case "BLOCKER":
+		return "high", 1
+	case "WARNING":
+		return "normal", 3
+	default:
+		return "low", 0
+	}
+}
+
+func migrationAssignmentKey(code string, kind FileKind, fileName, field string, targetKind FileKind) string {
+	parts := []string{
+		"migration",
+		normalizeAssignmentKeyPart(code),
+		normalizeAssignmentKeyPart(string(kind)),
+		normalizeAssignmentKeyPart(fileName),
+		normalizeAssignmentKeyPart(field),
+		normalizeAssignmentKeyPart(string(targetKind)),
+	}
+	return strings.Join(parts, ":")
+}
+
+func normalizeAssignmentKeyPart(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "-"
+	}
+
+	var b strings.Builder
+	lastWasSeparator := false
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastWasSeparator = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastWasSeparator = false
+		default:
+			if !lastWasSeparator {
+				b.WriteByte('-')
+				lastWasSeparator = true
+			}
+		}
+	}
+	normalized := strings.Trim(b.String(), "-")
+	if normalized == "" {
+		return "-"
+	}
+	return normalized
 }
 
 func classifyMigrationIssue(issue ValidationIssue) (string, string) {

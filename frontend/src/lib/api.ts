@@ -674,6 +674,17 @@ class ApiClient {
     );
   }
 
+  async validateMigrationBundle(
+    tenantId: string,
+    data: ValidateBundleRequest,
+  ) {
+    return this.request<BundleValidationReport>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/migration/validate`,
+      data,
+    );
+  }
+
   async updateDocumentRetention(
     tenantId: string,
     documentId: string,
@@ -3222,6 +3233,103 @@ export interface EvidencePolicyResult {
   rule_results?: EvidencePolicyRuleResult[];
   violations?: EvidencePolicyRuleResult[];
   remediation_actions?: DocumentRemediationAction[];
+}
+
+export type MigrationFileKind =
+  | "accounts"
+  | "contacts"
+  | "employees"
+  | "expenses"
+  | "invoices"
+  | "e_invoices"
+  | "payments"
+  | "bank_accounts"
+  | "bank_transactions"
+  | "payroll_history"
+  | "leave_balances"
+  | "tsd_history"
+  | "kmd_history"
+  | "quotes"
+  | "orders"
+  | "recurring_invoices"
+  | "cost_centers"
+  | "cost_allocations"
+  | "product_categories"
+  | "warehouses"
+  | "products"
+  | "stock_adjustments"
+  | "fixed_assets"
+  | "opening_balances"
+  | "journal_entries";
+
+export type MigrationProviderPreset = "generic" | "merit" | "smartaccounts";
+export type EInvoiceContactMode = "supplier" | "customer" | "both";
+export type MigrationIssueSeverity = "ERROR" | "WARNING";
+
+export interface BundleFile {
+  kind: MigrationFileKind;
+  file_name: string;
+  csv_content?: string;
+  xml_content?: string;
+}
+
+export interface ValidateBundleRequest {
+  files: BundleFile[];
+  e_invoice_contact_mode?: EInvoiceContactMode;
+  provider_preset?: MigrationProviderPreset;
+}
+
+export interface BundleValidationSummary {
+  files_validated: number;
+  rows_validated: number;
+  error_count: number;
+  warning_count: number;
+  ready: boolean;
+}
+
+export interface FileValidation {
+  kind: MigrationFileKind;
+  file_name: string;
+  rows: number;
+  headers?: string[];
+  missing_columns?: string[];
+}
+
+export interface ValidationIssue {
+  severity: MigrationIssueSeverity;
+  kind: MigrationFileKind;
+  file_name: string;
+  row?: number;
+  field?: string;
+  value?: string;
+  target_kind?: MigrationFileKind;
+  message: string;
+}
+
+export interface MigrationRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  kind?: MigrationFileKind;
+  file_name?: string;
+  field?: string;
+  target_kind?: MigrationFileKind;
+  issue_count: number;
+  cli_command?: string;
+}
+
+export interface BundleValidationReport {
+  summary: BundleValidationSummary;
+  files: FileValidation[];
+  issues?: ValidationIssue[];
+  remediation_actions?: MigrationRemediationAction[];
 }
 
 export interface TenantMembership {
