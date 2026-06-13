@@ -108,6 +108,8 @@ func TestTaxHandlersKMDWorkflow(t *testing.T) {
 	require.Equal(t, 2, generated.Month)
 	require.True(t, generated.TotalOutputVAT.Equal(decimal.NewFromInt(220)))
 	require.True(t, generated.TotalInputVAT.Equal(decimal.NewFromInt(66)))
+	require.NotEmpty(t, generated.RemediationActions)
+	require.Contains(t, kmdRemediationCodes(generated.RemediationActions), "kmd_payable_review")
 	require.Len(t, taxRepo.savedDecls, 1)
 
 	now := time.Now().UTC()
@@ -130,6 +132,7 @@ func TestTaxHandlersKMDWorkflow(t *testing.T) {
 	))
 	require.Len(t, declarations, 1)
 	require.Equal(t, "decl-1", declarations[0].ID)
+	require.NotEmpty(t, declarations[0].RemediationActions)
 
 	taxRepo.infRows = []tax.KMDINFReportRow{{
 		Part:                       tax.KMDINFPartSales,
@@ -200,6 +203,14 @@ func TestTaxHandlersKMDWorkflow(t *testing.T) {
 	require.Contains(t, xmlResp.Header().Get("Content-Disposition"), "KMD_2026_2.xml")
 	require.Contains(t, xmlResp.Body.String(), "<regNr>12345678</regNr>")
 	require.Contains(t, xmlResp.Body.String(), "<periood>2026-02</periood>")
+}
+
+func kmdRemediationCodes(actions []tax.KMDRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }
 
 func TestTaxHandlersKMDImportHistory(t *testing.T) {

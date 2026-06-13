@@ -3017,6 +3017,7 @@ func printKMDDeclaration(w io.Writer, declaration *tax.KMDDeclaration) {
 	_, _ = fmt.Fprintf(w, "Output VAT: %s\n", declaration.TotalOutputVAT.String())
 	_, _ = fmt.Fprintf(w, "Input VAT: %s\n", declaration.TotalInputVAT.String())
 	_, _ = fmt.Fprintf(w, "Payable: %s\n", declaration.CalculatePayable().String())
+	printKMDRemediationActions(w, declaration.RemediationActions)
 	if len(declaration.Rows) == 0 {
 		return
 	}
@@ -3025,6 +3026,28 @@ func printKMDDeclaration(w io.Writer, declaration *tax.KMDDeclaration) {
 	_, _ = fmt.Fprintln(tw, "ROW\tDESCRIPTION\tTAX BASE\tTAX AMOUNT")
 	for _, row := range declaration.Rows {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", row.Code, row.Description, row.TaxBase.String(), row.TaxAmount.String())
+	}
+	_ = tw.Flush()
+}
+
+func printKMDRemediationActions(w io.Writer, actions []tax.KMDRemediationAction) {
+	if len(actions) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "KMD remediation actions")
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	for _, action := range actions {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			action.Severity,
+			action.Scope,
+			action.OwnerRole,
+			action.Code,
+			action.Action,
+			action.CLICommand,
+		)
 	}
 	_ = tw.Flush()
 }

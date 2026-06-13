@@ -3626,7 +3626,7 @@ GET /tenants/{tenantId}/tax/kmd
 Authorization: Bearer <token>
 ```
 
-Returns generated KMD declarations for the tenant.
+Returns generated KMD declarations for the tenant. KMD declaration responses include `remediation_actions` with `code`, `severity`, `scope`, `owner_role`, `message`, `action`, `period`, optional entity context, UI path, and CLI command fields for accountant follow-up on draft payable/refund/zero declarations, empty VAT periods, submitted declarations awaiting acceptance, missing submission timestamps, and accepted declarations that should be archived with supporting evidence.
 
 ### Generate KMD Declaration
 
@@ -3640,6 +3640,8 @@ Content-Type: application/json
   "month": 1
 }
 ```
+
+The generated declaration response includes the same KMD `remediation_actions` array as other KMD declaration responses.
 
 ### Generate KMD INF Report
 

@@ -132,6 +132,7 @@ func (s *Service) GenerateKMD(ctx context.Context, tenantID, schemaName string, 
 		return nil, fmt.Errorf("save declaration: %w", err)
 	}
 
+	decl.RemediationActions = BuildKMDRemediationActions(decl)
 	return decl, nil
 }
 
@@ -233,12 +234,26 @@ func (s *Service) GetKMD(ctx context.Context, tenantID, schemaName, yearStr, mon
 		return nil, fmt.Errorf("invalid month: %w", err)
 	}
 
-	return s.repo.GetDeclaration(ctx, schemaName, tenantID, year, month)
+	declaration, err := s.repo.GetDeclaration(ctx, schemaName, tenantID, year, month)
+	if err != nil {
+		return nil, err
+	}
+	if declaration != nil {
+		declaration.RemediationActions = BuildKMDRemediationActions(declaration)
+	}
+	return declaration, nil
 }
 
 // ListKMD lists all KMD declarations for a tenant
 func (s *Service) ListKMD(ctx context.Context, tenantID, schemaName string) ([]KMDDeclaration, error) {
-	return s.repo.ListDeclarations(ctx, schemaName, tenantID)
+	declarations, err := s.repo.ListDeclarations(ctx, schemaName, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range declarations {
+		declarations[i].RemediationActions = BuildKMDRemediationActions(&declarations[i])
+	}
+	return declarations, nil
 }
 
 // mapVATRateToKMDCode maps a VAT rate to the appropriate KMD row code

@@ -282,6 +282,8 @@ func TestService_GenerateKMD_Success(t *testing.T) {
 	assert.Equal(t, "220", decl.TotalOutputVAT.String())
 	assert.Equal(t, "110", decl.TotalInputVAT.String())
 	assert.Len(t, decl.Rows, 2)
+	require.NotEmpty(t, decl.RemediationActions)
+	assert.Equal(t, "kmd_payable_review", decl.RemediationActions[len(decl.RemediationActions)-1].Code)
 	assert.Len(t, repo.savedDeclarations, 1)
 }
 
@@ -326,6 +328,92 @@ func TestService_GenerateKMD_EmptyVATData(t *testing.T) {
 	assert.True(t, decl.TotalOutputVAT.IsZero())
 	assert.True(t, decl.TotalInputVAT.IsZero())
 	assert.Len(t, decl.Rows, 0)
+	require.Len(t, decl.RemediationActions, 2)
+	assert.Equal(t, "kmd_no_vat_rows", decl.RemediationActions[0].Code)
+	assert.Equal(t, "kmd_zero_payable_review", decl.RemediationActions[1].Code)
+}
+
+func TestBuildKMDRemediationActions(t *testing.T) {
+	submittedAt := time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name        string
+		declaration *KMDDeclaration
+		wantCodes   []string
+	}{
+		{
+			name: "draft payable",
+			declaration: &KMDDeclaration{
+				ID:             "kmd-payable",
+				Year:           2026,
+				Month:          3,
+				Status:         "DRAFT",
+				TotalOutputVAT: decimal.NewFromInt(220),
+				TotalInputVAT:  decimal.NewFromInt(80),
+				Rows:           []KMDRow{{Code: KMDRow1}},
+			},
+			wantCodes: []string{"kmd_payable_review"},
+		},
+		{
+			name: "draft refund",
+			declaration: &KMDDeclaration{
+				ID:             "kmd-refund",
+				Year:           2026,
+				Month:          4,
+				Status:         "DRAFT",
+				TotalOutputVAT: decimal.NewFromInt(40),
+				TotalInputVAT:  decimal.NewFromInt(140),
+				Rows:           []KMDRow{{Code: KMDRow4}},
+			},
+			wantCodes: []string{"kmd_refund_review"},
+		},
+		{
+			name: "submitted with timestamp",
+			declaration: &KMDDeclaration{
+				ID:          "kmd-submitted",
+				Year:        2026,
+				Month:       5,
+				Status:      "SUBMITTED",
+				SubmittedAt: &submittedAt,
+			},
+			wantCodes: []string{"kmd_awaiting_authority_acceptance"},
+		},
+		{
+			name: "submitted missing timestamp",
+			declaration: &KMDDeclaration{
+				ID:     "kmd-submitted-missing-date",
+				Year:   2026,
+				Month:  6,
+				Status: "SUBMITTED",
+			},
+			wantCodes: []string{"kmd_awaiting_authority_acceptance", "kmd_submission_date_missing"},
+		},
+		{
+			name: "accepted",
+			declaration: &KMDDeclaration{
+				ID:     "kmd-accepted",
+				Year:   2026,
+				Month:  7,
+				Status: "ACCEPTED",
+			},
+			wantCodes: []string{"kmd_accepted_archive"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actions := BuildKMDRemediationActions(tt.declaration)
+			assert.Equal(t, tt.wantCodes, kmdRemediationCodes(actions))
+			for _, action := range actions {
+				assert.Equal(t, "tax", action.Scope)
+				assert.Equal(t, "accountant", action.OwnerRole)
+				assert.NotEmpty(t, action.Period)
+				assert.NotEmpty(t, action.Action)
+			}
+		})
+	}
+
+	assert.Nil(t, BuildKMDRemediationActions(nil))
 }
 
 func TestService_GenerateKMDINF_Success(t *testing.T) {
@@ -512,6 +600,7 @@ func TestService_GetKMD_Success(t *testing.T) {
 	assert.Equal(t, "decl-1", decl.ID)
 	assert.Equal(t, 2024, decl.Year)
 	assert.Equal(t, 1, decl.Month)
+	assert.NotEmpty(t, decl.RemediationActions)
 }
 
 func TestService_GetKMD_InvalidYear(t *testing.T) {
@@ -561,6 +650,16 @@ func TestService_ListKMD_Success(t *testing.T) {
 	assert.Len(t, declarations, 2)
 	assert.Equal(t, "decl-1", declarations[0].ID)
 	assert.Equal(t, "decl-2", declarations[1].ID)
+	assert.NotEmpty(t, declarations[0].RemediationActions)
+	assert.NotEmpty(t, declarations[1].RemediationActions)
+}
+
+func kmdRemediationCodes(actions []KMDRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }
 
 func TestService_ListKMD_Empty(t *testing.T) {
