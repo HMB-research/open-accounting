@@ -486,3 +486,155 @@ func TestImportTSDHistoryCSV_RejectsMissingHeaders(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing required period_year, period_month, or gross_payment column")
 }
+
+func TestImportTSDHistoryCSV_RejectsEmptyRowsAndRepositoryFailures(t *testing.T) {
+	t.Parallel()
+
+	validCSV := "period_year,period_month,status,employee_number,gross_payment\n" +
+		"2025,4,DRAFT,EMP-100,1000.00\n"
+	seedEmployee := func(repo *MockRepository) {
+		repo.Employees["emp-100"] = &Employee{
+			ID:             "emp-100",
+			TenantID:       "tenant-1",
+			EmployeeNumber: "EMP-100",
+			FirstName:      "TSD",
+			LastName:       "Tester",
+			StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			IsActive:       true,
+		}
+	}
+
+	t.Run("no TSD rows", func(t *testing.T) {
+		t.Parallel()
+
+		service := NewServiceWithRepository(NewMockRepository(), &MockUUIDGenerator{prefix: "tsd"})
+
+		result, err := service.ImportTSDHistoryCSV(context.Background(), "tenant_schema", "tenant-1", &ImportTSDHistoryRequest{
+			CSVContent: "period_year,period_month,gross_payment,employee_number\n,,,\n",
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "no TSD rows found in CSV")
+	})
+
+	t.Run("list employees failure", func(t *testing.T) {
+		t.Parallel()
+
+		repo := NewMockRepository()
+		repo.ListEmployeesErr = errors.New("employees unavailable")
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+
+		result, err := service.ImportTSDHistoryCSV(context.Background(), "tenant_schema", "tenant-1", &ImportTSDHistoryRequest{
+			CSVContent: validCSV,
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "list existing employees: employees unavailable")
+	})
+
+	t.Run("get TSD failure", func(t *testing.T) {
+		t.Parallel()
+
+		repo := NewMockRepository()
+		seedEmployee(repo)
+		repo.GetTSDErr = errors.New("lookup unavailable")
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+
+		result, err := service.ImportTSDHistoryCSV(context.Background(), "tenant_schema", "tenant-1", &ImportTSDHistoryRequest{
+			CSVContent: validCSV,
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "check existing TSD declaration for 2025-04: lookup unavailable")
+	})
+
+	t.Run("create declaration failure", func(t *testing.T) {
+		t.Parallel()
+
+		repo := NewMockRepository()
+		seedEmployee(repo)
+		repo.CreateTSDErr = errors.New("create unavailable")
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+
+		result, err := service.ImportTSDHistoryCSV(context.Background(), "tenant_schema", "tenant-1", &ImportTSDHistoryRequest{
+			CSVContent: validCSV,
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.DeclarationsCreated)
+		assert.Zero(t, result.RowsImported)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "create TSD declaration: create unavailable")
+	})
+}
+
+func TestImportTSDHistoryCSV_ReportsAdditionalAmountValidationErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-100"] = &Employee{
+		ID:             "emp-100",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+
+	result, err := service.ImportTSDHistoryCSV(ctx, "tenant_schema", "tenant-1", &ImportTSDHistoryRequest{
+		CSVContent: "period_year,period_month,status,employee_number,gross_payment,social_tax,unemployment_insurance_employer,unemployment_insurance_employee,funded_pension\n" +
+			"2025,5,ACCEPTED,EMP-100,1000.00,bad-tax,,,\n" +
+			"2025,5,ACCEPTED,EMP-100,1000.00,,bad-er,,\n" +
+			"2025,5,ACCEPTED,EMP-100,1000.00,,,bad-ee,\n" +
+			"2025,5,ACCEPTED,EMP-100,1000.00,,,,bad-pension\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 4, result.RowsProcessed)
+	assert.Zero(t, result.DeclarationsCreated)
+	assert.Zero(t, result.RowsImported)
+	assert.Equal(t, 4, result.RowsSkipped)
+	require.Len(t, result.Errors, 4)
+	assert.Contains(t, result.Errors[0].Message, "invalid social_tax")
+	assert.Contains(t, result.Errors[1].Message, "invalid unemployment_insurance_employer")
+	assert.Contains(t, result.Errors[2].Message, "invalid unemployment_insurance_employee")
+	assert.Contains(t, result.Errors[3].Message, "invalid funded_pension")
+}
+
+func TestTSDHistoryImportParsingHelpers(t *testing.T) {
+	t.Parallel()
+
+	rows, err := parseTSDHistoryImportRows("")
+	require.Error(t, err)
+	assert.Nil(t, rows)
+	assert.Contains(t, err.Error(), "csv_content is required")
+
+	rows, err = parseTSDHistoryImportRows(`"`)
+	require.Error(t, err)
+	assert.Nil(t, rows)
+	assert.Contains(t, err.Error(), "parse csv header")
+
+	rows, err = parseTSDHistoryImportRows("period_year,period_month,gross_payment\n\"")
+	require.Error(t, err)
+	assert.Nil(t, rows)
+	assert.Contains(t, err.Error(), "parse csv row 2")
+
+	rows, err = parseTSDHistoryImportRows("period_year,,period_month,gross_payment\n\n2025,ignored,6,1000.00\n,,,\n")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 2, rows[0].rowNumber)
+	assert.Equal(t, "2025", rows[0].values["period_year"])
+	assert.Equal(t, "6", rows[0].values["period_month"])
+	assert.Equal(t, "1000.00", rows[0].values["gross_payment"])
+	_, hasBlankHeader := rows[0].values[""]
+	assert.False(t, hasBlankHeader)
+
+	assert.Equal(t, "legacy_column", canonicalTSDHistoryImportHeader(" Legacy_Column "))
+}
