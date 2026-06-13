@@ -22,16 +22,28 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("payroll repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
 }
 
 // WithTransaction runs fn inside a GORM-backed transaction.
 func (r *GORMRepository) WithTransaction(ctx context.Context, fn func(txRepo Repository) error) error {
-	if r.db == nil {
-		return fmt.Errorf("database connection not available")
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
 	}
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
 		return fn(&GORMRepository{db: tx})
 	})
 }
@@ -324,6 +336,10 @@ func (r *GORMRepository) CreatePayslip(ctx context.Context, schemaName string, p
 
 // GetPayslipsWithEmployees retrieves payslips with employee data.
 func (r *GORMRepository) GetPayslipsWithEmployees(ctx context.Context, schemaName, tenantID, payrollRunID string) ([]Payslip, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	payslipsTable, err := database.QualifiedTable(schemaName, "payslips")
 	if err != nil {
 		return nil, err
@@ -340,7 +356,7 @@ func (r *GORMRepository) GetPayslipsWithEmployees(ctx context.Context, schemaNam
 		EmployeePersonalCode string
 		EmployeeEmail        string
 	}
-	if err := r.db.WithContext(ctx).Table(payslipsTable+" AS p").
+	if err := db.Table(payslipsTable+" AS p").
 		Select(`
 			p.*,
 			e.first_name AS employee_first_name,
