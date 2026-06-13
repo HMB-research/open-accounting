@@ -15590,6 +15590,21 @@ func TestCLICloseCommands(t *testing.T) {
 				"close_pack": 1,
 			},
 		},
+		"inventory_costing_review": map[string]any{
+			"valuation_method":              inventory.InventoryValuationMethodFIFO,
+			"line_count":                    2,
+			"total_quantity":                "4.00",
+			"total_reserved":                "0.00",
+			"total_available":               "4.00",
+			"total_value":                   "24.00",
+			"negative_quantity_line_count":  0,
+			"negative_available_line_count": 0,
+			"negative_value_line_count":     0,
+			"missing_cost_line_count":       0,
+			"blocking_exception_line_count": 0,
+			"ready":                         true,
+			"generated_at":                  now,
+		},
 	}
 	packPayload := map[string]any{
 		"status": statusPayload,
@@ -15691,6 +15706,7 @@ func TestCLICloseCommands(t *testing.T) {
 			assert.Equal(t, "2026-03-31", req.PeriodEndDate)
 			assert.Equal(t, "March close", req.Note)
 			assert.True(t, req.ReviewerSignOff)
+			assert.Equal(t, "fifo", req.InventoryValuationMethod)
 			event := closeEventPayload("close", "March close")
 			event["reviewer_sign_off"] = true
 			_ = json.NewEncoder(w).Encode(map[string]any{"tenant": tenantPayload, "event": event})
@@ -15702,15 +15718,27 @@ func TestCLICloseCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"tenant": tenantPayload, "event": closeEventPayload("reopen", "Adjustments")})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-status":
 			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
+			if r.URL.Query().Get("inventory_valuation_method") != "" {
+				assert.Equal(t, "fifo", r.URL.Query().Get("inventory_valuation_method"))
+			}
 			_ = json.NewEncoder(w).Encode(statusPayload)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-pack":
 			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
+			if r.URL.Query().Get("inventory_valuation_method") != "" {
+				assert.Equal(t, "fifo", r.URL.Query().Get("inventory_valuation_method"))
+			}
 			_ = json.NewEncoder(w).Encode(packPayload)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-audit-evidence":
 			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
+			if r.URL.Query().Get("inventory_valuation_method") != "" {
+				assert.Equal(t, "fifo", r.URL.Query().Get("inventory_valuation_method"))
+			}
 			_ = json.NewEncoder(w).Encode(auditPayload)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-close-audit-archive":
 			require.Equal(t, "2025-12-31", r.URL.Query().Get("period_end_date"))
+			if r.URL.Query().Get("inventory_valuation_method") != "" {
+				assert.Equal(t, "fifo", r.URL.Query().Get("inventory_valuation_method"))
+			}
 			w.Header().Set("Content-Type", "application/zip")
 			w.Header().Set("Content-Disposition", `attachment; filename="year-end-close-audit-2025-12-31.zip"`)
 			_, _ = w.Write([]byte("zip-bytes"))
@@ -15718,6 +15746,7 @@ func TestCLICloseCommands(t *testing.T) {
 			var req accounting.CreateYearEndCarryForwardRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "2025-12-31", req.PeriodEndDate)
+			assert.Equal(t, "fifo", req.InventoryValuationMethod)
 			_ = json.NewEncoder(w).Encode(carryForwardPayload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/year-end-carry-forward/reverse":
 			var req accounting.ReverseYearEndCarryForwardRequest
@@ -15746,14 +15775,14 @@ func TestCLICloseCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "March close")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"close", "period", "--period-end", "2026-03-31", "--note", "March close", "--reviewer-sign-off"})
+	err = app.run(context.Background(), []string{"close", "period", "--period-end", "2026-03-31", "--note", "March close", "--reviewer-sign-off", "--inventory-valuation-method", "fifo"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Closed period")
 	assert.Contains(t, stdout.String(), "Period end: 2026-03-31")
 	assert.Contains(t, stdout.String(), "Reviewer sign-off: true")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"close", "period", "--period-end", "2026-03-31", "--note", "March close", "--reviewer-sign-off", "--json"})
+	err = app.run(context.Background(), []string{"close", "period", "--period-end", "2026-03-31", "--note", "March close", "--reviewer-sign-off", "--inventory-valuation-method", "fifo", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"event": {`)
 	assert.Contains(t, stdout.String(), `"reviewer_sign_off": true`)
@@ -15769,10 +15798,11 @@ func TestCLICloseCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"action": "reopen"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"close", "year-end-status", "--period-end", "2025-12-31"})
+	err = app.run(context.Background(), []string{"close", "year-end-status", "--period-end", "2025-12-31", "--inventory-valuation-method", "fifo"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Carry-forward ready: true")
 	assert.Contains(t, stdout.String(), "Close-pack evidence compliant: true")
+	assert.Contains(t, stdout.String(), "Inventory costing review: method FIFO, ready true")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"close", "year-end-status", "--period-end", "2025-12-31", "--json"})
@@ -15780,7 +15810,7 @@ func TestCLICloseCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"fiscal_year_label": "2025"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"close", "year-end-pack", "--period-end", "2025-12-31"})
+	err = app.run(context.Background(), []string{"close", "year-end-pack", "--period-end", "2025-12-31", "--inventory-valuation-method", "fifo"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Trial balance: debits 1000")
 	assert.Contains(t, stdout.String(), "Income statement: revenue 2000")
@@ -15791,7 +15821,7 @@ func TestCLICloseCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"trial_balance": {`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"close", "year-end-audit", "--period-end", "2025-12-31"})
+	err = app.run(context.Background(), []string{"close", "year-end-audit", "--period-end", "2025-12-31", "--inventory-valuation-method", "fifo"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Close-pack audit evidence generated")
 	assert.Contains(t, stdout.String(), "close-pack.pdf")
@@ -15803,7 +15833,7 @@ func TestCLICloseCommands(t *testing.T) {
 
 	stdout.Reset()
 	archivePath := filepath.Join(t.TempDir(), "year-end-audit.zip")
-	err = app.run(context.Background(), []string{"close", "year-end-archive", "--period-end", "2025-12-31", "--output", archivePath})
+	err = app.run(context.Background(), []string{"close", "year-end-archive", "--period-end", "2025-12-31", "--inventory-valuation-method", "fifo", "--output", archivePath})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Downloaded year-end close audit archive")
 	archiveBytes, err := os.ReadFile(archivePath)
@@ -15833,12 +15863,12 @@ func TestCLICloseCommands(t *testing.T) {
 	assert.Empty(t, stdout.String())
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31"})
+	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31", "--inventory-valuation-method", "fifo"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Created year-end carry-forward JE-2026-001")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31", "--json"})
+	err = app.run(context.Background(), []string{"close", "carry-forward", "--period-end", "2025-12-31", "--inventory-valuation-method", "fifo", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"journal_entry": {`)
 

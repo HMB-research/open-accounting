@@ -55,7 +55,7 @@ func (h *Handlers) ListPeriodCloseEvents(w http.ResponseWriter, r *http.Request)
 
 // ClosePeriod closes a month-end or year-end period.
 // @Summary Close period
-// @Description Close a tenant accounting period after validating permissions and required review evidence
+// @Description Close a tenant accounting period after validating permissions, fiscal-year inventory costing readiness, and required review evidence
 // @Tags Period Close
 // @Accept json
 // @Produce json
@@ -88,6 +88,10 @@ func (h *Handlers) ClosePeriod(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ReviewerSignOff {
 		if err := h.requireApprovedYearEndClosePackEvidence(r.Context(), tenantRecord, req.PeriodEndDate); err != nil {
+			respondPeriodCloseError(w, err)
+			return
+		}
+		if err := h.requireYearEndInventoryCostingReady(r.Context(), tenantRecord.SchemaName, tenantID, tenantRecord.Settings.FiscalYearStart, req.PeriodEndDate, req.InventoryValuationMethod); err != nil {
 			respondPeriodCloseError(w, err)
 			return
 		}
@@ -195,6 +199,8 @@ func respondPeriodCloseError(w http.ResponseWriter, err error) {
 		respondError(w, http.StatusBadRequest, err.Error())
 	case strings.Contains(err.Error(), "reviewer sign-off is required"):
 		respondError(w, http.StatusBadRequest, err.Error())
+	case strings.Contains(err.Error(), "invalid valuation method"):
+		respondError(w, http.StatusBadRequest, err.Error())
 	case strings.Contains(err.Error(), "period already closed through"):
 		respondError(w, http.StatusConflict, err.Error())
 	case strings.Contains(err.Error(), "no closed period to reopen"):
@@ -204,6 +210,8 @@ func respondPeriodCloseError(w http.ResponseWriter, err error) {
 	case strings.Contains(err.Error(), "has not been closed yet"):
 		respondError(w, http.StatusConflict, err.Error())
 	case strings.Contains(err.Error(), "carry-forward has been posted"):
+		respondError(w, http.StatusConflict, err.Error())
+	case strings.Contains(err.Error(), "inventory costing review"):
 		respondError(w, http.StatusConflict, err.Error())
 	default:
 		respondError(w, http.StatusInternalServerError, "Failed to update period close state")

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -890,6 +891,35 @@ func TestClosePeriodRequiresApprovedClosePackEvidence(t *testing.T) {
 	h.ClosePeriod(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+}
+
+func TestClosePeriodRequiresInventoryCostingReady(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	attachYearEndInventoryFixture(h, decimal.Zero)
+
+	tenantRecord := repo.addTestTenant("tenant-1", "Tenant", "tenant")
+	tenantRecord.Settings = tenant.DefaultSettings()
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+	}
+
+	body := map[string]interface{}{
+		"period_end_date":            "2026-12-31",
+		"note":                       "Year-end close",
+		"reviewer_sign_off":          true,
+		"inventory_valuation_method": "standard-cost",
+	}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/period-close", body, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.ClosePeriod(w, req)
+
+	require.Equal(t, http.StatusConflict, w.Code, "response body: %s", w.Body.String())
+	assert.Contains(t, w.Body.String(), "inventory costing review has 1 blocking exception lines")
 }
 
 func TestClosePeriodRequiresAuthentication(t *testing.T) {

@@ -13799,7 +13799,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Close a tenant accounting period after validating permissions and required review evidence",
+                "description": "Close a tenant accounting period after validating permissions, fiscal-year inventory costing readiness, and required review evidence",
                 "consumes": [
                     "application/json"
                 ],
@@ -20772,7 +20772,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Create and post retained-earnings carry-forward journal entries after the fiscal year has been closed",
+                "description": "Create and post retained-earnings carry-forward journal entries after the fiscal year has been closed and inventory costing review has no blocking exceptions",
                 "consumes": [
                     "application/json"
                 ],
@@ -20952,7 +20952,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Download a ZIP archive containing year-end close pack metadata, evidence-policy results, and close-pack documents",
+                "description": "Download a ZIP archive containing year-end close pack metadata, inventory costing review, evidence-policy results, and close-pack documents",
                 "produces": [
                     "application/zip"
                 ],
@@ -20974,6 +20974,12 @@ const docTemplate = `{
                         "name": "period_end_date",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inventory valuation method for close review: standard-cost, weighted-average, or fifo",
+                        "name": "inventory_valuation_method",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -21037,7 +21043,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get year-end close readiness, core reports, close-pack evidence policy, and attached close-pack document metadata",
+                "description": "Get year-end close readiness, inventory costing review, core reports, close-pack evidence policy, and attached close-pack document metadata",
                 "produces": [
                     "application/json"
                 ],
@@ -21059,6 +21065,12 @@ const docTemplate = `{
                         "name": "period_end_date",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inventory valuation method for close review: standard-cost, weighted-average, or fifo",
+                        "name": "inventory_valuation_method",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -21122,7 +21134,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get year-end close readiness plus trial balance, balance sheet, and income statement for the fiscal year",
+                "description": "Get year-end close readiness plus inventory costing review, trial balance, balance sheet, and income statement for the fiscal year",
                 "produces": [
                     "application/json"
                 ],
@@ -21144,6 +21156,12 @@ const docTemplate = `{
                         "name": "period_end_date",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inventory valuation method for close review: standard-cost, weighted-average, or fifo",
+                        "name": "inventory_valuation_method",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -21207,7 +21225,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get fiscal year close readiness, retained-earnings mapping, net income, period-lock status, and existing carry-forward state",
+                "description": "Get fiscal year close readiness, retained-earnings mapping, net income, period-lock status, inventory costing review, and existing carry-forward state",
                 "produces": [
                     "application/json"
                 ],
@@ -21229,6 +21247,12 @@ const docTemplate = `{
                         "name": "period_end_date",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inventory valuation method for close review: standard-cost, weighted-average, or fifo",
+                        "name": "inventory_valuation_method",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -21879,6 +21903,9 @@ const docTemplate = `{
         "github_com_HMB-research_open-accounting_internal_accounting.CreateYearEndCarryForwardRequest": {
             "type": "object",
             "properties": {
+                "inventory_valuation_method": {
+                    "type": "string"
+                },
                 "period_end_date": {
                     "type": "string"
                 }
@@ -22675,6 +22702,9 @@ const docTemplate = `{
                 "has_retained_earnings_account": {
                     "type": "boolean"
                 },
+                "inventory_costing_review": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndInventoryCostingReview"
+                },
                 "is_fiscal_year_end": {
                     "type": "boolean"
                 },
@@ -22692,6 +22722,50 @@ const docTemplate = `{
                 },
                 "retained_earnings_account": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountSummary"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.YearEndInventoryCostingReview": {
+            "type": "object",
+            "properties": {
+                "blocking_exception_line_count": {
+                    "type": "integer"
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "line_count": {
+                    "type": "integer"
+                },
+                "missing_cost_line_count": {
+                    "type": "integer"
+                },
+                "negative_available_line_count": {
+                    "type": "integer"
+                },
+                "negative_quantity_line_count": {
+                    "type": "integer"
+                },
+                "negative_value_line_count": {
+                    "type": "integer"
+                },
+                "ready": {
+                    "type": "boolean"
+                },
+                "total_available": {
+                    "type": "number"
+                },
+                "total_quantity": {
+                    "type": "number"
+                },
+                "total_reserved": {
+                    "type": "number"
+                },
+                "total_value": {
+                    "type": "number"
+                },
+                "valuation_method": {
+                    "type": "string"
                 }
             }
         },
@@ -31045,6 +31119,9 @@ const docTemplate = `{
         "github_com_HMB-research_open-accounting_internal_tenant.ClosePeriodRequest": {
             "type": "object",
             "properties": {
+                "inventory_valuation_method": {
+                    "type": "string"
+                },
                 "note": {
                     "type": "string"
                 },

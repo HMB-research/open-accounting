@@ -2257,11 +2257,39 @@ func printYearEndCloseStatus(w io.Writer, status *accounting.YearEndCloseStatus)
 	if status.ClosePackEvidence != nil {
 		_, _ = fmt.Fprintf(w, "Close-pack evidence compliant: %t\n", status.ClosePackEvidence.Compliant)
 	}
+	if status.InventoryCostingReview != nil {
+		printYearEndInventoryCostingReview(w, status.InventoryCostingReview)
+	}
 	if status.RetainedEarningsAccount != nil {
 		_, _ = fmt.Fprintf(w, "Retained earnings: %s %s\n", status.RetainedEarningsAccount.Code, status.RetainedEarningsAccount.Name)
 	}
 	if status.ExistingCarryForward != nil {
 		_, _ = fmt.Fprintf(w, "Existing carry-forward: %s (%s)\n", status.ExistingCarryForward.EntryNumber, status.ExistingCarryForward.ID)
+	}
+}
+
+func printYearEndInventoryCostingReview(w io.Writer, review *accounting.YearEndInventoryCostingReview) {
+	if review == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(
+		w,
+		"Inventory costing review: method %s, ready %t, lines %d, total value %s\n",
+		review.ValuationMethod,
+		review.Ready,
+		review.LineCount,
+		review.TotalValue.String(),
+	)
+	if review.BlockingExceptionLineCount > 0 {
+		_, _ = fmt.Fprintf(
+			w,
+			"Inventory costing exceptions: blocking lines %d, negative qty %d, negative available %d, negative value %d, missing cost %d\n",
+			review.BlockingExceptionLineCount,
+			review.NegativeQuantityLineCount,
+			review.NegativeAvailableLineCount,
+			review.NegativeValueLineCount,
+			review.MissingCostLineCount,
+		)
 	}
 }
 

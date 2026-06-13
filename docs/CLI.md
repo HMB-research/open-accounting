@@ -879,17 +879,17 @@ The interest rate is a daily decimal rate (`0.0005` = 0.05% daily). `--annual-ra
 ```bash
 go run ./cmd/oa close events --limit 20
 go run ./cmd/oa close period --period-end 2026-03-31 --note "March close"
-go run ./cmd/oa close period --period-end 2025-12-31 --note "Year-end reviewed" --reviewer-sign-off
+go run ./cmd/oa close period --period-end 2025-12-31 --note "Year-end reviewed" --reviewer-sign-off --inventory-valuation-method fifo
 go run ./cmd/oa close reopen --period-end 2026-03-31 --note "Correcting late supplier invoice"
-go run ./cmd/oa close year-end-status --period-end 2025-12-31
-go run ./cmd/oa close year-end-pack --period-end 2025-12-31
-go run ./cmd/oa close year-end-audit --period-end 2025-12-31
-go run ./cmd/oa close year-end-archive --period-end 2025-12-31 --output ./year-end-audit.zip
-go run ./cmd/oa close carry-forward --period-end 2025-12-31
+go run ./cmd/oa close year-end-status --period-end 2025-12-31 --inventory-valuation-method fifo
+go run ./cmd/oa close year-end-pack --period-end 2025-12-31 --inventory-valuation-method fifo
+go run ./cmd/oa close year-end-audit --period-end 2025-12-31 --inventory-valuation-method fifo
+go run ./cmd/oa close year-end-archive --period-end 2025-12-31 --inventory-valuation-method fifo --output ./year-end-audit.zip
+go run ./cmd/oa close carry-forward --period-end 2025-12-31 --inventory-valuation-method fifo
 go run ./cmd/oa close reverse-carry-forward --period-end 2025-12-31 --reason "Late supplier accrual"
 ```
 
-Period close and reopen operations require a user role that can manage close workflows. Fiscal-year close requires `--reviewer-sign-off` plus approved `close_pack` evidence attached to the `year_end_close` entity printed by `close year-end-status` or `close year-end-pack`; carry-forward requires that approved close-pack evidence too. Reopening requires a note, and fiscal-year periods cannot be reopened after carry-forward has been posted unless the carry-forward is explicitly reversed first. `close year-end-pack` returns the readiness status plus year-end trial balance, balance sheet, and income statement. `close year-end-audit` adds close-pack evidence-policy status and attached close-pack document metadata for auditor handoff. `close year-end-archive` downloads a ZIP with `manifest.json` and attached close-pack files. Use `--json` for automation where available.
+Period close and reopen operations require a user role that can manage close workflows. Fiscal-year close requires `--reviewer-sign-off` plus approved `close_pack` evidence attached to the `year_end_close` entity printed by `close year-end-status` or `close year-end-pack`; fiscal-year close and carry-forward also require inventory costing review to have no blocking exception lines when inventory is configured. `--inventory-valuation-method` accepts `standard-cost` (default), `weighted-average`, or `fifo` on fiscal-year close, year-end status/pack/audit/archive, and carry-forward commands. Year-end status output includes the selected inventory valuation method, total inventory value, and blocking exception counts for negative stock/availability/value and missing costs. Reopening requires a note, and fiscal-year periods cannot be reopened after carry-forward has been posted unless the carry-forward is explicitly reversed first. `close year-end-pack` returns the readiness status plus year-end trial balance, balance sheet, and income statement. `close year-end-audit` adds close-pack evidence-policy status and attached close-pack document metadata for auditor handoff. `close year-end-archive` downloads a ZIP with `manifest.json` and attached close-pack files. Use `--json` for automation where available.
 
 ## Banking
 

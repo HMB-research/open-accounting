@@ -392,6 +392,8 @@ definitions:
     type: object
   github_com_HMB-research_open-accounting_internal_accounting.CreateYearEndCarryForwardRequest:
     properties:
+      inventory_valuation_method:
+        type: string
       period_end_date:
         type: string
     type: object
@@ -916,6 +918,8 @@ definitions:
         type: boolean
       has_retained_earnings_account:
         type: boolean
+      inventory_costing_review:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.YearEndInventoryCostingReview'
       is_fiscal_year_end:
         type: boolean
       locked_through_date:
@@ -928,6 +932,35 @@ definitions:
         type: string
       retained_earnings_account:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.AccountSummary'
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.YearEndInventoryCostingReview:
+    properties:
+      blocking_exception_line_count:
+        type: integer
+      generated_at:
+        type: string
+      line_count:
+        type: integer
+      missing_cost_line_count:
+        type: integer
+      negative_available_line_count:
+        type: integer
+      negative_quantity_line_count:
+        type: integer
+      negative_value_line_count:
+        type: integer
+      ready:
+        type: boolean
+      total_available:
+        type: number
+      total_quantity:
+        type: number
+      total_reserved:
+        type: number
+      total_value:
+        type: number
+      valuation_method:
+        type: string
     type: object
   github_com_HMB-research_open-accounting_internal_analytics.ActivityItem:
     properties:
@@ -6508,6 +6541,8 @@ definitions:
     type: object
   github_com_HMB-research_open-accounting_internal_tenant.ClosePeriodRequest:
     properties:
+      inventory_valuation_method:
+        type: string
       note:
         type: string
       period_end_date:
@@ -15653,8 +15688,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Close a tenant accounting period after validating permissions and
-        required review evidence
+      description: Close a tenant accounting period after validating permissions,
+        fiscal-year inventory costing readiness, and required review evidence
       parameters:
       - description: Tenant ID
         in: path
@@ -20150,7 +20185,8 @@ paths:
       consumes:
       - application/json
       description: Create and post retained-earnings carry-forward journal entries
-        after the fiscal year has been closed
+        after the fiscal year has been closed and inventory costing review has no
+        blocking exceptions
       parameters:
       - description: Tenant ID
         in: path
@@ -20264,7 +20300,7 @@ paths:
   /tenants/{tenantID}/year-end-close-audit-archive:
     get:
       description: Download a ZIP archive containing year-end close pack metadata,
-        evidence-policy results, and close-pack documents
+        inventory costing review, evidence-policy results, and close-pack documents
       parameters:
       - description: Tenant ID
         in: path
@@ -20275,6 +20311,11 @@ paths:
         in: query
         name: period_end_date
         required: true
+        type: string
+      - description: 'Inventory valuation method for close review: standard-cost,
+          weighted-average, or fifo'
+        in: query
+        name: inventory_valuation_method
         type: string
       produces:
       - application/zip
@@ -20318,8 +20359,8 @@ paths:
       - Period Close
   /tenants/{tenantID}/year-end-close-audit-evidence:
     get:
-      description: Get year-end close readiness, core reports, close-pack evidence
-        policy, and attached close-pack document metadata
+      description: Get year-end close readiness, inventory costing review, core reports,
+        close-pack evidence policy, and attached close-pack document metadata
       parameters:
       - description: Tenant ID
         in: path
@@ -20330,6 +20371,11 @@ paths:
         in: query
         name: period_end_date
         required: true
+        type: string
+      - description: 'Inventory valuation method for close review: standard-cost,
+          weighted-average, or fifo'
+        in: query
+        name: inventory_valuation_method
         type: string
       produces:
       - application/json
@@ -20373,8 +20419,8 @@ paths:
       - Period Close
   /tenants/{tenantID}/year-end-close-pack:
     get:
-      description: Get year-end close readiness plus trial balance, balance sheet,
-        and income statement for the fiscal year
+      description: Get year-end close readiness plus inventory costing review, trial
+        balance, balance sheet, and income statement for the fiscal year
       parameters:
       - description: Tenant ID
         in: path
@@ -20385,6 +20431,11 @@ paths:
         in: query
         name: period_end_date
         required: true
+        type: string
+      - description: 'Inventory valuation method for close review: standard-cost,
+          weighted-average, or fifo'
+        in: query
+        name: inventory_valuation_method
         type: string
       produces:
       - application/json
@@ -20429,7 +20480,8 @@ paths:
   /tenants/{tenantID}/year-end-close-status:
     get:
       description: Get fiscal year close readiness, retained-earnings mapping, net
-        income, period-lock status, and existing carry-forward state
+        income, period-lock status, inventory costing review, and existing carry-forward
+        state
       parameters:
       - description: Tenant ID
         in: path
@@ -20440,6 +20492,11 @@ paths:
         in: query
         name: period_end_date
         required: true
+        type: string
+      - description: 'Inventory valuation method for close review: standard-cost,
+          weighted-average, or fifo'
+        in: query
+        name: inventory_valuation_method
         type: string
       produces:
       - application/json

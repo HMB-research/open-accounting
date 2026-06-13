@@ -19,6 +19,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -171,6 +172,71 @@ func setupTenantAccountingHandlers() (*Handlers, *mockTenantRepository, *mockYea
 	return h, repo, accountingRepo
 }
 
+func attachYearEndInventoryFixture(h *Handlers, unitCost decimal.Decimal) *mockInventoryRepository {
+	inventoryRepo := newMockInventoryRepository()
+	h.inventoryService = inventory.NewServiceWithRepository(inventoryRepo)
+	inventoryRepo.products[apiInventoryStockProductID] = &inventory.Product{
+		ID:             apiInventoryStockProductID,
+		TenantID:       "tenant-1",
+		Code:           "SKU-001",
+		Name:           "Widget",
+		ProductType:    inventory.ProductTypeGoods,
+		PurchasePrice:  unitCost,
+		CurrentStock:   decimal.NewFromInt(4),
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	inventoryRepo.warehouses[apiInventoryStockWarehouseID] = &inventory.Warehouse{
+		ID:       apiInventoryStockWarehouseID,
+		TenantID: "tenant-1",
+		Code:     "MAIN",
+		Name:     "Main warehouse",
+		IsActive: true,
+	}
+	inventoryRepo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID)] = &inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    apiInventoryStockProductID,
+		WarehouseID:  apiInventoryStockWarehouseID,
+		Quantity:     decimal.NewFromInt(4),
+		ReservedQty:  decimal.Zero,
+		AvailableQty: decimal.NewFromInt(4),
+	}
+	if unitCost.GreaterThan(decimal.Zero) {
+		inventoryRepo.movements[apiInventoryStockProductID] = []inventory.InventoryMovement{{
+			ID:           "movement-1",
+			TenantID:     "tenant-1",
+			ProductID:    apiInventoryStockProductID,
+			WarehouseID:  apiInventoryStockWarehouseID,
+			MovementType: inventory.MovementTypeIn,
+			Quantity:     decimal.NewFromInt(4),
+			UnitCost:     unitCost,
+			TotalCost:    unitCost.Mul(decimal.NewFromInt(4)),
+			MovementDate: time.Date(2025, 12, 15, 0, 0, 0, 0, time.UTC),
+		}}
+	}
+	return inventoryRepo
+}
+
+func seedYearEndAccountingReady(accountingRepo *mockYearEndAccountingRepository) {
+	accountingRepo.accounts["retained"] = &accounting.Account{
+		ID:          "retained",
+		TenantID:    "tenant-1",
+		Code:        "3200",
+		Name:        "Retained Earnings",
+		AccountType: accounting.AccountTypeEquity,
+		IsActive:    true,
+	}
+	accountingRepo.periodBalances = []accounting.AccountBalance{{
+		AccountID:     "revenue-1",
+		AccountCode:   "4100",
+		AccountName:   "Sales Revenue",
+		AccountType:   accounting.AccountTypeRevenue,
+		CreditBalance: decimal.NewFromInt(1000),
+		NetBalance:    decimal.NewFromInt(1000),
+	}}
+}
+
 func TestGetYearEndCloseStatus(t *testing.T) {
 	h, repo, accountingRepo := setupTenantAccountingHandlers()
 	settings := tenant.DefaultSettings()
@@ -274,6 +340,42 @@ func TestGetYearEndCloseStatusIncludesClosePackEvidence(t *testing.T) {
 	assert.False(t, resp.CarryForwardReady)
 }
 
+func TestGetYearEndCloseStatusIncludesInventoryCostingReview(t *testing.T) {
+	h, repo, accountingRepo := setupTenantAccountingHandlers()
+	attachYearEndInventoryFixture(h, decimal.NewFromInt(6))
+
+	settings := tenant.DefaultSettings()
+	settings.PeriodLockDate = stringPtr("2025-12-31")
+	repo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		Name:       "Tenant",
+		Slug:       "tenant",
+		SchemaName: "tenant_tenant",
+		Settings:   settings,
+	}
+	seedYearEndAccountingReady(accountingRepo)
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/year-end-close-status?period_end_date=2025-12-31&inventory_valuation_method=weighted-average", nil, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.GetYearEndCloseStatus(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp accounting.YearEndCloseStatus
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.NotNil(t, resp.InventoryCostingReview)
+	assert.Equal(t, inventory.InventoryValuationMethodWeightedAverage, resp.InventoryCostingReview.ValuationMethod)
+	assert.True(t, resp.InventoryCostingReview.Ready)
+	assert.Equal(t, 1, resp.InventoryCostingReview.LineCount)
+	assert.True(t, resp.InventoryCostingReview.TotalValue.Equal(decimal.NewFromInt(24)))
+	assert.Equal(t, 0, resp.InventoryCostingReview.BlockingExceptionLineCount)
+	assert.True(t, resp.CarryForwardReady)
+}
+
 func TestGetYearEndClosePack(t *testing.T) {
 	h, repo, accountingRepo := setupTenantAccountingHandlers()
 	settings := tenant.DefaultSettings()
@@ -333,6 +435,40 @@ func TestGetYearEndClosePack(t *testing.T) {
 	assert.True(t, resp.IncomeStatement.NetIncome.Equal(decimal.NewFromInt(750)))
 	assert.True(t, resp.TrialBalance.TotalDebits.Equal(decimal.NewFromInt(250)))
 	assert.True(t, resp.TrialBalance.TotalCredits.Equal(decimal.NewFromInt(1000)))
+}
+
+func TestCreateYearEndCarryForwardRequiresInventoryCostingReady(t *testing.T) {
+	h, repo, accountingRepo := setupTenantAccountingHandlers()
+	attachYearEndInventoryFixture(h, decimal.Zero)
+
+	settings := tenant.DefaultSettings()
+	settings.PeriodLockDate = stringPtr("2025-12-31")
+	repo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		Name:       "Tenant",
+		Slug:       "tenant",
+		SchemaName: "tenant_tenant",
+		Settings:   settings,
+	}
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+	}
+	seedYearEndAccountingReady(accountingRepo)
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/year-end-carry-forward", map[string]any{
+		"period_end_date":            "2025-12-31",
+		"inventory_valuation_method": "standard-cost",
+	}, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.CreateYearEndCarryForward(w, req)
+
+	require.Equal(t, http.StatusConflict, w.Code, "response body: %s", w.Body.String())
+	assert.Contains(t, w.Body.String(), "inventory costing review has 1 blocking exception lines")
 }
 
 func TestGetAnnualReport(t *testing.T) {
