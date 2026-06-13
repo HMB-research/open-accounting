@@ -702,12 +702,13 @@ func TestCLIOpsBackupCommands(t *testing.T) {
 		"--backup", "/backups/openaccounting.dump",
 		"--restore-url", "postgres://drill",
 		"--source-url", "postgres://prod",
+		"--status-file", "/tmp/openaccounting_restore_drill.prom",
 		"--allow-non-empty",
 		"--skip-checksum",
 		"--dry-run",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "db-restore-drill.sh --backup /backups/openaccounting.dump --restore-url postgres://drill --source-url postgres://prod --allow-non-empty --skip-checksum --dry-run")
+	assert.Contains(t, stdout.String(), "db-restore-drill.sh --backup /backups/openaccounting.dump --restore-url postgres://drill --source-url postgres://prod --status-file /tmp/openaccounting_restore_drill.prom --allow-non-empty --skip-checksum --dry-run")
 }
 
 func TestCLIOpsBackupBranches(t *testing.T) {
