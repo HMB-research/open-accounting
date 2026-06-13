@@ -259,6 +259,27 @@ func TestValidateBundleAcceptsSmartAccountsProviderPresetAliases(t *testing.T) {
 	assert.Contains(t, report.Files[4].Headers, "entry_reference")
 }
 
+func TestValidateBundleDefaultsDisplayFileNames(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			CSVContent: "name,reg_code\nSupplier OÜ,12345678\n",
+		},
+		{
+			Kind:       KindEInvoices,
+			XMLContent: cutoverEInvoiceXML("BILL-2026-001", "Supplier OÜ", "12345678"),
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 2)
+	assert.Equal(t, "contacts.csv", report.Files[0].FileName)
+	assert.Equal(t, "e_invoices.xml", report.Files[1].FileName)
+}
+
 func TestValidateBundleAcceptsMeritPayrollProviderPresetAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: MigrationProviderPresetMerit,
