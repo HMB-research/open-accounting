@@ -266,6 +266,13 @@ func TestBuildExpenseRemediationActions(t *testing.T) {
 				assert.NotEmpty(t, action.Action)
 				assert.NotEmpty(t, action.CLICommand)
 				assert.Contains(t, action.UIPath, "/expenses")
+				assert.Equal(t, "expense_claims", action.WorkspaceQueue)
+				assert.NotEmpty(t, action.AssignmentKey)
+				assert.NotEmpty(t, action.Priority)
+				if action.Severity == "ACTION" {
+					assert.Equal(t, "high", action.Priority)
+					assert.Equal(t, 1, action.DueInDays)
+				}
 			}
 		})
 	}

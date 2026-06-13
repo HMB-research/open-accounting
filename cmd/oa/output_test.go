@@ -523,17 +523,23 @@ func TestPrintReportOutputEdgeBranches(t *testing.T) {
 		TotalOutputVAT: decimal.NewFromInt(220),
 		TotalInputVAT:  decimal.NewFromInt(80),
 		RemediationActions: []tax.KMDRemediationAction{{
-			Code:       "kmd_payable_review",
-			Severity:   "ACTION",
-			Scope:      "tax",
-			OwnerRole:  "accountant",
-			Action:     "Review output/input VAT totals, generate KMD INF when needed, export XML, and submit the declaration in e-MTA.",
-			CLICommand: "oa tax kmd export-xml --year 2026 --month 3 --output ./kmd-2026-03.xml",
+			Code:           "kmd_payable_review",
+			Severity:       "ACTION",
+			Scope:          "tax",
+			OwnerRole:      "accountant",
+			WorkspaceQueue: "kmd_declarations",
+			AssignmentKey:  "kmd-declarations:kmd-payable-review:kmd-declaration:kmd-1:2026-03",
+			Priority:       "high",
+			DueInDays:      1,
+			Action:         "Review output/input VAT totals, generate KMD INF when needed, export XML, and submit the declaration in e-MTA.",
+			CLICommand:     "oa tax kmd export-xml --year 2026 --month 3 --output ./kmd-2026-03.xml",
 		}},
 	})
 	assert.Contains(t, buf.String(), "KMD 2026-03")
 	assert.Contains(t, buf.String(), "KMD remediation actions")
 	assert.Contains(t, buf.String(), "kmd_payable_review")
+	assert.Contains(t, buf.String(), "kmd_declarations")
+	assert.Contains(t, buf.String(), "1d")
 	assert.NotContains(t, buf.String(), "ROW\tDESCRIPTION")
 
 	buf.Reset()
@@ -960,6 +966,9 @@ func TestPrintTables(t *testing.T) {
 			Severity:           "INFO",
 			Scope:              "documents",
 			OwnerRole:          "accountant",
+			WorkspaceQueue:     "document_review",
+			AssignmentKey:      "document-review:document-retention-due-soon:bank-transaction:txn-1:reconciliation-evidence:doc-1",
+			Priority:           "low",
 			Message:            "Retention is due on 2027-03-15",
 			Action:             "Review the document before the retention date and either extend retention or complete the disposal workflow.",
 			EntityType:         documents.EntityTypeBankTxn,
@@ -971,18 +980,22 @@ func TestPrintTables(t *testing.T) {
 			DaysUntilRetention: &daysUntilRetention,
 			CLICommand:         "oa documents retention-set --id doc-1 --retention-until <YYYY-MM-DD>",
 		}, {
-			Code:         "document_retention_missing",
-			Severity:     "WARNING",
-			Scope:        "documents",
-			OwnerRole:    "accountant",
-			Message:      "Document receipt.pdf is missing retention metadata.",
-			Action:       "Set a retention date or document why the record is exempt from retention policy.",
-			EntityType:   documents.EntityTypeExpense,
-			EntityID:     "exp-1",
-			DocumentID:   "doc-missing-retention",
-			DocumentType: documents.DocumentTypeReceipt,
-			FileName:     "receipt.pdf",
-			CLICommand:   "oa documents retention-set --id doc-missing-retention --retention-until <YYYY-MM-DD>",
+			Code:           "document_retention_missing",
+			Severity:       "WARNING",
+			Scope:          "documents",
+			OwnerRole:      "accountant",
+			WorkspaceQueue: "document_review",
+			AssignmentKey:  "document-review:document-retention-missing:expense:exp-1:receipt:doc-missing-retention",
+			Priority:       "normal",
+			DueInDays:      3,
+			Message:        "Document receipt.pdf is missing retention metadata.",
+			Action:         "Set a retention date or document why the record is exempt from retention policy.",
+			EntityType:     documents.EntityTypeExpense,
+			EntityID:       "exp-1",
+			DocumentID:     "doc-missing-retention",
+			DocumentType:   documents.DocumentTypeReceipt,
+			FileName:       "receipt.pdf",
+			CLICommand:     "oa documents retention-set --id doc-missing-retention --retention-until <YYYY-MM-DD>",
 		}},
 	})
 	assert.Contains(t, retentionBuf.String(), "Document retention review")
@@ -993,6 +1006,7 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, retentionBuf.String(), "Document remediation actions")
 	assert.Contains(t, retentionBuf.String(), "document_retention_due_soon")
 	assert.Contains(t, retentionBuf.String(), "document_retention_missing")
+	assert.Contains(t, retentionBuf.String(), "document_review")
 }
 
 func TestPrintPaymentOutputs(t *testing.T) {

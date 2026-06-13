@@ -301,6 +301,10 @@ func TestBuildYearEndCloseRemediationActions(t *testing.T) {
 	assert.Contains(t, codes, "inventory_costing_exceptions")
 	assert.NotContains(t, codes, "ready_to_post_carry_forward")
 	assert.Equal(t, "accountant", actions[0].OwnerRole)
+	assert.Equal(t, "year_end_close", actions[0].WorkspaceQueue)
+	assert.Equal(t, "high", actions[0].Priority)
+	assert.Equal(t, 1, actions[0].DueInDays)
+	assert.Contains(t, actions[0].AssignmentKey, "year-end-close:fiscal-year-not-closed")
 	assert.Contains(t, actions[2].Message, "pending")
 	assert.Contains(t, actions[3].CLICommand, "weighted-average")
 

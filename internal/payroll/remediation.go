@@ -3,6 +3,8 @@ package payroll
 import (
 	"fmt"
 	"strings"
+
+	"github.com/HMB-research/open-accounting/internal/workspace"
 )
 
 // BuildPayrollRunRemediationActions turns payroll run state into accountant follow-up actions.
@@ -26,6 +28,18 @@ func BuildPayrollRunRemediationActions(run *PayrollRun) []PayrollRunRemediationA
 		item := base
 		item.Code = code
 		item.Severity = severity
+		meta := workspace.RemediationAssignment(
+			"payroll_runs",
+			code,
+			severity,
+			item.EntityType,
+			item.EntityID,
+			item.Period,
+		)
+		item.WorkspaceQueue = meta.WorkspaceQueue
+		item.AssignmentKey = meta.AssignmentKey
+		item.Priority = meta.Priority
+		item.DueInDays = meta.DueInDays
 		item.Message = message
 		item.Action = text
 		item.CLICommand = command

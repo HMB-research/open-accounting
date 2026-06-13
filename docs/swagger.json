@@ -22768,11 +22768,17 @@
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -22786,6 +22792,9 @@
                 "owner_role": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -22793,6 +22802,9 @@
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -23801,6 +23813,9 @@
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "bank_account_id": {
                     "type": "string"
                 },
@@ -23809,6 +23824,9 @@
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -23825,6 +23843,9 @@
                 "owner_role": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -23835,6 +23856,9 @@
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -24887,6 +24911,9 @@
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
@@ -24905,6 +24932,9 @@
                 "due_date": {
                     "type": "string"
                 },
+                "due_in_days": {
+                    "type": "integer"
+                },
                 "entity_id": {
                     "type": "string"
                 },
@@ -24920,6 +24950,9 @@
                 "owner_role": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -24927,6 +24960,9 @@
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -25661,11 +25697,17 @@
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -25682,6 +25724,9 @@
                 "owner_role": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -25692,6 +25737,9 @@
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -29255,11 +29303,17 @@
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -29276,6 +29330,9 @@
                 "period": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -29283,6 +29340,9 @@
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -29508,11 +29568,17 @@
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -29529,6 +29595,9 @@
                 "period": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -29536,6 +29605,9 @@
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -31649,11 +31721,17 @@
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -31670,6 +31748,9 @@
                 "period": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -31677,6 +31758,9 @@
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }

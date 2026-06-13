@@ -22779,11 +22779,17 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -22797,6 +22803,9 @@ const docTemplate = `{
                 "owner_role": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -22804,6 +22813,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -23812,6 +23824,9 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "bank_account_id": {
                     "type": "string"
                 },
@@ -23820,6 +23835,9 @@ const docTemplate = `{
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -23836,6 +23854,9 @@ const docTemplate = `{
                 "owner_role": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -23846,6 +23867,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -24898,6 +24922,9 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
@@ -24916,6 +24943,9 @@ const docTemplate = `{
                 "due_date": {
                     "type": "string"
                 },
+                "due_in_days": {
+                    "type": "integer"
+                },
                 "entity_id": {
                     "type": "string"
                 },
@@ -24931,6 +24961,9 @@ const docTemplate = `{
                 "owner_role": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -24938,6 +24971,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -25672,11 +25708,17 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -25693,6 +25735,9 @@ const docTemplate = `{
                 "owner_role": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -25703,6 +25748,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -29266,11 +29314,17 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -29287,6 +29341,9 @@ const docTemplate = `{
                 "period": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -29294,6 +29351,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -29519,11 +29579,17 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -29540,6 +29606,9 @@ const docTemplate = `{
                 "period": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -29547,6 +29616,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }
@@ -31660,11 +31732,17 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "entity_id": {
                     "type": "string"
@@ -31681,6 +31759,9 @@ const docTemplate = `{
                 "period": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -31688,6 +31769,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
                     "type": "string"
                 }
             }

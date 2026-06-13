@@ -62,18 +62,22 @@ type Expense struct {
 
 // ExpenseRemediationAction describes one operator action for expense claim follow-up.
 type ExpenseRemediationAction struct {
-	Code          string `json:"code"`
-	Severity      string `json:"severity"`
-	Scope         string `json:"scope"`
-	OwnerRole     string `json:"owner_role"`
-	Message       string `json:"message"`
-	Action        string `json:"action"`
-	EntityType    string `json:"entity_type,omitempty"`
-	EntityID      string `json:"entity_id,omitempty"`
-	ExpenseNumber string `json:"expense_number,omitempty"`
-	Status        string `json:"status,omitempty"`
-	UIPath        string `json:"ui_path,omitempty"`
-	CLICommand    string `json:"cli_command,omitempty"`
+	Code           string `json:"code"`
+	Severity       string `json:"severity"`
+	Scope          string `json:"scope"`
+	OwnerRole      string `json:"owner_role"`
+	WorkspaceQueue string `json:"workspace_queue,omitempty"`
+	AssignmentKey  string `json:"assignment_key,omitempty"`
+	Priority       string `json:"priority,omitempty"`
+	DueInDays      int    `json:"due_in_days,omitempty"`
+	Message        string `json:"message"`
+	Action         string `json:"action"`
+	EntityType     string `json:"entity_type,omitempty"`
+	EntityID       string `json:"entity_id,omitempty"`
+	ExpenseNumber  string `json:"expense_number,omitempty"`
+	Status         string `json:"status,omitempty"`
+	UIPath         string `json:"ui_path,omitempty"`
+	CLICommand     string `json:"cli_command,omitempty"`
 }
 
 type CreateExpenseRequest struct {

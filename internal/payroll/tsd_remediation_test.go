@@ -97,6 +97,12 @@ func TestBuildTSDRemediationActions(t *testing.T) {
 				if action.Period == "" || action.Action == "" || action.CLICommand == "" {
 					t.Fatalf("expected action metadata to be populated: %+v", action)
 				}
+				if action.WorkspaceQueue != "tsd_declarations" || action.AssignmentKey == "" || action.Priority == "" {
+					t.Fatalf("expected assignment metadata to be populated: %+v", action)
+				}
+				if action.Severity == "ACTION" && (action.Priority != "high" || action.DueInDays != 1) {
+					t.Fatalf("expected high-priority action due in 1 day: %+v", action)
+				}
 			}
 		})
 	}

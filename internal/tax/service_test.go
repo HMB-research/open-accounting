@@ -409,6 +409,13 @@ func TestBuildKMDRemediationActions(t *testing.T) {
 				assert.Equal(t, "accountant", action.OwnerRole)
 				assert.NotEmpty(t, action.Period)
 				assert.NotEmpty(t, action.Action)
+				assert.Equal(t, "kmd_declarations", action.WorkspaceQueue)
+				assert.NotEmpty(t, action.AssignmentKey)
+				assert.NotEmpty(t, action.Priority)
+				if action.Severity == "ACTION" {
+					assert.Equal(t, "high", action.Priority)
+					assert.Equal(t, 1, action.DueInDays)
+				}
 			}
 		})
 	}

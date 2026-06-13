@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/HMB-research/open-accounting/internal/workspace"
 )
 
 const (
@@ -64,6 +66,7 @@ func BuildRetentionReviewRemediationActions(review *RetentionReview) []DocumentR
 			base.CLICommand = "oa documents retention --include-missing"
 		}
 
+		assignDocumentRemediationAction(&base)
 		actions = append(actions, base)
 	}
 
@@ -104,6 +107,7 @@ func BuildEvidencePolicyRemediationActions(result *EvidencePolicyResult) []Docum
 			base.CLICommand = evidencePolicyCommand(result.EntityType, result.EntityID, documentType, violation.RequiredCount, violation.RequireApproved)
 		}
 
+		assignDocumentRemediationAction(&base)
 		actions = append(actions, base)
 	}
 
@@ -121,6 +125,22 @@ func documentRemediationBase(entityType, entityID, documentID, documentType, fil
 		FileName:     strings.TrimSpace(fileName),
 		UIPath:       documentRemediationUIPath(entityType, entityID, documentID),
 	}
+}
+
+func assignDocumentRemediationAction(action *DocumentRemediationAction) {
+	meta := workspace.RemediationAssignment(
+		"document_review",
+		action.Code,
+		action.Severity,
+		action.EntityType,
+		action.EntityID,
+		action.DocumentType,
+		action.DocumentID,
+	)
+	action.WorkspaceQueue = meta.WorkspaceQueue
+	action.AssignmentKey = meta.AssignmentKey
+	action.Priority = meta.Priority
+	action.DueInDays = meta.DueInDays
 }
 
 func documentRemediationUIPath(entityType, entityID, documentID string) string {
