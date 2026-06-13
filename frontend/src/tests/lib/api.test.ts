@@ -819,6 +819,58 @@ describe("API Client - Core Functionality", () => {
       expect(result.remediation_actions?.[0].priority).toBe("high");
     });
 
+    it("should list expense claims with remediation actions", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: "expense-1",
+            expense_number: "EXP-001",
+            amount: "35.00",
+            status: "SUBMITTED",
+            remediation_actions: [
+              {
+                code: "expense_receipt_approval_required",
+                severity: "ACTION",
+                scope: "expenses",
+                owner_role: "accountant",
+                workspace_queue: "expense_claims",
+                assignment_key:
+                  "expense-claims:expense-receipt-approval-required:expense:expense-1:EXP-001:SUBMITTED",
+                priority: "high",
+                due_in_days: 1,
+                message: "Expense EXP-001 is submitted and receipt-backed.",
+                action:
+                  "Confirm a linked receipt exists and is approved before approving the expense.",
+                entity_type: "expense",
+                entity_id: "expense-1",
+                ui_path: "/expenses?expense_id=expense-1",
+                cli_command:
+                  "oa documents review-queue --entity-type expense --document-type receipt --status PENDING",
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await api.listExpenses("tenant-123", {
+        status: "SUBMITTED",
+        limit: 25,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/expenses?status=SUBMITTED&limit=25",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result[0].amount.toString()).toBe("35");
+      expect(result[0].remediation_actions?.[0].workspace_queue).toBe(
+        "expense_claims",
+      );
+    });
+
     it("should update document retention metadata", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

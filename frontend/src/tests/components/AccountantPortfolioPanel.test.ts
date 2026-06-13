@@ -13,6 +13,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn(),
 		getDocumentRetentionReview: vi.fn(),
+		listExpenses: vi.fn(),
 		listPayrollRuns: vi.fn(),
 		listTSD: vi.fn(),
 		listKMD: vi.fn(),
@@ -286,6 +287,50 @@ describe('AccountantPortfolioPanel', () => {
 						]
 					: []
 		}));
+		apiMock.listExpenses.mockImplementation(async (tenantId: string) =>
+			tenantId === 'tenant-1'
+				? [
+						{
+							id: 'expense-1',
+							tenant_id: tenantId,
+							expense_number: 'EXP-001',
+							expense_date: '2026-02-09',
+							merchant: 'Taxi Co',
+							expense_account_id: 'expense-account',
+							payment_account_id: 'cash-account',
+							amount: new Decimal(35),
+							currency: 'EUR',
+							exchange_rate: new Decimal(1),
+							base_amount: new Decimal(35),
+							requires_receipt: true,
+							status: 'SUBMITTED',
+							remediation_actions: [
+								{
+									code: 'expense_receipt_approval_required',
+									severity: 'ACTION',
+									scope: 'expenses',
+									owner_role: 'accountant',
+									workspace_queue: 'expense_claims',
+									assignment_key: 'expense-claims:expense-receipt-approval-required:expense:expense-1:EXP-001:SUBMITTED',
+									priority: 'high',
+									due_in_days: 1,
+									message: 'Expense EXP-001 is submitted and receipt-backed.',
+									action: 'Confirm the receipt before approval.',
+									entity_type: 'expense',
+									entity_id: 'expense-1',
+									expense_number: 'EXP-001',
+									status: 'SUBMITTED',
+									ui_path: '/expenses?expense_id=expense-1',
+									cli_command: 'oa documents review-queue --entity-type expense --document-type receipt --status PENDING'
+								}
+							],
+							created_at: '2026-02-09T00:00:00Z',
+							created_by: 'user-1',
+							updated_at: '2026-02-09T00:00:00Z'
+						}
+					]
+				: []
+		);
 		apiMock.listPayrollRuns.mockImplementation(async (tenantId: string) =>
 			tenantId === 'tenant-1'
 				? [
@@ -379,7 +424,7 @@ describe('AccountantPortfolioPanel', () => {
 		expect(screen.getAllByText('1 missing evidence').length).toBeGreaterThan(0);
 		expect(screen.getAllByText('1 pending review').length).toBeGreaterThan(0);
 		expect(screen.getAllByText('1 accounting evidence').length).toBeGreaterThan(0);
-		expect(screen.getByText('4 assignments')).toBeInTheDocument();
+		expect(screen.getByText('5 assignments')).toBeInTheDocument();
 		expect(screen.getByText('workspace assignments')).toBeInTheDocument();
 		expect(screen.getByText('Draft journal entries needing approved evidence: 1')).toBeInTheDocument();
 		expect(screen.getAllByText('Close due').length).toBeGreaterThan(0);
@@ -392,6 +437,7 @@ describe('AccountantPortfolioPanel', () => {
 			'/documents?tenant=tenant-1&entity_type=bank_transaction&review_status=PENDING'
 		);
 		expect(apiMock.listDocumentReviewSummaries).toHaveBeenCalledWith('tenant-1', 'journal_entry', ['journal-1']);
+		expect(apiMock.listExpenses).toHaveBeenCalledWith('tenant-1', { limit: 100 });
 		expect(screen.getByRole('link', { name: 'Open journal' })).toHaveAttribute('href', '/journal?tenant=tenant-1');
 		expect(screen.getByRole('link', { name: 'Review journal evidence' })).toHaveAttribute(
 			'href',
@@ -464,6 +510,7 @@ describe('AccountantPortfolioPanel', () => {
 			documents: [],
 			remediation_actions: []
 		});
+		apiMock.listExpenses.mockResolvedValue([]);
 		apiMock.listPayrollRuns.mockResolvedValue([]);
 		apiMock.listTSD.mockResolvedValue([]);
 		apiMock.listKMD.mockResolvedValue([]);

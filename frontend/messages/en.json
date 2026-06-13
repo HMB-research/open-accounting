@@ -197,6 +197,7 @@
   "dashboard_reviewAssignmentSourceClose": "Close",
   "dashboard_reviewAssignmentSourceBanking": "Banking",
   "dashboard_reviewAssignmentSourceDocuments": "Documents",
+  "dashboard_reviewAssignmentSourceExpenses": "Expenses",
   "dashboard_reviewAssignmentSourcePayroll": "Payroll",
   "dashboard_reviewAssignmentSourceTsd": "TSD",
   "dashboard_reviewAssignmentSourceKmd": "KMD",

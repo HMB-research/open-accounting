@@ -685,6 +685,17 @@ class ApiClient {
     );
   }
 
+  async listExpenses(
+    tenantId: string,
+    filter: ListExpensesFilter = {},
+  ) {
+    const query = buildQuery(filter);
+    return this.request<ExpenseClaim[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/expenses${query}`,
+    );
+  }
+
   async updateDocumentRetention(
     tenantId: string,
     documentId: string,
@@ -3338,6 +3349,70 @@ export interface BundleValidationReport {
   files: FileValidation[];
   issues?: ValidationIssue[];
   remediation_actions?: MigrationRemediationAction[];
+}
+
+export type ExpenseStatus =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "POSTED";
+
+export interface ExpenseClaim {
+  id: string;
+  tenant_id: string;
+  expense_number: string;
+  expense_date: string;
+  merchant: string;
+  description?: string;
+  employee_id?: string;
+  contact_id?: string;
+  expense_account_id: string;
+  payment_account_id: string;
+  amount: Decimal;
+  currency: string;
+  exchange_rate: Decimal;
+  base_amount: Decimal;
+  requires_receipt: boolean;
+  status: ExpenseStatus;
+  journal_entry_id?: string;
+  remediation_actions?: ExpenseRemediationAction[];
+  submitted_at?: string;
+  submitted_by?: string;
+  approved_at?: string;
+  approved_by?: string;
+  rejected_at?: string;
+  rejected_by?: string;
+  rejection_reason?: string;
+  posted_at?: string;
+  posted_by?: string;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+}
+
+export interface ExpenseRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  entity_type?: string;
+  entity_id?: string;
+  expense_number?: string;
+  status?: string;
+  ui_path?: string;
+  cli_command?: string;
+}
+
+export interface ListExpensesFilter {
+  status?: ExpenseStatus | "";
+  limit?: number;
 }
 
 export interface TenantMembership {

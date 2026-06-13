@@ -8,6 +8,8 @@ import {
 	type DocumentRemediationAction,
 	type DocumentRetentionReview,
 	type DocumentReviewSummary,
+	type ExpenseClaim,
+	type ExpenseRemediationAction,
 	type JournalEntry,
 	type KMDDeclaration,
 	type KMDRemediationAction,
@@ -55,6 +57,7 @@ export type WorkspaceAssignmentSource =
 	| 'close'
 	| 'banking'
 	| 'documents'
+	| 'expenses'
 	| 'payroll'
 	| 'tsd'
 	| 'kmd';
@@ -100,6 +103,7 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 		periodCloseResult,
 		journalResult,
 		retentionResult,
+		expensesResult,
 		payrollResult,
 		tsdResult,
 		kmdResult,
@@ -110,6 +114,7 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 		api.listPeriodCloseEvents(tenant.id, 6),
 		api.listJournalEntries(tenant.id, 6),
 		api.getDocumentRetentionReview(tenant.id, { horizon_days: 30, include_missing: true }),
+		api.listExpenses(tenant.id, { limit: 100 }),
 		api.listPayrollRuns(tenant.id),
 		api.listTSD(tenant.id),
 		api.listKMD(tenant.id),
@@ -127,6 +132,7 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 		closeStatus: yearEndCloseResult.status === 'fulfilled' ? yearEndCloseResult.value : null,
 		bankExceptions,
 		retentionReview: retentionResult.status === 'fulfilled' ? retentionResult.value : null,
+		expenses: expensesResult.status === 'fulfilled' ? expensesResult.value : [],
 		payrollRuns: payrollResult.status === 'fulfilled' ? payrollResult.value : [],
 		tsdDeclarations: tsdResult.status === 'fulfilled' ? tsdResult.value : [],
 		kmdDeclarations: kmdResult.status === 'fulfilled' ? kmdResult.value : []
@@ -138,6 +144,7 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 	const assignmentErrorCount = [
 		yearEndCloseResult,
 		retentionResult,
+		expensesResult,
 		payrollResult,
 		tsdResult,
 		kmdResult
@@ -160,6 +167,7 @@ function buildWorkspaceAssignmentActions(input: {
 	closeStatus: YearEndCloseStatus | null;
 	bankExceptions: BankExceptionGroup[];
 	retentionReview: DocumentRetentionReview | null;
+	expenses: ExpenseClaim[];
 	payrollRuns: PayrollRun[];
 	tsdDeclarations: TSDDeclaration[];
 	kmdDeclarations: KMDDeclaration[];
@@ -175,6 +183,10 @@ function buildWorkspaceAssignmentActions(input: {
 			)
 		),
 		...normalizeRemediationActions('documents', input.retentionReview?.remediation_actions ?? []),
+		...normalizeRemediationActions(
+			'expenses',
+			input.expenses.flatMap((expense) => expense.remediation_actions ?? [])
+		),
 		...normalizeRemediationActions(
 			'payroll',
 			input.payrollRuns.flatMap((run) => run.remediation_actions ?? [])
@@ -197,6 +209,7 @@ function normalizeRemediationActions(
 	actions:
 		| BankRemediationAction[]
 		| DocumentRemediationAction[]
+		| ExpenseRemediationAction[]
 		| KMDRemediationAction[]
 		| PayrollRunRemediationAction[]
 		| TSDRemediationAction[]

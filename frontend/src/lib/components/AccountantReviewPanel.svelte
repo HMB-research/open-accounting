@@ -190,6 +190,8 @@
 				return m.dashboard_reviewAssignmentSourceBanking();
 			case 'documents':
 				return m.dashboard_reviewAssignmentSourceDocuments();
+			case 'expenses':
+				return m.dashboard_reviewAssignmentSourceExpenses();
 			case 'payroll':
 				return m.dashboard_reviewAssignmentSourcePayroll();
 			case 'tsd':
