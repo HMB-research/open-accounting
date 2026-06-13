@@ -3,6 +3,7 @@ package payroll
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -153,6 +154,183 @@ func TestImportEmployeesCSV_ReportsAliasValidationErrors(t *testing.T) {
 	assert.Empty(t, repo.Employees)
 }
 
+func TestImportEmployeesCSV_ReportsExtendedValidationErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "emp"})
+
+	result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", &ImportEmployeesRequest{
+		CSVContent: strings.Join([]string{
+			"first_name,last_name,start_date,employment_type,basic_exemption_amount,funded_pension_rate,end_date,is_active,base_salary,salary_effective_from",
+			",Missing,2026-01-01,FULL_TIME,,,,,,",
+			"Bad,Start,not-a-date,FULL_TIME,,,,,,",
+			"Bad,Type,2026-01-01,intern,,,,,,",
+			"Bad,BasicParse,2026-01-01,,not-a-decimal,,,,,",
+			"Bad,BasicNegative,2026-01-01,,-1,,,,,",
+			"Bad,PensionParse,2026-01-01,,,not-a-decimal,,,,",
+			"Bad,PensionNegative,2026-01-01,,,-0.01,,,,",
+			"Bad,EndParse,2026-01-01,,,,not-a-date,,,",
+			"Bad,Active,2026-01-01,,,,,maybe,,",
+			"Bad,SalaryParse,2026-01-01,,,,,,not-a-decimal,",
+			"Bad,SalaryEffectiveParse,2026-01-01,,,,,,1000,not-a-date",
+		}, "\n") + "\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 11, result.RowsProcessed)
+	assert.Zero(t, result.EmployeesCreated)
+	assert.Zero(t, result.SalariesCreated)
+	assert.Equal(t, 11, result.RowsSkipped)
+	require.Len(t, result.Errors, 11)
+
+	expectedMessages := []string{
+		"first_name and last_name are required",
+		"start_date must be in YYYY-MM-DD format",
+		`invalid employment_type "intern"`,
+		"invalid basic_exemption_amount",
+		"basic_exemption_amount must be zero or greater",
+		"invalid funded_pension_rate",
+		"funded_pension_rate must be between 0 and 1",
+		"end_date must be in YYYY-MM-DD format",
+		`invalid is_active "maybe"`,
+		"invalid base_salary",
+		"salary_effective_from must be in YYYY-MM-DD format",
+	}
+	for i, expected := range expectedMessages {
+		assert.Contains(t, result.Errors[i].Message, expected)
+	}
+	assert.Empty(t, repo.Employees)
+}
+
+func TestImportEmployeesCSV_SkipsEmailDuplicatesAndIgnoresUnknownHeaders(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["existing-1"] = &Employee{
+		ID:             "existing-1",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-001",
+		FirstName:      "Existing",
+		LastName:       "Person",
+		Email:          "Existing@Example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "emp"})
+
+	result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", &ImportEmployeesRequest{
+		CSVContent: "first_name,last_name,start_date,email,external_id,\n" +
+			"Duplicate,Email,2026-01-01,existing@example.com,legacy-1,ignored\n" +
+			"Valid,Worker,2026-01-02,valid@example.com,legacy-2,ignored\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Equal(t, 1, result.EmployeesCreated)
+	assert.Zero(t, result.SalariesCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `email "existing@example.com" already exists`)
+	require.Len(t, repo.Employees, 2)
+	assert.Equal(t, "Valid", repo.Employees["emp-1"].FirstName)
+}
+
+func TestImportEmployeesCSV_DerivesInactiveStatusFromPastEndDate(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "emp"})
+
+	result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", &ImportEmployeesRequest{
+		CSVContent: "first_name,last_name,start_date,end_date\n" +
+			"Mari,Past,2019-01-01,2020-01-01\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.EmployeesCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+	require.Len(t, repo.Employees, 1)
+	employee := repo.Employees["emp-1"]
+	require.NotNil(t, employee.EndDate)
+	assert.Equal(t, "2020-01-01", employee.EndDate.Format("2006-01-02"))
+	assert.False(t, employee.IsActive)
+}
+
+func TestImportEmployeesCSV_ReportsTransactionFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		setupRepo func(*MockRepository)
+		content   string
+		wantErr   string
+	}{
+		{
+			name: "create employee failure",
+			setupRepo: func(repo *MockRepository) {
+				repo.CreateEmployeeErr = errors.New("create failed")
+			},
+			content: "first_name,last_name,start_date\n" +
+				"Mari,Create,2026-01-01\n",
+			wantErr: "create employee: create failed",
+		},
+		{
+			name: "update employee failure",
+			setupRepo: func(repo *MockRepository) {
+				repo.UpdateEmployeeErr = errors.New("update failed")
+			},
+			content: "first_name,last_name,start_date,is_active\n" +
+				"Mari,Update,2026-01-01,false\n",
+			wantErr: "update employee: update failed",
+		},
+		{
+			name: "base salary failure",
+			setupRepo: func(repo *MockRepository) {
+				repo.CreateSalaryComponentErr = errors.New("salary failed")
+			},
+			content: "first_name,last_name,start_date,base_salary\n" +
+				"Mari,Salary,2026-01-01,2500\n",
+			wantErr: "set base salary: salary failed",
+		},
+		{
+			name: "transaction failure",
+			setupRepo: func(repo *MockRepository) {
+				repo.WithTransactionErr = errors.New("transaction unavailable")
+			},
+			content: "first_name,last_name,start_date\n" +
+				"Mari,Transaction,2026-01-01\n",
+			wantErr: "transaction unavailable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := NewMockRepository()
+			tt.setupRepo(repo)
+			service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "emp"})
+
+			result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", &ImportEmployeesRequest{
+				CSVContent: tt.content,
+			})
+			require.NoError(t, err)
+
+			assert.Equal(t, 1, result.RowsProcessed)
+			assert.Zero(t, result.EmployeesCreated)
+			assert.Zero(t, result.SalariesCreated)
+			assert.Equal(t, 1, result.RowsSkipped)
+			require.Len(t, result.Errors, 1)
+			assert.Contains(t, result.Errors[0].Message, tt.wantErr)
+		})
+	}
+}
+
 func TestImportEmployeesCSV_RejectsMissingHeaders(t *testing.T) {
 	t.Parallel()
 
@@ -190,6 +368,84 @@ func TestImportEmployeesCSV_RejectsNilOrEmptyRequest(t *testing.T) {
 			assert.Contains(t, err.Error(), "csv_content is required")
 		})
 	}
+}
+
+func TestImportEmployeesCSV_RejectsNoRowsAndRepositoryFailures(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("no nonblank employee rows", func(t *testing.T) {
+		service := NewServiceWithRepository(NewMockRepository(), &MockUUIDGenerator{prefix: "emp"})
+
+		result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", &ImportEmployeesRequest{
+			CSVContent: "first_name,last_name,start_date\n,,\n",
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "no employees found in CSV")
+	})
+
+	t.Run("list existing employees failure", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.ListEmployeesErr = errors.New("list failed")
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "emp"})
+
+		result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", &ImportEmployeesRequest{
+			CSVContent: "first_name,last_name,start_date\nMari,Maasikas,2026-01-01\n",
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "list existing employees: list failed")
+	})
+
+	t.Run("malformed header", func(t *testing.T) {
+		service := NewServiceWithRepository(NewMockRepository(), &MockUUIDGenerator{prefix: "emp"})
+
+		result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", &ImportEmployeesRequest{
+			CSVContent: "\"first_name,last_name,start_date\n",
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "parse csv header")
+	})
+
+	t.Run("malformed row", func(t *testing.T) {
+		service := NewServiceWithRepository(NewMockRepository(), &MockUUIDGenerator{prefix: "emp"})
+
+		result, err := service.ImportEmployeesCSV(ctx, "tenant_schema", "tenant-1", &ImportEmployeesRequest{
+			CSVContent: "first_name,last_name,start_date\n\"Mari,Maasikas,2026-01-01\n",
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "parse csv row 2")
+	})
+}
+
+func TestEmployeeImportNormalizationHelpers(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "legacy_column", canonicalEmployeeImportHeader(" Legacy_Column "))
+	assert.Empty(t, employeeImportNameStartKey(" ", " ", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+	assert.Empty(t, employeeImportNameStartKey("OnlyFirst", "", time.Time{}))
+	assert.Equal(
+		t,
+		"mari mets|2026-01-01",
+		employeeImportNameStartKey(" Mari ", " Mets ", time.Date(2026, 1, 1, 12, 30, 0, 0, time.Local)),
+	)
+}
+
+func TestParseEmployeeImportRowsRejectsEmptyContent(t *testing.T) {
+	t.Parallel()
+
+	rows, err := parseEmployeeImportRows("")
+	require.Error(t, err)
+	assert.Nil(t, rows)
+	assert.Contains(t, err.Error(), "csv_content is required")
 }
 
 func TestImportPayrollHistoryCSV_Success(t *testing.T) {
