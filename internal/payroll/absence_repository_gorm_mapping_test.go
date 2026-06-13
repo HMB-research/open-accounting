@@ -1,6 +1,7 @@
 package payroll
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -10,6 +11,154 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAbsenceGORMRepositoryNilDatabase(t *testing.T) {
+	repo := NewAbsenceGORMRepository(nil)
+	ctx := context.Background()
+	schemaName := "tenant_schema"
+	tenantID := "tenant-1"
+	balance := &LeaveBalance{
+		ID:            "balance-1",
+		TenantID:      tenantID,
+		EmployeeID:    "employee-1",
+		AbsenceTypeID: "absence-type-1",
+		Year:          2026,
+	}
+	record := &LeaveRecord{
+		ID:       "record-1",
+		TenantID: tenantID,
+	}
+
+	require.NotNil(t, repo)
+	assert.Nil(t, repo.db)
+
+	tableName, err := repo.tenantTableName(schemaName, "leave_balances")
+	require.NoError(t, err)
+	assert.Equal(t, `"tenant_schema"."leave_balances"`, tableName)
+
+	invalidTableName, err := repo.tenantTableName("tenant-schema", "leave_balances")
+	require.Error(t, err)
+	assert.Empty(t, invalidTableName)
+	assert.Contains(t, err.Error(), "invalid SQL identifier")
+
+	tests := []struct {
+		name string
+		run  func(t *testing.T) error
+	}{
+		{
+			name: "dbWithContext",
+			run: func(t *testing.T) error {
+				db, err := repo.dbWithContext(ctx)
+				assert.Nil(t, db)
+				return err
+			},
+		},
+		{
+			name: "tenantTable",
+			run: func(t *testing.T) error {
+				db, err := repo.tenantTable(ctx, schemaName, "absence_types")
+				assert.Nil(t, db)
+				return err
+			},
+		},
+		{
+			name: "ListEmployees",
+			run: func(t *testing.T) error {
+				employees, err := repo.ListEmployees(ctx, schemaName, tenantID, true)
+				assert.Nil(t, employees)
+				return err
+			},
+		},
+		{
+			name: "ListAbsenceTypes",
+			run: func(t *testing.T) error {
+				types, err := repo.ListAbsenceTypes(ctx, schemaName, tenantID, true)
+				assert.Nil(t, types)
+				return err
+			},
+		},
+		{
+			name: "GetAbsenceType",
+			run: func(t *testing.T) error {
+				absenceType, err := repo.GetAbsenceType(ctx, schemaName, tenantID, "absence-type-1")
+				assert.Nil(t, absenceType)
+				return err
+			},
+		},
+		{
+			name: "GetAbsenceTypeByCode",
+			run: func(t *testing.T) error {
+				absenceType, err := repo.GetAbsenceTypeByCode(ctx, schemaName, tenantID, "ANNUAL")
+				assert.Nil(t, absenceType)
+				return err
+			},
+		},
+		{
+			name: "GetLeaveBalance",
+			run: func(t *testing.T) error {
+				gotBalance, err := repo.GetLeaveBalance(ctx, schemaName, tenantID, balance.EmployeeID, balance.AbsenceTypeID, balance.Year)
+				assert.Nil(t, gotBalance)
+				return err
+			},
+		},
+		{
+			name: "ListLeaveBalances",
+			run: func(t *testing.T) error {
+				balances, err := repo.ListLeaveBalances(ctx, schemaName, tenantID, balance.EmployeeID, balance.Year)
+				assert.Nil(t, balances)
+				return err
+			},
+		},
+		{
+			name: "CreateLeaveBalance",
+			run: func(t *testing.T) error {
+				return repo.CreateLeaveBalance(ctx, schemaName, balance)
+			},
+		},
+		{
+			name: "UpdateLeaveBalance",
+			run: func(t *testing.T) error {
+				return repo.UpdateLeaveBalance(ctx, schemaName, balance)
+			},
+		},
+		{
+			name: "CreateLeaveRecord",
+			run: func(t *testing.T) error {
+				return repo.CreateLeaveRecord(ctx, schemaName, record)
+			},
+		},
+		{
+			name: "GetLeaveRecord",
+			run: func(t *testing.T) error {
+				gotRecord, err := repo.GetLeaveRecord(ctx, schemaName, tenantID, record.ID)
+				assert.Nil(t, gotRecord)
+				return err
+			},
+		},
+		{
+			name: "ListLeaveRecords",
+			run: func(t *testing.T) error {
+				records, err := repo.ListLeaveRecords(ctx, schemaName, tenantID, record.EmployeeID, 2026)
+				assert.Nil(t, records)
+				return err
+			},
+		},
+		{
+			name: "UpdateLeaveRecord",
+			run: func(t *testing.T) error {
+				return repo.UpdateLeaveRecord(ctx, schemaName, record)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run(t)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "absence repository database is not configured")
+		})
+	}
+}
 
 func TestAbsenceTypeModelMapping(t *testing.T) {
 	now := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
