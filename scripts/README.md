@@ -304,6 +304,24 @@ BACKUP_OFFSITE_RCLONE_REMOTE="b2:company-backups/open-accounting/prod" \
 
 The offsite sync helper copies selected `openaccounting_*.dump` files plus matching `.sha256` files and never deletes remote objects. Use `--backup FILE` to sync one specific dump, and `--dry-run` to verify the planned uploads from cron, systemd timers, or deployment automation.
 
+Generate systemd service and timer templates for the full backup chain:
+
+```bash
+scripts/db-backup-systemd-schedule.sh \
+  --output-dir ./deploy/systemd \
+  --scripts-dir /opt/open-accounting/scripts \
+  --env-file /etc/open-accounting/backup.env \
+  --dry-run
+
+go run ./cmd/oa ops backup schedule-systemd \
+  --output-dir ./deploy/systemd \
+  --scripts-dir /opt/open-accounting/scripts \
+  --env-file /etc/open-accounting/backup.env \
+  --dry-run
+```
+
+The generator writes units and timers for backup creation, offsite sync, backup health, and weekly restore drills. It also writes an example environment file showing the required variables; keep the real `DATABASE_URL`, `RESTORE_DATABASE_URL`, restore backup path, and offsite credentials in the host secret manager or a root-readable file outside the repository.
+
 ---
 
 ## Troubleshooting

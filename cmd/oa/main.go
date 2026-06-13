@@ -162,6 +162,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  ops backup health         Check backup freshness and checksum")
 	_, _ = fmt.Fprintln(a.stdout, "  ops backup offsite-sync   Sync backup dumps to offsite storage")
 	_, _ = fmt.Fprintln(a.stdout, "  ops backup restore-drill  Restore a backup into a drill database")
+	_, _ = fmt.Fprintln(a.stdout, "  ops backup schedule-systemd Generate systemd backup timers")
 	_, _ = fmt.Fprintln(a.stdout, "  demo status               Show demo data status")
 	_, _ = fmt.Fprintln(a.stdout, "  demo reset                Reset demo data")
 	_, _ = fmt.Fprintln(a.stdout, "  auth register             Register a user")
@@ -635,6 +636,40 @@ func (a *cliApp) runOpsBackup(ctx context.Context, args []string) error {
 		scriptArgs = appendBoolFlag(scriptArgs, "skip-checksum", *skipChecksum)
 		scriptArgs = appendBoolFlag(scriptArgs, "dry-run", *dryRun)
 		return a.runOperatorScript(ctx, "db-restore-drill.sh", scriptArgs)
+
+	case "schedule-systemd":
+		fs := flag.NewFlagSet("ops backup schedule-systemd", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		outputDir := fs.String("output-dir", "", "Directory for generated systemd unit files")
+		scriptsDir := fs.String("scripts-dir", "", "Directory containing backup scripts")
+		backupDir := fs.String("backup-dir", "", "Backup directory passed to backup scripts")
+		statusDir := fs.String("status-dir", "", "Prometheus textfile metrics directory")
+		envFile := fs.String("env-file", "", "systemd EnvironmentFile path")
+		retentionDays := fs.String("retention-days", "", "Backup retention in days")
+		maxAgeHours := fs.String("max-age-hours", "", "Maximum acceptable backup age in hours")
+		backupCalendar := fs.String("backup-calendar", "", "systemd OnCalendar value for backups")
+		offsiteCalendar := fs.String("offsite-calendar", "", "systemd OnCalendar value for offsite sync")
+		healthCalendar := fs.String("health-calendar", "", "systemd OnCalendar value for backup health")
+		restoreCalendar := fs.String("restore-calendar", "", "systemd OnCalendar value for restore drills")
+		dryRun := fs.Bool("dry-run", false, "Print generated file paths without writing")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		scriptArgs := make([]string, 0, 24)
+		scriptArgs = appendStringFlag(scriptArgs, "output-dir", *outputDir)
+		scriptArgs = appendStringFlag(scriptArgs, "scripts-dir", *scriptsDir)
+		scriptArgs = appendStringFlag(scriptArgs, "backup-dir", *backupDir)
+		scriptArgs = appendStringFlag(scriptArgs, "status-dir", *statusDir)
+		scriptArgs = appendStringFlag(scriptArgs, "env-file", *envFile)
+		scriptArgs = appendStringFlag(scriptArgs, "retention-days", *retentionDays)
+		scriptArgs = appendStringFlag(scriptArgs, "max-age-hours", *maxAgeHours)
+		scriptArgs = appendStringFlag(scriptArgs, "backup-calendar", *backupCalendar)
+		scriptArgs = appendStringFlag(scriptArgs, "offsite-calendar", *offsiteCalendar)
+		scriptArgs = appendStringFlag(scriptArgs, "health-calendar", *healthCalendar)
+		scriptArgs = appendStringFlag(scriptArgs, "restore-calendar", *restoreCalendar)
+		scriptArgs = appendBoolFlag(scriptArgs, "dry-run", *dryRun)
+		return a.runOperatorScript(ctx, "db-backup-systemd-schedule.sh", scriptArgs)
 
 	default:
 		return fmt.Errorf("unknown ops backup subcommand %q", args[0])

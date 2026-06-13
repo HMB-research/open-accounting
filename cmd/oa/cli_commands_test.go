@@ -654,6 +654,7 @@ func TestCLIOpsBackupCommands(t *testing.T) {
 		"db-backup-health.sh",
 		"db-backup-offsite-sync.sh",
 		"db-restore-drill.sh",
+		"db-backup-systemd-schedule.sh",
 	} {
 		writeTempOperatorScript(t, scriptDir, scriptName)
 	}
@@ -709,6 +710,25 @@ func TestCLIOpsBackupCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "db-restore-drill.sh --backup /backups/openaccounting.dump --restore-url postgres://drill --source-url postgres://prod --status-file /tmp/openaccounting_restore_drill.prom --allow-non-empty --skip-checksum --dry-run")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"ops", "backup", "schedule-systemd",
+		"--output-dir", "/tmp/openaccounting-systemd",
+		"--scripts-dir", "/opt/open-accounting/scripts",
+		"--backup-dir", "/backups",
+		"--status-dir", "/var/lib/node_exporter/textfile_collector",
+		"--env-file", "/etc/open-accounting/backup.env",
+		"--retention-days", "14",
+		"--max-age-hours", "30",
+		"--backup-calendar", "*-*-* 01:00:00",
+		"--offsite-calendar", "*-*-* 01:20:00",
+		"--health-calendar", "*-*-* 01:30:00",
+		"--restore-calendar", "Sun *-*-* 03:00:00",
+		"--dry-run",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "db-backup-systemd-schedule.sh --output-dir /tmp/openaccounting-systemd --scripts-dir /opt/open-accounting/scripts --backup-dir /backups --status-dir /var/lib/node_exporter/textfile_collector --env-file /etc/open-accounting/backup.env --retention-days 14 --max-age-hours 30 --backup-calendar *-*-* 01:00:00 --offsite-calendar *-*-* 01:20:00 --health-calendar *-*-* 01:30:00 --restore-calendar Sun *-*-* 03:00:00 --dry-run")
 }
 
 func TestCLIOpsBackupBranches(t *testing.T) {
@@ -726,6 +746,7 @@ func TestCLIOpsBackupBranches(t *testing.T) {
 		{name: "health invalid flag", args: []string{"ops", "backup", "health", "--bogus"}, want: "flag provided but not defined"},
 		{name: "offsite sync invalid flag", args: []string{"ops", "backup", "offsite-sync", "--bogus"}, want: "flag provided but not defined"},
 		{name: "restore drill invalid flag", args: []string{"ops", "backup", "restore-drill", "--bogus"}, want: "flag provided but not defined"},
+		{name: "schedule systemd invalid flag", args: []string{"ops", "backup", "schedule-systemd", "--bogus"}, want: "flag provided but not defined"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stdout.Reset()

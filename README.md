@@ -369,7 +369,7 @@ open-accounting/
 - [x] Optional approved evidence blockers for quote send and order confirmation
 - [x] Purchase-invoice evidence enforcement on send and email paths
 - [x] Reconciliation completion blocks bank transactions marked as requiring evidence until approved evidence is attached
-- [x] Backup creation, offsite sync, health-check, and restore-drill scripts for self-hosted operations
+- [x] Backup creation, offsite sync, health-check, restore-drill, and systemd schedule template scripts for self-hosted operations
 
 ### Still missing for reliable production use
 
