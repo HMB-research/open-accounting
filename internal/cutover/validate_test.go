@@ -1415,6 +1415,60 @@ func TestValidateBundleReportsHistoricalJournalInvalidSourceID(t *testing.T) {
 	assertValidationIssue(t, report, KindJournalEntries, "source_id", "source_id must be a valid UUID")
 }
 
+func TestValidateBundleReportsHistoricalJournalReferenceAndDateGroupIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit\n" +
+				",2026-05-30,1000,100,0\n" +
+				"JE-DATE,2026-05-30,1000,100,0\n" +
+				"JE-DATE,2026-05-31,4000,0,100\n" +
+				"JE-MISSING-DATE,,1000,100,0\n" +
+				"JE-MISSING-DATE,2026-05-30,4000,0,100\n" +
+				"JE-BAD-DATE,30/05/2026,1000,100,0\n" +
+				"JE-BAD-DATE,2026-05-30,4000,0,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 4, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 4)
+	assertValidationIssue(t, report, KindJournalEntries, "entry_reference", "entry_reference is required")
+	assertValidationIssue(t, report, KindJournalEntries, "entry_date", "entry_date must match the group date 2026-05-30")
+	assertValidationIssue(t, report, KindJournalEntries, "entry_date", "entry_date is required")
+	assertValidationIssue(t, report, KindJournalEntries, "entry_date", "entry_date must be in YYYY-MM-DD format")
+}
+
+func TestValidateBundleReportsHistoricalJournalShapeAndExchangeRateGroupIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit,exchange_rate\n" +
+				"JE-SINGLE,2026-05-30,1000,25,0,1\n" +
+				"JE-CREDIT-ONLY,2026-05-30,4000,0,50,1\n" +
+				"JE-CREDIT-ONLY,2026-05-30,4010,0,25,1\n" +
+				"JE-BAD-FX,2026-05-30,1000,100,0,-1\n" +
+				"JE-BAD-FX,2026-05-30,4000,0,100,1\n" +
+				"JE-FX-TEXT,2026-05-30,1000,100,0,abc\n" +
+				"JE-FX-TEXT,2026-05-30,4000,0,100,1\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 4, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 4)
+	assertValidationIssue(t, report, KindJournalEntries, "entry_reference", "must have at least two lines")
+	assertValidationIssue(t, report, KindJournalEntries, "entry_reference/debit/credit", "cannot have zero amounts")
+	assertValidationIssue(t, report, KindJournalEntries, "exchange_rate", "exchange_rate cannot be negative")
+	assertValidationIssue(t, report, KindJournalEntries, "exchange_rate", "invalid exchange_rate")
+}
+
 func TestValidateBundleAcceptsJournalImportAliasesAndExchangeRateBalance(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
