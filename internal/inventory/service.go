@@ -522,6 +522,10 @@ func (s *Service) inventoryValuationUnitCost(ctx context.Context, tenantID, sche
 		return fifoInventoryUnitCost(product, movements, tenantID, valuationQuantity), nil
 	}
 
+	return weightedAverageInventoryUnitCost(product, movements, tenantID), nil
+}
+
+func weightedAverageInventoryUnitCost(product Product, movements []InventoryMovement, tenantID string) decimal.Decimal {
 	totalQuantity := decimal.Zero
 	totalCost := decimal.Zero
 	for _, movement := range movements {
@@ -548,9 +552,9 @@ func (s *Service) inventoryValuationUnitCost(ctx context.Context, tenantID, sche
 	}
 
 	if totalQuantity.IsZero() {
-		return product.PurchasePrice, nil
+		return product.PurchasePrice
 	}
-	return totalCost.Div(totalQuantity), nil
+	return totalCost.Div(totalQuantity)
 }
 
 func fifoInventoryUnitCost(product Product, movements []InventoryMovement, tenantID string, quantity decimal.Decimal) decimal.Decimal {
@@ -854,6 +858,42 @@ func (r *InventoryLotReport) addLotLine(line InventoryLotLine) {
 	r.TotalValue = r.TotalValue.Add(line.InventoryValue)
 }
 
+func transferInventoryUnitCost(product Product, movements []InventoryMovement, tenantID, sourceWarehouseID, lotNumber, serialNumber, expiryDate string, quantity decimal.Decimal) (decimal.Decimal, error) {
+	if hasInventoryTrackingMetadata(lotNumber, serialNumber, expiryDate) {
+		position := inventoryLotPositionFromMovements(product, movements, tenantID, sourceWarehouseID, lotNumber, serialNumber, expiryDate)
+		if position == nil || position.line.Quantity.LessThan(quantity) {
+			return decimal.Zero, fmt.Errorf("insufficient tracked lot stock in source warehouse")
+		}
+		if position.costQuantity.GreaterThan(decimal.Zero) {
+			return position.costTotal.Div(position.costQuantity), nil
+		}
+	}
+
+	return weightedAverageInventoryUnitCost(product, movements, tenantID), nil
+}
+
+func hasInventoryTrackingMetadata(lotNumber, serialNumber, expiryDate string) bool {
+	return strings.TrimSpace(lotNumber) != "" || strings.TrimSpace(serialNumber) != "" || strings.TrimSpace(expiryDate) != ""
+}
+
+func inventoryLotPositionFromMovements(product Product, movements []InventoryMovement, tenantID, warehouseID, lotNumber, serialNumber, expiryDate string) *inventoryLotAccumulator {
+	positions := make(map[inventoryLotKey]*inventoryLotAccumulator)
+	for _, movement := range movements {
+		if movement.TenantID != tenantID {
+			continue
+		}
+		addInventoryLotReportMovement(positions, product, nil, movement, warehouseID)
+	}
+
+	return positions[inventoryLotKey{
+		productID:    product.ID,
+		warehouseID:  strings.TrimSpace(warehouseID),
+		lotNumber:    strings.TrimSpace(lotNumber),
+		serialNumber: strings.TrimSpace(serialNumber),
+		expiryDate:   strings.TrimSpace(expiryDate),
+	}]
+}
+
 // AdjustStock adjusts stock level for a product
 func (s *Service) AdjustStock(ctx context.Context, tenantID, schemaName string, req *AdjustStockRequest) (*InventoryMovement, error) {
 	quantity, err := decimal.NewFromString(req.Quantity)
@@ -997,7 +1037,8 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 	if err != nil {
 		return err
 	}
-	if _, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID); err != nil {
+	product, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID)
+	if err != nil {
 		return fmt.Errorf("get product: %w", err)
 	}
 	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, fromWarehouseID); err != nil {
@@ -1019,6 +1060,16 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 		return fmt.Errorf("insufficient available stock in source warehouse")
 	}
 
+	movements, err := s.repo.ListMovements(ctx, schemaName, tenantID, productID)
+	if err != nil {
+		return fmt.Errorf("list movements for transfer costing: %w", err)
+	}
+	unitCost, err := transferInventoryUnitCost(*product, movements, tenantID, fromWarehouseID, lotNumber, serialNumber, expiryDate, quantity)
+	if err != nil {
+		return err
+	}
+	totalCost := quantity.Mul(unitCost)
+
 	outMovement := &InventoryMovement{
 		ID:            uuid.New().String(),
 		TenantID:      tenantID,
@@ -1026,8 +1077,8 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 		WarehouseID:   fromWarehouseID,
 		MovementType:  MovementTypeOut,
 		Quantity:      quantity,
-		UnitCost:      decimal.Zero,
-		TotalCost:     decimal.Zero,
+		UnitCost:      unitCost,
+		TotalCost:     totalCost,
 		LotNumber:     lotNumber,
 		SerialNumber:  serialNumber,
 		ExpiryDate:    expiryDate,
@@ -1050,8 +1101,8 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 		WarehouseID:  toWarehouseID,
 		MovementType: MovementTypeIn,
 		Quantity:     quantity,
-		UnitCost:     decimal.Zero,
-		TotalCost:    decimal.Zero,
+		UnitCost:     unitCost,
+		TotalCost:    totalCost,
 		LotNumber:    lotNumber,
 		SerialNumber: serialNumber,
 		ExpiryDate:   expiryDate,

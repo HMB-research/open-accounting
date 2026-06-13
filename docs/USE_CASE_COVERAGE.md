@@ -17,7 +17,7 @@ Status values:
 
 ## Current Evidence Baseline
 
-- PR #62 on `feat/payroll-history-import` was green at commit `bb45d24` in CI run `27464554969`.
+- PR #62 on `feat/payroll-history-import` was green at commit `dbbe184` in CI run `27464796537`.
 - `make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.
 - `make test-backend-coverage` enforces the same CLI coverage from the backend coverage gate.
 - `go test -timeout=3m ./docs -count=1` keeps the documentation status and route coverage checks active.
@@ -35,7 +35,7 @@ Status values:
 | Payroll, leave, and TSD | `Verified` | Employees, salary components, payroll runs, payslips, payroll history import, leave balances, leave records, TSD declarations, TSD exports, and TSD history import. | `go test -tags=integration ./internal/payroll -count=1`, backend tests, CLI coverage gates, docs tests, and PR #62 CI. | Automatic e-MTA submission remains blocked by external certification/integration work. |
 | KMD, VAT, INF, and EU OSS | `Verified` | KMD generation/export, KMD INF A/B, quarterly EU VAT OSS reporting, KMD history import, and migration preflight validation for KMD history rows. | Backend tests, migration validator tests, API docs, CLI docs, and CI. | Direct e-MTA submission remains blocked. |
 | Quotes, orders, recurring invoices, expenses, and fixed assets | `Verified` | Quote/order import, PDF download, email delivery, quote-to-invoice, order-to-invoice, recurring invoice template import, expense import and receipt-backed approval/posting, fixed-asset import, depreciation posting, and disposal posting. | Focused backend tests, seeded demo E2E, API docs, CLI docs, and PR #62 CI. | Accountant-grade polish is still limited in some workflow surfaces. |
-| Inventory and warehouses | `Partial` | Product/category/warehouse CRUD, imports, stock adjustments, stock import with lot metadata, serialized stock import guards, warehouse stock levels, transfers, reservations, pick lists, lot reports, and standard-cost/weighted-average/FIFO valuation. | Backend tests, integration gates, API docs, CLI docs, and migration validator tests. | Full lot-ledger allocation and lot-specific costing layers remain thin. |
+| Inventory and warehouses | `Partial` | Product/category/warehouse CRUD, imports, stock adjustments, stock import with lot metadata, serialized stock import guards, warehouse stock levels, cost-preserving lot/serial/expiry transfers with source-lot quantity validation, reservations, pick lists, lot reports, and standard-cost/weighted-average/FIFO valuation. | Backend tests, integration gates, API docs, CLI docs, and migration validator tests. | Deeper per-lot issue allocation, reservation allocation, and accounting-layer costing remain thin. |
 | Historical migration and cutover | `Partial` | Chart of accounts, contacts, employees, invoices, quotes, orders, recurring templates, payments, expenses, e-invoice XML, banking, cost centers, cost allocations, product categories, warehouses, products, stock, fixed assets, payroll history, leave balances, TSD/KMD history, opening balances, and historical journals. | Migration bundle validator tests, payment bank-account and provider journal-line/cost-allocation cross-reference tests, Merit/SmartAccounts payment, bank-data, expense, cost-allocation, inventory, fixed-asset, and KMD-history alias tests, import tests, CLI coverage gates, API docs, CLI docs, and PR #62 CI. | Full incumbent-system cutover paths, broader vendor mapping presets, and deeper cross-file validation remain open. |
 | Document attachments, retention, and evidence policy | `Partial` | Upload/list/download/delete/review/approve/reject, retention metadata, review queues, retention review, retention reminder actions, scheduled retention reminder digest delivery with configurable retry/escalation controls, evidence policy checks, and workflow blockers for reconciliation, assets, purchase invoices, journal entries, payments, expenses, leave records, and close packs. | Backend tests, scheduler tests, API docs, CLI docs, and docs status checks. | Broader workflow-level policy enforcement remains incomplete. |
 | Close, reopen, year-end, and carry-forward controls | `Partial` | Period close/reopen, audit history, fiscal-year reviewer sign-off, close packs, approved close-pack evidence, ZIP export, carry-forward posting, and carry-forward reversal. | Backend tests, API docs, CLI docs, and status docs. | More close exception reporting and operator guidance are still needed. |
@@ -70,10 +70,11 @@ gates that protect the changed surface.
 The following items still prevent the project from honestly claiming fully
 working, production-ready accounting software:
 
-1. Complete the remaining historical cutover paths and vendor-specific mapping presets.
-2. Expand document policy enforcement beyond the current workflow blockers and scheduled retention reminder delivery controls.
-3. Add deeper accountant workspace exception actions for tax, payroll, close, document, and migration follow-up.
-4. Finish auth administration and operational hardening for accounting-firm pilots.
-5. Harden provider-specific backup credential provisioning and host-specific timer enablement.
-6. Keep replacing uncovered migration validator branches with focused tests until the use-case coverage evidence is no longer mostly indirect.
-7. Keep externally blocked direct bank, e-invoice, OCR, SEPA, and authority filing tracks documented separately from locally implementable work.
+1. Deepen inventory lot allocation beyond transfer costing into per-lot issue allocation, reservations, and accounting-layer costing.
+2. Complete the remaining historical cutover paths and vendor-specific mapping presets.
+3. Expand document policy enforcement beyond the current workflow blockers and scheduled retention reminder delivery controls.
+4. Add deeper accountant workspace exception actions for tax, payroll, close, document, and migration follow-up.
+5. Finish auth administration and operational hardening for accounting-firm pilots.
+6. Harden provider-specific backup credential provisioning and host-specific timer enablement.
+7. Keep replacing uncovered migration validator branches with focused tests until the use-case coverage evidence is no longer mostly indirect.
+8. Keep externally blocked direct bank, e-invoice, OCR, SEPA, and authority filing tracks documented separately from locally implementable work.

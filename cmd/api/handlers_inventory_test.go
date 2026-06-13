@@ -1105,10 +1105,12 @@ func TestTransferStock(t *testing.T) {
 	}
 
 	repo.products[apiInventoryStockProductID] = &inventory.Product{
-		ID:          apiInventoryStockProductID,
-		TenantID:    "tenant-1",
-		Name:        "Product A",
-		ProductType: inventory.ProductTypeGoods,
+		ID:             apiInventoryStockProductID,
+		TenantID:       "tenant-1",
+		Name:           "Product A",
+		ProductType:    inventory.ProductTypeGoods,
+		PurchasePrice:  decimal.RequireFromString("7.00"),
+		TrackInventory: true,
 	}
 	repo.warehouses[apiInventoryStockWarehouseID] = &inventory.Warehouse{ID: apiInventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main"}
 	repo.warehouses[apiInventoryStockWarehouseID2] = &inventory.Warehouse{ID: apiInventoryStockWarehouseID2, TenantID: "tenant-1", Name: "Overflow"}
@@ -1129,6 +1131,21 @@ func TestTransferStock(t *testing.T) {
 		Quantity:     decimal.Zero,
 		ReservedQty:  decimal.Zero,
 		AvailableQty: decimal.Zero,
+	}
+	repo.movements[apiInventoryStockProductID] = []inventory.InventoryMovement{
+		{
+			ID:           "mov-lot-receipt",
+			TenantID:     "tenant-1",
+			ProductID:    apiInventoryStockProductID,
+			WarehouseID:  apiInventoryStockWarehouseID,
+			MovementType: inventory.MovementTypeIn,
+			Quantity:     decimal.NewFromInt(9),
+			UnitCost:     decimal.RequireFromString("8.25"),
+			TotalCost:    decimal.RequireFromString("74.25"),
+			LotNumber:    "LOT-2026-01",
+			SerialNumber: "SN-001",
+			ExpiryDate:   "2027-01-31",
+		},
 	}
 
 	body := map[string]interface{}{
@@ -1152,13 +1169,16 @@ func TestTransferStock(t *testing.T) {
 	assert.True(t, repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID)].AvailableQty.Equal(decimal.NewFromInt(4)))
 	assert.True(t, repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID2)].Quantity.Equal(decimal.NewFromInt(4)))
 	assert.True(t, repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID2)].AvailableQty.Equal(decimal.NewFromInt(4)))
-	require.Len(t, repo.movements[apiInventoryStockProductID], 2)
-	assert.Equal(t, inventory.MovementTypeOut, repo.movements[apiInventoryStockProductID][0].MovementType)
-	assert.Equal(t, inventory.MovementTypeIn, repo.movements[apiInventoryStockProductID][1].MovementType)
-	for _, movement := range repo.movements[apiInventoryStockProductID] {
+	require.Len(t, repo.movements[apiInventoryStockProductID], 3)
+	transferMovements := repo.movements[apiInventoryStockProductID][1:]
+	assert.Equal(t, inventory.MovementTypeOut, transferMovements[0].MovementType)
+	assert.Equal(t, inventory.MovementTypeIn, transferMovements[1].MovementType)
+	for _, movement := range transferMovements {
 		assert.Equal(t, "LOT-2026-01", movement.LotNumber)
 		assert.Equal(t, "SN-001", movement.SerialNumber)
 		assert.Equal(t, "2027-01-31", movement.ExpiryDate)
+		assert.True(t, movement.UnitCost.Equal(decimal.RequireFromString("8.25")))
+		assert.True(t, movement.TotalCost.Equal(decimal.RequireFromString("33.00")))
 	}
 }
 
