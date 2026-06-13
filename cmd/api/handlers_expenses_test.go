@@ -59,6 +59,7 @@ func TestExpenseHandlersLifecycle(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&created))
 	assert.Equal(t, expenses.StatusDraft, created.Status)
 	assert.True(t, created.RequiresReceipt)
+	assert.Equal(t, []string{"expense_receipt_required", "expense_submit_for_approval"}, expenseHandlerRemediationCodes(created.RemediationActions))
 
 	req = withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/expenses/"+created.ID, nil, claims), map[string]string{
 		"tenantID":  "tenant-1",
@@ -71,6 +72,7 @@ func TestExpenseHandlersLifecycle(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&fetched))
 	assert.Equal(t, created.ID, fetched.ID)
 	assert.Equal(t, "Office Store", fetched.Merchant)
+	assert.Equal(t, expenseHandlerRemediationCodes(created.RemediationActions), expenseHandlerRemediationCodes(fetched.RemediationActions))
 
 	req = withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/expenses/missing", nil, claims), map[string]string{
 		"tenantID":  "tenant-1",
@@ -87,6 +89,7 @@ func TestExpenseHandlersLifecycle(t *testing.T) {
 	var listed []expenses.Expense
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&listed))
 	require.Len(t, listed, 1)
+	assert.Equal(t, []string{"expense_receipt_required", "expense_submit_for_approval"}, expenseHandlerRemediationCodes(listed[0].RemediationActions))
 
 	req = withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/expenses/"+created.ID+"/submit", nil, claims), map[string]string{
 		"tenantID":  "tenant-1",
@@ -95,6 +98,9 @@ func TestExpenseHandlersLifecycle(t *testing.T) {
 	w = httptest.NewRecorder()
 	h.SubmitExpense(w, req)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var submitted expenses.Expense
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&submitted))
+	assert.Equal(t, []string{"expense_receipt_approval_required", "expense_approve_or_reject"}, expenseHandlerRemediationCodes(submitted.RemediationActions))
 
 	req = withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/expenses/"+created.ID+"/approve", nil, claims), map[string]string{
 		"tenantID":  "tenant-1",
@@ -115,6 +121,7 @@ func TestExpenseHandlersLifecycle(t *testing.T) {
 	var approved expenses.Expense
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&approved))
 	assert.Equal(t, expenses.StatusApproved, approved.Status)
+	assert.Equal(t, []string{"expense_post_to_ledger"}, expenseHandlerRemediationCodes(approved.RemediationActions))
 
 	req = withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/expenses/"+created.ID+"/post", nil, claims), map[string]string{
 		"tenantID":  "tenant-1",
@@ -127,6 +134,7 @@ func TestExpenseHandlersLifecycle(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&posted))
 	assert.Equal(t, expenses.StatusPosted, posted.Status)
 	require.NotNil(t, posted.JournalEntryID)
+	assert.Equal(t, []string{"expense_posted_archive"}, expenseHandlerRemediationCodes(posted.RemediationActions))
 }
 
 func TestExpenseHandlersReject(t *testing.T) {
@@ -167,6 +175,7 @@ func TestExpenseHandlersReject(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&rejected))
 	assert.Equal(t, expenses.StatusRejected, rejected.Status)
 	assert.Equal(t, "Need project code", rejected.RejectionReason)
+	assert.Equal(t, []string{"expense_rejection_review"}, expenseHandlerRemediationCodes(rejected.RemediationActions))
 }
 
 func TestExpenseHandlersImport(t *testing.T) {
@@ -278,4 +287,12 @@ func (e *expenseHandlerEvidence) EvaluateEvidencePolicy(_ context.Context, _, _ 
 
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+func expenseHandlerRemediationCodes(actions []expenses.ExpenseRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }

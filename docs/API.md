@@ -2052,7 +2052,7 @@ GET /tenants/{tenantId}/expenses?status=SUBMITTED&limit=50
 Authorization: Bearer <token>
 ```
 
-Statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, and `POSTED`.
+Statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, and `POSTED`. Expense responses include `remediation_actions` so accountant queues can surface receipt, approval, rejection, posting, and archive follow-up without parsing status text. Each action includes `code`, `severity`, `scope`, `owner_role`, `message`, `action`, expense context, `ui_path`, and a suggested `cli_command`.
 
 ### Create Expense
 
@@ -2109,7 +2109,7 @@ document_type=receipt
 file=<binary>
 ```
 
-Then approve the document with `POST /tenants/{tenantId}/documents/{documentId}/review`. Expenses with `requires_receipt=true` reject approval and posting until at least one linked `receipt` document is approved.
+Then approve the document with `POST /tenants/{tenantId}/documents/{documentId}/review`. Expenses with `requires_receipt=true` reject approval and posting until at least one linked `receipt` document is approved. Receipt-backed draft and submitted expense responses include remediation actions such as `expense_receipt_required` and `expense_receipt_approval_required`, pointing operators to document upload or review-queue commands.
 
 ### Lifecycle
 
@@ -2131,6 +2131,14 @@ Reject payloads require a reason:
 ```
 
 Posting creates and posts a balanced journal entry with source type `EXPENSE`, using the expense account as the debit line and the payment/reimbursement account as the credit line.
+
+Lifecycle responses expose status-specific remediation actions:
+
+- `expense_submit_for_approval` for draft claims
+- `expense_approve_or_reject` for submitted claims
+- `expense_post_to_ledger` for approved claims
+- `expense_rejection_review` for rejected claims
+- `expense_posted_archive` for posted claims
 
 ---
 

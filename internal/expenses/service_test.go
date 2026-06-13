@@ -149,6 +149,130 @@ func TestServiceGetExpenseValidatesID(t *testing.T) {
 	assert.Contains(t, err.Error(), "expense id is required")
 }
 
+func TestServiceExpenseRemediationHydration(t *testing.T) {
+	repo := newMemoryRepository()
+	service := NewServiceWithRepository(repo, newFakeAccountingPoster(), &fakeEvidenceEvaluator{compliant: true})
+	service.now = fixedExpenseNow
+
+	expense := createTestExpense(t, service)
+	assert.Equal(t, []string{"expense_receipt_required", "expense_submit_for_approval"}, expenseRemediationCodes(expense.RemediationActions))
+
+	fetched, err := service.GetExpense(context.Background(), "tenant_acme", "tenant-1", expense.ID)
+	require.NoError(t, err)
+	assert.Equal(t, expenseRemediationCodes(expense.RemediationActions), expenseRemediationCodes(fetched.RemediationActions))
+
+	submitted, err := service.SubmitExpense(context.Background(), "tenant_acme", "tenant-1", expense.ID, &ExpenseActionRequest{UserID: "user-1"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"expense_receipt_approval_required", "expense_approve_or_reject"}, expenseRemediationCodes(submitted.RemediationActions))
+
+	listed, err := service.ListExpenses(context.Background(), "tenant_acme", "tenant-1", ListExpensesFilter{Status: StatusSubmitted})
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	assert.Equal(t, []string{"expense_receipt_approval_required", "expense_approve_or_reject"}, expenseRemediationCodes(listed[0].RemediationActions))
+
+	approved, err := service.ApproveExpense(context.Background(), "tenant_acme", "tenant-1", expense.ID, &ExpenseActionRequest{UserID: "user-2"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"expense_post_to_ledger"}, expenseRemediationCodes(approved.RemediationActions))
+
+	posted, err := service.PostExpense(context.Background(), "tenant_acme", "tenant-1", expense.ID, &ExpenseActionRequest{UserID: "user-3"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"expense_posted_archive"}, expenseRemediationCodes(posted.RemediationActions))
+}
+
+func TestBuildExpenseRemediationActions(t *testing.T) {
+	tests := []struct {
+		name string
+		exp  *Expense
+		want []string
+	}{
+		{
+			name: "draft receipt-backed expense",
+			exp: &Expense{
+				ID:              "exp-1",
+				ExpenseNumber:   "EXP-00001",
+				Status:          StatusDraft,
+				RequiresReceipt: true,
+			},
+			want: []string{"expense_receipt_required", "expense_submit_for_approval"},
+		},
+		{
+			name: "draft receiptless expense",
+			exp: &Expense{
+				ID:              "exp-2",
+				ExpenseNumber:   "EXP-00002",
+				Status:          StatusDraft,
+				RequiresReceipt: false,
+			},
+			want: []string{"expense_submit_for_approval"},
+		},
+		{
+			name: "submitted receipt-backed expense",
+			exp: &Expense{
+				ID:              "exp-3",
+				ExpenseNumber:   "EXP-00003",
+				Status:          StatusSubmitted,
+				RequiresReceipt: true,
+			},
+			want: []string{"expense_receipt_approval_required", "expense_approve_or_reject"},
+		},
+		{
+			name: "approved expense",
+			exp: &Expense{
+				ID:            "exp-4",
+				ExpenseNumber: "EXP-00004",
+				Status:        StatusApproved,
+			},
+			want: []string{"expense_post_to_ledger"},
+		},
+		{
+			name: "rejected expense",
+			exp: &Expense{
+				ID:            "exp-5",
+				ExpenseNumber: "EXP-00005",
+				Status:        StatusRejected,
+			},
+			want: []string{"expense_rejection_review"},
+		},
+		{
+			name: "posted expense",
+			exp: &Expense{
+				ID:            "exp-6",
+				ExpenseNumber: "EXP-00006",
+				Status:        StatusPosted,
+			},
+			want: []string{"expense_posted_archive"},
+		},
+		{
+			name: "unsupported status",
+			exp: &Expense{
+				ID:            "exp-7",
+				ExpenseNumber: "EXP-00007",
+				Status:        ExpenseStatus("ARCHIVED"),
+			},
+			want: []string{"expense_status_review"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actions := BuildExpenseRemediationActions(tt.exp)
+
+			assert.Equal(t, tt.want, expenseRemediationCodes(actions))
+			for _, action := range actions {
+				assert.Equal(t, "expenses", action.Scope)
+				assert.Equal(t, "accountant", action.OwnerRole)
+				assert.Equal(t, "expense", action.EntityType)
+				assert.NotEmpty(t, action.Message)
+				assert.NotEmpty(t, action.Action)
+				assert.NotEmpty(t, action.CLICommand)
+				assert.Contains(t, action.UIPath, "/expenses")
+			}
+		})
+	}
+
+	assert.Nil(t, BuildExpenseRemediationActions(nil))
+}
+
 func TestServicePostExpenseCreatesAndPostsBalancedJournalEntry(t *testing.T) {
 	repo := newMemoryRepository()
 	accountingSvc := newFakeAccountingPoster()
@@ -501,4 +625,12 @@ func (f *fakeEvidenceEvaluator) EvaluateEvidencePolicy(_ context.Context, _, _ s
 		EntityID:   req.EntityIDs[0],
 		Compliant:  f.compliant,
 	}}, nil
+}
+
+func expenseRemediationCodes(actions []ExpenseRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }

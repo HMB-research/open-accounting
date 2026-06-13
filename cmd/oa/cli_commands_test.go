@@ -8571,6 +8571,18 @@ func cliExpensePayload(status string) map[string]any {
 		"created_at":         "2026-05-30T12:00:00Z",
 		"created_by":         "user-1",
 		"updated_at":         "2026-05-30T12:00:00Z",
+		"remediation_actions": []map[string]any{{
+			"code":        cliExpenseRemediationCode(status),
+			"severity":    "ACTION",
+			"scope":       "expenses",
+			"owner_role":  "accountant",
+			"message":     "Expense follow-up is required.",
+			"action":      "Review the expense workflow state.",
+			"entity_type": "expense",
+			"entity_id":   "expense-1",
+			"ui_path":     "/expenses?expense_id=expense-1",
+			"cli_command": "oa expenses get --id expense-1",
+		}},
 	}
 	if status == "POSTED" {
 		payload["journal_entry_id"] = "je-1"
@@ -8579,6 +8591,21 @@ func cliExpensePayload(status string) map[string]any {
 		payload["rejection_reason"] = "Need project code"
 	}
 	return payload
+}
+
+func cliExpenseRemediationCode(status string) string {
+	switch status {
+	case "SUBMITTED":
+		return "expense_approve_or_reject"
+	case "APPROVED":
+		return "expense_post_to_ledger"
+	case "REJECTED":
+		return "expense_rejection_review"
+	case "POSTED":
+		return "expense_posted_archive"
+	default:
+		return "expense_submit_for_approval"
+	}
 }
 
 func TestCLIExpenseCommands(t *testing.T) {
@@ -8651,6 +8678,7 @@ func TestCLIExpenseCommands(t *testing.T) {
 	err := app.run(context.Background(), []string{"expenses", "list", "--status", "draft", "--limit", "25", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"expense_number": "EXP-00001"`)
+	assert.Contains(t, stdout.String(), `"remediation_actions": [`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
@@ -8677,6 +8705,8 @@ func TestCLIExpenseCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"expenses", "get", "--id", "expense-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Expense EXP-00001 Office Store")
+	assert.Contains(t, stdout.String(), "Expense remediation actions")
+	assert.Contains(t, stdout.String(), "expense_approve_or_reject")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"expenses", "submit", "--id", "expense-1"})
@@ -8838,6 +8868,7 @@ func TestCLIExpenseBranches(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"expense_number": "EXP-00001"`)
 	assert.Contains(t, stdout.String(), `"status": "DRAFT"`)
+	assert.Contains(t, stdout.String(), `"code": "expense_submit_for_approval"`)
 
 	stdout.Reset()
 	err = app.run(ctx, []string{"expenses", "import", "--file", importFile, "--json"})
@@ -8850,17 +8881,20 @@ func TestCLIExpenseBranches(t *testing.T) {
 	err = app.run(ctx, []string{"expenses", "get", "--id", " expense-1 ", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "APPROVED"`)
+	assert.Contains(t, stdout.String(), `"code": "expense_post_to_ledger"`)
 
 	stdout.Reset()
 	err = app.run(ctx, []string{"expenses", "submit", "--id", " expense-1 ", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "SUBMITTED"`)
+	assert.Contains(t, stdout.String(), `"code": "expense_approve_or_reject"`)
 
 	stdout.Reset()
 	err = app.run(ctx, []string{"expenses", "reject", "--id", " expense-1 ", "--reason", " Need project code ", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "REJECTED"`)
 	assert.Contains(t, stdout.String(), `"rejection_reason": "Need project code"`)
+	assert.Contains(t, stdout.String(), `"code": "expense_rejection_review"`)
 }
 
 func TestCLIExpenseAPIErrorBranches(t *testing.T) {
