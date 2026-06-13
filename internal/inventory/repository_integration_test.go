@@ -4,9 +4,11 @@ package inventory
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -832,6 +834,191 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 	}
 	if movements[0].SourceID != sourceID {
 		t.Errorf("expected source ID to round-trip, got %q", movements[0].SourceID)
+	}
+}
+
+func TestRepository_WithInventoryLedgerTransactionRollsBackInventoryAndLedger(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewGORMRepository(pool)
+	ctx := context.Background()
+	accountingSvc := accounting.NewService(pool)
+	accounts, err := accountingSvc.ListAccounts(ctx, tenant.SchemaName, tenant.ID, false)
+	if err != nil {
+		t.Fatalf("ListAccounts failed: %v", err)
+	}
+	accountIDByCode := make(map[string]string, len(accounts))
+	for _, account := range accounts {
+		accountIDByCode[account.Code] = account.ID
+	}
+	inventoryAccountID := accountIDByCode["1300"]
+	cogsAccountID := accountIDByCode["5100"]
+	if inventoryAccountID == "" || cogsAccountID == "" {
+		t.Fatalf("expected default inventory and COGS accounts, got inventory=%q cogs=%q", inventoryAccountID, cogsAccountID)
+	}
+
+	product := &Product{
+		ID:                 uuid.New().String(),
+		TenantID:           tenant.ID,
+		Code:               "PRD-TX-ISSUE",
+		Name:               "Transactional Issue Product",
+		ProductType:        ProductTypeGoods,
+		Unit:               "pcs",
+		PurchasePrice:      decimal.RequireFromString("6.00"),
+		SalesPrice:         decimal.RequireFromString("10.00"),
+		VATRate:            decimal.RequireFromString("22.00"),
+		CurrentStock:       decimal.RequireFromString("5.00"),
+		InventoryAccountID: inventoryAccountID,
+		TrackInventory:     true,
+		IsActive:           true,
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	if err := repo.CreateProduct(ctx, tenant.SchemaName, product); err != nil {
+		t.Fatalf("CreateProduct failed: %v", err)
+	}
+	warehouse := &Warehouse{
+		ID:        uuid.New().String(),
+		TenantID:  tenant.ID,
+		Code:      "WH-TX-ISSUE",
+		Name:      "Transactional Issue Warehouse",
+		IsActive:  true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := repo.CreateWarehouse(ctx, tenant.SchemaName, warehouse); err != nil {
+		t.Fatalf("CreateWarehouse failed: %v", err)
+	}
+	level := &StockLevel{
+		ID:           uuid.New().String(),
+		TenantID:     tenant.ID,
+		ProductID:    product.ID,
+		WarehouseID:  warehouse.ID,
+		Quantity:     decimal.RequireFromString("5.00"),
+		AvailableQty: decimal.RequireFromString("5.00"),
+		LastUpdated:  time.Now(),
+	}
+	if err := repo.UpsertStockLevel(ctx, tenant.SchemaName, level); err != nil {
+		t.Fatalf("UpsertStockLevel failed: %v", err)
+	}
+	userID := uuid.New().String()
+	inbound := &InventoryMovement{
+		ID:           uuid.New().String(),
+		TenantID:     tenant.ID,
+		ProductID:    product.ID,
+		WarehouseID:  warehouse.ID,
+		MovementType: MovementTypeIn,
+		Quantity:     decimal.RequireFromString("5.00"),
+		UnitCost:     decimal.RequireFromString("6.00"),
+		TotalCost:    decimal.RequireFromString("30.00"),
+		Reference:    "Opening stock",
+		MovementDate: time.Now(),
+		CreatedAt:    time.Now(),
+		CreatedBy:    userID,
+	}
+	if err := repo.CreateMovement(ctx, tenant.SchemaName, inbound); err != nil {
+		t.Fatalf("CreateMovement failed: %v", err)
+	}
+
+	sourceID := uuid.New().String()
+	transactioner, ok := repo.(inventoryLedgerTransactioner)
+	if !ok {
+		t.Fatal("expected GORM inventory repository to support inventory ledger transactions")
+	}
+	err = transactioner.WithInventoryLedgerTransaction(ctx, accountingSvc, func(txRepo Repository, ledger accountingPoster) error {
+		outbound := &InventoryMovement{
+			ID:           uuid.New().String(),
+			TenantID:     tenant.ID,
+			ProductID:    product.ID,
+			WarehouseID:  warehouse.ID,
+			MovementType: MovementTypeOut,
+			Quantity:     decimal.RequireFromString("2.00"),
+			UnitCost:     decimal.RequireFromString("6.00"),
+			TotalCost:    decimal.RequireFromString("12.00"),
+			Reference:    "Issue with forced rollback",
+			SourceType:   inventoryIssueSourceTypeDefault,
+			SourceID:     sourceID,
+			MovementDate: time.Now(),
+			CreatedAt:    time.Now(),
+			CreatedBy:    userID,
+		}
+		if err := txRepo.CreateMovement(ctx, tenant.SchemaName, outbound); err != nil {
+			return err
+		}
+		if err := txRepo.UpdateProductStock(ctx, tenant.SchemaName, tenant.ID, product.ID, decimal.RequireFromString("3.00")); err != nil {
+			return err
+		}
+		level.Quantity = decimal.RequireFromString("3.00")
+		level.AvailableQty = decimal.RequireFromString("3.00")
+		level.LastUpdated = time.Now()
+		if err := txRepo.UpsertStockLevel(ctx, tenant.SchemaName, level); err != nil {
+			return err
+		}
+		entry, err := ledger.CreateJournalEntry(ctx, tenant.SchemaName, tenant.ID, &accounting.CreateJournalEntryRequest{
+			EntryDate:   time.Now(),
+			Description: "Issue stock for Transactional Issue Product",
+			Reference:   "Issue with forced rollback",
+			SourceType:  inventoryIssueSourceTypeDefault,
+			SourceID:    &sourceID,
+			UserID:      userID,
+			Lines: []accounting.CreateJournalEntryLineReq{
+				{
+					AccountID:    cogsAccountID,
+					Description:  "COGS",
+					DebitAmount:  decimal.RequireFromString("12.00"),
+					Currency:     "EUR",
+					ExchangeRate: decimal.NewFromInt(1),
+				},
+				{
+					AccountID:    inventoryAccountID,
+					Description:  "Inventory",
+					CreditAmount: decimal.RequireFromString("12.00"),
+					Currency:     "EUR",
+					ExchangeRate: decimal.NewFromInt(1),
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := ledger.PostJournalEntry(ctx, tenant.SchemaName, tenant.ID, entry.ID, userID); err != nil {
+			return err
+		}
+		return fmt.Errorf("force rollback after inventory and ledger writes")
+	})
+	if err == nil {
+		t.Fatal("expected forced rollback error")
+	}
+
+	reloadedProduct, err := repo.GetProductByID(ctx, tenant.SchemaName, tenant.ID, product.ID)
+	if err != nil {
+		t.Fatalf("GetProductByID failed: %v", err)
+	}
+	if !reloadedProduct.CurrentStock.Equal(decimal.RequireFromString("5.00")) {
+		t.Fatalf("expected product stock rollback to 5.00, got %s", reloadedProduct.CurrentStock)
+	}
+	reloadedLevel, err := repo.GetStockLevel(ctx, tenant.SchemaName, tenant.ID, product.ID, warehouse.ID)
+	if err != nil {
+		t.Fatalf("GetStockLevel failed: %v", err)
+	}
+	if !reloadedLevel.Quantity.Equal(decimal.RequireFromString("5.00")) || !reloadedLevel.AvailableQty.Equal(decimal.RequireFromString("5.00")) {
+		t.Fatalf("expected stock level rollback to 5.00/5.00, got %s/%s", reloadedLevel.Quantity, reloadedLevel.AvailableQty)
+	}
+	movements, err := repo.ListMovements(ctx, tenant.SchemaName, tenant.ID, product.ID)
+	if err != nil {
+		t.Fatalf("ListMovements failed: %v", err)
+	}
+	if len(movements) != 1 || movements[0].ID != inbound.ID {
+		t.Fatalf("expected only inbound movement after rollback, got %#v", movements)
+	}
+	accountingRepo := accounting.NewRepository(pool)
+	entry, err := accountingRepo.GetJournalEntryBySource(ctx, tenant.SchemaName, tenant.ID, inventoryIssueSourceTypeDefault, sourceID)
+	if err != nil {
+		t.Fatalf("GetJournalEntryBySource failed: %v", err)
+	}
+	if entry != nil {
+		t.Fatal("expected journal entry to be rolled back")
 	}
 }
 

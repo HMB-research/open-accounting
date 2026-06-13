@@ -54,6 +54,77 @@ func NewMockRepository() *MockRepository {
 	}
 }
 
+type mockRepositorySnapshot struct {
+	products        map[string]*Product
+	categories      map[string]*ProductCategory
+	warehouses      map[string]*Warehouse
+	stockLevels     map[string]*StockLevel
+	movements       map[string][]InventoryMovement
+	lotReservations map[string]*InventoryLotReservation
+	productCodeSeq  int
+}
+
+func (r *MockRepository) WithInventoryLedgerTransaction(ctx context.Context, ledger accountingPoster, fn func(repo Repository, ledger accountingPoster) error) error {
+	snapshot := r.snapshot()
+	if err := fn(r, ledger); err != nil {
+		r.restore(snapshot)
+		return err
+	}
+	return nil
+}
+
+func (r *MockRepository) snapshot() mockRepositorySnapshot {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	snapshot := mockRepositorySnapshot{
+		products:        make(map[string]*Product, len(r.Products)),
+		categories:      make(map[string]*ProductCategory, len(r.Categories)),
+		warehouses:      make(map[string]*Warehouse, len(r.Warehouses)),
+		stockLevels:     make(map[string]*StockLevel, len(r.StockLevels)),
+		movements:       make(map[string][]InventoryMovement, len(r.Movements)),
+		lotReservations: make(map[string]*InventoryLotReservation, len(r.LotReservations)),
+		productCodeSeq:  r.ProductCodeSeq,
+	}
+	for id, product := range r.Products {
+		copy := *product
+		snapshot.products[id] = &copy
+	}
+	for id, category := range r.Categories {
+		copy := *category
+		snapshot.categories[id] = &copy
+	}
+	for id, warehouse := range r.Warehouses {
+		copy := *warehouse
+		snapshot.warehouses[id] = &copy
+	}
+	for id, level := range r.StockLevels {
+		copy := *level
+		snapshot.stockLevels[id] = &copy
+	}
+	for id, movements := range r.Movements {
+		snapshot.movements[id] = append([]InventoryMovement(nil), movements...)
+	}
+	for id, reservation := range r.LotReservations {
+		copy := *reservation
+		snapshot.lotReservations[id] = &copy
+	}
+	return snapshot
+}
+
+func (r *MockRepository) restore(snapshot mockRepositorySnapshot) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.Products = snapshot.products
+	r.Categories = snapshot.categories
+	r.Warehouses = snapshot.warehouses
+	r.StockLevels = snapshot.stockLevels
+	r.Movements = snapshot.movements
+	r.LotReservations = snapshot.lotReservations
+	r.ProductCodeSeq = snapshot.productCodeSeq
+}
+
 // Products
 func (r *MockRepository) CreateProduct(ctx context.Context, schemaName string, product *Product) error {
 	if r.ErrOnCreate {
@@ -706,6 +777,7 @@ type fakeInventoryLedger struct {
 	accounts       []accounting.Account
 	createdRequest *accounting.CreateJournalEntryRequest
 	postedIDs      []string
+	postErr        error
 }
 
 func (f *fakeInventoryLedger) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
@@ -718,6 +790,9 @@ func (f *fakeInventoryLedger) CreateJournalEntry(_ context.Context, _, tenantID 
 }
 
 func (f *fakeInventoryLedger) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
+	if f.postErr != nil {
+		return f.postErr
+	}
 	f.postedIDs = append(f.postedIDs, entryID)
 	return nil
 }
@@ -2169,6 +2244,81 @@ func TestService_IssueStockPostsLedgerEntryWhenRequested(t *testing.T) {
 	assert.Equal(t, "55555555-5555-4555-8555-555555555555", ledger.createdRequest.Lines[1].AccountID)
 	assert.True(t, ledger.createdRequest.Lines[1].CreditAmount.Equal(decimal.RequireFromString("13.00")))
 	assert.Equal(t, []string{"journal-1"}, ledger.postedIDs)
+}
+
+func TestService_IssueStockRollsBackInventoryWhenLedgerPostingFails(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := &fakeInventoryLedger{
+		accounts: []accounting.Account{
+			{ID: "44444444-4444-4444-8444-444444444444", AccountType: accounting.AccountTypeExpense},
+			{ID: "55555555-5555-4555-8555-555555555555", AccountType: accounting.AccountTypeAsset},
+		},
+		postErr: fmt.Errorf("ledger unavailable"),
+	}
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	repo.Products[inventoryStockProductID] = &Product{
+		ID:                 inventoryStockProductID,
+		TenantID:           "tenant-1",
+		Code:               "SKU-001",
+		Name:               "Widget",
+		ProductType:        ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("6.00"),
+		CurrentStock:       decimal.RequireFromString("5.00"),
+		TrackInventory:     true,
+		InventoryAccountID: "55555555-5555-4555-8555-555555555555",
+	}
+	repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+	repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
+		Quantity:     decimal.RequireFromString("5.00"),
+		AvailableQty: decimal.RequireFromString("5.00"),
+	}
+	repo.Movements[inventoryStockProductID] = []InventoryMovement{
+		{
+			ID:           "lot-in",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("5.00"),
+			UnitCost:     decimal.RequireFromString("6.50"),
+			TotalCost:    decimal.RequireFromString("32.50"),
+			LotNumber:    "LOT-POST",
+		},
+	}
+
+	result, err := svc.IssueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+		ProductID:                inventoryStockProductID,
+		WarehouseID:              inventoryStockWarehouseID,
+		Quantity:                 "2",
+		LotNumber:                "LOT-POST",
+		Reference:                "Invoice INV-003",
+		Reason:                   "Shipment",
+		CostOfGoodsSoldAccountID: "44444444-4444-4444-8444-444444444444",
+		PostToLedger:             true,
+		UserID:                   "user-1",
+	})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "post inventory issue journal entry")
+	assert.ErrorContains(t, err, "ledger unavailable")
+	assert.Nil(t, result)
+	require.NotNil(t, ledger.createdRequest)
+	assert.Empty(t, ledger.postedIDs)
+
+	product, err := repo.GetProductByID(ctx, "test_schema", "tenant-1", inventoryStockProductID)
+	require.NoError(t, err)
+	assert.True(t, product.CurrentStock.Equal(decimal.RequireFromString("5.00")))
+	level := repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
+	require.NotNil(t, level)
+	assert.True(t, level.Quantity.Equal(decimal.RequireFromString("5.00")))
+	assert.True(t, level.AvailableQty.Equal(decimal.RequireFromString("5.00")))
+	require.Len(t, repo.Movements[inventoryStockProductID], 1)
+	assert.Equal(t, "lot-in", repo.Movements[inventoryStockProductID][0].ID)
 }
 
 func TestService_IssueStockAutoAllocatesTrackedLots(t *testing.T) {
