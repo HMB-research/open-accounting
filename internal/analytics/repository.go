@@ -70,6 +70,9 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 }
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName, alias string) (*gorm.DB, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("analytics repository database is not configured")
+	}
 	qualifiedTable, err := database.QualifiedTable(schemaName, tableName)
 	if err != nil {
 		return nil, err
