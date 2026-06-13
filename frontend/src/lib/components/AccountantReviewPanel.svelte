@@ -233,6 +233,15 @@
 		return action.source === 'payroll' && action.code === 'payroll_run_approve' && Boolean(action.entityId);
 	}
 
+	function canSetAssignmentPayrollPaymentDate(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'payroll' &&
+			action.code === 'payroll_payment_date_missing' &&
+			Boolean(action.entityId) &&
+			parseAssignmentPeriod(action) !== null
+		);
+	}
+
 	function canGenerateAssignmentTSD(action: WorkspaceAssignmentAction): boolean {
 		return action.source === 'payroll' && action.code === 'payroll_generate_tsd' && Boolean(action.entityId);
 	}
@@ -275,6 +284,14 @@
 		}
 
 		return { year, month };
+	}
+
+	function getMonthEndDate(period: AssignmentPeriod): string {
+		const date = new Date(Date.UTC(period.year, period.month, 0));
+		const year = date.getUTCFullYear();
+		const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+		const day = String(date.getUTCDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
 	}
 
 	function canRegenerateAssignmentKMD(action: WorkspaceAssignmentAction): boolean {
@@ -375,6 +392,32 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentPayrollApproveError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function setAssignmentPayrollPaymentDate(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!action.entityId || !period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.updatePayrollPaymentDate(tenant.id, action.entityId, {
+				payment_date: getMonthEndDate(period)
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentPayrollPaymentDateSet();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentPayrollPaymentDateError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -875,6 +918,18 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: m.dashboard_reviewAssignmentsApprovePayroll()}
+										</button>
+									{/if}
+									{#if canSetAssignmentPayrollPaymentDate(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => setAssignmentPayrollPaymentDate(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsSetPayrollPaymentDate()}
 										</button>
 									{/if}
 									{#if canGenerateAssignmentTSD(action)}

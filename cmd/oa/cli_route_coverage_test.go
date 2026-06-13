@@ -1119,6 +1119,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"POST": "payroll import-history"})
 	case "/payroll-runs/{runID}":
 		return commandForMethod(method, map[string]string{"GET": "payroll runs get"})
+	case "/payroll-runs/{runID}/payment-date":
+		return commandForMethod(method, map[string]string{"PATCH": "payroll runs set-payment-date"})
 	case "/payroll-runs/{runID}/calculate":
 		return commandForMethod(method, map[string]string{"POST": "payroll runs calculate"})
 	case "/payroll-runs/{runID}/process":

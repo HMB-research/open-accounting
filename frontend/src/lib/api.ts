@@ -2546,6 +2546,18 @@ class ApiClient {
     );
   }
 
+  async updatePayrollPaymentDate(
+    tenantId: string,
+    runId: string,
+    data: UpdatePayrollRunPaymentDateRequest,
+  ) {
+    return this.request<PayrollRun>(
+      "PATCH",
+      `/api/v1/tenants/${tenantId}/payroll-runs/${runId}/payment-date`,
+      data,
+    );
+  }
+
   async approvePayroll(tenantId: string, runId: string) {
     return this.request<{ status: string }>(
       "POST",
@@ -5382,6 +5394,10 @@ export interface CreatePayrollRunRequest {
   period_month: number;
   payment_date?: string;
   notes?: string;
+}
+
+export interface UpdatePayrollRunPaymentDateRequest {
+  payment_date: string;
 }
 
 export interface Payslip {

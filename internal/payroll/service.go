@@ -491,6 +491,30 @@ func (s *Service) GetPayrollRun(ctx context.Context, schemaName, tenantID, runID
 	return run, nil
 }
 
+// UpdatePayrollRunPaymentDate sets the intended salary payment date on a run.
+func (s *Service) UpdatePayrollRunPaymentDate(ctx context.Context, schemaName, tenantID, runID string, req *UpdatePayrollRunPaymentDateRequest) (*PayrollRun, error) {
+	if req == nil || req.PaymentDate.IsZero() {
+		return nil, fmt.Errorf("payment date is required")
+	}
+
+	run, err := s.GetPayrollRun(ctx, schemaName, tenantID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if run.Status == PayrollDeclared {
+		return nil, fmt.Errorf("declared payroll runs cannot change payment date")
+	}
+
+	paymentDate := req.PaymentDate
+	run.PaymentDate = &paymentDate
+	run.UpdatedAt = time.Now()
+	if err := s.repo.UpdatePayrollRun(ctx, schemaName, run); err != nil {
+		return nil, fmt.Errorf("update payroll payment date: %w", err)
+	}
+
+	return s.GetPayrollRun(ctx, schemaName, tenantID, runID)
+}
+
 // ListPayrollRuns lists payroll runs for a tenant
 func (s *Service) ListPayrollRuns(ctx context.Context, schemaName, tenantID string, year int) ([]PayrollRun, error) {
 	runs, err := s.repo.ListPayrollRuns(ctx, schemaName, tenantID, year)

@@ -253,6 +253,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs create       Create a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs get          Show one payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs calculate    Calculate payslips for a payroll run")
+	_, _ = fmt.Fprintln(a.stdout, "  payroll runs set-payment-date Set payment date for a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs process      Bulk process a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs approve      Approve a payroll run")
 	_, _ = fmt.Fprintln(a.stdout, "  payroll runs payslips     List payslips for a payroll run")
@@ -10501,6 +10502,41 @@ func (a *cliApp) runPayrollRuns(ctx context.Context, cfg *cliConfig, client *api
 		if *asJSON {
 			return printJSON(a.stdout, run)
 		}
+		printPayrollRun(a.stdout, run)
+		return nil
+
+	case "set-payment-date":
+		fs := flag.NewFlagSet("payroll runs set-payment-date", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		runID := fs.String("id", "", "Payroll run id")
+		paymentDate := fs.String("payment-date", "", "Payment date in YYYY-MM-DD")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		trimmedRunID := strings.TrimSpace(*runID)
+		if trimmedRunID == "" {
+			return errors.New("id is required")
+		}
+		trimmedPaymentDate := strings.TrimSpace(*paymentDate)
+		if trimmedPaymentDate == "" {
+			return errors.New("payment-date is required")
+		}
+		parsedPaymentDate, err := time.Parse("2006-01-02", trimmedPaymentDate)
+		if err != nil {
+			return fmt.Errorf("parse payment-date: %w", err)
+		}
+
+		run, err := client.updatePayrollRunPaymentDate(ctx, cfg.TenantID, trimmedRunID, &payroll.UpdatePayrollRunPaymentDateRequest{
+			PaymentDate: parsedPaymentDate,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, run)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Updated payroll run %s payment date to %s\n", trimmedRunID, trimmedPaymentDate)
 		printPayrollRun(a.stdout, run)
 		return nil
 

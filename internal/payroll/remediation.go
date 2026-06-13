@@ -55,7 +55,7 @@ func BuildPayrollRunRemediationActions(run *PayrollRun) []PayrollRunRemediationA
 			"WARNING",
 			fmt.Sprintf("Payroll run %s has no payment date.", period),
 			"Confirm the intended salary payment date before approving payroll or filing TSD.",
-			fmt.Sprintf("oa payroll runs get --id %s", run.ID),
+			fmt.Sprintf("oa payroll runs set-payment-date --id %s --payment-date <YYYY-MM-DD>", run.ID),
 		))
 	}
 

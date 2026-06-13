@@ -13588,6 +13588,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/payroll-runs/{runID}/payment-date": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Set or correct the intended salary payment date for a payroll run until the run is declared",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payroll"
+                ],
+                "summary": "Update payroll payment date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Payroll Run ID",
+                        "name": "runID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Payment date update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.UpdatePayrollRunPaymentDateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollRun"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/payroll-runs/{runID}/payslips": {
             "get": {
                 "security": [
@@ -29800,6 +29864,14 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "notes": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_payroll.UpdatePayrollRunPaymentDateRequest": {
+            "type": "object",
+            "properties": {
+                "payment_date": {
                     "type": "string"
                 }
             }

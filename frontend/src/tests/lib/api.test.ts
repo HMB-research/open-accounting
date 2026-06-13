@@ -871,6 +871,43 @@ describe("API Client - Core Functionality", () => {
       );
     });
 
+    it("should update payroll payment date", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "payroll-1",
+          tenant_id: "tenant-123",
+          period_year: 2026,
+          period_month: 2,
+          status: "CALCULATED",
+          payment_date: "2026-02-28T00:00:00Z",
+          total_gross: "4200",
+          total_net: "3260",
+          total_employer_cost: "5628",
+          created_at: "2026-02-01T00:00:00Z",
+          updated_at: "2026-02-11T00:00:00Z",
+          remediation_actions: [],
+        }),
+      });
+
+      const result = await api.updatePayrollPaymentDate("tenant-123", "payroll-1", {
+        payment_date: "2026-02-28",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/payroll-runs/payroll-1/payment-date",
+        ),
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ payment_date: "2026-02-28" }),
+        }),
+      );
+      expect(result.payment_date).toBe("2026-02-28T00:00:00Z");
+      expect(result.remediation_actions).toEqual([]);
+    });
+
     it("should run expense lifecycle actions", async () => {
       const expenseResponse = {
         id: "expense-1",

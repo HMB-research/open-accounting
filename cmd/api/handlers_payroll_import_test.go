@@ -285,6 +285,17 @@ func TestPayrollBusinessHandlersRunLifecycleAndTSD(t *testing.T) {
 	require.Equal(t, "March payroll", gotRun.Notes)
 	require.NotEmpty(t, gotRun.RemediationActions)
 
+	paymentDate := time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)
+	updatedRun := invokePayrollImportJSON[payroll.PayrollRun](t, http.StatusOK, h.UpdatePayrollRunPaymentDate, payrollHandlerRequest(
+		http.MethodPatch,
+		"/tenants/tenant-1/payroll-runs/"+createdRun.ID+"/payment-date",
+		payroll.UpdatePayrollRunPaymentDateRequest{PaymentDate: paymentDate},
+		map[string]string{"tenantID": "tenant-1", "runID": createdRun.ID},
+	))
+	require.NotNil(t, updatedRun.PaymentDate)
+	require.Equal(t, "2026-03-31", updatedRun.PaymentDate.Format("2006-01-02"))
+	require.NotContains(t, payrollRunRemediationCodes(updatedRun.RemediationActions), "payroll_payment_date_missing")
+
 	calculated := invokePayrollImportJSON[payroll.PayrollRun](t, http.StatusOK, h.CalculatePayroll, payrollHandlerRequest(
 		http.MethodPost,
 		"/tenants/tenant-1/payroll-runs/"+createdRun.ID+"/calculate",

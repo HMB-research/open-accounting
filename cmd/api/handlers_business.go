@@ -3753,6 +3753,39 @@ func (h *Handlers) GetPayrollRun(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, run)
 }
 
+// UpdatePayrollRunPaymentDate updates the intended salary payment date.
+// @Summary Update payroll payment date
+// @Description Set or correct the intended salary payment date for a payroll run until the run is declared
+// @Tags Payroll
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param runID path string true "Payroll Run ID"
+// @Param request body payroll.UpdatePayrollRunPaymentDateRequest true "Payment date update"
+// @Success 200 {object} payroll.PayrollRun
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/payroll-runs/{runID}/payment-date [patch]
+func (h *Handlers) UpdatePayrollRunPaymentDate(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	runID := chi.URLParam(r, "runID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req payroll.UpdatePayrollRunPaymentDateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	run, err := h.payrollService.UpdatePayrollRunPaymentDate(r.Context(), schemaName, tenantID, runID, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, run)
+}
+
 // CalculatePayroll calculates all payslips for a payroll run
 // @Summary Calculate payroll
 // @Description Calculate payslips for all active employees in a payroll run
