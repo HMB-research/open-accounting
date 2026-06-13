@@ -2558,6 +2558,44 @@ func TestValidateBundleReportsFixedAssetAccountReferenceIssues(t *testing.T) {
 	assert.Equal(t, "9999", report.Issues[0].Value)
 }
 
+func TestValidateBundleAcceptsFixedAssetPurchaseDateFormats(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindFixedAssets,
+			FileName: "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost\n" +
+				"FA-1,Laptop,2026-05-30,1200\n" +
+				"FA-2,Lathe,2026-05-30T00:00:00Z,2400\n" +
+				"FA-3,Desk,2026-06-01 15:04:05,300\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsMissingFixedAssetPurchaseDate(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost\nFA-1,Laptop,,1200\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindFixedAssets, report.Issues[0].Kind)
+	assert.Equal(t, "purchase_date", report.Issues[0].Field)
+	assert.Equal(t, "purchase_date is required", report.Issues[0].Message)
+}
+
 func TestValidateBundleReportsFixedAssetRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
