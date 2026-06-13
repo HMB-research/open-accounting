@@ -25628,6 +25628,12 @@ const docTemplate = `{
                 "rejection_reason": {
                     "type": "string"
                 },
+                "remediation_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_expenses.ExpenseRemediationAction"
+                    }
+                },
                 "requires_receipt": {
                     "type": "boolean"
                 },
@@ -25644,6 +25650,47 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_expenses.ExpenseRemediationAction": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "cli_command": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "expense_number": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "owner_role": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "ui_path": {
                     "type": "string"
                 }
             }

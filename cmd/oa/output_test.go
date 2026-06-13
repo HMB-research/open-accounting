@@ -1047,9 +1047,17 @@ func TestPrintExpenseOutputs(t *testing.T) {
 		RequiresReceipt:  true,
 		Status:           expenses.StatusPosted,
 		JournalEntryID:   &journalID,
-		CreatedAt:        now,
-		CreatedBy:        "user-1",
-		UpdatedAt:        now,
+		RemediationActions: []expenses.ExpenseRemediationAction{{
+			Code:       "expense_posted_archive",
+			Severity:   "INFO",
+			Scope:      "expenses",
+			OwnerRole:  "accountant",
+			Action:     "Archive expense support.",
+			CLICommand: "oa expenses get --id exp-1",
+		}},
+		CreatedAt: now,
+		CreatedBy: "user-1",
+		UpdatedAt: now,
 	}
 	receiptlessExpense := expense
 	receiptlessExpense.ID = "exp-2"
@@ -1070,6 +1078,12 @@ func TestPrintExpenseOutputs(t *testing.T) {
 	assert.Contains(t, detailBuf.String(), "Expense EXP-00001 Office Store")
 	assert.Contains(t, detailBuf.String(), "Requires receipt: true")
 	assert.Contains(t, detailBuf.String(), "Journal entry: je-1")
+	assert.Contains(t, detailBuf.String(), "Expense remediation actions")
+	assert.Contains(t, detailBuf.String(), "expense_posted_archive")
+
+	var emptyRemediationBuf bytes.Buffer
+	printExpenseRemediationActions(&emptyRemediationBuf, nil)
+	assert.Empty(t, emptyRemediationBuf.String())
 }
 
 func TestPrintReminderOutputs(t *testing.T) {

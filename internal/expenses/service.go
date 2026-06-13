@@ -108,6 +108,7 @@ func (s *Service) CreateExpense(ctx context.Context, schemaName, tenantID string
 	if err := s.repo.Create(ctx, schemaName, expense); err != nil {
 		return nil, err
 	}
+	hydrateExpenseDerivedFields(expense)
 	return expense, nil
 }
 
@@ -117,14 +118,24 @@ func (s *Service) ListExpenses(ctx context.Context, schemaName, tenantID string,
 		return nil, err
 	}
 	filter.Status = status
-	return s.repo.List(ctx, schemaName, tenantID, filter)
+	expenses, err := s.repo.List(ctx, schemaName, tenantID, filter)
+	if err != nil {
+		return nil, err
+	}
+	hydrateExpenseSlice(expenses)
+	return expenses, nil
 }
 
 func (s *Service) GetExpense(ctx context.Context, schemaName, tenantID, expenseID string) (*Expense, error) {
 	if strings.TrimSpace(expenseID) == "" {
 		return nil, fmt.Errorf("expense id is required")
 	}
-	return s.repo.GetByID(ctx, schemaName, tenantID, strings.TrimSpace(expenseID))
+	expense, err := s.repo.GetByID(ctx, schemaName, tenantID, strings.TrimSpace(expenseID))
+	if err != nil {
+		return nil, err
+	}
+	hydrateExpenseDerivedFields(expense)
+	return expense, nil
 }
 
 func (s *Service) SubmitExpense(ctx context.Context, schemaName, tenantID, expenseID string, req *ExpenseActionRequest) (*Expense, error) {
@@ -150,6 +161,7 @@ func (s *Service) SubmitExpense(ctx context.Context, schemaName, tenantID, expen
 	if err := s.repo.Update(ctx, schemaName, expense); err != nil {
 		return nil, err
 	}
+	hydrateExpenseDerivedFields(expense)
 	return expense, nil
 }
 
@@ -179,6 +191,7 @@ func (s *Service) ApproveExpense(ctx context.Context, schemaName, tenantID, expe
 	if err := s.repo.Update(ctx, schemaName, expense); err != nil {
 		return nil, err
 	}
+	hydrateExpenseDerivedFields(expense)
 	return expense, nil
 }
 
@@ -210,6 +223,7 @@ func (s *Service) RejectExpense(ctx context.Context, schemaName, tenantID, expen
 	if err := s.repo.Update(ctx, schemaName, expense); err != nil {
 		return nil, err
 	}
+	hydrateExpenseDerivedFields(expense)
 	return expense, nil
 }
 
@@ -277,7 +291,21 @@ func (s *Service) PostExpense(ctx context.Context, schemaName, tenantID, expense
 	if err := s.repo.Update(ctx, schemaName, expense); err != nil {
 		return nil, err
 	}
+	hydrateExpenseDerivedFields(expense)
 	return expense, nil
+}
+
+func hydrateExpenseSlice(expenseList []Expense) {
+	for i := range expenseList {
+		hydrateExpenseDerivedFields(&expenseList[i])
+	}
+}
+
+func hydrateExpenseDerivedFields(expense *Expense) {
+	if expense == nil {
+		return
+	}
+	expense.RemediationActions = BuildExpenseRemediationActions(expense)
 }
 
 func (s *Service) requireApprovedReceipt(ctx context.Context, schemaName, tenantID string, expense *Expense) error {

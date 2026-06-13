@@ -1081,6 +1081,29 @@ func printExpense(w io.Writer, expense *expenses.Expense) {
 	if strings.TrimSpace(expense.RejectionReason) != "" {
 		_, _ = fmt.Fprintf(w, "Rejection reason: %s\n", expense.RejectionReason)
 	}
+	printExpenseRemediationActions(w, expense.RemediationActions)
+}
+
+func printExpenseRemediationActions(w io.Writer, actions []expenses.ExpenseRemediationAction) {
+	if len(actions) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "Expense remediation actions")
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	for _, action := range actions {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			action.Severity,
+			action.Scope,
+			action.OwnerRole,
+			action.Code,
+			action.Action,
+			action.CLICommand,
+		)
+	}
+	_ = tw.Flush()
 }
 
 func printAssetsTable(w io.Writer, assetList []assets.FixedAsset) {
