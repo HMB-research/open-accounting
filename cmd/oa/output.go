@@ -165,6 +165,23 @@ func printMigrationRemediationActions(w io.Writer, actions []cutover.MigrationRe
 	_ = tw.Flush()
 }
 
+func remediationAssignmentCells(queue, priority string, dueInDays int, assignmentKey string) (string, string, string, string) {
+	if strings.TrimSpace(queue) == "" {
+		queue = "-"
+	}
+	if strings.TrimSpace(priority) == "" {
+		priority = "-"
+	}
+	due := "-"
+	if dueInDays > 0 {
+		due = fmt.Sprintf("%dd", dueInDays)
+	}
+	if strings.TrimSpace(assignmentKey) == "" {
+		assignmentKey = "-"
+	}
+	return priority, due, queue, assignmentKey
+}
+
 func printLoginResponse(w io.Writer, resp *loginResponse) {
 	_, _ = fmt.Fprintf(w, "Access token: %s\n", resp.AccessToken)
 	if strings.TrimSpace(resp.RefreshToken) != "" {
@@ -1110,15 +1127,20 @@ func printExpenseRemediationActions(w io.Writer, actions []expenses.ExpenseRemed
 	}
 	_, _ = fmt.Fprintln(w, "Expense remediation actions")
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tPRIORITY\tDUE\tQUEUE\tSCOPE\tOWNER\tCODE\tASSIGNMENT KEY\tACTION\tCOMMAND")
 	for _, action := range actions {
+		priority, due, queue, assignmentKey := remediationAssignmentCells(action.WorkspaceQueue, action.Priority, action.DueInDays, action.AssignmentKey)
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			action.Severity,
+			priority,
+			due,
+			queue,
 			action.Scope,
 			action.OwnerRole,
 			action.Code,
+			assignmentKey,
 			action.Action,
 			action.CLICommand,
 		)
@@ -2097,8 +2119,9 @@ func printDocumentRemediationActions(w io.Writer, actions []documents.DocumentRe
 
 	_, _ = fmt.Fprintln(w, "Document remediation actions")
 	actionWriter := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(actionWriter, "SEVERITY\tSCOPE\tOWNER\tCODE\tENTITY\tDOCUMENT\tACTION\tCOMMAND")
+	_, _ = fmt.Fprintln(actionWriter, "SEVERITY\tPRIORITY\tDUE\tQUEUE\tSCOPE\tOWNER\tCODE\tENTITY\tDOCUMENT\tASSIGNMENT KEY\tACTION\tCOMMAND")
 	for _, action := range actions {
+		priority, due, queue, assignmentKey := remediationAssignmentCells(action.WorkspaceQueue, action.Priority, action.DueInDays, action.AssignmentKey)
 		entity := action.EntityType
 		if strings.TrimSpace(action.EntityID) != "" {
 			entity = fmt.Sprintf("%s:%s", action.EntityType, action.EntityID)
@@ -2113,13 +2136,17 @@ func printDocumentRemediationActions(w io.Writer, actions []documents.DocumentRe
 		}
 		_, _ = fmt.Fprintf(
 			actionWriter,
-			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			action.Severity,
+			priority,
+			due,
+			queue,
 			action.Scope,
 			action.OwnerRole,
 			action.Code,
 			entity,
 			document,
+			assignmentKey,
 			action.Action,
 			action.CLICommand,
 		)
@@ -2541,15 +2568,20 @@ func printYearEndCloseRemediationActions(w io.Writer, actions []accounting.YearE
 	}
 	_, _ = fmt.Fprintln(w, "Close remediation actions")
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tPRIORITY\tDUE\tQUEUE\tSCOPE\tOWNER\tCODE\tASSIGNMENT KEY\tACTION\tCOMMAND")
 	for _, action := range actions {
+		priority, due, queue, assignmentKey := remediationAssignmentCells(action.WorkspaceQueue, action.Priority, action.DueInDays, action.AssignmentKey)
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			action.Severity,
+			priority,
+			due,
+			queue,
 			action.Scope,
 			action.OwnerRole,
 			action.Code,
+			assignmentKey,
 			action.Action,
 			action.CLICommand,
 		)
@@ -2784,15 +2816,20 @@ func printBankRemediationActions(w io.Writer, actions []banking.BankRemediationA
 	}
 	_, _ = fmt.Fprintln(w, "Bank remediation actions")
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tPRIORITY\tDUE\tQUEUE\tSCOPE\tOWNER\tCODE\tASSIGNMENT KEY\tACTION\tCOMMAND")
 	for _, action := range actions {
+		priority, due, queue, assignmentKey := remediationAssignmentCells(action.WorkspaceQueue, action.Priority, action.DueInDays, action.AssignmentKey)
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			action.Severity,
+			priority,
+			due,
+			queue,
 			action.Scope,
 			action.OwnerRole,
 			action.Code,
+			assignmentKey,
 			action.Action,
 			action.CLICommand,
 		)
@@ -3025,15 +3062,20 @@ func printPayrollRunRemediationActions(w io.Writer, actions []payroll.PayrollRun
 	}
 	_, _ = fmt.Fprintln(w, "Payroll remediation actions")
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tPRIORITY\tDUE\tQUEUE\tSCOPE\tOWNER\tCODE\tASSIGNMENT KEY\tACTION\tCOMMAND")
 	for _, action := range actions {
+		priority, due, queue, assignmentKey := remediationAssignmentCells(action.WorkspaceQueue, action.Priority, action.DueInDays, action.AssignmentKey)
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			action.Severity,
+			priority,
+			due,
+			queue,
 			action.Scope,
 			action.OwnerRole,
 			action.Code,
+			assignmentKey,
 			action.Action,
 			action.CLICommand,
 		)
@@ -3134,15 +3176,20 @@ func printTSDRemediationActions(w io.Writer, actions []payroll.TSDRemediationAct
 	}
 	_, _ = fmt.Fprintln(w, "TSD remediation actions")
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tPRIORITY\tDUE\tQUEUE\tSCOPE\tOWNER\tCODE\tASSIGNMENT KEY\tACTION\tCOMMAND")
 	for _, action := range actions {
+		priority, due, queue, assignmentKey := remediationAssignmentCells(action.WorkspaceQueue, action.Priority, action.DueInDays, action.AssignmentKey)
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			action.Severity,
+			priority,
+			due,
+			queue,
 			action.Scope,
 			action.OwnerRole,
 			action.Code,
+			assignmentKey,
 			action.Action,
 			action.CLICommand,
 		)
@@ -3192,15 +3239,20 @@ func printKMDRemediationActions(w io.Writer, actions []tax.KMDRemediationAction)
 	}
 	_, _ = fmt.Fprintln(w, "KMD remediation actions")
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tPRIORITY\tDUE\tQUEUE\tSCOPE\tOWNER\tCODE\tASSIGNMENT KEY\tACTION\tCOMMAND")
 	for _, action := range actions {
+		priority, due, queue, assignmentKey := remediationAssignmentCells(action.WorkspaceQueue, action.Priority, action.DueInDays, action.AssignmentKey)
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			action.Severity,
+			priority,
+			due,
+			queue,
 			action.Scope,
 			action.OwnerRole,
 			action.Code,
+			assignmentKey,
 			action.Action,
 			action.CLICommand,
 		)

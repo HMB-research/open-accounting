@@ -783,6 +783,9 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	if retentionReview.RemediationActions[0].Scope != "documents" || retentionReview.RemediationActions[0].OwnerRole != "accountant" {
 		t.Fatalf("unexpected retention remediation ownership: %#v", retentionReview.RemediationActions[0])
 	}
+	if retentionReview.RemediationActions[0].WorkspaceQueue != "document_review" || retentionReview.RemediationActions[0].AssignmentKey == "" || retentionReview.RemediationActions[0].Priority == "" {
+		t.Fatalf("expected retention remediation assignment metadata: %#v", retentionReview.RemediationActions[0])
+	}
 	if _, err := svc.GetRetentionReview(context.Background(), "tenant_demo", "tenant-1", time.Now(), -1, false); err == nil {
 		t.Fatal("expected negative retention horizon to fail")
 	}
@@ -869,6 +872,9 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	}
 	if len(policyResults[1].RemediationActions) != 1 || policyResults[1].RemediationActions[0].Code != "document_evidence_unapproved" {
 		t.Fatalf("expected pay-2 unapproved-evidence remediation action: %#v", policyResults[1].RemediationActions)
+	}
+	if policyResults[1].RemediationActions[0].WorkspaceQueue != "document_review" || policyResults[1].RemediationActions[0].Priority != "high" || policyResults[1].RemediationActions[0].DueInDays != 1 {
+		t.Fatalf("expected evidence policy assignment metadata: %#v", policyResults[1].RemediationActions[0])
 	}
 	if policyResults[2].Compliant || !policyResults[2].MissingEvidence {
 		t.Fatalf("expected pay-3 policy to fail as missing evidence: %#v", policyResults[2])

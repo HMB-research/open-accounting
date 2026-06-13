@@ -600,7 +600,7 @@ Content-Type: application/json
 }
 ```
 
-Returns one result per requested entity ID with `compliant`, document-status counts, document-type counts, rule-level accepted counts, and `violations` for missing or unapproved evidence. Non-compliant results also include `remediation_actions` with stable document evidence codes such as `document_evidence_missing`, `document_evidence_unapproved`, and `document_evidence_policy_violation`, plus severity, owner role, entity/document context, UI path, and suggested CLI command fields. Omit `document_types` in a rule to allow any supported document type; `min_count` defaults to `1`.
+Returns one result per requested entity ID with `compliant`, document-status counts, document-type counts, rule-level accepted counts, and `violations` for missing or unapproved evidence. Non-compliant results also include `remediation_actions` with stable document evidence codes such as `document_evidence_missing`, `document_evidence_unapproved`, and `document_evidence_policy_violation`, plus severity, owner role, workspace queue, stable assignment key, priority, due window, entity/document context, UI path, and suggested CLI command fields. Omit `document_types` in a rule to allow any supported document type; `min_count` defaults to `1`.
 
 #### Retention Review
 
@@ -609,7 +609,7 @@ GET /tenants/{tenantId}/documents/retention?as_of=2027-03-01&horizon_days=45&inc
 Authorization: Bearer <token>
 ```
 
-Returns tenant-wide retention administration data for documents with `retention_until` on or before the cutoff date. `include_missing=true` also includes documents without retention metadata. The response includes expired, due-soon, missing-retention, pending-review, rejected, and total counts plus the matching documents. It also includes `reminder_actions`, an automation-friendly queue with one action per expired retention date, due-soon retention date, missing retention date, pending review, or rejected document. `remediation_actions` exposes the same retention and review follow-up as accountant-assigned actions with codes such as `document_retention_expired`, `document_retention_due_soon`, `document_retention_missing`, `document_review_pending`, and `document_review_rejected`, including severity, owner role, UI path, and CLI command fields.
+Returns tenant-wide retention administration data for documents with `retention_until` on or before the cutoff date. `include_missing=true` also includes documents without retention metadata. The response includes expired, due-soon, missing-retention, pending-review, rejected, and total counts plus the matching documents. It also includes `reminder_actions`, an automation-friendly queue with one action per expired retention date, due-soon retention date, missing retention date, pending review, or rejected document. `remediation_actions` exposes the same retention and review follow-up as accountant-assigned actions with codes such as `document_retention_expired`, `document_retention_due_soon`, `document_retention_missing`, `document_review_pending`, and `document_review_rejected`, including severity, owner role, workspace queue, stable assignment key, priority, due window, UI path, and CLI command fields.
 
 #### Update Retention Metadata
 
@@ -1238,7 +1238,7 @@ Authorization: Bearer <token>
 
 - `year` (integer): optional period-year filter
 
-Payroll run responses include `remediation_actions` with `code`, `severity`, `scope`, `owner_role`, `message`, `action`, `period`, optional entity context, UI path, and CLI command fields for accountant follow-up on draft calculation, missing payment dates, zero-payslip runs, approval, TSD generation, paid-run declaration follow-up, and declared payroll archive evidence.
+Payroll run responses include `remediation_actions` with `code`, `severity`, `scope`, `owner_role`, `workspace_queue`, stable `assignment_key`, `priority`, `due_in_days`, `message`, `action`, `period`, optional entity context, UI path, and CLI command fields for accountant follow-up on draft calculation, missing payment dates, zero-payslip runs, approval, TSD generation, paid-run declaration follow-up, and declared payroll archive evidence.
 
 ### Create Payroll Run
 
@@ -2052,7 +2052,7 @@ GET /tenants/{tenantId}/expenses?status=SUBMITTED&limit=50
 Authorization: Bearer <token>
 ```
 
-Statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, and `POSTED`. Expense responses include `remediation_actions` so accountant queues can surface receipt, approval, rejection, posting, and archive follow-up without parsing status text. Each action includes `code`, `severity`, `scope`, `owner_role`, `message`, `action`, expense context, `ui_path`, and a suggested `cli_command`.
+Statuses are `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, and `POSTED`. Expense responses include `remediation_actions` so accountant queues can surface receipt, approval, rejection, posting, and archive follow-up without parsing status text. Each action includes `code`, `severity`, `scope`, `owner_role`, `workspace_queue`, stable `assignment_key`, `priority`, `due_in_days`, `message`, `action`, expense context, `ui_path`, and a suggested `cli_command`.
 
 ### Create Expense
 
@@ -2989,7 +2989,7 @@ POST /tenants/{tenantId}/year-end-carry-forward/reverse
 Authorization: Bearer <token>
 ```
 
-The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year. Status, pack, audit evidence, and audit archive responses include `inventory_costing_review` when inventory is configured. The review summarizes the explicit `inventory_valuation_method` when supplied, otherwise the tenant valuation policy, plus totals, blocking exception counts for negative quantities/availability/value and missing costs, and whether inventory costing is ready; blocking exceptions make carry-forward readiness false. Year-end status responses also include `remediation_actions`, a machine-readable close plan with `code`, `severity`, `scope`, `owner_role`, `message`, `action`, and optional `entity_type`, `entity_id`, `ui_path`, and `cli_command` fields for unresolved close, evidence, ledger, and inventory blockers. The audit evidence endpoint adds the close-pack evidence-policy result and attached close-pack document metadata. The audit archive endpoint returns that evidence as a ZIP with a JSON manifest and attached close-pack files. Year-end carry-forward requires the fiscal year to be closed, the same approved close-pack evidence to be present, and inventory costing review to be ready when inventory is configured.
+The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year. Status, pack, audit evidence, and audit archive responses include `inventory_costing_review` when inventory is configured. The review summarizes the explicit `inventory_valuation_method` when supplied, otherwise the tenant valuation policy, plus totals, blocking exception counts for negative quantities/availability/value and missing costs, and whether inventory costing is ready; blocking exceptions make carry-forward readiness false. Year-end status responses also include `remediation_actions`, a machine-readable close plan with `code`, `severity`, `scope`, `owner_role`, `workspace_queue`, stable `assignment_key`, `priority`, `due_in_days`, `message`, `action`, and optional `entity_type`, `entity_id`, `ui_path`, and `cli_command` fields for unresolved close, evidence, ledger, and inventory blockers. The audit evidence endpoint adds the close-pack evidence-policy result and attached close-pack document metadata. The audit archive endpoint returns that evidence as a ZIP with a JSON manifest and attached close-pack files. Year-end carry-forward requires the fiscal year to be closed, the same approved close-pack evidence to be present, and inventory costing review to be ready when inventory is configured.
 
 Create carry-forward:
 
@@ -3170,7 +3170,7 @@ Review an unmatched transaction:
 - `follow_up_status` supports `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`
 - successful updates stamp `reviewed_by` and `reviewed_at` on the transaction
 - transaction reads and lists return review metadata alongside match and reconciliation ids
-- transaction reads, lists, and review responses include `remediation_actions` with stable codes such as `bank_evidence_required`, `bank_ready_to_match`, `bank_transaction_unmatched`, `bank_transaction_reconciliation_pending`, and `bank_transaction_reconciled_archive`, plus severity, owner role, entity context, UI path, and suggested CLI command fields for accountant workspace follow-up
+- transaction reads, lists, and review responses include `remediation_actions` with stable codes such as `bank_evidence_required`, `bank_ready_to_match`, `bank_transaction_unmatched`, `bank_transaction_reconciliation_pending`, and `bank_transaction_reconciled_archive`, plus severity, owner role, workspace queue, stable assignment key, priority, due window, entity context, UI path, and suggested CLI command fields for accountant workspace follow-up
 
 ### Bank Reconciliations
 
@@ -3637,7 +3637,7 @@ GET /tenants/{tenantId}/tax/kmd
 Authorization: Bearer <token>
 ```
 
-Returns generated KMD declarations for the tenant. KMD declaration responses include `remediation_actions` with `code`, `severity`, `scope`, `owner_role`, `message`, `action`, `period`, optional entity context, UI path, and CLI command fields for accountant follow-up on draft payable/refund/zero declarations, empty VAT periods, submitted declarations awaiting acceptance, missing submission timestamps, and accepted declarations that should be archived with supporting evidence.
+Returns generated KMD declarations for the tenant. KMD declaration responses include `remediation_actions` with `code`, `severity`, `scope`, `owner_role`, `workspace_queue`, stable `assignment_key`, `priority`, `due_in_days`, `message`, `action`, `period`, optional entity context, UI path, and CLI command fields for accountant follow-up on draft payable/refund/zero declarations, empty VAT periods, submitted declarations awaiting acceptance, missing submission timestamps, and accepted declarations that should be archived with supporting evidence.
 
 ### Generate KMD Declaration
 
@@ -3714,7 +3714,7 @@ Optional query parameters:
 | `year`    | int  | Filter declarations by period year |
 | `month`   | int  | Filter declarations by period month (`1`-`12`) |
 
-TSD declaration responses include `remediation_actions` for accountant follow-up: empty rows/totals, draft export/submission, submitted declarations awaiting acceptance, missing submission timestamps, rejected declaration review, accepted declaration archiving, and unsupported status review. Each action includes `code`, `severity`, `scope`, `owner_role`, `message`, `action`, optional entity/period context, UI path, and a suggested CLI command.
+TSD declaration responses include `remediation_actions` for accountant follow-up: empty rows/totals, draft export/submission, submitted declarations awaiting acceptance, missing submission timestamps, rejected declaration review, accepted declaration archiving, and unsupported status review. Each action includes `code`, `severity`, `scope`, `owner_role`, `workspace_queue`, stable `assignment_key`, `priority`, `due_in_days`, `message`, `action`, optional entity/period context, UI path, and a suggested CLI command.
 
 ### Get TSD Declaration
 

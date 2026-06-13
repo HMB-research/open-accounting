@@ -3050,6 +3050,10 @@ export interface YearEndCloseRemediationAction {
   severity: string;
   scope: string;
   owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
   message: string;
   action: string;
   entity_type?: string;
@@ -3189,6 +3193,10 @@ export interface DocumentRemediationAction {
   severity: string;
   scope: string;
   owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
   message: string;
   action: string;
   entity_type?: DocumentAttachment["entity_type"];
@@ -4769,6 +4777,10 @@ export interface BankRemediationAction {
   severity: string;
   scope: string;
   owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
   message: string;
   action: string;
   entity_type?: string;
@@ -4885,9 +4897,28 @@ export interface KMDDeclaration {
   total_output_vat: Decimal;
   total_input_vat: Decimal;
   rows: KMDRow[];
+  remediation_actions?: KMDRemediationAction[];
   submitted_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface KMDRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  period?: string;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
 }
 
 export interface CreateKMDRequest {
@@ -5218,6 +5249,10 @@ export interface PayrollRunRemediationAction {
   severity: string;
   scope: string;
   owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
   message: string;
   action: string;
   period?: string;
@@ -5232,6 +5267,10 @@ export interface TSDRemediationAction {
   severity: string;
   scope: string;
   owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
   message: string;
   action: string;
   period?: string;

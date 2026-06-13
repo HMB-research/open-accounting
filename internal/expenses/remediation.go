@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/HMB-research/open-accounting/internal/workspace"
 )
 
 // BuildExpenseRemediationActions turns expense claim state into accountant follow-up actions.
@@ -27,6 +29,19 @@ func BuildExpenseRemediationActions(expense *Expense) []ExpenseRemediationAction
 		item := base
 		item.Code = code
 		item.Severity = severity
+		meta := workspace.RemediationAssignment(
+			"expense_claims",
+			code,
+			severity,
+			item.EntityType,
+			item.EntityID,
+			item.ExpenseNumber,
+			item.Status,
+		)
+		item.WorkspaceQueue = meta.WorkspaceQueue
+		item.AssignmentKey = meta.AssignmentKey
+		item.Priority = meta.Priority
+		item.DueInDays = meta.DueInDays
 		item.Message = message
 		item.Action = text
 		item.CLICommand = command

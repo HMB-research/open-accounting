@@ -181,6 +181,10 @@ type DocumentRemediationAction struct {
 	Severity           string `json:"severity"`
 	Scope              string `json:"scope"`
 	OwnerRole          string `json:"owner_role"`
+	WorkspaceQueue     string `json:"workspace_queue,omitempty"`
+	AssignmentKey      string `json:"assignment_key,omitempty"`
+	Priority           string `json:"priority,omitempty"`
+	DueInDays          int    `json:"due_in_days,omitempty"`
 	Message            string `json:"message"`
 	Action             string `json:"action"`
 	EntityType         string `json:"entity_type,omitempty"`

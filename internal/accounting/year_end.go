@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/workspace"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
@@ -76,16 +77,20 @@ type YearEndInventoryCostingReview struct {
 
 // YearEndCloseRemediationAction describes one operator action needed to complete or correct year-end close.
 type YearEndCloseRemediationAction struct {
-	Code       string `json:"code"`
-	Severity   string `json:"severity"`
-	Scope      string `json:"scope"`
-	OwnerRole  string `json:"owner_role"`
-	Message    string `json:"message"`
-	Action     string `json:"action"`
-	EntityType string `json:"entity_type,omitempty"`
-	EntityID   string `json:"entity_id,omitempty"`
-	UIPath     string `json:"ui_path,omitempty"`
-	CLICommand string `json:"cli_command,omitempty"`
+	Code           string `json:"code"`
+	Severity       string `json:"severity"`
+	Scope          string `json:"scope"`
+	OwnerRole      string `json:"owner_role"`
+	WorkspaceQueue string `json:"workspace_queue,omitempty"`
+	AssignmentKey  string `json:"assignment_key,omitempty"`
+	Priority       string `json:"priority,omitempty"`
+	DueInDays      int    `json:"due_in_days,omitempty"`
+	Message        string `json:"message"`
+	Action         string `json:"action"`
+	EntityType     string `json:"entity_type,omitempty"`
+	EntityID       string `json:"entity_id,omitempty"`
+	UIPath         string `json:"ui_path,omitempty"`
+	CLICommand     string `json:"cli_command,omitempty"`
 }
 
 // YearEndClosePack bundles close readiness with core year-end financial reports.
@@ -223,6 +228,19 @@ func BuildYearEndCloseRemediationActions(status *YearEndCloseStatus) []YearEndCl
 
 	actions := make([]YearEndCloseRemediationAction, 0, 5)
 	add := func(action YearEndCloseRemediationAction) {
+		meta := workspace.RemediationAssignment(
+			"year_end_close",
+			action.Code,
+			action.Severity,
+			action.Scope,
+			action.EntityType,
+			action.EntityID,
+			periodEnd,
+		)
+		action.WorkspaceQueue = meta.WorkspaceQueue
+		action.AssignmentKey = meta.AssignmentKey
+		action.Priority = meta.Priority
+		action.DueInDays = meta.DueInDays
 		actions = append(actions, action)
 	}
 

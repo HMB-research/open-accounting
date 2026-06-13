@@ -1556,6 +1556,12 @@ func TestBuildBankRemediationActions(t *testing.T) {
 				if strings.TrimSpace(action.CLICommand) == "" || strings.TrimSpace(action.UIPath) == "" {
 					t.Fatalf("expected runnable command and UI path, got %#v", action)
 				}
+				if action.WorkspaceQueue != "banking_followup" || action.AssignmentKey == "" || action.Priority == "" {
+					t.Fatalf("expected assignment metadata, got %#v", action)
+				}
+				if action.Severity == "ACTION" && (action.Priority != "high" || action.DueInDays != 1) {
+					t.Fatalf("expected high-priority action due in 1 day, got %#v", action)
+				}
 			}
 		})
 	}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/HMB-research/open-accounting/internal/workspace"
 )
 
 // BuildBankRemediationActions turns bank transaction state into accountant follow-up actions.
@@ -29,6 +31,19 @@ func BuildBankRemediationActions(transaction *BankTransaction) []BankRemediation
 		item := base
 		item.Code = code
 		item.Severity = severity
+		meta := workspace.RemediationAssignment(
+			"banking_followup",
+			code,
+			severity,
+			item.EntityType,
+			item.EntityID,
+			item.TransactionStatus,
+			item.FollowUpStatus,
+		)
+		item.WorkspaceQueue = meta.WorkspaceQueue
+		item.AssignmentKey = meta.AssignmentKey
+		item.Priority = meta.Priority
+		item.DueInDays = meta.DueInDays
 		item.Message = message
 		item.Action = text
 		item.CLICommand = command

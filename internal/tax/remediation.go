@@ -3,6 +3,8 @@ package tax
 import (
 	"fmt"
 	"strings"
+
+	"github.com/HMB-research/open-accounting/internal/workspace"
 )
 
 // BuildKMDRemediationActions turns a KMD declaration status into accountant follow-up actions.
@@ -27,6 +29,18 @@ func BuildKMDRemediationActions(declaration *KMDDeclaration) []KMDRemediationAct
 		item := base
 		item.Code = code
 		item.Severity = severity
+		meta := workspace.RemediationAssignment(
+			"kmd_declarations",
+			code,
+			severity,
+			item.EntityType,
+			item.EntityID,
+			item.Period,
+		)
+		item.WorkspaceQueue = meta.WorkspaceQueue
+		item.AssignmentKey = meta.AssignmentKey
+		item.Priority = meta.Priority
+		item.DueInDays = meta.DueInDays
 		item.Message = message
 		item.Action = text
 		item.CLICommand = command
