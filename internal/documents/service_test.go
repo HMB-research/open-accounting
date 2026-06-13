@@ -721,16 +721,26 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	repo.docs[missingRetentionDoc.ID] = &missingRetentionDoc
 
 	expiredDate := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	dueSoonDate := time.Date(2026, 3, 30, 0, 0, 0, 0, time.UTC)
+	dueSoonDoc := *doc
+	dueSoonDoc.ID = "doc-due-soon"
+	dueSoonDoc.EntityID = "txn-due-soon"
+	dueSoonDoc.RetentionUntil = &dueSoonDate
+	dueSoonDoc.ReviewStatus = ReviewStatusApproved
+	repo.docs[dueSoonDoc.ID] = &dueSoonDoc
 	repo.docs[doc.ID].RetentionUntil = &expiredDate
 	retentionReview, err := svc.GetRetentionReview(context.Background(), "tenant_demo", "tenant-1", time.Date(2026, 3, 15, 8, 0, 0, 0, time.UTC), 30, true)
 	if err != nil {
 		t.Fatalf("GetRetentionReview failed: %v", err)
 	}
-	if retentionReview.TotalCount != 2 || retentionReview.ExpiredCount != 1 || retentionReview.MissingRetentionCount != 1 {
+	if retentionReview.TotalCount != 3 || retentionReview.ExpiredCount != 1 || retentionReview.DueSoonCount != 1 || retentionReview.MissingRetentionCount != 1 {
 		t.Fatalf("unexpected retention review: %#v", retentionReview)
 	}
 	if retentionReview.PendingReviewCount != 1 || retentionReview.RejectedCount != 1 {
 		t.Fatalf("unexpected retention review status counts: %#v", retentionReview)
+	}
+	if _, err := svc.GetRetentionReview(context.Background(), "tenant_demo", "tenant-1", time.Now(), -1, false); err == nil {
+		t.Fatal("expected negative retention horizon to fail")
 	}
 
 	correctedRetention := time.Date(2028, 3, 31, 15, 45, 0, 0, time.FixedZone("EET", 2*60*60))
@@ -847,6 +857,53 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(rootDir, doc.StorageKey)); !os.IsNotExist(err) {
 		t.Fatalf("expected stored file to be deleted, got err=%v", err)
+	}
+}
+
+func TestNormalizeUploadRetentionValidation(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 3, 15, 8, 30, 0, 0, time.FixedZone("EET", 2*60*60))
+	explicitRetention := time.Date(2029, 3, 31, 15, 45, 0, 0, time.FixedZone("EET", 2*60*60))
+
+	tests := []struct {
+		name           string
+		retentionUntil *time.Time
+		retentionYears int
+		wantDate       string
+		wantErr        string
+	}{
+		{name: "no retention", wantDate: ""},
+		{name: "negative years", retentionYears: -1, wantErr: "retention years must be zero or greater"},
+		{name: "too many years", retentionYears: MaxRetentionYears + 1, wantErr: "retention years cannot exceed"},
+		{name: "explicit date", retentionUntil: &explicitRetention, wantDate: "2029-03-31"},
+		{name: "years from upload date", retentionYears: 7, wantDate: "2033-03-15"},
+		{name: "conflicting retention inputs", retentionUntil: &explicitRetention, retentionYears: 7, wantErr: "retention_until and retention_years cannot be combined"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			retentionUntil, err := normalizeUploadRetention(tt.retentionUntil, tt.retentionYears, createdAt)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("normalizeUploadRetention failed: %v", err)
+			}
+			if tt.wantDate == "" {
+				if retentionUntil != nil {
+					t.Fatalf("expected nil retention date, got %#v", retentionUntil)
+				}
+				return
+			}
+			if retentionUntil == nil || retentionUntil.Format("2006-01-02") != tt.wantDate {
+				t.Fatalf("expected retention date %s, got %#v", tt.wantDate, retentionUntil)
+			}
+		})
 	}
 }
 
