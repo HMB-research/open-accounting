@@ -457,6 +457,28 @@ func TestValidateBundleReportsGroupedCommercialDocumentHeaderConflicts(t *testin
 	assertValidationIssue(t, report, KindRecurringInvoices, "frequency", "frequency must be consistent for each template")
 }
 
+func TestValidateBundleAcceptsQuoteAndOrderStatusAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindQuotes,
+			FileName: "quotes.csv",
+			CSVContent: "quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate,status\n" +
+				"Q-1,2026-05-30,CUST-1,Setup,1,100,22,issued\n",
+		},
+		{
+			Kind:     KindOrders,
+			FileName: "orders.csv",
+			CSVContent: "order_number,order_date,contact_code,line_description,quantity,unit_price,vat_rate,status\n" +
+				"SO-1,2026-05-30,CUST-1,Setup,1,100,22,open\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Zero(t, report.Summary.ErrorCount)
+}
+
 func TestValidateBundleReportsGroupedDocumentPreservedIDIssues(t *testing.T) {
 	sharedInvoiceID := "11111111-1111-1111-1111-111111111111"
 	sharedQuoteID := "22222222-2222-2222-2222-222222222222"
