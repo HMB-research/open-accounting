@@ -871,6 +871,73 @@ describe("API Client - Core Functionality", () => {
       );
     });
 
+    it("should run expense lifecycle actions", async () => {
+      const expenseResponse = {
+        id: "expense-1",
+        tenant_id: "tenant-123",
+        expense_number: "EXP-001",
+        expense_date: "2026-05-30",
+        merchant: "Taxi Co",
+        expense_account_id: "expense-account",
+        payment_account_id: "cash-account",
+        amount: "35.00",
+        currency: "EUR",
+        exchange_rate: "1",
+        base_amount: "35.00",
+        requires_receipt: false,
+        status: "SUBMITTED",
+        created_at: "2026-05-30T00:00:00Z",
+        created_by: "user-1",
+        updated_at: "2026-05-30T00:00:00Z",
+      };
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ ...expenseResponse, status: "SUBMITTED" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ ...expenseResponse, status: "APPROVED" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ ...expenseResponse, status: "POSTED" }),
+        });
+
+      const submitted = await api.submitExpense("tenant-123", "expense-1");
+      const approved = await api.approveExpense("tenant-123", "expense-1");
+      const posted = await api.postExpense("tenant-123", "expense-1");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/expenses/expense-1/submit",
+        ),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/expenses/expense-1/approve",
+        ),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/expenses/expense-1/post",
+        ),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(submitted.status).toBe("SUBMITTED");
+      expect(approved.status).toBe("APPROVED");
+      expect(posted.status).toBe("POSTED");
+    });
+
     it("should update document retention metadata", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

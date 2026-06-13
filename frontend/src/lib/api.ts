@@ -696,6 +696,27 @@ class ApiClient {
     );
   }
 
+  async submitExpense(tenantId: string, expenseId: string) {
+    return this.request<ExpenseClaim>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/expenses/${expenseId}/submit`,
+    );
+  }
+
+  async approveExpense(tenantId: string, expenseId: string) {
+    return this.request<ExpenseClaim>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/expenses/${expenseId}/approve`,
+    );
+  }
+
+  async postExpense(tenantId: string, expenseId: string) {
+    return this.request<ExpenseClaim>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/expenses/${expenseId}/post`,
+    );
+  }
+
   async updateDocumentRetention(
     tenantId: string,
     documentId: string,
