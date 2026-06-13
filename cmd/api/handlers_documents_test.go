@@ -257,6 +257,11 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, 1, retentionReview.TotalCount)
 	require.Equal(t, 1, retentionReview.DueSoonCount)
 	require.Len(t, retentionReview.Documents, 1)
+	require.Len(t, retentionReview.ReminderActions, 2)
+	require.Equal(t, documents.RetentionReminderDueSoon, retentionReview.ReminderActions[0].Action)
+	require.Equal(t, uploaded.ID, retentionReview.ReminderActions[0].DocumentID)
+	require.Equal(t, documents.RetentionReminderPendingReview, retentionReview.ReminderActions[1].Action)
+	require.Equal(t, uploaded.ID, retentionReview.ReminderActions[1].DocumentID)
 
 	retentionSetReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/retention", map[string]any{
 		"retention_until": "2028-03-31",

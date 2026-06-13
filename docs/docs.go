@@ -21647,6 +21647,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "id": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -24604,6 +24607,38 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_documents.RetentionReminderAction": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "days_until_retention": {
+                    "type": "integer"
+                },
+                "document_id": {
+                    "type": "string"
+                },
+                "document_type": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "retention_until": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_documents.RetentionReview": {
             "type": "object",
             "properties": {
@@ -24633,6 +24668,12 @@ const docTemplate = `{
                 },
                 "rejected_count": {
                     "type": "integer"
+                },
+                "reminder_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.RetentionReminderAction"
+                    }
                 },
                 "total_count": {
                     "type": "integer"

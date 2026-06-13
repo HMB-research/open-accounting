@@ -1864,6 +1864,26 @@ func printDocumentRetentionReview(w io.Writer, review *documents.RetentionReview
 		)
 	}
 	_ = tw.Flush()
+
+	if len(review.ReminderActions) == 0 {
+		return
+	}
+
+	_, _ = fmt.Fprintln(w, "Reminder actions")
+	actionWriter := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(actionWriter, "ACTION\tDOCUMENT\tRETENTION\tDAYS\tMESSAGE")
+	for _, action := range review.ReminderActions {
+		_, _ = fmt.Fprintf(
+			actionWriter,
+			"%s\t%s\t%s\t%s\t%s\n",
+			action.Action,
+			action.DocumentID,
+			formatDatePtr(action.RetentionUntil),
+			formatIntPtr(action.DaysUntilRetention),
+			action.Message,
+		)
+	}
+	_ = actionWriter.Flush()
 }
 
 func printPaymentsTable(w io.Writer, paymentsList []payments.Payment) {
@@ -3334,6 +3354,13 @@ func formatDatePtr(value *time.Time) string {
 		return "-"
 	}
 	return formatDate(*value)
+}
+
+func formatIntPtr(value *int) string {
+	if value == nil {
+		return "-"
+	}
+	return strconv.Itoa(*value)
 }
 
 func formatOptionalString(value string) string {

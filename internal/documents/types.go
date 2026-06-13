@@ -28,6 +28,12 @@ const (
 	ReviewStatusApproved = "APPROVED"
 	ReviewStatusRejected = "REJECTED"
 
+	RetentionReminderExpired          = "expired_retention"
+	RetentionReminderDueSoon          = "retention_due_soon"
+	RetentionReminderMissingRetention = "missing_retention"
+	RetentionReminderPendingReview    = "pending_review"
+	RetentionReminderRejected         = "rejected_document"
+
 	MaxDocumentSizeBytes = 10 << 20
 	MaxRetentionYears    = 100
 )
@@ -144,13 +150,26 @@ type EvidencePolicyResult struct {
 }
 
 type RetentionReview struct {
-	AsOfDate              string     `json:"as_of_date"`
-	CutoffDate            string     `json:"cutoff_date"`
-	TotalCount            int        `json:"total_count"`
-	ExpiredCount          int        `json:"expired_count"`
-	DueSoonCount          int        `json:"due_soon_count"`
-	MissingRetentionCount int        `json:"missing_retention_count"`
-	PendingReviewCount    int        `json:"pending_review_count"`
-	RejectedCount         int        `json:"rejected_count"`
-	Documents             []Document `json:"documents"`
+	AsOfDate              string                    `json:"as_of_date"`
+	CutoffDate            string                    `json:"cutoff_date"`
+	TotalCount            int                       `json:"total_count"`
+	ExpiredCount          int                       `json:"expired_count"`
+	DueSoonCount          int                       `json:"due_soon_count"`
+	MissingRetentionCount int                       `json:"missing_retention_count"`
+	PendingReviewCount    int                       `json:"pending_review_count"`
+	RejectedCount         int                       `json:"rejected_count"`
+	ReminderActions       []RetentionReminderAction `json:"reminder_actions"`
+	Documents             []Document                `json:"documents"`
+}
+
+type RetentionReminderAction struct {
+	DocumentID         string     `json:"document_id"`
+	EntityType         string     `json:"entity_type"`
+	EntityID           string     `json:"entity_id"`
+	DocumentType       string     `json:"document_type"`
+	FileName           string     `json:"file_name"`
+	Action             string     `json:"action"`
+	Message            string     `json:"message"`
+	DaysUntilRetention *int       `json:"days_until_retention,omitempty"`
+	RetentionUntil     *time.Time `json:"retention_until,omitempty"`
 }
