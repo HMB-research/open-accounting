@@ -292,6 +292,7 @@ open-accounting/
 | [API Reference](docs/API.md)                                          | Complete REST API documentation with examples                               |
 | [Architecture](docs/ARCHITECTURE.md)                                  | System design, multi-tenancy, authentication flow                           |
 | [CLI Guide](docs/CLI.md)                                              | API-token bootstrap, token management, and import examples for the `oa` CLI |
+| [Use Case Coverage Matrix](docs/USE_CASE_COVERAGE.md)                 | Current use-case status, evidence gates, and remaining gaps                 |
 | [Deployment](docs/DEPLOYMENT.md)                                      | Production deployment guide                                                 |
 | [EMTA Integration](docs/EMTA_INTEGRATION.md)                          | Estonian Tax Board integration guide                                        |
 | [Plugins](docs/PLUGINS.md)                                            | Plugin development and marketplace guide                                    |

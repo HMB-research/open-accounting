@@ -99,6 +99,7 @@ Still not done:
 
 - [Reliability and Product Roadmap](./plans/2026-03-12-reliability-and-product-roadmap.md)
 - [Feature Mapping: Merit & SmartAccounts](./FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md)
+- [Use Case Coverage Matrix](./USE_CASE_COVERAGE.md)
 - [API Reference](./API.md)
 - [CLI Guide](./CLI.md)
 - [Deployment Guide](./DEPLOYMENT.md)

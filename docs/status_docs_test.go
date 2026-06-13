@@ -156,6 +156,46 @@ func TestCLIGuideDocumentsPayrollMigrationSamples(t *testing.T) {
 	}
 }
 
+func TestUseCaseCoverageMatrixDocumentsGoalEvidence(t *testing.T) {
+	payload, err := os.ReadFile("USE_CASE_COVERAGE.md")
+	if err != nil {
+		t.Fatalf("read use case coverage matrix: %v", err)
+	}
+	matrix := string(payload)
+
+	for _, snippet := range []string{
+		"# Use Case Coverage Matrix",
+		"`make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.",
+		"`make test-backend-coverage` enforces the same CLI coverage from the backend coverage gate.",
+		"`go test -timeout=3m ./docs -count=1` keeps the documentation status and route coverage checks active.",
+		"| Historical migration and cutover | `Partial` |",
+		"Full incumbent-system cutover paths, complete vendor mapping presets, and deeper cross-file validation remain open.",
+		"| Direct bank feeds, direct SEPA initiation, e-invoice operator exchange, OCR, and automatic authority filing | `Blocked` |",
+		"Keep replacing uncovered migration validator branches with focused tests until the use-case coverage evidence is no longer mostly indirect.",
+	} {
+		if !strings.Contains(matrix, snippet) {
+			t.Fatalf("use case coverage matrix missing snippet %q", snippet)
+		}
+	}
+
+	read := func(path string) string {
+		t.Helper()
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		return string(payload)
+	}
+	for path, doc := range map[string]string{
+		filepath.Join("..", "README.md"): read(filepath.Join("..", "README.md")),
+		"DEVELOPMENT_STATUS.md":          read("DEVELOPMENT_STATUS.md"),
+	} {
+		if !strings.Contains(doc, "USE_CASE_COVERAGE.md") {
+			t.Fatalf("%s missing use case coverage matrix link", path)
+		}
+	}
+}
+
 func TestWorkflowDemoE2EGatesMatchDocumentation(t *testing.T) {
 	workflowPayload, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
 	if err != nil {
