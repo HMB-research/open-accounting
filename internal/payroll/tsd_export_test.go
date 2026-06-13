@@ -427,24 +427,50 @@ func TestServiceGenerateTSDErrors(t *testing.T) {
 		}
 	})
 
-	t.Run("wraps repository write failures", func(t *testing.T) {
+	t.Run("wraps payslip lookup failures", func(t *testing.T) {
 		repo := NewMockRepository()
 		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
 		repo.PayrollRuns["run-1"] = &PayrollRun{
-			ID:          "run-1",
-			TenantID:    "tenant-1",
-			PeriodYear:  2025,
-			PeriodMonth: 1,
-			Status:      PayrollApproved,
+			ID:       "run-1",
+			TenantID: "tenant-1",
+			Status:   PayrollApproved,
 		}
-		repo.Employees["emp-1"] = &Employee{ID: "emp-1", TenantID: "tenant-1"}
-		repo.Payslips = []Payslip{{
-			ID:           "pay-1",
-			TenantID:     "tenant-1",
-			PayrollRunID: "run-1",
-			EmployeeID:   "emp-1",
-			GrossSalary:  decimal.NewFromInt(1000),
-		}}
+		repo.GetPayslipsErr = errors.New("lookup failed")
+
+		_, err := service.GenerateTSD(ctx, "tenant_schema", "tenant-1", "run-1")
+		if err == nil || !strings.Contains(err.Error(), "get payslips") {
+			t.Fatalf("expected payslip lookup error, got %v", err)
+		}
+	})
+
+	t.Run("wraps delete existing declaration failures", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+		seedApprovedPayrollRunWithPayslip(repo)
+		repo.DeleteTSDErr = errors.New("delete failed")
+
+		_, err := service.GenerateTSD(ctx, "tenant_schema", "tenant-1", "run-1")
+		if err == nil || !strings.Contains(err.Error(), "delete existing TSD") {
+			t.Fatalf("expected delete existing TSD error, got %v", err)
+		}
+	})
+
+	t.Run("wraps declaration create failures", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+		seedApprovedPayrollRunWithPayslip(repo)
+		repo.CreateTSDErr = errors.New("create failed")
+
+		_, err := service.GenerateTSD(ctx, "tenant_schema", "tenant-1", "run-1")
+		if err == nil || !strings.Contains(err.Error(), "insert TSD declaration") {
+			t.Fatalf("expected declaration insert error, got %v", err)
+		}
+	})
+
+	t.Run("wraps repository write failures", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+		seedApprovedPayrollRunWithPayslip(repo)
 		repo.CreateTSDRowsErr = errors.New("insert failed")
 
 		_, err := service.GenerateTSD(ctx, "tenant_schema", "tenant-1", "run-1")
@@ -561,8 +587,29 @@ func TestServiceTSDErrorWrapping(t *testing.T) {
 		!strings.Contains(err.Error(), "get TSD") {
 		t.Fatalf("expected XML export lookup error, got %v", err)
 	}
+	if _, err := service.ExportTSDToCSV(ctx, "tenant_schema", "tenant-1", 2025, 1); err == nil ||
+		!strings.Contains(err.Error(), "get TSD") {
+		t.Fatalf("expected CSV export lookup error, got %v", err)
+	}
+	if _, err := service.GetTSDSummary(ctx, "tenant_schema", "tenant-1", 2025, 1); err == nil ||
+		!strings.Contains(err.Error(), "get TSD") {
+		t.Fatalf("expected summary lookup error, got %v", err)
+	}
+
+	repo.GetTSDErr = ErrTSDDeclarationNotFound
+	if _, err := service.GetTSD(ctx, "tenant_schema", "tenant-1", 2025, 1); err == nil ||
+		!strings.Contains(err.Error(), "TSD declaration not found") {
+		t.Fatalf("expected not found error, got %v", err)
+	}
 
 	repo.GetTSDErr = nil
+	repo.GetPayslipsErr = errors.New("payslips failed")
+	if _, err := service.GetPayslipsWithEmployees(ctx, "tenant_schema", "tenant-1", "run-1"); err == nil ||
+		!strings.Contains(err.Error(), "get payslips") {
+		t.Fatalf("expected payslip lookup error, got %v", err)
+	}
+
+	repo.GetPayslipsErr = nil
 	repo.GetTSDRowsErr = errors.New("rows failed")
 	if _, err := service.GetTSDRows(ctx, "tenant_schema", "tenant-1", "tsd-1"); err == nil ||
 		!strings.Contains(err.Error(), "get TSD rows") {
@@ -593,6 +640,29 @@ func TestServiceTSDErrorWrapping(t *testing.T) {
 		!strings.Contains(err.Error(), "mark TSD rejected") {
 		t.Fatalf("expected rejected marker error, got %v", err)
 	}
+}
+
+func seedApprovedPayrollRunWithPayslip(repo *MockRepository) {
+	repo.PayrollRuns["run-1"] = &PayrollRun{
+		ID:          "run-1",
+		TenantID:    "tenant-1",
+		PeriodYear:  2025,
+		PeriodMonth: 1,
+		Status:      PayrollApproved,
+	}
+	repo.Employees["emp-1"] = &Employee{
+		ID:        "emp-1",
+		TenantID:  "tenant-1",
+		FirstName: "Mari",
+		LastName:  "Maasikas",
+	}
+	repo.Payslips = []Payslip{{
+		ID:           "pay-1",
+		TenantID:     "tenant-1",
+		PayrollRunID: "run-1",
+		EmployeeID:   "emp-1",
+		GrossSalary:  decimal.NewFromInt(1000),
+	}}
 }
 
 func seedTSDForExport(repo *MockRepository) {
