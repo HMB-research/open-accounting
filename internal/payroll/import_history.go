@@ -111,7 +111,7 @@ func (s *Service) ImportPayrollHistoryCSV(
 	schemaName, tenantID, userID string,
 	req *ImportPayrollHistoryRequest,
 ) (*ImportPayrollHistoryResult, error) {
-	if strings.TrimSpace(req.CSVContent) == "" {
+	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
 		return nil, fmt.Errorf("csv_content is required")
 	}
 

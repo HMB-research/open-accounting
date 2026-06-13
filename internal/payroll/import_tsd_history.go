@@ -106,7 +106,7 @@ func (s *Service) ImportTSDHistoryCSV(
 	schemaName, tenantID string,
 	req *ImportTSDHistoryRequest,
 ) (*ImportTSDHistoryResult, error) {
-	if strings.TrimSpace(req.CSVContent) == "" {
+	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
 		return nil, fmt.Errorf("csv_content is required")
 	}
 

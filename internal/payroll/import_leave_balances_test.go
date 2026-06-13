@@ -11,6 +11,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestImportLeaveBalancesCSV_RejectsNilOrEmptyRequest(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	service := NewAbsenceService(NewMockAbsenceRepository(), &MockUUIDGenerator{prefix: "leave"})
+
+	tests := []struct {
+		name string
+		req  *ImportLeaveBalancesRequest
+	}{
+		{name: "nil request"},
+		{name: "empty content", req: &ImportLeaveBalancesRequest{CSVContent: " \n\t "}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", tt.req)
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.Contains(t, err.Error(), "csv_content is required")
+		})
+	}
+}
+
 func TestImportLeaveBalancesCSV_CreatesAndUpdatesBalances(t *testing.T) {
 	t.Parallel()
 

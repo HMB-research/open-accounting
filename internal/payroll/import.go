@@ -110,7 +110,7 @@ var employeeImportBoolAliases = map[string]bool{
 
 // ImportEmployeesCSV imports employees and optional base salaries from CSV content.
 func (s *Service) ImportEmployeesCSV(ctx context.Context, schemaName, tenantID string, req *ImportEmployeesRequest) (*ImportEmployeesResult, error) {
-	if strings.TrimSpace(req.CSVContent) == "" {
+	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
 		return nil, fmt.Errorf("csv_content is required")
 	}
 
