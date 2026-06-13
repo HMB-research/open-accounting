@@ -24,13 +24,11 @@ import (
 	"github.com/HMB-research/open-accounting/internal/tax"
 )
 
-type migrationExecutionResultStatus string
-
 const (
-	migrationExecutionResultPlanned   migrationExecutionResultStatus = "PLANNED"
-	migrationExecutionResultSkipped   migrationExecutionResultStatus = "SKIPPED"
-	migrationExecutionResultSucceeded migrationExecutionResultStatus = "SUCCEEDED"
-	migrationExecutionResultFailed    migrationExecutionResultStatus = "FAILED"
+	migrationExecutionResultPlanned   = cutover.MigrationExecutionResultPlanned
+	migrationExecutionResultSkipped   = cutover.MigrationExecutionResultSkipped
+	migrationExecutionResultSucceeded = cutover.MigrationExecutionResultSucceeded
+	migrationExecutionResultFailed    = cutover.MigrationExecutionResultFailed
 )
 
 type migrationExecuteOptions struct {
@@ -41,38 +39,9 @@ type migrationExecuteOptions struct {
 	OpeningBalanceEntryDate  string
 }
 
-type migrationExecutionRun struct {
-	Summary            migrationExecutionRunSummary         `json:"summary"`
-	Plan               *cutover.MigrationExecutionPlan      `json:"plan,omitempty"`
-	Steps              []migrationExecutionStepRun          `json:"steps,omitempty"`
-	RemediationActions []cutover.MigrationRemediationAction `json:"remediation_actions,omitempty"`
-}
-
-type migrationExecutionRunSummary struct {
-	Status             string `json:"status"`
-	Confirmed          bool   `json:"confirmed"`
-	PlanReady          bool   `json:"plan_ready"`
-	ValidationReady    bool   `json:"validation_ready"`
-	StepCount          int    `json:"step_count"`
-	SucceededStepCount int    `json:"succeeded_step_count"`
-	FailedStepCount    int    `json:"failed_step_count"`
-	SkippedStepCount   int    `json:"skipped_step_count"`
-	PlannedStepCount   int    `json:"planned_step_count"`
-	NeedsContextCount  int    `json:"needs_context_count"`
-	BlockedStepCount   int    `json:"blocked_step_count"`
-}
-
-type migrationExecutionStepRun struct {
-	StepNumber int                            `json:"step_number"`
-	Kind       cutover.FileKind               `json:"kind"`
-	FileName   string                         `json:"file_name"`
-	Status     migrationExecutionResultStatus `json:"status"`
-	Message    string                         `json:"message,omitempty"`
-	Error      string                         `json:"error,omitempty"`
-	APIPath    string                         `json:"api_path,omitempty"`
-	CLICommand string                         `json:"cli_command,omitempty"`
-	Response   json.RawMessage                `json:"response,omitempty"`
-}
+type migrationExecutionRun = cutover.MigrationExecutionRun
+type migrationExecutionRunSummary = cutover.MigrationExecutionRunSummary
+type migrationExecutionStepRun = cutover.MigrationExecutionStepRun
 
 func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
 	fs := flag.NewFlagSet("migration execute", flag.ContinueOnError)
@@ -223,50 +192,13 @@ func executeMigrationRun(ctx context.Context, client *apiClient, tenantID string
 }
 
 func newMigrationExecutionRun(plan *cutover.MigrationExecutionPlan, confirmed bool) *migrationExecutionRun {
-	run := &migrationExecutionRun{
-		Summary: migrationExecutionRunSummary{
-			Status:    "blocked",
-			Confirmed: confirmed,
-		},
-		Plan: plan,
-	}
-	if plan == nil {
-		return run
-	}
-	run.RemediationActions = plan.RemediationActions
-	run.Summary.PlanReady = plan.Summary.Ready
-	run.Summary.ValidationReady = plan.Summary.ValidationReady
-	run.Summary.StepCount = len(plan.Steps)
-	run.Summary.NeedsContextCount = plan.Summary.NeedsContextCount
-	run.Summary.BlockedStepCount = plan.Summary.BlockedStepCount
-	if plan.Summary.Ready && confirmed {
-		run.Summary.Status = "running"
-	} else if plan.Summary.Ready {
-		run.Summary.Status = "needs_confirmation"
-	}
-
-	run.Steps = make([]migrationExecutionStepRun, 0, len(plan.Steps))
-	for _, step := range plan.Steps {
-		status := migrationExecutionResultPlanned
-		message := "Pass --confirm to run this import."
-		if step.Status != cutover.MigrationExecutionStepReady {
-			status = migrationExecutionResultSkipped
-			message = step.Message
-			run.Summary.SkippedStepCount++
-		} else if confirmed {
-			message = "Ready to import."
-		} else {
-			run.Summary.PlannedStepCount++
+	run := cutover.NewMigrationExecutionRun(plan, confirmed)
+	if run != nil && !confirmed {
+		for index := range run.Steps {
+			if run.Steps[index].Status == cutover.MigrationExecutionResultPlanned {
+				run.Steps[index].Message = "Pass --confirm to run this import."
+			}
 		}
-		run.Steps = append(run.Steps, migrationExecutionStepRun{
-			StepNumber: step.StepNumber,
-			Kind:       step.Kind,
-			FileName:   step.FileName,
-			Status:     status,
-			Message:    message,
-			APIPath:    step.APIPath,
-			CLICommand: step.CLICommand,
-		})
 	}
 	return run
 }
