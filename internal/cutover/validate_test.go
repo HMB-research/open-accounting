@@ -353,6 +353,65 @@ func TestValidateBundleAcceptsSmartAccountsInventoryAndAssetProviderPresetAliase
 	assert.Contains(t, report.Files[4].Headers, "useful_life_months")
 }
 
+func TestValidateBundleAcceptsMeritKMDHistoryProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetMerit,
+		Files: []BundleFile{
+			{
+				Kind:     KindKMDHistory,
+				FileName: "merit-kmd-history.csv",
+				CSVContent: "aasta,kuu,staatus,esitamise_kuupaev,rea_kood,rea_nimetus,maksustatav_kaive,kaibemaks,valjundkaibemaks,sisendkaibemaks\n" +
+					"2025,12,accepted,2026-01-20,1,Taxable sales,1000,220,220,80\n" +
+					"2025,12,accepted,2026-01-20,4,Input VAT,363.64,80,220,80\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 1)
+	assert.Contains(t, report.Files[0].Headers, "year")
+	assert.Contains(t, report.Files[0].Headers, "month")
+	assert.Contains(t, report.Files[0].Headers, "submitted_at")
+	assert.Contains(t, report.Files[0].Headers, "row_code")
+	assert.Contains(t, report.Files[0].Headers, "tax_base")
+	assert.Contains(t, report.Files[0].Headers, "tax_amount")
+	assert.Contains(t, report.Files[0].Headers, "total_output_vat")
+	assert.Contains(t, report.Files[0].Headers, "total_input_vat")
+}
+
+func TestValidateBundleAcceptsSmartAccountsKMDHistoryProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{
+			{
+				Kind:     KindKMDHistory,
+				FileName: "smartaccounts-kmd-history.csv",
+				CSVContent: "vat_return_year,vat_return_month,vat_return_status,filing_date,vat_row,line_description,vat_base,vat_sum,output_tax,input_tax\n" +
+					"2025,12,accepted,2026-01-20,1,Taxable sales,1000,220,220,80\n" +
+					"2025,12,accepted,2026-01-20,4,Input VAT,363.64,80,220,80\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 1)
+	assert.Contains(t, report.Files[0].Headers, "year")
+	assert.Contains(t, report.Files[0].Headers, "month")
+	assert.Contains(t, report.Files[0].Headers, "submitted_at")
+	assert.Contains(t, report.Files[0].Headers, "row_code")
+	assert.Contains(t, report.Files[0].Headers, "description")
+	assert.Contains(t, report.Files[0].Headers, "tax_base")
+	assert.Contains(t, report.Files[0].Headers, "tax_amount")
+	assert.Contains(t, report.Files[0].Headers, "total_output_vat")
+	assert.Contains(t, report.Files[0].Headers, "total_input_vat")
+}
+
 func TestValidateBundleDefaultsDisplayFileNames(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
