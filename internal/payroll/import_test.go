@@ -440,6 +440,98 @@ func TestImportPayrollHistoryCSV_RejectsMismatchedIdentifiersAndGroupInconsisten
 	assert.Contains(t, result.Errors[4].Message, "notes must be consistent for each payroll period")
 }
 
+func TestImportPayrollHistoryCSV_RejectsAmbiguousNameIdentifierConflicts(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-1"] = &Employee{
+		ID:             "emp-1",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-2"] = &Employee{
+		ID:             "emp-2",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-200",
+		FirstName:      "Duplicate",
+		LastName:       "Name",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-3"] = &Employee{
+		ID:             "emp-3",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-201",
+		FirstName:      "Duplicate",
+		LastName:       "Name",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+	result, err := service.ImportPayrollHistoryCSV(ctx, "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+		CSVContent: "period_year,period_month,status,employee_number,name,first_name,last_name,gross_salary\n" +
+			"2025,5,PAID,EMP-100,Duplicate Name,,,1000.00\n" +
+			"2025,5,PAID,EMP-100,,Duplicate,Name,900.00\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Zero(t, result.PayrollRunsCreated)
+	assert.Zero(t, result.PayslipsCreated)
+	assert.Equal(t, 2, result.RowsSkipped)
+	require.Len(t, result.Errors, 2)
+	assert.Contains(t, result.Errors[0].Message, "employee identifiers do not match the same employee")
+	assert.Contains(t, result.Errors[1].Message, "employee identifiers do not match the same employee")
+}
+
+func TestImportPayrollHistoryCSV_AllowsAmbiguousNameWithMatchingExplicitIdentifier(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-1"] = &Employee{
+		ID:             "emp-1",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-200",
+		FirstName:      "Duplicate",
+		LastName:       "Name",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-2"] = &Employee{
+		ID:             "emp-2",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-201",
+		FirstName:      "Duplicate",
+		LastName:       "Name",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+	result, err := service.ImportPayrollHistoryCSV(ctx, "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+		CSVContent: "period_year,period_month,status,employee_number,name,first_name,last_name,gross_salary\n" +
+			"2025,5,PAID,EMP-200,Duplicate Name,,,1000.00\n" +
+			"2025,5,PAID,EMP-201,,Duplicate,Name,900.00\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Equal(t, 1, result.PayrollRunsCreated)
+	assert.Equal(t, 2, result.PayslipsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+	require.Len(t, repo.Payslips, 2)
+	assert.Equal(t, "emp-1", repo.Payslips[0].EmployeeID)
+	assert.Equal(t, "emp-2", repo.Payslips[1].EmployeeID)
+}
+
 func TestImportPayrollHistoryCSV_ReportsTransactionErrorsPerGroup(t *testing.T) {
 	t.Parallel()
 

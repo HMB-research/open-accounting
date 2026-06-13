@@ -583,6 +583,8 @@ func findPayrollHistoryEmployee(values map[string]string, indexes *payrollHistor
 		}
 		if len(matches) == 1 {
 			candidates[matches[0].ID] = matches[0]
+		} else if !payrollHistoryMatchesCandidate(candidates, matches) {
+			return nil, "", fmt.Errorf("employee identifiers do not match the same employee")
 		}
 	}
 
@@ -602,6 +604,8 @@ func findPayrollHistoryEmployee(values map[string]string, indexes *payrollHistor
 		}
 		if len(matches) == 1 {
 			candidates[matches[0].ID] = matches[0]
+		} else if !payrollHistoryMatchesCandidate(candidates, matches) {
+			return nil, "", fmt.Errorf("employee identifiers do not match the same employee")
 		}
 	}
 
@@ -617,6 +621,15 @@ func findPayrollHistoryEmployee(values map[string]string, indexes *payrollHistor
 	}
 
 	return nil, "", fmt.Errorf("employee not found")
+}
+
+func payrollHistoryMatchesCandidate(candidates map[string]*Employee, matches []*Employee) bool {
+	for _, match := range matches {
+		if _, ok := candidates[match.ID]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func validatePayrollHistoryGroupConsistency(group *payrollHistoryImportGroup, record *payrollHistoryImportRecord) string {
