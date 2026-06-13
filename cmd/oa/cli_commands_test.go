@@ -21861,6 +21861,17 @@ func TestCLIDocumentCommands(t *testing.T) {
 				"missing_retention_count": 0,
 				"pending_review_count":    1,
 				"rejected_count":          0,
+				"reminder_actions": []map[string]any{{
+					"document_id":          "doc-1",
+					"entity_type":          "payment",
+					"entity_id":            "pay-1",
+					"document_type":        "receipt",
+					"file_name":            "receipt.pdf",
+					"action":               documents.RetentionReminderDueSoon,
+					"message":              "Retention is due on 2027-03-31",
+					"days_until_retention": 30,
+					"retention_until":      "2027-03-31T00:00:00Z",
+				}},
 				"documents": []map[string]any{{
 					"id":              "doc-1",
 					"tenant_id":       "tenant-1",
@@ -22022,6 +22033,7 @@ func TestCLIDocumentCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Document retention review as of 2027-03-01")
 	assert.Contains(t, stdout.String(), "receipt.pdf")
+	assert.Contains(t, stdout.String(), documents.RetentionReminderDueSoon)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{

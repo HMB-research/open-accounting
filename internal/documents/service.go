@@ -275,20 +275,44 @@ func (s *Service) GetRetentionReview(ctx context.Context, schemaName, tenantID s
 	for _, doc := range docs {
 		if doc.RetentionUntil == nil {
 			review.MissingRetentionCount++
+			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderMissingRetention, "Retention date is missing", asOf))
 		} else if dateOnlyUTC(*doc.RetentionUntil).After(asOf) {
 			review.DueSoonCount++
+			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderDueSoon, fmt.Sprintf("Retention is due on %s", dateOnlyUTC(*doc.RetentionUntil).Format("2006-01-02")), asOf))
 		} else {
 			review.ExpiredCount++
+			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderExpired, fmt.Sprintf("Retention expired on %s", dateOnlyUTC(*doc.RetentionUntil).Format("2006-01-02")), asOf))
 		}
 		if doc.ReviewStatus == ReviewStatusPending {
 			review.PendingReviewCount++
+			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderPendingReview, "Document is still pending review", asOf))
 		}
 		if doc.ReviewStatus == ReviewStatusRejected {
 			review.RejectedCount++
+			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderRejected, "Document was rejected and needs remediation", asOf))
 		}
 	}
 
 	return review, nil
+}
+
+func retentionReminderAction(doc Document, action, message string, asOf time.Time) RetentionReminderAction {
+	reminder := RetentionReminderAction{
+		DocumentID:   doc.ID,
+		EntityType:   doc.EntityType,
+		EntityID:     doc.EntityID,
+		DocumentType: doc.DocumentType,
+		FileName:     doc.FileName,
+		Action:       action,
+		Message:      message,
+	}
+	if doc.RetentionUntil != nil {
+		retentionDate := dateOnlyUTC(*doc.RetentionUntil)
+		daysUntilRetention := int(retentionDate.Sub(asOf).Hours() / 24)
+		reminder.RetentionUntil = &retentionDate
+		reminder.DaysUntilRetention = &daysUntilRetention
+	}
+	return reminder
 }
 
 func (s *Service) MarkDocumentReviewed(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string) (*Document, error) {

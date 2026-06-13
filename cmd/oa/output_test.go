@@ -351,6 +351,24 @@ func TestPrintReportOutputEdgeBranches(t *testing.T) {
 	assert.Contains(t, buf.String(), "Total: 2")
 	assert.NotContains(t, buf.String(), "ID\tENTITY")
 
+	buf.Reset()
+	printDocumentRetentionReview(&buf, &documents.RetentionReview{
+		AsOfDate:   "2026-03-12",
+		CutoffDate: "2026-04-11",
+		TotalCount: 1,
+		Documents: []documents.Document{{
+			ID:           "doc-no-reminder",
+			EntityType:   documents.EntityTypeExpense,
+			EntityID:     "exp-1",
+			DocumentType: documents.DocumentTypeReceipt,
+			FileName:     "receipt.pdf",
+			ReviewStatus: documents.ReviewStatusApproved,
+			CreatedAt:    now,
+		}},
+	})
+	assert.Contains(t, buf.String(), "doc-no-reminder")
+	assert.NotContains(t, buf.String(), "Reminder actions")
+
 	existingCarryForward := accounting.JournalEntrySummary{ID: "je-existing", EntryNumber: "JE-EXISTING"}
 	status := accounting.YearEndCloseStatus{
 		PeriodEndDate:              "2025-12-31",
@@ -808,6 +826,7 @@ func TestPrintTables(t *testing.T) {
 
 	var retentionBuf bytes.Buffer
 	retentionUntil := now.AddDate(1, 0, 0)
+	daysUntilRetention := 365
 	printDocumentRetentionReview(&retentionBuf, &documents.RetentionReview{
 		AsOfDate:              "2026-03-15",
 		CutoffDate:            "2026-04-14",
@@ -824,9 +843,31 @@ func TestPrintTables(t *testing.T) {
 			RetentionUntil: &retentionUntil,
 			CreatedAt:      now,
 		}},
+		ReminderActions: []documents.RetentionReminderAction{{
+			DocumentID:         "doc-1",
+			EntityType:         documents.EntityTypeBankTxn,
+			EntityID:           "txn-1",
+			DocumentType:       documents.DocumentTypeReconciliation,
+			FileName:           "statement.pdf",
+			Action:             documents.RetentionReminderDueSoon,
+			Message:            "Retention is due on 2027-03-15",
+			DaysUntilRetention: &daysUntilRetention,
+			RetentionUntil:     &retentionUntil,
+		}, {
+			DocumentID:   "doc-missing-retention",
+			EntityType:   documents.EntityTypeExpense,
+			EntityID:     "exp-1",
+			DocumentType: documents.DocumentTypeReceipt,
+			FileName:     "receipt.pdf",
+			Action:       documents.RetentionReminderMissingRetention,
+			Message:      "Retention date is missing",
+		}},
 	})
 	assert.Contains(t, retentionBuf.String(), "Document retention review")
 	assert.Contains(t, retentionBuf.String(), "statement.pdf")
+	assert.Contains(t, retentionBuf.String(), "Reminder actions")
+	assert.Contains(t, retentionBuf.String(), documents.RetentionReminderDueSoon)
+	assert.Contains(t, retentionBuf.String(), documents.RetentionReminderMissingRetention)
 }
 
 func TestPrintPaymentOutputs(t *testing.T) {

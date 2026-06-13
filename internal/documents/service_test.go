@@ -739,6 +739,32 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	if retentionReview.PendingReviewCount != 1 || retentionReview.RejectedCount != 1 {
 		t.Fatalf("unexpected retention review status counts: %#v", retentionReview)
 	}
+	if len(retentionReview.ReminderActions) != 5 {
+		t.Fatalf("expected 5 retention reminder actions, got %#v", retentionReview.ReminderActions)
+	}
+	actionCounts := map[string]int{}
+	for _, action := range retentionReview.ReminderActions {
+		actionCounts[action.Action]++
+		if action.DocumentID == "doc-due-soon" && action.Action == RetentionReminderDueSoon {
+			if action.DaysUntilRetention == nil || *action.DaysUntilRetention != 15 {
+				t.Fatalf("expected due-soon reminder to be 15 days out, got %#v", action.DaysUntilRetention)
+			}
+			if action.RetentionUntil == nil || action.RetentionUntil.Format("2006-01-02") != "2026-03-30" {
+				t.Fatalf("unexpected reminder retention date: %#v", action.RetentionUntil)
+			}
+		}
+	}
+	for _, action := range []string{
+		RetentionReminderExpired,
+		RetentionReminderDueSoon,
+		RetentionReminderMissingRetention,
+		RetentionReminderPendingReview,
+		RetentionReminderRejected,
+	} {
+		if actionCounts[action] == 0 {
+			t.Fatalf("missing retention reminder action %q in %#v", action, retentionReview.ReminderActions)
+		}
+	}
 	if _, err := svc.GetRetentionReview(context.Background(), "tenant_demo", "tenant-1", time.Now(), -1, false); err == nil {
 		t.Fatal("expected negative retention horizon to fail")
 	}

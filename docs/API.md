@@ -607,7 +607,7 @@ GET /tenants/{tenantId}/documents/retention?as_of=2027-03-01&horizon_days=45&inc
 Authorization: Bearer <token>
 ```
 
-Returns tenant-wide retention administration data for documents with `retention_until` on or before the cutoff date. `include_missing=true` also includes documents without retention metadata. The response includes expired, due-soon, missing-retention, pending-review, rejected, and total counts plus the matching documents.
+Returns tenant-wide retention administration data for documents with `retention_until` on or before the cutoff date. `include_missing=true` also includes documents without retention metadata. The response includes expired, due-soon, missing-retention, pending-review, rejected, and total counts plus the matching documents. It also includes `reminder_actions`, an automation-friendly queue with one action per expired retention date, due-soon retention date, missing retention date, pending review, or rejected document.
 
 #### Update Retention Metadata
 

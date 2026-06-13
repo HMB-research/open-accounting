@@ -364,7 +364,7 @@ open-accounting/
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
-- [x] Document attachments with review, retention dates, and retention-year calculation for invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, and orders
+- [x] Document attachments with review, retention dates, retention-year calculation, retention review, and reminder actions for invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, and orders
 - [x] Document evidence policy evaluation through API and CLI
 - [x] Optional approved evidence blockers for quote send and order confirmation
 - [x] Purchase-invoice evidence enforcement on send and email paths
