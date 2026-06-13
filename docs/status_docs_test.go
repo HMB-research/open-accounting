@@ -133,6 +133,29 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 	}
 }
 
+func TestCLIGuideDocumentsPayrollMigrationSamples(t *testing.T) {
+	payload, err := os.ReadFile("CLI.md")
+	if err != nil {
+		t.Fatalf("read CLI guide: %v", err)
+	}
+	guide := string(payload)
+
+	for _, snippet := range []string{
+		"### Payroll history",
+		"period_year,period_month,status,payment_date,notes,employee_number,gross_salary",
+		"### Leave balances",
+		"year,employee_number,absence_type_code,entitled_days,carryover_days,used_days,pending_days,notes",
+		"### TSD history",
+		"period_year,period_month,status,submitted_at,emta_reference,employee_number,payment_type,gross_payment",
+		"TSD history accepts aliases such as `tsd_year`, `tsd_month`, `declaration_status`, `submitted_date`, `emta_ref`, `employee_no`, `isikukood`, `gross_salary`, `taxable_income`, `unemployment_insurance_er`, `unemployment_insurance_ee`, and `pension`.",
+		"Existing TSD declaration periods are skipped instead of overwritten.",
+	} {
+		if !strings.Contains(guide, snippet) {
+			t.Fatalf("CLI guide missing payroll migration sample snippet %q", snippet)
+		}
+	}
+}
+
 func TestWorkflowDemoE2EGatesMatchDocumentation(t *testing.T) {
 	workflowPayload, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
 	if err != nil {

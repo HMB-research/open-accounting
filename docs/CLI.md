@@ -1189,6 +1189,16 @@ year,employee_number,absence_type_code,entitled_days,carryover_days,used_days,pe
 
 Leave balance imports can use `period_year`, `employee_no`, `isikukood`, `leave_type_code`, `leave_type`, `entitlement`, `carried_forward_days`, `taken_days`, and `reserved_days` aliases.
 
+### TSD history
+
+```csv
+period_year,period_month,status,submitted_at,emta_reference,employee_number,payment_type,gross_payment,basic_exemption,taxable_amount,income_tax,social_tax,unemployment_insurance_employer,unemployment_insurance_employee,funded_pension
+2025,12,ACCEPTED,2026-01-10,EMTA-2025-12,EMP-001,10,3200.00,700.00,2500.00,500.00,1056.00,25.60,51.20,64.00
+2025,12,ACCEPTED,2026-01-10,EMTA-2025-12,EMP-002,10,2800.00,700.00,2100.00,420.00,924.00,22.40,44.80,56.00
+```
+
+TSD history accepts aliases such as `tsd_year`, `tsd_month`, `declaration_status`, `submitted_date`, `emta_ref`, `employee_no`, `isikukood`, `gross_salary`, `taxable_income`, `unemployment_insurance_er`, `unemployment_insurance_ee`, and `pension`. Existing TSD declaration periods are skipped instead of overwritten.
+
 ### Opening balances
 
 ```csv
