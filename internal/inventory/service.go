@@ -17,6 +17,12 @@ type accountingLister interface {
 	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]accounting.Account, error)
 }
 
+type accountingPoster interface {
+	accountingLister
+	CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error)
+	PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID string) error
+}
+
 const (
 	inventoryIssueSourceTypeDefault     = "INVENTORY_ISSUE"
 	inventoryIssueAccountingRoleCOGS    = "COST_OF_GOODS_SOLD"
@@ -28,13 +34,16 @@ const (
 type Service struct {
 	repo     Repository
 	accounts accountingLister
+	ledger   accountingPoster
 }
 
 // NewService creates a new inventory service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
+	accountingService := accounting.NewService(db)
 	return &Service{
 		repo:     NewGORMRepository(db),
-		accounts: accounting.NewService(db),
+		accounts: accountingService,
+		ledger:   accountingService,
 	}
 }
 
@@ -45,10 +54,14 @@ func NewServiceWithRepository(repo Repository) *Service {
 
 // NewServiceWithRepositoryAndAccounting creates a new inventory service with a custom repository and accounting account lister.
 func NewServiceWithRepositoryAndAccounting(repo Repository, accounts accountingLister) *Service {
-	return &Service{
+	service := &Service{
 		repo:     repo,
 		accounts: accounts,
 	}
+	if ledger, ok := accounts.(accountingPoster); ok {
+		service.ledger = ledger
+	}
+	return service
 }
 
 // CreateProduct creates a new product
@@ -1229,6 +1242,14 @@ func (s *Service) IssueStock(ctx context.Context, tenantID, schemaName string, r
 	if err != nil {
 		return nil, err
 	}
+	if req.PostToLedger {
+		if strings.TrimSpace(req.UserID) == "" {
+			return nil, fmt.Errorf("user id is required to post issue accounting")
+		}
+		if sourceID == "" {
+			sourceID = uuid.New().String()
+		}
+	}
 	lotNumber, serialNumber, expiryDate, err := normalizeMovementTrackingMetadataValues(req.LotNumber, req.SerialNumber, req.ExpiryDate)
 	if err != nil {
 		return nil, err
@@ -1269,6 +1290,17 @@ func (s *Service) IssueStock(ctx context.Context, tenantID, schemaName string, r
 	accountingLines, err := s.inventoryIssueAccounting(ctx, schemaName, tenantID, *product, req, sourceID, totalCost)
 	if err != nil {
 		return nil, err
+	}
+	if req.PostToLedger {
+		if s.ledger == nil {
+			return nil, fmt.Errorf("accounting service is unavailable for issue ledger posting")
+		}
+		if totalCost.LessThanOrEqual(decimal.Zero) {
+			return nil, fmt.Errorf("positive issue cost is required to post issue accounting")
+		}
+		if accountingLines == nil {
+			return nil, fmt.Errorf("cost_of_goods_sold_account_id and inventory_account_id are required to post issue accounting")
+		}
 	}
 
 	reference := strings.TrimSpace(req.Reference)
@@ -1318,6 +1350,9 @@ func (s *Service) IssueStock(ctx context.Context, tenantID, schemaName string, r
 	level.LastUpdated = time.Now()
 	if err := s.repo.UpsertStockLevel(ctx, schemaName, level); err != nil {
 		return nil, fmt.Errorf("update stock level: %w", err)
+	}
+	if err := s.postInventoryIssueAccounting(ctx, schemaName, tenantID, req, accountingLines, now); err != nil {
+		return nil, err
 	}
 
 	unitCost := decimal.Zero
@@ -1445,7 +1480,7 @@ func (s *Service) inventoryIssueAccounting(
 	if err != nil {
 		return nil, err
 	}
-	if cogsAccountID == "" && strings.TrimSpace(req.InventoryAccountID) == "" {
+	if cogsAccountID == "" && strings.TrimSpace(req.InventoryAccountID) == "" && !req.PostToLedger {
 		return nil, nil
 	}
 	if cogsAccountID == "" || inventoryAccountID == "" {
@@ -1489,6 +1524,62 @@ func (s *Service) inventoryIssueAccounting(
 			},
 		},
 	}, nil
+}
+
+func (s *Service) postInventoryIssueAccounting(
+	ctx context.Context,
+	schemaName, tenantID string,
+	req *IssueStockRequest,
+	issueAccounting *InventoryIssueAccounting,
+	issuedAt time.Time,
+) error {
+	if !req.PostToLedger {
+		return nil
+	}
+	if issueAccounting == nil {
+		return fmt.Errorf("issue accounting lines are required for ledger posting")
+	}
+	userID := strings.TrimSpace(req.UserID)
+	if userID == "" {
+		return fmt.Errorf("user id is required to post issue accounting")
+	}
+
+	sourceID := strings.TrimSpace(issueAccounting.SourceID)
+	var sourceIDPtr *string
+	if sourceID != "" {
+		sourceIDPtr = &sourceID
+	}
+	lines := make([]accounting.CreateJournalEntryLineReq, 0, len(issueAccounting.Lines))
+	for _, line := range issueAccounting.Lines {
+		lines = append(lines, accounting.CreateJournalEntryLineReq{
+			AccountID:    line.AccountID,
+			Description:  line.Description,
+			DebitAmount:  line.DebitAmount,
+			CreditAmount: line.CreditAmount,
+			Currency:     line.Currency,
+			ExchangeRate: decimal.NewFromInt(1),
+		})
+	}
+
+	entry, err := s.ledger.CreateJournalEntry(ctx, schemaName, tenantID, &accounting.CreateJournalEntryRequest{
+		EntryDate:   issuedAt,
+		Description: issueAccounting.Description,
+		Reference:   issueAccounting.Reference,
+		SourceType:  issueAccounting.SourceType,
+		SourceID:    sourceIDPtr,
+		UserID:      userID,
+		Lines:       lines,
+	})
+	if err != nil {
+		return fmt.Errorf("create inventory issue journal entry: %w", err)
+	}
+	if err := s.ledger.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, userID); err != nil {
+		return fmt.Errorf("post inventory issue journal entry: %w", err)
+	}
+	issueAccounting.Posted = true
+	issueAccounting.JournalID = entry.ID
+	issueAccounting.JournalNo = entry.EntryNumber
+	return nil
 }
 
 func (s *Service) validateInventoryIssueAccounts(ctx context.Context, schemaName, tenantID, cogsAccountID, inventoryAccountID string) error {

@@ -25672,11 +25672,20 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "journal_entry_id": {
+                    "type": "string"
+                },
+                "journal_entry_number": {
+                    "type": "string"
+                },
                 "lines": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccountingLine"
                     }
+                },
+                "posted": {
+                    "type": "boolean"
                 },
                 "reference": {
                     "type": "string"
@@ -25937,6 +25946,9 @@ const docTemplate = `{
                 },
                 "lot_number": {
                     "type": "string"
+                },
+                "post_to_ledger": {
+                    "type": "boolean"
                 },
                 "product_id": {
                     "type": "string"

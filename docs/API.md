@@ -2440,11 +2440,12 @@ Content-Type: application/json
   "source_id": "uuid",
   "reason": "Shipment",
   "cost_of_goods_sold_account_id": "uuid",
-  "inventory_account_id": "uuid"
+  "inventory_account_id": "uuid",
+  "post_to_ledger": true
 }
 ```
 
-`product_id`, `warehouse_id`, optional `source_id`, and optional account IDs must be valid UUIDs. Issues require a positive quantity and enough available warehouse stock. Optional lot metadata consumes only a matching tracked lot/serial/expiry position after tracked and unallocated reservations; without metadata, issue allocation consumes available tracked lots in deterministic expiry/lot/serial order before any untracked remainder. The response includes costed outbound movements, weighted issue cost, the updated stock level, and optional accounting-ready lines that debit cost of goods sold and credit inventory when COGS and inventory asset accounts are available. The service validates supplied COGS accounts as `EXPENSE` and inventory accounts as `ASSET` when accounting account metadata is available.
+`product_id`, `warehouse_id`, optional `source_id`, and optional account IDs must be valid UUIDs. Issues require a positive quantity and enough available warehouse stock. Optional lot metadata consumes only a matching tracked lot/serial/expiry position after tracked and unallocated reservations; without metadata, issue allocation consumes available tracked lots in deterministic expiry/lot/serial order before any untracked remainder. The response includes costed outbound movements, weighted issue cost, the updated stock level, and optional accounting-ready lines that debit cost of goods sold and credit inventory when COGS and inventory asset accounts are available. When `post_to_ledger` is true, those lines are created and posted as a journal entry; the response includes the posted journal entry ID and number. The service validates supplied COGS accounts as `EXPENSE` and inventory accounts as `ASSET` when accounting account metadata is available.
 
 ```http
 POST /tenants/{tenantId}/inventory/transfer

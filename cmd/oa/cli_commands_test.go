@@ -9205,7 +9205,23 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, "Shipment", req.Reason)
 			assert.Equal(t, cogsAccountID, req.CostOfGoodsSoldAccountID)
 			assert.Equal(t, inventoryAccountID, req.InventoryAccountID)
-			_ = json.NewEncoder(w).Encode(issueResultPayload)
+			response := issueResultPayload
+			if req.PostToLedger {
+				posted := make(map[string]any, len(issueResultPayload))
+				for key, value := range issueResultPayload {
+					posted[key] = value
+				}
+				accountingPayload := make(map[string]any, len(issueResultPayload["accounting"].(map[string]any))+3)
+				for key, value := range issueResultPayload["accounting"].(map[string]any) {
+					accountingPayload[key] = value
+				}
+				accountingPayload["posted"] = true
+				accountingPayload["journal_entry_id"] = "journal-1"
+				accountingPayload["journal_entry_number"] = "JE-00001"
+				posted["accounting"] = accountingPayload
+				response = posted
+			}
+			_ = json.NewEncoder(w).Encode(response)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/stock-import":
 			var req inventory.ImportStockAdjustmentsRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -9496,6 +9512,26 @@ func TestCLIInventoryCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"total_cost": "21"`)
 	assert.Contains(t, stdout.String(), `"role": "COST_OF_GOODS_SOLD"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"inventory", "issue",
+		"--product-id", stockProductID,
+		"--warehouse-id", stockWarehouseID,
+		"--quantity", "2.00",
+		"--lot-number", "LOT-2026-01",
+		"--serial-number", "SN-001",
+		"--expiry-date", "2027-01-31",
+		"--reference", "Invoice INV-001",
+		"--source-type", "SALES_INVOICE",
+		"--source-id", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		"--reason", "Shipment",
+		"--cogs-account-id", cogsAccountID,
+		"--inventory-account-id", inventoryAccountID,
+		"--post-to-ledger",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Posted accounting journal entry: journal-1")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "stock", "import", "--file", stockImportFile})

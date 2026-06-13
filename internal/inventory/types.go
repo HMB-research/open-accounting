@@ -430,6 +430,7 @@ type IssueStockRequest struct {
 	Reason                   string `json:"reason,omitempty"`
 	CostOfGoodsSoldAccountID string `json:"cost_of_goods_sold_account_id,omitempty"`
 	InventoryAccountID       string `json:"inventory_account_id,omitempty"`
+	PostToLedger             bool   `json:"post_to_ledger,omitempty"`
 	UserID                   string `json:"-"`
 }
 
@@ -449,6 +450,9 @@ type InventoryIssueAccounting struct {
 	SourceID    string                         `json:"source_id,omitempty"`
 	Reference   string                         `json:"reference,omitempty"`
 	Description string                         `json:"description,omitempty"`
+	Posted      bool                           `json:"posted,omitempty"`
+	JournalID   string                         `json:"journal_entry_id,omitempty"`
+	JournalNo   string                         `json:"journal_entry_number,omitempty"`
 	Lines       []InventoryIssueAccountingLine `json:"lines"`
 }
 

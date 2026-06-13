@@ -2925,10 +2925,16 @@ definitions:
     properties:
       description:
         type: string
+      journal_entry_id:
+        type: string
+      journal_entry_number:
+        type: string
       lines:
         items:
           $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccountingLine'
         type: array
+      posted:
+        type: boolean
       reference:
         type: string
       source_id:
@@ -3100,6 +3106,8 @@ definitions:
         type: string
       lot_number:
         type: string
+      post_to_ledger:
+        type: boolean
       product_id:
         type: string
       quantity:
