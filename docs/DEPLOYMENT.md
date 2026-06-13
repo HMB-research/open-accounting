@@ -267,6 +267,20 @@ Weekly scripts/db-restore-drill.sh --backup <newest-synced-dump> --status-file /
 
 Run `db-restore-drill.sh` from a scheduled job at least weekly against the latest offsite-restored backup copy, not only the local backup directory.
 
+For systemd hosts, generate service and timer templates for the same chain:
+
+```bash
+scripts/db-backup-systemd-schedule.sh \
+  --output-dir ./deploy/systemd \
+  --scripts-dir /opt/open-accounting/scripts \
+  --backup-dir /backups \
+  --status-dir /var/lib/node_exporter/textfile_collector \
+  --env-file /etc/open-accounting/backup.env \
+  --dry-run
+```
+
+Remove `--dry-run` after reviewing the paths, copy the generated unit files into the host systemd unit directory, install `/etc/open-accounting/backup.env` from the generated example with real secrets, then enable the four timers. Keep `DATABASE_URL`, `RESTORE_DATABASE_URL`, `RESTORE_DRILL_BACKUP_FILE`, and provider credentials outside the repository.
+
 ### Connection Pooling
 
 For high-traffic deployments, use PgBouncer:
