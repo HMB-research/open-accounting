@@ -533,6 +533,44 @@ func TestValidateBundleReportsCommercialDocumentRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindRecurringInvoices, "attach_pdf_to_email", "attach_pdf_to_email must be true or false")
 }
 
+func TestValidateBundleAcceptsInvoiceVATTreatmentAndDiscountEdges(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,discount_percent,vat_rate,vat_treatment,reverse_charge\n" +
+				"INV-STANDARD,SALES,CUST-1,2026-05-30,2026-06-14,Standard sale,1,100,,22,standard,\n" +
+				"INV-NORMAL,SALES,CUST-1,2026-05-30,2026-06-14,Normal sale,1,100,0,22,normal,\n" +
+				"INV-RC-TREATMENT,SALES,CUST-1,2026-05-30,2026-06-14,Reverse charge service,1,100,100,20,reverse charge,\n" +
+				"INV-RC-FALSE,SALES,CUST-1,2026-05-30,2026-06-14,Local zero-rated line,1,100,\"12,5\",0,,false\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsInvoiceVATTreatmentAndDiscountParsingIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,discount_percent,vat_rate,vat_treatment\n" +
+				"INV-BAD,SALES,CUST-1,2026-05-30,2026-06-14,Bad treatment,1,100,not-a-decimal,22,margin\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindInvoices, "discount_percent", "discount_percent must be a decimal")
+	assertValidationIssue(t, report, KindInvoices, "vat_treatment", `invalid vat_treatment "margin"`)
+}
+
 func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
