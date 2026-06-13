@@ -24899,6 +24899,9 @@ const docTemplate = `{
                 },
                 "provider_preset": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset"
+                },
+                "resume_from_run": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionRun"
                 }
             }
         },
@@ -25099,6 +25102,12 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "planned_step_count": {
+                    "type": "integer"
+                },
+                "resumed": {
+                    "type": "boolean"
+                },
+                "resumed_step_count": {
                     "type": "integer"
                 },
                 "skipped_step_count": {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
@@ -37,6 +38,7 @@ type migrationExecuteOptions struct {
 	BankTransactionFormat    string
 	EInvoiceInvoiceType      invoicing.InvoiceType
 	OpeningBalanceEntryDate  string
+	ResumeFromRun            *migrationExecutionRun
 }
 
 type migrationExecutionRun = cutover.MigrationExecutionRun
@@ -77,6 +79,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 	openingBalancesFile := fs.String("opening-balances", "", "Opening balances CSV file")
 	openingBalanceEntryDate := fs.String("opening-balance-entry-date", "", "Opening balance journal entry date in YYYY-MM-DD")
 	journalFile := fs.String("journal", "", "Historical journal CSV file")
+	resumeRunFile := fs.String("resume-run", "", "Previous migration execution run JSON file to resume from")
 	confirm := fs.Bool("confirm", false, "Execute the planned imports")
 	asJSON := fs.Bool("json", false, "Output JSON")
 	if err := fs.Parse(args); err != nil {
@@ -120,6 +123,10 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 	if len(files) == 0 {
 		return errors.New("at least one migration CSV or XML file is required")
 	}
+	resumeFromRun, err := readMigrationExecutionRunFile(*resumeRunFile)
+	if err != nil {
+		return err
+	}
 
 	plan, err := client.planMigrationExecution(ctx, cfg.TenantID, &cutover.PlanMigrationExecutionRequest{
 		Files:                    files,
@@ -138,6 +145,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 		BankTransactionFormat:    strings.TrimSpace(*bankTransactionFormat),
 		EInvoiceInvoiceType:      invoiceType,
 		OpeningBalanceEntryDate:  strings.TrimSpace(*openingBalanceEntryDate),
+		ResumeFromRun:            resumeFromRun,
 	})
 	if *asJSON {
 		_ = printJSON(a.stdout, run)
@@ -148,7 +156,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 }
 
 func executeMigrationRun(ctx context.Context, client *apiClient, tenantID string, files []cutover.BundleFile, plan *cutover.MigrationExecutionPlan, opts migrationExecuteOptions) (*migrationExecutionRun, error) {
-	run := newMigrationExecutionRun(plan, opts.Confirm)
+	run := newMigrationExecutionRun(plan, opts.Confirm, opts.ResumeFromRun)
 	if plan == nil {
 		return run, errors.New("migration execution plan is required")
 	}
@@ -161,6 +169,9 @@ func executeMigrationRun(ctx context.Context, client *apiClient, tenantID string
 
 	filesByKey := migrationFilesByStepKey(files)
 	for i, step := range plan.Steps {
+		if run.Steps[i].Status == migrationExecutionResultSucceeded {
+			continue
+		}
 		if step.Status != cutover.MigrationExecutionStepReady {
 			run.Steps[i].Status = migrationExecutionResultSkipped
 			run.Steps[i].Message = "Step is not ready to execute."
@@ -191,8 +202,8 @@ func executeMigrationRun(ctx context.Context, client *apiClient, tenantID string
 	return run, nil
 }
 
-func newMigrationExecutionRun(plan *cutover.MigrationExecutionPlan, confirmed bool) *migrationExecutionRun {
-	run := cutover.NewMigrationExecutionRun(plan, confirmed)
+func newMigrationExecutionRun(plan *cutover.MigrationExecutionPlan, confirmed bool, resumeFrom *migrationExecutionRun) *migrationExecutionRun {
+	run := cutover.NewResumableMigrationExecutionRun(plan, confirmed, resumeFrom)
 	if run != nil && !confirmed {
 		for index := range run.Steps {
 			if run.Steps[index].Status == cutover.MigrationExecutionResultPlanned {
@@ -201,6 +212,22 @@ func newMigrationExecutionRun(plan *cutover.MigrationExecutionPlan, confirmed bo
 		}
 	}
 	return run
+}
+
+func readMigrationExecutionRunFile(path string) (*migrationExecutionRun, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read migration resume run: %w", err)
+	}
+	var run migrationExecutionRun
+	if err := json.Unmarshal(payload, &run); err != nil {
+		return nil, fmt.Errorf("parse migration resume run: %w", err)
+	}
+	return &run, nil
 }
 
 func migrationFilesByStepKey(files []cutover.BundleFile) map[string]cutover.BundleFile {

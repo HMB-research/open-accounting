@@ -1,5 +1,7 @@
 package cutover
 
+import "strconv"
+
 type MigrationExecutionResultStatus string
 
 const (
@@ -18,6 +20,7 @@ type ExecuteMigrationRequest struct {
 	BankTransactionFormat    string                  `json:"bank_transaction_format,omitempty"`
 	OpeningBalanceEntryDate  string                  `json:"opening_balance_entry_date,omitempty"`
 	Confirm                  bool                    `json:"confirm,omitempty"`
+	ResumeFromRun            *MigrationExecutionRun  `json:"resume_from_run,omitempty"`
 }
 
 func (r ExecuteMigrationRequest) PlanRequest() *PlanMigrationExecutionRequest {
@@ -40,6 +43,7 @@ type MigrationExecutionRun struct {
 type MigrationExecutionRunSummary struct {
 	Status             string `json:"status"`
 	Confirmed          bool   `json:"confirmed"`
+	Resumed            bool   `json:"resumed"`
 	PlanReady          bool   `json:"plan_ready"`
 	ValidationReady    bool   `json:"validation_ready"`
 	StepCount          int    `json:"step_count"`
@@ -47,6 +51,7 @@ type MigrationExecutionRunSummary struct {
 	FailedStepCount    int    `json:"failed_step_count"`
 	SkippedStepCount   int    `json:"skipped_step_count"`
 	PlannedStepCount   int    `json:"planned_step_count"`
+	ResumedStepCount   int    `json:"resumed_step_count"`
 	NeedsContextCount  int    `json:"needs_context_count"`
 	BlockedStepCount   int    `json:"blocked_step_count"`
 }
@@ -110,4 +115,58 @@ func NewMigrationExecutionRun(plan *MigrationExecutionPlan, confirmed bool) *Mig
 		})
 	}
 	return run
+}
+
+func NewResumableMigrationExecutionRun(plan *MigrationExecutionPlan, confirmed bool, resumeFrom *MigrationExecutionRun) *MigrationExecutionRun {
+	run := NewMigrationExecutionRun(plan, confirmed)
+	ApplyMigrationExecutionResume(run, resumeFrom)
+	return run
+}
+
+func ApplyMigrationExecutionResume(run *MigrationExecutionRun, resumeFrom *MigrationExecutionRun) {
+	if run == nil || resumeFrom == nil {
+		return
+	}
+
+	succeededSteps := make(map[string]MigrationExecutionStepRun, len(resumeFrom.Steps))
+	for _, step := range resumeFrom.Steps {
+		if step.Status != MigrationExecutionResultSucceeded {
+			continue
+		}
+		succeededSteps[migrationExecutionRunStepKey(step.StepNumber, step.Kind, step.FileName)] = step
+	}
+	if len(succeededSteps) == 0 {
+		return
+	}
+
+	for index := range run.Steps {
+		current := &run.Steps[index]
+		if current.Status != MigrationExecutionResultPlanned {
+			continue
+		}
+		previous, ok := succeededSteps[migrationExecutionRunStepKey(current.StepNumber, current.Kind, current.FileName)]
+		if !ok {
+			continue
+		}
+		current.Status = MigrationExecutionResultSucceeded
+		current.Message = "Step already succeeded in the previous run; skipping on resume."
+		current.Response = previous.Response
+		if run.Summary.PlannedStepCount > 0 {
+			run.Summary.PlannedStepCount--
+		}
+		run.Summary.SucceededStepCount++
+		run.Summary.ResumedStepCount++
+	}
+
+	if run.Summary.ResumedStepCount == 0 {
+		return
+	}
+	run.Summary.Resumed = true
+	if run.Summary.PlanReady && run.Summary.SucceededStepCount == run.Summary.StepCount && run.Summary.FailedStepCount == 0 {
+		run.Summary.Status = "succeeded"
+	}
+}
+
+func migrationExecutionRunStepKey(stepNumber int, kind FileKind, fileName string) string {
+	return string(kind) + "\x00" + fileName + "\x00" + strconv.Itoa(stepNumber)
 }
