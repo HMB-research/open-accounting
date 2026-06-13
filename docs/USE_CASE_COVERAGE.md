@@ -17,7 +17,7 @@ Status values:
 
 ## Current Evidence Baseline
 
-- PR #62 on `feat/payroll-history-import` was green at commit `dbbe184` in CI run `27464796537`.
+- PR #62 on `feat/payroll-history-import` was green at commit `57e53a2` in CI run `27465296875`.
 - `make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.
 - `make test-backend-coverage` enforces the same CLI coverage from the backend coverage gate.
 - `go test -timeout=3m ./docs -count=1` keeps the documentation status and route coverage checks active.
