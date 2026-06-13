@@ -23806,6 +23806,50 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_banking.BankRemediationAction": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "bank_account_id": {
+                    "type": "string"
+                },
+                "cli_command": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "follow_up_status": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "owner_role": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "transaction_status": {
+                    "type": "string"
+                },
+                "ui_path": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_banking.BankStatementImport": {
             "type": "object",
             "properties": {
@@ -23879,6 +23923,12 @@ const docTemplate = `{
                 },
                 "reference": {
                     "type": "string"
+                },
+                "remediation_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankRemediationAction"
+                    }
                 },
                 "review_note": {
                     "type": "string"

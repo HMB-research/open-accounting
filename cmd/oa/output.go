@@ -2732,6 +2732,29 @@ func printBankTransaction(w io.Writer, transaction *banking.BankTransaction) {
 	if transaction.ReconciliationID != nil && strings.TrimSpace(*transaction.ReconciliationID) != "" {
 		_, _ = fmt.Fprintf(w, "Reconciliation: %s\n", *transaction.ReconciliationID)
 	}
+	printBankRemediationActions(w, transaction.RemediationActions)
+}
+
+func printBankRemediationActions(w io.Writer, actions []banking.BankRemediationAction) {
+	if len(actions) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "Bank remediation actions")
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	for _, action := range actions {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			action.Severity,
+			action.Scope,
+			action.OwnerRole,
+			action.Code,
+			action.Action,
+			action.CLICommand,
+		)
+	}
+	_ = tw.Flush()
 }
 
 func printBankImportResult(w io.Writer, result *banking.ImportResult) {

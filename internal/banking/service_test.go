@@ -1414,6 +1414,9 @@ func TestService_UpdateTransactionReview(t *testing.T) {
 	if result.ReviewedAt == nil {
 		t.Fatal("expected reviewed_at to be set")
 	}
+	if !bankRemediationActionCodes(result.RemediationActions)["bank_evidence_required"] {
+		t.Fatalf("expected evidence remediation action, got %#v", result.RemediationActions)
+	}
 }
 
 func TestService_UpdateTransactionReview_RejectsInvalidRequest(t *testing.T) {
@@ -1456,6 +1459,118 @@ func TestService_ListTransactions_NormalizesEmptyFollowUpStatus(t *testing.T) {
 	if transactions[0].FollowUpStatus != FollowUpNone {
 		t.Fatalf("expected normalized follow-up status %q, got %q", FollowUpNone, transactions[0].FollowUpStatus)
 	}
+	if !bankRemediationActionCodes(transactions[0].RemediationActions)["bank_transaction_unmatched"] {
+		t.Fatalf("expected unmatched remediation action, got %#v", transactions[0].RemediationActions)
+	}
+}
+
+func TestBuildBankRemediationActions(t *testing.T) {
+	paymentID := "payment-1"
+	reconciliationID := "rec-1"
+
+	tests := []struct {
+		name  string
+		tx    *BankTransaction
+		codes []string
+	}{
+		{
+			name: "unmatched without follow-up",
+			tx: &BankTransaction{
+				ID:            "tx-unmatched",
+				BankAccountID: "bank-1",
+				Status:        StatusUnmatched,
+			},
+			codes: []string{"bank_transaction_unmatched"},
+		},
+		{
+			name: "evidence required and unmatched",
+			tx: &BankTransaction{
+				ID:             "tx-evidence",
+				BankAccountID:  "bank-1",
+				Status:         StatusUnmatched,
+				FollowUpStatus: FollowUpEvidenceRequired,
+			},
+			codes: []string{"bank_evidence_required", "bank_transaction_unmatched"},
+		},
+		{
+			name: "ready to match",
+			tx: &BankTransaction{
+				ID:             "tx-ready",
+				BankAccountID:  "bank-1",
+				Status:         StatusUnmatched,
+				FollowUpStatus: FollowUpReadyToMatch,
+			},
+			codes: []string{"bank_ready_to_match"},
+		},
+		{
+			name: "matched without reconciliation",
+			tx: &BankTransaction{
+				ID:               "tx-matched",
+				BankAccountID:    "bank-1",
+				Status:           StatusMatched,
+				FollowUpStatus:   FollowUpNone,
+				MatchedPaymentID: &paymentID,
+			},
+			codes: []string{"bank_transaction_reconciliation_pending"},
+		},
+		{
+			name: "reconciled archive",
+			tx: &BankTransaction{
+				ID:               "tx-reconciled",
+				BankAccountID:    "bank-1",
+				Status:           StatusReconciled,
+				FollowUpStatus:   FollowUpNone,
+				MatchedPaymentID: &paymentID,
+				ReconciliationID: &reconciliationID,
+			},
+			codes: []string{"bank_transaction_reconciled_archive"},
+		},
+		{
+			name: "unsupported status and follow-up",
+			tx: &BankTransaction{
+				ID:             "tx-review",
+				BankAccountID:  "bank-1",
+				Status:         TransactionStatus("HELD"),
+				FollowUpStatus: FollowUpStatus("ESCALATED"),
+			},
+			codes: []string{"bank_follow_up_status_review", "bank_transaction_status_review"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actions := BuildBankRemediationActions(tt.tx)
+			got := bankRemediationActionCodes(actions)
+			for _, code := range tt.codes {
+				if !got[code] {
+					t.Fatalf("expected action code %q in %#v", code, actions)
+				}
+			}
+			for _, action := range actions {
+				if action.Scope != "banking" || action.OwnerRole != "accountant" {
+					t.Fatalf("expected accountant banking scope, got %#v", action)
+				}
+				if action.EntityType != "bank_transaction" || action.EntityID != tt.tx.ID {
+					t.Fatalf("expected bank transaction entity context, got %#v", action)
+				}
+				if strings.TrimSpace(action.CLICommand) == "" || strings.TrimSpace(action.UIPath) == "" {
+					t.Fatalf("expected runnable command and UI path, got %#v", action)
+				}
+			}
+		})
+	}
+
+	if BuildBankRemediationActions(nil) != nil {
+		t.Fatal("expected nil actions for nil transaction")
+	}
+}
+
+func bankRemediationActionCodes(actions []BankRemediationAction) map[string]bool {
+	codes := make(map[string]bool, len(actions))
+	for _, action := range actions {
+		codes[action.Code] = true
+	}
+	return codes
 }
 
 func TestService_CreateReconciliation(t *testing.T) {

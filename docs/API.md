@@ -3162,6 +3162,7 @@ Review an unmatched transaction:
 - `follow_up_status` supports `NONE`, `EVIDENCE_REQUIRED`, and `READY_TO_MATCH`
 - successful updates stamp `reviewed_by` and `reviewed_at` on the transaction
 - transaction reads and lists return review metadata alongside match and reconciliation ids
+- transaction reads, lists, and review responses include `remediation_actions` with stable codes such as `bank_evidence_required`, `bank_ready_to_match`, `bank_transaction_unmatched`, `bank_transaction_reconciliation_pending`, and `bank_transaction_reconciled_archive`, plus severity, owner role, entity context, UI path, and suggested CLI command fields for accountant workspace follow-up
 
 ### Bank Reconciliations
 

@@ -4653,6 +4653,23 @@ export interface BankTransaction {
   reconciliation_id?: string;
   import_id?: string;
   created_at: string;
+  remediation_actions?: BankRemediationAction[];
+}
+
+export interface BankRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  message: string;
+  action: string;
+  entity_type?: string;
+  entity_id?: string;
+  bank_account_id?: string;
+  transaction_status?: string;
+  follow_up_status?: string;
+  ui_path?: string;
+  cli_command?: string;
 }
 
 export interface UpdateBankTransactionReviewRequest {

@@ -582,7 +582,7 @@ func (s *Service) ListTransactions(ctx context.Context, schemaName, tenantID str
 	if err != nil {
 		return nil, err
 	}
-	normalizeTransactionSlice(transactions)
+	hydrateTransactionSlice(transactions)
 	return transactions, nil
 }
 
@@ -592,7 +592,7 @@ func (s *Service) GetTransaction(ctx context.Context, schemaName, tenantID, tran
 	if err != nil {
 		return nil, err
 	}
-	normalizeTransactionReviewFields(transaction)
+	hydrateTransactionDerivedFields(transaction)
 	return transaction, nil
 }
 
@@ -638,7 +638,7 @@ func (s *Service) UpdateTransactionReview(ctx context.Context, schemaName, tenan
 		return nil, err
 	}
 
-	normalizeTransactionReviewFields(transaction)
+	hydrateTransactionDerivedFields(transaction)
 	return transaction, nil
 }
 
@@ -701,15 +701,18 @@ func (s *Service) GetImportHistory(ctx context.Context, schemaName, tenantID, ba
 	return s.repo.GetImportHistory(ctx, schemaName, tenantID, bankAccountID)
 }
 
-func normalizeTransactionSlice(transactions []BankTransaction) {
+func hydrateTransactionSlice(transactions []BankTransaction) {
 	for i := range transactions {
-		normalizeTransactionReviewFields(&transactions[i])
+		hydrateTransactionDerivedFields(&transactions[i])
 	}
 }
 
-func normalizeTransactionReviewFields(transaction *BankTransaction) {
-	if transaction == nil || transaction.FollowUpStatus != "" {
+func hydrateTransactionDerivedFields(transaction *BankTransaction) {
+	if transaction == nil {
 		return
 	}
-	transaction.FollowUpStatus = FollowUpNone
+	if transaction.FollowUpStatus == "" {
+		transaction.FollowUpStatus = FollowUpNone
+	}
+	transaction.RemediationActions = BuildBankRemediationActions(transaction)
 }

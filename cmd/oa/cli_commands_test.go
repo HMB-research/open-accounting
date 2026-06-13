@@ -16134,7 +16134,7 @@ func TestCLICloseAuthFlagsAndAPIErrorBranches(t *testing.T) {
 }
 
 func cliBankTransactionPayload(followUp string) map[string]any {
-	return map[string]any{
+	payload := map[string]any{
 		"id":                   "tx-1",
 		"tenant_id":            "tenant-1",
 		"bank_account_id":      "bank-1",
@@ -16153,6 +16153,79 @@ func cliBankTransactionPayload(followUp string) map[string]any {
 		"reconciliation_id":    "rec-1",
 		"imported_at":          "2026-03-15T12:00:00Z",
 		"external_id":          "ext-1",
+	}
+	payload["remediation_actions"] = cliBankRemediationPayload("tx-1", "bank-1", followUp)
+	return payload
+}
+
+func cliBankRemediationPayload(transactionID, bankAccountID, followUp string) []map[string]any {
+	uiPath := fmt.Sprintf("/banking?account_id=%s&transaction_id=%s", bankAccountID, transactionID)
+	switch followUp {
+	case "EVIDENCE_REQUIRED":
+		return []map[string]any{
+			{
+				"code":               "bank_evidence_required",
+				"severity":           "ACTION",
+				"scope":              "banking",
+				"owner_role":         "accountant",
+				"message":            fmt.Sprintf("Bank transaction %s requires approved reconciliation evidence.", transactionID),
+				"action":             "Upload and approve reconciliation evidence before completing the reconciliation.",
+				"entity_type":        "bank_transaction",
+				"entity_id":          transactionID,
+				"bank_account_id":    bankAccountID,
+				"transaction_status": "UNMATCHED",
+				"follow_up_status":   "EVIDENCE_REQUIRED",
+				"ui_path":            uiPath,
+				"cli_command":        fmt.Sprintf("oa documents upload --entity-type bank_transaction --entity-id %s --document-type reconciliation_evidence --file <file>", transactionID),
+			},
+			{
+				"code":               "bank_transaction_unmatched",
+				"severity":           "ACTION",
+				"scope":              "banking",
+				"owner_role":         "accountant",
+				"message":            fmt.Sprintf("Bank transaction %s is still unmatched.", transactionID),
+				"action":             "Match it to an existing payment, create a payment from the transaction, or mark the needed follow-up.",
+				"entity_type":        "bank_transaction",
+				"entity_id":          transactionID,
+				"bank_account_id":    bankAccountID,
+				"transaction_status": "UNMATCHED",
+				"follow_up_status":   "EVIDENCE_REQUIRED",
+				"ui_path":            uiPath,
+				"cli_command":        fmt.Sprintf("oa banking transactions suggestions --id %s", transactionID),
+			},
+		}
+	case "READY_TO_MATCH":
+		return []map[string]any{{
+			"code":               "bank_ready_to_match",
+			"severity":           "ACTION",
+			"scope":              "banking",
+			"owner_role":         "accountant",
+			"message":            fmt.Sprintf("Bank transaction %s is marked ready to match.", transactionID),
+			"action":             "Review payment suggestions and match the transaction to the correct payment.",
+			"entity_type":        "bank_transaction",
+			"entity_id":          transactionID,
+			"bank_account_id":    bankAccountID,
+			"transaction_status": "UNMATCHED",
+			"follow_up_status":   "READY_TO_MATCH",
+			"ui_path":            uiPath,
+			"cli_command":        fmt.Sprintf("oa banking transactions suggestions --id %s", transactionID),
+		}}
+	default:
+		return []map[string]any{{
+			"code":               "bank_transaction_unmatched",
+			"severity":           "ACTION",
+			"scope":              "banking",
+			"owner_role":         "accountant",
+			"message":            fmt.Sprintf("Bank transaction %s is still unmatched.", transactionID),
+			"action":             "Match it to an existing payment, create a payment from the transaction, or mark the needed follow-up.",
+			"entity_type":        "bank_transaction",
+			"entity_id":          transactionID,
+			"bank_account_id":    bankAccountID,
+			"transaction_status": "UNMATCHED",
+			"follow_up_status":   "NONE",
+			"ui_path":            uiPath,
+			"cli_command":        fmt.Sprintf("oa banking transactions suggestions --id %s", transactionID),
+		}}
 	}
 }
 
@@ -16462,6 +16535,7 @@ func TestCLIBankingCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"banking", "transactions", "list", "--account-id", "bank-1", "--status", "unmatched", "--from", "2026-03-01", "--to", "2026-03-31", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"description": "Client payment"`)
+	assert.Contains(t, stdout.String(), `"remediation_actions"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"banking", "transactions", "import", "--account-id", "bank-1", "--file", importFile})
@@ -16478,6 +16552,8 @@ func TestCLIBankingCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Bank transaction tx-1")
 	assert.Contains(t, stdout.String(), "Need receipt")
+	assert.Contains(t, stdout.String(), "Bank remediation actions")
+	assert.Contains(t, stdout.String(), "bank_evidence_required")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"banking", "transactions", "suggestions", "--id", "tx-1"})
@@ -16499,6 +16575,7 @@ func TestCLIBankingCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"banking", "transactions", "review", "--id", "tx-1", "--follow-up-status", "ready_to_match", "--review-note", "Ready after receipt"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Follow-up: READY_TO_MATCH")
+	assert.Contains(t, stdout.String(), "bank_ready_to_match")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"banking", "transactions", "create-payment", "--id", "tx-1"})

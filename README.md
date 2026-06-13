@@ -335,7 +335,7 @@ open-accounting/
 - [x] User authentication and RBAC
 - [x] Invoicing with PDF generation
 - [x] Payment recording and allocation
-- [x] Bank transaction import and reconciliation
+- [x] Bank transaction import, reconciliation, and accountant remediation actions
 - [x] Estonian KMD/VAT compliance
 - [x] User invitation system
 - [x] Dashboard analytics with charts
