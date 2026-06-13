@@ -2517,6 +2517,111 @@ func TestValidateBundleReportsInvalidCostAllocationJournalEntryLineIDs(t *testin
 	assertValidationIssue(t, report, KindCostAllocations, "journal_entry_line_id", "journal_entry_line_id must be a valid UUID")
 }
 
+func TestValidateBundleChecksCostAllocationJournalLineReferences(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n4000,Sales,REVENUE\n",
+		},
+		{
+			Kind:       KindCostCenters,
+			FileName:   "cost-centers.csv",
+			CSVContent: "code,name\nOPS,Operations\n",
+		},
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,entry_date,line_id,account_code,debit,credit\n" +
+				"JE-1,2026-05-31," + cutoverJournalLineID1 + ",1000,125.50,0\n" +
+				"JE-1,2026-05-31," + cutoverJournalLineID2 + ",4000,0,125.50\n",
+		},
+		{
+			Kind:     KindCostAllocations,
+			FileName: "cost-allocations.csv",
+			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_date\n" +
+				"OPS," + cutoverJournalLineID1 + ",125.50,2026-05-31\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsMissingCostAllocationJournalLineReference(t *testing.T) {
+	missingJournalLineID := "33333333-3333-4333-8333-333333333333"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n4000,Sales,REVENUE\n",
+		},
+		{
+			Kind:       KindCostCenters,
+			FileName:   "cost-centers.csv",
+			CSVContent: "code,name\nOPS,Operations\n",
+		},
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,entry_date,line_id,account_code,debit,credit\n" +
+				"JE-1,2026-05-31," + cutoverJournalLineID1 + ",1000,125.50,0\n" +
+				"JE-1,2026-05-31," + cutoverJournalLineID2 + ",4000,0,125.50\n",
+		},
+		{
+			Kind:       KindCostAllocations,
+			FileName:   "cost-allocations.csv",
+			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_date\nOPS," + missingJournalLineID + ",125.50,2026-05-31\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindCostAllocations, report.Issues[0].Kind)
+	assert.Equal(t, KindJournalEntries, report.Issues[0].TargetKind)
+	assert.Equal(t, "journal_entry_line_id", report.Issues[0].Field)
+	assert.Equal(t, missingJournalLineID, report.Issues[0].Value)
+}
+
+func TestValidateBundleReportsInvalidJournalLineIDs(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindJournalEntries,
+			FileName:   "journals.csv",
+			CSVContent: "entry_reference,entry_date,line_id,account_code,debit,credit\nJE-1,2026-05-31,legacy-line,1000,125.50,0\nJE-1,2026-05-31,,4000,0,125.50\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assertValidationIssue(t, report, KindJournalEntries, "line_id", "line_id must be a valid UUID")
+}
+
+func TestValidateBundleReportsDuplicateJournalLineIDs(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,entry_date,line_id,account_code,debit,credit\n" +
+				"JE-1,2026-05-31," + cutoverJournalLineID1 + ",1000,125.50,0\n" +
+				"JE-1,2026-05-31," + cutoverJournalLineID1 + ",4000,0,125.50\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assertValidationIssue(t, report, KindJournalEntries, "line_id", "duplicates row")
+}
+
 func TestValidateBundleReportsCostAllocationIDsThatMatchGeneratedCostCenterImportIDs(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

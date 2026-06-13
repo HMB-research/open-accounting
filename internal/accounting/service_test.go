@@ -810,6 +810,26 @@ func TestService_CreateJournalEntry(t *testing.T) {
 		assert.Len(t, result.Lines, 2)
 	})
 
+	t.Run("preserves requested journal line IDs", func(t *testing.T) {
+		lineID1 := "11111111-1111-4111-8111-111111111111"
+		lineID2 := "22222222-2222-4222-8222-222222222222"
+		req := &CreateJournalEntryRequest{
+			EntryDate:   time.Now(),
+			Description: "Historical entry",
+			Lines: []CreateJournalEntryLineReq{
+				{LineID: " " + lineID1 + " ", AccountID: "acc-1", DebitAmount: decimal.NewFromFloat(100)},
+				{LineID: lineID2, AccountID: "acc-2", CreditAmount: decimal.NewFromFloat(100)},
+			},
+			UserID: "user-1",
+		}
+
+		result, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
+		require.NoError(t, err)
+		require.Len(t, result.Lines, 2)
+		assert.Equal(t, lineID1, result.Lines[0].ID)
+		assert.Equal(t, lineID2, result.Lines[1].ID)
+	})
+
 	t.Run("applies default currency EUR", func(t *testing.T) {
 		req := &CreateJournalEntryRequest{
 			EntryDate:   time.Now(),
@@ -873,6 +893,39 @@ func TestService_CreateJournalEntry(t *testing.T) {
 		_, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "exchange_rate must be positive")
+	})
+
+	t.Run("rejects invalid journal line ID", func(t *testing.T) {
+		req := &CreateJournalEntryRequest{
+			EntryDate:   time.Now(),
+			Description: "Bad line ID entry",
+			Lines: []CreateJournalEntryLineReq{
+				{LineID: "legacy-line", AccountID: "acc-1", DebitAmount: decimal.NewFromFloat(100)},
+				{AccountID: "acc-2", CreditAmount: decimal.NewFromFloat(100)},
+			},
+			UserID: "user-1",
+		}
+
+		_, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "line_id must be a valid UUID")
+	})
+
+	t.Run("rejects duplicate journal line IDs", func(t *testing.T) {
+		lineID := "11111111-1111-4111-8111-111111111111"
+		req := &CreateJournalEntryRequest{
+			EntryDate:   time.Now(),
+			Description: "Duplicate line ID entry",
+			Lines: []CreateJournalEntryLineReq{
+				{LineID: lineID, AccountID: "acc-1", DebitAmount: decimal.NewFromFloat(100)},
+				{LineID: " " + lineID + " ", AccountID: "acc-2", CreditAmount: decimal.NewFromFloat(100)},
+			},
+			UserID: "user-1",
+		}
+
+		_, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "duplicate line_id")
 	})
 
 	t.Run("rejects unbalanced entry", func(t *testing.T) {
