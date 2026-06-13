@@ -39,6 +39,8 @@ func TestValidateMigrationBundleHandler(t *testing.T) {
 	assert.Equal(t, 1, report.Summary.ErrorCount)
 	require.Len(t, report.Issues, 1)
 	assert.Equal(t, cutover.KindContacts, report.Issues[0].TargetKind)
+	require.NotEmpty(t, report.RemediationActions)
+	assert.Contains(t, migrationRemediationCodes(report.RemediationActions), "missing_reference")
 }
 
 func TestValidateMigrationBundleHandlerRejectsEmptyRequest(t *testing.T) {
@@ -68,6 +70,14 @@ func TestValidateMigrationBundleHandlerRejectsUnsupportedEInvoiceContactMode(t *
 
 	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 	assert.Contains(t, w.Body.String(), "unsupported e_invoice_contact_mode")
+}
+
+func migrationRemediationCodes(actions []cutover.MigrationRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }
 
 func TestValidateMigrationBundleHandlerRejectsUnsupportedProviderPreset(t *testing.T) {

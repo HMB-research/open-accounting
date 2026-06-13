@@ -81,6 +81,10 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 	assert.Contains(t, buf.String(), "No migration validation report")
 
 	buf.Reset()
+	printMigrationRemediationActions(&buf, nil)
+	assert.Empty(t, buf.String())
+
+	buf.Reset()
 	printMigrationValidationReport(&buf, &cutover.BundleValidationReport{
 		Summary: cutover.BundleValidationSummary{FilesValidated: 1, RowsValidated: 2, ErrorCount: 1, WarningCount: 1, Ready: false},
 		Files: []cutover.FileValidation{{
@@ -94,10 +98,25 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 			FileName: "accounts.csv",
 			Message:  "missing required field",
 		}},
+		RemediationActions: []cutover.MigrationRemediationAction{{
+			Code:       "missing_required_columns",
+			Severity:   "BLOCKER",
+			Scope:      "migration",
+			OwnerRole:  "accountant",
+			Kind:       cutover.KindAccounts,
+			FileName:   "accounts.csv",
+			Field:      "name",
+			IssueCount: 1,
+			Action:     "Add one accepted column from each missing required group or rerun with the correct provider preset.",
+			CLICommand: "oa migration validate --accounts <file> --provider-preset generic --json",
+		}},
 	})
 	assert.Contains(t, buf.String(), "blocked")
 	assert.Contains(t, buf.String(), "name")
 	assert.Contains(t, buf.String(), "missing required field")
+	assert.Contains(t, buf.String(), "Migration remediation actions")
+	assert.Contains(t, buf.String(), "missing_required_columns")
+	assert.Contains(t, buf.String(), "oa migration validate --accounts")
 
 	buf.Reset()
 	printMigrationValidationReport(&buf, &cutover.BundleValidationReport{
@@ -114,11 +133,37 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 			Field:    "amount",
 			Message:  "uses fallback currency",
 		}},
+		RemediationActions: []cutover.MigrationRemediationAction{{
+			Code:       "warning_review",
+			Severity:   "WARNING",
+			Scope:      "migration",
+			OwnerRole:  "accountant",
+			Kind:       cutover.KindInvoices,
+			FileName:   "invoices.csv",
+			Field:      "amount",
+			IssueCount: 1,
+			Action:     "Review the warning before import.",
+			CLICommand: "oa migration validate --invoices <file> --provider-preset generic --json",
+		}},
 	})
 	assert.Contains(t, buf.String(), "ready")
 	assert.Contains(t, buf.String(), "invoices.csv")
 	assert.Contains(t, buf.String(), "amount")
 	assert.Contains(t, buf.String(), "uses fallback currency")
+	assert.Contains(t, buf.String(), "WARNING")
+
+	buf.Reset()
+	printMigrationRemediationActions(&buf, []cutover.MigrationRemediationAction{{
+		Code:       "unsupported_file_kind",
+		Severity:   "BLOCKER",
+		Scope:      "migration",
+		OwnerRole:  "accountant",
+		IssueCount: 1,
+		Action:     "Remove unsupported migration files or map them to a supported kind before rerunning validation.",
+		CLICommand: "oa migration validate --provider-preset generic --json",
+	}})
+	assert.Contains(t, buf.String(), "unsupported_file_kind")
+	assert.Contains(t, buf.String(), "-")
 
 	buf.Reset()
 	printMigrationValidationReport(&buf, &cutover.BundleValidationReport{

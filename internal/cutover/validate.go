@@ -1174,7 +1174,235 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 	})
 
 	report.Summary.Ready = report.Summary.ErrorCount == 0
+	report.RemediationActions = BuildMigrationRemediationActions(report)
 	return report, nil
+}
+
+func BuildMigrationRemediationActions(report *BundleValidationReport) []MigrationRemediationAction {
+	if report == nil {
+		return nil
+	}
+	if len(report.Issues) == 0 {
+		if report.Summary.Ready {
+			return []MigrationRemediationAction{{
+				Code:       "ready_to_import",
+				Severity:   "ACTION",
+				Scope:      "migration",
+				OwnerRole:  "accountant",
+				Message:    "Migration bundle passed preflight validation.",
+				Action:     "Run the relevant import commands in the planned cutover order.",
+				IssueCount: 0,
+				CLICommand: "oa migration validate --provider-preset generic --json",
+			}}
+		}
+		return nil
+	}
+
+	type actionKey struct {
+		code       string
+		severity   string
+		kind       FileKind
+		fileName   string
+		field      string
+		targetKind FileKind
+	}
+	actionsByKey := make(map[actionKey]*MigrationRemediationAction)
+	keys := make([]actionKey, 0)
+
+	for _, issue := range report.Issues {
+		code, action := classifyMigrationIssue(issue)
+		key := actionKey{
+			code:       code,
+			severity:   migrationActionSeverity(issue.Severity),
+			kind:       issue.Kind,
+			fileName:   issue.FileName,
+			field:      issue.Field,
+			targetKind: issue.TargetKind,
+		}
+		remediation, ok := actionsByKey[key]
+		if !ok {
+			remediation = &MigrationRemediationAction{
+				Code:       key.code,
+				Severity:   key.severity,
+				Scope:      "migration",
+				OwnerRole:  "accountant",
+				Message:    migrationActionMessage(issue, code),
+				Action:     action,
+				Kind:       key.kind,
+				FileName:   key.fileName,
+				Field:      key.field,
+				TargetKind: key.targetKind,
+				CLICommand: migrationValidationCommand(issue.Kind),
+			}
+			actionsByKey[key] = remediation
+			keys = append(keys, key)
+		}
+		remediation.IssueCount++
+	}
+
+	sort.SliceStable(keys, func(i, j int) bool {
+		left := keys[i]
+		right := keys[j]
+		if left.severity != right.severity {
+			return left.severity < right.severity
+		}
+		if left.fileName != right.fileName {
+			return left.fileName < right.fileName
+		}
+		if left.kind != right.kind {
+			return left.kind < right.kind
+		}
+		if left.code != right.code {
+			return left.code < right.code
+		}
+		if left.field != right.field {
+			return left.field < right.field
+		}
+		return left.targetKind < right.targetKind
+	})
+
+	actions := make([]MigrationRemediationAction, 0, len(keys))
+	for _, key := range keys {
+		actions = append(actions, *actionsByKey[key])
+	}
+	return actions
+}
+
+func classifyMigrationIssue(issue ValidationIssue) (string, string) {
+	if issue.Severity == SeverityWarning {
+		return "warning_review", "Review the warning with the migration owner, document the accepted risk, or correct the row before import."
+	}
+
+	message := strings.ToLower(strings.TrimSpace(issue.Message))
+	switch {
+	case strings.Contains(message, "unsupported migration file kind"):
+		return "unsupported_file_kind", "Remove unsupported migration files or map them to a supported kind before rerunning validation."
+	case strings.Contains(message, "missing required column group"):
+		return "missing_required_columns", "Add one accepted column from each missing required group or rerun with the correct provider preset."
+	case issue.TargetKind != "" || strings.Contains(message, "reference") || strings.Contains(message, "was not found"):
+		return "missing_reference", "Add the referenced target file or correct the source row reference before import."
+	case strings.Contains(message, "duplicates row") || strings.Contains(message, "duplicate"):
+		return "duplicate_identifier", "Deduplicate business identifiers or preserved IDs so each imported record has one authoritative row."
+	case strings.Contains(message, "must be consistent"):
+		return "grouped_consistency", "Normalize grouped header or period values across all rows that belong to the same imported document or declaration."
+	case strings.Contains(message, "valid uuid"):
+		return "invalid_identifier", "Replace malformed preserved IDs with valid UUIDs or use supported code/name references."
+	default:
+		return "invalid_row_value", "Correct the row value to match the documented importer validation rule, then rerun migration validation."
+	}
+}
+
+func migrationActionSeverity(severity IssueSeverity) string {
+	if severity == SeverityWarning {
+		return "WARNING"
+	}
+	return "BLOCKER"
+}
+
+func migrationActionMessage(issue ValidationIssue, code string) string {
+	fileName := strings.TrimSpace(issue.FileName)
+	if fileName == "" {
+		fileName = string(issue.Kind)
+	}
+	field := strings.TrimSpace(issue.Field)
+	switch code {
+	case "missing_required_columns":
+		return fmt.Sprintf("Required migration columns are missing in %s.", fileName)
+	case "missing_reference":
+		if issue.TargetKind != "" {
+			return fmt.Sprintf("%s has unresolved references to %s.", fileName, issue.TargetKind)
+		}
+		return fmt.Sprintf("%s has unresolved migration references.", fileName)
+	case "duplicate_identifier":
+		if field != "" {
+			return fmt.Sprintf("%s has duplicate values in %s.", fileName, field)
+		}
+		return fmt.Sprintf("%s has duplicate migration identifiers.", fileName)
+	case "grouped_consistency":
+		return fmt.Sprintf("%s has inconsistent grouped migration values.", fileName)
+	case "invalid_identifier":
+		if field != "" {
+			return fmt.Sprintf("%s has malformed IDs in %s.", fileName, field)
+		}
+		return fmt.Sprintf("%s has malformed migration IDs.", fileName)
+	case "unsupported_file_kind":
+		return fmt.Sprintf("%s uses an unsupported migration file kind.", fileName)
+	case "warning_review":
+		if field != "" {
+			return fmt.Sprintf("%s has migration warnings in %s.", fileName, field)
+		}
+		return fmt.Sprintf("%s has migration warnings.", fileName)
+	default:
+		if field != "" {
+			return fmt.Sprintf("%s has invalid row values in %s.", fileName, field)
+		}
+		return fmt.Sprintf("%s has invalid migration row values.", fileName)
+	}
+}
+
+func migrationValidationCommand(kind FileKind) string {
+	flag := migrationKindCLIFlag(kind)
+	if flag == "" {
+		return "oa migration validate --provider-preset generic --json"
+	}
+	return fmt.Sprintf("oa migration validate --%s <file> --provider-preset generic --json", flag)
+}
+
+func migrationKindCLIFlag(kind FileKind) string {
+	switch kind {
+	case KindAccounts:
+		return "accounts"
+	case KindContacts:
+		return "contacts"
+	case KindEmployees:
+		return "employees"
+	case KindExpenses:
+		return "expenses"
+	case KindInvoices:
+		return "invoices"
+	case KindEInvoices:
+		return "e-invoices"
+	case KindPayments:
+		return "payments"
+	case KindBankAccounts:
+		return "bank-accounts"
+	case KindBankTransactions:
+		return "bank-transactions"
+	case KindPayrollHistory:
+		return "payroll-history"
+	case KindLeaveBalances:
+		return "leave-balances"
+	case KindTSDHistory:
+		return "tsd-history"
+	case KindKMDHistory:
+		return "kmd-history"
+	case KindQuotes:
+		return "quotes"
+	case KindOrders:
+		return "orders"
+	case KindRecurringInvoices:
+		return "recurring-invoices"
+	case KindCostCenters:
+		return "cost-centers"
+	case KindCostAllocations:
+		return "cost-allocations"
+	case KindProductCategories:
+		return "product-categories"
+	case KindWarehouses:
+		return "warehouses"
+	case KindProducts:
+		return "products"
+	case KindStockAdjustments:
+		return "stock"
+	case KindFixedAssets:
+		return "fixed-assets"
+	case KindOpeningBalances:
+		return "opening-balances"
+	case KindJournalEntries:
+		return "journal"
+	default:
+		return ""
+	}
 }
 
 func normalizeEInvoiceContactMode(mode EInvoiceContactMode) (EInvoiceContactMode, error) {
