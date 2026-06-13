@@ -984,6 +984,45 @@ func TestService_UpdatePreservesCategoryAndAccountsWhenOmitted(t *testing.T) {
 	assert.Equal(t, accumulatedDepreciationAccountID, *asset.AccumulatedDepreciationAcctID)
 }
 
+func TestService_UpdateTrimsAndClearsExplicitAccountIDs(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	assetAccountID := "old-asset-account"
+	depreciationExpenseAccountID := "old-depreciation-expense"
+	accumulatedDepreciationAccountID := "old-accumulated-depreciation"
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Laptop",
+		Status:                        AssetStatusActive,
+		PurchaseDate:                  time.Now(),
+		PurchaseCost:                  decimal.NewFromInt(1200),
+		UsefulLifeMonths:              36,
+		ResidualValue:                 decimal.NewFromInt(100),
+		DepreciationMethod:            DepreciationStraightLine,
+		AssetAccountID:                &assetAccountID,
+		DepreciationExpenseAccountID:  &depreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedDepreciationAccountID,
+	}
+
+	blankAssetAccountID := " \t "
+	newDepreciationExpenseAccountID := " depreciation-expense "
+	newAccumulatedDepreciationAccountID := "\naccumulated-depreciation\t"
+	asset, err := ts.svc.Update(ctx, "tenant-1", "test_schema", "a1", &UpdateAssetRequest{
+		AssetAccountID:                &blankAssetAccountID,
+		DepreciationExpenseAccountID:  &newDepreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: &newAccumulatedDepreciationAccountID,
+	})
+
+	require.NoError(t, err)
+	assert.Nil(t, asset.AssetAccountID)
+	require.NotNil(t, asset.DepreciationExpenseAccountID)
+	assert.Equal(t, "depreciation-expense", *asset.DepreciationExpenseAccountID)
+	require.NotNil(t, asset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, "accumulated-depreciation", *asset.AccumulatedDepreciationAcctID)
+}
+
 func TestService_UpdateInheritsChangedCategoryDefaults(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
