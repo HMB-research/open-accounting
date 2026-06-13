@@ -5102,6 +5102,20 @@ export interface PayrollRunRemediationAction {
   cli_command?: string;
 }
 
+export interface TSDRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  message: string;
+  action: string;
+  period?: string;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
+}
+
 export interface CreatePayrollRunRequest {
   period_year: number;
   period_month: number;
@@ -5146,6 +5160,7 @@ export interface TSDDeclaration {
   status: TSDStatus;
   submitted_at?: string;
   emta_reference?: string;
+  remediation_actions?: TSDRemediationAction[];
   created_at: string;
   updated_at: string;
   rows?: TSDRow[];

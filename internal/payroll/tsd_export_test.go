@@ -379,6 +379,9 @@ func TestServiceGenerateTSDWithMockRepository(t *testing.T) {
 	requireDecimalEqual(t, tsd.TotalUnemploymentEE, decimal.NewFromInt(32))
 	requireDecimalEqual(t, tsd.TotalUnemploymentER, decimal.NewFromInt(16))
 	requireDecimalEqual(t, tsd.TotalFundedPension, decimal.NewFromInt(40))
+	if got := tsdRemediationCodes(tsd.RemediationActions); !equalStringSlices(got, []string{"tsd_export_and_submit"}) {
+		t.Fatalf("unexpected TSD remediation actions: %v", got)
+	}
 	if len(tsd.Rows) != 1 {
 		t.Fatalf("expected one TSD row, got %d", len(tsd.Rows))
 	}
@@ -682,6 +685,9 @@ func TestServiceTSDQuerySummaryAndStatusMarkers(t *testing.T) {
 	}
 	if len(declarations) != 1 || declarations[0].ID != "tsd-1" {
 		t.Fatalf("unexpected declarations: %+v", declarations)
+	}
+	if got := tsdRemediationCodes(declarations[0].RemediationActions); !equalStringSlices(got, []string{"tsd_export_and_submit"}) {
+		t.Fatalf("unexpected TSD list remediation actions: %v", got)
 	}
 
 	summary, err := service.GetTSDSummary(ctx, "tenant_schema", "tenant-1", 2025, 1)

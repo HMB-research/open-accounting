@@ -3039,6 +3039,7 @@ func printTSDDeclaration(w io.Writer, declaration *payroll.TSDDeclaration) {
 	if declaration.EMTAReference != "" {
 		_, _ = fmt.Fprintf(w, "e-MTA reference: %s\n", declaration.EMTAReference)
 	}
+	printTSDRemediationActions(w, declaration.RemediationActions)
 	if len(declaration.Rows) == 0 {
 		return
 	}
@@ -3056,6 +3057,28 @@ func printTSDDeclaration(w io.Writer, declaration *payroll.TSDDeclaration) {
 			row.TaxableAmount.String(),
 			row.IncomeTax.String(),
 			row.SocialTax.String(),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printTSDRemediationActions(w io.Writer, actions []payroll.TSDRemediationAction) {
+	if len(actions) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "TSD remediation actions")
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tSCOPE\tOWNER\tCODE\tACTION\tCOMMAND")
+	for _, action := range actions {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			action.Severity,
+			action.Scope,
+			action.OwnerRole,
+			action.Code,
+			action.Action,
+			action.CLICommand,
 		)
 	}
 	_ = tw.Flush()

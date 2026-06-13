@@ -395,9 +395,27 @@ func cliTSDDeclarationPayload(id string, year, month int, status string) map[str
 		"total_funded_pension":        "64.00",
 		"emta_reference":              "EMTA-REF",
 		"status":                      status,
+		"remediation_actions":         cliTSDRemediationPayload(id, year, month),
 		"created_at":                  "2026-03-31T12:00:00Z",
 		"updated_at":                  "2026-03-31T12:00:00Z",
 	}
+}
+
+func cliTSDRemediationPayload(id string, year, month int) []map[string]any {
+	period := fmt.Sprintf("%04d-%02d", year, month)
+	return []map[string]any{{
+		"code":        "tsd_export_and_submit",
+		"severity":    "ACTION",
+		"scope":       "tax",
+		"owner_role":  "accountant",
+		"message":     fmt.Sprintf("TSD %s is ready for export and submission review.", period),
+		"action":      "Review declaration totals, export XML or CSV, submit through e-MTA, and mark the declaration submitted with the e-MTA reference.",
+		"period":      period,
+		"entity_type": "tsd_declaration",
+		"entity_id":   id,
+		"ui_path":     fmt.Sprintf("/tsd?year=%d&month=%d", year, month),
+		"cli_command": fmt.Sprintf("oa tsd export-xml --year %d --month %d --output ./tsd-%s.xml", year, month, period),
+	}}
 }
 
 func cliKMDRemediationPayload() []map[string]any {
@@ -21035,6 +21053,7 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 				"total_unemployment_employee": "51.20",
 				"total_funded_pension":        "64.00",
 				"status":                      "DRAFT",
+				"remediation_actions":         cliTSDRemediationPayload("tsd-1", 2026, 3),
 				"created_at":                  "2026-03-31T12:00:00Z",
 				"updated_at":                  "2026-03-31T12:00:00Z",
 			}})
@@ -21052,6 +21071,7 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 				"total_unemployment_employee": "51.20",
 				"total_funded_pension":        "64.00",
 				"status":                      "DRAFT",
+				"remediation_actions":         cliTSDRemediationPayload("tsd-1", 2026, 3),
 				"created_at":                  "2026-03-31T12:00:00Z",
 				"updated_at":                  "2026-03-31T12:00:00Z",
 				"rows": []map[string]any{{
@@ -21077,16 +21097,17 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/tsd":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":               "tsd-2",
-				"tenant_id":        "tenant-1",
-				"period_year":      2026,
-				"period_month":     4,
-				"total_payments":   "4000.00",
-				"total_income_tax": "650.00",
-				"total_social_tax": "1320.00",
-				"status":           "DRAFT",
-				"created_at":       "2026-04-30T12:00:00Z",
-				"updated_at":       "2026-04-30T12:00:00Z",
+				"id":                  "tsd-2",
+				"tenant_id":           "tenant-1",
+				"period_year":         2026,
+				"period_month":        4,
+				"total_payments":      "4000.00",
+				"total_income_tax":    "650.00",
+				"total_social_tax":    "1320.00",
+				"status":              "DRAFT",
+				"remediation_actions": cliTSDRemediationPayload("tsd-2", 2026, 4),
+				"created_at":          "2026-04-30T12:00:00Z",
+				"updated_at":          "2026-04-30T12:00:00Z",
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tsd/2026/3/xml":
 			w.Header().Set("Content-Type", "application/xml")
@@ -21262,11 +21283,14 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"tsd", "get", "--year", "2026", "--month", "3"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Mari Maasikas")
+	assert.Contains(t, stdout.String(), "TSD remediation actions")
+	assert.Contains(t, stdout.String(), "tsd_export_and_submit")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"tsd", "generate", "--run-id", "run-1", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"id": "tsd-2"`)
+	assert.Contains(t, stdout.String(), `"remediation_actions"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"tsd", "export-xml", "--year", "2026", "--month", "3"})
