@@ -520,7 +520,7 @@ Authorization: Bearer <token>
 
 ### Document Attachments
 
-Document attachments currently support `invoice`, `journal_entry`, `payment`, `bank_transaction`, `asset`, `expense`, `quote`, `order`, and `year_end_close` entities.
+Document attachments currently support `invoice`, `journal_entry`, `payment`, `bank_transaction`, `asset`, `expense`, `quote`, `order`, `year_end_close`, and `leave_record` entities.
 
 #### List Documents
 
@@ -600,7 +600,7 @@ Content-Type: application/json
 }
 ```
 
-Returns one result per requested entity ID with `compliant`, document-status counts, document-type counts, rule-level accepted counts, and `violations` for missing or unapproved evidence. Omit `document_types` in a rule to allow any supported document type; `min_count` defaults to `1`.
+Returns one result per requested entity ID with `compliant`, document-status counts, document-type counts, rule-level accepted counts, and `violations` for missing or unapproved evidence. Non-compliant results also include `remediation_actions` with stable document evidence codes such as `document_evidence_missing`, `document_evidence_unapproved`, and `document_evidence_policy_violation`, plus severity, owner role, entity/document context, UI path, and suggested CLI command fields. Omit `document_types` in a rule to allow any supported document type; `min_count` defaults to `1`.
 
 #### Retention Review
 
@@ -609,7 +609,7 @@ GET /tenants/{tenantId}/documents/retention?as_of=2027-03-01&horizon_days=45&inc
 Authorization: Bearer <token>
 ```
 
-Returns tenant-wide retention administration data for documents with `retention_until` on or before the cutoff date. `include_missing=true` also includes documents without retention metadata. The response includes expired, due-soon, missing-retention, pending-review, rejected, and total counts plus the matching documents. It also includes `reminder_actions`, an automation-friendly queue with one action per expired retention date, due-soon retention date, missing retention date, pending review, or rejected document.
+Returns tenant-wide retention administration data for documents with `retention_until` on or before the cutoff date. `include_missing=true` also includes documents without retention metadata. The response includes expired, due-soon, missing-retention, pending-review, rejected, and total counts plus the matching documents. It also includes `reminder_actions`, an automation-friendly queue with one action per expired retention date, due-soon retention date, missing retention date, pending review, or rejected document. `remediation_actions` exposes the same retention and review follow-up as accountant-assigned actions with codes such as `document_retention_expired`, `document_retention_due_soon`, `document_retention_missing`, `document_review_pending`, and `document_review_rejected`, including severity, owner role, UI path, and CLI command fields.
 
 #### Update Retention Metadata
 

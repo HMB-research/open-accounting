@@ -24830,6 +24830,56 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "cli_command": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "days_until_retention": {
+                    "type": "integer"
+                },
+                "document_id": {
+                    "type": "string"
+                },
+                "document_type": {
+                    "type": "string"
+                },
+                "due_date": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "owner_role": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "ui_path": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyRequest": {
             "type": "object",
             "properties": {
@@ -24885,6 +24935,12 @@ const docTemplate = `{
                 },
                 "rejected_count": {
                     "type": "integer"
+                },
+                "remediation_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction"
+                    }
                 },
                 "reviewed_count": {
                     "type": "integer"
@@ -25019,6 +25075,12 @@ const docTemplate = `{
                 },
                 "rejected_count": {
                     "type": "integer"
+                },
+                "remediation_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction"
+                    }
                 },
                 "reminder_actions": {
                     "type": "array",

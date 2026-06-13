@@ -884,10 +884,24 @@ func TestPrintTables(t *testing.T) {
 			Compliant:       false,
 			Message:         "requires at least 1 approved documents for receipt; found 0",
 		}},
+		RemediationActions: []documents.DocumentRemediationAction{{
+			Code:         "document_evidence_missing",
+			Severity:     "ACTION",
+			Scope:        "documents",
+			OwnerRole:    "accountant",
+			Message:      "payment pay-1 is missing required evidence.",
+			Action:       "Upload the required evidence document before continuing the workflow.",
+			EntityType:   documents.EntityTypePayment,
+			EntityID:     "pay-1",
+			DocumentType: documents.DocumentTypeReceipt,
+			CLICommand:   "oa documents upload --entity-type payment --entity-id pay-1 --document-type receipt --file <file>",
+		}},
 	}})
 	assert.Contains(t, policyBuf.String(), "COMPLIANT")
 	assert.Contains(t, policyBuf.String(), "pay-1")
 	assert.Contains(t, policyBuf.String(), "requires at least 1 approved documents for receipt")
+	assert.Contains(t, policyBuf.String(), "Document remediation actions")
+	assert.Contains(t, policyBuf.String(), "document_evidence_missing")
 
 	var retentionBuf bytes.Buffer
 	retentionUntil := now.AddDate(1, 0, 0)
@@ -927,12 +941,44 @@ func TestPrintTables(t *testing.T) {
 			Action:       documents.RetentionReminderMissingRetention,
 			Message:      "Retention date is missing",
 		}},
+		RemediationActions: []documents.DocumentRemediationAction{{
+			Code:               "document_retention_due_soon",
+			Severity:           "INFO",
+			Scope:              "documents",
+			OwnerRole:          "accountant",
+			Message:            "Retention is due on 2027-03-15",
+			Action:             "Review the document before the retention date and either extend retention or complete the disposal workflow.",
+			EntityType:         documents.EntityTypeBankTxn,
+			EntityID:           "txn-1",
+			DocumentID:         "doc-1",
+			DocumentType:       documents.DocumentTypeReconciliation,
+			FileName:           "statement.pdf",
+			DueDate:            "2027-03-15",
+			DaysUntilRetention: &daysUntilRetention,
+			CLICommand:         "oa documents retention-set --id doc-1 --retention-until <YYYY-MM-DD>",
+		}, {
+			Code:         "document_retention_missing",
+			Severity:     "WARNING",
+			Scope:        "documents",
+			OwnerRole:    "accountant",
+			Message:      "Document receipt.pdf is missing retention metadata.",
+			Action:       "Set a retention date or document why the record is exempt from retention policy.",
+			EntityType:   documents.EntityTypeExpense,
+			EntityID:     "exp-1",
+			DocumentID:   "doc-missing-retention",
+			DocumentType: documents.DocumentTypeReceipt,
+			FileName:     "receipt.pdf",
+			CLICommand:   "oa documents retention-set --id doc-missing-retention --retention-until <YYYY-MM-DD>",
+		}},
 	})
 	assert.Contains(t, retentionBuf.String(), "Document retention review")
 	assert.Contains(t, retentionBuf.String(), "statement.pdf")
 	assert.Contains(t, retentionBuf.String(), "Reminder actions")
 	assert.Contains(t, retentionBuf.String(), documents.RetentionReminderDueSoon)
 	assert.Contains(t, retentionBuf.String(), documents.RetentionReminderMissingRetention)
+	assert.Contains(t, retentionBuf.String(), "Document remediation actions")
+	assert.Contains(t, retentionBuf.String(), "document_retention_due_soon")
+	assert.Contains(t, retentionBuf.String(), "document_retention_missing")
 }
 
 func TestPrintPaymentOutputs(t *testing.T) {

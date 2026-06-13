@@ -134,32 +134,34 @@ type EvidencePolicyRuleResult struct {
 }
 
 type EvidencePolicyResult struct {
-	EntityType                 string                     `json:"entity_type"`
-	EntityID                   string                     `json:"entity_id"`
-	Compliant                  bool                       `json:"compliant"`
-	TotalCount                 int                        `json:"total_count"`
-	PendingReviewCount         int                        `json:"pending_review_count"`
-	ReviewedCount              int                        `json:"reviewed_count"`
-	ApprovedCount              int                        `json:"approved_count"`
-	RejectedCount              int                        `json:"rejected_count"`
-	MissingEvidence            bool                       `json:"missing_evidence"`
-	DocumentTypeCounts         map[string]int             `json:"document_type_counts"`
-	ApprovedDocumentTypeCounts map[string]int             `json:"approved_document_type_counts"`
-	RuleResults                []EvidencePolicyRuleResult `json:"rule_results"`
-	Violations                 []EvidencePolicyRuleResult `json:"violations"`
+	EntityType                 string                      `json:"entity_type"`
+	EntityID                   string                      `json:"entity_id"`
+	Compliant                  bool                        `json:"compliant"`
+	TotalCount                 int                         `json:"total_count"`
+	PendingReviewCount         int                         `json:"pending_review_count"`
+	ReviewedCount              int                         `json:"reviewed_count"`
+	ApprovedCount              int                         `json:"approved_count"`
+	RejectedCount              int                         `json:"rejected_count"`
+	MissingEvidence            bool                        `json:"missing_evidence"`
+	DocumentTypeCounts         map[string]int              `json:"document_type_counts"`
+	ApprovedDocumentTypeCounts map[string]int              `json:"approved_document_type_counts"`
+	RuleResults                []EvidencePolicyRuleResult  `json:"rule_results"`
+	Violations                 []EvidencePolicyRuleResult  `json:"violations"`
+	RemediationActions         []DocumentRemediationAction `json:"remediation_actions,omitempty"`
 }
 
 type RetentionReview struct {
-	AsOfDate              string                    `json:"as_of_date"`
-	CutoffDate            string                    `json:"cutoff_date"`
-	TotalCount            int                       `json:"total_count"`
-	ExpiredCount          int                       `json:"expired_count"`
-	DueSoonCount          int                       `json:"due_soon_count"`
-	MissingRetentionCount int                       `json:"missing_retention_count"`
-	PendingReviewCount    int                       `json:"pending_review_count"`
-	RejectedCount         int                       `json:"rejected_count"`
-	ReminderActions       []RetentionReminderAction `json:"reminder_actions"`
-	Documents             []Document                `json:"documents"`
+	AsOfDate              string                      `json:"as_of_date"`
+	CutoffDate            string                      `json:"cutoff_date"`
+	TotalCount            int                         `json:"total_count"`
+	ExpiredCount          int                         `json:"expired_count"`
+	DueSoonCount          int                         `json:"due_soon_count"`
+	MissingRetentionCount int                         `json:"missing_retention_count"`
+	PendingReviewCount    int                         `json:"pending_review_count"`
+	RejectedCount         int                         `json:"rejected_count"`
+	ReminderActions       []RetentionReminderAction   `json:"reminder_actions"`
+	RemediationActions    []DocumentRemediationAction `json:"remediation_actions,omitempty"`
+	Documents             []Document                  `json:"documents"`
 }
 
 type RetentionReminderAction struct {
@@ -172,4 +174,22 @@ type RetentionReminderAction struct {
 	Message            string     `json:"message"`
 	DaysUntilRetention *int       `json:"days_until_retention,omitempty"`
 	RetentionUntil     *time.Time `json:"retention_until,omitempty"`
+}
+
+type DocumentRemediationAction struct {
+	Code               string `json:"code"`
+	Severity           string `json:"severity"`
+	Scope              string `json:"scope"`
+	OwnerRole          string `json:"owner_role"`
+	Message            string `json:"message"`
+	Action             string `json:"action"`
+	EntityType         string `json:"entity_type,omitempty"`
+	EntityID           string `json:"entity_id,omitempty"`
+	DocumentID         string `json:"document_id,omitempty"`
+	DocumentType       string `json:"document_type,omitempty"`
+	FileName           string `json:"file_name,omitempty"`
+	DueDate            string `json:"due_date,omitempty"`
+	DaysUntilRetention *int   `json:"days_until_retention,omitempty"`
+	UIPath             string `json:"ui_path,omitempty"`
+	CLICommand         string `json:"cli_command,omitempty"`
 }
