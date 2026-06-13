@@ -169,7 +169,7 @@ func TestUseCaseCoverageMatrixDocumentsGoalEvidence(t *testing.T) {
 		"`make test-backend-coverage` enforces the same CLI coverage from the backend coverage gate.",
 		"`go test -timeout=3m ./docs -count=1` keeps the documentation status and route coverage checks active.",
 		"| Historical migration and cutover | `Partial` |",
-		"Merit/SmartAccounts expense, inventory, fixed-asset, and KMD-history alias tests",
+		"Merit/SmartAccounts expense, cost-allocation, inventory, fixed-asset, and KMD-history alias tests",
 		"Full incumbent-system cutover paths, broader vendor mapping presets, and deeper cross-file validation remain open.",
 		"| Direct bank feeds, direct SEPA initiation, e-invoice operator exchange, OCR, and automatic authority filing | `Blocked` |",
 		"Keep replacing uncovered migration validator branches with focused tests until the use-case coverage evidence is no longer mostly indirect.",
