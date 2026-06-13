@@ -3477,6 +3477,7 @@ export interface MigrationExecutionPlan {
 
 export type MigrationExecutionResultStatus =
   | "PLANNED"
+  | "RUNNING"
   | "SKIPPED"
   | "SUCCEEDED"
   | "FAILED";
@@ -3488,13 +3489,21 @@ export interface MigrationExecutionRunSummary {
   plan_ready: boolean;
   validation_ready: boolean;
   step_count: number;
+  running_step_count: number;
   succeeded_step_count: number;
   failed_step_count: number;
   skipped_step_count: number;
   planned_step_count: number;
   resumed_step_count: number;
+  completed_step_count: number;
+  remaining_step_count: number;
+  progress_percent: number;
   needs_context_count: number;
   blocked_step_count: number;
+  active_step_number?: number;
+  active_step_kind?: MigrationFileKind;
+  active_step_file_name?: string;
+  active_step_status?: MigrationExecutionResultStatus;
 }
 
 export interface MigrationExecutionStepRun {

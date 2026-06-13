@@ -9,6 +9,7 @@ type MigrationExecutionResultStatus string
 
 const (
 	MigrationExecutionResultPlanned   MigrationExecutionResultStatus = "PLANNED"
+	MigrationExecutionResultRunning   MigrationExecutionResultStatus = "RUNNING"
 	MigrationExecutionResultSkipped   MigrationExecutionResultStatus = "SKIPPED"
 	MigrationExecutionResultSucceeded MigrationExecutionResultStatus = "SUCCEEDED"
 	MigrationExecutionResultFailed    MigrationExecutionResultStatus = "FAILED"
@@ -50,19 +51,27 @@ type MigrationExecutionRun struct {
 }
 
 type MigrationExecutionRunSummary struct {
-	Status             string `json:"status"`
-	Confirmed          bool   `json:"confirmed"`
-	Resumed            bool   `json:"resumed"`
-	PlanReady          bool   `json:"plan_ready"`
-	ValidationReady    bool   `json:"validation_ready"`
-	StepCount          int    `json:"step_count"`
-	SucceededStepCount int    `json:"succeeded_step_count"`
-	FailedStepCount    int    `json:"failed_step_count"`
-	SkippedStepCount   int    `json:"skipped_step_count"`
-	PlannedStepCount   int    `json:"planned_step_count"`
-	ResumedStepCount   int    `json:"resumed_step_count"`
-	NeedsContextCount  int    `json:"needs_context_count"`
-	BlockedStepCount   int    `json:"blocked_step_count"`
+	Status             string                         `json:"status"`
+	Confirmed          bool                           `json:"confirmed"`
+	Resumed            bool                           `json:"resumed"`
+	PlanReady          bool                           `json:"plan_ready"`
+	ValidationReady    bool                           `json:"validation_ready"`
+	StepCount          int                            `json:"step_count"`
+	RunningStepCount   int                            `json:"running_step_count"`
+	SucceededStepCount int                            `json:"succeeded_step_count"`
+	FailedStepCount    int                            `json:"failed_step_count"`
+	SkippedStepCount   int                            `json:"skipped_step_count"`
+	PlannedStepCount   int                            `json:"planned_step_count"`
+	ResumedStepCount   int                            `json:"resumed_step_count"`
+	CompletedStepCount int                            `json:"completed_step_count"`
+	RemainingStepCount int                            `json:"remaining_step_count"`
+	ProgressPercent    int                            `json:"progress_percent"`
+	NeedsContextCount  int                            `json:"needs_context_count"`
+	BlockedStepCount   int                            `json:"blocked_step_count"`
+	ActiveStepNumber   int                            `json:"active_step_number,omitempty"`
+	ActiveStepKind     FileKind                       `json:"active_step_kind,omitempty"`
+	ActiveStepFileName string                         `json:"active_step_file_name,omitempty"`
+	ActiveStepStatus   MigrationExecutionResultStatus `json:"active_step_status,omitempty"`
 }
 
 type MigrationExecutionStepRun struct {
@@ -91,7 +100,6 @@ func NewMigrationExecutionRun(plan *MigrationExecutionPlan, confirmed bool) *Mig
 	run.RemediationActions = plan.RemediationActions
 	run.Summary.PlanReady = plan.Summary.Ready
 	run.Summary.ValidationReady = plan.Summary.ValidationReady
-	run.Summary.StepCount = len(plan.Steps)
 	run.Summary.NeedsContextCount = plan.Summary.NeedsContextCount
 	run.Summary.BlockedStepCount = plan.Summary.BlockedStepCount
 	if plan.Summary.Ready && confirmed {
@@ -107,11 +115,10 @@ func NewMigrationExecutionRun(plan *MigrationExecutionPlan, confirmed bool) *Mig
 		if step.Status != MigrationExecutionStepReady {
 			status = MigrationExecutionResultSkipped
 			message = step.Message
-			run.Summary.SkippedStepCount++
 		} else if confirmed {
 			message = "Ready to import."
 		} else {
-			run.Summary.PlannedStepCount++
+			message = "Pass confirm=true to run this import."
 		}
 		run.Steps = append(run.Steps, MigrationExecutionStepRun{
 			StepNumber: step.StepNumber,
@@ -123,6 +130,7 @@ func NewMigrationExecutionRun(plan *MigrationExecutionPlan, confirmed bool) *Mig
 			CLICommand: step.CLICommand,
 		})
 	}
+	RefreshMigrationExecutionRunProgress(run)
 	return run
 }
 
@@ -148,6 +156,7 @@ func ApplyMigrationExecutionResume(run *MigrationExecutionRun, resumeFrom *Migra
 		return
 	}
 
+	resumedCount := 0
 	for index := range run.Steps {
 		current := &run.Steps[index]
 		if current.Status != MigrationExecutionResultPlanned {
@@ -160,20 +169,92 @@ func ApplyMigrationExecutionResume(run *MigrationExecutionRun, resumeFrom *Migra
 		current.Status = MigrationExecutionResultSucceeded
 		current.Message = "Step already succeeded in the previous run; skipping on resume."
 		current.Response = previous.Response
-		if run.Summary.PlannedStepCount > 0 {
-			run.Summary.PlannedStepCount--
-		}
-		run.Summary.SucceededStepCount++
-		run.Summary.ResumedStepCount++
+		resumedCount++
 	}
 
+	RefreshMigrationExecutionRunProgress(run)
+	run.Summary.ResumedStepCount = resumedCount
 	if run.Summary.ResumedStepCount == 0 {
 		return
 	}
 	run.Summary.Resumed = true
-	if run.Summary.PlanReady && run.Summary.SucceededStepCount == run.Summary.StepCount && run.Summary.FailedStepCount == 0 {
-		run.Summary.Status = "succeeded"
+	RefreshMigrationExecutionRunProgress(run)
+}
+
+func RefreshMigrationExecutionRunProgress(run *MigrationExecutionRun) {
+	if run == nil {
+		return
 	}
+
+	summary := &run.Summary
+	if len(run.Steps) > 0 {
+		summary.StepCount = len(run.Steps)
+		summary.RunningStepCount = 0
+		summary.SucceededStepCount = 0
+		summary.FailedStepCount = 0
+		summary.SkippedStepCount = 0
+		summary.PlannedStepCount = 0
+		summary.ActiveStepNumber = 0
+		summary.ActiveStepKind = ""
+		summary.ActiveStepFileName = ""
+		summary.ActiveStepStatus = ""
+
+		activePriority := 0
+		for _, step := range run.Steps {
+			switch step.Status {
+			case MigrationExecutionResultRunning:
+				summary.RunningStepCount++
+				activePriority = setMigrationExecutionActiveStep(summary, step, activePriority, 3)
+			case MigrationExecutionResultFailed:
+				summary.FailedStepCount++
+				activePriority = setMigrationExecutionActiveStep(summary, step, activePriority, 2)
+			case MigrationExecutionResultPlanned:
+				summary.PlannedStepCount++
+				activePriority = setMigrationExecutionActiveStep(summary, step, activePriority, 1)
+			case MigrationExecutionResultSkipped:
+				summary.SkippedStepCount++
+			case MigrationExecutionResultSucceeded:
+				summary.SucceededStepCount++
+			}
+		}
+	}
+
+	summary.CompletedStepCount = summary.SucceededStepCount + summary.FailedStepCount
+	summary.RemainingStepCount = summary.StepCount - summary.CompletedStepCount
+	if summary.RemainingStepCount < 0 {
+		summary.RemainingStepCount = 0
+	}
+	if summary.StepCount > 0 {
+		summary.ProgressPercent = summary.CompletedStepCount * 100 / summary.StepCount
+	} else {
+		summary.ProgressPercent = 0
+	}
+
+	switch {
+	case summary.FailedStepCount > 0:
+		summary.Status = "failed"
+	case summary.RunningStepCount > 0:
+		summary.Status = "running"
+	case summary.PlanReady && summary.StepCount > 0 && summary.SucceededStepCount == summary.StepCount:
+		summary.Status = "succeeded"
+	case summary.PlanReady && !summary.Confirmed:
+		summary.Status = "needs_confirmation"
+	case summary.PlanReady && summary.Confirmed && summary.PlannedStepCount > 0:
+		summary.Status = "running"
+	case !summary.ValidationReady || !summary.PlanReady || summary.NeedsContextCount > 0 || summary.BlockedStepCount > 0 || summary.SkippedStepCount > 0:
+		summary.Status = "blocked"
+	}
+}
+
+func setMigrationExecutionActiveStep(summary *MigrationExecutionRunSummary, step MigrationExecutionStepRun, currentPriority, priority int) int {
+	if priority <= currentPriority {
+		return currentPriority
+	}
+	summary.ActiveStepNumber = step.StepNumber
+	summary.ActiveStepKind = step.Kind
+	summary.ActiveStepFileName = step.FileName
+	summary.ActiveStepStatus = step.Status
+	return priority
 }
 
 func migrationExecutionRunStepKey(stepNumber int, kind FileKind, fileName string) string {

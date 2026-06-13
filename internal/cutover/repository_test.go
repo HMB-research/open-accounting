@@ -46,6 +46,9 @@ func TestMigrationExecutionRunRepositoryMappingRoundTripsPayload(t *testing.T) {
 	assert.Equal(t, "user-1", roundTripped.CreatedBy)
 	assert.Equal(t, "succeeded", roundTripped.Summary.Status)
 	assert.Equal(t, 2, roundTripped.Summary.SucceededStepCount)
+	assert.Equal(t, 2, roundTripped.Summary.CompletedStepCount)
+	assert.Equal(t, 0, roundTripped.Summary.RemainingStepCount)
+	assert.Equal(t, 100, roundTripped.Summary.ProgressPercent)
 	require.Len(t, roundTripped.Steps, 2)
 	assert.Equal(t, MigrationExecutionResultSucceeded, roundTripped.Steps[0].Status)
 	assert.Equal(t, now, *roundTripped.CreatedAt)
@@ -80,4 +83,7 @@ func TestRecordToMigrationExecutionRunFallsBackToIndexedSummary(t *testing.T) {
 	assert.True(t, run.Summary.Resumed)
 	assert.Equal(t, 3, run.Summary.StepCount)
 	assert.Equal(t, 1, run.Summary.ResumedStepCount)
+	assert.Equal(t, 2, run.Summary.CompletedStepCount)
+	assert.Equal(t, 1, run.Summary.RemainingStepCount)
+	assert.Equal(t, 66, run.Summary.ProgressPercent)
 }

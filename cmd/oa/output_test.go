@@ -263,6 +263,55 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 	assert.Contains(t, buf.String(), "BLOCKED")
 	assert.Contains(t, buf.String(), "contacts.csv")
 
+	buf.Reset()
+	printMigrationExecutionRun(&buf, nil)
+	assert.Contains(t, buf.String(), "No migration execution run")
+
+	buf.Reset()
+	printMigrationExecutionRun(&buf, &migrationExecutionRun{
+		Summary: migrationExecutionRunSummary{
+			Status:             "running",
+			Confirmed:          true,
+			StepCount:          2,
+			RunningStepCount:   1,
+			SucceededStepCount: 1,
+			CompletedStepCount: 1,
+			RemainingStepCount: 1,
+			ProgressPercent:    50,
+			ActiveStepNumber:   2,
+			ActiveStepKind:     cutover.KindContacts,
+			ActiveStepFileName: "contacts.csv",
+			ActiveStepStatus:   cutover.MigrationExecutionResultRunning,
+		},
+		Steps: []migrationExecutionStepRun{
+			{StepNumber: 1, Kind: cutover.KindAccounts, FileName: "accounts.csv", Status: cutover.MigrationExecutionResultSucceeded, Message: "Import completed.", CLICommand: "oa accounts import --file accounts.csv"},
+			{StepNumber: 2, Kind: cutover.KindContacts, FileName: "contacts.csv", Status: cutover.MigrationExecutionResultRunning, Message: "Import running.", CLICommand: "oa contacts import --file contacts.csv"},
+		},
+	})
+	assert.Contains(t, buf.String(), "Migration execution: running (50% complete")
+	assert.Contains(t, buf.String(), "Active step: #2 RUNNING contacts contacts.csv")
+	assert.Contains(t, buf.String(), "Import running.")
+
+	buf.Reset()
+	printMigrationExecutionRunsTable(&buf, []cutover.MigrationExecutionRun{{
+		ID: "run-1",
+		Summary: cutover.MigrationExecutionRunSummary{
+			Status:             "running",
+			Confirmed:          true,
+			StepCount:          2,
+			SucceededStepCount: 1,
+			ProgressPercent:    50,
+			ActiveStepNumber:   2,
+			ActiveStepKind:     cutover.KindContacts,
+			ActiveStepFileName: "contacts.csv",
+			ActiveStepStatus:   cutover.MigrationExecutionResultRunning,
+		},
+		UpdatedAt: &now,
+	}})
+	assert.Contains(t, buf.String(), "PROGRESS")
+	assert.Contains(t, buf.String(), "50%")
+	assert.Contains(t, buf.String(), "#2 RUNNING contacts contacts.csv")
+
 	periodLock := "2026-03-31"
 	buf.Reset()
 	printTenant(&buf, &tenant.Tenant{

@@ -275,6 +275,9 @@ func TestExecuteMigrationHandlerRunsConfirmedReadySteps(t *testing.T) {
 	assert.True(t, run.Summary.Confirmed)
 	assert.Equal(t, 2, run.Summary.SucceededStepCount)
 	assert.Equal(t, 0, run.Summary.FailedStepCount)
+	assert.Equal(t, 2, run.Summary.CompletedStepCount)
+	assert.Equal(t, 0, run.Summary.RemainingStepCount)
+	assert.Equal(t, 100, run.Summary.ProgressPercent)
 	require.Len(t, executor.calls, 2)
 	assert.Equal(t, cutover.KindAccounts, executor.calls[0].Kind)
 	assert.Equal(t, cutover.KindContacts, executor.calls[1].Kind)
@@ -318,6 +321,7 @@ func TestExecuteMigrationHandlerResumesPreviouslySucceededSteps(t *testing.T) {
 	assert.True(t, run.Summary.Resumed)
 	assert.Equal(t, 1, run.Summary.ResumedStepCount)
 	assert.Equal(t, 2, run.Summary.SucceededStepCount)
+	assert.Equal(t, 100, run.Summary.ProgressPercent)
 	require.Len(t, executor.calls, 1)
 	assert.Equal(t, cutover.KindContacts, executor.calls[0].Kind)
 	require.Len(t, run.Steps, 2)
@@ -350,8 +354,15 @@ func TestExecuteMigrationHandlerPersistsRunSnapshots(t *testing.T) {
 	assert.Equal(t, "user-1", run.CreatedBy)
 	require.GreaterOrEqual(t, len(store.saved), 2)
 	assert.Equal(t, "running", store.saved[0].Summary.Status)
+	assert.Equal(t, 1, store.saved[0].Summary.PlannedStepCount)
+	assert.Equal(t, 0, store.saved[0].Summary.ProgressPercent)
+	assert.Equal(t, cutover.MigrationExecutionResultPlanned, store.saved[0].Summary.ActiveStepStatus)
+	assert.Equal(t, "running", store.saved[1].Summary.Status)
+	assert.Equal(t, 1, store.saved[1].Summary.RunningStepCount)
+	assert.Equal(t, cutover.MigrationExecutionResultRunning, store.saved[1].Summary.ActiveStepStatus)
 	assert.Equal(t, "succeeded", store.saved[len(store.saved)-1].Summary.Status)
 	assert.Equal(t, 1, store.saved[len(store.saved)-1].Summary.SucceededStepCount)
+	assert.Equal(t, 100, store.saved[len(store.saved)-1].Summary.ProgressPercent)
 }
 
 func TestExecuteMigrationHandlerResumesSavedRunID(t *testing.T) {
@@ -416,6 +427,8 @@ func TestExecuteMigrationHandlerRejectsNotReadyPlan(t *testing.T) {
 	assert.Equal(t, "blocked", run.Summary.Status)
 	assert.True(t, run.Summary.Confirmed)
 	assert.Equal(t, 1, run.Summary.NeedsContextCount)
+	assert.Equal(t, 0, run.Summary.ProgressPercent)
+	assert.Equal(t, 1, run.Summary.RemainingStepCount)
 	assert.Empty(t, executor.calls)
 }
 
@@ -439,6 +452,8 @@ func TestExecuteMigrationHandlerReportsStepFailure(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&run))
 	assert.Equal(t, "failed", run.Summary.Status)
 	assert.Equal(t, 1, run.Summary.FailedStepCount)
+	assert.Equal(t, 100, run.Summary.ProgressPercent)
+	assert.Equal(t, cutover.MigrationExecutionResultFailed, run.Summary.ActiveStepStatus)
 	require.Len(t, run.Steps, 1)
 	assert.Equal(t, cutover.MigrationExecutionResultFailed, run.Steps[0].Status)
 	assert.Contains(t, run.Steps[0].Error, "import failed")
