@@ -214,6 +214,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks test             Send a test webhook delivery")
 	_, _ = fmt.Fprintln(a.stdout, "  migration validate        Validate CSV/XML migration bundle references")
 	_, _ = fmt.Fprintln(a.stdout, "  migration plan            Plan ordered cutover import execution")
+	_, _ = fmt.Fprintln(a.stdout, "  migration execute         Execute ready cutover imports in planned order")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins list        List installed plugins")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins search      Search plugin repositories")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins get         Show an installed plugin")
@@ -2210,6 +2211,9 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		}
 		printMigrationExecutionPlan(a.stdout, plan)
 		return nil
+
+	case "execute":
+		return a.runMigrationExecute(ctx, cfg, client, args[1:])
 
 	default:
 		return fmt.Errorf("unknown migration subcommand %q", args[0])
