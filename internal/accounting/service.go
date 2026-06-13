@@ -318,15 +318,24 @@ func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID s
 	}
 
 	// Convert request lines to entry lines
+	lineIDs := make(map[string]struct{}, len(req.Lines))
 	for i, reqLine := range req.Lines {
 		currency := normalizeJournalLineCurrency(reqLine.Currency)
 		exchangeRate, err := normalizeJournalLineExchangeRate(reqLine.ExchangeRate)
 		if err != nil {
 			return nil, fmt.Errorf("validation failed: line %d: %w", i+1, err)
 		}
+		lineID, err := normalizeJournalLineID(reqLine.LineID)
+		if err != nil {
+			return nil, fmt.Errorf("validation failed: line %d: %w", i+1, err)
+		}
+		if _, exists := lineIDs[lineID]; exists {
+			return nil, fmt.Errorf("validation failed: line %d: duplicate line_id %q", i+1, lineID)
+		}
+		lineIDs[lineID] = struct{}{}
 
 		line := JournalEntryLine{
-			ID:           uuid.New().String(),
+			ID:           lineID,
 			AccountID:    reqLine.AccountID,
 			Description:  reqLine.Description,
 			DebitAmount:  reqLine.DebitAmount,
@@ -350,6 +359,18 @@ func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID s
 	}
 
 	return entry, nil
+}
+
+func normalizeJournalLineID(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return uuid.New().String(), nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("line_id must be a valid UUID")
+	}
+	return parsedID.String(), nil
 }
 
 func normalizeOptionalJournalUUIDPtr(value *string, field string) (*string, error) {

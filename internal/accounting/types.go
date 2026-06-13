@@ -262,6 +262,7 @@ type CreateJournalEntryRequest struct {
 // CreateJournalEntryLineReq is a line in the create request
 type CreateJournalEntryLineReq struct {
 	AccountID    string          `json:"account_id"`
+	LineID       string          `json:"line_id,omitempty"`
 	Description  string          `json:"description,omitempty"`
 	DebitAmount  decimal.Decimal `json:"debit_amount"`
 	CreditAmount decimal.Decimal `json:"credit_amount"`

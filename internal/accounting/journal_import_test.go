@@ -93,6 +93,26 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 		assert.Equal(t, defaultJournalImportSourceType, result.JournalEntries[0].SourceType)
 	})
 
+	t.Run("preserves imported journal line IDs", func(t *testing.T) {
+		lineID1 := "11111111-1111-4111-8111-111111111111"
+		lineID2 := "22222222-2222-4222-8222-222222222222"
+		repo := newJournalImportMockRepository(tenantID)
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
+			UserID: "user-1",
+			CSVContent: "entry_reference,entry_date,line_id,account_code,debit,credit\n" +
+				"LEG-001,2026-03-31," + lineID1 + ",1000,100.00,0\n" +
+				"LEG-001,2026-03-31," + lineID2 + ",4000,0,100.00\n",
+		})
+
+		require.NoError(t, err)
+		require.Len(t, result.JournalEntries, 1)
+		require.Len(t, result.JournalEntries[0].Lines, 2)
+		assert.Equal(t, lineID1, result.JournalEntries[0].Lines[0].ID)
+		assert.Equal(t, lineID2, result.JournalEntries[0].Lines[1].ID)
+	})
+
 	t.Run("skips invalid groups and imports valid groups", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.accounts["acc-1000"] = &Account{ID: "acc-1000", TenantID: tenantID, Code: "1000", Name: "Cash", AccountType: AccountTypeAsset, IsActive: true}
@@ -157,6 +177,26 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 		assert.Equal(t, 2, result.RowsSkipped)
 		require.Len(t, result.Errors, 1)
 		assert.Contains(t, result.Errors[0].Message, "source_id must be a valid UUID")
+	})
+
+	t.Run("skips journals with invalid line id", func(t *testing.T) {
+		repo := newJournalImportMockRepository(tenantID)
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
+			UserID: "user-1",
+			CSVContent: "entry_reference,entry_date,line_id,account_code,debit,credit\n" +
+				"LEG-001,2026-03-31,legacy-line,1000,100.00,0\n" +
+				"LEG-001,2026-03-31,,4000,0,100.00\n",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, 2, result.RowsProcessed)
+		assert.Zero(t, result.EntriesCreated)
+		assert.Zero(t, result.LinesImported)
+		assert.Equal(t, 2, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "line_id must be a valid UUID")
 	})
 
 	t.Run("requires csv content and user", func(t *testing.T) {
@@ -614,6 +654,7 @@ func TestJournalImportHeaderAndOptionalUUID(t *testing.T) {
 		assert.Equal(t, "entry_description", canonicalJournalImportHeader("entry memo"))
 		assert.Equal(t, "account_code", canonicalJournalImportHeader("Account"))
 		assert.Equal(t, "line_description", canonicalJournalImportHeader("Memo"))
+		assert.Equal(t, "line_id", canonicalJournalImportHeader("journal_entry_line_id"))
 		assert.Equal(t, "debit", canonicalJournalImportHeader("Debit Amount"))
 		assert.Equal(t, "credit", canonicalJournalImportHeader("credit_amount"))
 		assert.Equal(t, "custom_field", canonicalJournalImportHeader("Custom Field"))

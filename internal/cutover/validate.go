@@ -47,6 +47,7 @@ type bundleIndexes struct {
 	productCategories  map[string]bool
 	productCodes       map[string]bool
 	warehouseCodes     map[string]bool
+	journalLineIDs     map[string]bool
 }
 
 type duplicateIdentifierSpec struct {
@@ -769,28 +770,31 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindJournalEntries: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
-			"entry_reference":     "entry_reference",
-			"reference":           "entry_reference",
-			"document_number":     "entry_reference",
-			"voucher_number":      "entry_reference",
-			"journal_number":      "entry_reference",
-			"entry_date":          "entry_date",
-			"date":                "entry_date",
-			"posting_date":        "entry_date",
-			"account_code":        "account_code",
-			"code":                "account_code",
-			"account":             "account_code",
-			"entry_description":   "entry_description",
-			"journal_description": "entry_description",
-			"entry_memo":          "entry_description",
-			"line_description":    "line_description",
-			"description":         "line_description",
-			"memo":                "line_description",
-			"debit_amount":        "debit",
-			"credit_amount":       "credit",
-			"exchange_rate":       "exchange_rate",
-			"source_type":         "source_type",
-			"source_id":           "source_id",
+			"entry_reference":       "entry_reference",
+			"reference":             "entry_reference",
+			"document_number":       "entry_reference",
+			"voucher_number":        "entry_reference",
+			"journal_number":        "entry_reference",
+			"entry_date":            "entry_date",
+			"date":                  "entry_date",
+			"posting_date":          "entry_date",
+			"account_code":          "account_code",
+			"code":                  "account_code",
+			"account":               "account_code",
+			"entry_description":     "entry_description",
+			"journal_description":   "entry_description",
+			"entry_memo":            "entry_description",
+			"line_description":      "line_description",
+			"description":           "line_description",
+			"memo":                  "line_description",
+			"line_id":               "line_id",
+			"journal_line_id":       "line_id",
+			"journal_entry_line_id": "line_id",
+			"debit_amount":          "debit",
+			"credit_amount":         "credit",
+			"exchange_rate":         "exchange_rate",
+			"source_type":           "source_type",
+			"source_id":             "source_id",
 		}),
 		requiredGroups: [][]string{{"entry_reference"}, {"entry_date"}, {"account_code"}, {"debit"}, {"credit"}},
 	},
@@ -845,6 +849,9 @@ var duplicateIdentifierPreflightSpecs = map[FileKind][]duplicateIdentifierSpec{
 	KindFixedAssets: {
 		{field: "id"},
 		{field: "asset_number"},
+	},
+	KindJournalEntries: {
+		{field: "line_id"},
 	},
 }
 
@@ -1450,6 +1457,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 		productCategories:  map[string]bool{},
 		productCodes:       map[string]bool{},
 		warehouseCodes:     map[string]bool{},
+		journalLineIDs:     map[string]bool{},
 	}
 	for _, file := range files {
 		indexes.files[file.kind] = true
@@ -1484,6 +1492,8 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 				addIndexValue(indexes.productCodes, row.values["code"])
 			case KindWarehouses:
 				addIndexValue(indexes.warehouseCodes, row.values["code"])
+			case KindJournalEntries:
+				addIndexValue(indexes.journalLineIDs, row.values["line_id"])
 			}
 		}
 	}
@@ -4805,6 +4815,11 @@ func checkJournalEntryRows(report *BundleValidationReport, file parsedFile) {
 			checkOptionalUUID(report, file, row, "source_id")
 		}
 	}
+	if fileHasHeaders(file, "line_id") {
+		for _, row := range file.rows {
+			checkOptionalUUID(report, file, row, "line_id")
+		}
+	}
 	checkJournalEntryGroups(report, file)
 }
 
@@ -5279,10 +5294,14 @@ func checkCostAllocationReference(report *BundleValidationReport, indexes bundle
 	costCenterID := strings.TrimSpace(row.values["cost_center_id"])
 	if costCenterID != "" {
 		checkOptionalUUID(report, file, row, "cost_center_id")
+	} else {
+		checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenterCodes, file, row, KindCostCenters,
+			[]string{"cost_center_code"})
+	}
+	if len(indexes.journalLineIDs) == 0 {
 		return
 	}
-	checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenterCodes, file, row, KindCostCenters,
-		[]string{"cost_center_code"})
+	checkReferenceValues(report, indexes.journalLineIDs, file, row, KindJournalEntries, "journal_entry_line_id", []string{row.values["journal_entry_line_id"]})
 }
 
 func checkProductCategoryReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, idField, nameField string) {

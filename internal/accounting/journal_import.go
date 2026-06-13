@@ -27,31 +27,34 @@ type journalImportGroup struct {
 }
 
 var journalImportHeaderAliases = map[string]string{
-	"entry_reference":     "entry_reference",
-	"reference":           "entry_reference",
-	"document_number":     "entry_reference",
-	"voucher_number":      "entry_reference",
-	"journal_number":      "entry_reference",
-	"entry_date":          "entry_date",
-	"date":                "entry_date",
-	"posting_date":        "entry_date",
-	"entry_description":   "entry_description",
-	"journal_description": "entry_description",
-	"entry_memo":          "entry_description",
-	"account_code":        "account_code",
-	"code":                "account_code",
-	"account":             "account_code",
-	"line_description":    "line_description",
-	"description":         "line_description",
-	"memo":                "line_description",
-	"debit":               "debit",
-	"debit_amount":        "debit",
-	"credit":              "credit",
-	"credit_amount":       "credit",
-	"currency":            "currency",
-	"exchange_rate":       "exchange_rate",
-	"source_type":         "source_type",
-	"source_id":           "source_id",
+	"entry_reference":       "entry_reference",
+	"reference":             "entry_reference",
+	"document_number":       "entry_reference",
+	"voucher_number":        "entry_reference",
+	"journal_number":        "entry_reference",
+	"entry_date":            "entry_date",
+	"date":                  "entry_date",
+	"posting_date":          "entry_date",
+	"entry_description":     "entry_description",
+	"journal_description":   "entry_description",
+	"entry_memo":            "entry_description",
+	"account_code":          "account_code",
+	"code":                  "account_code",
+	"account":               "account_code",
+	"line_description":      "line_description",
+	"description":           "line_description",
+	"memo":                  "line_description",
+	"line_id":               "line_id",
+	"journal_line_id":       "line_id",
+	"journal_entry_line_id": "line_id",
+	"debit":                 "debit",
+	"debit_amount":          "debit",
+	"credit":                "credit",
+	"credit_amount":         "credit",
+	"currency":              "currency",
+	"exchange_rate":         "exchange_rate",
+	"source_type":           "source_type",
+	"source_id":             "source_id",
 }
 
 // ImportJournalEntriesCSV imports historical double-entry journals from grouped CSV rows.
@@ -163,15 +166,23 @@ func (s *Service) buildJournalEntryFromImportGroup(
 		if currency == "" {
 			currency = "EUR"
 		}
+		lineID, err := optionalJournalImportUUID("line_id", row.values["line_id"])
+		if err != nil {
+			return nil, decimal.Zero, decimal.Zero, fmt.Errorf("row %d: %w", row.rowNumber, err)
+		}
 
-		lines = append(lines, CreateJournalEntryLineReq{
+		line := CreateJournalEntryLineReq{
 			AccountID:    account.ID,
 			Description:  strings.TrimSpace(row.values["line_description"]),
 			DebitAmount:  debit,
 			CreditAmount: credit,
 			Currency:     currency,
 			ExchangeRate: exchangeRate,
-		})
+		}
+		if lineID != nil {
+			line.LineID = *lineID
+		}
+		lines = append(lines, line)
 		totalDebit = totalDebit.Add(debit.Mul(exchangeRate))
 		totalCredit = totalCredit.Add(credit.Mul(exchangeRate))
 	}
