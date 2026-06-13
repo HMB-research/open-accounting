@@ -1279,6 +1279,10 @@ func (s *Service) issueStock(ctx context.Context, tenantID, schemaName string, r
 			sourceID = uuid.New().String()
 		}
 	}
+	costingMethod, err := normalizeIssueCostingMethod(req.CostingMethod)
+	if err != nil {
+		return nil, err
+	}
 	lotNumber, serialNumber, expiryDate, err := normalizeMovementTrackingMetadataValues(req.LotNumber, req.SerialNumber, req.ExpiryDate)
 	if err != nil {
 		return nil, err
@@ -1307,7 +1311,7 @@ func (s *Service) issueStock(ctx context.Context, tenantID, schemaName string, r
 	if err != nil {
 		return nil, fmt.Errorf("list movements for issue costing: %w", err)
 	}
-	allocations, err := s.issueStockAllocations(ctx, tenantID, schemaName, *product, level, movements, quantity, lotNumber, serialNumber, expiryDate)
+	allocations, err := s.issueStockAllocations(ctx, tenantID, schemaName, *product, level, movements, quantity, costingMethod, lotNumber, serialNumber, expiryDate)
 	if err != nil {
 		return nil, err
 	}
@@ -1390,14 +1394,15 @@ func (s *Service) issueStock(ctx context.Context, tenantID, schemaName string, r
 	}
 
 	return &IssueStockResult{
-		ProductID:   productID,
-		WarehouseID: warehouseID,
-		Quantity:    quantity,
-		UnitCost:    unitCost,
-		TotalCost:   totalCost,
-		Movements:   createdMovements,
-		StockLevel:  level,
-		Accounting:  accountingLines,
+		ProductID:     productID,
+		WarehouseID:   warehouseID,
+		Quantity:      quantity,
+		CostingMethod: costingMethod,
+		UnitCost:      unitCost,
+		TotalCost:     totalCost,
+		Movements:     createdMovements,
+		StockLevel:    level,
+		Accounting:    accountingLines,
 	}, nil
 }
 
@@ -1415,6 +1420,7 @@ func (s *Service) issueStockAllocations(
 	level *StockLevel,
 	movements []InventoryMovement,
 	quantity decimal.Decimal,
+	costingMethod string,
 	lotNumber, serialNumber, expiryDate string,
 ) ([]inventoryIssueAllocation, error) {
 	positions := inventoryLotPositionsFromMovements(product, movements, tenantID, level.WarehouseID)
@@ -1441,7 +1447,8 @@ func (s *Service) issueStockAllocations(
 		if available.LessThan(quantity) {
 			return nil, fmt.Errorf("insufficient available tracked lot stock to issue")
 		}
-		return []inventoryIssueAllocation{newInventoryIssueAllocation(product, key, quantity, inventoryPositionUnitCost(product, position))}, nil
+		unitCost := inventoryIssueAllocationUnitCost(product, position, movements, tenantID, costingMethod)
+		return []inventoryIssueAllocation{newInventoryIssueAllocation(product, key, quantity, unitCost)}, nil
 	}
 
 	remaining := quantity
@@ -1459,7 +1466,8 @@ func (s *Service) issueStockAllocations(
 			continue
 		}
 		issueQty := minDecimal(available, remaining)
-		allocations = append(allocations, newInventoryIssueAllocation(product, key, issueQty, inventoryPositionUnitCost(product, position)))
+		unitCost := inventoryIssueAllocationUnitCost(product, position, movements, tenantID, costingMethod)
+		allocations = append(allocations, newInventoryIssueAllocation(product, key, issueQty, unitCost))
 		remaining = remaining.Sub(issueQty)
 		if remaining.IsZero() {
 			break
@@ -1468,9 +1476,38 @@ func (s *Service) issueStockAllocations(
 
 	if remaining.GreaterThan(decimal.Zero) {
 		key := inventoryLotKey{productID: product.ID, warehouseID: level.WarehouseID}
-		allocations = append(allocations, newInventoryIssueAllocation(product, key, remaining, weightedAverageInventoryUnitCost(product, movements, tenantID)))
+		unitCost := inventoryIssueAllocationUnitCost(product, nil, movements, tenantID, costingMethod)
+		allocations = append(allocations, newInventoryIssueAllocation(product, key, remaining, unitCost))
 	}
 	return allocations, nil
+}
+
+func normalizeIssueCostingMethod(method string) (string, error) {
+	normalized := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(method), "-", "_"))
+	switch normalized {
+	case "", InventoryIssueCostingMethodLot, "LOT_COST", "SPECIFIC_LOT", "ACTUAL_LOT", "FIFO", "FEFO":
+		return InventoryIssueCostingMethodLot, nil
+	case "STANDARD", InventoryIssueCostingMethodStandardCost:
+		return InventoryIssueCostingMethodStandardCost, nil
+	case "WEIGHTED", "AVERAGE", "AVERAGE_COST", InventoryIssueCostingMethodWeightedAverage:
+		return InventoryIssueCostingMethodWeightedAverage, nil
+	default:
+		return "", fmt.Errorf("invalid costing_method: %s", method)
+	}
+}
+
+func inventoryIssueAllocationUnitCost(product Product, position *inventoryLotAccumulator, movements []InventoryMovement, tenantID, costingMethod string) decimal.Decimal {
+	switch costingMethod {
+	case InventoryIssueCostingMethodStandardCost:
+		return product.PurchasePrice
+	case InventoryIssueCostingMethodWeightedAverage:
+		return weightedAverageInventoryUnitCost(product, movements, tenantID)
+	default:
+		if position != nil {
+			return inventoryPositionUnitCost(product, position)
+		}
+		return weightedAverageInventoryUnitCost(product, movements, tenantID)
+	}
 }
 
 func inventoryPositionUnitCost(product Product, position *inventoryLotAccumulator) decimal.Decimal {

@@ -2404,6 +2404,100 @@ func TestService_IssueStockAutoAllocatesTrackedLots(t *testing.T) {
 	assert.True(t, level.AvailableQty.Equal(decimal.RequireFromString("2.00")))
 }
 
+func TestService_IssueStockSupportsCostingMethods(t *testing.T) {
+	ctx := context.Background()
+	seed := func() *testService {
+		ts := newTestService()
+		ts.repo.Products[inventoryStockProductID] = &Product{
+			ID:             inventoryStockProductID,
+			TenantID:       "tenant-1",
+			Code:           "SKU-001",
+			Name:           "Widget",
+			ProductType:    ProductTypeGoods,
+			PurchasePrice:  decimal.RequireFromString("9.00"),
+			CurrentStock:   decimal.RequireFromString("8.00"),
+			TrackInventory: true,
+		}
+		ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+		ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+			ID:           "sl-1",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			Quantity:     decimal.RequireFromString("8.00"),
+			AvailableQty: decimal.RequireFromString("8.00"),
+		}
+		ts.repo.Movements[inventoryStockProductID] = []InventoryMovement{
+			{
+				ID:           "lot-a",
+				TenantID:     "tenant-1",
+				ProductID:    inventoryStockProductID,
+				WarehouseID:  inventoryStockWarehouseID,
+				MovementType: MovementTypeIn,
+				Quantity:     decimal.RequireFromString("4.00"),
+				UnitCost:     decimal.RequireFromString("5.00"),
+				TotalCost:    decimal.RequireFromString("20.00"),
+				LotNumber:    "LOT-A",
+				ExpiryDate:   "2027-01-31",
+			},
+			{
+				ID:           "lot-b",
+				TenantID:     "tenant-1",
+				ProductID:    inventoryStockProductID,
+				WarehouseID:  inventoryStockWarehouseID,
+				MovementType: MovementTypeIn,
+				Quantity:     decimal.RequireFromString("4.00"),
+				UnitCost:     decimal.RequireFromString("7.00"),
+				TotalCost:    decimal.RequireFromString("28.00"),
+				LotNumber:    "LOT-B",
+				ExpiryDate:   "2027-05-31",
+			},
+		}
+		return ts
+	}
+
+	for _, tc := range []struct {
+		name          string
+		method        string
+		wantMethod    string
+		wantUnitCost  string
+		wantTotalCost string
+	}{
+		{name: "default lot layer cost", method: "", wantMethod: InventoryIssueCostingMethodLot, wantUnitCost: "5.4", wantTotalCost: "27.00"},
+		{name: "weighted average", method: "weighted-average", wantMethod: InventoryIssueCostingMethodWeightedAverage, wantUnitCost: "6", wantTotalCost: "30.00"},
+		{name: "standard cost", method: "standard-cost", wantMethod: InventoryIssueCostingMethodStandardCost, wantUnitCost: "9", wantTotalCost: "45.00"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := seed()
+			result, err := ts.svc.IssueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+				ProductID:     inventoryStockProductID,
+				WarehouseID:   inventoryStockWarehouseID,
+				Quantity:      "5",
+				CostingMethod: tc.method,
+				Reference:     "Shipment",
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantMethod, result.CostingMethod)
+			require.Len(t, result.Movements, 2)
+			assert.Equal(t, "LOT-A", result.Movements[0].LotNumber)
+			assert.Equal(t, "LOT-B", result.Movements[1].LotNumber)
+			assert.True(t, result.UnitCost.Equal(decimal.RequireFromString(tc.wantUnitCost)))
+			assert.True(t, result.TotalCost.Equal(decimal.RequireFromString(tc.wantTotalCost)))
+		})
+	}
+
+	ts := seed()
+	_, err := ts.svc.IssueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+		ProductID:     inventoryStockProductID,
+		WarehouseID:   inventoryStockWarehouseID,
+		Quantity:      "1",
+		CostingMethod: "lifo",
+		Reference:     "Shipment",
+	})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "invalid costing_method")
+}
+
 func TestService_IssueStockRejectsReservedTrackedLotAndBadAccountingAccount(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()

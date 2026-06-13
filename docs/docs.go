@@ -25938,6 +25938,9 @@ const docTemplate = `{
                 "cost_of_goods_sold_account_id": {
                     "type": "string"
                 },
+                "costing_method": {
+                    "type": "string"
+                },
                 "expiry_date": {
                     "type": "string"
                 },
@@ -25981,6 +25984,9 @@ const docTemplate = `{
             "properties": {
                 "accounting": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccounting"
+                },
+                "costing_method": {
+                    "type": "string"
                 },
                 "movements": {
                     "type": "array",

@@ -162,6 +162,15 @@ const (
 	InventoryValuationMethodFIFO = "FIFO"
 )
 
+const (
+	// InventoryIssueCostingMethodLot uses the consumed lot/serial/expiry layer costs.
+	InventoryIssueCostingMethodLot = "LOT"
+	// InventoryIssueCostingMethodStandardCost uses each product purchase price for issue cost.
+	InventoryIssueCostingMethodStandardCost = InventoryValuationMethodStandardCost
+	// InventoryIssueCostingMethodWeightedAverage uses weighted average inbound movement cost for issue cost.
+	InventoryIssueCostingMethodWeightedAverage = InventoryValuationMethodWeightedAverage
+)
+
 // InventoryValuationLine represents one valued product/warehouse stock position.
 type InventoryValuationLine struct {
 	ProductID      string          `json:"product_id"`
@@ -421,6 +430,7 @@ type IssueStockRequest struct {
 	ProductID                string `json:"product_id"`
 	WarehouseID              string `json:"warehouse_id"`
 	Quantity                 string `json:"quantity"`
+	CostingMethod            string `json:"costing_method,omitempty"`
 	LotNumber                string `json:"lot_number,omitempty"`
 	SerialNumber             string `json:"serial_number,omitempty"`
 	ExpiryDate               string `json:"expiry_date,omitempty"`
@@ -458,14 +468,15 @@ type InventoryIssueAccounting struct {
 
 // IssueStockResult summarizes created stock issue movements and their cost.
 type IssueStockResult struct {
-	ProductID   string                    `json:"product_id"`
-	WarehouseID string                    `json:"warehouse_id"`
-	Quantity    decimal.Decimal           `json:"quantity"`
-	UnitCost    decimal.Decimal           `json:"unit_cost"`
-	TotalCost   decimal.Decimal           `json:"total_cost"`
-	Movements   []InventoryMovement       `json:"movements"`
-	StockLevel  *StockLevel               `json:"stock_level,omitempty"`
-	Accounting  *InventoryIssueAccounting `json:"accounting,omitempty"`
+	ProductID     string                    `json:"product_id"`
+	WarehouseID   string                    `json:"warehouse_id"`
+	Quantity      decimal.Decimal           `json:"quantity"`
+	CostingMethod string                    `json:"costing_method"`
+	UnitCost      decimal.Decimal           `json:"unit_cost"`
+	TotalCost     decimal.Decimal           `json:"total_cost"`
+	Movements     []InventoryMovement       `json:"movements"`
+	StockLevel    *StockLevel               `json:"stock_level,omitempty"`
+	Accounting    *InventoryIssueAccounting `json:"accounting,omitempty"`
 }
 
 // ProductFilter represents filters for listing products

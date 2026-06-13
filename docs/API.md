@@ -2432,6 +2432,7 @@ Content-Type: application/json
   "product_id": "uuid",
   "warehouse_id": "uuid",
   "quantity": "2",
+  "costing_method": "weighted-average",
   "lot_number": "LOT-2026-01",
   "serial_number": "SN-001",
   "expiry_date": "2027-01-31",
@@ -2445,7 +2446,7 @@ Content-Type: application/json
 }
 ```
 
-`product_id`, `warehouse_id`, optional `source_id`, and optional account IDs must be valid UUIDs. Issues require a positive quantity and enough available warehouse stock. Optional lot metadata consumes only a matching tracked lot/serial/expiry position after tracked and unallocated reservations; without metadata, issue allocation consumes available tracked lots in deterministic expiry/lot/serial order before any untracked remainder. The response includes costed outbound movements, weighted issue cost, the updated stock level, and optional accounting-ready lines that debit cost of goods sold and credit inventory when COGS and inventory asset accounts are available. When `post_to_ledger` is true, those lines are created and posted as a journal entry in the same database transaction as the stock issue, so a ledger posting failure rolls back the stock movements and stock-level updates; the response includes the posted journal entry ID and number. The service validates supplied COGS accounts as `EXPENSE` and inventory accounts as `ASSET` when accounting account metadata is available.
+`product_id`, `warehouse_id`, optional `source_id`, and optional account IDs must be valid UUIDs. Issues require a positive quantity and enough available warehouse stock. Optional lot metadata consumes only a matching tracked lot/serial/expiry position after tracked and unallocated reservations; without metadata, issue allocation consumes available tracked lots in deterministic expiry/lot/serial order before any untracked remainder. `costing_method` accepts `lot` (default), `weighted-average`, or `standard-cost`; all methods preserve the physical lot allocation while changing the unit cost applied to the outbound movement and accounting lines. The response includes costed outbound movements, the normalized costing method, weighted issue cost, the updated stock level, and optional accounting-ready lines that debit cost of goods sold and credit inventory when COGS and inventory asset accounts are available. When `post_to_ledger` is true, those lines are created and posted as a journal entry in the same database transaction as the stock issue, so a ledger posting failure rolls back the stock movements and stock-level updates; the response includes the posted journal entry ID and number. The service validates supplied COGS accounts as `EXPENSE` and inventory accounts as `ASSET` when accounting account metadata is available.
 
 ```http
 POST /tenants/{tenantId}/inventory/transfer
