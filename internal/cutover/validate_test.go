@@ -544,6 +544,118 @@ func TestValidateBundleAcceptsSmartAccountsCostAllocationProviderPresetAliases(t
 	assert.Contains(t, report.Files[1].Headers, "notes")
 }
 
+func TestValidateBundleAcceptsMeritPaymentAndBankProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetMerit,
+		Files: []BundleFile{
+			{
+				Kind:       KindAccounts,
+				FileName:   "merit-accounts.csv",
+				CSVContent: "konto_kood,konto_nimi,konto_tüüp\n1000,Main bank,ASSET\n4000,Sales,REVENUE\n",
+			},
+			{
+				Kind:       KindContacts,
+				FileName:   "merit-contacts.csv",
+				CSVContent: "kliendi_kood,nimi\nCUST-1,Customer One\n",
+			},
+			{
+				Kind:       KindInvoices,
+				FileName:   "merit-invoices.csv",
+				CSVContent: "arve_nr,arve_tyyp,arve_kuupaev,due_date,kliendi_kood,rea_kirjeldus,kogus,yhiku_hind,kaibemaks\nINV-1,SALES,2026-05-30,2026-06-14,CUST-1,Work,1,100,22\n",
+			},
+			{
+				Kind:     KindPayments,
+				FileName: "merit-payments.csv",
+				CSVContent: "makse_nr,makse_tyyp,kuupaev,summa,arve_nr,viitenumber,selgitus,makseviis,pangakonto,jaotuse_summa\n" + //nolint:misspell // Estonian CSV header aliases.
+					"PAY-1,RECEIVED,2026-05-31,100,INV-1,REF-1,Customer payment,BANK_TRANSFER,EE471000001020145685,100\n",
+			},
+			{
+				Kind:       KindBankAccounts,
+				FileName:   "merit-bank-accounts.csv",
+				CSVContent: "konto_nimi,pangakonto,pank,valuuta,konto_kood,vaikimisi,aktiivne\nMain bank,EE471000001020145685,LHV,EUR,1000,true,true\n",
+			},
+			{
+				Kind:       KindBankTransactions,
+				FileName:   "merit-bank-transactions.csv",
+				CSVContent: "kuupaev,summa,konto,valuuta,selgitus,viitenumber,vastaspool,vastaspoole_konto\n2026-05-31,100,EE471000001020145685,EUR,Customer payment,REF-1,Customer One,EE111\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 6)
+	assert.Contains(t, report.Files[3].Headers, "payment_number")
+	assert.Contains(t, report.Files[3].Headers, "payment_method")
+	assert.Contains(t, report.Files[3].Headers, "bank_account")
+	assert.Contains(t, report.Files[3].Headers, "allocation_amount")
+	assert.Contains(t, report.Files[4].Headers, "account_number")
+	assert.Contains(t, report.Files[4].Headers, "currency")
+	assert.Contains(t, report.Files[4].Headers, "gl_account_code")
+	assert.Contains(t, report.Files[5].Headers, "source_account")
+	assert.Contains(t, report.Files[5].Headers, "reference")
+	assert.Contains(t, report.Files[5].Headers, "counterparty_account")
+}
+
+func TestValidateBundleAcceptsSmartAccountsPaymentAndBankProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{
+			{
+				Kind:       KindAccounts,
+				FileName:   "smartaccounts-accounts.csv",
+				CSVContent: "account_no,account_title,classification\n1000,Main bank,ASSET\n4000,Sales,REVENUE\n",
+			},
+			{
+				Kind:       KindContacts,
+				FileName:   "smartaccounts-contacts.csv",
+				CSVContent: "client_no,client_name\nCUST-1,Customer One\n",
+			},
+			{
+				Kind:       KindInvoices,
+				FileName:   "smartaccounts-invoices.csv",
+				CSVContent: "document_no,document_type,document_date,due_date,client_no,item_description,qty,unit_price,vat_percent\nINV-1,SALES,2026-05-30,2026-06-14,CUST-1,Work,1,100,22\n",
+			},
+			{
+				Kind:     KindPayments,
+				FileName: "smartaccounts-payments.csv",
+				CSVContent: "payment_no,payment_kind,payment_date,paid_amount,document_no,payment_method,bank_account_no,reference_no,payment_memo,allocated_amount\n" +
+					"PAY-1,RECEIVED,2026-05-31,100,INV-1,BANK_TRANSFER,EE471000001020145685,REF-1,Customer payment,100\n",
+			},
+			{
+				Kind:       KindBankAccounts,
+				FileName:   "smartaccounts-bank-accounts.csv",
+				CSVContent: "bank_account_name,bank_account_no,bank_name,currency_code,cash_account_no,default_bank_account,active\nMain bank,EE471000001020145685,LHV,EUR,1000,true,true\n",
+			},
+			{
+				Kind:       KindBankTransactions,
+				FileName:   "smartaccounts-bank-transactions.csv",
+				CSVContent: "transaction_date,transaction_sum,bank_account_no,currency_code,transaction_text,transaction_reference,counterparty_name,counterparty_account_no,external_id\n2026-05-31,100,EE471000001020145685,EUR,Customer payment,REF-1,Customer One,EE111,bank-ext-1\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 6)
+	assert.Contains(t, report.Files[3].Headers, "payment_number")
+	assert.Contains(t, report.Files[3].Headers, "payment_method")
+	assert.Contains(t, report.Files[3].Headers, "bank_account")
+	assert.Contains(t, report.Files[3].Headers, "allocation_amount")
+	assert.Contains(t, report.Files[4].Headers, "account_number")
+	assert.Contains(t, report.Files[4].Headers, "currency")
+	assert.Contains(t, report.Files[4].Headers, "gl_account_code")
+	assert.Contains(t, report.Files[5].Headers, "source_account")
+	assert.Contains(t, report.Files[5].Headers, "currency")
+	assert.Contains(t, report.Files[5].Headers, "reference")
+	assert.Contains(t, report.Files[5].Headers, "counterparty_account")
+	assert.Contains(t, report.Files[5].Headers, "external_id")
+}
+
 func TestValidateBundleDefaultsDisplayFileNames(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
