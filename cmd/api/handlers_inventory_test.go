@@ -1039,6 +1039,7 @@ func TestIssueStock(t *testing.T) {
 		"product_id":                    apiInventoryStockProductID,
 		"warehouse_id":                  apiInventoryStockWarehouseID,
 		"quantity":                      "3",
+		"costing_method":                "weighted-average",
 		"lot_number":                    "LOT-2026-01",
 		"expiry_date":                   "2027-01-31",
 		"reference":                     "Invoice INV-001",
@@ -1055,6 +1056,7 @@ func TestIssueStock(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 	var result inventory.IssueStockResult
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+	assert.Equal(t, inventory.InventoryIssueCostingMethodWeightedAverage, result.CostingMethod)
 	assert.True(t, result.TotalCost.Equal(decimal.RequireFromString("24.75")))
 	require.Len(t, result.Movements, 1)
 	assert.Equal(t, "LOT-2026-01", result.Movements[0].LotNumber)

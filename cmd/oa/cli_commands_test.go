@@ -8969,12 +8969,13 @@ func TestCLIInventoryCommands(t *testing.T) {
 	}
 	movementPayload := cliInventoryMovementPayload(stockProductID, stockWarehouseID)
 	issueResultPayload := map[string]any{
-		"product_id":   stockProductID,
-		"warehouse_id": stockWarehouseID,
-		"quantity":     "2",
-		"unit_cost":    "10.5",
-		"total_cost":   "21",
-		"movements":    []map[string]any{movementPayload},
+		"product_id":     stockProductID,
+		"warehouse_id":   stockWarehouseID,
+		"quantity":       "2",
+		"costing_method": "WEIGHTED_AVERAGE",
+		"unit_cost":      "10.5",
+		"total_cost":     "21",
+		"movements":      []map[string]any{movementPayload},
 		"stock_level": map[string]any{
 			"id":            "stock-1",
 			"tenant_id":     "tenant-1",
@@ -9203,6 +9204,9 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, "SALES_INVOICE", req.SourceType)
 			assert.Equal(t, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", req.SourceID)
 			assert.Equal(t, "Shipment", req.Reason)
+			if req.CostingMethod != "" {
+				assert.Equal(t, "weighted-average", req.CostingMethod)
+			}
 			assert.Equal(t, cogsAccountID, req.CostOfGoodsSoldAccountID)
 			assert.Equal(t, inventoryAccountID, req.InventoryAccountID)
 			response := issueResultPayload
@@ -9478,6 +9482,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"--product-id", stockProductID,
 		"--warehouse-id", stockWarehouseID,
 		"--quantity", "2.00",
+		"--costing-method", "weighted-average",
 		"--lot-number", "LOT-2026-01",
 		"--serial-number", "SN-001",
 		"--expiry-date", "2027-01-31",
@@ -9511,6 +9516,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"total_cost": "21"`)
+	assert.Contains(t, stdout.String(), `"costing_method": "WEIGHTED_AVERAGE"`)
 	assert.Contains(t, stdout.String(), `"role": "COST_OF_GOODS_SOLD"`)
 
 	stdout.Reset()

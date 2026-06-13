@@ -7464,6 +7464,7 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		productID := fs.String("product-id", "", "Product id")
 		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
 		quantityFlag := fs.String("quantity", "", "Quantity to issue")
+		costingMethod := fs.String("costing-method", "", "Costing method: lot, weighted-average, or standard-cost")
 		lotNumber := fs.String("lot-number", "", "Lot or batch number")
 		serialNumber := fs.String("serial-number", "", "Serial number")
 		expiryDate := fs.String("expiry-date", "", "Lot expiry date in YYYY-MM-DD")
@@ -7516,6 +7517,7 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 			ProductID:                productIDValue,
 			WarehouseID:              warehouseIDValue,
 			Quantity:                 quantity.String(),
+			CostingMethod:            strings.TrimSpace(*costingMethod),
 			LotNumber:                strings.TrimSpace(*lotNumber),
 			SerialNumber:             strings.TrimSpace(*serialNumber),
 			ExpiryDate:               strings.TrimSpace(*expiryDate),
