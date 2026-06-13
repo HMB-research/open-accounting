@@ -1016,6 +1016,9 @@ func TestListBankTransactions(t *testing.T) {
 				err := json.Unmarshal(rr.Body.Bytes(), &result)
 				require.NoError(t, err)
 				assert.Len(t, result, tt.wantCount)
+				if tt.wantCount > 0 {
+					assert.NotEmpty(t, result[0].RemediationActions)
+				}
 			}
 		})
 	}
@@ -1063,6 +1066,12 @@ func TestGetBankTransaction(t *testing.T) {
 			h.GetBankTransaction(rr, req)
 
 			assert.Equal(t, tt.wantStatus, rr.Code)
+			if tt.wantStatus == http.StatusOK {
+				var result banking.BankTransaction
+				err := json.Unmarshal(rr.Body.Bytes(), &result)
+				require.NoError(t, err)
+				assert.NotEmpty(t, result.RemediationActions)
+			}
 		})
 	}
 }
@@ -1312,6 +1321,7 @@ func TestReviewBankTransaction(t *testing.T) {
 			require.NotNil(t, result.ReviewedBy)
 			assert.Equal(t, "user-1", *result.ReviewedBy)
 			require.NotNil(t, result.ReviewedAt)
+			assert.NotEmpty(t, result.RemediationActions)
 		})
 	}
 }

@@ -1585,6 +1585,35 @@ definitions:
       tenant_id:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_banking.BankRemediationAction:
+    properties:
+      action:
+        type: string
+      bank_account_id:
+        type: string
+      cli_command:
+        type: string
+      code:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        type: string
+      follow_up_status:
+        type: string
+      message:
+        type: string
+      owner_role:
+        type: string
+      scope:
+        type: string
+      severity:
+        type: string
+      transaction_status:
+        type: string
+      ui_path:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_banking.BankStatementImport:
     properties:
       bank_account_id:
@@ -1634,6 +1663,10 @@ definitions:
         type: string
       reference:
         type: string
+      remediation_actions:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_banking.BankRemediationAction'
+        type: array
       review_note:
         type: string
       reviewed_at:

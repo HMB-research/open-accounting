@@ -1497,6 +1497,19 @@ func TestPrintBankingOutputs(t *testing.T) {
 		MatchedPaymentID:    &paymentID,
 		ReconciliationID:    &reconciliationID,
 		ImportedAt:          now,
+		RemediationActions: []banking.BankRemediationAction{{
+			Code:          "bank_ready_to_match",
+			Severity:      "ACTION",
+			Scope:         "banking",
+			OwnerRole:     "accountant",
+			Message:       "Bank transaction tx-1 is marked ready to match.",
+			Action:        "Review payment suggestions and match the transaction to the correct payment.",
+			EntityType:    "bank_transaction",
+			EntityID:      "tx-1",
+			BankAccountID: "bank-1",
+			UIPath:        "/banking?account_id=bank-1&transaction_id=tx-1",
+			CLICommand:    "oa banking transactions suggestions --id tx-1",
+		}},
 	}
 	result := banking.ImportResult{
 		ImportID:             "import-1",
@@ -1566,6 +1579,12 @@ func TestPrintBankingOutputs(t *testing.T) {
 	assert.Contains(t, transactionBuf.String(), "Bank transaction tx-1")
 	assert.Contains(t, transactionBuf.String(), "Matched payment: pay-1")
 	assert.Contains(t, transactionBuf.String(), "Review note: Ready")
+	assert.Contains(t, transactionBuf.String(), "Bank remediation actions")
+	assert.Contains(t, transactionBuf.String(), "bank_ready_to_match")
+
+	var emptyBankRemediationBuf bytes.Buffer
+	printBankRemediationActions(&emptyBankRemediationBuf, nil)
+	assert.Empty(t, emptyBankRemediationBuf.String())
 
 	var resultBuf bytes.Buffer
 	printBankImportResult(&resultBuf, &result)

@@ -62,27 +62,45 @@ type BankAccount struct {
 
 // BankTransaction represents an imported bank transaction
 type BankTransaction struct {
-	ID                  string            `json:"id"`
-	TenantID            string            `json:"tenant_id"`
-	BankAccountID       string            `json:"bank_account_id"`
-	TransactionDate     time.Time         `json:"transaction_date"`
-	ValueDate           *time.Time        `json:"value_date,omitempty"`
-	Amount              decimal.Decimal   `json:"amount"`
-	Currency            string            `json:"currency"`
-	Description         string            `json:"description,omitempty"`
-	Reference           string            `json:"reference,omitempty"`
-	CounterpartyName    string            `json:"counterparty_name,omitempty"`
-	CounterpartyAccount string            `json:"counterparty_account,omitempty"`
-	Status              TransactionStatus `json:"status"`
-	FollowUpStatus      FollowUpStatus    `json:"follow_up_status"`
-	ReviewNote          string            `json:"review_note,omitempty"`
-	ReviewedBy          *string           `json:"reviewed_by,omitempty"`
-	ReviewedAt          *time.Time        `json:"reviewed_at,omitempty"`
-	MatchedPaymentID    *string           `json:"matched_payment_id,omitempty"`
-	JournalEntryID      *string           `json:"journal_entry_id,omitempty"`
-	ReconciliationID    *string           `json:"reconciliation_id,omitempty"`
-	ImportedAt          time.Time         `json:"imported_at"`
-	ExternalID          string            `json:"external_id,omitempty"`
+	ID                  string                  `json:"id"`
+	TenantID            string                  `json:"tenant_id"`
+	BankAccountID       string                  `json:"bank_account_id"`
+	TransactionDate     time.Time               `json:"transaction_date"`
+	ValueDate           *time.Time              `json:"value_date,omitempty"`
+	Amount              decimal.Decimal         `json:"amount"`
+	Currency            string                  `json:"currency"`
+	Description         string                  `json:"description,omitempty"`
+	Reference           string                  `json:"reference,omitempty"`
+	CounterpartyName    string                  `json:"counterparty_name,omitempty"`
+	CounterpartyAccount string                  `json:"counterparty_account,omitempty"`
+	Status              TransactionStatus       `json:"status"`
+	FollowUpStatus      FollowUpStatus          `json:"follow_up_status"`
+	ReviewNote          string                  `json:"review_note,omitempty"`
+	ReviewedBy          *string                 `json:"reviewed_by,omitempty"`
+	ReviewedAt          *time.Time              `json:"reviewed_at,omitempty"`
+	MatchedPaymentID    *string                 `json:"matched_payment_id,omitempty"`
+	JournalEntryID      *string                 `json:"journal_entry_id,omitempty"`
+	ReconciliationID    *string                 `json:"reconciliation_id,omitempty"`
+	ImportedAt          time.Time               `json:"imported_at"`
+	ExternalID          string                  `json:"external_id,omitempty"`
+	RemediationActions  []BankRemediationAction `json:"remediation_actions,omitempty"`
+}
+
+// BankRemediationAction describes one operator action for bank transaction follow-up.
+type BankRemediationAction struct {
+	Code              string `json:"code"`
+	Severity          string `json:"severity"`
+	Scope             string `json:"scope"`
+	OwnerRole         string `json:"owner_role"`
+	Message           string `json:"message"`
+	Action            string `json:"action"`
+	EntityType        string `json:"entity_type,omitempty"`
+	EntityID          string `json:"entity_id,omitempty"`
+	BankAccountID     string `json:"bank_account_id,omitempty"`
+	TransactionStatus string `json:"transaction_status,omitempty"`
+	FollowUpStatus    string `json:"follow_up_status,omitempty"`
+	UIPath            string `json:"ui_path,omitempty"`
+	CLICommand        string `json:"cli_command,omitempty"`
 }
 
 // BankReconciliation represents a reconciliation session
