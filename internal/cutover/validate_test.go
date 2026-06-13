@@ -404,6 +404,51 @@ func TestValidateBundleRejectsUnsupportedProviderPreset(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported provider_preset")
 }
 
+func TestNormalizeMigrationProviderPresetVariants(t *testing.T) {
+	tests := []struct {
+		name string
+		in   MigrationProviderPreset
+		want MigrationProviderPreset
+	}{
+		{name: "empty defaults to generic", in: "", want: MigrationProviderPresetGeneric},
+		{name: "generic with whitespace", in: " generic ", want: MigrationProviderPresetGeneric},
+		{name: "merit uppercase", in: "MERIT", want: MigrationProviderPresetMerit},
+		{name: "smartaccounts canonical", in: MigrationProviderPresetSmartAccounts, want: MigrationProviderPresetSmartAccounts},
+		{name: "smart accounts spaced", in: "Smart Accounts", want: MigrationProviderPresetSmartAccounts},
+		{name: "smart account singular", in: "smart-account", want: MigrationProviderPresetSmartAccounts},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeMigrationProviderPreset(tt.in)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFileSpecForProviderPresetMergesAliasesWithoutMutatingGeneric(t *testing.T) {
+	genericAccounts := fileSpecForProviderPreset(KindAccounts, MigrationProviderPresetGeneric)
+	meritAccounts := fileSpecForProviderPreset(KindAccounts, MigrationProviderPresetMerit)
+
+	assert.Equal(t, "code", meritAccounts.aliases["konto_kood"])
+	assert.Equal(t, "code", meritAccounts.aliases["account_code"])
+	_, genericHasMeritAlias := genericAccounts.aliases["konto_kood"]
+	assert.False(t, genericHasMeritAlias)
+	assert.Equal(t, "code", genericAccounts.aliases["account_code"])
+}
+
+func TestFileSpecForProviderPresetFallsBackWhenProviderHasNoAliases(t *testing.T) {
+	genericSpec := fileSpecForProviderPreset(KindEInvoices, MigrationProviderPresetGeneric)
+	meritSpec := fileSpecForProviderPreset(KindEInvoices, MigrationProviderPresetMerit)
+	smartAccountsSpec := fileSpecForProviderPreset(KindEInvoices, MigrationProviderPresetSmartAccounts)
+
+	assert.Equal(t, genericSpec.aliases, meritSpec.aliases)
+	assert.Equal(t, genericSpec.requiredGroups, meritSpec.requiredGroups)
+	assert.Equal(t, genericSpec.aliases, smartAccountsSpec.aliases)
+	assert.Equal(t, genericSpec.requiredGroups, smartAccountsSpec.requiredGroups)
+}
+
 func TestValidateBundleRequiresInvoiceTypeForCSVInvoices(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
