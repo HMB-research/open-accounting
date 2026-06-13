@@ -213,6 +213,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks deliveries       List webhook deliveries")
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks test             Send a test webhook delivery")
 	_, _ = fmt.Fprintln(a.stdout, "  migration validate        Validate CSV/XML migration bundle references")
+	_, _ = fmt.Fprintln(a.stdout, "  migration plan            Plan ordered cutover import execution")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins list        List installed plugins")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins search      Search plugin repositories")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins get         Show an installed plugin")
@@ -2121,6 +2122,93 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, report)
 		}
 		printMigrationValidationReport(a.stdout, report)
+		return nil
+
+	case "plan":
+		fs := flag.NewFlagSet("migration plan", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		accountsFile := fs.String("accounts", "", "Accounts CSV file")
+		contactsFile := fs.String("contacts", "", "Contacts CSV file")
+		employeesFile := fs.String("employees", "", "Employees CSV file")
+		expensesFile := fs.String("expenses", "", "Expenses CSV file")
+		invoicesFile := fs.String("invoices", "", "Invoices CSV file")
+		eInvoicesFile := fs.String("e-invoices", "", "Estonian e-invoice XML file")
+		eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
+		providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, or smartaccounts")
+		paymentsFile := fs.String("payments", "", "Payments CSV file")
+		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
+		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
+		bankTransactionAccountID := fs.String("bank-transaction-account-id", "", "Bank account ID for bank transaction import execution")
+		payrollHistoryFile := fs.String("payroll-history", "", "Historical payroll CSV file")
+		leaveBalancesFile := fs.String("leave-balances", "", "Leave balances CSV file")
+		tsdHistoryFile := fs.String("tsd-history", "", "TSD history CSV file")
+		kmdHistoryFile := fs.String("kmd-history", "", "KMD history CSV file")
+		quotesFile := fs.String("quotes", "", "Quotes CSV file")
+		ordersFile := fs.String("orders", "", "Orders CSV file")
+		recurringInvoicesFile := fs.String("recurring-invoices", "", "Recurring invoice templates CSV file")
+		costCentersFile := fs.String("cost-centers", "", "Cost centers CSV file")
+		costAllocationsFile := fs.String("cost-allocations", "", "Cost allocations CSV file")
+		productCategoriesFile := fs.String("product-categories", "", "Product categories CSV file")
+		warehousesFile := fs.String("warehouses", "", "Warehouses CSV file")
+		productsFile := fs.String("products", "", "Products CSV file")
+		stockFile := fs.String("stock", "", "Stock adjustments CSV file")
+		fixedAssetsFile := fs.String("fixed-assets", "", "Fixed assets CSV file")
+		openingBalancesFile := fs.String("opening-balances", "", "Opening balances CSV file")
+		openingBalanceEntryDate := fs.String("opening-balance-entry-date", "", "Opening balance journal entry date in YYYY-MM-DD")
+		journalFile := fs.String("journal", "", "Historical journal CSV file")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		files, err := buildMigrationBundleFiles([]migrationFileInput{
+			{kind: cutover.KindAccounts, path: *accountsFile},
+			{kind: cutover.KindContacts, path: *contactsFile},
+			{kind: cutover.KindEmployees, path: *employeesFile},
+			{kind: cutover.KindExpenses, path: *expensesFile},
+			{kind: cutover.KindInvoices, path: *invoicesFile},
+			{kind: cutover.KindEInvoices, path: *eInvoicesFile},
+			{kind: cutover.KindPayments, path: *paymentsFile},
+			{kind: cutover.KindBankAccounts, path: *bankAccountsFile},
+			{kind: cutover.KindBankTransactions, path: *bankTransactionsFile},
+			{kind: cutover.KindPayrollHistory, path: *payrollHistoryFile},
+			{kind: cutover.KindLeaveBalances, path: *leaveBalancesFile},
+			{kind: cutover.KindTSDHistory, path: *tsdHistoryFile},
+			{kind: cutover.KindKMDHistory, path: *kmdHistoryFile},
+			{kind: cutover.KindQuotes, path: *quotesFile},
+			{kind: cutover.KindOrders, path: *ordersFile},
+			{kind: cutover.KindRecurringInvoices, path: *recurringInvoicesFile},
+			{kind: cutover.KindCostCenters, path: *costCentersFile},
+			{kind: cutover.KindCostAllocations, path: *costAllocationsFile},
+			{kind: cutover.KindProductCategories, path: *productCategoriesFile},
+			{kind: cutover.KindWarehouses, path: *warehousesFile},
+			{kind: cutover.KindProducts, path: *productsFile},
+			{kind: cutover.KindStockAdjustments, path: *stockFile},
+			{kind: cutover.KindFixedAssets, path: *fixedAssetsFile},
+			{kind: cutover.KindOpeningBalances, path: *openingBalancesFile},
+			{kind: cutover.KindJournalEntries, path: *journalFile},
+		})
+		if err != nil {
+			return err
+		}
+		if len(files) == 0 {
+			return errors.New("at least one migration CSV or XML file is required")
+		}
+
+		plan, err := client.planMigrationExecution(ctx, cfg.TenantID, &cutover.PlanMigrationExecutionRequest{
+			Files:                    files,
+			EInvoiceContactMode:      cutover.EInvoiceContactMode(strings.TrimSpace(*eInvoiceContactMode)),
+			ProviderPreset:           cutover.MigrationProviderPreset(strings.TrimSpace(*providerPreset)),
+			BankTransactionAccountID: strings.TrimSpace(*bankTransactionAccountID),
+			OpeningBalanceEntryDate:  strings.TrimSpace(*openingBalanceEntryDate),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, plan)
+		}
+		printMigrationExecutionPlan(a.stdout, plan)
 		return nil
 
 	default:

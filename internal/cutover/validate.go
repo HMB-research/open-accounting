@@ -1195,7 +1195,7 @@ func BuildMigrationRemediationActions(report *BundleValidationReport) []Migratio
 				Message:        "Migration bundle passed preflight validation.",
 				Action:         "Run the relevant import commands in the planned cutover order.",
 				IssueCount:     0,
-				CLICommand:     "oa migration validate --provider-preset generic --json",
+				CLICommand:     "oa migration plan --provider-preset generic --json",
 			}}
 		}
 		return nil

@@ -186,6 +186,83 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 	assert.Contains(t, buf.String(), "ready")
 	assert.NotContains(t, buf.String(), "Issues:")
 
+	buf.Reset()
+	printMigrationExecutionPlan(&buf, nil)
+	assert.Contains(t, buf.String(), "No migration execution plan")
+
+	buf.Reset()
+	printMigrationExecutionPlan(&buf, &cutover.MigrationExecutionPlan{
+		Summary: cutover.MigrationExecutionPlanSummary{
+			ValidationReady:   true,
+			Ready:             false,
+			StepCount:         2,
+			ReadyStepCount:    1,
+			NeedsContextCount: 1,
+		},
+		Steps: []cutover.MigrationExecutionStep{
+			{
+				StepNumber: 1,
+				Kind:       cutover.KindAccounts,
+				FileName:   "accounts.csv",
+				Status:     cutover.MigrationExecutionStepReady,
+				APIPath:    "/api/v1/tenants/{tenantID}/accounts/import",
+				CLICommand: "oa accounts import --file <accounts.csv>",
+			},
+			{
+				StepNumber:    2,
+				Kind:          cutover.KindBankTransactions,
+				FileName:      "bank.csv",
+				Status:        cutover.MigrationExecutionStepNeedsContext,
+				DependsOn:     []cutover.FileKind{cutover.KindBankAccounts},
+				ContextFields: []string{"bank_transaction_account_id"},
+				APIPath:       "/api/v1/tenants/{tenantID}/bank-accounts/<bank-account-id>/import",
+				CLICommand:    "oa banking transactions import --account-id <bank-account-id> --file <bank.csv>",
+			},
+		},
+		RemediationActions: []cutover.MigrationRemediationAction{{
+			Code:           "ready_to_import",
+			Severity:       "ACTION",
+			WorkspaceQueue: "migration_cutover",
+			AssignmentKey:  "migration:ready-to-import:-:-:-:-",
+			Priority:       "low",
+			Action:         "Run the relevant import commands in the planned cutover order.",
+			CLICommand:     "oa migration plan --provider-preset generic --json",
+		}},
+	})
+	assert.Contains(t, buf.String(), "Migration execution plan: needs attention")
+	assert.Contains(t, buf.String(), "NEEDS_CONTEXT")
+	assert.Contains(t, buf.String(), "bank_transaction_account_id")
+	assert.Contains(t, buf.String(), "bank_accounts")
+	assert.Contains(t, buf.String(), "oa migration plan --provider-preset generic --json")
+
+	buf.Reset()
+	printMigrationExecutionPlan(&buf, &cutover.MigrationExecutionPlan{
+		Summary: cutover.MigrationExecutionPlanSummary{
+			ValidationReady: true,
+			Ready:           true,
+		},
+	})
+	assert.Contains(t, buf.String(), "Migration execution plan: ready")
+
+	buf.Reset()
+	printMigrationExecutionPlan(&buf, &cutover.MigrationExecutionPlan{
+		Summary: cutover.MigrationExecutionPlanSummary{
+			ValidationReady:  false,
+			Ready:            false,
+			StepCount:        1,
+			BlockedStepCount: 1,
+		},
+		Steps: []cutover.MigrationExecutionStep{{
+			StepNumber: 1,
+			Kind:       cutover.KindContacts,
+			FileName:   "contacts.csv",
+			Status:     cutover.MigrationExecutionStepBlocked,
+		}},
+	})
+	assert.Contains(t, buf.String(), "Migration execution plan: blocked")
+	assert.Contains(t, buf.String(), "BLOCKED")
+	assert.Contains(t, buf.String(), "contacts.csv")
+
 	periodLock := "2026-03-31"
 	buf.Reset()
 	printTenant(&buf, &tenant.Tenant{

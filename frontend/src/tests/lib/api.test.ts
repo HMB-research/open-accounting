@@ -819,6 +819,129 @@ describe("API Client - Core Functionality", () => {
       expect(result.remediation_actions?.[0].priority).toBe("high");
     });
 
+    it("should plan migration execution with context-aware import steps", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          summary: {
+            validation_ready: true,
+            ready: false,
+            step_count: 2,
+            ready_step_count: 1,
+            needs_context_count: 1,
+            blocked_step_count: 0,
+          },
+          validation: {
+            summary: {
+              files_validated: 2,
+              rows_validated: 2,
+              error_count: 0,
+              warning_count: 0,
+              ready: true,
+            },
+            files: [
+              { kind: "accounts", file_name: "accounts.csv", rows: 1 },
+              { kind: "bank_transactions", file_name: "bank.csv", rows: 1 },
+            ],
+          },
+          steps: [
+            {
+              step_number: 1,
+              kind: "accounts",
+              file_name: "accounts.csv",
+              status: "READY",
+              message: "Import this validated migration file.",
+              action:
+                "Import this validated cutover file through the listed API or CLI command.",
+              api_method: "POST",
+              api_path: "/api/v1/tenants/{tenantID}/accounts/import",
+              cli_command: "oa accounts import --file <accounts.csv>",
+            },
+            {
+              step_number: 2,
+              kind: "bank_transactions",
+              file_name: "bank.csv",
+              status: "NEEDS_CONTEXT",
+              message:
+                "Import bank transactions after selecting the target bank account.",
+              action:
+                "Provide the missing execution context, then run the listed import command.",
+              api_method: "POST",
+              api_path:
+                "/api/v1/tenants/{tenantID}/bank-accounts/<bank-account-id>/import",
+              cli_command:
+                "oa banking transactions import --account-id <bank-account-id> --file <bank.csv>",
+              depends_on: ["bank_accounts"],
+              context_fields: ["bank_transaction_account_id"],
+            },
+          ],
+          remediation_actions: [
+            {
+              code: "ready_to_import",
+              severity: "ACTION",
+              scope: "migration",
+              owner_role: "accountant",
+              workspace_queue: "migration_cutover",
+              assignment_key: "migration:ready-to-import:-:-:-:-",
+              priority: "low",
+              message: "Migration bundle passed preflight validation.",
+              action:
+                "Run the relevant import commands in the planned cutover order.",
+              issue_count: 0,
+              cli_command: "oa migration plan --provider-preset generic --json",
+            },
+          ],
+        }),
+      });
+
+      const result = await api.planMigrationExecution("tenant-123", {
+        provider_preset: "generic",
+        bank_transaction_account_id: "bank-1",
+        files: [
+          {
+            kind: "accounts",
+            file_name: "accounts.csv",
+            csv_content: "code,name,account_type\n1000,Cash,ASSET\n",
+          },
+          {
+            kind: "bank_transactions",
+            file_name: "bank.csv",
+            csv_content: "date,amount\n2026-05-31,100\n",
+          },
+        ],
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-plan",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            provider_preset: "generic",
+            bank_transaction_account_id: "bank-1",
+            files: [
+              {
+                kind: "accounts",
+                file_name: "accounts.csv",
+                csv_content: "code,name,account_type\n1000,Cash,ASSET\n",
+              },
+              {
+                kind: "bank_transactions",
+                file_name: "bank.csv",
+                csv_content: "date,amount\n2026-05-31,100\n",
+              },
+            ],
+          }),
+        }),
+      );
+      expect(result.summary.needs_context_count).toBe(1);
+      expect(result.steps?.[1].context_fields).toEqual([
+        "bank_transaction_account_id",
+      ]);
+    });
+
     it("should list expense claims with remediation actions", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

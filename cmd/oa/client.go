@@ -706,6 +706,14 @@ func (c *apiClient) validateMigrationBundle(ctx context.Context, tenantID string
 	return &resp, nil
 }
 
+func (c *apiClient) planMigrationExecution(ctx context.Context, tenantID string, req *cutover.PlanMigrationExecutionRequest) (*cutover.MigrationExecutionPlan, error) {
+	var resp cutover.MigrationExecutionPlan
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "migration", "execution-plan"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]accounting.Account, error) {
 	query := ""
 	if activeOnly {

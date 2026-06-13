@@ -11338,6 +11338,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/migration/execution-plan": {
+            "post": {
+                "description": "Validate CSV and XML cutover files and return a dependency-aware import execution plan with API and CLI commands",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Migration"
+                ],
+                "summary": "Plan migration execution",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Migration bundle files and execution context",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.PlanMigrationExecutionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionPlan"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/migration/validate": {
             "post": {
                 "description": "Validate CSV and XML cutover files for required columns and cross-file references before running imports",
@@ -24815,6 +24889,109 @@ const docTemplate = `{
                 "SeverityWarning"
             ]
         },
+        "github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionPlan": {
+            "type": "object",
+            "properties": {
+                "remediation_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationRemediationAction"
+                    }
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionStep"
+                    }
+                },
+                "summary": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionPlanSummary"
+                },
+                "validation": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleValidationReport"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionPlanSummary": {
+            "type": "object",
+            "properties": {
+                "blocked_step_count": {
+                    "type": "integer"
+                },
+                "needs_context_count": {
+                    "type": "integer"
+                },
+                "ready": {
+                    "type": "boolean"
+                },
+                "ready_step_count": {
+                    "type": "integer"
+                },
+                "step_count": {
+                    "type": "integer"
+                },
+                "validation_ready": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionStep": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "api_method": {
+                    "type": "string"
+                },
+                "api_path": {
+                    "type": "string"
+                },
+                "cli_command": {
+                    "type": "string"
+                },
+                "context_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "depends_on": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                    }
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionStepStatus"
+                },
+                "step_number": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionStepStatus": {
+            "type": "string",
+            "enum": [
+                "READY",
+                "NEEDS_CONTEXT",
+                "BLOCKED"
+            ],
+            "x-enum-varnames": [
+                "MigrationExecutionStepReady",
+                "MigrationExecutionStepNeedsContext",
+                "MigrationExecutionStepBlocked"
+            ]
+        },
         "github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset": {
             "type": "string",
             "enum": [
@@ -24878,6 +25055,29 @@ const docTemplate = `{
                 },
                 "workspace_queue": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.PlanMigrationExecutionRequest": {
+            "type": "object",
+            "properties": {
+                "bank_transaction_account_id": {
+                    "type": "string"
+                },
+                "e_invoice_contact_mode": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.EInvoiceContactMode"
+                },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleFile"
+                    }
+                },
+                "opening_balance_entry_date": {
+                    "type": "string"
+                },
+                "provider_preset": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset"
                 }
             }
         },

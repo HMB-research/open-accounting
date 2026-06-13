@@ -2229,6 +2229,75 @@ definitions:
     x-enum-varnames:
     - SeverityError
     - SeverityWarning
+  github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionPlan:
+    properties:
+      remediation_actions:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationRemediationAction'
+        type: array
+      steps:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionStep'
+        type: array
+      summary:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionPlanSummary'
+      validation:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleValidationReport'
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionPlanSummary:
+    properties:
+      blocked_step_count:
+        type: integer
+      needs_context_count:
+        type: integer
+      ready:
+        type: boolean
+      ready_step_count:
+        type: integer
+      step_count:
+        type: integer
+      validation_ready:
+        type: boolean
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionStep:
+    properties:
+      action:
+        type: string
+      api_method:
+        type: string
+      api_path:
+        type: string
+      cli_command:
+        type: string
+      context_fields:
+        items:
+          type: string
+        type: array
+      depends_on:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind'
+        type: array
+      file_name:
+        type: string
+      kind:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind'
+      message:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionStepStatus'
+      step_number:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionStepStatus:
+    enum:
+    - READY
+    - NEEDS_CONTEXT
+    - BLOCKED
+    type: string
+    x-enum-varnames:
+    - MigrationExecutionStepReady
+    - MigrationExecutionStepNeedsContext
+    - MigrationExecutionStepBlocked
   github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset:
     enum:
     - generic
@@ -2273,6 +2342,21 @@ definitions:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind'
       workspace_queue:
         type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.PlanMigrationExecutionRequest:
+    properties:
+      bank_transaction_account_id:
+        type: string
+      e_invoice_contact_mode:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.EInvoiceContactMode'
+      files:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleFile'
+        type: array
+      opening_balance_entry_date:
+        type: string
+      provider_preset:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset'
     type: object
   github_com_HMB-research_open-accounting_internal_cutover.ValidateBundleRequest:
     properties:
@@ -14525,6 +14609,55 @@ paths:
       summary: Reject leave record
       tags:
       - Leave Management
+  /tenants/{tenantID}/migration/execution-plan:
+    post:
+      consumes:
+      - application/json
+      description: Validate CSV and XML cutover files and return a dependency-aware
+        import execution plan with API and CLI commands
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Migration bundle files and execution context
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.PlanMigrationExecutionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionPlan'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Plan migration execution
+      tags:
+      - Migration
   /tenants/{tenantID}/migration/validate:
     post:
       consumes:

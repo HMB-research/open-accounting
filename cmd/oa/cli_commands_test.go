@@ -4117,6 +4117,136 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"files_validated": 2`)
 }
 
+func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	accountsFile := writeTempCSV(t, "accounts.csv", "code,name,account_type\n1000,Cash,ASSET\n3000,Equity,EQUITY\n")
+	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number\nMain bank,EE471000001020145685\n")
+	bankFile := writeTempCSV(t, "bank.csv", "date,amount,description\n2026-05-31,100,Customer receipt\n")
+	openingFile := writeTempCSV(t, "opening.csv", "account_code,debit,credit\n1000,100,0\n3000,0,100\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/v1/tenants/tenant-1/migration/execution-plan", r.URL.Path)
+
+		var req cutover.PlanMigrationExecutionRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		assert.Equal(t, cutover.EInvoiceContactModeSupplier, req.EInvoiceContactMode)
+		assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
+		assert.Equal(t, "bank-1", req.BankTransactionAccountID)
+		assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
+		require.Len(t, req.Files, 4)
+		assert.Equal(t, cutover.KindAccounts, req.Files[0].Kind)
+		assert.Equal(t, cutover.KindBankAccounts, req.Files[1].Kind)
+		assert.Equal(t, cutover.KindBankTransactions, req.Files[2].Kind)
+		assert.Equal(t, cutover.KindOpeningBalances, req.Files[3].Kind)
+
+		_ = json.NewEncoder(w).Encode(cutover.MigrationExecutionPlan{
+			Summary: cutover.MigrationExecutionPlanSummary{
+				ValidationReady:   true,
+				Ready:             false,
+				StepCount:         4,
+				ReadyStepCount:    3,
+				NeedsContextCount: 1,
+			},
+			Validation: cutover.BundleValidationReport{
+				Summary: cutover.BundleValidationSummary{FilesValidated: 4, RowsValidated: 6, Ready: true},
+			},
+			Steps: []cutover.MigrationExecutionStep{
+				{
+					StepNumber: 1,
+					Kind:       cutover.KindAccounts,
+					FileName:   "accounts.csv",
+					Status:     cutover.MigrationExecutionStepReady,
+					APIPath:    "/api/v1/tenants/{tenantID}/accounts/import",
+					CLICommand: "oa accounts import --file <accounts.csv>",
+				},
+				{
+					StepNumber: 2,
+					Kind:       cutover.KindBankAccounts,
+					FileName:   "bank-accounts.csv",
+					Status:     cutover.MigrationExecutionStepReady,
+					DependsOn:  []cutover.FileKind{cutover.KindAccounts},
+					APIPath:    "/api/v1/tenants/{tenantID}/bank-accounts/import",
+					CLICommand: "oa banking accounts import --file <bank-accounts.csv>",
+				},
+				{
+					StepNumber:    3,
+					Kind:          cutover.KindBankTransactions,
+					FileName:      "bank.csv",
+					Status:        cutover.MigrationExecutionStepNeedsContext,
+					DependsOn:     []cutover.FileKind{cutover.KindBankAccounts},
+					ContextFields: []string{"bank_transaction_account_id"},
+					APIPath:       "/api/v1/tenants/{tenantID}/bank-accounts/<bank-account-id>/import",
+					CLICommand:    "oa banking transactions import --account-id <bank-account-id> --file <bank.csv>",
+				},
+				{
+					StepNumber: 4,
+					Kind:       cutover.KindOpeningBalances,
+					FileName:   "opening.csv",
+					Status:     cutover.MigrationExecutionStepReady,
+					DependsOn:  []cutover.FileKind{cutover.KindAccounts},
+					APIPath:    "/api/v1/tenants/{tenantID}/journal-entries/import-opening-balances",
+					CLICommand: "oa journal import-opening-balances --entry-date 2026-01-01 --file <opening.csv>",
+				},
+			},
+			RemediationActions: []cutover.MigrationRemediationAction{{
+				Code:           "ready_to_import",
+				Severity:       "ACTION",
+				WorkspaceQueue: "migration_cutover",
+				AssignmentKey:  "migration:ready-to-import:-:-:-:-",
+				Priority:       "low",
+				Action:         "Run the relevant import commands in the planned cutover order.",
+			}},
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{
+		"migration", "plan",
+		"--accounts", accountsFile,
+		"--bank-accounts", bankAccountsFile,
+		"--bank-transactions", bankFile,
+		"--bank-transaction-account-id", "bank-1",
+		"--opening-balances", openingFile,
+		"--opening-balance-entry-date", "2026-01-01",
+		"--provider-preset", "smartaccounts",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Migration execution plan: needs attention")
+	assert.Contains(t, stdout.String(), "NEEDS_CONTEXT")
+	assert.Contains(t, stdout.String(), "bank_transaction_account_id")
+	assert.Contains(t, stdout.String(), "oa journal import-opening-balances --entry-date 2026-01-01")
+	assert.Contains(t, stdout.String(), "migration:ready-to-import:-:-:-:-")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"migration", "plan",
+		"--accounts", accountsFile,
+		"--bank-accounts", bankAccountsFile,
+		"--bank-transactions", bankFile,
+		"--bank-transaction-account-id", "bank-1",
+		"--opening-balances", openingFile,
+		"--opening-balance-entry-date", "2026-01-01",
+		"--provider-preset", "smartaccounts",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"needs_context_count": 1`)
+}
+
 func TestCLIMigrationValidationBranches(t *testing.T) {
 	configureCLIEnv(t)
 
@@ -4161,6 +4291,18 @@ func TestCLIMigrationValidationBranches(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "read file")
 
+	err = app.run(context.Background(), []string{"migration", "plan", "--not-a-flag"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "flag provided but not defined")
+
+	err = app.run(context.Background(), []string{"migration", "plan"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one migration CSV or XML file is required")
+
+	err = app.run(context.Background(), []string{"migration", "plan", "--contacts", filepath.Join(t.TempDir(), "missing.csv")})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read file")
+
 	contactsFile := writeTempCSV(t, "contacts.csv", "contact_code,name\nCUST-1,Customer One\n")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -4176,6 +4318,21 @@ func TestCLIMigrationValidationBranches(t *testing.T) {
 	err = app.run(context.Background(), []string{"migration", "validate", "--contacts", contactsFile})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "migration validation unavailable")
+
+	planServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/v1/tenants/tenant-1/migration/execution-plan", r.URL.Path)
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "migration execution planning unavailable"})
+	}))
+	defer planServer.Close()
+	t.Setenv("OA_BASE_URL", planServer.URL)
+
+	err = app.run(context.Background(), []string{"migration", "plan", "--contacts", contactsFile})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "migration execution planning unavailable")
 }
 
 func TestCLIAdminPluginCommands(t *testing.T) {
