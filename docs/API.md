@@ -2440,7 +2440,7 @@ Content-Type: application/json
 }
 ```
 
-`product_id`, `from_warehouse_id`, and `to_warehouse_id` must be valid UUIDs. Transfers require a positive quantity and enough available stock in the source warehouse. `lot_number`, `serial_number`, and `expiry_date` are optional movement metadata fields; `expiry_date` must use `YYYY-MM-DD`. Successful transfers create an outbound movement for the source warehouse, an inbound movement for the destination warehouse, copy any lot metadata to both movements, and update both warehouse stock levels without changing total product stock.
+`product_id`, `from_warehouse_id`, and `to_warehouse_id` must be valid UUIDs. Transfers require a positive quantity and enough available stock in the source warehouse. `lot_number`, `serial_number`, and `expiry_date` are optional movement metadata fields; `expiry_date` must use `YYYY-MM-DD`. When lot metadata is supplied, the matching source lot/serial/expiry position must have enough quantity for the transfer. Successful transfers create an outbound movement for the source warehouse, an inbound movement for the destination warehouse, copy any lot metadata to both movements, carry the source lot cost when a matching cost layer exists, fall back to weighted-average or purchase price when needed, and update both warehouse stock levels without changing total product stock.
 
 ```http
 POST /tenants/{tenantId}/inventory/reserve
