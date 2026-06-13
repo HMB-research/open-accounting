@@ -13,6 +13,7 @@ const { apiMock } = vi.hoisted(() => ({
 		reviewBankTransaction: vi.fn(),
 		reviewDocument: vi.fn(),
 		approvePayroll: vi.fn(),
+		generateTSD: vi.fn(),
 		sendPaymentReminder: vi.fn(),
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn(),
@@ -352,6 +353,7 @@ describe('AccountantReviewPanel', () => {
 			created_at: '2026-02-08T00:00:00Z'
 		});
 		apiMock.approvePayroll.mockResolvedValue({ status: 'approved' });
+		apiMock.generateTSD.mockResolvedValue({ id: 'tsd-1' });
 		apiMock.sendPaymentReminder.mockResolvedValue({
 			invoice_id: 'inv-1',
 			invoice_number: 'INV-001',
@@ -489,6 +491,57 @@ describe('AccountantReviewPanel', () => {
 		expect(screen.getByText('No close or reopen actions have been recorded yet.')).toBeInTheDocument();
 		expect(screen.getByText('No recent journal entries to review yet.')).toBeInTheDocument();
 		expect(screen.getByText('No periods locked yet')).toBeInTheDocument();
+	});
+
+	it('generates TSD from approved payroll assignment rows', async () => {
+		apiMock.listPayrollRuns.mockResolvedValue([
+			{
+				id: 'payroll-approved-1',
+				tenant_id: 'tenant-1',
+				period_year: 2026,
+				period_month: 3,
+				status: 'APPROVED',
+				total_gross: new Decimal(5100),
+				total_net: new Decimal(3978),
+				total_employer_cost: new Decimal(6834),
+				remediation_actions: [
+					{
+						code: 'payroll_generate_tsd',
+						severity: 'ACTION',
+						scope: 'payroll',
+						owner_role: 'accountant',
+						workspace_queue: 'payroll_runs',
+						assignment_key: 'payroll-runs:payroll-generate-tsd:payroll-run:payroll-approved-1:2026-03',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'Payroll run 2026-03 is approved and ready for TSD generation.',
+						action: 'Generate the TSD declaration, export it, and file it through e-MTA.',
+						entity_type: 'payroll_run',
+						entity_id: 'payroll-approved-1',
+						period: '2026-03',
+						ui_path: '/payroll?run_id=payroll-approved-1',
+						cli_command: 'oa tsd generate --run-id payroll-approved-1'
+					}
+				],
+				created_at: '2026-03-01T00:00:00Z',
+				updated_at: '2026-03-01T00:00:00Z'
+			}
+		]);
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('Payroll run 2026-03 is approved and ready for TSD generation.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Generate TSD' }));
+
+		await waitFor(() => {
+			expect(apiMock.generateTSD).toHaveBeenCalledWith('tenant-1', 'payroll-approved-1');
+			expect(screen.getByText('TSD generated from workspace.')).toBeInTheDocument();
+		});
 	});
 
 	it('saves follow-up updates from the review queue', async () => {
