@@ -1271,6 +1271,22 @@ func TestValidateBundleReportsPaymentRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindPayments, "allocation_amount", "allocation_amount exceeds payment amount")
 }
 
+func TestValidateBundleReportsBlankPaymentDate(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_number,payment_type,payment_date,amount\nPAY-1,RECEIVED,,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindPayments, "payment_date", "payment_date is required")
+}
+
 func TestValidateBundleReportsBankAccountRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
