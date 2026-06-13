@@ -4,6 +4,7 @@ package payroll
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -214,6 +215,164 @@ func TestGORMRepository_PayslipOperations(t *testing.T) {
 	}
 	if len(payslips) != 0 {
 		t.Errorf("expected 0 payslips after delete, got %d", len(payslips))
+	}
+}
+
+func TestGORMRepository_TSDOperations(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "tsd-gorm-test@example.com")
+	repo := newPayrollGORMRepository(t, pool)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	employee := testEmployee(tenant.ID, "EMP-TSD-REPO-001")
+	employee.FirstName = "TSD"
+	employee.LastName = "Repository"
+	employee.PersonalCode = "38901234567"
+	if err := repo.CreateEmployee(ctx, tenant.SchemaName, employee); err != nil {
+		t.Fatalf("CreateEmployee failed: %v", err)
+	}
+
+	run := testPayrollRun(tenant.ID, userID, now)
+	run.PeriodYear = 2026
+	run.PeriodMonth = 6
+	run.Status = PayrollApproved
+	if err := repo.CreatePayrollRun(ctx, tenant.SchemaName, run); err != nil {
+		t.Fatalf("CreatePayrollRun failed: %v", err)
+	}
+
+	if err := repo.CreateTSDRows(ctx, tenant.SchemaName, nil); err != nil {
+		t.Fatalf("CreateTSDRows nil failed: %v", err)
+	}
+	if _, err := repo.GetTSD(ctx, tenant.SchemaName, tenant.ID, 2099, 12); !errors.Is(err, ErrTSDDeclarationNotFound) {
+		t.Fatalf("expected ErrTSDDeclarationNotFound from GetTSD, got %v", err)
+	}
+	if err := repo.MarkTSDSubmitted(ctx, tenant.SchemaName, tenant.ID, uuid.New().String(), "EMTA-MISSING", now); !errors.Is(err, ErrTSDDeclarationNotFound) {
+		t.Fatalf("expected ErrTSDDeclarationNotFound from MarkTSDSubmitted, got %v", err)
+	}
+	if err := repo.UpdateTSDStatus(ctx, tenant.SchemaName, tenant.ID, uuid.New().String(), TSDAccepted, now); !errors.Is(err, ErrTSDDeclarationNotFound) {
+		t.Fatalf("expected ErrTSDDeclarationNotFound from UpdateTSDStatus, got %v", err)
+	}
+
+	emptyRows, err := repo.GetTSDRows(ctx, tenant.SchemaName, tenant.ID, uuid.New().String())
+	if err != nil {
+		t.Fatalf("GetTSDRows empty failed: %v", err)
+	}
+	if len(emptyRows) != 0 {
+		t.Fatalf("expected no TSD rows, got %d", len(emptyRows))
+	}
+	emptyDeclarations, err := repo.ListTSD(ctx, tenant.SchemaName, tenant.ID, TSDListFilter{Year: 1999, Month: 1})
+	if err != nil {
+		t.Fatalf("ListTSD empty failed: %v", err)
+	}
+	if len(emptyDeclarations) != 0 {
+		t.Fatalf("expected no TSD declarations, got %d", len(emptyDeclarations))
+	}
+
+	declaration := &TSDDeclaration{
+		ID:                  uuid.New().String(),
+		TenantID:            tenant.ID,
+		PeriodYear:          run.PeriodYear,
+		PeriodMonth:         run.PeriodMonth,
+		PayrollRunID:        run.ID,
+		TotalPayments:       decimal.NewFromInt(3000),
+		TotalIncomeTax:      decimal.NewFromInt(506),
+		TotalSocialTax:      decimal.NewFromInt(990),
+		TotalUnemploymentER: decimal.NewFromInt(24),
+		TotalUnemploymentEE: decimal.NewFromInt(48),
+		TotalFundedPension:  decimal.NewFromInt(60),
+		Status:              TSDDraft,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}
+	if err := repo.CreateTSDDeclaration(ctx, tenant.SchemaName, declaration); err != nil {
+		t.Fatalf("CreateTSDDeclaration failed: %v", err)
+	}
+
+	row := TSDRow{
+		ID:             uuid.New().String(),
+		TenantID:       tenant.ID,
+		DeclarationID:  declaration.ID,
+		EmployeeID:     employee.ID,
+		PersonalCode:   employee.PersonalCode,
+		FirstName:      employee.FirstName,
+		LastName:       employee.LastName,
+		PaymentType:    PaymentTypeSalary,
+		GrossPayment:   decimal.NewFromInt(3000),
+		BasicExemption: DefaultBasicExemption,
+		TaxableAmount:  decimal.NewFromInt(2300),
+		IncomeTax:      decimal.NewFromInt(506),
+		SocialTax:      decimal.NewFromInt(990),
+		UnemploymentER: decimal.NewFromInt(24),
+		UnemploymentEE: decimal.NewFromInt(48),
+		FundedPension:  decimal.NewFromInt(60),
+		CreatedAt:      now,
+	}
+	if err := repo.CreateTSDRows(ctx, tenant.SchemaName, []TSDRow{row}); err != nil {
+		t.Fatalf("CreateTSDRows failed: %v", err)
+	}
+
+	retrieved, err := repo.GetTSD(ctx, tenant.SchemaName, tenant.ID, run.PeriodYear, run.PeriodMonth)
+	if err != nil {
+		t.Fatalf("GetTSD failed: %v", err)
+	}
+	if retrieved.ID != declaration.ID || len(retrieved.Rows) != 1 || retrieved.Rows[0].EmployeeID != employee.ID {
+		t.Fatalf("unexpected retrieved TSD declaration: %+v", retrieved)
+	}
+
+	rows, err := repo.GetTSDRows(ctx, tenant.SchemaName, tenant.ID, declaration.ID)
+	if err != nil {
+		t.Fatalf("GetTSDRows failed: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != row.ID {
+		t.Fatalf("expected one TSD row %s, got %+v", row.ID, rows)
+	}
+
+	declarations, err := repo.ListTSD(ctx, tenant.SchemaName, tenant.ID, TSDListFilter{Year: run.PeriodYear, Month: run.PeriodMonth})
+	if err != nil {
+		t.Fatalf("ListTSD filtered failed: %v", err)
+	}
+	if len(declarations) != 1 || declarations[0].ID != declaration.ID {
+		t.Fatalf("expected one filtered TSD declaration %s, got %+v", declaration.ID, declarations)
+	}
+
+	submittedAt := now.Add(time.Hour)
+	if err := repo.MarkTSDSubmitted(ctx, tenant.SchemaName, tenant.ID, declaration.ID, "EMTA-EDGE", submittedAt); err != nil {
+		t.Fatalf("MarkTSDSubmitted failed: %v", err)
+	}
+	submitted, err := repo.GetTSD(ctx, tenant.SchemaName, tenant.ID, run.PeriodYear, run.PeriodMonth)
+	if err != nil {
+		t.Fatalf("GetTSD after submit failed: %v", err)
+	}
+	if submitted.Status != TSDSubmitted || submitted.EMTAReference != "EMTA-EDGE" || submitted.SubmittedAt == nil {
+		t.Fatalf("submission marker was not persisted: %+v", submitted)
+	}
+
+	acceptedAt := now.Add(2 * time.Hour)
+	if err := repo.UpdateTSDStatus(ctx, tenant.SchemaName, tenant.ID, declaration.ID, TSDAccepted, acceptedAt); err != nil {
+		t.Fatalf("UpdateTSDStatus failed: %v", err)
+	}
+	accepted, err := repo.GetTSD(ctx, tenant.SchemaName, tenant.ID, run.PeriodYear, run.PeriodMonth)
+	if err != nil {
+		t.Fatalf("GetTSD after status update failed: %v", err)
+	}
+	if accepted.Status != TSDAccepted {
+		t.Fatalf("expected accepted TSD status, got %s", accepted.Status)
+	}
+
+	if err := repo.DeleteTSDByPeriod(ctx, tenant.SchemaName, tenant.ID, run.PeriodYear, run.PeriodMonth); err != nil {
+		t.Fatalf("DeleteTSDByPeriod failed: %v", err)
+	}
+	if _, err := repo.GetTSD(ctx, tenant.SchemaName, tenant.ID, run.PeriodYear, run.PeriodMonth); !errors.Is(err, ErrTSDDeclarationNotFound) {
+		t.Fatalf("expected deleted TSD to be missing, got %v", err)
+	}
+	rows, err = repo.GetTSDRows(ctx, tenant.SchemaName, tenant.ID, declaration.ID)
+	if err != nil {
+		t.Fatalf("GetTSDRows after delete failed: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("expected TSD rows to cascade delete, got %+v", rows)
 	}
 }
 
