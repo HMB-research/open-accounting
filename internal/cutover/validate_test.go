@@ -1112,6 +1112,57 @@ func TestValidateBundleReportsOpeningBalanceAccountCodeRowIssue(t *testing.T) {
 	assertValidationIssue(t, report, KindOpeningBalances, "account_code", "account_code is required")
 }
 
+func TestValidateBundleReportsOpeningBalanceDebitCreditRowValueIssues(t *testing.T) {
+	tests := []struct {
+		name    string
+		row     string
+		value   string
+		message string
+	}{
+		{
+			name:    "negative amount",
+			row:     "1000,-1.25,0\n",
+			value:   "debit=-1.25 credit=0",
+			message: "amounts cannot be negative",
+		},
+		{
+			name:    "zero amount",
+			row:     "1000,0,0\n",
+			value:   "debit=0 credit=0",
+			message: "either debit or credit is required",
+		},
+		{
+			name:    "both sides",
+			row:     "1000,100,25\n",
+			value:   "debit=100 credit=25",
+			message: "row cannot contain both debit and credit amounts",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+				{
+					Kind:       KindOpeningBalances,
+					FileName:   "opening.csv",
+					CSVContent: "account_code,debit,credit\n" + tt.row,
+				},
+			}})
+
+			require.NoError(t, err)
+			require.NotNil(t, report)
+			assert.False(t, report.Summary.Ready)
+			assert.Equal(t, 1, report.Summary.ErrorCount)
+			require.Len(t, report.Issues, 1)
+			assert.Equal(t, KindOpeningBalances, report.Issues[0].Kind)
+			assert.Equal(t, 2, report.Issues[0].Row)
+			assert.Equal(t, "debit/credit", report.Issues[0].Field)
+			assert.Equal(t, tt.value, report.Issues[0].Value)
+			assert.Equal(t, tt.message, report.Issues[0].Message)
+		})
+	}
+}
+
 func TestValidateBundleReportsHistoricalJournalBalanceIssue(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
