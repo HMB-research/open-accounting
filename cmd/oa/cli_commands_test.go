@@ -4384,6 +4384,74 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 	}
 }
 
+func TestCLIMigrationExecuteResumesRunFile(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	accountsFile := writeTempCSV(t, "accounts.csv", "code,name,account_type\n1000,Cash,ASSET\n")
+	contactsFile := writeTempCSV(t, "contacts.csv", "contact_code,name\nCUST-1,Customer One\n")
+	previousRun := migrationExecutionRun{
+		Steps: []migrationExecutionStepRun{
+			{StepNumber: 1, Kind: cutover.KindAccounts, FileName: "accounts.csv", Status: migrationExecutionResultSucceeded, Response: json.RawMessage(`{"created":1}`)},
+			{StepNumber: 2, Kind: cutover.KindContacts, FileName: "contacts.csv", Status: migrationExecutionResultFailed},
+		},
+	}
+	resumePayload, err := json.Marshal(previousRun)
+	require.NoError(t, err)
+	resumeRunFile := filepath.Join(t.TempDir(), "migration-run.json")
+	require.NoError(t, os.WriteFile(resumeRunFile, resumePayload, 0o600))
+
+	accountsImported := false
+	contactsImported := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/migration/execution-plan":
+			var req cutover.PlanMigrationExecutionRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			_ = json.NewEncoder(w).Encode(migrationExecuteReadyPlan(req.Files))
+		case "/api/v1/tenants/tenant-1/accounts/import":
+			accountsImported = true
+			t.Fatalf("previously succeeded accounts import should not be retried")
+		case "/api/v1/tenants/tenant-1/contacts/import":
+			contactsImported = true
+			var req contacts.ImportContactsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "contacts.csv", req.FileName)
+			_, _ = w.Write([]byte(`{"created":1}`))
+		default:
+			t.Fatalf("unexpected request: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err = app.run(context.Background(), []string{
+		"migration", "execute",
+		"--accounts", accountsFile,
+		"--contacts", contactsFile,
+		"--resume-run", resumeRunFile,
+		"--confirm",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.False(t, accountsImported)
+	assert.True(t, contactsImported)
+	assert.Contains(t, stdout.String(), `"status": "succeeded"`)
+	assert.Contains(t, stdout.String(), `"resumed": true`)
+	assert.Contains(t, stdout.String(), `"resumed_step_count": 1`)
+	assert.Contains(t, stdout.String(), `"succeeded_step_count": 2`)
+}
+
 func TestCLIMigrationExecuteSafetyBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -4407,6 +4475,8 @@ func TestCLIMigrationExecuteSafetyBranches(t *testing.T) {
 		{name: "no files", args: []string{"migration", "execute"}, want: "at least one migration CSV or XML file is required"},
 		{name: "bad e-invoice type", args: []string{"migration", "execute", "--accounts", accountsFile, "--e-invoice-invoice-type", "memo"}, want: `invalid invoice type "memo"`},
 		{name: "missing file", args: []string{"migration", "execute", "--accounts", missingFile}, want: "read file"},
+		{name: "missing resume run", args: []string{"migration", "execute", "--accounts", accountsFile, "--resume-run", missingFile}, want: "read migration resume run"},
+		{name: "bad resume run json", args: []string{"migration", "execute", "--accounts", accountsFile, "--resume-run", writeTempCSV(t, "bad-run.json", "{")}, want: "parse migration resume run"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stdout.Reset()

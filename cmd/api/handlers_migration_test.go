@@ -245,6 +245,49 @@ func TestExecuteMigrationHandlerRunsConfirmedReadySteps(t *testing.T) {
 	assert.NotNil(t, run.Steps[0].Response)
 }
 
+func TestExecuteMigrationHandlerResumesPreviouslySucceededSteps(t *testing.T) {
+	executor := &fakeMigrationStepExecutor{}
+	h := &Handlers{migrationExecutor: executor}
+	req := executeMigrationRequest(cutover.ExecuteMigrationRequest{
+		Files: []cutover.BundleFile{
+			{
+				Kind:       cutover.KindAccounts,
+				FileName:   "accounts.csv",
+				CSVContent: "code,name,account_type\n1000,Cash,ASSET\n",
+			},
+			{
+				Kind:       cutover.KindContacts,
+				FileName:   "contacts.csv",
+				CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+			},
+		},
+		Confirm: true,
+		ResumeFromRun: &cutover.MigrationExecutionRun{
+			Steps: []cutover.MigrationExecutionStepRun{
+				{StepNumber: 1, Kind: cutover.KindAccounts, FileName: "accounts.csv", Status: cutover.MigrationExecutionResultSucceeded, Response: map[string]any{"created": 1}},
+				{StepNumber: 2, Kind: cutover.KindContacts, FileName: "contacts.csv", Status: cutover.MigrationExecutionResultFailed},
+			},
+		},
+	})
+
+	w := httptest.NewRecorder()
+	h.ExecuteMigration(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var run cutover.MigrationExecutionRun
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&run))
+	assert.Equal(t, "succeeded", run.Summary.Status)
+	assert.True(t, run.Summary.Resumed)
+	assert.Equal(t, 1, run.Summary.ResumedStepCount)
+	assert.Equal(t, 2, run.Summary.SucceededStepCount)
+	require.Len(t, executor.calls, 1)
+	assert.Equal(t, cutover.KindContacts, executor.calls[0].Kind)
+	require.Len(t, run.Steps, 2)
+	assert.Equal(t, cutover.MigrationExecutionResultSucceeded, run.Steps[0].Status)
+	assert.Contains(t, run.Steps[0].Message, "previous run")
+	assert.Equal(t, cutover.MigrationExecutionResultSucceeded, run.Steps[1].Status)
+}
+
 func TestExecuteMigrationHandlerRejectsNotReadyPlan(t *testing.T) {
 	executor := &fakeMigrationStepExecutor{}
 	h := &Handlers{migrationExecutor: executor}

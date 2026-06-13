@@ -75,7 +75,7 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	run := cutover.NewMigrationExecutionRun(plan, req.Confirm)
+	run := cutover.NewResumableMigrationExecutionRun(plan, req.Confirm, req.ResumeFromRun)
 	if !req.Confirm {
 		respondJSON(w, http.StatusOK, run)
 		return
@@ -88,6 +88,9 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 	filesByKey := migrationFilesByExecutionStepKey(req.Files)
 	executor := h.effectiveMigrationExecutor()
 	for index, step := range plan.Steps {
+		if run.Steps[index].Status == cutover.MigrationExecutionResultSucceeded {
+			continue
+		}
 		if step.Status != cutover.MigrationExecutionStepReady {
 			run.Steps[index].Status = cutover.MigrationExecutionResultSkipped
 			run.Steps[index].Message = "Step is not ready to execute."
