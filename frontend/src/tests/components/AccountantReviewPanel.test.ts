@@ -15,6 +15,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn(),
 		getDocumentRetentionReview: vi.fn(),
+		listExpenses: vi.fn(),
 		listPayrollRuns: vi.fn(),
 		listTSD: vi.fn(),
 		listKMD: vi.fn(),
@@ -205,6 +206,46 @@ describe('AccountantReviewPanel', () => {
 				}
 			]
 		});
+		apiMock.listExpenses.mockResolvedValue([
+			{
+				id: 'expense-1',
+				tenant_id: 'tenant-1',
+				expense_number: 'EXP-001',
+				expense_date: '2026-02-09',
+				merchant: 'Taxi Co',
+				expense_account_id: 'expense-account',
+				payment_account_id: 'cash-account',
+				amount: new Decimal(35),
+				currency: 'EUR',
+				exchange_rate: new Decimal(1),
+				base_amount: new Decimal(35),
+				requires_receipt: true,
+				status: 'SUBMITTED',
+				remediation_actions: [
+					{
+						code: 'expense_receipt_approval_required',
+						severity: 'ACTION',
+						scope: 'expenses',
+						owner_role: 'accountant',
+						workspace_queue: 'expense_claims',
+						assignment_key: 'expense-claims:expense-receipt-approval-required:expense:expense-1:EXP-001:SUBMITTED',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'Expense EXP-001 is submitted and receipt-backed.',
+						action: 'Confirm a linked receipt exists and is approved before approving the expense.',
+						entity_type: 'expense',
+						entity_id: 'expense-1',
+						expense_number: 'EXP-001',
+						status: 'SUBMITTED',
+						ui_path: '/expenses?expense_id=expense-1',
+						cli_command: 'oa documents review-queue --entity-type expense --document-type receipt --status PENDING'
+					}
+				],
+				created_at: '2026-02-09T00:00:00Z',
+				created_by: 'user-1',
+				updated_at: '2026-02-09T00:00:00Z'
+			}
+		]);
 		apiMock.listPayrollRuns.mockResolvedValue([
 			{
 				id: 'payroll-1',
@@ -313,12 +354,19 @@ describe('AccountantReviewPanel', () => {
 		expect(screen.getByText('Assignment queue')).toBeInTheDocument();
 		expect(screen.getByText('Fiscal year ending 2025-12-31 is not closed.')).toBeInTheDocument();
 		expect(screen.getByText('Bank transaction needs matching.')).toBeInTheDocument();
+		expect(screen.getByText('Expense EXP-001 is submitted and receipt-backed.')).toBeInTheDocument();
 		expect(screen.getByText('Payroll run needs calculation.')).toBeInTheDocument();
+		expect(screen.getByText(/oa documents review-queue --entity-type expense/)).toBeInTheDocument();
 		expect(screen.getByText(/oa close period --period-end 2025-12-31/)).toBeInTheDocument();
 		expect(
 			screen
 				.getAllByRole('link', { name: 'Open action' })
 				.some((link) => link.getAttribute('href') === '/settings/company?tenant=tenant-1#period-history')
+		).toBe(true);
+		expect(
+			screen
+				.getAllByRole('link', { name: 'Open action' })
+				.some((link) => link.getAttribute('href') === '/expenses?expense_id=expense-1&tenant=tenant-1')
 		).toBe(true);
 		expect(screen.getAllByText('Closed').length).toBeGreaterThan(0);
 		expect(screen.getByRole('link', { name: 'Open reminders' })).toHaveAttribute('href', '/invoices/reminders?tenant=tenant-1');
@@ -328,6 +376,7 @@ describe('AccountantReviewPanel', () => {
 			horizon_days: 30,
 			include_missing: true
 		});
+		expect(apiMock.listExpenses).toHaveBeenCalledWith('tenant-1', { limit: 100 });
 		expect(apiMock.listPayrollRuns).toHaveBeenCalledWith('tenant-1');
 		expect(apiMock.listTSD).toHaveBeenCalledWith('tenant-1');
 		expect(apiMock.listKMD).toHaveBeenCalledWith('tenant-1');
@@ -358,6 +407,7 @@ describe('AccountantReviewPanel', () => {
 			documents: [],
 			remediation_actions: []
 		});
+		apiMock.listExpenses.mockResolvedValue([]);
 		apiMock.listPayrollRuns.mockResolvedValue([]);
 		apiMock.listTSD.mockResolvedValue([]);
 		apiMock.listKMD.mockResolvedValue([]);

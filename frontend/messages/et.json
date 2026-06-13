@@ -197,6 +197,7 @@
   "dashboard_reviewAssignmentSourceClose": "Sulgemine",
   "dashboard_reviewAssignmentSourceBanking": "Pangandus",
   "dashboard_reviewAssignmentSourceDocuments": "Dokumendid",
+  "dashboard_reviewAssignmentSourceExpenses": "Kulud",
   "dashboard_reviewAssignmentSourcePayroll": "Palgaarvestus",
   "dashboard_reviewAssignmentSourceTsd": "TSD",
   "dashboard_reviewAssignmentSourceKmd": "KMD",
