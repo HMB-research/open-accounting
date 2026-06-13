@@ -381,6 +381,7 @@ go run ./cmd/oa payroll runs list --json
 go run ./cmd/oa payroll runs create --year 2026 --month 3 --payment-date 2026-03-31
 go run ./cmd/oa payroll runs get --id <payroll-run-id>
 go run ./cmd/oa payroll runs calculate --id <payroll-run-id>
+go run ./cmd/oa payroll runs set-payment-date --id <payroll-run-id> --payment-date 2026-03-31
 go run ./cmd/oa payroll runs process --id <payroll-run-id> --approve
 go run ./cmd/oa payroll runs approve --id <payroll-run-id>
 go run ./cmd/oa payroll runs payslips --id <payroll-run-id>
@@ -388,7 +389,7 @@ go run ./cmd/oa payroll runs payslip-pdf --run-id <payroll-run-id> --payslip-id 
 go run ./cmd/oa payroll tax-preview --gross-salary 3200.00
 ```
 
-Use `payroll runs calculate` after employee salary setup, then `payroll runs approve` before TSD generation. Payroll run human output includes a remediation action table for draft calculation, missing payment dates, zero-payslip review, approval, TSD generation, paid-run declaration follow-up, and declared payroll archive evidence; the table includes workspace queue, priority, due window, and assignment key columns. JSON output exposes the same `remediation_actions` array. Use `payroll runs process --approve` to bulk-calculate all active employees in a draft run and approve it in one request. `payroll runs create` accepts an optional `--payment-date`; when omitted, the API receives no payment date. Payroll run IDs are trimmed before API requests. Use `--json` on read and mutation commands when scripting, including list/create/get/calculate/process/approve/payslips. `payroll runs payslip-pdf` downloads a generated PDF for one payslip; pass `--output` to write a file, or omit it to stream the PDF bytes to stdout.
+Use `payroll runs calculate` after employee salary setup, then `payroll runs approve` before TSD generation. Payroll run human output includes a remediation action table for draft calculation, missing payment dates, zero-payslip review, approval, TSD generation, paid-run declaration follow-up, and declared payroll archive evidence; the table includes workspace queue, priority, due window, and assignment key columns. JSON output exposes the same `remediation_actions` array. Use `payroll runs set-payment-date` to clear missing-date remediation without recreating the run; declared payroll runs reject payment-date changes. Use `payroll runs process --approve` to bulk-calculate all active employees in a draft run and approve it in one request. `payroll runs create` accepts an optional `--payment-date`; when omitted, the API receives no payment date. Payroll run IDs are trimmed before API requests. Use `--json` on read and mutation commands when scripting, including list/create/get/calculate/set-payment-date/process/approve/payslips. `payroll runs payslip-pdf` downloads a generated PDF for one payslip; pass `--output` to write a file, or omit it to stream the PDF bytes to stdout.
 
 ## Payroll migration imports
 

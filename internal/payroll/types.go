@@ -304,6 +304,11 @@ type ProcessPayrollRunRequest struct {
 	Approve bool `json:"approve,omitempty"`
 }
 
+// UpdatePayrollRunPaymentDateRequest updates the salary payment date for a run.
+type UpdatePayrollRunPaymentDateRequest struct {
+	PaymentDate time.Time `json:"payment_date"`
+}
+
 // CreateSalaryComponentRequest creates an additional salary component for an employee.
 type CreateSalaryComponentRequest struct {
 	ComponentType string          `json:"component_type,omitempty"`

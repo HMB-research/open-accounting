@@ -12,6 +12,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listDocumentReviewSummaries: vi.fn(),
 		reviewBankTransaction: vi.fn(),
 		reviewDocument: vi.fn(),
+		updatePayrollPaymentDate: vi.fn(),
 		approvePayroll: vi.fn(),
 		generateTSD: vi.fn(),
 		generateKMD: vi.fn(),
@@ -359,6 +360,20 @@ describe('AccountantReviewPanel', () => {
 			reviewed_at: '2026-02-09T09:00:00Z',
 			created_at: '2026-02-08T00:00:00Z'
 		});
+		apiMock.updatePayrollPaymentDate.mockResolvedValue({
+			id: 'payroll-1',
+			tenant_id: 'tenant-1',
+			period_year: 2026,
+			period_month: 2,
+			status: 'CALCULATED',
+			payment_date: '2026-02-28T00:00:00Z',
+			total_gross: new Decimal(4200),
+			total_net: new Decimal(3260),
+			total_employer_cost: new Decimal(5628),
+			remediation_actions: [],
+			created_at: '2026-02-01T00:00:00Z',
+			updated_at: '2026-02-01T00:00:00Z'
+		});
 		apiMock.approvePayroll.mockResolvedValue({ status: 'approved' });
 		apiMock.generateTSD.mockResolvedValue({ id: 'tsd-1' });
 		apiMock.generateKMD.mockResolvedValue({ id: 'kmd-1' });
@@ -669,6 +684,90 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(apiMock.generateTSD).toHaveBeenCalledWith('tenant-1', 'payroll-approved-1');
 			expect(screen.getByText('TSD generated from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it('sets missing payroll payment dates from assignment rows', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-02-11',
+			cutoff_date: '2026-03-13',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+		apiMock.listPayrollRuns.mockResolvedValue([
+			{
+				id: 'payroll-missing-date-1',
+				tenant_id: 'tenant-1',
+				period_year: 2026,
+				period_month: 2,
+				status: 'CALCULATED',
+				total_gross: new Decimal(4200),
+				total_net: new Decimal(3260),
+				total_employer_cost: new Decimal(5628),
+				remediation_actions: [
+					{
+						code: 'payroll_payment_date_missing',
+						severity: 'WARNING',
+						scope: 'payroll',
+						owner_role: 'accountant',
+						workspace_queue: 'payroll_runs',
+						assignment_key: 'payroll-runs:payroll-payment-date-missing:payroll-run:payroll-missing-date-1:2026-02',
+						priority: 'normal',
+						due_in_days: 3,
+						message: 'Payroll run 2026-02 has no payment date.',
+						action: 'Confirm the intended salary payment date before approving payroll or filing TSD.',
+						entity_type: 'payroll_run',
+						entity_id: 'payroll-missing-date-1',
+						period: '2026-02',
+						ui_path: '/payroll?run_id=payroll-missing-date-1',
+						cli_command: 'oa payroll runs set-payment-date --id payroll-missing-date-1 --payment-date <YYYY-MM-DD>'
+					}
+				],
+				created_at: '2026-02-01T00:00:00Z',
+				updated_at: '2026-02-01T00:00:00Z'
+			}
+		]);
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('Payroll run 2026-02 has no payment date.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Set payment date' }));
+
+		await waitFor(() => {
+			expect(apiMock.updatePayrollPaymentDate).toHaveBeenCalledWith('tenant-1', 'payroll-missing-date-1', {
+				payment_date: '2026-02-28'
+			});
+			expect(screen.getByText('Payroll payment date set from workspace.')).toBeInTheDocument();
 		});
 	});
 

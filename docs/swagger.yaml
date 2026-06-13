@@ -5591,6 +5591,11 @@ definitions:
       notes:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_payroll.UpdatePayrollRunPaymentDateRequest:
+    properties:
+      payment_date:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_plugin.CreateRegistryRequest:
     properties:
       description:
@@ -15927,6 +15932,48 @@ paths:
       security:
       - BearerAuth: []
       summary: Calculate payroll
+      tags:
+      - Payroll
+  /tenants/{tenantID}/payroll-runs/{runID}/payment-date:
+    patch:
+      consumes:
+      - application/json
+      description: Set or correct the intended salary payment date for a payroll run
+        until the run is declared
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Payroll Run ID
+        in: path
+        name: runID
+        required: true
+        type: string
+      - description: Payment date update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.UpdatePayrollRunPaymentDateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_payroll.PayrollRun'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update payroll payment date
       tags:
       - Payroll
   /tenants/{tenantID}/payroll-runs/{runID}/payslips:

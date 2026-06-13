@@ -1098,6 +1098,53 @@ func TestCreatePayrollRun_Success(t *testing.T) {
 	assert.Equal(t, []string{"payroll_run_calculate"}, payrollRunRemediationCodes(run.RemediationActions))
 }
 
+func TestUpdatePayrollRunPaymentDate_ClearsMissingDateRemediation(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "run"})
+	ctx := context.Background()
+	repo.PayrollRuns["run-1"] = &PayrollRun{
+		ID:          "run-1",
+		TenantID:    "tenant-1",
+		PeriodYear:  2026,
+		PeriodMonth: 5,
+		Status:      PayrollCalculated,
+	}
+	paymentDate := time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC)
+
+	run, err := service.UpdatePayrollRunPaymentDate(ctx, "test_schema", "tenant-1", "run-1", &UpdatePayrollRunPaymentDateRequest{
+		PaymentDate: paymentDate,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, run.PaymentDate)
+	assert.Equal(t, "2026-05-31", run.PaymentDate.Format("2006-01-02"))
+	assert.NotContains(t, payrollRunRemediationCodes(run.RemediationActions), "payroll_payment_date_missing")
+	assert.Contains(t, payrollRunRemediationCodes(run.RemediationActions), "payroll_run_approve")
+}
+
+func TestUpdatePayrollRunPaymentDate_Validation(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "run"})
+	ctx := context.Background()
+	repo.PayrollRuns["declared-run"] = &PayrollRun{
+		ID:          "declared-run",
+		TenantID:    "tenant-1",
+		PeriodYear:  2026,
+		PeriodMonth: 5,
+		Status:      PayrollDeclared,
+	}
+
+	_, err := service.UpdatePayrollRunPaymentDate(ctx, "test_schema", "tenant-1", "declared-run", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "payment date is required")
+
+	_, err = service.UpdatePayrollRunPaymentDate(ctx, "test_schema", "tenant-1", "declared-run", &UpdatePayrollRunPaymentDateRequest{
+		PaymentDate: time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "declared payroll runs cannot change payment date")
+}
+
 func TestCreatePayrollRun_ValidationErrors(t *testing.T) {
 	repo := NewMockRepository()
 	uuidGen := &MockUUIDGenerator{prefix: "run"}

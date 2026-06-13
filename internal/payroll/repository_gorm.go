@@ -281,6 +281,7 @@ func (r *GORMRepository) UpdatePayrollRun(ctx context.Context, schemaName string
 	return db.Where("id = ?", run.ID).
 		Updates(map[string]interface{}{
 			"status":              run.Status,
+			"payment_date":        run.PaymentDate,
 			"total_gross":         run.TotalGross.String(),
 			"total_net":           run.TotalNet.String(),
 			"total_employer_cost": run.TotalEmployerCost.String(),

@@ -2724,6 +2724,14 @@ func (c *apiClient) calculatePayrollRun(ctx context.Context, tenantID, runID str
 	return &resp, nil
 }
 
+func (c *apiClient) updatePayrollRunPaymentDate(ctx context.Context, tenantID, runID string, req *payroll.UpdatePayrollRunPaymentDateRequest) (*payroll.PayrollRun, error) {
+	var resp payroll.PayrollRun
+	if err := c.request(ctx, http.MethodPatch, path.Join("/api/v1/tenants", tenantID, "payroll-runs", runID, "payment-date"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) processPayrollRun(ctx context.Context, tenantID, runID string, req *payroll.ProcessPayrollRunRequest) (*payroll.PayrollRunProcessResult, error) {
 	var resp payroll.PayrollRunProcessResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "payroll-runs", runID, "process"), req, c.apiToken, &resp); err != nil {

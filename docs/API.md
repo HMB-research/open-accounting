@@ -1262,6 +1262,20 @@ GET /tenants/{tenantId}/payroll-runs/{runId}
 Authorization: Bearer <token>
 ```
 
+### Update Payroll Payment Date
+
+```http
+PATCH /tenants/{tenantId}/payroll-runs/{runId}/payment-date
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "payment_date": "2026-03-31T00:00:00Z"
+}
+```
+
+Sets or corrects the intended salary payment date on draft, calculated, approved, or paid payroll runs. Declared payroll runs reject payment-date changes. The returned payroll run includes refreshed remediation actions, so `payroll_payment_date_missing` clears immediately when the date is set.
+
 ### Calculate Payroll Run
 
 ```http

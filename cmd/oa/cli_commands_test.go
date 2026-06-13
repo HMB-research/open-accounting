@@ -19955,6 +19955,13 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/calculate":
 			_ = json.NewEncoder(w).Encode(cliPayrollRunPayload("run-1", "CALCULATED", 2026, 3))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/payment-date":
+			var req payroll.UpdatePayrollRunPaymentDateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-03-31", req.PaymentDate.Format("2006-01-02"))
+			payload := cliPayrollRunPayload("run-1", "CALCULATED", 2026, 3)
+			payload["payment_date"] = "2026-03-31T00:00:00Z"
+			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-1/process":
 			var req payroll.ProcessPayrollRunRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -20029,6 +20036,11 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "payroll_run_approve")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "set-payment-date", "--id", "run-1", "--payment-date", "2026-03-31"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Updated payroll run run-1 payment date to 2026-03-31")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"payroll", "runs", "process", "--id", "run-1", "--approve"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Processed payroll run run-1 with 1 payslips")
@@ -20094,6 +20106,13 @@ func TestCLIPayrollRunBranches(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-branch/calculate":
 			_ = json.NewEncoder(w).Encode(cliPayrollRunPayload("run-branch", "CALCULATED", 2026, 4))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-branch/payment-date":
+			var req payroll.UpdatePayrollRunPaymentDateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-04-30", req.PaymentDate.Format("2006-01-02"))
+			payload := cliPayrollRunPayload("run-branch", "CALCULATED", 2026, 4)
+			payload["payment_date"] = "2026-04-30T00:00:00Z"
+			_ = json.NewEncoder(w).Encode(payload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-branch/process":
 			var req payroll.ProcessPayrollRunRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -20145,6 +20164,11 @@ func TestCLIPayrollRunBranches(t *testing.T) {
 	err = app.run(context.Background(), []string{"payroll", "runs", "calculate", "--id", " run-branch ", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "CALCULATED"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"payroll", "runs", "set-payment-date", "--id", " run-branch ", "--payment-date", "2026-04-30", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"payment_date": "2026-04-30T00:00:00Z"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"payroll", "runs", "process", "--id", " run-branch "})
@@ -20203,6 +20227,10 @@ func TestCLIPayrollRunValidationBranches(t *testing.T) {
 		{name: "get missing id", args: []string{"payroll", "runs", "get"}, want: "id is required"},
 		{name: "calculate bad flag", args: []string{"payroll", "runs", "calculate", "--bad"}, want: "flag provided but not defined"},
 		{name: "calculate missing id", args: []string{"payroll", "runs", "calculate"}, want: "id is required"},
+		{name: "set payment date bad flag", args: []string{"payroll", "runs", "set-payment-date", "--bad"}, want: "flag provided but not defined"},
+		{name: "set payment date missing id", args: []string{"payroll", "runs", "set-payment-date", "--payment-date", "2026-03-31"}, want: "id is required"},
+		{name: "set payment date missing date", args: []string{"payroll", "runs", "set-payment-date", "--id", "run-1"}, want: "payment-date is required"},
+		{name: "set payment date invalid date", args: []string{"payroll", "runs", "set-payment-date", "--id", "run-1", "--payment-date", "march"}, want: "parse payment-date:"},
 		{name: "process bad flag", args: []string{"payroll", "runs", "process", "--bad"}, want: "flag provided but not defined"},
 		{name: "process missing id", args: []string{"payroll", "runs", "process"}, want: "id is required"},
 		{name: "approve bad flag", args: []string{"payroll", "runs", "approve", "--bad"}, want: "flag provided but not defined"},
@@ -20249,6 +20277,10 @@ func TestCLIPayrollRunAPIErrors(t *testing.T) {
 			assert.Equal(t, "May payroll", req.Notes)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error":
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error/calculate":
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error/payment-date":
+			var req payroll.UpdatePayrollRunPaymentDateRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2026-05-31", req.PaymentDate.Format("2006-01-02"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/payroll-runs/run-error/process":
 			var req payroll.ProcessPayrollRunRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -20277,6 +20309,7 @@ func TestCLIPayrollRunAPIErrors(t *testing.T) {
 		{name: "create api error", args: []string{"create", "--year", "2026", "--month", "5", "--payment-date", "2026-05-31", "--notes", "May payroll"}},
 		{name: "get api error", args: []string{"get", "--id", "run-error"}},
 		{name: "calculate api error", args: []string{"calculate", "--id", "run-error"}},
+		{name: "set payment date api error", args: []string{"set-payment-date", "--id", "run-error", "--payment-date", "2026-05-31"}},
 		{name: "process api error", args: []string{"process", "--id", "run-error", "--approve"}},
 		{name: "approve api error", args: []string{"approve", "--id", "run-error"}},
 		{name: "payslips api error", args: []string{"payslips", "--id", "run-error"}},
