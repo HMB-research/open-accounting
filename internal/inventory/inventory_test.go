@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -699,6 +700,26 @@ type fakeInventoryAccountLister struct {
 
 func (f fakeInventoryAccountLister) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
 	return f.accounts, nil
+}
+
+type fakeInventoryLedger struct {
+	accounts       []accounting.Account
+	createdRequest *accounting.CreateJournalEntryRequest
+	postedIDs      []string
+}
+
+func (f *fakeInventoryLedger) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	return f.accounts, nil
+}
+
+func (f *fakeInventoryLedger) CreateJournalEntry(_ context.Context, _, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error) {
+	f.createdRequest = req
+	return &accounting.JournalEntry{ID: "journal-1", TenantID: tenantID, EntryNumber: "JE-00001", Status: accounting.StatusDraft}, nil
+}
+
+func (f *fakeInventoryLedger) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
+	f.postedIDs = append(f.postedIDs, entryID)
+	return nil
 }
 
 func TestService_CreateProduct(t *testing.T) {
@@ -2070,6 +2091,84 @@ func TestService_IssueStockConsumesSpecificTrackedLotWithAccountingLines(t *test
 	assert.True(t, level.Quantity.Equal(decimal.RequireFromString("9.00")))
 	assert.True(t, level.ReservedQty.Equal(decimal.RequireFromString("2.00")))
 	assert.True(t, level.AvailableQty.Equal(decimal.RequireFromString("7.00")))
+}
+
+func TestService_IssueStockPostsLedgerEntryWhenRequested(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := &fakeInventoryLedger{accounts: []accounting.Account{
+		{ID: "44444444-4444-4444-8444-444444444444", AccountType: accounting.AccountTypeExpense},
+		{ID: "55555555-5555-4555-8555-555555555555", AccountType: accounting.AccountTypeAsset},
+	}}
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	repo.Products[inventoryStockProductID] = &Product{
+		ID:                 inventoryStockProductID,
+		TenantID:           "tenant-1",
+		Code:               "SKU-001",
+		Name:               "Widget",
+		ProductType:        ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("6.00"),
+		CurrentStock:       decimal.RequireFromString("5.00"),
+		TrackInventory:     true,
+		InventoryAccountID: "55555555-5555-4555-8555-555555555555",
+	}
+	repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+	repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
+		Quantity:     decimal.RequireFromString("5.00"),
+		AvailableQty: decimal.RequireFromString("5.00"),
+	}
+	repo.Movements[inventoryStockProductID] = []InventoryMovement{
+		{
+			ID:           "lot-in",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.RequireFromString("5.00"),
+			UnitCost:     decimal.RequireFromString("6.50"),
+			TotalCost:    decimal.RequireFromString("32.50"),
+			LotNumber:    "LOT-POST",
+		},
+	}
+
+	result, err := svc.IssueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+		ProductID:                inventoryStockProductID,
+		WarehouseID:              inventoryStockWarehouseID,
+		Quantity:                 "2",
+		LotNumber:                "LOT-POST",
+		Reference:                "Invoice INV-002",
+		Reason:                   "Shipment",
+		CostOfGoodsSoldAccountID: "44444444-4444-4444-8444-444444444444",
+		PostToLedger:             true,
+		UserID:                   "user-1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Accounting)
+	assert.True(t, result.Accounting.Posted)
+	assert.Equal(t, "journal-1", result.Accounting.JournalID)
+	assert.Equal(t, "JE-00001", result.Accounting.JournalNo)
+	require.Len(t, result.Movements, 1)
+	assert.Equal(t, result.Accounting.SourceID, result.Movements[0].SourceID)
+	assert.NotEmpty(t, result.Accounting.SourceID)
+	_, err = uuid.Parse(result.Accounting.SourceID)
+	require.NoError(t, err)
+
+	require.NotNil(t, ledger.createdRequest)
+	assert.Equal(t, inventoryIssueSourceTypeDefault, ledger.createdRequest.SourceType)
+	require.NotNil(t, ledger.createdRequest.SourceID)
+	assert.Equal(t, result.Accounting.SourceID, *ledger.createdRequest.SourceID)
+	assert.Equal(t, "Invoice INV-002", ledger.createdRequest.Reference)
+	require.Len(t, ledger.createdRequest.Lines, 2)
+	assert.Equal(t, "44444444-4444-4444-8444-444444444444", ledger.createdRequest.Lines[0].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[0].DebitAmount.Equal(decimal.RequireFromString("13.00")))
+	assert.Equal(t, "55555555-5555-4555-8555-555555555555", ledger.createdRequest.Lines[1].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[1].CreditAmount.Equal(decimal.RequireFromString("13.00")))
+	assert.Equal(t, []string{"journal-1"}, ledger.postedIDs)
 }
 
 func TestService_IssueStockAutoAllocatesTrackedLots(t *testing.T) {

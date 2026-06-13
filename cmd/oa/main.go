@@ -7473,6 +7473,7 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		reason := fs.String("reason", "", "Issue reason")
 		cogsAccountID := fs.String("cogs-account-id", "", "Cost of goods sold account id")
 		inventoryAccountID := fs.String("inventory-account-id", "", "Inventory asset account id")
+		postToLedger := fs.Bool("post-to-ledger", false, "Create and post inventory issue accounting entry")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -7524,6 +7525,7 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 			Reason:                   strings.TrimSpace(*reason),
 			CostOfGoodsSoldAccountID: cogsAccountIDValue,
 			InventoryAccountID:       inventoryAccountIDValue,
+			PostToLedger:             *postToLedger,
 		})
 		if err != nil {
 			return err
@@ -7533,7 +7535,11 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Issued %s of product %s from warehouse %s at total cost %s\n", quantity.String(), productIDValue, warehouseIDValue, result.TotalCost.String())
 		if result.Accounting != nil && len(result.Accounting.Lines) > 0 {
-			_, _ = fmt.Fprintf(a.stdout, "Accounting lines prepared: %d\n", len(result.Accounting.Lines))
+			if result.Accounting.Posted {
+				_, _ = fmt.Fprintf(a.stdout, "Posted accounting journal entry: %s\n", result.Accounting.JournalID)
+			} else {
+				_, _ = fmt.Fprintf(a.stdout, "Accounting lines prepared: %d\n", len(result.Accounting.Lines))
+			}
 		}
 		return nil
 
