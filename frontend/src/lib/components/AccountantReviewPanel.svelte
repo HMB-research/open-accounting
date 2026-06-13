@@ -257,6 +257,44 @@
 		return action.source === 'close' && action.code === 'ready_to_post_carry_forward' && Boolean(action.periodEndDate);
 	}
 
+	type AssignmentPeriod = {
+		year: number;
+		month: number;
+	};
+
+	function parseAssignmentPeriod(action: WorkspaceAssignmentAction): AssignmentPeriod | null {
+		const match = action.period?.match(/^(\d{4})-(\d{2})$/);
+		if (!match) {
+			return null;
+		}
+
+		const year = Number(match[1]);
+		const month = Number(match[2]);
+		if (!year || month < 1 || month > 12) {
+			return null;
+		}
+
+		return { year, month };
+	}
+
+	function canRegenerateAssignmentKMD(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'kmd' && action.code === 'kmd_no_vat_rows' && parseAssignmentPeriod(action) !== null;
+	}
+
+	function canExportAssignmentKMD(action: WorkspaceAssignmentAction): boolean {
+		if (action.source !== 'kmd' || parseAssignmentPeriod(action) === null) {
+			return false;
+		}
+
+		return [
+			'kmd_payable_review',
+			'kmd_refund_review',
+			'kmd_zero_payable_review',
+			'kmd_awaiting_authority_acceptance',
+			'kmd_accepted_archive'
+		].includes(action.code);
+	}
+
 	function isReviewDirty(transaction: BankTransaction): boolean {
 		const draft = reviewDrafts[transaction.id];
 		if (!draft) {
@@ -487,6 +525,54 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentCarryForwardPostError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function regenerateAssignmentKMD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.generateKMD(tenant.id, period);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentKmdRegenerated();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdGenerateError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function exportAssignmentKMD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.downloadKMDXml(tenant.id, period.year, period.month);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentKmdExported();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdExportError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -837,6 +923,30 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: m.dashboard_reviewAssignmentsPostExpense()}
+										</button>
+									{/if}
+									{#if canRegenerateAssignmentKMD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => regenerateAssignmentKMD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsRegenerateKmd()}
+										</button>
+									{/if}
+									{#if canExportAssignmentKMD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => exportAssignmentKMD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsExportKmdXml()}
 										</button>
 									{/if}
 									{#if assignmentCompletionErrorId === action.id}

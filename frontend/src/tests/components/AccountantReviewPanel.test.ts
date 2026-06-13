@@ -14,6 +14,8 @@ const { apiMock } = vi.hoisted(() => ({
 		reviewDocument: vi.fn(),
 		approvePayroll: vi.fn(),
 		generateTSD: vi.fn(),
+		generateKMD: vi.fn(),
+		downloadKMDXml: vi.fn(),
 		submitExpense: vi.fn(),
 		approveExpense: vi.fn(),
 		postExpense: vi.fn(),
@@ -359,6 +361,8 @@ describe('AccountantReviewPanel', () => {
 		});
 		apiMock.approvePayroll.mockResolvedValue({ status: 'approved' });
 		apiMock.generateTSD.mockResolvedValue({ id: 'tsd-1' });
+		apiMock.generateKMD.mockResolvedValue({ id: 'kmd-1' });
+		apiMock.downloadKMDXml.mockResolvedValue(undefined);
 		apiMock.submitExpense.mockResolvedValue({ id: 'expense-draft-1', status: 'SUBMITTED' });
 		apiMock.approveExpense.mockResolvedValue({ id: 'expense-submitted-1', status: 'APPROVED' });
 		apiMock.postExpense.mockResolvedValue({ id: 'expense-approved-1', status: 'POSTED' });
@@ -665,6 +669,134 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(apiMock.generateTSD).toHaveBeenCalledWith('tenant-1', 'payroll-approved-1');
 			expect(screen.getByText('TSD generated from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it('executes KMD assignment rows from the workspace', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-04-11',
+			cutoff_date: '2026-05-11',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+		apiMock.listKMD.mockResolvedValue([
+			{
+				id: 'kmd-empty-1',
+				tenant_id: 'tenant-1',
+				year: 2026,
+				month: 4,
+				status: 'DRAFT',
+				total_output_vat: new Decimal(0),
+				total_input_vat: new Decimal(0),
+				rows: [],
+				remediation_actions: [
+					{
+						code: 'kmd_no_vat_rows',
+						severity: 'WARNING',
+						scope: 'tax',
+						owner_role: 'accountant',
+						workspace_queue: 'kmd_declarations',
+						assignment_key: 'kmd-declarations:kmd-no-vat-rows:kmd-declaration:kmd-empty-1:2026-04',
+						priority: 'normal',
+						due_in_days: 3,
+						message: 'KMD 2026-04 has no VAT rows or totals.',
+						action: 'Confirm the period has no VAT activity, or post missing VAT-bearing invoices and regenerate KMD before export.',
+						entity_type: 'kmd_declaration',
+						entity_id: 'kmd-empty-1',
+						period: '2026-04',
+						ui_path: '/tax/kmd?year=2026&month=4',
+						cli_command: 'oa tax kmd generate --year 2026 --month 4'
+					}
+				],
+				created_at: '2026-04-30T00:00:00Z',
+				updated_at: '2026-04-30T00:00:00Z'
+			},
+			{
+				id: 'kmd-payable-1',
+				tenant_id: 'tenant-1',
+				year: 2026,
+				month: 5,
+				status: 'DRAFT',
+				total_output_vat: new Decimal(220),
+				total_input_vat: new Decimal(30),
+				rows: [
+					{
+						code: '1',
+						description: 'Standard rate sales',
+						tax_base: new Decimal(1000),
+						tax_amount: new Decimal(220)
+					}
+				],
+				remediation_actions: [
+					{
+						code: 'kmd_payable_review',
+						severity: 'ACTION',
+						scope: 'tax',
+						owner_role: 'accountant',
+						workspace_queue: 'kmd_declarations',
+						assignment_key: 'kmd-declarations:kmd-payable-review:kmd-declaration:kmd-payable-1:2026-05',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'KMD 2026-05 has VAT payable of 190.',
+						action: 'Review output/input VAT totals, generate KMD INF when needed, export XML, and submit the declaration in e-MTA.',
+						entity_type: 'kmd_declaration',
+						entity_id: 'kmd-payable-1',
+						period: '2026-05',
+						ui_path: '/tax/kmd?year=2026&month=5',
+						cli_command: 'oa tax kmd export-xml --year 2026 --month 5 --output ./kmd-2026-05.xml'
+					}
+				],
+				created_at: '2026-05-31T00:00:00Z',
+				updated_at: '2026-05-31T00:00:00Z'
+			}
+		]);
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('KMD 2026-04 has no VAT rows or totals.')).toBeInTheDocument();
+			expect(screen.getByText('KMD 2026-05 has VAT payable of 190.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Regenerate KMD' }));
+
+		await waitFor(() => {
+			expect(apiMock.generateKMD).toHaveBeenCalledWith('tenant-1', { year: 2026, month: 4 });
+			expect(screen.getByText('KMD regenerated from workspace.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Export KMD XML' }));
+
+		await waitFor(() => {
+			expect(apiMock.downloadKMDXml).toHaveBeenCalledWith('tenant-1', 2026, 5);
+			expect(screen.getByText('KMD XML exported from workspace.')).toBeInTheDocument();
 		});
 	});
 
