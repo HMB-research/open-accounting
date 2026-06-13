@@ -1,16 +1,16 @@
 # Frontend Test Coverage Status
 
-> Last Updated: 2026-06-10
-> Unit Tests: 546 tests across 30 files
+> Last Updated: 2026-06-14
+> Unit Tests: 572 tests across 32 files
 > E2E Tests: 33 demo spec files plus 1 blocking smoke spec
 
 ## Quick Stats
 
 | Metric | Current | Target |
 |--------|---------|--------|
-| Unit Test Files | 30 | Keep current with new shared UI and API-client behavior |
-| Unit Tests | 546 | Keep increasing with every frontend workflow change |
-| Component Inventory | 19/19 shared components tested | Maintain |
+| Unit Test Files | 32 | Keep current with new shared UI and API-client behavior |
+| Unit Tests | 572 | Keep increasing with every frontend workflow change |
+| Component Inventory | 20/20 shared components tested | Maintain |
 | Utility Coverage | dates, formatting, tenant tested | Maintain |
 | Store Coverage | auth store tested | Maintain |
 
@@ -32,6 +32,7 @@
 | `FormModal` | Tested | Dialog content, footer, backdrop, and Escape close |
 | `LanguageSelector` | Tested | Locale switching and labels |
 | `LineItemsEditor` | Tested | Add/remove lines, totals, discounts, and immutable edits |
+| `MigrationWorkbench` | Tested | Bundle assembly, planning, saved-run monitoring, and resume execution |
 | `OnboardingWizard` | Tested | Required fields, setup steps, completion |
 | `PeriodSelector` | Tested | Shared period ranges and custom date edits |
 | `SetupCenter` | Tested | Setup progress and guided setup action |
@@ -107,5 +108,6 @@ Run Paraglide/SvelteKit-writing gates serially. `check`, `test`, and `build` can
 | 2026-06-10 | Completed shared component inventory coverage for activity feed, contact modal, generic modal, and line-item editor; removed non-reactive line-item bindings | 15 tests |
 | 2026-06-10 | Added shared UI control coverage for date ranges, periods, export, and status badges; fixed local-date range formatting | 10 tests |
 | 2026-06-10 | Refreshed frontend test inventory from the current tree | 0 |
+| 2026-06-14 | Added migration workbench coverage for historical cutover launch and monitoring controls | 3 tests |
 | 2026-01-23 | Migrated test commands from npm to bun | 0 |
 | 2026-01-10 | Initial tracking document created | 0 |

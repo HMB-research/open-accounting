@@ -129,6 +129,7 @@
 						<span class="nav-dropdown-trigger">{m.nav_admin()}</span>
 						<div class="nav-dropdown-menu">
 							<a href={getNavUrl('/documents')}>{m.nav_documents()}</a>
+							<a href={getNavUrl('/migration')}>Migration</a>
 							<a href={getNavUrl('/admin/plugins')}>{m.nav_plugins()}</a>
 							<a href={getNavUrl('/settings')}>{m.nav_settings()}</a>
 						</div>
@@ -246,6 +247,7 @@
 						{#if expandedDropdown === 'admin'}
 							<div class="mobile-nav-accordion-content">
 								<a href={getNavUrl('/documents')} class="mobile-nav-link sub">{m.nav_documents()}</a>
+								<a href={getNavUrl('/migration')} class="mobile-nav-link sub">Migration</a>
 								<a href={getNavUrl('/admin/plugins')} class="mobile-nav-link sub">{m.nav_plugins()}</a>
 								<a href={getNavUrl('/settings')} class="mobile-nav-link sub">{m.nav_settings()}</a>
 							</div>
