@@ -303,6 +303,49 @@ func TestValidateBundleAcceptsMeritPayrollProviderPresetAliases(t *testing.T) {
 	assert.Contains(t, report.Files[3].Headers, "gross_payment")
 }
 
+func TestValidateBundleDerivesLeaveBalanceYearFromBalanceDate(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{
+			{
+				Kind:     KindLeaveBalances,
+				FileName: "smartaccounts-leave-balances.csv",
+				CSVContent: "employee_no,balance_date,leave_type_code,entitlement_days\n" +
+					"EMP-1,2026,ANNUAL,28\n" +
+					"EMP-2,2026-12-31,SICK,5\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 1)
+	assert.Contains(t, report.Files[0].Headers, "year")
+}
+
+func TestValidateBundleReportsLeaveBalanceBalanceDateWithoutDerivableYear(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{
+			{
+				Kind:     KindLeaveBalances,
+				FileName: "smartaccounts-leave-balances.csv",
+				CSVContent: "employee_no,balance_date,leave_type_code,entitlement_days\n" +
+					"EMP-1,20AB,ANNUAL,28\n" +
+					"EMP-2,FY2026,SICK,5\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindLeaveBalances, "year", "year must be between 2020 and 2100")
+}
+
 func TestValidateBundleRejectsUnsupportedProviderPreset(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: "legacy-system",
