@@ -8637,6 +8637,85 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/inventory/issue": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Consume positive available stock from one warehouse with optional lot/serial/expiry allocation and accounting-ready COGS lines",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inventory"
+                ],
+                "summary": "Issue warehouse stock",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Stock issue",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.IssueStockRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.IssueStockResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/inventory/lots": {
             "get": {
                 "security": [
@@ -21727,6 +21806,9 @@ const docTemplate = `{
                 },
                 "exchange_rate": {
                     "type": "number"
+                },
+                "line_id": {
+                    "type": "string"
                 }
             }
         },
@@ -25584,6 +25666,52 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccounting": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccountingLine"
+                    }
+                },
+                "reference": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccountingLine": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "credit_amount": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "debit_amount": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_inventory.InventoryLotLine": {
             "type": "object",
             "properties": {
@@ -25795,6 +25923,79 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_inventory.IssueStockRequest": {
+            "type": "object",
+            "properties": {
+                "cost_of_goods_sold_account_id": {
+                    "type": "string"
+                },
+                "expiry_date": {
+                    "type": "string"
+                },
+                "inventory_account_id": {
+                    "type": "string"
+                },
+                "lot_number": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "reference": {
+                    "type": "string"
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "warehouse_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_inventory.IssueStockResult": {
+            "type": "object",
+            "properties": {
+                "accounting": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccounting"
+                },
+                "movements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryMovement"
+                    }
+                },
+                "product_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "stock_level": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_inventory.StockLevel"
+                },
+                "total_cost": {
+                    "type": "number"
+                },
+                "unit_cost": {
+                    "type": "number"
+                },
+                "warehouse_id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_inventory.MovementType": {
             "type": "string",
             "enum": [
@@ -25956,6 +26157,12 @@ const docTemplate = `{
         "github_com_HMB-research_open-accounting_internal_inventory.StockReservationRequest": {
             "type": "object",
             "properties": {
+                "expiry_date": {
+                    "type": "string"
+                },
+                "lot_number": {
+                    "type": "string"
+                },
                 "product_id": {
                     "type": "string"
                 },
@@ -25963,6 +26170,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "reason": {
+                    "type": "string"
+                },
+                "serial_number": {
                     "type": "string"
                 },
                 "warehouse_id": {

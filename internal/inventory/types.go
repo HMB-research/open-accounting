@@ -416,6 +416,54 @@ type StockReservationRequest struct {
 	UserID       string `json:"-"`
 }
 
+// IssueStockRequest represents a request to consume sellable stock from one warehouse.
+type IssueStockRequest struct {
+	ProductID                string `json:"product_id"`
+	WarehouseID              string `json:"warehouse_id"`
+	Quantity                 string `json:"quantity"`
+	LotNumber                string `json:"lot_number,omitempty"`
+	SerialNumber             string `json:"serial_number,omitempty"`
+	ExpiryDate               string `json:"expiry_date,omitempty"`
+	Reference                string `json:"reference,omitempty"`
+	SourceType               string `json:"source_type,omitempty"`
+	SourceID                 string `json:"source_id,omitempty"`
+	Reason                   string `json:"reason,omitempty"`
+	CostOfGoodsSoldAccountID string `json:"cost_of_goods_sold_account_id,omitempty"`
+	InventoryAccountID       string `json:"inventory_account_id,omitempty"`
+	UserID                   string `json:"-"`
+}
+
+// InventoryIssueAccountingLine is a suggested accounting line for a costed stock issue.
+type InventoryIssueAccountingLine struct {
+	Role         string          `json:"role"`
+	AccountID    string          `json:"account_id"`
+	Description  string          `json:"description,omitempty"`
+	DebitAmount  decimal.Decimal `json:"debit_amount"`
+	CreditAmount decimal.Decimal `json:"credit_amount"`
+	Currency     string          `json:"currency"`
+}
+
+// InventoryIssueAccounting contains accounting-ready COGS lines for a stock issue.
+type InventoryIssueAccounting struct {
+	SourceType  string                         `json:"source_type,omitempty"`
+	SourceID    string                         `json:"source_id,omitempty"`
+	Reference   string                         `json:"reference,omitempty"`
+	Description string                         `json:"description,omitempty"`
+	Lines       []InventoryIssueAccountingLine `json:"lines"`
+}
+
+// IssueStockResult summarizes created stock issue movements and their cost.
+type IssueStockResult struct {
+	ProductID   string                    `json:"product_id"`
+	WarehouseID string                    `json:"warehouse_id"`
+	Quantity    decimal.Decimal           `json:"quantity"`
+	UnitCost    decimal.Decimal           `json:"unit_cost"`
+	TotalCost   decimal.Decimal           `json:"total_cost"`
+	Movements   []InventoryMovement       `json:"movements"`
+	StockLevel  *StockLevel               `json:"stock_level,omitempty"`
+	Accounting  *InventoryIssueAccounting `json:"accounting,omitempty"`
+}
+
 // ProductFilter represents filters for listing products
 type ProductFilter struct {
 	ProductType ProductType   `json:"product_type,omitempty"`

@@ -345,6 +345,8 @@ definitions:
         type: string
       exchange_rate:
         type: number
+      line_id:
+        type: string
     type: object
   github_com_HMB-research_open-accounting_internal_accounting.CreateJournalEntryRequest:
     properties:
@@ -2919,6 +2921,36 @@ definitions:
       row:
         type: integer
     type: object
+  github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccounting:
+    properties:
+      description:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccountingLine'
+        type: array
+      reference:
+        type: string
+      source_id:
+        type: string
+      source_type:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccountingLine:
+    properties:
+      account_id:
+        type: string
+      credit_amount:
+        type: number
+      currency:
+        type: string
+      debit_amount:
+        type: number
+      description:
+        type: string
+      role:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_inventory.InventoryLotLine:
     properties:
       expiry_date:
@@ -3058,6 +3090,54 @@ definitions:
       warehouse_id:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_inventory.IssueStockRequest:
+    properties:
+      cost_of_goods_sold_account_id:
+        type: string
+      expiry_date:
+        type: string
+      inventory_account_id:
+        type: string
+      lot_number:
+        type: string
+      product_id:
+        type: string
+      quantity:
+        type: string
+      reason:
+        type: string
+      reference:
+        type: string
+      serial_number:
+        type: string
+      source_id:
+        type: string
+      source_type:
+        type: string
+      warehouse_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_inventory.IssueStockResult:
+    properties:
+      accounting:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryIssueAccounting'
+      movements:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryMovement'
+        type: array
+      product_id:
+        type: string
+      quantity:
+        type: number
+      stock_level:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.StockLevel'
+      total_cost:
+        type: number
+      unit_cost:
+        type: number
+      warehouse_id:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_inventory.MovementType:
     enum:
     - IN
@@ -3167,11 +3247,17 @@ definitions:
     type: object
   github_com_HMB-research_open-accounting_internal_inventory.StockReservationRequest:
     properties:
+      expiry_date:
+        type: string
+      lot_number:
+        type: string
       product_id:
         type: string
       quantity:
         type: string
       reason:
+        type: string
+      serial_number:
         type: string
       warehouse_id:
         type: string
@@ -12241,6 +12327,57 @@ paths:
       security:
       - BearerAuth: []
       summary: Adjust product stock
+      tags:
+      - Inventory
+  /tenants/{tenantID}/inventory/issue:
+    post:
+      consumes:
+      - application/json
+      description: Consume positive available stock from one warehouse with optional
+        lot/serial/expiry allocation and accounting-ready COGS lines
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Stock issue
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.IssueStockRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.IssueStockResult'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Issue warehouse stock
       tags:
       - Inventory
   /tenants/{tenantID}/inventory/lots:

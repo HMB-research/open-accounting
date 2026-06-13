@@ -8911,6 +8911,7 @@ func TestCLIInventoryCommands(t *testing.T) {
 	saleAccountID := "44444444-4444-4444-8444-444444444444"
 	purchaseAccountID := "55555555-5555-4555-8555-555555555555"
 	inventoryAccountID := "66666666-6666-4666-8666-666666666666"
+	cogsAccountID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 	stockProductID := "77777777-7777-4777-8777-777777777777"
 	stockWarehouseID := "88888888-8888-4888-8888-888888888888"
 	stockWarehouseID2 := "99999999-9999-4999-8999-999999999999"
@@ -8967,6 +8968,33 @@ func TestCLIInventoryCommands(t *testing.T) {
 		"last_updated":  "2026-03-15T12:00:00Z",
 	}
 	movementPayload := cliInventoryMovementPayload(stockProductID, stockWarehouseID)
+	issueResultPayload := map[string]any{
+		"product_id":   stockProductID,
+		"warehouse_id": stockWarehouseID,
+		"quantity":     "2",
+		"unit_cost":    "10.5",
+		"total_cost":   "21",
+		"movements":    []map[string]any{movementPayload},
+		"stock_level": map[string]any{
+			"id":            "stock-1",
+			"tenant_id":     "tenant-1",
+			"product_id":    stockProductID,
+			"warehouse_id":  stockWarehouseID,
+			"quantity":      "10.00",
+			"reserved_qty":  "2.00",
+			"available_qty": "8.00",
+			"last_updated":  "2026-03-15T12:00:00Z",
+		},
+		"accounting": map[string]any{
+			"source_type": "SALES_INVOICE",
+			"source_id":   "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+			"reference":   "Invoice INV-001",
+			"lines": []map[string]any{
+				{"role": "COST_OF_GOODS_SOLD", "account_id": cogsAccountID, "debit_amount": "21", "credit_amount": "0", "currency": "EUR"},
+				{"role": "INVENTORY", "account_id": inventoryAccountID, "debit_amount": "0", "credit_amount": "21", "currency": "EUR"},
+			},
+		},
+	}
 	valuationPayload := map[string]any{
 		"tenant_id":        "tenant-1",
 		"warehouse_id":     "wh-1",
@@ -9162,6 +9190,22 @@ func TestCLIInventoryCommands(t *testing.T) {
 			assert.Equal(t, "2027-01-31", req.ExpiryDate)
 			assert.Equal(t, "Cycle count", req.Reason)
 			_ = json.NewEncoder(w).Encode(movementPayload)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/issue":
+			var req inventory.IssueStockRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, stockProductID, req.ProductID)
+			assert.Equal(t, stockWarehouseID, req.WarehouseID)
+			assert.Equal(t, "2", req.Quantity)
+			assert.Equal(t, "LOT-2026-01", req.LotNumber)
+			assert.Equal(t, "SN-001", req.SerialNumber)
+			assert.Equal(t, "2027-01-31", req.ExpiryDate)
+			assert.Equal(t, "Invoice INV-001", req.Reference)
+			assert.Equal(t, "SALES_INVOICE", req.SourceType)
+			assert.Equal(t, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", req.SourceID)
+			assert.Equal(t, "Shipment", req.Reason)
+			assert.Equal(t, cogsAccountID, req.CostOfGoodsSoldAccountID)
+			assert.Equal(t, inventoryAccountID, req.InventoryAccountID)
+			_ = json.NewEncoder(w).Encode(issueResultPayload)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/inventory/stock-import":
 			var req inventory.ImportStockAdjustmentsRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -9411,6 +9455,47 @@ func TestCLIInventoryCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"movement_type": "ADJUSTMENT"`)
 	assert.Contains(t, stdout.String(), `"notes": "Cycle count"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"inventory", "issue",
+		"--product-id", stockProductID,
+		"--warehouse-id", stockWarehouseID,
+		"--quantity", "2.00",
+		"--lot-number", "LOT-2026-01",
+		"--serial-number", "SN-001",
+		"--expiry-date", "2027-01-31",
+		"--reference", "Invoice INV-001",
+		"--source-type", "SALES_INVOICE",
+		"--source-id", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		"--reason", "Shipment",
+		"--cogs-account-id", cogsAccountID,
+		"--inventory-account-id", inventoryAccountID,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Issued 2 of product "+stockProductID+" from warehouse "+stockWarehouseID+" at total cost 21")
+	assert.Contains(t, stdout.String(), "Accounting lines prepared: 2")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"inventory", "issue",
+		"--product-id", stockProductID,
+		"--warehouse-id", stockWarehouseID,
+		"--quantity", "2.00",
+		"--lot-number", "LOT-2026-01",
+		"--serial-number", "SN-001",
+		"--expiry-date", "2027-01-31",
+		"--reference", "Invoice INV-001",
+		"--source-type", "SALES_INVOICE",
+		"--source-id", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		"--reason", "Shipment",
+		"--cogs-account-id", cogsAccountID,
+		"--inventory-account-id", inventoryAccountID,
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"total_cost": "21"`)
+	assert.Contains(t, stdout.String(), `"role": "COST_OF_GOODS_SOLD"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"inventory", "stock", "import", "--file", stockImportFile})
@@ -9855,6 +9940,16 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "valuation bad flag", args: []string{"inventory", "valuation", "--bad"}, want: "flag provided but not defined"},
 		{name: "lots bad flag", args: []string{"inventory", "lots", "--bad"}, want: "flag provided but not defined"},
 		{name: "adjust bad flag", args: []string{"inventory", "adjust", "--bad"}, want: "flag provided but not defined"},
+		{name: "issue bad flag", args: []string{"inventory", "issue", "--bad"}, want: "flag provided but not defined"},
+		{name: "issue missing product", args: []string{"inventory", "issue", "--warehouse-id", "wh-1", "--quantity", "1"}, want: "product-id is required"},
+		{name: "issue missing warehouse", args: []string{"inventory", "issue", "--product-id", "prod-1", "--quantity", "1"}, want: "warehouse-id is required"},
+		{name: "issue nonpositive quantity", args: []string{"inventory", "issue", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "0"}, want: "quantity must be positive"},
+		{name: "issue bad expiry", args: []string{"inventory", "issue", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1", "--expiry-date", "2026/01/31"}, want: "parse expiry-date"},
+		{name: "issue bad product id", args: []string{"inventory", "issue", "--product-id", "prod-1", "--warehouse-id", stockWarehouseID, "--quantity", "1"}, want: "product-id must be a valid UUID"},
+		{name: "issue bad warehouse id", args: []string{"inventory", "issue", "--product-id", stockProductID, "--warehouse-id", "wh-1", "--quantity", "1"}, want: "warehouse-id must be a valid UUID"},
+		{name: "issue bad source", args: []string{"inventory", "issue", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1", "--source-id", "legacy-source"}, want: "source-id must be a valid UUID"},
+		{name: "issue bad cogs account", args: []string{"inventory", "issue", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1", "--cogs-account-id", "expense-account"}, want: "cogs-account-id must be a valid UUID"},
+		{name: "issue bad inventory account", args: []string{"inventory", "issue", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1", "--cogs-account-id", "44444444-4444-4444-8444-444444444444", "--inventory-account-id", "inventory-account"}, want: "inventory-account-id must be a valid UUID"},
 		{name: "transfer bad flag", args: []string{"inventory", "transfer", "--bad"}, want: "flag provided but not defined"},
 		{name: "reserve bad flag", args: []string{"inventory", "reserve", "--bad"}, want: "flag provided but not defined"},
 		{name: "reserve missing product", args: []string{"inventory", "reserve", "--warehouse-id", "wh-1", "--quantity", "1"}, want: "product-id is required"},
@@ -9981,6 +10076,7 @@ func TestCLIInventoryTopLevelAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "valuation", args: []string{"inventory", "valuation", "--warehouse-id", "wh-1", "--method", "fifo"}},
 		{name: "lots", args: []string{"inventory", "lots"}},
 		{name: "adjust", args: []string{"inventory", "adjust", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1", "--unit-cost", "10"}},
+		{name: "issue", args: []string{"inventory", "issue", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1"}},
 		{name: "transfer", args: []string{"inventory", "transfer", "--product-id", stockProductID, "--from-warehouse-id", stockWarehouseID, "--to-warehouse-id", stockWarehouseID2, "--quantity", "1"}},
 		{name: "reserve", args: []string{"inventory", "reserve", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1"}},
 		{name: "release", args: []string{"inventory", "release", "--product-id", stockProductID, "--warehouse-id", stockWarehouseID, "--quantity", "1"}},

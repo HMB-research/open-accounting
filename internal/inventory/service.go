@@ -17,6 +17,13 @@ type accountingLister interface {
 	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]accounting.Account, error)
 }
 
+const (
+	inventoryIssueSourceTypeDefault     = "INVENTORY_ISSUE"
+	inventoryIssueAccountingRoleCOGS    = "COST_OF_GOODS_SOLD"
+	inventoryIssueAccountingRoleAsset   = "INVENTORY"
+	inventoryIssueAccountingCurrencyEUR = "EUR"
+)
+
 // Service provides inventory operations
 type Service struct {
 	repo     Repository
@@ -1202,6 +1209,325 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 	}
 
 	return nil
+}
+
+// IssueStock consumes positive available stock from a warehouse and returns costed movements plus optional accounting lines.
+func (s *Service) IssueStock(ctx context.Context, tenantID, schemaName string, req *IssueStockRequest) (*IssueStockResult, error) {
+	quantity, err := parsePositiveStockQuantity(req.Quantity)
+	if err != nil {
+		return nil, err
+	}
+	productID, err := normalizeRequiredInventoryUUIDString(req.ProductID, "product_id")
+	if err != nil {
+		return nil, err
+	}
+	warehouseID, err := normalizeRequiredInventoryUUIDString(req.WarehouseID, "warehouse_id")
+	if err != nil {
+		return nil, err
+	}
+	sourceID, err := normalizeOptionalInventoryUUIDString(req.SourceID, "source_id")
+	if err != nil {
+		return nil, err
+	}
+	lotNumber, serialNumber, expiryDate, err := normalizeMovementTrackingMetadataValues(req.LotNumber, req.SerialNumber, req.ExpiryDate)
+	if err != nil {
+		return nil, err
+	}
+
+	product, err := s.repo.GetProductByID(ctx, schemaName, tenantID, productID)
+	if err != nil {
+		return nil, fmt.Errorf("get product: %w", err)
+	}
+	if _, err := s.repo.GetWarehouseByID(ctx, schemaName, tenantID, warehouseID); err != nil {
+		return nil, fmt.Errorf("get warehouse: %w", err)
+	}
+
+	level, err := s.stockLevelForWarehouse(ctx, tenantID, schemaName, productID, warehouseID)
+	if err != nil {
+		return nil, fmt.Errorf("get stock level: %w", err)
+	}
+	if level.AvailableQty.LessThan(quantity) {
+		return nil, fmt.Errorf("insufficient available stock to issue")
+	}
+	if product.CurrentStock.LessThan(quantity) {
+		return nil, fmt.Errorf("insufficient product stock to issue")
+	}
+
+	movements, err := s.repo.ListMovements(ctx, schemaName, tenantID, productID)
+	if err != nil {
+		return nil, fmt.Errorf("list movements for issue costing: %w", err)
+	}
+	allocations, err := s.issueStockAllocations(ctx, tenantID, schemaName, *product, level, movements, quantity, lotNumber, serialNumber, expiryDate)
+	if err != nil {
+		return nil, err
+	}
+
+	totalCost := decimal.Zero
+	for _, allocation := range allocations {
+		totalCost = totalCost.Add(allocation.totalCost)
+	}
+	accountingLines, err := s.inventoryIssueAccounting(ctx, schemaName, tenantID, *product, req, sourceID, totalCost)
+	if err != nil {
+		return nil, err
+	}
+
+	reference := strings.TrimSpace(req.Reference)
+	if reference == "" {
+		reference = "Inventory Issue"
+	}
+	sourceType := strings.TrimSpace(req.SourceType)
+	if sourceType == "" {
+		sourceType = inventoryIssueSourceTypeDefault
+	}
+	now := time.Now()
+	createdMovements := make([]InventoryMovement, 0, len(allocations))
+	for _, allocation := range allocations {
+		movement := &InventoryMovement{
+			ID:           uuid.New().String(),
+			TenantID:     tenantID,
+			ProductID:    productID,
+			WarehouseID:  warehouseID,
+			MovementType: MovementTypeOut,
+			Quantity:     allocation.quantity,
+			UnitCost:     allocation.unitCost,
+			TotalCost:    allocation.totalCost,
+			LotNumber:    allocation.key.lotNumber,
+			SerialNumber: allocation.key.serialNumber,
+			ExpiryDate:   allocation.key.expiryDate,
+			Reference:    reference,
+			SourceType:   sourceType,
+			SourceID:     sourceID,
+			Notes:        strings.TrimSpace(req.Reason),
+			MovementDate: now,
+			CreatedAt:    now,
+			CreatedBy:    strings.TrimSpace(req.UserID),
+		}
+		if err := s.repo.CreateMovement(ctx, schemaName, movement); err != nil {
+			return nil, fmt.Errorf("create issue movement: %w", err)
+		}
+		createdMovements = append(createdMovements, *movement)
+	}
+
+	newProductStock := product.CurrentStock.Sub(quantity)
+	if err := s.repo.UpdateProductStock(ctx, schemaName, tenantID, productID, newProductStock); err != nil {
+		return nil, fmt.Errorf("update product stock: %w", err)
+	}
+
+	level.Quantity = level.Quantity.Sub(quantity)
+	level.AvailableQty = level.AvailableQty.Sub(quantity)
+	level.LastUpdated = time.Now()
+	if err := s.repo.UpsertStockLevel(ctx, schemaName, level); err != nil {
+		return nil, fmt.Errorf("update stock level: %w", err)
+	}
+
+	unitCost := decimal.Zero
+	if !quantity.IsZero() && totalCost.GreaterThan(decimal.Zero) {
+		unitCost = totalCost.Div(quantity)
+	}
+
+	return &IssueStockResult{
+		ProductID:   productID,
+		WarehouseID: warehouseID,
+		Quantity:    quantity,
+		UnitCost:    unitCost,
+		TotalCost:   totalCost,
+		Movements:   createdMovements,
+		StockLevel:  level,
+		Accounting:  accountingLines,
+	}, nil
+}
+
+type inventoryIssueAllocation struct {
+	key       inventoryLotKey
+	quantity  decimal.Decimal
+	unitCost  decimal.Decimal
+	totalCost decimal.Decimal
+}
+
+func (s *Service) issueStockAllocations(
+	ctx context.Context,
+	tenantID, schemaName string,
+	product Product,
+	level *StockLevel,
+	movements []InventoryMovement,
+	quantity decimal.Decimal,
+	lotNumber, serialNumber, expiryDate string,
+) ([]inventoryIssueAllocation, error) {
+	positions := inventoryLotPositionsFromMovements(product, movements, tenantID, level.WarehouseID)
+	reservations, err := s.repo.ListLotReservations(ctx, schemaName, tenantID, product.ID, level.WarehouseID)
+	if err != nil {
+		return nil, fmt.Errorf("list lot reservations: %w", err)
+	}
+	reservedByLot := inventoryLotReservationQuantities(reservations)
+
+	if hasInventoryTrackingMetadata(lotNumber, serialNumber, expiryDate) {
+		key := inventoryLotKey{
+			productID:    product.ID,
+			warehouseID:  level.WarehouseID,
+			lotNumber:    lotNumber,
+			serialNumber: serialNumber,
+			expiryDate:   expiryDate,
+		}
+		position := positions[key]
+		available := decimal.Zero
+		if position != nil {
+			available = position.line.Quantity.Sub(reservedByLot[key])
+			available = available.Sub(unallocatedReservedQuantity(level.ReservedQty, reservations))
+		}
+		if available.LessThan(quantity) {
+			return nil, fmt.Errorf("insufficient available tracked lot stock to issue")
+		}
+		return []inventoryIssueAllocation{newInventoryIssueAllocation(product, key, quantity, inventoryPositionUnitCost(product, position))}, nil
+	}
+
+	remaining := quantity
+	allocations := make([]inventoryIssueAllocation, 0)
+	blockedUnallocated := unallocatedReservedQuantity(level.ReservedQty, reservations)
+	for _, key := range sortedInventoryLotKeys(positions) {
+		position := positions[key]
+		available := position.line.Quantity.Sub(reservedByLot[key])
+		if blockedUnallocated.GreaterThan(decimal.Zero) {
+			blocked := minDecimal(available, blockedUnallocated)
+			available = available.Sub(blocked)
+			blockedUnallocated = blockedUnallocated.Sub(blocked)
+		}
+		if available.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+		issueQty := minDecimal(available, remaining)
+		allocations = append(allocations, newInventoryIssueAllocation(product, key, issueQty, inventoryPositionUnitCost(product, position)))
+		remaining = remaining.Sub(issueQty)
+		if remaining.IsZero() {
+			break
+		}
+	}
+
+	if remaining.GreaterThan(decimal.Zero) {
+		key := inventoryLotKey{productID: product.ID, warehouseID: level.WarehouseID}
+		allocations = append(allocations, newInventoryIssueAllocation(product, key, remaining, weightedAverageInventoryUnitCost(product, movements, tenantID)))
+	}
+	return allocations, nil
+}
+
+func inventoryPositionUnitCost(product Product, position *inventoryLotAccumulator) decimal.Decimal {
+	if position != nil && position.costQuantity.GreaterThan(decimal.Zero) {
+		return position.costTotal.Div(position.costQuantity)
+	}
+	return product.PurchasePrice
+}
+
+func newInventoryIssueAllocation(product Product, key inventoryLotKey, quantity, unitCost decimal.Decimal) inventoryIssueAllocation {
+	if unitCost.LessThan(decimal.Zero) {
+		unitCost = decimal.Zero
+	}
+	return inventoryIssueAllocation{
+		key:       key,
+		quantity:  quantity,
+		unitCost:  unitCost,
+		totalCost: quantity.Mul(unitCost),
+	}
+}
+
+func (s *Service) inventoryIssueAccounting(
+	ctx context.Context,
+	schemaName, tenantID string,
+	product Product,
+	req *IssueStockRequest,
+	sourceID string,
+	totalCost decimal.Decimal,
+) (*InventoryIssueAccounting, error) {
+	cogsAccountID, err := normalizeOptionalInventoryUUIDString(req.CostOfGoodsSoldAccountID, "cost_of_goods_sold_account_id")
+	if err != nil {
+		return nil, err
+	}
+	inventoryAccountIDValue := firstInventoryNonEmpty(req.InventoryAccountID, product.InventoryAccountID)
+	inventoryAccountID, err := normalizeOptionalInventoryUUIDString(inventoryAccountIDValue, "inventory_account_id")
+	if err != nil {
+		return nil, err
+	}
+	if cogsAccountID == "" && strings.TrimSpace(req.InventoryAccountID) == "" {
+		return nil, nil
+	}
+	if cogsAccountID == "" || inventoryAccountID == "" {
+		return nil, fmt.Errorf("cost_of_goods_sold_account_id and inventory_account_id are both required for issue accounting")
+	}
+	if err := s.validateInventoryIssueAccounts(ctx, schemaName, tenantID, cogsAccountID, inventoryAccountID); err != nil {
+		return nil, err
+	}
+	if totalCost.LessThanOrEqual(decimal.Zero) {
+		return nil, nil
+	}
+
+	reference := strings.TrimSpace(req.Reference)
+	if reference == "" {
+		reference = "Inventory Issue"
+	}
+	sourceType := strings.TrimSpace(req.SourceType)
+	if sourceType == "" {
+		sourceType = inventoryIssueSourceTypeDefault
+	}
+	description := fmt.Sprintf("Issue stock for %s", product.Name)
+	return &InventoryIssueAccounting{
+		SourceType:  sourceType,
+		SourceID:    sourceID,
+		Reference:   reference,
+		Description: description,
+		Lines: []InventoryIssueAccountingLine{
+			{
+				Role:        inventoryIssueAccountingRoleCOGS,
+				AccountID:   cogsAccountID,
+				Description: description,
+				DebitAmount: totalCost,
+				Currency:    inventoryIssueAccountingCurrencyEUR,
+			},
+			{
+				Role:         inventoryIssueAccountingRoleAsset,
+				AccountID:    inventoryAccountID,
+				Description:  description,
+				CreditAmount: totalCost,
+				Currency:     inventoryIssueAccountingCurrencyEUR,
+			},
+		},
+	}, nil
+}
+
+func (s *Service) validateInventoryIssueAccounts(ctx context.Context, schemaName, tenantID, cogsAccountID, inventoryAccountID string) error {
+	if s.accounts == nil {
+		return nil
+	}
+	accounts, err := s.accounts.ListAccounts(ctx, schemaName, tenantID, false)
+	if err != nil {
+		return fmt.Errorf("list accounts for issue accounting: %w", err)
+	}
+	byID := make(map[string]accounting.Account, len(accounts))
+	for _, account := range accounts {
+		byID[account.ID] = account
+	}
+	cogsAccount, ok := byID[cogsAccountID]
+	if !ok {
+		return fmt.Errorf("cost_of_goods_sold_account_id was not found")
+	}
+	if cogsAccount.AccountType != accounting.AccountTypeExpense {
+		return fmt.Errorf("cost_of_goods_sold_account_id must reference an EXPENSE account")
+	}
+	inventoryAccount, ok := byID[inventoryAccountID]
+	if !ok {
+		return fmt.Errorf("inventory_account_id was not found")
+	}
+	if inventoryAccount.AccountType != accounting.AccountTypeAsset {
+		return fmt.Errorf("inventory_account_id must reference an ASSET account")
+	}
+	return nil
+}
+
+func firstInventoryNonEmpty(values ...string) string {
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // ReserveStock reserves available stock in a warehouse without changing on-hand quantity.

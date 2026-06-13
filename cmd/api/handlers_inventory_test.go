@@ -985,6 +985,90 @@ func TestAdjustStock(t *testing.T) {
 	}
 }
 
+func TestIssueStock(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+	cogsAccountID := "44444444-4444-4444-8444-444444444444"
+	inventoryAccountID := "55555555-5555-4555-8555-555555555555"
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+	repo.products[apiInventoryStockProductID] = &inventory.Product{
+		ID:                 apiInventoryStockProductID,
+		TenantID:           "tenant-1",
+		Code:               "SKU-001",
+		Name:               "Widget",
+		ProductType:        inventory.ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("8.00"),
+		CurrentStock:       decimal.RequireFromString("12.00"),
+		TrackInventory:     true,
+		InventoryAccountID: inventoryAccountID,
+	}
+	repo.warehouses[apiInventoryStockWarehouseID] = &inventory.Warehouse{
+		ID:       apiInventoryStockWarehouseID,
+		TenantID: "tenant-1",
+		Code:     "MAIN",
+		Name:     "Main Warehouse",
+	}
+	repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID)] = &inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    apiInventoryStockProductID,
+		WarehouseID:  apiInventoryStockWarehouseID,
+		Quantity:     decimal.RequireFromString("12.00"),
+		ReservedQty:  decimal.RequireFromString("2.00"),
+		AvailableQty: decimal.RequireFromString("10.00"),
+	}
+	repo.movements[apiInventoryStockProductID] = []inventory.InventoryMovement{
+		{
+			ID:           "mov-lot-in",
+			TenantID:     "tenant-1",
+			ProductID:    apiInventoryStockProductID,
+			WarehouseID:  apiInventoryStockWarehouseID,
+			MovementType: inventory.MovementTypeIn,
+			Quantity:     decimal.RequireFromString("12.00"),
+			UnitCost:     decimal.RequireFromString("8.25"),
+			TotalCost:    decimal.RequireFromString("99.00"),
+			LotNumber:    "LOT-2026-01",
+			ExpiryDate:   "2027-01-31",
+		},
+	}
+
+	body := map[string]interface{}{
+		"product_id":                    apiInventoryStockProductID,
+		"warehouse_id":                  apiInventoryStockWarehouseID,
+		"quantity":                      "3",
+		"lot_number":                    "LOT-2026-01",
+		"expiry_date":                   "2027-01-31",
+		"reference":                     "Invoice INV-001",
+		"source_type":                   "SALES_INVOICE",
+		"source_id":                     "66666666-6666-4666-8666-666666666666",
+		"reason":                        "Shipped goods",
+		"cost_of_goods_sold_account_id": cogsAccountID,
+	}
+	req := newInventoryJSONRequest(t, http.MethodPost, "/tenants/tenant-1/inventory/issue", body, map[string]string{"tenantID": "tenant-1"})
+
+	rr := httptest.NewRecorder()
+	h.IssueStock(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var result inventory.IssueStockResult
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+	assert.True(t, result.TotalCost.Equal(decimal.RequireFromString("24.75")))
+	require.Len(t, result.Movements, 1)
+	assert.Equal(t, "LOT-2026-01", result.Movements[0].LotNumber)
+	assert.Equal(t, "SALES_INVOICE", result.Movements[0].SourceType)
+	require.NotNil(t, result.Accounting)
+	require.Len(t, result.Accounting.Lines, 2)
+	assert.Equal(t, cogsAccountID, result.Accounting.Lines[0].AccountID)
+	assert.Equal(t, inventoryAccountID, result.Accounting.Lines[1].AccountID)
+	level := repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID)]
+	require.NotNil(t, level)
+	assert.True(t, level.Quantity.Equal(decimal.RequireFromString("9.00")))
+	assert.True(t, level.AvailableQty.Equal(decimal.RequireFromString("7.00")))
+}
+
 func TestImportStockAdjustments(t *testing.T) {
 	h, repo, tenantRepo := setupInventoryTestHandlers()
 

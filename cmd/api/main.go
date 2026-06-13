@@ -688,6 +688,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Inventory - Stock Operations
 				r.Post("/inventory/adjust", h.AdjustStock)
 				r.Post("/inventory/stock-import", h.ImportStockAdjustments)
+				r.Post("/inventory/issue", h.IssueStock)
 				r.Post("/inventory/transfer", h.TransferStock)
 				r.Post("/inventory/reserve", h.ReserveStock)
 				r.Post("/inventory/release", h.ReleaseStock)

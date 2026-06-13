@@ -7103,6 +7103,46 @@ func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, movement)
 }
 
+// IssueStock consumes available stock from a warehouse.
+// @Summary Issue warehouse stock
+// @Description Consume positive available stock from one warehouse with optional lot/serial/expiry allocation and accounting-ready COGS lines
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body inventory.IssueStockRequest true "Stock issue"
+// @Success 200 {object} inventory.IssueStockResult
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/inventory/issue [post]
+func (h *Handlers) IssueStock(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid or missing authentication")
+		return
+	}
+
+	var req inventory.IssueStockRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = claims.UserID
+
+	result, err := h.inventoryService.IssueStock(r.Context(), tenantID, schemaName, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("Failed to issue stock: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // TransferStock transfers stock between warehouses
 // @Summary Transfer product stock
 // @Description Move positive available stock between warehouses without changing total product stock

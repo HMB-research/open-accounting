@@ -448,6 +448,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  inventory warehouses delete  Delete a warehouse")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory adjust          Adjust product stock")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory stock import    Import stock adjustments from CSV")
+	_, _ = fmt.Fprintln(a.stdout, "  inventory issue           Issue available stock with cost allocation")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory transfer        Transfer stock between warehouses")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory reserve         Reserve available warehouse stock")
 	_, _ = fmt.Fprintln(a.stdout, "  inventory release         Release reserved warehouse stock")
@@ -7455,6 +7456,85 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, movement)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Adjusted stock for product %s by %s in warehouse %s\n", productIDValue, quantity.String(), warehouseIDValue)
+		return nil
+
+	case "issue":
+		fs := flag.NewFlagSet("inventory issue", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		productID := fs.String("product-id", "", "Product id")
+		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
+		quantityFlag := fs.String("quantity", "", "Quantity to issue")
+		lotNumber := fs.String("lot-number", "", "Lot or batch number")
+		serialNumber := fs.String("serial-number", "", "Serial number")
+		expiryDate := fs.String("expiry-date", "", "Lot expiry date in YYYY-MM-DD")
+		reference := fs.String("reference", "", "Issue reference")
+		sourceType := fs.String("source-type", "", "Source type")
+		sourceID := fs.String("source-id", "", "Source id")
+		reason := fs.String("reason", "", "Issue reason")
+		cogsAccountID := fs.String("cogs-account-id", "", "Cost of goods sold account id")
+		inventoryAccountID := fs.String("inventory-account-id", "", "Inventory asset account id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*productID) == "" {
+			return errors.New("product-id is required")
+		}
+		if strings.TrimSpace(*warehouseID) == "" {
+			return errors.New("warehouse-id is required")
+		}
+		quantity, err := parseRequiredPositiveDecimal("quantity", *quantityFlag)
+		if err != nil {
+			return err
+		}
+		if _, err := parseOptionalDate("expiry-date", *expiryDate); err != nil {
+			return err
+		}
+		productIDValue, err := optionalUUIDStringValue("product-id", *productID)
+		if err != nil {
+			return err
+		}
+		warehouseIDValue, err := optionalUUIDStringValue("warehouse-id", *warehouseID)
+		if err != nil {
+			return err
+		}
+		sourceIDValue, err := optionalUUIDStringValue("source-id", *sourceID)
+		if err != nil {
+			return err
+		}
+		cogsAccountIDValue, err := optionalUUIDStringValue("cogs-account-id", *cogsAccountID)
+		if err != nil {
+			return err
+		}
+		inventoryAccountIDValue, err := optionalUUIDStringValue("inventory-account-id", *inventoryAccountID)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.issueStock(ctx, cfg.TenantID, &inventory.IssueStockRequest{
+			ProductID:                productIDValue,
+			WarehouseID:              warehouseIDValue,
+			Quantity:                 quantity.String(),
+			LotNumber:                strings.TrimSpace(*lotNumber),
+			SerialNumber:             strings.TrimSpace(*serialNumber),
+			ExpiryDate:               strings.TrimSpace(*expiryDate),
+			Reference:                strings.TrimSpace(*reference),
+			SourceType:               strings.TrimSpace(*sourceType),
+			SourceID:                 sourceIDValue,
+			Reason:                   strings.TrimSpace(*reason),
+			CostOfGoodsSoldAccountID: cogsAccountIDValue,
+			InventoryAccountID:       inventoryAccountIDValue,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Issued %s of product %s from warehouse %s at total cost %s\n", quantity.String(), productIDValue, warehouseIDValue, result.TotalCost.String())
+		if result.Accounting != nil && len(result.Accounting.Lines) > 0 {
+			_, _ = fmt.Fprintf(a.stdout, "Accounting lines prepared: %d\n", len(result.Accounting.Lines))
+		}
 		return nil
 
 	case "transfer":
