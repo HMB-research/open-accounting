@@ -12,6 +12,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listDocumentReviewSummaries: vi.fn(),
 		reviewBankTransaction: vi.fn(),
 		reviewDocument: vi.fn(),
+		approvePayroll: vi.fn(),
 		sendPaymentReminder: vi.fn(),
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn(),
@@ -276,24 +277,27 @@ describe('AccountantReviewPanel', () => {
 				tenant_id: 'tenant-1',
 				period_year: 2026,
 				period_month: 2,
-				status: 'DRAFT',
-				total_gross: new Decimal(0),
-				total_net: new Decimal(0),
-				total_employer_cost: new Decimal(0),
+				status: 'CALCULATED',
+				total_gross: new Decimal(4200),
+				total_net: new Decimal(3260),
+				total_employer_cost: new Decimal(5628),
 				remediation_actions: [
 					{
-						code: 'payroll_run_calculation_required',
+						code: 'payroll_run_approve',
 						severity: 'ACTION',
 						scope: 'payroll',
 						owner_role: 'accountant',
 						workspace_queue: 'payroll_runs',
-						assignment_key: 'payroll-runs:payroll-run-calculation-required:payroll-run:payroll-1:2026-02',
+						assignment_key: 'payroll-runs:payroll-run-approve:payroll-run:payroll-1:2026-02',
 						priority: 'high',
 						due_in_days: 1,
-						message: 'Payroll run needs calculation.',
-						action: 'Calculate payroll before approval.',
-						ui_path: '/payroll',
-						cli_command: 'oa payroll runs calculate --id payroll-1'
+						message: 'Payroll run 2026-02 is calculated and awaiting approval.',
+						action: 'Review payroll totals and payslips, then approve the run.',
+						entity_type: 'payroll_run',
+						entity_id: 'payroll-1',
+						period: '2026-02',
+						ui_path: '/payroll?run_id=payroll-1',
+						cli_command: 'oa payroll runs approve --id payroll-1'
 					}
 				],
 				created_at: '2026-02-01T00:00:00Z',
@@ -347,6 +351,7 @@ describe('AccountantReviewPanel', () => {
 			reviewed_at: '2026-02-09T09:00:00Z',
 			created_at: '2026-02-08T00:00:00Z'
 		});
+		apiMock.approvePayroll.mockResolvedValue({ status: 'approved' });
 		apiMock.sendPaymentReminder.mockResolvedValue({
 			invoice_id: 'inv-1',
 			invoice_number: 'INV-001',
@@ -380,9 +385,11 @@ describe('AccountantReviewPanel', () => {
 		expect(screen.getByText('Bank transaction needs matching.')).toBeInTheDocument();
 		expect(screen.getByText('Document bank-evidence.pdf is still pending review.')).toBeInTheDocument();
 		expect(screen.getByText('Expense EXP-001 is submitted and receipt-backed.')).toBeInTheDocument();
-		expect(screen.getByText('Payroll run needs calculation.')).toBeInTheDocument();
+		expect(screen.getByText('Payroll run 2026-02 is calculated and awaiting approval.')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Approve document' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Approve payroll' })).toBeInTheDocument();
 		expect(screen.getByText(/oa documents review-queue --entity-type expense/)).toBeInTheDocument();
+		expect(screen.getByText(/oa payroll runs approve --id payroll-1/)).toBeInTheDocument();
 		expect(screen.getByText(/oa close period --period-end 2025-12-31/)).toBeInTheDocument();
 		expect(
 			screen
@@ -414,6 +421,13 @@ describe('AccountantReviewPanel', () => {
 				review_status: 'APPROVED'
 			});
 			expect(screen.getByText('Document approved from workspace.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Approve payroll' }));
+
+		await waitFor(() => {
+			expect(apiMock.approvePayroll).toHaveBeenCalledWith('tenant-1', 'payroll-1');
+			expect(screen.getByText('Payroll run approved from workspace.')).toBeInTheDocument();
 		});
 	});
 
