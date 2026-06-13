@@ -325,6 +325,26 @@ func TestValidateBundleDerivesLeaveBalanceYearFromBalanceDate(t *testing.T) {
 	assert.Contains(t, report.Files[0].Headers, "year")
 }
 
+func TestValidateBundleDerivesKMDHistoryPeriodFromAlias(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindKMDHistory,
+			FileName: "kmd-history.csv",
+			CSVContent: "period_code,row_code,tax_base,tax_amount\n" +
+				"2026-05,1,100,22\n" +
+				"202606,2,50,11\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 1)
+	assert.Contains(t, report.Files[0].Headers, "year")
+	assert.Contains(t, report.Files[0].Headers, "month")
+}
+
 func TestValidateBundleReportsLeaveBalanceBalanceDateWithoutDerivableYear(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: MigrationProviderPresetSmartAccounts,
@@ -1293,6 +1313,25 @@ func TestValidateBundleReportsPaymentRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindPayments, "allocation_amount", "allocation_amount exceeds payment amount")
 }
 
+func TestValidateBundleReportsPaymentAmountRequiredAndDecimalIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindPayments,
+			FileName: "payments.csv",
+			CSVContent: "payment_number,payment_type,payment_date,amount\n" +
+				"PAY-1,RECEIVED,2026-05-31,\n" +
+				"PAY-2,RECEIVED,2026-05-31,abc\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindPayments, "amount", "amount is required")
+	assertValidationIssue(t, report, KindPayments, "amount", "amount must be a decimal")
+}
+
 func TestValidateBundleReportsBlankPaymentDate(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -1633,6 +1672,26 @@ func TestValidateBundleReportsHistoricalJournalShapeAndExchangeRateGroupIssues(t
 	assertValidationIssue(t, report, KindJournalEntries, "entry_reference/debit/credit", "cannot have zero amounts")
 	assertValidationIssue(t, report, KindJournalEntries, "exchange_rate", "exchange_rate cannot be negative")
 	assertValidationIssue(t, report, KindJournalEntries, "exchange_rate", "invalid exchange_rate")
+}
+
+func TestValidateBundleSkipsHistoricalJournalGroupingWithoutCompleteHeaders(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,account_code,debit,credit\n" +
+				"JE-1,1000,100,0\n" +
+				"JE-1,4000,0,90\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindJournalEntries, report.Issues[0].Kind)
+	assert.Contains(t, report.Issues[0].Message, "entry_date")
 }
 
 func TestValidateBundleAcceptsJournalImportAliasesAndExchangeRateBalance(t *testing.T) {
@@ -3324,6 +3383,43 @@ func assertValidationIssue(t *testing.T, report *BundleValidationReport, kind Fi
 		}
 	}
 	assert.Failf(t, "missing validation issue", "kind=%s field=%s message containing %q issues=%v", kind, field, message, report.Issues)
+}
+
+func TestDuplicatePeriodKeyHandlesMissingAndTextualPeriods(t *testing.T) {
+	key, display, ok := duplicatePeriodKey(map[string]string{
+		"year":  "2026",
+		"month": "",
+	}, "year", "month")
+	assert.False(t, ok)
+	assert.Empty(t, key)
+	assert.Empty(t, display)
+
+	key, display, ok = duplicatePeriodKey(map[string]string{
+		"year":  "",
+		"month": "5",
+	}, "year", "month")
+	assert.False(t, ok)
+	assert.Empty(t, key)
+	assert.Empty(t, display)
+
+	key, display, ok = duplicatePeriodKey(map[string]string{
+		"year":  "FY2026",
+		"month": "05A",
+	}, "year", "month")
+	assert.True(t, ok)
+	assert.Equal(t, "fy2026-05a", key)
+	assert.Equal(t, "fy2026-05a", display)
+}
+
+func TestBundleValidationReportAddIssueTracksWarningsSeparately(t *testing.T) {
+	var report BundleValidationReport
+
+	report.addIssue(ValidationIssue{Severity: SeverityWarning, Message: "check this row"})
+	report.addIssue(ValidationIssue{Severity: SeverityError, Message: "fix this row"})
+
+	assert.Equal(t, 1, report.Summary.WarningCount)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 2)
 }
 
 func cutoverEInvoiceXML(number, sellerName, sellerRegCode string) string {
