@@ -2120,6 +2120,45 @@ func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindProducts, "purchase_account_code", "reference")
 }
 
+func TestValidateBundleAcceptsProductTypeValuesAndBlank(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindProducts,
+			FileName: "products.csv",
+			CSVContent: "code,name,product_type,sales_price\n" +
+				"SKU-GOODS,Widget, goods ,10\n" +
+				"SKU-SERVICE,Consulting,sErViCe,0\n" +
+				"SKU-BLANK,Untyped,,5\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsInvalidProductType(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,product_type,sales_price\nSKU-BUNDLE,Starter bundle,bundle,10\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindProducts, report.Issues[0].Kind)
+	assert.Equal(t, "product_type", report.Issues[0].Field)
+	assert.Equal(t, "bundle", report.Issues[0].Value)
+	assert.Equal(t, `invalid product_type "bundle"`, report.Issues[0].Message)
+}
+
 func TestValidateBundleReportsProductCategoryRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
