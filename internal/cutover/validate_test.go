@@ -259,6 +259,100 @@ func TestValidateBundleAcceptsSmartAccountsProviderPresetAliases(t *testing.T) {
 	assert.Contains(t, report.Files[4].Headers, "entry_reference")
 }
 
+func TestValidateBundleAcceptsMeritInventoryAndAssetProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetMerit,
+		Files: []BundleFile{
+			{
+				Kind:     KindProductCategories,
+				FileName: "merit-product-groups.csv",
+				CSVContent: "grupp,ylemgrupp\n" +
+					"Root,\n" +
+					"Widgets,Root\n",
+			},
+			{
+				Kind:       KindWarehouses,
+				FileName:   "merit-warehouses.csv",
+				CSVContent: "ladu_kood,ladu_nimi,vaikimisi\nMAIN,Main warehouse,yes\n",
+			},
+			{
+				Kind:       KindProducts,
+				FileName:   "merit-products.csv",
+				CSVContent: "artikkel,toote_nimi,tootegrupp,myygihind,ostuhind,kaibemaks\nSKU-1,Widget,Widgets,12,6,22\n",
+			},
+			{
+				Kind:       KindStockAdjustments,
+				FileName:   "merit-stock.csv",
+				CSVContent: "artikkel,ladu,kogus,omahind,partii,seerianumber,aegumiskuupaev\nSKU-1,MAIN,1,6,LOT-1,SN-1,2027-01-31\n",
+			},
+			{
+				Kind:       KindFixedAssets,
+				FileName:   "merit-fixed-assets.csv",
+				CSVContent: "pohivara_nr,nimetus,soetuskuupaev,soetusmaksumus,kasulik_elu_kuud,akumuleeritud_kulum,jaakmaksumus\nFA-1,Laptop,2026-01-01,1200,36,200,1000\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 5)
+	assert.Contains(t, report.Files[0].Headers, "parent_name")
+	assert.Contains(t, report.Files[1].Headers, "code")
+	assert.Contains(t, report.Files[2].Headers, "category_name")
+	assert.Contains(t, report.Files[3].Headers, "serial_number")
+	assert.Contains(t, report.Files[4].Headers, "purchase_cost")
+	assert.Contains(t, report.Files[4].Headers, "book_value")
+}
+
+func TestValidateBundleAcceptsSmartAccountsInventoryAndAssetProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{
+			{
+				Kind:     KindProductCategories,
+				FileName: "smartaccounts-product-groups.csv",
+				CSVContent: "item_group_name,parent_group\n" +
+					"Root,\n" +
+					"Widgets,Root\n",
+			},
+			{
+				Kind:       KindWarehouses,
+				FileName:   "smartaccounts-warehouses.csv",
+				CSVContent: "location_no,location_name,default_warehouse\nMAIN,Main warehouse,true\n",
+			},
+			{
+				Kind:       KindProducts,
+				FileName:   "smartaccounts-products.csv",
+				CSVContent: "item_no,item_name,item_group_name,sales_price,purchase_price,vat_percent\nSKU-1,Widget,Widgets,12,6,22\n",
+			},
+			{
+				Kind:       KindStockAdjustments,
+				FileName:   "smartaccounts-stock.csv",
+				CSVContent: "item_no,location_no,quantity_on_hand,average_cost,batch_no,serial_no,best_before\nSKU-1,MAIN,1,6,LOT-1,SN-1,2027-01-31\n",
+			},
+			{
+				Kind:       KindFixedAssets,
+				FileName:   "smartaccounts-fixed-assets.csv",
+				CSVContent: "fixed_asset_no,asset_description,purchase_date,purchase_value,depreciation_months,accumulated_depreciation,book_value\nFA-1,Laptop,2026-01-01,1200,36,200,1000\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 5)
+	assert.Contains(t, report.Files[0].Headers, "parent_name")
+	assert.Contains(t, report.Files[1].Headers, "code")
+	assert.Contains(t, report.Files[2].Headers, "category_name")
+	assert.Contains(t, report.Files[3].Headers, "serial_number")
+	assert.Contains(t, report.Files[4].Headers, "purchase_cost")
+	assert.Contains(t, report.Files[4].Headers, "useful_life_months")
+}
+
 func TestValidateBundleDefaultsDisplayFileNames(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
