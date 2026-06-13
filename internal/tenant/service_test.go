@@ -809,6 +809,42 @@ func TestService_UpdateTenant(t *testing.T) {
 	}
 }
 
+func TestService_CreateTenantNormalizesInventoryPolicySettings(t *testing.T) {
+	repo := NewMockRepository()
+	svc := newTestServiceWithRepository(repo)
+
+	created, err := svc.CreateTenant(context.Background(), &CreateTenantRequest{
+		Name: "Inventory Tenant",
+		Slug: "inventory-tenant",
+		Settings: &TenantSettings{
+			DefaultCurrency:             "EUR",
+			CountryCode:                 "EE",
+			InventoryIssueCostingMethod: "weighted-average",
+			InventoryValuationMethod:    "fifo",
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, InventoryIssueCostingMethodWeightedAverage, created.Settings.InventoryIssueCostingMethod)
+	assert.Equal(t, InventoryValuationMethodFIFO, created.Settings.InventoryValuationMethod)
+}
+
+func TestService_CreateTenantRejectsInvalidInventoryPolicySettings(t *testing.T) {
+	repo := NewMockRepository()
+	svc := newTestServiceWithRepository(repo)
+
+	_, err := svc.CreateTenant(context.Background(), &CreateTenantRequest{
+		Name: "Inventory Tenant",
+		Slug: "inventory-tenant",
+		Settings: &TenantSettings{
+			InventoryIssueCostingMethod: "lifo",
+		},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid inventory issue costing method")
+}
+
 func TestService_UpdateTenantRejectsPeriodLockMutation(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenant(&Tenant{
@@ -852,6 +888,48 @@ func TestService_UpdateTenantAllowsUnchangedPeriodLockDate(t *testing.T) {
 	require.NotNil(t, updatedTenant.Settings.PeriodLockDate)
 	assert.Equal(t, "2026-01-31", *updatedTenant.Settings.PeriodLockDate)
 	assert.Equal(t, "updated@example.com", updatedTenant.Settings.Email)
+}
+
+func TestService_UpdateTenantNormalizesInventoryPolicySettings(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	updatedTenant, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
+		Settings: &TenantSettings{
+			InventoryIssueCostingMethod: "standard-cost",
+			InventoryValuationMethod:    "weighted-average",
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, InventoryIssueCostingMethodStandardCost, updatedTenant.Settings.InventoryIssueCostingMethod)
+	assert.Equal(t, InventoryValuationMethodWeightedAverage, updatedTenant.Settings.InventoryValuationMethod)
+}
+
+func TestService_UpdateTenantRejectsInvalidInventoryPolicySettings(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
+		Settings: &TenantSettings{
+			InventoryValuationMethod: "replacement-cost",
+		},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid inventory valuation method")
 }
 
 func TestService_UpdateLatePaymentInterestRate(t *testing.T) {

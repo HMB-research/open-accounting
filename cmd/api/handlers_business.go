@@ -6773,22 +6773,28 @@ func (h *Handlers) GetInventoryMovements(w http.ResponseWriter, r *http.Request)
 
 // GetInventoryValuation returns inventory valuation by warehouse.
 // @Summary Get inventory valuation
-// @Description Return valued on-hand stock for tracked goods using standard-cost, weighted-average, or FIFO valuation
+// @Description Return valued on-hand stock for tracked goods using the explicit valuation method or the tenant inventory valuation policy
 // @Tags Inventory
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param warehouse_id query string false "Warehouse ID"
-// @Param method query string false "Valuation method: standard-cost, weighted-average, or fifo"
+// @Param method query string false "Valuation method override: standard-cost, weighted-average, or fifo"
 // @Success 200 {object} inventory.InventoryValuationReport
 // @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/inventory/valuation [get]
 func (h *Handlers) GetInventoryValuation(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+	schemaName := tenantRecord.SchemaName
 	warehouseID := strings.TrimSpace(r.URL.Query().Get("warehouse_id"))
-	method := strings.TrimSpace(r.URL.Query().Get("method"))
+	method := tenantInventoryValuationMethod(tenantRecord, r.URL.Query().Get("method"))
 
 	report, err := h.inventoryService.GetInventoryValuation(r.Context(), tenantID, schemaName, warehouseID, method)
 	if err != nil {
@@ -7075,6 +7081,7 @@ func (h *Handlers) ImportStockAdjustments(w http.ResponseWriter, r *http.Request
 // @Success 200 {object} inventory.InventoryMovement
 // @Failure 400 {object} object{error=string}
 // @Failure 401 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/inventory/adjust [post]
 func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
@@ -7105,7 +7112,7 @@ func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
 
 // IssueStock consumes available stock from a warehouse.
 // @Summary Issue warehouse stock
-// @Description Consume positive available stock from one warehouse with optional lot/serial/expiry allocation and accounting-ready COGS lines
+// @Description Consume positive available stock from one warehouse with optional lot/serial/expiry allocation, tenant/default issue costing policy, and accounting-ready COGS lines
 // @Tags Inventory
 // @Accept json
 // @Produce json
@@ -7119,7 +7126,12 @@ func (h *Handlers) AdjustStock(w http.ResponseWriter, r *http.Request) {
 // @Router /tenants/{tenantID}/inventory/issue [post]
 func (h *Handlers) IssueStock(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
+	tenantRecord, err := h.tenantService.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Tenant not found")
+		return
+	}
+	schemaName := tenantRecord.SchemaName
 
 	claims, ok := auth.GetClaims(r.Context())
 	if !ok {
@@ -7133,6 +7145,7 @@ func (h *Handlers) IssueStock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.UserID = claims.UserID
+	req.CostingMethod = tenantInventoryIssueCostingMethod(tenantRecord, req.CostingMethod)
 
 	result, err := h.inventoryService.IssueStock(r.Context(), tenantID, schemaName, &req)
 	if err != nil {

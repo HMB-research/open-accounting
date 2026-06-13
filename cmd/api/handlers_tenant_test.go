@@ -648,6 +648,34 @@ func TestUpdateTenantRejectsPeriodLockMutation(t *testing.T) {
 	assert.Contains(t, resp["error"], "close or reopen actions")
 }
 
+func TestUpdateTenantRejectsInvalidInventoryPolicy(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	repo.addTestTenant("tenant-1", "Old Name", "test-tenant")
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
+	}
+
+	req := makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1", map[string]interface{}{
+		"settings": map[string]interface{}{
+			"inventory_valuation_method": "replacement-cost",
+		},
+	}, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+
+	w := httptest.NewRecorder()
+	h.UpdateTenant(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code, "response body: %s", w.Body.String())
+
+	var resp map[string]string
+	err := json.NewDecoder(w.Body).Decode(&resp)
+	require.NoError(t, err)
+	assert.Contains(t, resp["error"], "invalid inventory valuation method")
+}
+
 func TestUpdateTenantRecordsAuditEvent(t *testing.T) {
 	h, repo := setupTenantTestHandlers()
 	repo.addTestTenant("tenant-1", "Old Name", "test-tenant")

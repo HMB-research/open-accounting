@@ -55,7 +55,7 @@ func (h *Handlers) ListPeriodCloseEvents(w http.ResponseWriter, r *http.Request)
 
 // ClosePeriod closes a month-end or year-end period.
 // @Summary Close period
-// @Description Close a tenant accounting period after validating permissions, fiscal-year inventory costing readiness, and required review evidence
+// @Description Close a tenant accounting period after validating permissions, fiscal-year inventory costing readiness using the explicit method or tenant valuation policy, and required review evidence
 // @Tags Period Close
 // @Accept json
 // @Produce json
@@ -86,6 +86,7 @@ func (h *Handlers) ClosePeriod(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "Tenant not found")
 		return
 	}
+	req.InventoryValuationMethod = tenantInventoryValuationMethod(tenantRecord, req.InventoryValuationMethod)
 	if req.ReviewerSignOff {
 		if err := h.requireApprovedYearEndClosePackEvidence(r.Context(), tenantRecord, req.PeriodEndDate); err != nil {
 			respondPeriodCloseError(w, err)

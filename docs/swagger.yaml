@@ -6665,6 +6665,11 @@ definitions:
       fiscal_year_start_month:
         description: 1-12
         type: integer
+      inventory_issue_costing_method:
+        description: Inventory costing policy settings
+        type: string
+      inventory_valuation_method:
+        type: string
       invoice_terms:
         type: string
       late_payment_interest_rate:
@@ -12364,6 +12369,13 @@ paths:
               error:
                 type: string
             type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
         "500":
           description: Internal Server Error
           schema:
@@ -12381,7 +12393,8 @@ paths:
       consumes:
       - application/json
       description: Consume positive available stock from one warehouse with optional
-        lot/serial/expiry allocation and accounting-ready COGS lines
+        lot/serial/expiry allocation, tenant/default issue costing policy, and accounting-ready
+        COGS lines
       parameters:
       - description: Tenant ID
         in: path
@@ -12656,8 +12669,8 @@ paths:
       - Inventory
   /tenants/{tenantID}/inventory/valuation:
     get:
-      description: Return valued on-hand stock for tracked goods using standard-cost,
-        weighted-average, or FIFO valuation
+      description: Return valued on-hand stock for tracked goods using the explicit
+        valuation method or the tenant inventory valuation policy
       parameters:
       - description: Tenant ID
         in: path
@@ -12668,7 +12681,8 @@ paths:
         in: query
         name: warehouse_id
         type: string
-      - description: 'Valuation method: standard-cost, weighted-average, or fifo'
+      - description: 'Valuation method override: standard-cost, weighted-average,
+          or fifo'
         in: query
         name: method
         type: string
@@ -12681,6 +12695,13 @@ paths:
             $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_inventory.InventoryValuationReport'
         "400":
           description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
           schema:
             properties:
               error:
@@ -15689,7 +15710,8 @@ paths:
       consumes:
       - application/json
       description: Close a tenant accounting period after validating permissions,
-        fiscal-year inventory costing readiness, and required review evidence
+        fiscal-year inventory costing readiness using the explicit method or tenant
+        valuation policy, and required review evidence
       parameters:
       - description: Tenant ID
         in: path
@@ -20300,7 +20322,8 @@ paths:
   /tenants/{tenantID}/year-end-close-audit-archive:
     get:
       description: Download a ZIP archive containing year-end close pack metadata,
-        inventory costing review, evidence-policy results, and close-pack documents
+        inventory costing review using the explicit method or tenant valuation policy,
+        evidence-policy results, and close-pack documents
       parameters:
       - description: Tenant ID
         in: path
@@ -20312,7 +20335,7 @@ paths:
         name: period_end_date
         required: true
         type: string
-      - description: 'Inventory valuation method for close review: standard-cost,
+      - description: 'Inventory valuation method override for close review: standard-cost,
           weighted-average, or fifo'
         in: query
         name: inventory_valuation_method
@@ -20359,8 +20382,9 @@ paths:
       - Period Close
   /tenants/{tenantID}/year-end-close-audit-evidence:
     get:
-      description: Get year-end close readiness, inventory costing review, core reports,
-        close-pack evidence policy, and attached close-pack document metadata
+      description: Get year-end close readiness, inventory costing review using the
+        explicit method or tenant valuation policy, core reports, close-pack evidence
+        policy, and attached close-pack document metadata
       parameters:
       - description: Tenant ID
         in: path
@@ -20372,7 +20396,7 @@ paths:
         name: period_end_date
         required: true
         type: string
-      - description: 'Inventory valuation method for close review: standard-cost,
+      - description: 'Inventory valuation method override for close review: standard-cost,
           weighted-average, or fifo'
         in: query
         name: inventory_valuation_method
@@ -20419,8 +20443,9 @@ paths:
       - Period Close
   /tenants/{tenantID}/year-end-close-pack:
     get:
-      description: Get year-end close readiness plus inventory costing review, trial
-        balance, balance sheet, and income statement for the fiscal year
+      description: Get year-end close readiness plus inventory costing review using
+        the explicit method or tenant valuation policy, trial balance, balance sheet,
+        and income statement for the fiscal year
       parameters:
       - description: Tenant ID
         in: path
@@ -20432,7 +20457,7 @@ paths:
         name: period_end_date
         required: true
         type: string
-      - description: 'Inventory valuation method for close review: standard-cost,
+      - description: 'Inventory valuation method override for close review: standard-cost,
           weighted-average, or fifo'
         in: query
         name: inventory_valuation_method
@@ -20480,8 +20505,8 @@ paths:
   /tenants/{tenantID}/year-end-close-status:
     get:
       description: Get fiscal year close readiness, retained-earnings mapping, net
-        income, period-lock status, inventory costing review, and existing carry-forward
-        state
+        income, period-lock status, inventory costing review using the explicit method
+        or tenant valuation policy, and existing carry-forward state
       parameters:
       - description: Tenant ID
         in: path
@@ -20493,7 +20518,7 @@ paths:
         name: period_end_date
         required: true
         type: string
-      - description: 'Inventory valuation method for close review: standard-cost,
+      - description: 'Inventory valuation method override for close review: standard-cost,
           weighted-average, or fifo'
         in: query
         name: inventory_valuation_method

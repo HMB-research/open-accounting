@@ -376,6 +376,39 @@ func TestGetYearEndCloseStatusIncludesInventoryCostingReview(t *testing.T) {
 	assert.True(t, resp.CarryForwardReady)
 }
 
+func TestGetYearEndCloseStatusUsesTenantInventoryPolicyWhenOmitted(t *testing.T) {
+	h, repo, accountingRepo := setupTenantAccountingHandlers()
+	attachYearEndInventoryFixture(h, decimal.NewFromInt(6))
+
+	settings := tenant.DefaultSettings()
+	settings.PeriodLockDate = stringPtr("2025-12-31")
+	settings.InventoryValuationMethod = tenant.InventoryValuationMethodWeightedAverage
+	repo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		Name:       "Tenant",
+		Slug:       "tenant",
+		SchemaName: "tenant_tenant",
+		Settings:   settings,
+	}
+	seedYearEndAccountingReady(accountingRepo)
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/year-end-close-status?period_end_date=2025-12-31", nil, &auth.Claims{
+		UserID: "user-1",
+		Email:  "user@example.com",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.GetYearEndCloseStatus(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp accounting.YearEndCloseStatus
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.NotNil(t, resp.InventoryCostingReview)
+	assert.Equal(t, inventory.InventoryValuationMethodWeightedAverage, resp.InventoryCostingReview.ValuationMethod)
+	assert.True(t, resp.InventoryCostingReview.Ready)
+}
+
 func TestGetYearEndClosePack(t *testing.T) {
 	h, repo, accountingRepo := setupTenantAccountingHandlers()
 	settings := tenant.DefaultSettings()

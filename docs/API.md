@@ -330,12 +330,14 @@ Content-Type: application/json
 {
   "name": "Acme Corp",
   "settings": {
-    "email": "finance@acme.example"
+    "email": "finance@acme.example",
+    "inventory_issue_costing_method": "WEIGHTED_AVERAGE",
+    "inventory_valuation_method": "FIFO"
   }
 }
 ```
 
-`period_lock_date` is returned on tenant reads, but it is no longer mutable through the generic tenant settings endpoint. Use the explicit period close/reopen endpoints below so changes are audited.
+`period_lock_date` is returned on tenant reads, but it is no longer mutable through the generic tenant settings endpoint. Use the explicit period close/reopen endpoints below so changes are audited. Inventory policy settings are `inventory_issue_costing_method` (`LOT`, `WEIGHTED_AVERAGE`, or `STANDARD_COST`) and `inventory_valuation_method` (`STANDARD_COST`, `WEIGHTED_AVERAGE`, or `FIFO`); friendly aliases such as `lot`, `weighted-average`, `standard-cost`, and `fifo` are accepted and stored canonically.
 
 ### Complete Onboarding
 
@@ -2348,7 +2350,7 @@ GET /tenants/{tenantId}/inventory/valuation?method=fifo
 Authorization: Bearer <token>
 ```
 
-Returns tracked `GOODS` stock valuation. `method` accepts `standard-cost` (default, using each product `purchase_price`), `weighted-average` (using costed inbound stock movements), or `fifo` (valuing current quantity from newest remaining inbound layers). Costed methods fall back to purchase price when no usable movement costs exist. The response includes product and warehouse labels, on-hand/reserved/available quantities, line value, and report totals.
+Returns tracked `GOODS` stock valuation. `method` accepts `standard-cost`, `weighted-average`, or `fifo` and overrides the tenant `inventory_valuation_method` policy, which defaults to `STANDARD_COST`. Costed methods fall back to purchase price when no usable movement costs exist. The response includes product and warehouse labels, on-hand/reserved/available quantities, line value, and report totals.
 
 ### Inventory Lot Report
 
@@ -2446,7 +2448,7 @@ Content-Type: application/json
 }
 ```
 
-`product_id`, `warehouse_id`, optional `source_id`, and optional account IDs must be valid UUIDs. Issues require a positive quantity and enough available warehouse stock. Optional lot metadata consumes only a matching tracked lot/serial/expiry position after tracked and unallocated reservations; without metadata, issue allocation consumes available tracked lots in deterministic expiry/lot/serial order before any untracked remainder. `costing_method` accepts `lot` (default), `weighted-average`, or `standard-cost`; all methods preserve the physical lot allocation while changing the unit cost applied to the outbound movement and accounting lines. The response includes costed outbound movements, the normalized costing method, weighted issue cost, the updated stock level, and optional accounting-ready lines that debit cost of goods sold and credit inventory when COGS and inventory asset accounts are available. When `post_to_ledger` is true, those lines are created and posted as a journal entry in the same database transaction as the stock issue, so a ledger posting failure rolls back the stock movements and stock-level updates; the response includes the posted journal entry ID and number. The service validates supplied COGS accounts as `EXPENSE` and inventory accounts as `ASSET` when accounting account metadata is available.
+`product_id`, `warehouse_id`, optional `source_id`, and optional account IDs must be valid UUIDs. Issues require a positive quantity and enough available warehouse stock. Optional lot metadata consumes only a matching tracked lot/serial/expiry position after tracked and unallocated reservations; without metadata, issue allocation consumes available tracked lots in deterministic expiry/lot/serial order before any untracked remainder. `costing_method` accepts `lot`, `weighted-average`, or `standard-cost` and overrides the tenant `inventory_issue_costing_method` policy, which defaults to `LOT`; all methods preserve the physical lot allocation while changing the unit cost applied to the outbound movement and accounting lines. The response includes costed outbound movements, the normalized costing method, weighted issue cost, the updated stock level, and optional accounting-ready lines that debit cost of goods sold and credit inventory when COGS and inventory asset accounts are available. When `post_to_ledger` is true, those lines are created and posted as a journal entry in the same database transaction as the stock issue, so a ledger posting failure rolls back the stock movements and stock-level updates; the response includes the posted journal entry ID and number. The service validates supplied COGS accounts as `EXPENSE` and inventory accounts as `ASSET` when accounting account metadata is available.
 
 ```http
 POST /tenants/{tenantId}/inventory/transfer
@@ -2951,7 +2953,7 @@ Close or reopen request:
 }
 ```
 
-Fiscal-year close requests require `reviewer_sign_off=true`, approved `close_pack` evidence attached to the `year_end_close` entity ID returned by year-end status or pack, and an inventory costing review with no blocking exception lines when inventory is configured. `inventory_valuation_method` accepts `standard-cost` (default), `weighted-average`, or `fifo` for fiscal-year close review. Reopen requests require a note. The API rejects fiscal-year reopen requests after year-end carry-forward has been posted.
+Fiscal-year close requests require `reviewer_sign_off=true`, approved `close_pack` evidence attached to the `year_end_close` entity ID returned by year-end status or pack, and an inventory costing review with no blocking exception lines when inventory is configured. `inventory_valuation_method` accepts `standard-cost`, `weighted-average`, or `fifo` for fiscal-year close review and overrides the tenant `inventory_valuation_method` policy, which defaults to `STANDARD_COST`. Reopen requests require a note. The API rejects fiscal-year reopen requests after year-end carry-forward has been posted.
 
 ### Year-End Carry-Forward
 
@@ -2965,7 +2967,7 @@ POST /tenants/{tenantId}/year-end-carry-forward/reverse
 Authorization: Bearer <token>
 ```
 
-The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year. Status, pack, audit evidence, and audit archive responses include `inventory_costing_review` when inventory is configured. The review summarizes valuation method, totals, blocking exception counts for negative quantities/availability/value and missing costs, and whether inventory costing is ready; blocking exceptions make carry-forward readiness false. The audit evidence endpoint adds the close-pack evidence-policy result and attached close-pack document metadata. The audit archive endpoint returns that evidence as a ZIP with a JSON manifest and attached close-pack files. Year-end carry-forward requires the fiscal year to be closed, the same approved close-pack evidence to be present, and inventory costing review to be ready when inventory is configured.
+The close pack returns the readiness status plus year-end trial balance, balance sheet, and income statement for the selected fiscal year. Status, pack, audit evidence, and audit archive responses include `inventory_costing_review` when inventory is configured. The review summarizes the explicit `inventory_valuation_method` when supplied, otherwise the tenant valuation policy, plus totals, blocking exception counts for negative quantities/availability/value and missing costs, and whether inventory costing is ready; blocking exceptions make carry-forward readiness false. The audit evidence endpoint adds the close-pack evidence-policy result and attached close-pack document metadata. The audit archive endpoint returns that evidence as a ZIP with a JSON manifest and attached close-pack files. Year-end carry-forward requires the fiscal year to be closed, the same approved close-pack evidence to be present, and inventory costing review to be ready when inventory is configured.
 
 Create carry-forward:
 

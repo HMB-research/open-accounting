@@ -73,6 +73,9 @@ func (s *Service) CreateTenant(ctx context.Context, req *CreateTenantRequest) (*
 	if req.Settings != nil {
 		settings = *req.Settings
 	}
+	if err := normalizeInventoryPolicySettings(&settings); err != nil {
+		return nil, err
+	}
 
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
@@ -130,6 +133,9 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 
 	// Update settings if provided
 	if req.Settings != nil {
+		current.Settings.InventoryIssueCostingMethod = EffectiveInventoryIssueCostingMethod(current.Settings.InventoryIssueCostingMethod)
+		current.Settings.InventoryValuationMethod = EffectiveInventoryValuationMethod(current.Settings.InventoryValuationMethod)
+
 		if req.Settings.PeriodLockDate != nil {
 			requestedLockDate := strings.TrimSpace(*req.Settings.PeriodLockDate)
 			currentLockDate := ""
@@ -187,6 +193,20 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 		}
 		if req.Settings.FiscalYearStart != 0 {
 			current.Settings.FiscalYearStart = req.Settings.FiscalYearStart
+		}
+		if req.Settings.InventoryIssueCostingMethod != "" {
+			method, err := NormalizeInventoryIssueCostingMethod(req.Settings.InventoryIssueCostingMethod)
+			if err != nil {
+				return nil, err
+			}
+			current.Settings.InventoryIssueCostingMethod = method
+		}
+		if req.Settings.InventoryValuationMethod != "" {
+			method, err := NormalizeInventoryValuationMethod(req.Settings.InventoryValuationMethod)
+			if err != nil {
+				return nil, err
+			}
+			current.Settings.InventoryValuationMethod = method
 		}
 	}
 

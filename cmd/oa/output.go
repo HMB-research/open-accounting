@@ -203,6 +203,8 @@ func printTenant(w io.Writer, tenantRecord *tenant.Tenant) {
 	_, _ = fmt.Fprintf(w, "Currency: %s\n", tenantRecord.Settings.DefaultCurrency)
 	_, _ = fmt.Fprintf(w, "Country: %s\n", tenantRecord.Settings.CountryCode)
 	_, _ = fmt.Fprintf(w, "Timezone: %s\n", tenantRecord.Settings.Timezone)
+	_, _ = fmt.Fprintf(w, "Inventory issue costing: %s\n", tenant.EffectiveInventoryIssueCostingMethod(tenantRecord.Settings.InventoryIssueCostingMethod))
+	_, _ = fmt.Fprintf(w, "Inventory valuation: %s\n", tenant.EffectiveInventoryValuationMethod(tenantRecord.Settings.InventoryValuationMethod))
 	if strings.TrimSpace(tenantRecord.Settings.Email) != "" {
 		_, _ = fmt.Fprintf(w, "Email: %s\n", tenantRecord.Settings.Email)
 	}

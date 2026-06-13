@@ -2880,6 +2880,8 @@ export interface TenantSettings {
   pdf_footer_text?: string;
   bank_details?: string;
   invoice_terms?: string;
+  inventory_issue_costing_method?: InventoryIssueCostingMethod;
+  inventory_valuation_method?: InventoryValuationMethod;
 }
 
 export interface PeriodCloseEvent {
@@ -4112,7 +4114,18 @@ export interface StockReservationRequest {
 export type InventoryValuationMethod =
   | "standard-cost"
   | "weighted-average"
-  | "fifo";
+  | "fifo"
+  | "STANDARD_COST"
+  | "WEIGHTED_AVERAGE"
+  | "FIFO";
+
+export type InventoryIssueCostingMethod =
+  | "lot"
+  | "weighted-average"
+  | "standard-cost"
+  | "LOT"
+  | "WEIGHTED_AVERAGE"
+  | "STANDARD_COST";
 
 export interface InventoryValuationOptions {
   warehouse_id?: string;
