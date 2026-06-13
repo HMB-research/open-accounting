@@ -47,6 +47,10 @@ type TenantSettings struct {
 
 	// Cash-flow account-code mapping settings
 	CashFlowMapping *CashFlowMappingSettings `json:"cash_flow_mapping,omitempty"`
+
+	// Inventory costing policy settings
+	InventoryIssueCostingMethod string `json:"inventory_issue_costing_method,omitempty"`
+	InventoryValuationMethod    string `json:"inventory_valuation_method,omitempty"`
 }
 
 // CashFlowMappingSettings stores tenant-level cash-flow account-code mappings.
@@ -125,13 +129,15 @@ type ReopenPeriodRequest struct {
 // DefaultSettings returns default tenant settings for Estonia
 func DefaultSettings() TenantSettings {
 	return TenantSettings{
-		DefaultCurrency: "EUR",
-		CountryCode:     "EE",
-		Timezone:        "Europe/Tallinn",
-		DateFormat:      "DD.MM.YYYY",
-		DecimalSep:      ",",
-		ThousandsSep:    " ",
-		FiscalYearStart: 1, // January
+		DefaultCurrency:             "EUR",
+		CountryCode:                 "EE",
+		Timezone:                    "Europe/Tallinn",
+		DateFormat:                  "DD.MM.YYYY",
+		DecimalSep:                  ",",
+		ThousandsSep:                " ",
+		FiscalYearStart:             1, // January
+		InventoryIssueCostingMethod: InventoryIssueCostingMethodLot,
+		InventoryValuationMethod:    InventoryValuationMethodStandardCost,
 	}
 }
 

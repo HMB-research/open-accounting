@@ -22,10 +22,12 @@ func TestCLIJSONInputParserBranches(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, settings)
 
-	settings, err = parseTenantSettingsInput(`{"default_currency":"EUR","country_code":"EE","fiscal_year_start_month":1}`, "")
+	settings, err = parseTenantSettingsInput(`{"default_currency":"EUR","country_code":"EE","fiscal_year_start_month":1,"inventory_issue_costing_method":"WEIGHTED_AVERAGE","inventory_valuation_method":"FIFO"}`, "")
 	require.NoError(t, err)
 	require.NotNil(t, settings)
 	assert.Equal(t, "EUR", settings.DefaultCurrency)
+	assert.Equal(t, "WEIGHTED_AVERAGE", settings.InventoryIssueCostingMethod)
+	assert.Equal(t, "FIFO", settings.InventoryValuationMethod)
 
 	settingsPath := filepath.Join(t.TempDir(), "tenant-settings.json")
 	require.NoError(t, os.WriteFile(settingsPath, []byte(`{"default_currency":"USD","timezone":"UTC"}`), 0o600))

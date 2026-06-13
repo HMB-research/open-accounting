@@ -435,23 +435,25 @@ func TestGetRolePermissions_AllRoles(t *testing.T) {
 
 func TestTenantSettings_AllFields(t *testing.T) {
 	settings := TenantSettings{
-		DefaultCurrency: "USD",
-		CountryCode:     "US",
-		Timezone:        "America/New_York",
-		DateFormat:      "MM/DD/YYYY",
-		DecimalSep:      ".",
-		ThousandsSep:    ",",
-		FiscalYearStart: 7,
-		VATNumber:       "VAT123456",
-		RegCode:         "REG789",
-		Address:         "123 Main St",
-		Email:           "company@example.com",
-		Phone:           "+1-555-1234",
-		Logo:            "https://example.com/logo.png",
-		PDFPrimaryColor: "#ff0000",
-		PDFFooterText:   "Thank you for your business",
-		BankDetails:     "Bank: Example, IBAN: XX123",
-		InvoiceTerms:    "Net 30",
+		DefaultCurrency:             "USD",
+		CountryCode:                 "US",
+		Timezone:                    "America/New_York",
+		DateFormat:                  "MM/DD/YYYY",
+		DecimalSep:                  ".",
+		ThousandsSep:                ",",
+		FiscalYearStart:             7,
+		VATNumber:                   "VAT123456",
+		RegCode:                     "REG789",
+		Address:                     "123 Main St",
+		Email:                       "company@example.com",
+		Phone:                       "+1-555-1234",
+		Logo:                        "https://example.com/logo.png",
+		PDFPrimaryColor:             "#ff0000",
+		PDFFooterText:               "Thank you for your business",
+		BankDetails:                 "Bank: Example, IBAN: XX123",
+		InvoiceTerms:                "Net 30",
+		InventoryIssueCostingMethod: InventoryIssueCostingMethodWeightedAverage,
+		InventoryValuationMethod:    InventoryValuationMethodFIFO,
 	}
 
 	// Test JSON serialization
@@ -479,6 +481,8 @@ func TestTenantSettings_AllFields(t *testing.T) {
 	assert.Equal(t, settings.PDFFooterText, decoded.PDFFooterText)
 	assert.Equal(t, settings.BankDetails, decoded.BankDetails)
 	assert.Equal(t, settings.InvoiceTerms, decoded.InvoiceTerms)
+	assert.Equal(t, settings.InventoryIssueCostingMethod, decoded.InventoryIssueCostingMethod)
+	assert.Equal(t, settings.InventoryValuationMethod, decoded.InventoryValuationMethod)
 }
 
 func TestUserInvitation_JSONSerialization(t *testing.T) {

@@ -1071,6 +1071,77 @@ func TestIssueStock(t *testing.T) {
 	assert.True(t, level.AvailableQty.Equal(decimal.RequireFromString("7.00")))
 }
 
+func TestIssueStockUsesTenantCostingPolicyWhenOmitted(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+	cogsAccountID := "44444444-4444-4444-8444-444444444444"
+	inventoryAccountID := "55555555-5555-4555-8555-555555555555"
+
+	settings := tenant.DefaultSettings()
+	settings.InventoryIssueCostingMethod = tenant.InventoryIssueCostingMethodStandardCost
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+		Settings:   settings,
+	}
+	repo.products[apiInventoryStockProductID] = &inventory.Product{
+		ID:                 apiInventoryStockProductID,
+		TenantID:           "tenant-1",
+		Code:               "SKU-001",
+		Name:               "Widget",
+		ProductType:        inventory.ProductTypeGoods,
+		PurchasePrice:      decimal.RequireFromString("8.00"),
+		CurrentStock:       decimal.RequireFromString("12.00"),
+		TrackInventory:     true,
+		InventoryAccountID: inventoryAccountID,
+	}
+	repo.warehouses[apiInventoryStockWarehouseID] = &inventory.Warehouse{
+		ID:       apiInventoryStockWarehouseID,
+		TenantID: "tenant-1",
+		Code:     "MAIN",
+		Name:     "Main Warehouse",
+	}
+	repo.stockLevels[apiInventoryStockLevelKey(apiInventoryStockProductID, apiInventoryStockWarehouseID)] = &inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    apiInventoryStockProductID,
+		WarehouseID:  apiInventoryStockWarehouseID,
+		Quantity:     decimal.RequireFromString("12.00"),
+		AvailableQty: decimal.RequireFromString("12.00"),
+	}
+	repo.movements[apiInventoryStockProductID] = []inventory.InventoryMovement{{
+		ID:           "mov-lot-in",
+		TenantID:     "tenant-1",
+		ProductID:    apiInventoryStockProductID,
+		WarehouseID:  apiInventoryStockWarehouseID,
+		MovementType: inventory.MovementTypeIn,
+		Quantity:     decimal.RequireFromString("12.00"),
+		UnitCost:     decimal.RequireFromString("8.25"),
+		TotalCost:    decimal.RequireFromString("99.00"),
+		LotNumber:    "LOT-2026-01",
+	}}
+
+	body := map[string]interface{}{
+		"product_id":                    apiInventoryStockProductID,
+		"warehouse_id":                  apiInventoryStockWarehouseID,
+		"quantity":                      "3",
+		"lot_number":                    "LOT-2026-01",
+		"cost_of_goods_sold_account_id": cogsAccountID,
+	}
+	req := newInventoryJSONRequest(t, http.MethodPost, "/tenants/tenant-1/inventory/issue", body, map[string]string{"tenantID": "tenant-1"})
+
+	rr := httptest.NewRecorder()
+	h.IssueStock(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, "response body: %s", rr.Body.String())
+	var result inventory.IssueStockResult
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+	assert.Equal(t, inventory.InventoryIssueCostingMethodStandardCost, result.CostingMethod)
+	assert.True(t, result.TotalCost.Equal(decimal.RequireFromString("24.00")))
+	require.NotNil(t, result.Accounting)
+	require.Len(t, result.Accounting.Lines, 2)
+	assert.True(t, result.Accounting.Lines[0].DebitAmount.Equal(decimal.RequireFromString("24.00")))
+}
+
 func TestImportStockAdjustments(t *testing.T) {
 	h, repo, tenantRepo := setupInventoryTestHandlers()
 
@@ -1426,6 +1497,77 @@ func TestGetInventoryValuation(t *testing.T) {
 	assert.True(t, result.Lines[0].UnitCost.Equal(decimal.RequireFromString("10.00")))
 	assert.True(t, result.TotalQuantity.Equal(decimal.RequireFromString("12.00")))
 	assert.True(t, result.TotalValue.Equal(decimal.RequireFromString("120.00")))
+}
+
+func TestGetInventoryValuationUsesTenantPolicyWhenMethodOmitted(t *testing.T) {
+	h, repo, tenantRepo := setupInventoryTestHandlers()
+
+	settings := tenant.DefaultSettings()
+	settings.InventoryValuationMethod = tenant.InventoryValuationMethodFIFO
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+		Settings:   settings,
+	}
+
+	repo.products["prod-1"] = &inventory.Product{
+		ID:             "prod-1",
+		TenantID:       "tenant-1",
+		Code:           "SKU-001",
+		Name:           "Widget",
+		ProductType:    inventory.ProductTypeGoods,
+		PurchasePrice:  decimal.RequireFromString("10.50"),
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	repo.warehouses["wh-1"] = &inventory.Warehouse{
+		ID:       "wh-1",
+		TenantID: "tenant-1",
+		Code:     "MAIN",
+		Name:     "Main Warehouse",
+	}
+	repo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{
+		ID:           "stock-1",
+		TenantID:     "tenant-1",
+		ProductID:    "prod-1",
+		WarehouseID:  "wh-1",
+		Quantity:     decimal.RequireFromString("5.00"),
+		AvailableQty: decimal.RequireFromString("5.00"),
+	}
+	repo.movements["prod-1"] = []inventory.InventoryMovement{
+		{
+			ID:           "mov-1",
+			TenantID:     "tenant-1",
+			ProductID:    "prod-1",
+			MovementType: inventory.MovementTypeIn,
+			Quantity:     decimal.RequireFromString("2.00"),
+			UnitCost:     decimal.RequireFromString("8.00"),
+			TotalCost:    decimal.RequireFromString("16.00"),
+		},
+		{
+			ID:           "mov-2",
+			TenantID:     "tenant-1",
+			ProductID:    "prod-1",
+			MovementType: inventory.MovementTypeIn,
+			Quantity:     decimal.RequireFromString("3.00"),
+			UnitCost:     decimal.RequireFromString("12.00"),
+			TotalCost:    decimal.RequireFromString("36.00"),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/inventory/valuation?warehouse_id=wh-1", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.GetInventoryValuation(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, "response body: %s", rr.Body.String())
+	var result inventory.InventoryValuationReport
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+	assert.Equal(t, inventory.InventoryValuationMethodFIFO, result.ValuationMethod)
+	require.Len(t, result.Lines, 1)
+	assert.True(t, result.TotalValue.Equal(decimal.RequireFromString("52.00")))
 }
 
 func TestGetInventoryLotReport(t *testing.T) {

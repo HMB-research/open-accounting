@@ -8623,6 +8623,17 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -8644,7 +8655,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Consume positive available stock from one warehouse with optional lot/serial/expiry allocation and accounting-ready COGS lines",
+                "description": "Consume positive available stock from one warehouse with optional lot/serial/expiry allocation, tenant/default issue costing policy, and accounting-ready COGS lines",
                 "consumes": [
                     "application/json"
                 ],
@@ -9074,7 +9085,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Return valued on-hand stock for tracked goods using standard-cost, weighted-average, or FIFO valuation",
+                "description": "Return valued on-hand stock for tracked goods using the explicit valuation method or the tenant inventory valuation policy",
                 "produces": [
                     "application/json"
                 ],
@@ -9098,7 +9109,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Valuation method: standard-cost, weighted-average, or fifo",
+                        "description": "Valuation method override: standard-cost, weighted-average, or fifo",
                         "name": "method",
                         "in": "query"
                     }
@@ -9112,6 +9123,17 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "type": "object",
                             "properties": {
@@ -13799,7 +13821,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Close a tenant accounting period after validating permissions, fiscal-year inventory costing readiness, and required review evidence",
+                "description": "Close a tenant accounting period after validating permissions, fiscal-year inventory costing readiness using the explicit method or tenant valuation policy, and required review evidence",
                 "consumes": [
                     "application/json"
                 ],
@@ -20952,7 +20974,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Download a ZIP archive containing year-end close pack metadata, inventory costing review, evidence-policy results, and close-pack documents",
+                "description": "Download a ZIP archive containing year-end close pack metadata, inventory costing review using the explicit method or tenant valuation policy, evidence-policy results, and close-pack documents",
                 "produces": [
                     "application/zip"
                 ],
@@ -20977,7 +20999,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Inventory valuation method for close review: standard-cost, weighted-average, or fifo",
+                        "description": "Inventory valuation method override for close review: standard-cost, weighted-average, or fifo",
                         "name": "inventory_valuation_method",
                         "in": "query"
                     }
@@ -21043,7 +21065,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get year-end close readiness, inventory costing review, core reports, close-pack evidence policy, and attached close-pack document metadata",
+                "description": "Get year-end close readiness, inventory costing review using the explicit method or tenant valuation policy, core reports, close-pack evidence policy, and attached close-pack document metadata",
                 "produces": [
                     "application/json"
                 ],
@@ -21068,7 +21090,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Inventory valuation method for close review: standard-cost, weighted-average, or fifo",
+                        "description": "Inventory valuation method override for close review: standard-cost, weighted-average, or fifo",
                         "name": "inventory_valuation_method",
                         "in": "query"
                     }
@@ -21134,7 +21156,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get year-end close readiness plus inventory costing review, trial balance, balance sheet, and income statement for the fiscal year",
+                "description": "Get year-end close readiness plus inventory costing review using the explicit method or tenant valuation policy, trial balance, balance sheet, and income statement for the fiscal year",
                 "produces": [
                     "application/json"
                 ],
@@ -21159,7 +21181,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Inventory valuation method for close review: standard-cost, weighted-average, or fifo",
+                        "description": "Inventory valuation method override for close review: standard-cost, weighted-average, or fifo",
                         "name": "inventory_valuation_method",
                         "in": "query"
                     }
@@ -21225,7 +21247,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get fiscal year close readiness, retained-earnings mapping, net income, period-lock status, inventory costing review, and existing carry-forward state",
+                "description": "Get fiscal year close readiness, retained-earnings mapping, net income, period-lock status, inventory costing review using the explicit method or tenant valuation policy, and existing carry-forward state",
                 "produces": [
                     "application/json"
                 ],
@@ -21250,7 +21272,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Inventory valuation method for close review: standard-cost, weighted-average, or fifo",
+                        "description": "Inventory valuation method override for close review: standard-cost, weighted-average, or fifo",
                         "name": "inventory_valuation_method",
                         "in": "query"
                     }
@@ -31309,6 +31331,13 @@ const docTemplate = `{
                 "fiscal_year_start_month": {
                     "description": "1-12",
                     "type": "integer"
+                },
+                "inventory_issue_costing_method": {
+                    "description": "Inventory costing policy settings",
+                    "type": "string"
+                },
+                "inventory_valuation_method": {
+                    "type": "string"
                 },
                 "invoice_terms": {
                     "type": "string"

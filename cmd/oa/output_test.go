@@ -135,15 +135,19 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 		Slug:       "edge",
 		SchemaName: "tenant_edge",
 		Settings: tenant.TenantSettings{
-			DefaultCurrency: "EUR",
-			CountryCode:     "EE",
-			Timezone:        "Europe/Tallinn",
-			VATNumber:       "EE123",
-			RegCode:         "12345678",
-			PeriodLockDate:  &periodLock,
+			DefaultCurrency:             "EUR",
+			CountryCode:                 "EE",
+			Timezone:                    "Europe/Tallinn",
+			VATNumber:                   "EE123",
+			RegCode:                     "12345678",
+			PeriodLockDate:              &periodLock,
+			InventoryIssueCostingMethod: tenant.InventoryIssueCostingMethodWeightedAverage,
+			InventoryValuationMethod:    tenant.InventoryValuationMethodFIFO,
 		},
 	})
 	assert.Contains(t, buf.String(), "Schema: tenant_edge")
+	assert.Contains(t, buf.String(), "Inventory issue costing: WEIGHTED_AVERAGE")
+	assert.Contains(t, buf.String(), "Inventory valuation: FIFO")
 	assert.Contains(t, buf.String(), "VAT number: EE123")
 	assert.Contains(t, buf.String(), "Period lock date: 2026-03-31")
 
@@ -552,6 +556,8 @@ func TestPrintTables(t *testing.T) {
 		},
 	})
 	assert.Contains(t, tenantBuf.String(), "Tenant Alpha")
+	assert.Contains(t, tenantBuf.String(), "Inventory issue costing: LOT")
+	assert.Contains(t, tenantBuf.String(), "Inventory valuation: STANDARD_COST")
 	assert.Contains(t, tenantBuf.String(), "finance@example.com")
 
 	var tenantUsersBuf bytes.Buffer

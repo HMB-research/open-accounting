@@ -1088,6 +1088,8 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusNotFound, "Tenant not found")
 		case strings.Contains(err.Error(), "period lock must be managed through close or reopen actions"):
 			respondError(w, http.StatusBadRequest, err.Error())
+		case strings.Contains(err.Error(), "invalid inventory"):
+			respondError(w, http.StatusBadRequest, err.Error())
 		default:
 			respondError(w, http.StatusInternalServerError, err.Error())
 		}
