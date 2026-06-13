@@ -942,6 +942,113 @@ describe("API Client - Core Functionality", () => {
       ]);
     });
 
+    it("should execute and load saved migration execution runs", async () => {
+      const savedRun = {
+        id: "run-1",
+        tenant_id: "tenant-123",
+        created_by: "user-1",
+        updated_at: "2026-06-14T12:00:00Z",
+        summary: {
+          status: "succeeded",
+          confirmed: true,
+          resumed: true,
+          plan_ready: true,
+          validation_ready: true,
+          step_count: 1,
+          succeeded_step_count: 1,
+          failed_step_count: 0,
+          skipped_step_count: 0,
+          planned_step_count: 0,
+          resumed_step_count: 1,
+          needs_context_count: 0,
+          blocked_step_count: 0,
+        },
+        steps: [
+          {
+            step_number: 1,
+            kind: "accounts",
+            file_name: "accounts.csv",
+            status: "SUCCEEDED",
+            message: "Import completed.",
+            cli_command: "oa accounts import --file <accounts.csv>",
+          },
+        ],
+      };
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => savedRun,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => [savedRun],
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => savedRun,
+        });
+
+      const executed = await api.executeMigration("tenant-123", {
+        provider_preset: "generic",
+        confirm: true,
+        resume_from_run_id: "previous-run",
+        files: [
+          {
+            kind: "accounts",
+            file_name: "accounts.csv",
+            csv_content: "code,name,account_type\n1000,Cash,ASSET\n",
+          },
+        ],
+      });
+      const runs = await api.listMigrationExecutionRuns("tenant-123", {
+        status: "succeeded",
+        limit: 10,
+      });
+      const loaded = await api.getMigrationExecutionRun("tenant-123", "run-1");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execute",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            provider_preset: "generic",
+            confirm: true,
+            resume_from_run_id: "previous-run",
+            files: [
+              {
+                kind: "accounts",
+                file_name: "accounts.csv",
+                csv_content: "code,name,account_type\n1000,Cash,ASSET\n",
+              },
+            ],
+          }),
+        }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-runs?status=succeeded&limit=10",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-runs/run-1",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(executed.summary.resumed_step_count).toBe(1);
+      expect(runs[0].id).toBe("run-1");
+      expect(loaded.steps?.[0].status).toBe("SUCCEEDED");
+    });
+
     it("should list expense claims with remediation actions", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

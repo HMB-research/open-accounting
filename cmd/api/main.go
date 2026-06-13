@@ -27,6 +27,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/cutover"
 	"github.com/HMB-research/open-accounting/internal/demo"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
@@ -154,6 +155,7 @@ func main() {
 	webhookService := webhooks.NewService(pool)
 	webhookService.RegisterPluginHooks(pluginService.GetHookRegistry())
 	expensesService := expenses.NewService(pool, documentsService)
+	migrationRunStore := cutover.NewMigrationExecutionRunRepository(pool)
 	demoStatusReader, err := demo.NewStatusReader(pool)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize demo status reader")
@@ -244,6 +246,7 @@ func main() {
 		interestService:          interestService,
 		webhookService:           webhookService,
 		expensesService:          expensesService,
+		migrationRunStore:        migrationRunStore,
 		demoResetService:         demoResetService,
 		demoStatusReader:         demoStatusReader,
 	}
@@ -560,6 +563,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/migration/validate", h.ValidateMigrationBundle)
 				r.Post("/migration/execution-plan", h.PlanMigrationExecution)
 				r.Post("/migration/execute", h.ExecuteMigration)
+				r.Get("/migration/execution-runs", h.ListMigrationExecutionRuns)
+				r.Get("/migration/execution-runs/{runID}", h.GetMigrationExecutionRun)
 
 				// Accounts
 				r.Get("/accounts", h.ListAccounts)

@@ -714,6 +714,33 @@ func (c *apiClient) planMigrationExecution(ctx context.Context, tenantID string,
 	return &resp, nil
 }
 
+func (c *apiClient) listMigrationExecutionRuns(ctx context.Context, tenantID, status string, limit int) ([]cutover.MigrationExecutionRun, error) {
+	values := url.Values{}
+	if trimmed := strings.TrimSpace(status); trimmed != "" {
+		values.Set("status", trimmed)
+	}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	apiPath := path.Join("/api/v1/tenants", tenantID, "migration", "execution-runs")
+	if encoded := values.Encode(); encoded != "" {
+		apiPath += "?" + encoded
+	}
+	var resp []cutover.MigrationExecutionRun
+	if err := c.request(ctx, http.MethodGet, apiPath, nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *apiClient) getMigrationExecutionRun(ctx context.Context, tenantID, runID string) (*cutover.MigrationExecutionRun, error) {
+	var resp cutover.MigrationExecutionRun
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "migration", "execution-runs", runID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]accounting.Account, error) {
 	query := ""
 	if activeOnly {

@@ -24,6 +24,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/banking"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/cutover"
 	"github.com/HMB-research/open-accounting/internal/demo"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
@@ -81,6 +82,7 @@ type Handlers struct {
 	webhookService           *webhooks.Service
 	expensesService          *expenses.Service
 	migrationExecutor        migrationStepExecutor
+	migrationRunStore        cutover.MigrationExecutionRunStore
 	demoResetService         demoResetter
 	demoStatusReader         demo.StatusReader
 }

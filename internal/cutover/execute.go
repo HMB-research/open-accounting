@@ -1,6 +1,9 @@
 package cutover
 
-import "strconv"
+import (
+	"strconv"
+	"time"
+)
 
 type MigrationExecutionResultStatus string
 
@@ -21,6 +24,7 @@ type ExecuteMigrationRequest struct {
 	OpeningBalanceEntryDate  string                  `json:"opening_balance_entry_date,omitempty"`
 	Confirm                  bool                    `json:"confirm,omitempty"`
 	ResumeFromRun            *MigrationExecutionRun  `json:"resume_from_run,omitempty"`
+	ResumeFromRunID          string                  `json:"resume_from_run_id,omitempty"`
 }
 
 func (r ExecuteMigrationRequest) PlanRequest() *PlanMigrationExecutionRequest {
@@ -34,6 +38,11 @@ func (r ExecuteMigrationRequest) PlanRequest() *PlanMigrationExecutionRequest {
 }
 
 type MigrationExecutionRun struct {
+	ID                 string                       `json:"id,omitempty"`
+	TenantID           string                       `json:"tenant_id,omitempty"`
+	CreatedBy          string                       `json:"created_by,omitempty"`
+	CreatedAt          *time.Time                   `json:"created_at,omitempty"`
+	UpdatedAt          *time.Time                   `json:"updated_at,omitempty"`
 	Summary            MigrationExecutionRunSummary `json:"summary"`
 	Plan               *MigrationExecutionPlan      `json:"plan,omitempty"`
 	Steps              []MigrationExecutionStepRun  `json:"steps,omitempty"`
