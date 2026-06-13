@@ -696,6 +696,32 @@ class ApiClient {
     );
   }
 
+  async executeMigration(tenantId: string, data: ExecuteMigrationRequest) {
+    return this.request<MigrationExecutionRun>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/migration/execute`,
+      data,
+    );
+  }
+
+  async listMigrationExecutionRuns(
+    tenantId: string,
+    filter: MigrationExecutionRunFilter = {},
+  ) {
+    const query = buildQuery(filter);
+    return this.request<MigrationExecutionRun[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/migration/execution-runs${query}`,
+    );
+  }
+
+  async getMigrationExecutionRun(tenantId: string, runId: string) {
+    return this.request<MigrationExecutionRun>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/migration/execution-runs/${runId}`,
+    );
+  }
+
   async listExpenses(
     tenantId: string,
     filter: ListExpensesFilter = {},
@@ -3348,6 +3374,19 @@ export interface PlanMigrationExecutionRequest extends ValidateBundleRequest {
   opening_balance_entry_date?: string;
 }
 
+export interface ExecuteMigrationRequest extends PlanMigrationExecutionRequest {
+  e_invoice_invoice_type?: string;
+  bank_transaction_format?: string;
+  confirm?: boolean;
+  resume_from_run?: MigrationExecutionRun;
+  resume_from_run_id?: string;
+}
+
+export interface MigrationExecutionRunFilter {
+  status?: string;
+  limit?: number;
+}
+
 export interface BundleValidationSummary {
   files_validated: number;
   rows_validated: number;
@@ -3433,6 +3472,52 @@ export interface MigrationExecutionPlan {
   summary: MigrationExecutionPlanSummary;
   validation: BundleValidationReport;
   steps?: MigrationExecutionStep[];
+  remediation_actions?: MigrationRemediationAction[];
+}
+
+export type MigrationExecutionResultStatus =
+  | "PLANNED"
+  | "SKIPPED"
+  | "SUCCEEDED"
+  | "FAILED";
+
+export interface MigrationExecutionRunSummary {
+  status: string;
+  confirmed: boolean;
+  resumed: boolean;
+  plan_ready: boolean;
+  validation_ready: boolean;
+  step_count: number;
+  succeeded_step_count: number;
+  failed_step_count: number;
+  skipped_step_count: number;
+  planned_step_count: number;
+  resumed_step_count: number;
+  needs_context_count: number;
+  blocked_step_count: number;
+}
+
+export interface MigrationExecutionStepRun {
+  step_number: number;
+  kind: MigrationFileKind;
+  file_name: string;
+  status: MigrationExecutionResultStatus;
+  message?: string;
+  error?: string;
+  api_path?: string;
+  cli_command?: string;
+  response?: unknown;
+}
+
+export interface MigrationExecutionRun {
+  id?: string;
+  tenant_id?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  summary: MigrationExecutionRunSummary;
+  plan?: MigrationExecutionPlan;
+  steps?: MigrationExecutionStepRun[];
   remediation_actions?: MigrationRemediationAction[];
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,18 +71,40 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resumeFromRun, err := h.resolveMigrationExecutionResumeRun(r.Context(), schemaName, tenantID, &req)
+	if err != nil {
+		if errors.Is(err, cutover.ErrMigrationExecutionRunNotFound) {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to load migration execution resume run")
+		return
+	}
+
 	plan, err := cutover.BuildMigrationExecutionPlan(req.PlanRequest())
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	run := cutover.NewResumableMigrationExecutionRun(plan, req.Confirm, req.ResumeFromRun)
+	run := cutover.NewResumableMigrationExecutionRun(plan, req.Confirm, resumeFromRun)
 	if !req.Confirm {
+		if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
+			return
+		}
 		respondJSON(w, http.StatusOK, run)
 		return
 	}
 	if !plan.Summary.Ready {
+		if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
+			return
+		}
 		respondJSON(w, http.StatusConflict, run)
+		return
+	}
+	if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
 		return
 	}
 
@@ -102,6 +125,10 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 			run.Steps[index].Error = "migration bundle file not found"
 			run.Summary.FailedStepCount++
 			run.Summary.Status = "failed"
+			if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
+				respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
+				return
+			}
 			respondJSON(w, http.StatusBadRequest, run)
 			return
 		}
@@ -111,6 +138,10 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 			run.Steps[index].Error = err.Error()
 			run.Summary.FailedStepCount++
 			run.Summary.Status = "failed"
+			if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
+				respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
+				return
+			}
 			respondJSON(w, http.StatusBadRequest, run)
 			return
 		}
@@ -118,9 +149,123 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 		run.Steps[index].Message = "Import completed."
 		run.Steps[index].Response = response
 		run.Summary.SucceededStepCount++
+		if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
+			return
+		}
 	}
 	run.Summary.Status = "succeeded"
+	if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
+		return
+	}
 	respondJSON(w, http.StatusOK, run)
+}
+
+// ListMigrationExecutionRuns returns saved migration execution runs for dashboard and CLI resume workflows.
+// @Summary List migration execution runs
+// @Description List saved tenant-scoped migration execution runs
+// @Tags Migration
+// @Produce json
+// @Param tenantID path string true "Tenant ID"
+// @Param status query string false "Filter by run status"
+// @Param limit query int false "Maximum runs to return"
+// @Success 200 {array} cutover.MigrationExecutionRun
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Router /tenants/{tenantID}/migration/execution-runs [get]
+func (h *Handlers) ListMigrationExecutionRuns(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(chi.URLParam(r, "tenantID"))
+	if tenantID == "" {
+		respondError(w, http.StatusBadRequest, "tenantID is required")
+		return
+	}
+	limit := 50
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 1 || parsed > 200 {
+			respondError(w, http.StatusBadRequest, "limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+	store := h.migrationRunStore
+	if store == nil {
+		respondError(w, http.StatusInternalServerError, "Migration execution run storage is not configured")
+		return
+	}
+	runs, err := store.ListExecutionRuns(r.Context(), h.getSchemaName(r.Context(), tenantID), tenantID, cutover.MigrationExecutionRunFilter{
+		Status: strings.TrimSpace(r.URL.Query().Get("status")),
+		Limit:  limit,
+	})
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list migration execution runs")
+		return
+	}
+	respondJSON(w, http.StatusOK, runs)
+}
+
+// GetMigrationExecutionRun returns one saved migration execution run.
+// @Summary Get migration execution run
+// @Description Return a saved tenant-scoped migration execution run snapshot
+// @Tags Migration
+// @Produce json
+// @Param tenantID path string true "Tenant ID"
+// @Param runID path string true "Migration execution run ID"
+// @Success 200 {object} cutover.MigrationExecutionRun
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/migration/execution-runs/{runID} [get]
+func (h *Handlers) GetMigrationExecutionRun(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(chi.URLParam(r, "tenantID"))
+	runID := strings.TrimSpace(chi.URLParam(r, "runID"))
+	if tenantID == "" {
+		respondError(w, http.StatusBadRequest, "tenantID is required")
+		return
+	}
+	if runID == "" {
+		respondError(w, http.StatusBadRequest, "runID is required")
+		return
+	}
+	store := h.migrationRunStore
+	if store == nil {
+		respondError(w, http.StatusInternalServerError, "Migration execution run storage is not configured")
+		return
+	}
+	run, err := store.GetExecutionRun(r.Context(), h.getSchemaName(r.Context(), tenantID), tenantID, runID)
+	if errors.Is(err, cutover.ErrMigrationExecutionRunNotFound) {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load migration execution run")
+		return
+	}
+	respondJSON(w, http.StatusOK, run)
+}
+
+func (h *Handlers) resolveMigrationExecutionResumeRun(ctx context.Context, schemaName, tenantID string, req *cutover.ExecuteMigrationRequest) (*cutover.MigrationExecutionRun, error) {
+	if req == nil {
+		return nil, nil
+	}
+	if runID := strings.TrimSpace(req.ResumeFromRunID); runID != "" {
+		if h.migrationRunStore == nil {
+			return nil, fmt.Errorf("migration execution run storage is not configured")
+		}
+		return h.migrationRunStore.GetExecutionRun(ctx, schemaName, tenantID, runID)
+	}
+	return req.ResumeFromRun, nil
+}
+
+func (h *Handlers) saveMigrationExecutionRun(ctx context.Context, schemaName, tenantID, createdBy string, run *cutover.MigrationExecutionRun) error {
+	if h.migrationRunStore == nil {
+		return nil
+	}
+	_, err := h.migrationRunStore.SaveExecutionRun(ctx, schemaName, tenantID, createdBy, run)
+	return err
 }
 
 func (h *Handlers) effectiveMigrationExecutor() migrationStepExecutor {

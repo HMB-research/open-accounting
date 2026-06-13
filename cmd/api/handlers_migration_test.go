@@ -32,6 +32,44 @@ func (f *fakeMigrationStepExecutor) ExecuteMigrationStep(_ context.Context, tena
 	}, nil
 }
 
+type fakeMigrationRunStore struct {
+	saved      []cutover.MigrationExecutionRun
+	listRuns   []cutover.MigrationExecutionRun
+	getRun     *cutover.MigrationExecutionRun
+	saveErr    error
+	listErr    error
+	getErr     error
+	lastFilter cutover.MigrationExecutionRunFilter
+}
+
+func (f *fakeMigrationRunStore) SaveExecutionRun(_ context.Context, _, tenantID, createdBy string, run *cutover.MigrationExecutionRun) (*cutover.MigrationExecutionRun, error) {
+	if f.saveErr != nil {
+		return nil, f.saveErr
+	}
+	if run.ID == "" {
+		run.ID = "run-1"
+	}
+	run.TenantID = tenantID
+	run.CreatedBy = createdBy
+	f.saved = append(f.saved, *run)
+	return run, nil
+}
+
+func (f *fakeMigrationRunStore) ListExecutionRuns(_ context.Context, _, _ string, filter cutover.MigrationExecutionRunFilter) ([]cutover.MigrationExecutionRun, error) {
+	f.lastFilter = filter
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.listRuns, nil
+}
+
+func (f *fakeMigrationRunStore) GetExecutionRun(_ context.Context, _, _, _ string) (*cutover.MigrationExecutionRun, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	return f.getRun, nil
+}
+
 func TestValidateMigrationBundleHandler(t *testing.T) {
 	h := &Handlers{}
 	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
@@ -288,6 +326,75 @@ func TestExecuteMigrationHandlerResumesPreviouslySucceededSteps(t *testing.T) {
 	assert.Equal(t, cutover.MigrationExecutionResultSucceeded, run.Steps[1].Status)
 }
 
+func TestExecuteMigrationHandlerPersistsRunSnapshots(t *testing.T) {
+	executor := &fakeMigrationStepExecutor{}
+	store := &fakeMigrationRunStore{}
+	h := &Handlers{migrationExecutor: executor, migrationRunStore: store}
+	req := executeMigrationRequest(cutover.ExecuteMigrationRequest{
+		Files: []cutover.BundleFile{{
+			Kind:       cutover.KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "code,name,account_type\n1000,Cash,ASSET\n",
+		}},
+		Confirm: true,
+	})
+
+	w := httptest.NewRecorder()
+	h.ExecuteMigration(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var run cutover.MigrationExecutionRun
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&run))
+	assert.Equal(t, "run-1", run.ID)
+	assert.Equal(t, "tenant-1", run.TenantID)
+	assert.Equal(t, "user-1", run.CreatedBy)
+	require.GreaterOrEqual(t, len(store.saved), 2)
+	assert.Equal(t, "running", store.saved[0].Summary.Status)
+	assert.Equal(t, "succeeded", store.saved[len(store.saved)-1].Summary.Status)
+	assert.Equal(t, 1, store.saved[len(store.saved)-1].Summary.SucceededStepCount)
+}
+
+func TestExecuteMigrationHandlerResumesSavedRunID(t *testing.T) {
+	executor := &fakeMigrationStepExecutor{}
+	store := &fakeMigrationRunStore{
+		getRun: &cutover.MigrationExecutionRun{
+			ID: "previous-run",
+			Steps: []cutover.MigrationExecutionStepRun{
+				{StepNumber: 1, Kind: cutover.KindAccounts, FileName: "accounts.csv", Status: cutover.MigrationExecutionResultSucceeded, Response: map[string]any{"created": 1}},
+				{StepNumber: 2, Kind: cutover.KindContacts, FileName: "contacts.csv", Status: cutover.MigrationExecutionResultFailed},
+			},
+		},
+	}
+	h := &Handlers{migrationExecutor: executor, migrationRunStore: store}
+	req := executeMigrationRequest(cutover.ExecuteMigrationRequest{
+		Files: []cutover.BundleFile{
+			{
+				Kind:       cutover.KindAccounts,
+				FileName:   "accounts.csv",
+				CSVContent: "code,name,account_type\n1000,Cash,ASSET\n",
+			},
+			{
+				Kind:       cutover.KindContacts,
+				FileName:   "contacts.csv",
+				CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+			},
+		},
+		Confirm:         true,
+		ResumeFromRunID: "previous-run",
+	})
+
+	w := httptest.NewRecorder()
+	h.ExecuteMigration(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var run cutover.MigrationExecutionRun
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&run))
+	assert.True(t, run.Summary.Resumed)
+	assert.Equal(t, 1, run.Summary.ResumedStepCount)
+	require.Len(t, executor.calls, 1)
+	assert.Equal(t, cutover.KindContacts, executor.calls[0].Kind)
+}
+
 func TestExecuteMigrationHandlerRejectsNotReadyPlan(t *testing.T) {
 	executor := &fakeMigrationStepExecutor{}
 	h := &Handlers{migrationExecutor: executor}
@@ -347,6 +454,52 @@ func TestExecuteMigrationHandlerRejectsInvalidRequest(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 	assert.Contains(t, w.Body.String(), "at least one migration file is required")
+}
+
+func TestMigrationExecutionRunHandlersListAndGetSavedRuns(t *testing.T) {
+	store := &fakeMigrationRunStore{
+		listRuns: []cutover.MigrationExecutionRun{{
+			ID:      "run-1",
+			Summary: cutover.MigrationExecutionRunSummary{Status: "succeeded", StepCount: 1, SucceededStepCount: 1},
+		}},
+		getRun: &cutover.MigrationExecutionRun{
+			ID:      "run-1",
+			Summary: cutover.MigrationExecutionRunSummary{Status: "succeeded", StepCount: 1, SucceededStepCount: 1},
+		},
+	}
+	h := &Handlers{migrationRunStore: store}
+
+	listReq := withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/migration/execution-runs?status=succeeded&limit=10", nil, createTestClaims("user-1", "user@example.com", "tenant-1", "admin")), map[string]string{"tenantID": "tenant-1"})
+	listW := httptest.NewRecorder()
+	h.ListMigrationExecutionRuns(listW, listReq)
+
+	require.Equal(t, http.StatusOK, listW.Code, listW.Body.String())
+	var runs []cutover.MigrationExecutionRun
+	require.NoError(t, json.NewDecoder(listW.Body).Decode(&runs))
+	require.Len(t, runs, 1)
+	assert.Equal(t, "run-1", runs[0].ID)
+	assert.Equal(t, "succeeded", store.lastFilter.Status)
+	assert.Equal(t, 10, store.lastFilter.Limit)
+
+	getReq := withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/migration/execution-runs/run-1", nil, createTestClaims("user-1", "user@example.com", "tenant-1", "admin")), map[string]string{"tenantID": "tenant-1", "runID": "run-1"})
+	getW := httptest.NewRecorder()
+	h.GetMigrationExecutionRun(getW, getReq)
+
+	require.Equal(t, http.StatusOK, getW.Code, getW.Body.String())
+	var run cutover.MigrationExecutionRun
+	require.NoError(t, json.NewDecoder(getW.Body).Decode(&run))
+	assert.Equal(t, "run-1", run.ID)
+}
+
+func TestGetMigrationExecutionRunHandlerReturnsNotFound(t *testing.T) {
+	h := &Handlers{migrationRunStore: &fakeMigrationRunStore{getErr: cutover.ErrMigrationExecutionRunNotFound}}
+	req := withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/migration/execution-runs/missing", nil, createTestClaims("user-1", "user@example.com", "tenant-1", "admin")), map[string]string{"tenantID": "tenant-1", "runID": "missing"})
+
+	w := httptest.NewRecorder()
+	h.GetMigrationExecutionRun(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "migration execution run not found")
 }
 
 func executeMigrationRequest(body cutover.ExecuteMigrationRequest) *http.Request {

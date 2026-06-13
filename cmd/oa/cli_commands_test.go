@@ -4452,6 +4452,120 @@ func TestCLIMigrationExecuteResumesRunFile(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"succeeded_step_count": 2`)
 }
 
+func TestCLIMigrationRunsListAndGet(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	savedRun := cutover.MigrationExecutionRun{
+		ID: "run-1",
+		Summary: cutover.MigrationExecutionRunSummary{
+			Status:             "succeeded",
+			Confirmed:          true,
+			StepCount:          1,
+			SucceededStepCount: 1,
+		},
+		Steps: []cutover.MigrationExecutionStepRun{{
+			StepNumber: 1,
+			Kind:       cutover.KindAccounts,
+			FileName:   "accounts.csv",
+			Status:     cutover.MigrationExecutionResultSucceeded,
+		}},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/migration/execution-runs":
+			require.Equal(t, http.MethodGet, r.Method)
+			assert.Equal(t, "succeeded", r.URL.Query().Get("status"))
+			assert.Equal(t, "10", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]cutover.MigrationExecutionRun{savedRun})
+		case "/api/v1/tenants/tenant-1/migration/execution-runs/run-1":
+			require.Equal(t, http.MethodGet, r.Method)
+			_ = json.NewEncoder(w).Encode(savedRun)
+		default:
+			t.Fatalf("unexpected request: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"migration", "runs", "list", "--status", "succeeded", "--limit", "10"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "run-1")
+	assert.Contains(t, stdout.String(), "succeeded")
+
+	app, stdout, _ = newTestCLIApp()
+	err = app.run(context.Background(), []string{"migration", "runs", "get", "--json", "run-1"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "run-1"`)
+	assert.Contains(t, stdout.String(), `"succeeded_step_count": 1`)
+}
+
+func TestCLIMigrationRunsBranches(t *testing.T) {
+	savedRun := cutover.MigrationExecutionRun{
+		ID: "run-table",
+		Summary: cutover.MigrationExecutionRunSummary{
+			Status:             "succeeded",
+			Confirmed:          true,
+			StepCount:          1,
+			SucceededStepCount: 1,
+		},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/migration/execution-runs":
+			require.Equal(t, http.MethodGet, r.Method)
+			if r.URL.Query().Get("status") == "fail" {
+				http.Error(w, `{"error":"failed"}`, http.StatusInternalServerError)
+				return
+			}
+			assert.Empty(t, r.URL.Query().Get("status"))
+			assert.Empty(t, r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]cutover.MigrationExecutionRun{savedRun})
+		case "/api/v1/tenants/tenant-1/migration/execution-runs/run-table":
+			require.Equal(t, http.MethodGet, r.Method)
+			_ = json.NewEncoder(w).Encode(savedRun)
+		case "/api/v1/tenants/tenant-1/migration/execution-runs/error":
+			http.Error(w, `{"error":"failed"}`, http.StatusInternalServerError)
+		default:
+			t.Fatalf("unexpected request: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	app, stdout, _ := newTestCLIApp()
+	client := newAPIClient(server.URL, "oa_saved_token")
+	cfg := &cliConfig{TenantID: "tenant-1"}
+	ctx := context.Background()
+
+	require.EqualError(t, app.runMigrationRuns(ctx, cfg, client, nil), "migration runs subcommand required")
+	require.ErrorContains(t, app.runMigrationRuns(ctx, cfg, client, []string{"unknown"}), `unknown migration runs subcommand "unknown"`)
+	require.Error(t, app.runMigrationRuns(ctx, cfg, client, []string{"list", "--unknown"}))
+	require.Error(t, app.runMigrationRuns(ctx, cfg, client, []string{"get", "--unknown"}))
+	require.EqualError(t, app.runMigrationRuns(ctx, cfg, client, []string{"get"}), "migration run id is required")
+	require.Error(t, app.runMigrationRuns(ctx, cfg, client, []string{"list", "--status", "fail", "--limit", "0"}))
+	require.Error(t, app.runMigrationRuns(ctx, cfg, client, []string{"get", "--id", "error"}))
+
+	require.NoError(t, app.runMigrationRuns(ctx, cfg, client, []string{"list", "--limit", "0", "--json"}))
+	assert.Contains(t, stdout.String(), `"id": "run-table"`)
+
+	app, stdout, _ = newTestCLIApp()
+	require.NoError(t, app.runMigrationRuns(ctx, cfg, client, []string{"get", "--id", "run-table"}))
+	assert.Contains(t, stdout.String(), "Migration execution")
+	assert.Contains(t, stdout.String(), "succeeded")
+}
+
 func TestCLIMigrationExecuteSafetyBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{

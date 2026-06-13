@@ -214,6 +214,26 @@ func printMigrationExecutionRun(w io.Writer, run *migrationExecutionRun) {
 	printMigrationRemediationActions(w, run.RemediationActions)
 }
 
+func printMigrationExecutionRunsTable(w io.Writer, runs []cutover.MigrationExecutionRun) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tSTATUS\tCONFIRMED\tSTEPS\tSUCCEEDED\tFAILED\tRESUMED\tUPDATED")
+	for _, run := range runs {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%t\t%d\t%d\t%d\t%d\t%s\n",
+			run.ID,
+			run.Summary.Status,
+			run.Summary.Confirmed,
+			run.Summary.StepCount,
+			run.Summary.SucceededStepCount,
+			run.Summary.FailedStepCount,
+			run.Summary.ResumedStepCount,
+			formatTimePtr(run.UpdatedAt),
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printMigrationRemediationActions(w io.Writer, actions []cutover.MigrationRemediationAction) {
 	if len(actions) == 0 {
 		return

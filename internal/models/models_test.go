@@ -611,6 +611,13 @@ func TestPluginMigration_TableName(t *testing.T) {
 	}
 }
 
+func TestMigrationExecutionRunRecord_TableName(t *testing.T) {
+	run := MigrationExecutionRunRecord{}
+	if run.TableName() != "migration_execution_runs" {
+		t.Errorf("expected migration_execution_runs, got %s", run.TableName())
+	}
+}
+
 // Test recurring.go types
 func TestFrequency_Constants(t *testing.T) {
 	tests := []struct {
