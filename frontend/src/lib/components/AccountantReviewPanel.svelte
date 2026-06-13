@@ -229,6 +229,10 @@
 		return action.source === 'documents' && action.code === 'document_review_pending' && Boolean(action.documentId);
 	}
 
+	function canApproveAssignmentPayroll(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'payroll' && action.code === 'payroll_run_approve' && Boolean(action.entityId);
+	}
+
 	function isReviewDirty(transaction: BankTransaction): boolean {
 		const draft = reviewDrafts[transaction.id];
 		if (!draft) {
@@ -286,6 +290,29 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentDocumentApproveError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function approveAssignmentPayroll(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.approvePayroll(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentPayrollApproved();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentPayrollApproveError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -552,6 +579,18 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: m.dashboard_reviewAssignmentsApproveDocument()}
+										</button>
+									{/if}
+									{#if canApproveAssignmentPayroll(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => approveAssignmentPayroll(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsApprovePayroll()}
 										</button>
 									{/if}
 									{#if assignmentCompletionErrorId === action.id}
