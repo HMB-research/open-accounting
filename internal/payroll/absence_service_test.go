@@ -18,11 +18,19 @@ import (
 
 type fakeLeaveEvidenceEvaluator struct {
 	compliant bool
+	err       error
+	results   []documents.EvidencePolicyResult
 	request   *documents.EvidencePolicyRequest
 }
 
 func (f *fakeLeaveEvidenceEvaluator) EvaluateEvidencePolicy(_ context.Context, _, _ string, req *documents.EvidencePolicyRequest) ([]documents.EvidencePolicyResult, error) {
 	f.request = req
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.results != nil {
+		return f.results, nil
+	}
 	return []documents.EvidencePolicyResult{{
 		EntityType: req.EntityType,
 		EntityID:   req.EntityIDs[0],
@@ -39,6 +47,26 @@ func TestNewAbsenceService(t *testing.T) {
 	assert.NotNil(t, service)
 	assert.Equal(t, repo, service.repo)
 	assert.Equal(t, uuidGen, service.uuid)
+}
+
+func TestNewAbsenceServiceWithPool_NilPool(t *testing.T) {
+	service := NewAbsenceServiceWithPool(nil)
+
+	require.NotNil(t, service)
+	assert.Nil(t, service.repo)
+	assert.IsType(t, &DefaultUUIDGenerator{}, service.uuid)
+	assert.Nil(t, service.evidence)
+}
+
+func TestNewAbsenceServiceWithPoolAndEvidence_NilPool(t *testing.T) {
+	evidence := &fakeLeaveEvidenceEvaluator{}
+
+	service := NewAbsenceServiceWithPoolAndEvidence(nil, evidence)
+
+	require.NotNil(t, service)
+	assert.Nil(t, service.repo)
+	assert.IsType(t, &DefaultUUIDGenerator{}, service.uuid)
+	assert.Equal(t, evidence, service.evidence)
 }
 
 func TestListAbsenceTypes_Success(t *testing.T) {
@@ -166,6 +194,19 @@ func TestGetLeaveBalances_Success(t *testing.T) {
 	assert.True(t, balances[0].EntitledDays.Equal(decimal.NewFromInt(28)))
 }
 
+func TestGetLeaveBalances_RepositoryError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.ListLeaveBalancesErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.GetLeaveBalances(ctx, "test_schema", "tenant-1", "emp-1", 2025)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list leave balances")
+}
+
 func TestGetLeaveBalance_Success(t *testing.T) {
 	repo := NewMockAbsenceRepository()
 	uuidGen := &MockUUIDGenerator{prefix: "test"}
@@ -187,6 +228,19 @@ func TestGetLeaveBalance_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.True(t, balance.EntitledDays.Equal(decimal.NewFromInt(28)))
+}
+
+func TestGetLeaveBalance_RepositoryError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.GetLeaveBalanceErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.GetLeaveBalance(ctx, "test_schema", "tenant-1", "emp-1", "type-1", 2025)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get leave balance")
 }
 
 func TestCreateLeaveRecord_Success(t *testing.T) {
@@ -286,6 +340,11 @@ func TestCreateLeaveRecord_ValidationErrors(t *testing.T) {
 			req:     &CreateLeaveRecordRequest{EmployeeID: "emp-1", AbsenceTypeID: "type-1", StartDate: startDate, EndDate: endDate, WorkingDays: decimal.Zero},
 			wantErr: "working days must be positive",
 		},
+		{
+			name:    "negative working days",
+			req:     &CreateLeaveRecordRequest{EmployeeID: "emp-1", AbsenceTypeID: "type-1", StartDate: startDate, EndDate: endDate, WorkingDays: decimal.NewFromInt(-1)},
+			wantErr: "working days must be positive",
+		},
 	}
 
 	for _, tt := range tests {
@@ -335,6 +394,78 @@ func TestCreateLeaveRecord_InsufficientBalance(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Equal(t, ErrInsufficientLeaveBalance, err)
+}
+
+func TestCreateLeaveRecord_ErrorBranches(t *testing.T) {
+	ctx := context.Background()
+	startDate := time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 7, 5, 0, 0, 0, 0, time.UTC)
+	validReq := func() *CreateLeaveRecordRequest {
+		return &CreateLeaveRecordRequest{
+			EmployeeID:    "emp-1",
+			AbsenceTypeID: "type-1",
+			StartDate:     startDate,
+			EndDate:       endDate,
+			TotalDays:     decimal.NewFromInt(5),
+			WorkingDays:   decimal.NewFromInt(5),
+		}
+	}
+
+	t.Run("absence type lookup error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.GetAbsenceTypeErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+		_, err := service.CreateLeaveRecord(ctx, "test_schema", "tenant-1", "user-1", validReq())
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get absence type")
+	})
+
+	t.Run("missing balance still creates record", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.AbsenceTypes["type-1"] = &AbsenceType{ID: "type-1", TenantID: "tenant-1"}
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+		record, err := service.CreateLeaveRecord(ctx, "test_schema", "tenant-1", "user-1", validReq())
+
+		require.NoError(t, err)
+		assert.Equal(t, LeavePending, record.Status)
+		assert.Len(t, repo.LeaveRecords, 1)
+	})
+
+	t.Run("balance update error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.AbsenceTypes["type-1"] = &AbsenceType{ID: "type-1", TenantID: "tenant-1"}
+		repo.LeaveBalances["tenant-1-emp-1-type-1-2025"] = &LeaveBalance{
+			ID:            "bal-1",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			AbsenceTypeID: "type-1",
+			Year:          2025,
+			EntitledDays:  decimal.NewFromInt(28),
+			RemainingDays: decimal.NewFromInt(28),
+		}
+		repo.UpdateLeaveBalanceErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+		_, err := service.CreateLeaveRecord(ctx, "test_schema", "tenant-1", "user-1", validReq())
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update leave balance")
+	})
+
+	t.Run("create leave record error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.AbsenceTypes["type-1"] = &AbsenceType{ID: "type-1", TenantID: "tenant-1"}
+		repo.CreateLeaveRecordErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+		_, err := service.CreateLeaveRecord(ctx, "test_schema", "tenant-1", "user-1", validReq())
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "create leave record")
+	})
 }
 
 func TestGetLeaveRecord_Success(t *testing.T) {
@@ -393,6 +524,19 @@ func TestListLeaveRecords_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, records, 2)
+}
+
+func TestListLeaveRecords_RepositoryError(t *testing.T) {
+	repo := NewMockAbsenceRepository()
+	repo.ListLeaveRecordsErr = errors.New("database error")
+	uuidGen := &MockUUIDGenerator{prefix: "test"}
+	service := NewAbsenceService(repo, uuidGen)
+	ctx := context.Background()
+
+	_, err := service.ListLeaveRecords(ctx, "test_schema", "tenant-1", "emp-1", 2025)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list leave records")
 }
 
 func TestApproveLeaveRecord_Success(t *testing.T) {
@@ -527,6 +671,131 @@ func TestApproveLeaveRecord_NotPending(t *testing.T) {
 	assert.Equal(t, ErrLeaveRecordNotPending, err)
 }
 
+func TestApproveLeaveRecord_ErrorBranches(t *testing.T) {
+	ctx := context.Background()
+	pendingRecord := func() *LeaveRecord {
+		return &LeaveRecord{
+			ID:            "rec-1",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			AbsenceTypeID: "type-1",
+			StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+			WorkingDays:   decimal.NewFromInt(5),
+			Status:        LeavePending,
+		}
+	}
+
+	t.Run("record lookup error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.GetLeaveRecordErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get leave record")
+	})
+
+	t.Run("absence type lookup error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.GetAbsenceTypeErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get absence type")
+	})
+
+	t.Run("required document without evidence service", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.AbsenceTypes["type-1"] = &AbsenceType{ID: "type-1", TenantID: "tenant-1", RequiresDocument: true}
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+		require.ErrorIs(t, err, ErrApprovedLeaveDocumentRequired)
+		assert.Contains(t, err.Error(), "document evidence service is unavailable")
+	})
+
+	t.Run("evidence evaluation error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.AbsenceTypes["type-1"] = &AbsenceType{ID: "type-1", TenantID: "tenant-1", RequiresDocument: true}
+		evidence := &fakeLeaveEvidenceEvaluator{err: errors.New("service unavailable")}
+		service := NewAbsenceServiceWithEvidence(repo, &MockUUIDGenerator{prefix: "test"}, evidence)
+
+		_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "evaluate leave record evidence")
+	})
+
+	t.Run("evidence no results", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.AbsenceTypes["type-1"] = &AbsenceType{ID: "type-1", TenantID: "tenant-1", RequiresDocument: true}
+		evidence := &fakeLeaveEvidenceEvaluator{results: []documents.EvidencePolicyResult{}}
+		service := NewAbsenceServiceWithEvidence(repo, &MockUUIDGenerator{prefix: "test"}, evidence)
+
+		_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+		require.ErrorIs(t, err, ErrApprovedLeaveDocumentRequired)
+		assert.Contains(t, err.Error(), "before approving leave record rec-1")
+	})
+
+	t.Run("update record error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.AbsenceTypes["type-1"] = &AbsenceType{ID: "type-1", TenantID: "tenant-1"}
+		repo.UpdateLeaveRecordErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update leave record")
+	})
+
+	t.Run("missing balance still approves record", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.AbsenceTypes["type-1"] = &AbsenceType{ID: "type-1", TenantID: "tenant-1"}
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		record, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+		require.NoError(t, err)
+		assert.Equal(t, LeaveApproved, record.Status)
+	})
+
+	t.Run("balance update error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.AbsenceTypes["type-1"] = &AbsenceType{ID: "type-1", TenantID: "tenant-1"}
+		repo.LeaveBalances["tenant-1-emp-1-type-1-2025"] = &LeaveBalance{
+			ID:            "bal-1",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			AbsenceTypeID: "type-1",
+			Year:          2025,
+			EntitledDays:  decimal.NewFromInt(28),
+			PendingDays:   decimal.NewFromInt(2),
+			RemainingDays: decimal.NewFromInt(26),
+		}
+		repo.UpdateLeaveBalanceErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update leave balance")
+		assert.True(t, repo.LeaveBalances["tenant-1-emp-1-type-1-2025"].PendingDays.IsZero())
+	})
+}
+
 func TestRejectLeaveRecord_Success(t *testing.T) {
 	repo := NewMockAbsenceRepository()
 	uuidGen := &MockUUIDGenerator{prefix: "test"}
@@ -585,6 +854,78 @@ func TestRejectLeaveRecord_NotPending(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Equal(t, ErrLeaveRecordNotPending, err)
+}
+
+func TestRejectLeaveRecord_ErrorBranches(t *testing.T) {
+	ctx := context.Background()
+	pendingRecord := func() *LeaveRecord {
+		return &LeaveRecord{
+			ID:            "rec-1",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			AbsenceTypeID: "type-1",
+			StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+			WorkingDays:   decimal.NewFromInt(5),
+			Status:        LeavePending,
+		}
+	}
+
+	t.Run("record lookup error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.GetLeaveRecordErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.RejectLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "manager-1", "reason")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get leave record")
+	})
+
+	t.Run("update record error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.UpdateLeaveRecordErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.RejectLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "manager-1", "reason")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update leave record")
+	})
+
+	t.Run("missing balance still rejects record", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		record, err := service.RejectLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "manager-1", "reason")
+
+		require.NoError(t, err)
+		assert.Equal(t, LeaveRejected, record.Status)
+	})
+
+	t.Run("balance update error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.LeaveBalances["tenant-1-emp-1-type-1-2025"] = &LeaveBalance{
+			ID:            "bal-1",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			AbsenceTypeID: "type-1",
+			Year:          2025,
+			EntitledDays:  decimal.NewFromInt(28),
+			PendingDays:   decimal.NewFromInt(2),
+			RemainingDays: decimal.NewFromInt(26),
+		}
+		repo.UpdateLeaveBalanceErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.RejectLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "manager-1", "reason")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update leave balance")
+		assert.True(t, repo.LeaveBalances["tenant-1-emp-1-type-1-2025"].PendingDays.IsZero())
+	})
 }
 
 func TestCancelLeaveRecord_Pending(t *testing.T) {
@@ -683,6 +1024,105 @@ func TestCancelLeaveRecord_AlreadyRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "can only cancel pending or approved")
 }
 
+func TestCancelLeaveRecord_ErrorBranches(t *testing.T) {
+	ctx := context.Background()
+	pendingRecord := func() *LeaveRecord {
+		return &LeaveRecord{
+			ID:            "rec-1",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			AbsenceTypeID: "type-1",
+			StartDate:     time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+			WorkingDays:   decimal.NewFromInt(5),
+			Status:        LeavePending,
+		}
+	}
+
+	t.Run("record lookup error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.GetLeaveRecordErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get leave record")
+	})
+
+	t.Run("update record error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.UpdateLeaveRecordErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update leave record")
+	})
+
+	t.Run("missing balance still cancels record", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		record, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
+
+		require.NoError(t, err)
+		assert.Equal(t, LeaveCanceled, record.Status)
+	})
+
+	t.Run("pending balance update error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveRecords["rec-1"] = pendingRecord()
+		repo.LeaveBalances["tenant-1-emp-1-type-1-2025"] = &LeaveBalance{
+			ID:            "bal-1",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			AbsenceTypeID: "type-1",
+			Year:          2025,
+			EntitledDays:  decimal.NewFromInt(28),
+			PendingDays:   decimal.NewFromInt(2),
+			UsedDays:      decimal.Zero,
+			RemainingDays: decimal.NewFromInt(26),
+		}
+		repo.UpdateLeaveBalanceErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update leave balance")
+		assert.True(t, repo.LeaveBalances["tenant-1-emp-1-type-1-2025"].PendingDays.IsZero())
+	})
+
+	t.Run("approved balance update error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		record := pendingRecord()
+		record.Status = LeaveApproved
+		repo.LeaveRecords["rec-1"] = record
+		repo.LeaveBalances["tenant-1-emp-1-type-1-2025"] = &LeaveBalance{
+			ID:            "bal-1",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			AbsenceTypeID: "type-1",
+			Year:          2025,
+			EntitledDays:  decimal.NewFromInt(28),
+			PendingDays:   decimal.Zero,
+			UsedDays:      decimal.NewFromInt(2),
+			RemainingDays: decimal.NewFromInt(26),
+		}
+		repo.UpdateLeaveBalanceErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.CancelLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "emp-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update leave balance")
+		assert.True(t, repo.LeaveBalances["tenant-1-emp-1-type-1-2025"].UsedDays.IsZero())
+	})
+}
+
 func TestInitializeEmployeeLeaveBalances_Success(t *testing.T) {
 	repo := NewMockAbsenceRepository()
 	uuidGen := &MockUUIDGenerator{prefix: "bal"}
@@ -749,6 +1189,38 @@ func TestInitializeEmployeeLeaveBalances_ExistingBalance(t *testing.T) {
 	assert.True(t, balances[0].EntitledDays.Equal(decimal.NewFromInt(30))) // Keep custom value
 }
 
+func TestInitializeEmployeeLeaveBalances_ErrorBranches(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("list absence types error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.ListAbsenceTypesErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "bal"})
+
+		_, err := service.InitializeEmployeeLeaveBalances(ctx, "test_schema", "tenant-1", "emp-1", 2025)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list absence types")
+	})
+
+	t.Run("create leave balance error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.AbsenceTypes["type-1"] = &AbsenceType{
+			ID:                 "type-1",
+			TenantID:           "tenant-1",
+			DefaultDaysPerYear: decimal.NewFromInt(28),
+			IsActive:           true,
+		}
+		repo.CreateLeaveBalanceErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "bal"})
+
+		_, err := service.InitializeEmployeeLeaveBalances(ctx, "test_schema", "tenant-1", "emp-1", 2025)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "create leave balance")
+	})
+}
+
 func TestUpdateLeaveBalance_Success(t *testing.T) {
 	repo := NewMockAbsenceRepository()
 	uuidGen := &MockUUIDGenerator{prefix: "test"}
@@ -784,4 +1256,44 @@ func TestUpdateLeaveBalance_Success(t *testing.T) {
 	assert.True(t, balance.CarryoverDays.Equal(decimal.NewFromInt(5)))
 	assert.True(t, balance.RemainingDays.Equal(decimal.NewFromInt(35))) // 30 + 5 - 0 - 0
 	assert.Equal(t, "Adjusted for seniority", balance.Notes)
+}
+
+func TestUpdateLeaveBalance_ErrorBranches(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("lookup error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.GetLeaveBalanceErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.UpdateLeaveBalance(ctx, "test_schema", "tenant-1", "emp-1", "type-1", 2025, &UpdateLeaveBalanceRequest{})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get leave balance")
+	})
+
+	t.Run("update error", func(t *testing.T) {
+		repo := NewMockAbsenceRepository()
+		repo.LeaveBalances["tenant-1-emp-1-type-1-2025"] = &LeaveBalance{
+			ID:            "bal-1",
+			TenantID:      "tenant-1",
+			EmployeeID:    "emp-1",
+			AbsenceTypeID: "type-1",
+			Year:          2025,
+			EntitledDays:  decimal.NewFromInt(28),
+			CarryoverDays: decimal.NewFromInt(2),
+			UsedDays:      decimal.NewFromInt(4),
+			PendingDays:   decimal.NewFromInt(1),
+			RemainingDays: decimal.NewFromInt(25),
+			Notes:         "existing note",
+		}
+		repo.UpdateLeaveBalanceErr = errors.New("database error")
+		service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "test"})
+
+		_, err := service.UpdateLeaveBalance(ctx, "test_schema", "tenant-1", "emp-1", "type-1", 2025, &UpdateLeaveBalanceRequest{})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update leave balance")
+		assert.Equal(t, "existing note", repo.LeaveBalances["tenant-1-emp-1-type-1-2025"].Notes)
+	})
 }
