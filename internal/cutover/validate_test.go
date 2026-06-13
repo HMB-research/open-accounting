@@ -489,6 +489,42 @@ func TestValidateBundleReportsGroupedDocumentPreservedIDIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindQuotes, "id", "id must be a valid UUID")
 }
 
+func TestValidateBundleReportsMissingCommercialRequiredDateColumn(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-1,SALES,CUST-1,2026-05-30,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindInvoices, report.Issues[0].Kind)
+	assert.Contains(t, report.Issues[0].Message, "missing required column group: due_date")
+}
+
+func TestValidateBundleReportsBlankCommercialRequiredDate(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-1,SALES,CUST-1,,2026-06-14,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindInvoices, "issue_date", "issue_date is required")
+}
+
 func TestValidateBundleReportsCommercialDocumentRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
