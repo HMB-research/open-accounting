@@ -381,6 +381,26 @@ func TestValidateBundleRequiresInvoiceTypeForCSVInvoices(t *testing.T) {
 	assert.Contains(t, report.Issues[0].Message, "missing required column group: invoice_type")
 }
 
+func TestValidateBundleReportsBlankInvoiceType(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-1,,CUST-1,2026-05-30,2026-06-14,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindInvoices, report.Issues[0].Kind)
+	assert.Equal(t, "invoice_type", report.Issues[0].Field)
+	assert.Equal(t, "invoice_type is required", report.Issues[0].Message)
+}
+
 func TestValidateBundleReportsGroupedInvoiceHeaderConflicts(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
