@@ -29,9 +29,10 @@ Full local baseline last completed on 2026-06-08. On 2026-06-12, the current bra
 - `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage` passes against a fresh PostgreSQL database after applying all migrations
 - `cd frontend && bun run lint` passes
 - `cd frontend && bun run check:prepared` passes with 0 errors and 0 warnings
-- `cd frontend && bun run test:prepared` passes with 31 files and 569 tests
+- `cd frontend && bun run test:prepared` passes with 32 files and 572 tests
 - `cd frontend && bun run test:prepared -- AccountantReviewPanel.test.ts AccountantPortfolioPanel.test.ts review-workspace.test.ts api.test.ts` passes targeted accountant workspace assignment queue, expense frontend follow-up, expense assignment completion, document assignment approval, payroll assignment approval, payroll payment-date assignment, payroll TSD assignment generation, close assignment completion, and KMD assignment execution coverage
 - `cd frontend && bun run build:prepared` passes, with the existing large-chunk warning
+- `cd frontend && bun run test:prepared -- MigrationWorkbench.test.ts` passes focused dashboard-side migration workbench coverage for bundle assembly, planning, saved-run monitoring, and resume-by-ID execution
 - `cd frontend && BASE_URL=http://localhost:5174 PUBLIC_API_URL=http://localhost:18081 DEMO_RESET_SECRET=test-demo-secret bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/quotes.spec.ts e2e/demo/orders.spec.ts --workers=1` passes with auth setup plus quote and order delivery workflows
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment with 8 passed
 - `cd frontend && bun run test:e2e` passes against a fresh locally seeded demo environment with 260 passed and 12 intentionally skipped reset tests under `CI=true`
@@ -140,7 +141,7 @@ Still not done:
 
 ## Immediate Priorities
 
-1. Extend historical migration beyond guarded CLI/server-side execution, resume snapshots, and saved run records into richer dashboard-side incumbent-system cutover launch/monitor controls and additional provider presets, building on the migration bundle preflight validator.
+1. Extend historical migration beyond guarded CLI/server-side execution, resume snapshots, saved run records, and the dashboard migration workbench into richer progress telemetry, accountant-workspace launch handoff, and additional provider presets, building on the migration bundle preflight validator.
 2. Extend remediation actions beyond year-end close, migration preflight, KMD tax, TSD declarations, payroll runs, banking transactions, expense claims, and document evidence/retention into remaining non-KMD tax/payroll edges and accountant-workspace follow-up surfaces.
 3. Add more automated workflow blocks on top of document evidence-policy evaluation beyond reconciliation, fixed-asset activation/disposal, expense receipts, and year-end close packs.
 4. Add broader auth administration controls and remaining auth hardening.
