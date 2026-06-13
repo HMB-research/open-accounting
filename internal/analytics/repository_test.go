@@ -173,7 +173,7 @@ func TestGORMRepository_LimitGuardsDoNotRequireDatabase(t *testing.T) {
 	assert.Empty(t, activity)
 }
 
-func TestInvoiceActivityAction(t *testing.T) {
+func TestInvoiceActivityActionUnitCases(t *testing.T) {
 	tests := []struct {
 		name   string
 		status models.InvoiceStatus
