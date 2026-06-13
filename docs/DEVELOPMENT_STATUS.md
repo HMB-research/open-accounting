@@ -1,6 +1,6 @@
 # Open Accounting Development Status
 
-> Last updated: 2026-06-12
+> Last updated: 2026-06-13
 > This is the current-state status document. Historical plan docs may be more optimistic than what is verified here.
 
 ## Status Definitions
@@ -15,11 +15,12 @@
 
 ## Verified Engineering Baseline
 
-Full local baseline last completed on 2026-06-08. On 2026-06-12, the current branch was revalidated locally for quote/order delivery, migration compatibility, CLI coverage, documentation, recent frontend stage gates, historical TSD import, inventory lot reporting, and lot/serial/expiry-preserving inventory transfers; PR #62 CI run `27385096250` at commit `1737a54` revalidated lint, backend tests with CLI coverage enforcement, integration shards, frontend lint/check/test/build, smoke E2E, build, and all four seeded demo E2E shards:
+Full local baseline last completed on 2026-06-08. On 2026-06-12, the current branch was revalidated locally for quote/order delivery, migration compatibility, CLI coverage, documentation, recent frontend stage gates, historical TSD import, inventory lot reporting, and lot/serial/expiry-preserving inventory transfers. On 2026-06-13, the payroll-history-import branch was revalidated locally after employee import, payroll history import, leave balance import, TSD history import, absence repository, payroll TSD repository, and absence service constructor coverage stages; PR #62 CI run `27456883760` at commit `88157da` revalidated lint, backend tests with CLI coverage enforcement, integration shards, frontend lint/check/test/build, smoke E2E, build, and all four seeded demo E2E shards:
 
 - `make test-backend-coverage` passes without requiring PostgreSQL and enforces `cmd/oa` at 100.0% statement coverage from the same backend coverage profile
 - `make test-cli-coverage` passes as the focused CLI-only coverage gate
 - `go test -timeout=3m ./docs -count=1` passes
+- `go test -tags=integration ./internal/payroll -count=1` passes with the current payroll history import and leave/absence repository coverage
 - `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable go test -tags=integration ./cmd/migrate -run TestEmailTemplateTypeMigrationAllowsQuoteAndOrderTemplates -count=1` passes
 - `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable go test -tags=integration ./internal/email -run TestGORMRepository_ListTemplates_MultipleTemplates -count=1` passes
 - `DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable INTEGRATION_SHARD=2 INTEGRATION_SHARDS=4 make test-integration-coverage` passes
