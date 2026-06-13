@@ -835,6 +835,95 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 	}
 }
 
+func TestRepository_LotReservations(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewGORMRepository(pool)
+	ctx := context.Background()
+
+	product := &Product{
+		ID:             uuid.New().String(),
+		TenantID:       tenant.ID,
+		Code:           "PRD-LOT-RES",
+		Name:           "Lot Reserved Product",
+		ProductType:    ProductTypeGoods,
+		Unit:           "pcs",
+		PurchasePrice:  decimal.NewFromFloat(10.00),
+		SalesPrice:     decimal.NewFromFloat(15.00),
+		VATRate:        decimal.NewFromFloat(22.00),
+		TrackInventory: true,
+		IsActive:       true,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	if err := repo.CreateProduct(ctx, tenant.SchemaName, product); err != nil {
+		t.Fatalf("CreateProduct failed: %v", err)
+	}
+
+	warehouse := &Warehouse{
+		ID:        uuid.New().String(),
+		TenantID:  tenant.ID,
+		Code:      "WH-LOT-RES",
+		Name:      "Lot Reservation Warehouse",
+		IsActive:  true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := repo.CreateWarehouse(ctx, tenant.SchemaName, warehouse); err != nil {
+		t.Fatalf("CreateWarehouse failed: %v", err)
+	}
+
+	first := &InventoryLotReservation{
+		ID:          uuid.New().String(),
+		TenantID:    tenant.ID,
+		ProductID:   product.ID,
+		WarehouseID: warehouse.ID,
+		LotNumber:   "LOT-2026-01",
+		ExpiryDate:  "2027-01-31",
+		Quantity:    decimal.NewFromInt(3),
+		Reason:      "sales order",
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		CreatedBy:   uuid.New().String(),
+	}
+	if err := repo.UpsertLotReservation(ctx, tenant.SchemaName, first); err != nil {
+		t.Fatalf("UpsertLotReservation create failed: %v", err)
+	}
+	second := *first
+	second.ID = uuid.New().String()
+	second.Quantity = decimal.NewFromInt(2)
+	second.Reason = "second order"
+	second.UpdatedAt = time.Now()
+	if err := repo.UpsertLotReservation(ctx, tenant.SchemaName, &second); err != nil {
+		t.Fatalf("UpsertLotReservation increment failed: %v", err)
+	}
+
+	reservations, err := repo.ListLotReservations(ctx, tenant.SchemaName, tenant.ID, product.ID, warehouse.ID)
+	if err != nil {
+		t.Fatalf("ListLotReservations failed: %v", err)
+	}
+	if len(reservations) != 1 {
+		t.Fatalf("expected one lot reservation, got %d", len(reservations))
+	}
+	if !reservations[0].Quantity.Equal(decimal.NewFromInt(5)) {
+		t.Errorf("expected reserved quantity 5, got %s", reservations[0].Quantity)
+	}
+
+	released, err := repo.ReleaseLotReservation(ctx, tenant.SchemaName, tenant.ID, product.ID, warehouse.ID, "LOT-2026-01", "", "2027-01-31", decimal.NewFromInt(4), "packed", uuid.New().String())
+	if err != nil {
+		t.Fatalf("ReleaseLotReservation failed: %v", err)
+	}
+	if !released.Quantity.Equal(decimal.NewFromInt(1)) {
+		t.Errorf("expected remaining quantity 1, got %s", released.Quantity)
+	}
+
+	_, err = repo.ReleaseLotReservation(ctx, tenant.SchemaName, tenant.ID, product.ID, warehouse.ID, "LOT-2026-01", "", "2027-01-31", decimal.NewFromInt(2), "over-release", uuid.New().String())
+	if err == nil {
+		t.Fatal("expected over-release error")
+	}
+}
+
 func TestRepository_UpdateProductStock(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

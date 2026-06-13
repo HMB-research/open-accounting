@@ -7526,6 +7526,9 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		productID := fs.String("product-id", "", "Product id")
 		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
 		quantityFlag := fs.String("quantity", "", "Quantity to reserve")
+		lotNumber := fs.String("lot-number", "", "Lot or batch number")
+		serialNumber := fs.String("serial-number", "", "Serial number")
+		expiryDate := fs.String("expiry-date", "", "Expiry date in YYYY-MM-DD")
 		reason := fs.String("reason", "", "Reservation reason")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -7551,10 +7554,13 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		}
 
 		level, err := client.reserveStock(ctx, cfg.TenantID, &inventory.StockReservationRequest{
-			ProductID:   productIDValue,
-			WarehouseID: warehouseIDValue,
-			Quantity:    quantity.String(),
-			Reason:      strings.TrimSpace(*reason),
+			ProductID:    productIDValue,
+			WarehouseID:  warehouseIDValue,
+			Quantity:     quantity.String(),
+			LotNumber:    strings.TrimSpace(*lotNumber),
+			SerialNumber: strings.TrimSpace(*serialNumber),
+			ExpiryDate:   strings.TrimSpace(*expiryDate),
+			Reason:       strings.TrimSpace(*reason),
 		})
 		if err != nil {
 			return err
@@ -7571,6 +7577,9 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		productID := fs.String("product-id", "", "Product id")
 		warehouseID := fs.String("warehouse-id", "", "Warehouse id")
 		quantityFlag := fs.String("quantity", "", "Quantity to release")
+		lotNumber := fs.String("lot-number", "", "Lot or batch number")
+		serialNumber := fs.String("serial-number", "", "Serial number")
+		expiryDate := fs.String("expiry-date", "", "Expiry date in YYYY-MM-DD")
 		reason := fs.String("reason", "", "Release reason")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -7596,10 +7605,13 @@ func (a *cliApp) runInventory(ctx context.Context, args []string) error {
 		}
 
 		level, err := client.releaseStock(ctx, cfg.TenantID, &inventory.StockReservationRequest{
-			ProductID:   productIDValue,
-			WarehouseID: warehouseIDValue,
-			Quantity:    quantity.String(),
-			Reason:      strings.TrimSpace(*reason),
+			ProductID:    productIDValue,
+			WarehouseID:  warehouseIDValue,
+			Quantity:     quantity.String(),
+			LotNumber:    strings.TrimSpace(*lotNumber),
+			SerialNumber: strings.TrimSpace(*serialNumber),
+			ExpiryDate:   strings.TrimSpace(*expiryDate),
+			Reason:       strings.TrimSpace(*reason),
 		})
 		if err != nil {
 			return err

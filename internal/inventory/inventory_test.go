@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -25,28 +26,30 @@ func inventoryStockLevelKey(productID, warehouseID string) string {
 
 // MockRepository is a mock implementation of Repository for testing
 type MockRepository struct {
-	mu             sync.RWMutex
-	Products       map[string]*Product
-	Categories     map[string]*ProductCategory
-	Warehouses     map[string]*Warehouse
-	StockLevels    map[string]*StockLevel // key: productID-warehouseID
-	Movements      map[string][]InventoryMovement
-	ProductCodeSeq int
-	ErrOnCreate    bool
-	ErrOnGet       bool
-	ErrOnUpdate    bool
-	ErrOnDelete    bool
+	mu              sync.RWMutex
+	Products        map[string]*Product
+	Categories      map[string]*ProductCategory
+	Warehouses      map[string]*Warehouse
+	StockLevels     map[string]*StockLevel // key: productID-warehouseID
+	Movements       map[string][]InventoryMovement
+	LotReservations map[string]*InventoryLotReservation
+	ProductCodeSeq  int
+	ErrOnCreate     bool
+	ErrOnGet        bool
+	ErrOnUpdate     bool
+	ErrOnDelete     bool
 }
 
 // NewMockRepository creates a new mock repository
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
-		Products:       make(map[string]*Product),
-		Categories:     make(map[string]*ProductCategory),
-		Warehouses:     make(map[string]*Warehouse),
-		StockLevels:    make(map[string]*StockLevel),
-		Movements:      make(map[string][]InventoryMovement),
-		ProductCodeSeq: 0,
+		Products:        make(map[string]*Product),
+		Categories:      make(map[string]*ProductCategory),
+		Warehouses:      make(map[string]*Warehouse),
+		StockLevels:     make(map[string]*StockLevel),
+		Movements:       make(map[string][]InventoryMovement),
+		LotReservations: make(map[string]*InventoryLotReservation),
+		ProductCodeSeq:  0,
 	}
 }
 
@@ -266,6 +269,64 @@ func (r *MockRepository) UpsertStockLevel(ctx context.Context, schemaName string
 	key := level.ProductID + "-" + level.WarehouseID
 	r.StockLevels[key] = level
 	return nil
+}
+
+func inventoryLotReservationKey(productID, warehouseID, lotNumber, serialNumber, expiryDate string) string {
+	return strings.Join([]string{
+		productID,
+		warehouseID,
+		strings.TrimSpace(lotNumber),
+		strings.TrimSpace(serialNumber),
+		strings.TrimSpace(expiryDate),
+	}, "|")
+}
+
+func (r *MockRepository) ListLotReservations(ctx context.Context, schemaName, tenantID, productID, warehouseID string) ([]InventoryLotReservation, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []InventoryLotReservation
+	for _, reservation := range r.LotReservations {
+		if reservation.TenantID == tenantID &&
+			reservation.ProductID == productID &&
+			reservation.WarehouseID == warehouseID &&
+			reservation.Quantity.GreaterThan(decimal.Zero) {
+			result = append(result, *reservation)
+		}
+	}
+	return result, nil
+}
+
+func (r *MockRepository) UpsertLotReservation(ctx context.Context, schemaName string, reservation *InventoryLotReservation) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := inventoryLotReservationKey(reservation.ProductID, reservation.WarehouseID, reservation.LotNumber, reservation.SerialNumber, reservation.ExpiryDate)
+	existing := r.LotReservations[key]
+	if existing == nil {
+		copy := *reservation
+		r.LotReservations[key] = &copy
+		return nil
+	}
+	existing.Quantity = existing.Quantity.Add(reservation.Quantity)
+	existing.Reason = reservation.Reason
+	existing.UpdatedAt = reservation.UpdatedAt
+	existing.CreatedBy = reservation.CreatedBy
+	return nil
+}
+
+func (r *MockRepository) ReleaseLotReservation(ctx context.Context, schemaName, tenantID, productID, warehouseID, lotNumber, serialNumber, expiryDate string, quantity decimal.Decimal, reason, releasedBy string) (*InventoryLotReservation, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := inventoryLotReservationKey(productID, warehouseID, lotNumber, serialNumber, expiryDate)
+	reservation := r.LotReservations[key]
+	if reservation == nil || reservation.TenantID != tenantID || reservation.Quantity.LessThan(quantity) {
+		return nil, fmt.Errorf("tracked lot reservation not found")
+	}
+	reservation.Quantity = reservation.Quantity.Sub(quantity)
+	reservation.Reason = reason
+	reservation.UpdatedAt = time.Now()
+	reservation.CreatedBy = releasedBy
+	copy := *reservation
+	return &copy, nil
 }
 
 // Movements
@@ -1956,6 +2017,198 @@ func TestService_ReserveStock(t *testing.T) {
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(20)))
 }
 
+func TestService_ReserveStockTracksSpecificLot(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:             inventoryStockProductID,
+		TenantID:       "tenant-1",
+		Name:           "Widget",
+		ProductType:    ProductTypeGoods,
+		CurrentStock:   decimal.NewFromInt(10),
+		TrackInventory: true,
+	}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
+		TenantID: "tenant-1",
+		Name:     "Main",
+		IsActive: true,
+	}
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
+		Quantity:     decimal.NewFromInt(10),
+		ReservedQty:  decimal.NewFromInt(3),
+		AvailableQty: decimal.NewFromInt(7),
+	}
+	ts.repo.Movements[inventoryStockProductID] = []InventoryMovement{
+		{
+			ID:           "mov-lot-a",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.NewFromInt(10),
+			UnitCost:     decimal.RequireFromString("8.25"),
+			TotalCost:    decimal.RequireFromString("82.50"),
+			LotNumber:    "LOT-2026-01",
+			ExpiryDate:   "2027-01-31",
+		},
+	}
+	ts.repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-2026-01", "", "2027-01-31")] = &InventoryLotReservation{
+		ID:          "lot-res-1",
+		TenantID:    "tenant-1",
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
+		LotNumber:   "LOT-2026-01",
+		ExpiryDate:  "2027-01-31",
+		Quantity:    decimal.NewFromInt(3),
+	}
+
+	level, err := ts.svc.ReserveStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
+		Quantity:    "4",
+		LotNumber:   "LOT-2026-01",
+		ExpiryDate:  "2027-01-31",
+		Reason:      "Sales order allocation",
+		UserID:      "user-1",
+	})
+
+	require.NoError(t, err)
+	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(7)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(3)))
+	reservation := ts.repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-2026-01", "", "2027-01-31")]
+	require.NotNil(t, reservation)
+	assert.True(t, reservation.Quantity.Equal(decimal.NewFromInt(7)))
+	assert.Equal(t, "Sales order allocation", reservation.Reason)
+}
+
+func TestService_ReserveStockRejectsInsufficientTrackedLotAvailability(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:             inventoryStockProductID,
+		TenantID:       "tenant-1",
+		Name:           "Widget",
+		ProductType:    ProductTypeGoods,
+		CurrentStock:   decimal.NewFromInt(8),
+		TrackInventory: true,
+	}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
+		TenantID: "tenant-1",
+		Name:     "Main",
+		IsActive: true,
+	}
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
+		Quantity:     decimal.NewFromInt(8),
+		ReservedQty:  decimal.NewFromInt(4),
+		AvailableQty: decimal.NewFromInt(4),
+	}
+	ts.repo.Movements[inventoryStockProductID] = []InventoryMovement{
+		{
+			ID:           "mov-lot-a",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.NewFromInt(5),
+			LotNumber:    "LOT-2026-01",
+		},
+	}
+
+	_, err := ts.svc.ReserveStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
+		Quantity:    "2",
+		LotNumber:   "LOT-2026-01",
+		UserID:      "user-1",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "insufficient available tracked lot stock")
+	assert.Empty(t, ts.repo.LotReservations)
+	level := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
+	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(4)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(4)))
+}
+
+func TestService_ReserveStockAutoAllocatesTrackedLots(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:             inventoryStockProductID,
+		TenantID:       "tenant-1",
+		Name:           "Widget",
+		ProductType:    ProductTypeGoods,
+		CurrentStock:   decimal.NewFromInt(10),
+		TrackInventory: true,
+	}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
+		TenantID: "tenant-1",
+		Name:     "Main",
+		IsActive: true,
+	}
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
+		Quantity:     decimal.NewFromInt(10),
+		ReservedQty:  decimal.Zero,
+		AvailableQty: decimal.NewFromInt(10),
+	}
+	ts.repo.Movements[inventoryStockProductID] = []InventoryMovement{
+		{
+			ID:           "mov-late",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.NewFromInt(5),
+			LotNumber:    "LOT-B",
+			ExpiryDate:   "2027-06-30",
+		},
+		{
+			ID:           "mov-early",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			MovementType: MovementTypeIn,
+			Quantity:     decimal.NewFromInt(5),
+			LotNumber:    "LOT-A",
+			ExpiryDate:   "2027-01-31",
+		},
+	}
+
+	_, err := ts.svc.ReserveStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
+		Quantity:    "7",
+		Reason:      "Pick list",
+		UserID:      "user-1",
+	})
+
+	require.NoError(t, err)
+	early := ts.repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-A", "", "2027-01-31")]
+	late := ts.repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-B", "", "2027-06-30")]
+	require.NotNil(t, early)
+	require.NotNil(t, late)
+	assert.True(t, early.Quantity.Equal(decimal.NewFromInt(5)))
+	assert.True(t, late.Quantity.Equal(decimal.NewFromInt(2)))
+}
+
 func TestService_ReserveStock_InsufficientAvailableStock(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
@@ -2028,6 +2281,58 @@ func TestService_ReleaseStock(t *testing.T) {
 	product, err := ts.repo.GetProductByID(ctx, "test_schema", "tenant-1", inventoryStockProductID)
 	require.NoError(t, err)
 	assert.True(t, product.CurrentStock.Equal(decimal.NewFromInt(20)))
+}
+
+func TestService_ReleaseStockReleasesTrackedLot(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Products[inventoryStockProductID] = &Product{
+		ID:           inventoryStockProductID,
+		TenantID:     "tenant-1",
+		Name:         "Widget",
+		CurrentStock: decimal.NewFromInt(20),
+	}
+	ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{
+		ID:       inventoryStockWarehouseID,
+		TenantID: "tenant-1",
+		Name:     "Main",
+		IsActive: true,
+	}
+	ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    inventoryStockProductID,
+		WarehouseID:  inventoryStockWarehouseID,
+		Quantity:     decimal.NewFromInt(20),
+		ReservedQty:  decimal.NewFromInt(8),
+		AvailableQty: decimal.NewFromInt(12),
+	}
+	ts.repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-2026-01", "", "2027-01-31")] = &InventoryLotReservation{
+		ID:          "lot-res-1",
+		TenantID:    "tenant-1",
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
+		LotNumber:   "LOT-2026-01",
+		ExpiryDate:  "2027-01-31",
+		Quantity:    decimal.NewFromInt(6),
+	}
+
+	level, err := ts.svc.ReleaseStock(ctx, "tenant-1", "test_schema", &StockReservationRequest{
+		ProductID:   inventoryStockProductID,
+		WarehouseID: inventoryStockWarehouseID,
+		Quantity:    "4",
+		LotNumber:   "LOT-2026-01",
+		ExpiryDate:  "2027-01-31",
+		Reason:      "Order canceled",
+		UserID:      "user-1",
+	})
+
+	require.NoError(t, err)
+	assert.True(t, level.ReservedQty.Equal(decimal.NewFromInt(4)))
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(16)))
+	reservation := ts.repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-2026-01", "", "2027-01-31")]
+	assert.True(t, reservation.Quantity.Equal(decimal.NewFromInt(2)))
 }
 
 func TestService_ReleaseStock_TooMuch(t *testing.T) {

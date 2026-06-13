@@ -2451,11 +2451,13 @@ Content-Type: application/json
   "product_id": "uuid",
   "warehouse_id": "uuid",
   "quantity": "2",
+  "lot_number": "LOT-2026-01",
+  "expiry_date": "2027-01-31",
   "reason": "Sales order allocation"
 }
 ```
 
-`product_id` and `warehouse_id` must be valid UUIDs. Reservations require a positive quantity and sufficient warehouse available stock. A successful reservation increases `reserved_qty` and decreases `available_qty` without changing on-hand quantity or product total stock.
+`product_id` and `warehouse_id` must be valid UUIDs. Reservations require a positive quantity and sufficient warehouse available stock. Optional `lot_number`, `serial_number`, and `expiry_date` fields reserve against a matching tracked lot/serial/expiry position; explicit tracked-lot reservations require enough matching availability after existing tracked and unallocated reservations. When tracking metadata is omitted, the service allocates available tracked lots automatically before leaving any remainder as warehouse-level reserved stock. A successful reservation increases `reserved_qty` and decreases `available_qty` without changing on-hand quantity or product total stock.
 
 ```http
 POST /tenants/{tenantId}/inventory/release
@@ -2466,11 +2468,13 @@ Content-Type: application/json
   "product_id": "uuid",
   "warehouse_id": "uuid",
   "quantity": "1",
+  "lot_number": "LOT-2026-01",
+  "expiry_date": "2027-01-31",
   "reason": "Order canceled"
 }
 ```
 
-`product_id` and `warehouse_id` must be valid UUIDs. Releases require a positive quantity no greater than current reserved stock. A successful release decreases `reserved_qty` and increases `available_qty` without changing on-hand quantity or product total stock.
+`product_id` and `warehouse_id` must be valid UUIDs. Releases require a positive quantity no greater than current reserved stock. Optional `lot_number`, `serial_number`, and `expiry_date` fields release the matching tracked reservation and reject over-release for that lot; releases without tracking metadata consume tracked reservation rows first and then release any remaining warehouse-level reservation. A successful release decreases `reserved_qty` and increases `available_qty` without changing on-hand quantity or product total stock.
 
 ---
 

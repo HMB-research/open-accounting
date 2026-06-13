@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,12 +38,13 @@ func apiInventoryStockLevelKey(productID, warehouseID string) string {
 
 // mockInventoryRepository implements inventory.Repository for testing
 type mockInventoryRepository struct {
-	products    map[string]*inventory.Product
-	categories  map[string]*inventory.ProductCategory
-	warehouses  map[string]*inventory.Warehouse
-	stockLevels map[string]*inventory.StockLevel
-	movements   map[string][]inventory.InventoryMovement
-	productCode int
+	products        map[string]*inventory.Product
+	categories      map[string]*inventory.ProductCategory
+	warehouses      map[string]*inventory.Warehouse
+	stockLevels     map[string]*inventory.StockLevel
+	movements       map[string][]inventory.InventoryMovement
+	lotReservations map[string]*inventory.InventoryLotReservation
+	productCode     int
 
 	createProductErr   error
 	getProductErr      error
@@ -67,12 +69,13 @@ type mockInventoryRepository struct {
 
 func newMockInventoryRepository() *mockInventoryRepository {
 	return &mockInventoryRepository{
-		products:    make(map[string]*inventory.Product),
-		categories:  make(map[string]*inventory.ProductCategory),
-		warehouses:  make(map[string]*inventory.Warehouse),
-		stockLevels: make(map[string]*inventory.StockLevel),
-		movements:   make(map[string][]inventory.InventoryMovement),
-		productCode: 1,
+		products:        make(map[string]*inventory.Product),
+		categories:      make(map[string]*inventory.ProductCategory),
+		warehouses:      make(map[string]*inventory.Warehouse),
+		stockLevels:     make(map[string]*inventory.StockLevel),
+		movements:       make(map[string][]inventory.InventoryMovement),
+		lotReservations: make(map[string]*inventory.InventoryLotReservation),
+		productCode:     1,
 	}
 }
 
@@ -272,6 +275,58 @@ func (m *mockInventoryRepository) UpsertStockLevel(ctx context.Context, schemaNa
 	key := level.ProductID + "-" + level.WarehouseID
 	m.stockLevels[key] = level
 	return nil
+}
+
+func apiInventoryLotReservationKey(productID, warehouseID, lotNumber, serialNumber, expiryDate string) string {
+	return strings.Join([]string{
+		productID,
+		warehouseID,
+		strings.TrimSpace(lotNumber),
+		strings.TrimSpace(serialNumber),
+		strings.TrimSpace(expiryDate),
+	}, "|")
+}
+
+func (m *mockInventoryRepository) ListLotReservations(ctx context.Context, schemaName, tenantID, productID, warehouseID string) ([]inventory.InventoryLotReservation, error) {
+	var result []inventory.InventoryLotReservation
+	for _, reservation := range m.lotReservations {
+		if reservation.TenantID == tenantID &&
+			reservation.ProductID == productID &&
+			reservation.WarehouseID == warehouseID &&
+			reservation.Quantity.GreaterThan(decimal.Zero) {
+			result = append(result, *reservation)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockInventoryRepository) UpsertLotReservation(ctx context.Context, schemaName string, reservation *inventory.InventoryLotReservation) error {
+	key := apiInventoryLotReservationKey(reservation.ProductID, reservation.WarehouseID, reservation.LotNumber, reservation.SerialNumber, reservation.ExpiryDate)
+	existing := m.lotReservations[key]
+	if existing == nil {
+		copy := *reservation
+		m.lotReservations[key] = &copy
+		return nil
+	}
+	existing.Quantity = existing.Quantity.Add(reservation.Quantity)
+	existing.Reason = reservation.Reason
+	existing.UpdatedAt = reservation.UpdatedAt
+	existing.CreatedBy = reservation.CreatedBy
+	return nil
+}
+
+func (m *mockInventoryRepository) ReleaseLotReservation(ctx context.Context, schemaName, tenantID, productID, warehouseID, lotNumber, serialNumber, expiryDate string, quantity decimal.Decimal, reason, releasedBy string) (*inventory.InventoryLotReservation, error) {
+	key := apiInventoryLotReservationKey(productID, warehouseID, lotNumber, serialNumber, expiryDate)
+	reservation := m.lotReservations[key]
+	if reservation == nil || reservation.TenantID != tenantID || reservation.Quantity.LessThan(quantity) {
+		return nil, errors.New("tracked lot reservation not found")
+	}
+	reservation.Quantity = reservation.Quantity.Sub(quantity)
+	reservation.Reason = reason
+	reservation.UpdatedAt = time.Now()
+	reservation.CreatedBy = releasedBy
+	copy := *reservation
+	return &copy, nil
 }
 
 // Movements
@@ -1006,6 +1061,18 @@ func TestReserveAndReleaseStock(t *testing.T) {
 		ReservedQty:  decimal.NewFromInt(2),
 		AvailableQty: decimal.NewFromInt(10),
 	}
+	repo.movements[apiInventoryStockProductID] = []inventory.InventoryMovement{
+		{
+			ID:           "mov-lot",
+			TenantID:     "tenant-1",
+			ProductID:    apiInventoryStockProductID,
+			WarehouseID:  apiInventoryStockWarehouseID,
+			MovementType: inventory.MovementTypeIn,
+			Quantity:     decimal.NewFromInt(12),
+			LotNumber:    "LOT-2026-01",
+			ExpiryDate:   "2027-01-31",
+		},
+	}
 
 	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
 
@@ -1013,6 +1080,8 @@ func TestReserveAndReleaseStock(t *testing.T) {
 		"product_id":   apiInventoryStockProductID,
 		"warehouse_id": apiInventoryStockWarehouseID,
 		"quantity":     "3",
+		"lot_number":   "LOT-2026-01",
+		"expiry_date":  "2027-01-31",
 		"reason":       "Sales order allocation",
 	})
 	reserveReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/inventory/reserve", bytes.NewReader(reserveBody))
@@ -1028,11 +1097,16 @@ func TestReserveAndReleaseStock(t *testing.T) {
 	require.NoError(t, json.Unmarshal(reserveRR.Body.Bytes(), &reservedLevel))
 	assert.True(t, reservedLevel.ReservedQty.Equal(decimal.NewFromInt(5)))
 	assert.True(t, reservedLevel.AvailableQty.Equal(decimal.NewFromInt(7)))
+	lotReservation := repo.lotReservations[apiInventoryLotReservationKey(apiInventoryStockProductID, apiInventoryStockWarehouseID, "LOT-2026-01", "", "2027-01-31")]
+	require.NotNil(t, lotReservation)
+	assert.True(t, lotReservation.Quantity.Equal(decimal.NewFromInt(3)))
 
 	releaseBody, _ := json.Marshal(map[string]interface{}{
 		"product_id":   apiInventoryStockProductID,
 		"warehouse_id": apiInventoryStockWarehouseID,
 		"quantity":     "2",
+		"lot_number":   "LOT-2026-01",
+		"expiry_date":  "2027-01-31",
 		"reason":       "Order canceled",
 	})
 	releaseReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/inventory/release", bytes.NewReader(releaseBody))
@@ -1048,6 +1122,7 @@ func TestReserveAndReleaseStock(t *testing.T) {
 	require.NoError(t, json.Unmarshal(releaseRR.Body.Bytes(), &releasedLevel))
 	assert.True(t, releasedLevel.ReservedQty.Equal(decimal.NewFromInt(3)))
 	assert.True(t, releasedLevel.AvailableQty.Equal(decimal.NewFromInt(9)))
+	assert.True(t, lotReservation.Quantity.Equal(decimal.NewFromInt(1)))
 }
 
 func TestReleaseStockRejectsOverRelease(t *testing.T) {
