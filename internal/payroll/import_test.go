@@ -1001,3 +1001,313 @@ func TestImportPayrollHistoryCSV_RejectsNilOrEmptyRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestImportPayrollHistoryCSV_ReportsExtendedValidationErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.Employees["emp-100"] = &Employee{
+		ID:             "emp-100",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Payroll",
+		LastName:       "Tester",
+		PersonalCode:   "49001010100",
+		Email:          "payroll@example.com",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-dup-1"] = &Employee{
+		ID:             "emp-dup-1",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-201",
+		FirstName:      "Duplicate",
+		LastName:       "Name",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-dup-2"] = &Employee{
+		ID:             "emp-dup-2",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-202",
+		FirstName:      "Duplicate",
+		LastName:       "Name",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+	headers := []string{
+		"period_year",
+		"period_month",
+		"status",
+		"payment_date",
+		"employee_number",
+		"personal_code",
+		"email",
+		"name",
+		"first_name",
+		"last_name",
+		"gross_salary",
+		"basic_exemption_applied",
+		"unemployment_insurance_employee",
+		"funded_pension",
+		"other_deductions",
+		"net_salary",
+		"social_tax",
+		"unemployment_insurance_employer",
+		"total_employer_cost",
+		"payment_status",
+		"paid_at",
+	}
+	headerIndex := make(map[string]int, len(headers))
+	for i, header := range headers {
+		headerIndex[header] = i
+	}
+	row := func(changes map[string]string) []string {
+		values := []string{
+			"2025",
+			"1",
+			"PAID",
+			"",
+			"EMP-100",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"1000.00",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+		}
+		for header, value := range changes {
+			values[headerIndex[header]] = value
+		}
+		return values
+	}
+	buildCSV := func(rows [][]string) string {
+		var builder strings.Builder
+		builder.WriteString(strings.Join(headers, ","))
+		builder.WriteString("\n")
+		for _, values := range rows {
+			require.Len(t, values, len(headers))
+			builder.WriteString(strings.Join(values, ","))
+			builder.WriteString("\n")
+		}
+		return builder.String()
+	}
+
+	rows := [][]string{
+		row(map[string]string{"payment_date": "not-a-date"}),
+		row(map[string]string{"basic_exemption_applied": "-1"}),
+		row(map[string]string{"unemployment_insurance_employee": "bad"}),
+		row(map[string]string{"funded_pension": "-1"}),
+		row(map[string]string{"other_deductions": "bad"}),
+		row(map[string]string{"net_salary": "-1"}),
+		row(map[string]string{"social_tax": "bad"}),
+		row(map[string]string{"unemployment_insurance_employer": "-1"}),
+		row(map[string]string{"total_employer_cost": "bad"}),
+		row(map[string]string{"payment_status": "VOID"}),
+		row(map[string]string{"paid_at": "not-a-date"}),
+		row(map[string]string{"employee_number": "", "personal_code": "49999999999"}),
+		row(map[string]string{"employee_number": "", "email": "missing@example.com"}),
+		row(map[string]string{"employee_number": "", "name": "Missing Person"}),
+		row(map[string]string{"employee_number": "", "name": "Duplicate Name"}),
+		row(map[string]string{"employee_number": "", "first_name": "Only"}),
+		row(map[string]string{"employee_number": "", "first_name": "Missing", "last_name": "Person"}),
+		row(map[string]string{"employee_number": "", "first_name": "Duplicate", "last_name": "Name"}),
+		row(map[string]string{"employee_number": ""}),
+	}
+
+	result, err := service.ImportPayrollHistoryCSV(ctx, "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+		CSVContent: buildCSV(rows),
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, len(rows), result.RowsProcessed)
+	assert.Zero(t, result.PayrollRunsCreated)
+	assert.Zero(t, result.PayslipsCreated)
+	assert.Equal(t, len(rows), result.RowsSkipped)
+	require.Len(t, result.Errors, len(rows))
+
+	expectedMessages := []string{
+		"payment_date must be in YYYY-MM-DD format",
+		"basic_exemption_applied must be zero or greater",
+		"invalid unemployment_insurance_employee",
+		"funded_pension must be zero or greater",
+		"invalid other_deductions",
+		"net_salary must be zero or greater",
+		"invalid social_tax",
+		"unemployment_insurance_employer must be zero or greater",
+		"invalid total_employer_cost",
+		"payment_status must be PENDING, PAID, or CANCELLED",
+		"paid_at must be in YYYY-MM-DD format",
+		"personal_code \"49999999999\" not found",
+		"email \"missing@example.com\" not found",
+		"employee \"Missing Person\" not found",
+		"employee \"Duplicate Name\" matches multiple employees",
+		"first_name and last_name must both be provided",
+		"employee \"Missing Person\" not found",
+		"employee \"Duplicate Name\" matches multiple employees",
+		"employee_number, personal_code, email, name, or first_name/last_name is required",
+	}
+	for i, expected := range expectedMessages {
+		assert.Contains(t, result.Errors[i].Message, expected)
+	}
+}
+
+func TestImportPayrollHistoryCSV_RejectsEmptyRowsAndRepositoryFailures(t *testing.T) {
+	t.Parallel()
+
+	validCSV := "period_year,period_month,status,employee_number,gross_salary\n" +
+		"2025,4,PAID,EMP-100,1000.00\n"
+	seedEmployee := func(repo *MockRepository) {
+		repo.Employees["emp-100"] = &Employee{
+			ID:             "emp-100",
+			TenantID:       "tenant-1",
+			EmployeeNumber: "EMP-100",
+			FirstName:      "Payroll",
+			LastName:       "Tester",
+			StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			IsActive:       true,
+		}
+	}
+
+	t.Run("no payroll rows", func(t *testing.T) {
+		t.Parallel()
+
+		service := NewServiceWithRepository(NewMockRepository(), &MockUUIDGenerator{prefix: "hist"})
+
+		result, err := service.ImportPayrollHistoryCSV(context.Background(), "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+			CSVContent: "period_year,period_month,gross_salary,employee_number\n,,,\n",
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "no payroll rows found in CSV")
+	})
+
+	t.Run("list employees failure", func(t *testing.T) {
+		t.Parallel()
+
+		repo := NewMockRepository()
+		repo.ListEmployeesErr = errors.New("list unavailable")
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+		result, err := service.ImportPayrollHistoryCSV(context.Background(), "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+			CSVContent: validCSV,
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "list existing employees: list unavailable")
+	})
+
+	t.Run("list payroll runs failure", func(t *testing.T) {
+		t.Parallel()
+
+		repo := NewMockRepository()
+		seedEmployee(repo)
+		repo.ListPayrollRunsErr = errors.New("runs unavailable")
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+		result, err := service.ImportPayrollHistoryCSV(context.Background(), "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+			CSVContent: validCSV,
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "list existing payroll runs for 2025: runs unavailable")
+	})
+
+	t.Run("create payroll run failure", func(t *testing.T) {
+		t.Parallel()
+
+		repo := NewMockRepository()
+		seedEmployee(repo)
+		repo.CreatePayrollRunErr = errors.New("create failed")
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+		result, err := service.ImportPayrollHistoryCSV(context.Background(), "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+			CSVContent: validCSV,
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.PayrollRunsCreated)
+		assert.Zero(t, result.PayslipsCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "create payroll run: create failed")
+	})
+
+	t.Run("transaction failure", func(t *testing.T) {
+		t.Parallel()
+
+		repo := NewMockRepository()
+		seedEmployee(repo)
+		repo.WithTransactionErr = errors.New("transaction unavailable")
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "hist"})
+
+		result, err := service.ImportPayrollHistoryCSV(context.Background(), "tenant_schema", "tenant-1", "user-1", &ImportPayrollHistoryRequest{
+			CSVContent: validCSV,
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.PayrollRunsCreated)
+		assert.Zero(t, result.PayslipsCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "transaction unavailable")
+	})
+}
+
+func TestPayrollHistoryImportParsingHelpers(t *testing.T) {
+	t.Parallel()
+
+	rows, err := parsePayrollHistoryImportRows("")
+	require.Error(t, err)
+	assert.Nil(t, rows)
+	assert.Contains(t, err.Error(), "csv_content is required")
+
+	rows, err = parsePayrollHistoryImportRows(`"`)
+	require.Error(t, err)
+	assert.Nil(t, rows)
+	assert.Contains(t, err.Error(), "parse csv header")
+
+	rows, err = parsePayrollHistoryImportRows("period_year,period_month,gross_salary\n\"")
+	require.Error(t, err)
+	assert.Nil(t, rows)
+	assert.Contains(t, err.Error(), "parse csv row 2")
+
+	rows, err = parsePayrollHistoryImportRows("period_year,period_month,gross_salary,,legacy_column\n\n2025,3,1200.00,,ignored\n,,,,\n")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 2, rows[0].rowNumber)
+	assert.Equal(t, "2025", rows[0].values["period_year"])
+
+	assert.Equal(t, "legacy_column", canonicalPayrollHistoryImportHeader(" Legacy_Column "))
+
+	paymentStatus, err := parsePayrollHistoryPaymentStatus("VOID", PayrollPaid)
+	require.Error(t, err)
+	assert.Empty(t, paymentStatus)
+	assert.Contains(t, err.Error(), "payment_status must be PENDING, PAID, or CANCELLED")
+
+	paidDate := time.Date(2025, 12, 31, 15, 45, 0, 0, time.UTC)
+	sameDate := time.Date(2025, 12, 31, 0, 0, 0, 0, time.Local)
+	assert.True(t, payrollHistoryDatesEqual(nil, nil))
+	assert.False(t, payrollHistoryDatesEqual(nil, &paidDate))
+	assert.False(t, payrollHistoryDatesEqual(&paidDate, nil))
+	assert.True(t, payrollHistoryDatesEqual(&paidDate, &sameDate))
+
+	assert.Empty(t, payrollHistoryApprovedBy(PayrollCalculated, "user-1"))
+	assert.Nil(t, payrollHistoryApprovedAt(PayrollCalculated, nil))
+}
