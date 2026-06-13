@@ -533,6 +533,24 @@ func TestValidateBundleReportsCommercialDocumentRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindRecurringInvoices, "attach_pdf_to_email", "attach_pdf_to_email must be true or false")
 }
 
+func TestValidateBundleReportsCommercialNonNegativeDecimalParsingIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-BAD,SALES,CUST-1,2026-05-30,2026-06-14,Work,1,not-a-decimal,nope\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindInvoices, "unit_price", "unit_price must be a decimal")
+	assertValidationIssue(t, report, KindInvoices, "vat_rate", "vat_rate must be a decimal")
+}
+
 func TestValidateBundleAcceptsInvoiceVATTreatmentAndDiscountEdges(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
