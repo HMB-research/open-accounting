@@ -394,8 +394,102 @@ func TestServiceGenerateTSDWithMockRepository(t *testing.T) {
 	}
 }
 
+func TestServiceGenerateTSDSkipsPayslipsWithoutEmployee(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+
+	repo.PayrollRuns["run-1"] = &PayrollRun{
+		ID:          "run-1",
+		TenantID:    "tenant-1",
+		PeriodYear:  2025,
+		PeriodMonth: 1,
+		Status:      PayrollApproved,
+	}
+	repo.Employees["emp-1"] = &Employee{
+		ID:           "emp-1",
+		TenantID:     "tenant-1",
+		FirstName:    "Mari",
+		LastName:     "Maasikas",
+		PersonalCode: "38001010009",
+	}
+	repo.Payslips = []Payslip{
+		{
+			ID:                      "pay-1",
+			TenantID:                "tenant-1",
+			PayrollRunID:            "run-1",
+			EmployeeID:              "emp-1",
+			GrossSalary:             decimal.NewFromInt(1000),
+			IncomeTax:               decimal.NewFromInt(220),
+			SocialTax:               decimal.NewFromInt(330),
+			UnemploymentInsuranceEE: decimal.NewFromInt(16),
+			UnemploymentInsuranceER: decimal.NewFromInt(8),
+			FundedPension:           decimal.NewFromInt(20),
+		},
+		{
+			ID:                      "pay-missing-employee",
+			TenantID:                "tenant-1",
+			PayrollRunID:            "run-1",
+			EmployeeID:              "missing-emp",
+			GrossSalary:             decimal.NewFromInt(500),
+			IncomeTax:               decimal.NewFromInt(110),
+			SocialTax:               decimal.NewFromInt(165),
+			UnemploymentInsuranceEE: decimal.NewFromInt(8),
+			UnemploymentInsuranceER: decimal.NewFromInt(4),
+			FundedPension:           decimal.NewFromInt(10),
+		},
+	}
+
+	tsd, err := service.GenerateTSD(ctx, "tenant_schema", "tenant-1", "run-1")
+	if err != nil {
+		t.Fatalf("GenerateTSD returned error: %v", err)
+	}
+
+	if len(tsd.Rows) != 1 {
+		t.Fatalf("expected only the payslip with employee data to become a row, got %d", len(tsd.Rows))
+	}
+	if tsd.Rows[0].EmployeeID != "emp-1" {
+		t.Fatalf("unexpected generated row: %+v", tsd.Rows[0])
+	}
+	requireDecimalEqual(t, tsd.TotalPayments, decimal.NewFromInt(1000))
+	requireDecimalEqual(t, tsd.TotalIncomeTax, decimal.NewFromInt(220))
+	requireDecimalEqual(t, tsd.TotalSocialTax, decimal.NewFromInt(330))
+	requireDecimalEqual(t, tsd.TotalUnemploymentEE, decimal.NewFromInt(16))
+	requireDecimalEqual(t, tsd.TotalUnemploymentER, decimal.NewFromInt(8))
+	requireDecimalEqual(t, tsd.TotalFundedPension, decimal.NewFromInt(20))
+}
+
+func TestServiceGenerateTSDAllowsPaidPayrollRun(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+	seedApprovedPayrollRunWithPayslip(repo)
+	repo.PayrollRuns["run-1"].Status = PayrollPaid
+
+	tsd, err := service.GenerateTSD(ctx, "tenant_schema", "tenant-1", "run-1")
+	if err != nil {
+		t.Fatalf("GenerateTSD returned error: %v", err)
+	}
+
+	if tsd.PayrollRunID != "run-1" || len(tsd.Rows) != 1 {
+		t.Fatalf("unexpected generated TSD: %+v", tsd)
+	}
+	requireDecimalEqual(t, tsd.TotalPayments, decimal.NewFromInt(1000))
+}
+
 func TestServiceGenerateTSDErrors(t *testing.T) {
 	ctx := context.Background()
+
+	t.Run("wraps payroll run lookup failures", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+		repo.GetPayrollRunErr = errors.New("lookup failed")
+
+		_, err := service.GenerateTSD(ctx, "tenant_schema", "tenant-1", "run-1")
+		if err == nil || !strings.Contains(err.Error(), "get payroll run") {
+			t.Fatalf("expected payroll run lookup error, got %v", err)
+		}
+	})
 
 	t.Run("rejects unapproved payroll run", func(t *testing.T) {
 		repo := NewMockRepository()
@@ -517,6 +611,54 @@ func TestServiceExportTSDToXMLAndCSV(t *testing.T) {
 	expectedRow := "1;38001010009;Mari;Maasikas;10;2000.00;700.00;1300.00;286.00;660.00;32.00;16.00;40.00"
 	if !strings.Contains(csvText, expectedRow) {
 		t.Fatalf("expected CSV row %q\n%s", expectedRow, csvText)
+	}
+}
+
+func TestServiceExportTSDToXMLWithoutRows(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, &MockUUIDGenerator{prefix: "tsd"})
+
+	repo.TSDDeclarations["tsd-1"] = &TSDDeclaration{
+		ID:                  "tsd-1",
+		TenantID:            "tenant-1",
+		PeriodYear:          2025,
+		PeriodMonth:         2,
+		Status:              TSDDraft,
+		TotalPayments:       decimal.NewFromInt(1000),
+		TotalIncomeTax:      decimal.NewFromInt(220),
+		TotalSocialTax:      decimal.NewFromInt(330),
+		TotalUnemploymentEE: decimal.NewFromInt(16),
+		TotalUnemploymentER: decimal.NewFromInt(8),
+		TotalFundedPension:  decimal.NewFromInt(20),
+	}
+
+	xmlData, err := service.ExportTSDToXML(ctx, "tenant_schema", "tenant-1", 2025, 2, TSDCompanyInfo{
+		RegistryCode: "12345678",
+		Name:         "Acme OU",
+	})
+	if err != nil {
+		t.Fatalf("ExportTSDToXML returned error: %v", err)
+	}
+
+	xmlText := string(xmlData)
+	for _, expected := range []string{
+		"<dpiPeriood>202502</dpiPeriood>",
+		"<dpsMaksedKokku>1000.00</dpsMaksedKokku>",
+		"<dpsTm>220.00</dpsTm>",
+	} {
+		if !strings.Contains(xmlText, expected) {
+			t.Fatalf("expected XML to contain %q\n%s", expected, xmlText)
+		}
+	}
+	for _, unexpected := range []string{
+		"<dpiLisa1>",
+		"<l1Rida>",
+		"<l1Isikukood>",
+	} {
+		if strings.Contains(xmlText, unexpected) {
+			t.Fatalf("expected XML not to contain %q\n%s", unexpected, xmlText)
+		}
 	}
 }
 
