@@ -89,11 +89,15 @@ function executionRun(overrides: Partial<MigrationExecutionRun> = {}): Migration
 			plan_ready: true,
 			validation_ready: true,
 			step_count: 1,
+			running_step_count: 0,
 			succeeded_step_count: 1,
 			failed_step_count: 0,
 			skipped_step_count: 0,
 			planned_step_count: 0,
 			resumed_step_count: 0,
+			completed_step_count: 1,
+			remaining_step_count: 0,
+			progress_percent: 100,
 			needs_context_count: 0,
 			blocked_step_count: 0
 		},
@@ -111,6 +115,39 @@ function executionRun(overrides: Partial<MigrationExecutionRun> = {}): Migration
 		],
 		remediation_actions: [],
 		...overrides
+	};
+}
+
+function runningExecutionRun(): MigrationExecutionRun {
+	const base = executionRun();
+	return {
+		...base,
+		summary: {
+			...base.summary,
+			status: 'running',
+			running_step_count: 1,
+			succeeded_step_count: 1,
+			completed_step_count: 1,
+			remaining_step_count: 1,
+			progress_percent: 50,
+			active_step_number: 2,
+			active_step_kind: 'contacts',
+			active_step_file_name: 'contacts-next.csv',
+			active_step_status: 'RUNNING',
+			step_count: 2
+		},
+		steps: [
+			...(base.steps ?? []),
+			{
+				step_number: 2,
+				kind: 'contacts',
+				file_name: 'contacts-next.csv',
+				status: 'RUNNING',
+				message: 'Import running.',
+				api_path: '/api/v1/tenants/tenant-1/contacts/import',
+				cli_command: 'oa contacts import --file contacts-next.csv'
+			}
+		]
 	};
 }
 
@@ -168,7 +205,9 @@ describe('MigrationWorkbench', () => {
 	});
 
 	it('opens saved execution runs for monitoring', async () => {
-		apiMock.listMigrationExecutionRuns.mockResolvedValue([executionRun()]);
+		const monitoringRun = runningExecutionRun();
+		apiMock.listMigrationExecutionRuns.mockResolvedValue([monitoringRun]);
+		apiMock.getMigrationExecutionRun.mockResolvedValue(monitoringRun);
 		render(MigrationWorkbench, { tenantId: 'tenant-1' });
 
 		expect(await screen.findByText('run-1')).toBeInTheDocument();
@@ -178,7 +217,9 @@ describe('MigrationWorkbench', () => {
 			expect(apiMock.getMigrationExecutionRun).toHaveBeenCalledWith('tenant-1', 'run-1')
 		);
 		expect(await screen.findByText('Saved migration run loaded.')).toBeInTheDocument();
-		expect(screen.getByText('Imported contacts.')).toBeInTheDocument();
+		expect(screen.getByText('Import running.')).toBeInTheDocument();
+		expect(screen.getAllByText('50%').length).toBeGreaterThan(0);
+		expect(screen.getByText('Active step: #2 RUNNING contacts contacts-next.csv')).toBeInTheDocument();
 	});
 
 	it('executes a confirmed cutover with a selected resume run id', async () => {

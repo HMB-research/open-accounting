@@ -156,6 +156,7 @@ func (r *GORMMigrationExecutionRunRepository) runToRecord(tenantID, createdBy st
 	if strings.TrimSpace(run.ID) == "" {
 		run.ID = uuid.New().String()
 	}
+	RefreshMigrationExecutionRunProgress(run)
 	now := r.currentTime()
 	if run.CreatedAt == nil {
 		createdAt := now
@@ -217,6 +218,7 @@ func recordToMigrationExecutionRun(record *models.MigrationExecutionRunRecord) (
 		run.Summary.PlannedStepCount = record.PlannedStepCount
 		run.Summary.ResumedStepCount = record.ResumedStepCount
 	}
+	RefreshMigrationExecutionRunProgress(&run)
 	return &run, nil
 }
 

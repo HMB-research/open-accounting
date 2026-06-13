@@ -27,6 +27,7 @@ import (
 
 const (
 	migrationExecutionResultPlanned   = cutover.MigrationExecutionResultPlanned
+	migrationExecutionResultRunning   = cutover.MigrationExecutionResultRunning
 	migrationExecutionResultSkipped   = cutover.MigrationExecutionResultSkipped
 	migrationExecutionResultSucceeded = cutover.MigrationExecutionResultSucceeded
 	migrationExecutionResultFailed    = cutover.MigrationExecutionResultFailed
@@ -175,30 +176,34 @@ func executeMigrationRun(ctx context.Context, client *apiClient, tenantID string
 		if step.Status != cutover.MigrationExecutionStepReady {
 			run.Steps[i].Status = migrationExecutionResultSkipped
 			run.Steps[i].Message = "Step is not ready to execute."
+			cutover.RefreshMigrationExecutionRunProgress(run)
 			continue
 		}
 		file, ok := filesByKey[migrationStepFileKey(step.Kind, step.FileName)]
 		if !ok {
 			run.Steps[i].Status = migrationExecutionResultFailed
 			run.Steps[i].Error = "migration bundle file not found"
-			run.Summary.FailedStepCount++
-			run.Summary.Status = "failed"
+			cutover.RefreshMigrationExecutionRunProgress(run)
 			return run, fmt.Errorf("migration bundle file not found for step %d (%s)", step.StepNumber, step.Kind)
 		}
+		run.Steps[i].Status = migrationExecutionResultRunning
+		run.Steps[i].Message = "Import running."
+		cutover.RefreshMigrationExecutionRunProgress(run)
 		response, err := executeMigrationImportStep(ctx, client, tenantID, step, file, opts)
 		if err != nil {
 			run.Steps[i].Status = migrationExecutionResultFailed
+			run.Steps[i].Message = "Import failed."
 			run.Steps[i].Error = err.Error()
-			run.Summary.FailedStepCount++
-			run.Summary.Status = "failed"
+			cutover.RefreshMigrationExecutionRunProgress(run)
 			return run, fmt.Errorf("execute migration step %d (%s): %w", step.StepNumber, step.Kind, err)
 		}
 		run.Steps[i].Status = migrationExecutionResultSucceeded
 		run.Steps[i].Message = "Import completed."
 		run.Steps[i].Response = response
-		run.Summary.SucceededStepCount++
+		cutover.RefreshMigrationExecutionRunProgress(run)
 	}
 	run.Summary.Status = "succeeded"
+	cutover.RefreshMigrationExecutionRunProgress(run)
 	return run, nil
 }
 
@@ -210,6 +215,7 @@ func newMigrationExecutionRun(plan *cutover.MigrationExecutionPlan, confirmed bo
 				run.Steps[index].Message = "Pass --confirm to run this import."
 			}
 		}
+		cutover.RefreshMigrationExecutionRunProgress(run)
 	}
 	return run
 }

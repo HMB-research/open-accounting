@@ -8,6 +8,7 @@
 		type ExecuteMigrationRequest,
 		type MigrationExecutionPlan,
 		type MigrationExecutionRun,
+		type MigrationExecutionRunSummary,
 		type MigrationFileKind,
 		type MigrationProviderPreset,
 		type PlanMigrationExecutionRequest,
@@ -341,6 +342,20 @@
 		if (Number.isNaN(date.getTime())) return value;
 		return date.toLocaleString();
 	}
+
+	function progressPercent(summary: MigrationExecutionRunSummary | undefined): number {
+		const value = summary?.progress_percent ?? 0;
+		return Math.max(0, Math.min(100, value));
+	}
+
+	function activeStepLabel(summary: MigrationExecutionRunSummary | undefined): string {
+		if (!summary?.active_step_number) return '-';
+		const parts = [`#${summary.active_step_number}`];
+		if (summary.active_step_status) parts.push(summary.active_step_status);
+		if (summary.active_step_kind) parts.push(summary.active_step_kind);
+		if (summary.active_step_file_name) parts.push(summary.active_step_file_name);
+		return parts.join(' ');
+	}
 </script>
 
 {#if !tenantId.trim()}
@@ -606,9 +621,20 @@
 				</div>
 				<div class="metric-grid">
 					<div><strong>{run.summary.step_count}</strong><span>steps</span></div>
+					<div><strong>{run.summary.progress_percent ?? 0}%</strong><span>progress</span></div>
 					<div><strong>{run.summary.succeeded_step_count}</strong><span>succeeded</span></div>
 					<div><strong>{run.summary.failed_step_count}</strong><span>failed</span></div>
 					<div><strong>{run.summary.resumed_step_count}</strong><span>resumed</span></div>
+				</div>
+				<div class="progress-summary">
+					<div class="progress-line">
+						<strong>{run.summary.completed_step_count ?? run.summary.succeeded_step_count}</strong>
+						<span>completed, {run.summary.remaining_step_count ?? 0} remaining</span>
+					</div>
+					<div class="progress-track" aria-label="Migration execution progress">
+						<span style={`width: ${progressPercent(run.summary)}%;`}></span>
+					</div>
+					<p class="muted">Active step: {activeStepLabel(run.summary)}</p>
 				</div>
 
 				<div class="table-wrap">
@@ -672,6 +698,8 @@
 								<th>Run</th>
 								<th>Status</th>
 								<th>Updated</th>
+								<th>Progress</th>
+								<th>Active</th>
 								<th>Steps</th>
 								<th>Actions</th>
 							</tr>
@@ -682,6 +710,8 @@
 									<td><code>{saved.id ?? '-'}</code></td>
 									<td><span class={statusClass(saved.summary.status)}>{saved.summary.status}</span></td>
 									<td>{formatDateTime(saved.updated_at ?? saved.created_at)}</td>
+									<td>{saved.summary.progress_percent ?? 0}%</td>
+									<td>{activeStepLabel(saved.summary)}</td>
 									<td>{saved.summary.succeeded_step_count}/{saved.summary.step_count}</td>
 									<td>
 										<div class="row-actions">
@@ -864,7 +894,41 @@
 	}
 
 	.metric-grid {
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+	}
+
+	.progress-summary {
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+		padding: 0.85rem;
+	}
+
+	.progress-line {
+		align-items: baseline;
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.progress-line span {
+		color: var(--color-text-muted);
+		font-size: 0.82rem;
+	}
+
+	.progress-track {
+		background: rgba(100, 116, 139, 0.16);
+		border-radius: 999px;
+		height: 0.55rem;
+		overflow: hidden;
+	}
+
+	.progress-track span {
+		background: var(--color-primary);
+		border-radius: inherit;
+		display: block;
+		height: 100%;
 	}
 
 	.table-wrap {

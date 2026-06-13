@@ -117,14 +117,14 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 		if step.Status != cutover.MigrationExecutionStepReady {
 			run.Steps[index].Status = cutover.MigrationExecutionResultSkipped
 			run.Steps[index].Message = "Step is not ready to execute."
+			cutover.RefreshMigrationExecutionRunProgress(run)
 			continue
 		}
 		file, ok := filesByKey[migrationExecutionStepFileKey(step.Kind, step.FileName)]
 		if !ok {
 			run.Steps[index].Status = cutover.MigrationExecutionResultFailed
 			run.Steps[index].Error = "migration bundle file not found"
-			run.Summary.FailedStepCount++
-			run.Summary.Status = "failed"
+			cutover.RefreshMigrationExecutionRunProgress(run)
 			if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
 				respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
 				return
@@ -132,12 +132,19 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 			respondJSON(w, http.StatusBadRequest, run)
 			return
 		}
+		run.Steps[index].Status = cutover.MigrationExecutionResultRunning
+		run.Steps[index].Message = "Import running."
+		cutover.RefreshMigrationExecutionRunProgress(run)
+		if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
+			return
+		}
 		response, err := executor.ExecuteMigrationStep(r.Context(), tenantID, schemaName, claims.UserID, step, file, &req)
 		if err != nil {
 			run.Steps[index].Status = cutover.MigrationExecutionResultFailed
+			run.Steps[index].Message = "Import failed."
 			run.Steps[index].Error = err.Error()
-			run.Summary.FailedStepCount++
-			run.Summary.Status = "failed"
+			cutover.RefreshMigrationExecutionRunProgress(run)
 			if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
 				respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
 				return
@@ -148,13 +155,14 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 		run.Steps[index].Status = cutover.MigrationExecutionResultSucceeded
 		run.Steps[index].Message = "Import completed."
 		run.Steps[index].Response = response
-		run.Summary.SucceededStepCount++
+		cutover.RefreshMigrationExecutionRunProgress(run)
 		if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
 			return
 		}
 	}
 	run.Summary.Status = "succeeded"
+	cutover.RefreshMigrationExecutionRunProgress(run)
 	if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
 		return

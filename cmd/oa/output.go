@@ -181,14 +181,18 @@ func printMigrationExecutionRun(w io.Writer, run *migrationExecutionRun) {
 	}
 	_, _ = fmt.Fprintf(
 		w,
-		"Migration execution: %s (%d steps, %d succeeded, %d failed, %d skipped, %d planned)\n",
+		"Migration execution: %s (%d%% complete, %d steps, %d succeeded, %d failed, %d skipped, %d planned)\n",
 		run.Summary.Status,
+		run.Summary.ProgressPercent,
 		run.Summary.StepCount,
 		run.Summary.SucceededStepCount,
 		run.Summary.FailedStepCount,
 		run.Summary.SkippedStepCount,
 		run.Summary.PlannedStepCount,
 	)
+	if active := formatMigrationActiveStep(run.Summary); active != "-" {
+		_, _ = fmt.Fprintf(w, "Active step: %s\n", active)
+	}
 
 	if len(run.Steps) > 0 {
 		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
@@ -216,22 +220,41 @@ func printMigrationExecutionRun(w io.Writer, run *migrationExecutionRun) {
 
 func printMigrationExecutionRunsTable(w io.Writer, runs []cutover.MigrationExecutionRun) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tSTATUS\tCONFIRMED\tSTEPS\tSUCCEEDED\tFAILED\tRESUMED\tUPDATED")
+	_, _ = fmt.Fprintln(tw, "ID\tSTATUS\tCONFIRMED\tPROGRESS\tSTEPS\tSUCCEEDED\tFAILED\tRESUMED\tACTIVE\tUPDATED")
 	for _, run := range runs {
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%t\t%d\t%d\t%d\t%d\t%s\n",
+			"%s\t%s\t%t\t%d%%\t%d\t%d\t%d\t%d\t%s\t%s\n",
 			run.ID,
 			run.Summary.Status,
 			run.Summary.Confirmed,
+			run.Summary.ProgressPercent,
 			run.Summary.StepCount,
 			run.Summary.SucceededStepCount,
 			run.Summary.FailedStepCount,
 			run.Summary.ResumedStepCount,
+			formatMigrationActiveStep(run.Summary),
 			formatTimePtr(run.UpdatedAt),
 		)
 	}
 	_ = tw.Flush()
+}
+
+func formatMigrationActiveStep(summary cutover.MigrationExecutionRunSummary) string {
+	if summary.ActiveStepNumber <= 0 {
+		return "-"
+	}
+	parts := []string{fmt.Sprintf("#%d", summary.ActiveStepNumber)}
+	if summary.ActiveStepStatus != "" {
+		parts = append(parts, string(summary.ActiveStepStatus))
+	}
+	if summary.ActiveStepKind != "" {
+		parts = append(parts, string(summary.ActiveStepKind))
+	}
+	if strings.TrimSpace(summary.ActiveStepFileName) != "" {
+		parts = append(parts, summary.ActiveStepFileName)
+	}
+	return strings.Join(parts, " ")
 }
 
 func printMigrationRemediationActions(w io.Writer, actions []cutover.MigrationRemediationAction) {

@@ -4732,7 +4732,8 @@ func TestMigrationExecutionRunHelperBranches(t *testing.T) {
 	}
 	run, err = executeMigrationRun(context.Background(), nil, "tenant-1", []cutover.BundleFile{{Kind: cutover.KindAccounts, FileName: "accounts.csv"}}, inconsistentPlan, migrationExecuteOptions{Confirm: true})
 	require.NoError(t, err)
-	assert.Equal(t, "succeeded", run.Summary.Status)
+	assert.Equal(t, "blocked", run.Summary.Status)
+	assert.Equal(t, 0, run.Summary.ProgressPercent)
 	assert.Equal(t, migrationExecutionResultSkipped, run.Steps[0].Status)
 
 	_, err = executeMigrationImportStep(context.Background(), nil, "tenant-1", cutover.MigrationExecutionStep{Kind: cutover.FileKind("unsupported")}, cutover.BundleFile{}, migrationExecuteOptions{})
