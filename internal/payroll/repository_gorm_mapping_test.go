@@ -1,6 +1,7 @@
 package payroll
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -10,6 +11,276 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGORMRepositoryNilDatabase(t *testing.T) {
+	repo := NewGORMRepository(nil)
+	ctx := context.Background()
+	schemaName := "tenant_schema"
+	tenantID := "tenant-1"
+	now := time.Date(2026, 6, 7, 8, 9, 10, 0, time.UTC)
+	employee := &Employee{
+		ID:             "employee-1",
+		TenantID:       tenantID,
+		EmployeeNumber: "EMP-001",
+		FirstName:      "Mari",
+		LastName:       "Mets",
+		StartDate:      now,
+	}
+	component := &SalaryComponent{
+		ID:            "component-1",
+		TenantID:      tenantID,
+		EmployeeID:    employee.ID,
+		ComponentType: SalaryComponentBaseSalary,
+		Name:          "Base salary",
+		Amount:        decimal.NewFromInt(2500),
+		EffectiveFrom: now,
+	}
+	run := &PayrollRun{
+		ID:          "run-1",
+		TenantID:    tenantID,
+		PeriodYear:  2026,
+		PeriodMonth: 6,
+		Status:      PayrollCalculated,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	payslip := &Payslip{
+		ID:           "payslip-1",
+		TenantID:     tenantID,
+		PayrollRunID: run.ID,
+		EmployeeID:   employee.ID,
+		CreatedAt:    now,
+	}
+	declaration := &TSDDeclaration{
+		ID:          "tsd-1",
+		TenantID:    tenantID,
+		PeriodYear:  2026,
+		PeriodMonth: 6,
+		Status:      TSDDraft,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	row := TSDRow{
+		ID:            "tsd-row-1",
+		TenantID:      tenantID,
+		DeclarationID: declaration.ID,
+		EmployeeID:    employee.ID,
+		PaymentType:   PaymentTypeSalary,
+		CreatedAt:     now,
+	}
+
+	require.NotNil(t, repo)
+	assert.Nil(t, repo.db)
+
+	err := repo.CreateTSDRows(ctx, schemaName, nil)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name string
+		run  func(t *testing.T) error
+	}{
+		{
+			name: "dbWithContext",
+			run: func(t *testing.T) error {
+				db, err := repo.dbWithContext(ctx)
+				assert.Nil(t, db)
+				return err
+			},
+		},
+		{
+			name: "tenantTable",
+			run: func(t *testing.T) error {
+				db, err := repo.tenantTable(ctx, schemaName, "employees")
+				assert.Nil(t, db)
+				return err
+			},
+		},
+		{
+			name: "WithTransaction",
+			run: func(t *testing.T) error {
+				called := false
+				err := repo.WithTransaction(ctx, func(txRepo Repository) error {
+					called = true
+					return nil
+				})
+				assert.False(t, called)
+				return err
+			},
+		},
+		{
+			name: "CreateEmployee",
+			run: func(t *testing.T) error {
+				return repo.CreateEmployee(ctx, schemaName, employee)
+			},
+		},
+		{
+			name: "GetEmployee",
+			run: func(t *testing.T) error {
+				gotEmployee, err := repo.GetEmployee(ctx, schemaName, tenantID, employee.ID)
+				assert.Nil(t, gotEmployee)
+				return err
+			},
+		},
+		{
+			name: "ListEmployees",
+			run: func(t *testing.T) error {
+				employees, err := repo.ListEmployees(ctx, schemaName, tenantID, true)
+				assert.Nil(t, employees)
+				return err
+			},
+		},
+		{
+			name: "UpdateEmployee",
+			run: func(t *testing.T) error {
+				return repo.UpdateEmployee(ctx, schemaName, employee)
+			},
+		},
+		{
+			name: "EndCurrentBaseSalary",
+			run: func(t *testing.T) error {
+				return repo.EndCurrentBaseSalary(ctx, schemaName, tenantID, employee.ID, now)
+			},
+		},
+		{
+			name: "CreateSalaryComponent",
+			run: func(t *testing.T) error {
+				return repo.CreateSalaryComponent(ctx, schemaName, component)
+			},
+		},
+		{
+			name: "ListSalaryComponents",
+			run: func(t *testing.T) error {
+				components, err := repo.ListSalaryComponents(ctx, schemaName, tenantID, employee.ID, &now)
+				assert.Nil(t, components)
+				return err
+			},
+		},
+		{
+			name: "GetCurrentSalary",
+			run: func(t *testing.T) error {
+				salary, err := repo.GetCurrentSalary(ctx, schemaName, tenantID, employee.ID)
+				assert.True(t, salary.IsZero())
+				return err
+			},
+		},
+		{
+			name: "CreatePayrollRun",
+			run: func(t *testing.T) error {
+				return repo.CreatePayrollRun(ctx, schemaName, run)
+			},
+		},
+		{
+			name: "GetPayrollRun",
+			run: func(t *testing.T) error {
+				gotRun, err := repo.GetPayrollRun(ctx, schemaName, tenantID, run.ID)
+				assert.Nil(t, gotRun)
+				return err
+			},
+		},
+		{
+			name: "ListPayrollRuns",
+			run: func(t *testing.T) error {
+				runs, err := repo.ListPayrollRuns(ctx, schemaName, tenantID, 2026)
+				assert.Nil(t, runs)
+				return err
+			},
+		},
+		{
+			name: "UpdatePayrollRun",
+			run: func(t *testing.T) error {
+				return repo.UpdatePayrollRun(ctx, schemaName, run)
+			},
+		},
+		{
+			name: "ApprovePayrollRun",
+			run: func(t *testing.T) error {
+				return repo.ApprovePayrollRun(ctx, schemaName, tenantID, run.ID, "approver-1")
+			},
+		},
+		{
+			name: "DeletePayslipsByRunID",
+			run: func(t *testing.T) error {
+				return repo.DeletePayslipsByRunID(ctx, schemaName, run.ID)
+			},
+		},
+		{
+			name: "CreatePayslip",
+			run: func(t *testing.T) error {
+				return repo.CreatePayslip(ctx, schemaName, payslip)
+			},
+		},
+		{
+			name: "GetPayslipsWithEmployees",
+			run: func(t *testing.T) error {
+				payslips, err := repo.GetPayslipsWithEmployees(ctx, schemaName, tenantID, run.ID)
+				assert.Nil(t, payslips)
+				return err
+			},
+		},
+		{
+			name: "DeleteTSDByPeriod",
+			run: func(t *testing.T) error {
+				return repo.DeleteTSDByPeriod(ctx, schemaName, tenantID, 2026, 6)
+			},
+		},
+		{
+			name: "CreateTSDDeclaration",
+			run: func(t *testing.T) error {
+				return repo.CreateTSDDeclaration(ctx, schemaName, declaration)
+			},
+		},
+		{
+			name: "CreateTSDRows",
+			run: func(t *testing.T) error {
+				return repo.CreateTSDRows(ctx, schemaName, []TSDRow{row})
+			},
+		},
+		{
+			name: "GetTSD",
+			run: func(t *testing.T) error {
+				gotDeclaration, err := repo.GetTSD(ctx, schemaName, tenantID, 2026, 6)
+				assert.Nil(t, gotDeclaration)
+				return err
+			},
+		},
+		{
+			name: "GetTSDRows",
+			run: func(t *testing.T) error {
+				rows, err := repo.GetTSDRows(ctx, schemaName, tenantID, declaration.ID)
+				assert.Nil(t, rows)
+				return err
+			},
+		},
+		{
+			name: "ListTSD",
+			run: func(t *testing.T) error {
+				declarations, err := repo.ListTSD(ctx, schemaName, tenantID, TSDListFilter{Year: 2026, Month: 6})
+				assert.Nil(t, declarations)
+				return err
+			},
+		},
+		{
+			name: "MarkTSDSubmitted",
+			run: func(t *testing.T) error {
+				return repo.MarkTSDSubmitted(ctx, schemaName, tenantID, declaration.ID, "EMTA-REF-1", now)
+			},
+		},
+		{
+			name: "UpdateTSDStatus",
+			run: func(t *testing.T) error {
+				return repo.UpdateTSDStatus(ctx, schemaName, tenantID, declaration.ID, TSDSubmitted, now)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run(t)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "payroll repository database is not configured")
+		})
+	}
+}
 
 func TestEmployeeModelMappings(t *testing.T) {
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
