@@ -112,13 +112,12 @@ func NewMigrationExecutionRun(plan *MigrationExecutionPlan, confirmed bool) *Mig
 	for _, step := range plan.Steps {
 		status := MigrationExecutionResultPlanned
 		message := "Pass confirm=true to run this import."
+		if confirmed {
+			message = "Ready to import."
+		}
 		if step.Status != MigrationExecutionStepReady {
 			status = MigrationExecutionResultSkipped
 			message = step.Message
-		} else if confirmed {
-			message = "Ready to import."
-		} else {
-			message = "Pass confirm=true to run this import."
 		}
 		run.Steps = append(run.Steps, MigrationExecutionStepRun{
 			StepNumber: step.StepNumber,
