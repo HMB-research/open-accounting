@@ -438,8 +438,11 @@ func TestTemplateType_Constants(t *testing.T) {
 		expected string
 	}{
 		{TemplateInvoiceSend, "INVOICE_SEND"},
+		{TemplateQuoteSend, "QUOTE_SEND"},
+		{TemplateOrderConfirm, "ORDER_CONFIRM"},
 		{TemplatePaymentReceipt, "PAYMENT_RECEIPT"},
 		{TemplateOverdueReminder, "OVERDUE_REMINDER"},
+		{TemplateDocumentRetentionReminder, "DOCUMENT_RETENTION_REMINDER"},
 	}
 
 	for _, tc := range tests {

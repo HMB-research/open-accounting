@@ -448,8 +448,8 @@ func TestService_ListTemplates(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 		// Should have the existing template plus default templates for missing types
-		if len(templates) != 5 { // 1 custom + 4 defaults (quote, order, payment, overdue)
-			t.Errorf("len(templates) = %d, want 5", len(templates))
+		if len(templates) != 6 { // 1 custom + 5 defaults (quote, order, payment, overdue, retention)
+			t.Errorf("len(templates) = %d, want 6", len(templates))
 		}
 	})
 
@@ -466,8 +466,8 @@ func TestService_ListTemplates(t *testing.T) {
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
-		if len(templates) != 5 { // All defaults
-			t.Errorf("len(templates) = %d, want 5", len(templates))
+		if len(templates) != 6 { // All defaults
+			t.Errorf("len(templates) = %d, want 6", len(templates))
 		}
 	})
 

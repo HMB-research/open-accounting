@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 )
@@ -69,6 +70,43 @@ func (m *MockReminderService) ProcessRemindersForTenant(ctx context.Context, ten
 	return m.results[tenantID], nil
 }
 
+type MockDocumentRetentionReminderService struct {
+	results map[string]documents.RetentionReminderDeliveryResult
+	errors  map[string]error
+	calls   []documentRetentionReminderCall
+}
+
+type documentRetentionReminderCall struct {
+	tenantID       string
+	schemaName     string
+	companyName    string
+	recipientEmail string
+	horizonDays    int
+	includeMissing bool
+}
+
+func NewMockDocumentRetentionReminderService() *MockDocumentRetentionReminderService {
+	return &MockDocumentRetentionReminderService{
+		results: make(map[string]documents.RetentionReminderDeliveryResult),
+		errors:  make(map[string]error),
+	}
+}
+
+func (m *MockDocumentRetentionReminderService) ProcessRetentionRemindersForTenant(ctx context.Context, tenantID, schemaName, companyName, recipientEmail string, asOf time.Time, horizonDays int, includeMissing bool) (documents.RetentionReminderDeliveryResult, error) {
+	m.calls = append(m.calls, documentRetentionReminderCall{
+		tenantID:       tenantID,
+		schemaName:     schemaName,
+		companyName:    companyName,
+		recipientEmail: recipientEmail,
+		horizonDays:    horizonDays,
+		includeMissing: includeMissing,
+	})
+	if err, ok := m.errors[tenantID]; ok && err != nil {
+		return documents.RetentionReminderDeliveryResult{}, err
+	}
+	return m.results[tenantID], nil
+}
+
 type journalGenerationCall struct {
 	tenantID       string
 	schemaName     string
@@ -110,6 +148,15 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if config.RecurringJournalEntrySchedule != "15 6 * * *" {
 		t.Errorf("RecurringJournalEntrySchedule = %q, want %q", config.RecurringJournalEntrySchedule, "15 6 * * *")
+	}
+	if config.DocumentRetentionReminderSchedule != "30 9 * * *" {
+		t.Errorf("DocumentRetentionReminderSchedule = %q, want %q", config.DocumentRetentionReminderSchedule, "30 9 * * *")
+	}
+	if config.DocumentRetentionReminderHorizonDays != documents.DefaultRetentionReminderHorizonDays {
+		t.Errorf("DocumentRetentionReminderHorizonDays = %d, want %d", config.DocumentRetentionReminderHorizonDays, documents.DefaultRetentionReminderHorizonDays)
+	}
+	if !config.DocumentRetentionReminderIncludeMissing {
+		t.Error("DocumentRetentionReminderIncludeMissing should be true by default")
 	}
 	if !config.Enabled {
 		t.Error("Enabled should be true by default")
@@ -642,6 +689,82 @@ func TestScheduler_RunRemindersNow_ContinuesOnTenantError(t *testing.T) {
 
 	if len(mockReminder.calls) != 2 {
 		t.Fatalf("expected both tenants to be processed, got %d calls", len(mockReminder.calls))
+	}
+}
+
+func TestScheduler_RunDocumentRetentionRemindersNow_WithTenantResults(t *testing.T) {
+	tenants := []TenantInfo{
+		{ID: "tenant-1", SchemaName: "tenant_1", CompanyName: "Tenant One", Email: "ops1@example.com"},
+		{ID: "tenant-2", SchemaName: "tenant_2", CompanyName: "Tenant Two", Email: "ops2@example.com"},
+	}
+	mockRepo := &MockRepository{tenants: tenants}
+	mockRetention := NewMockDocumentRetentionReminderService()
+	mockRetention.results["tenant-1"] = documents.RetentionReminderDeliveryResult{
+		TenantID:       "tenant-1",
+		RecipientEmail: "ops1@example.com",
+		ActionsFound:   2,
+		EmailSent:      true,
+		EmailLogID:     "email-log-1",
+	}
+	mockRetention.results["tenant-2"] = documents.RetentionReminderDeliveryResult{
+		TenantID:     "tenant-2",
+		ActionsFound: 0,
+		Skipped:      true,
+		SkipReason:   "no document retention reminder actions",
+	}
+
+	config := DefaultConfig()
+	config.DocumentRetentionReminderHorizonDays = 45
+	config.DocumentRetentionReminderIncludeMissing = false
+	scheduler := NewSchedulerWithRepository(mockRepo, nil, nil, config)
+	scheduler.SetDocumentRetentionReminderService(mockRetention)
+	scheduler.RunDocumentRetentionRemindersNow()
+
+	if len(mockRetention.calls) != 2 {
+		t.Fatalf("expected retention reminders for 2 tenants, got %d", len(mockRetention.calls))
+	}
+	if mockRetention.calls[0].tenantID != "tenant-1" || mockRetention.calls[0].recipientEmail != "ops1@example.com" {
+		t.Fatalf("unexpected first retention call: %#v", mockRetention.calls[0])
+	}
+	if mockRetention.calls[0].horizonDays != 45 || mockRetention.calls[0].includeMissing {
+		t.Fatalf("expected custom retention config, got %#v", mockRetention.calls[0])
+	}
+}
+
+func TestScheduler_RunDocumentRetentionRemindersNow_WithRepositoryError(t *testing.T) {
+	mockRepo := &MockRepository{listActiveTenantsErr: errors.New("database error")}
+	mockRetention := NewMockDocumentRetentionReminderService()
+	scheduler := NewSchedulerWithRepository(mockRepo, nil, nil, DefaultConfig())
+	scheduler.SetDocumentRetentionReminderService(mockRetention)
+
+	scheduler.RunDocumentRetentionRemindersNow()
+
+	if len(mockRetention.calls) != 0 {
+		t.Fatalf("expected no retention calls on repository error, got %#v", mockRetention.calls)
+	}
+}
+
+func TestScheduler_RunDocumentRetentionRemindersNow_ContinuesOnTenantError(t *testing.T) {
+	tenants := []TenantInfo{
+		{ID: "tenant-1", SchemaName: "tenant_1", CompanyName: "Tenant One", Email: "ops1@example.com"},
+		{ID: "tenant-2", SchemaName: "tenant_2", CompanyName: "Tenant Two", Email: "ops2@example.com"},
+	}
+	mockRepo := &MockRepository{tenants: tenants}
+	mockRetention := NewMockDocumentRetentionReminderService()
+	mockRetention.errors["tenant-1"] = errors.New("retention repository unavailable")
+	mockRetention.results["tenant-2"] = documents.RetentionReminderDeliveryResult{
+		TenantID:     "tenant-2",
+		ActionsFound: 1,
+		Failed:       true,
+		ErrorMessage: "smtp unavailable",
+	}
+
+	scheduler := NewSchedulerWithRepository(mockRepo, nil, nil, DefaultConfig())
+	scheduler.SetDocumentRetentionReminderService(mockRetention)
+	scheduler.RunDocumentRetentionRemindersNow()
+
+	if len(mockRetention.calls) != 2 {
+		t.Fatalf("expected both tenants to be processed, got %d calls", len(mockRetention.calls))
 	}
 }
 

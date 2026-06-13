@@ -532,6 +532,96 @@ func TestEmailTemplateTypeMigrationAllowsQuoteAndOrderTemplates(t *testing.T) {
 	}
 }
 
+func TestEmailTemplateTypeMigrationAllowsDocumentRetentionReminderTemplate(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	execSQL(t, ctx, pool, `
+		CREATE EXTENSION IF NOT EXISTS pgcrypto;
+		CREATE TABLE tenants (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			schema_name TEXT NOT NULL UNIQUE,
+			is_active BOOLEAN NOT NULL DEFAULT true
+		);
+		CREATE SCHEMA tenant_retention_email_types;
+		INSERT INTO tenants (schema_name, is_active) VALUES ('tenant_retention_email_types', true);
+
+		CREATE TABLE tenant_retention_email_types.email_templates (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			tenant_id UUID NOT NULL,
+			template_type VARCHAR(50) NOT NULL
+				CONSTRAINT email_templates_template_type_check
+				CHECK (template_type IN (
+					'INVOICE_SEND',
+					'INVOICE_REMINDER',
+					'PAYMENT_RECEIPT',
+					'OVERDUE_REMINDER',
+					'WELCOME',
+					'CUSTOM',
+					'PAYMENT_DUE_SOON',
+					'PAYMENT_DUE_TODAY',
+					'QUOTE_SEND',
+					'ORDER_CONFIRM'
+				)),
+			subject TEXT NOT NULL,
+			body_html TEXT NOT NULL,
+			body_text TEXT,
+			is_active BOOLEAN DEFAULT true,
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW(),
+			UNIQUE (tenant_id, template_type)
+		);
+	`)
+
+	dir := t.TempDir()
+	copyRepositoryMigration(t, dir, "054_document_retention_reminder_template.up.sql")
+	copyRepositoryMigration(t, dir, "054_document_retention_reminder_template.down.sql")
+
+	if err := migrateUp(ctx, pool, dir, 0); err != nil {
+		t.Fatalf("migrateUp failed: %v", err)
+	}
+
+	execSQL(t, ctx, pool, `
+		INSERT INTO tenant_retention_email_types.email_templates (tenant_id, template_type, subject, body_html, body_text)
+		VALUES ((SELECT id FROM tenants WHERE schema_name = 'tenant_retention_email_types'), 'DOCUMENT_RETENTION_REMINDER', 'Retention', '<p>Retention</p>', 'Retention');
+	`)
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tenant_retention_email_types.email_templates (tenant_id, template_type, subject, body_html)
+		VALUES ((SELECT id FROM tenants WHERE schema_name = 'tenant_retention_email_types'), 'UNKNOWN_TEMPLATE', 'Unknown', '<p>Unknown</p>')
+	`); err == nil {
+		t.Fatalf("expected unknown template type to be rejected")
+	}
+
+	if err := migrateDown(ctx, pool, dir, 1); err != nil {
+		t.Fatalf("migrateDown failed: %v", err)
+	}
+
+	var remaining int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM tenant_retention_email_types.email_templates
+		WHERE template_type = 'DOCUMENT_RETENTION_REMINDER'
+	`).Scan(&remaining); err != nil {
+		t.Fatalf("count document retention reminder templates after rollback: %v", err)
+	}
+	if remaining != 0 {
+		t.Fatalf("expected document retention reminder templates to be removed on rollback, got %d", remaining)
+	}
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tenant_retention_email_types.email_templates (tenant_id, template_type, subject, body_html)
+		VALUES ((SELECT id FROM tenants WHERE schema_name = 'tenant_retention_email_types'), 'DOCUMENT_RETENTION_REMINDER', 'Retention', '<p>Retention</p>')
+	`); err == nil {
+		t.Fatalf("expected document retention reminder template type to be rejected after rollback")
+	}
+}
+
 func writeMigration(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {

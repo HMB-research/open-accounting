@@ -32,9 +32,12 @@ This guide covers deploying Open Accounting to production environments.
 | `PASSWORD_RESET_SMTP_FROM_NAME` | No | From name for password reset email delivery | `Open Accounting` |
 | `PASSWORD_RESET_SMTP_USE_TLS` | No | Require TLS for password reset email delivery | `true` |
 | `PASSWORD_RESET_EXPOSE_TOKEN` | No | Return reset tokens in API responses for local/dev only | `false` |
-| `SCHEDULER_ENABLED` | No | Enable recurring invoice, recurring journal entry, and payment reminder scheduler jobs | `true` |
+| `SCHEDULER_ENABLED` | No | Enable recurring invoice, recurring journal entry, payment reminder, and document retention reminder scheduler jobs | `true` |
 | `RECURRING_INVOICE_SCHEDULE` | No | Cron schedule for recurring invoice generation | `0 6 * * *` |
 | `RECURRING_JOURNAL_ENTRY_SCHEDULE` | No | Cron schedule for recurring journal entry generation | `15 6 * * *` |
+| `DOCUMENT_RETENTION_REMINDER_SCHEDULE` | No | Cron schedule for document retention reminder delivery | `30 9 * * *` |
+| `DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS` | No | Retention reminder lookahead horizon in days | `30` |
+| `DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING` | No | Include documents missing retention metadata in reminder digests | `true` |
 
 When `APP_ENV=production`, startup fails if `JWT_SECRET` is missing or shorter than 32 characters, or if `ALLOWED_ORIGINS` is empty. Production mode also uses only the configured origins instead of appending localhost development origins.
 

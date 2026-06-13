@@ -9,11 +9,12 @@ import (
 type TemplateType string
 
 const (
-	TemplateInvoiceSend     TemplateType = "INVOICE_SEND"
-	TemplateQuoteSend       TemplateType = "QUOTE_SEND"
-	TemplateOrderConfirm    TemplateType = "ORDER_CONFIRM"
-	TemplatePaymentReceipt  TemplateType = "PAYMENT_RECEIPT"
-	TemplateOverdueReminder TemplateType = "OVERDUE_REMINDER"
+	TemplateInvoiceSend               TemplateType = "INVOICE_SEND"
+	TemplateQuoteSend                 TemplateType = "QUOTE_SEND"
+	TemplateOrderConfirm              TemplateType = "ORDER_CONFIRM"
+	TemplatePaymentReceipt            TemplateType = "PAYMENT_RECEIPT"
+	TemplateOverdueReminder           TemplateType = "OVERDUE_REMINDER"
+	TemplateDocumentRetentionReminder TemplateType = "DOCUMENT_RETENTION_REMINDER"
 )
 
 // EmailStatus represents the status of an email
@@ -308,7 +309,50 @@ func DefaultTemplates() map[TemplateType]EmailTemplate {
 </html>`,
 			IsActive: true,
 		},
+		TemplateDocumentRetentionReminder: {
+			TemplateType: TemplateDocumentRetentionReminder,
+			Subject:      "Document retention follow-up for {{.CompanyName}}",
+			BodyHTML: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+<div style="max-width: 700px; margin: 0 auto; padding: 20px;">
+<h2>Document retention follow-up</h2>
+<p>{{.CompanyName}} has {{.RetentionActionCount}} document retention follow-up actions as of {{.RetentionAsOfDate}}.</p>
+<p><strong>Cutoff date:</strong> {{.RetentionCutoffDate}}</p>
+<ul>
+{{range .RetentionActions}}
+<li><strong>{{.Action}}</strong>: {{.FileName}} ({{.DocumentType}}, {{.EntityType}} {{.EntityID}}) - {{.Message}}{{if .RetentionUntil}} Retention: {{.RetentionUntil}}{{end}}{{if .DaysUntilRetention}} Days: {{.DaysUntilRetention}}{{end}}</li>
+{{end}}
+</ul>
+<p>Review the document retention queue in Open Accounting and update retention dates, approvals, or remediation notes before the next scheduled run.</p>
+</div>
+</body>
+</html>`,
+			BodyText: `Document retention follow-up for {{.CompanyName}}
+
+As of {{.RetentionAsOfDate}}, cutoff {{.RetentionCutoffDate}}, there are {{.RetentionActionCount}} document retention follow-up actions.
+
+{{range .RetentionActions}}- {{.Action}}: {{.FileName}} ({{.DocumentType}}, {{.EntityType}} {{.EntityID}}) - {{.Message}}{{if .RetentionUntil}} Retention: {{.RetentionUntil}}{{end}}{{if .DaysUntilRetention}} Days: {{.DaysUntilRetention}}{{end}}
+{{end}}
+Review the document retention queue in Open Accounting and update retention dates, approvals, or remediation notes before the next scheduled run.
+`,
+			IsActive: true,
+		},
 	}
+}
+
+// RetentionReminderTemplateAction holds one document retention follow-up row for templates.
+type RetentionReminderTemplateAction struct {
+	Action             string
+	DocumentID         string
+	DocumentType       string
+	FileName           string
+	EntityType         string
+	EntityID           string
+	Message            string
+	DaysUntilRetention string
+	RetentionUntil     string
 }
 
 // TemplateData holds data for rendering email templates
@@ -346,4 +390,16 @@ type TemplateData struct {
 	Amount      string
 	PaymentDate string
 	Reference   string
+
+	// Document retention reminder fields
+	RetentionAsOfDate              string
+	RetentionCutoffDate            string
+	RetentionActionCount           int
+	RetentionTotalCount            int
+	RetentionExpiredCount          int
+	RetentionDueSoonCount          int
+	RetentionMissingRetentionCount int
+	RetentionPendingReviewCount    int
+	RetentionRejectedCount         int
+	RetentionActions               []RetentionReminderTemplateAction
 }

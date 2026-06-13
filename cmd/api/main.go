@@ -149,6 +149,7 @@ func main() {
 	inventoryService := inventory.NewService(pool)
 	reminderService := invoicing.NewReminderService(pool, emailService)
 	automatedReminderService := invoicing.NewAutomatedReminderService(pool, emailService)
+	documentRetentionReminderService := documents.NewRetentionReminderService(documentsService, emailService)
 	costCenterService := accounting.NewCostCenterService(pool)
 	interestService := invoicing.NewInterestService(pool)
 	webhookService := webhooks.NewService(pool)
@@ -176,11 +177,31 @@ func main() {
 	if schedule := os.Getenv("RECURRING_JOURNAL_ENTRY_SCHEDULE"); schedule != "" {
 		schedulerConfig.RecurringJournalEntrySchedule = schedule
 	}
+	if schedule := os.Getenv("DOCUMENT_RETENTION_REMINDER_SCHEDULE"); schedule != "" {
+		schedulerConfig.DocumentRetentionReminderSchedule = schedule
+	}
+	if horizon := os.Getenv("DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS"); horizon != "" {
+		parsed, err := strconv.Atoi(horizon)
+		if err != nil || parsed < 0 {
+			log.Warn().Str("horizon_days", horizon).Msg("Invalid DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS, using default")
+		} else {
+			schedulerConfig.DocumentRetentionReminderHorizonDays = parsed
+		}
+	}
+	if includeMissing := os.Getenv("DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING"); includeMissing != "" {
+		parsed, err := strconv.ParseBool(includeMissing)
+		if err != nil {
+			log.Warn().Str("include_missing", includeMissing).Msg("Invalid DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING, using default")
+		} else {
+			schedulerConfig.DocumentRetentionReminderIncludeMissing = parsed
+		}
+	}
 	if os.Getenv("SCHEDULER_ENABLED") == "false" {
 		schedulerConfig.Enabled = false
 	}
 	appScheduler := scheduler.NewScheduler(pool, recurringService, automatedReminderService, schedulerConfig)
 	appScheduler.SetRecurringJournalEntryService(accountingService)
+	appScheduler.SetDocumentRetentionReminderService(documentRetentionReminderService)
 	if err := appScheduler.Start(); err != nil {
 		log.Warn().Err(err).Msg("Failed to start scheduler")
 	}

@@ -313,9 +313,12 @@ open-accounting/
 | `PASSWORD_RESET_BASE_URL`          | Frontend reset URL used in password reset emails                         | unset                                        |
 | `PASSWORD_RESET_SMTP_*`            | Global SMTP settings for password reset email delivery                   | unset                                        |
 | `PASSWORD_RESET_EXPOSE_TOKEN`      | Return reset tokens in API responses for local/dev only                  | `false`                                      |
-| `SCHEDULER_ENABLED`                | Enable recurring invoice, recurring journal, and reminder scheduler jobs | `true`                                       |
+| `SCHEDULER_ENABLED`                | Enable recurring invoice, recurring journal, invoice reminder, and document retention reminder scheduler jobs | `true`                                       |
 | `RECURRING_INVOICE_SCHEDULE`       | Cron schedule for recurring invoice generation                           | `0 6 * * *`                                  |
 | `RECURRING_JOURNAL_ENTRY_SCHEDULE` | Cron schedule for recurring journal entry generation                     | `15 6 * * *`                                 |
+| `DOCUMENT_RETENTION_REMINDER_SCHEDULE` | Cron schedule for document retention reminder delivery               | `30 9 * * *`                                 |
+| `DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS` | Retention reminder lookahead horizon in days                    | `30`                                         |
+| `DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING` | Include documents missing retention metadata in reminder digests | `true`                                       |
 
 ---
 
@@ -364,7 +367,7 @@ open-accounting/
 - [x] Tenant period lock on core write paths
 - [x] Close/reopen workflow with audit trail in API and company settings
 - [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
-- [x] Document attachments with review, retention dates, retention-year calculation, retention review, and reminder actions for invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, and orders
+- [x] Document attachments with review, retention dates, retention-year calculation, retention review, reminder actions, and scheduled retention reminder digests for invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, and orders
 - [x] Document evidence policy evaluation through API and CLI
 - [x] Optional approved evidence blockers for quote send and order confirmation
 - [x] Purchase-invoice evidence enforcement on send and email paths
