@@ -1058,6 +1058,25 @@ func TestValidateBundleReportsKMDHistoryRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindKMDHistory, "total_input_vat", "total_input_vat must be consistent for each KMD period")
 }
 
+func TestValidateBundleAcceptsKMDHistoryOptionalGroupValuesAfterBlankFirstRow(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindKMDHistory,
+			FileName: "kmd-history.csv",
+			CSVContent: "year,month,status,submitted_at,row_code,tax_base,tax_amount,total_output_vat,total_input_vat\n" +
+				"2026,5,ACCEPTED,,1,100,22,,\n" +
+				"2026,5,ACCEPTED,2026-01-20,2,50,11,22,5\n" +
+				"2026,5,ACCEPTED,2026-01-20,3,25,5.5,22,5\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
 func TestValidateBundleReportsHistoryCompositeDuplicateIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
