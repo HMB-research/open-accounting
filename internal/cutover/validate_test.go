@@ -878,6 +878,45 @@ func TestValidateBundleReportsTSDHistoryRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindTSDHistory, "emta_reference", "emta_reference must be consistent for each TSD period")
 }
 
+func TestValidateBundleAcceptsTSDHistorySubmittedAtDefaults(t *testing.T) {
+	tests := []struct {
+		name string
+		csv  string
+	}{
+		{
+			name: "missing column",
+			csv: "year,month,status,employee_number,gross_payment\n" +
+				"2026,5,DRAFT,EMP-1,3200\n" +
+				"2026,6,SUBMITTED,EMP-2,3200\n" +
+				"2026,7,ACCEPTED,EMP-3,3200\n",
+		},
+		{
+			name: "blank column",
+			csv: "year,month,status,submitted_at,employee_number,gross_payment\n" +
+				"2026,5,DRAFT,,EMP-1,3200\n" +
+				"2026,6,SUBMITTED,,EMP-2,3200\n" +
+				"2026,7,ACCEPTED,,EMP-3,3200\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+				{
+					Kind:       KindTSDHistory,
+					FileName:   "tsd-history.csv",
+					CSVContent: tt.csv,
+				},
+			}})
+
+			require.NoError(t, err)
+			require.NotNil(t, report)
+			assert.True(t, report.Summary.Ready)
+			assert.Empty(t, report.Issues)
+		})
+	}
+}
+
 func TestValidateBundleReportsKMDHistoryRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
