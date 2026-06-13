@@ -36,6 +36,7 @@ type MockRepository struct {
 	addUserToTenantErr       error
 	removeUserFromTenantErr  error
 	getUserRoleErr           error
+	getTenantUserErr         error
 	listUserTenantsErr       error
 	listTenantUsersErr       error
 	updateTenantUserRoleErr  error
@@ -252,6 +253,9 @@ func (m *MockRepository) GetUserRole(ctx context.Context, tenantID, userID strin
 }
 
 func (m *MockRepository) GetTenantUser(ctx context.Context, tenantID, userID string) (*TenantUser, error) {
+	if m.getTenantUserErr != nil {
+		return nil, m.getTenantUserErr
+	}
 	for _, u := range m.tenantUsers[tenantID] {
 		if u.UserID == userID {
 			user := u
@@ -971,6 +975,38 @@ func TestService_ClosePeriodRejectsInvalidDate(t *testing.T) {
 	assert.Contains(t, err.Error(), "last day of a month")
 }
 
+func TestService_ClosePeriodReturnsTenantLookupError(t *testing.T) {
+	repo := NewMockRepository()
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ClosePeriod(context.Background(), "missing-tenant", "user-123", &ClosePeriodRequest{
+		PeriodEndDate: "2026-01-31",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tenant not found: missing-tenant")
+}
+
+func TestService_ClosePeriodRejectsInvalidTenantLockDate(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("bad-date")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
+		PeriodEndDate: "2026-02-28",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid tenant period lock date")
+}
+
 func TestService_ClosePeriodRejectsAlreadyClosedDate(t *testing.T) {
 	repo := NewMockRepository()
 	initialSettings := DefaultSettings()
@@ -1073,6 +1109,46 @@ func TestService_ReopenPeriodClearsInitialLockDate(t *testing.T) {
 	assert.Nil(t, event.LockDateAfter)
 }
 
+func TestService_ReopenPeriodRejectsNoClosedPeriod(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
+		PeriodEndDate: "2026-01-31",
+		Note:          "Undo close",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no closed period to reopen")
+}
+
+func TestService_ReopenPeriodRejectsDateAfterCurrentLock(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-01-31")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
+		PeriodEndDate: "2026-02-28",
+		Note:          "Undo close",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is not currently closed")
+}
+
 func TestService_ReopenPeriodRequiresNote(t *testing.T) {
 	repo := NewMockRepository()
 	initialSettings := DefaultSettings()
@@ -1112,6 +1188,98 @@ func TestService_ReopenPeriodRequiresExistingCloseEvent(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "has not been closed yet")
+}
+
+func TestService_ReopenPeriodPropagatesLatestCloseLookupError(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-01-31")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	repo.getLatestCloseEventErr = errors.New("database error")
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
+		PeriodEndDate: "2026-01-31",
+		Note:          "Undo close",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
+}
+
+func TestService_ListPeriodCloseEvents(t *testing.T) {
+	repo := NewMockRepository()
+	repo.periodCloseEvents["tenant-123"] = []PeriodCloseEvent{
+		{ID: "event-2", TenantID: "tenant-123", PeriodEndDate: "2026-02-28"},
+		{ID: "event-1", TenantID: "tenant-123", PeriodEndDate: "2026-01-31"},
+	}
+	svc := newTestServiceWithRepository(repo)
+
+	events, err := svc.ListPeriodCloseEvents(context.Background(), "tenant-123", 1)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "event-2", events[0].ID)
+
+	repo.listPeriodCloseEventsErr = errors.New("database error")
+	_, err = svc.ListPeriodCloseEvents(context.Background(), "tenant-123", 10)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
+}
+
+func TestPeriodCloseDateHelpers(t *testing.T) {
+	t.Run("parse month end trims and normalizes", func(t *testing.T) {
+		parsed, err := parseMonthEndDate(" 2026-02-28 ")
+		require.NoError(t, err)
+		assert.Equal(t, time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC), parsed)
+	})
+
+	t.Run("parse month end rejects blank date", func(t *testing.T) {
+		_, err := parseMonthEndDate(" ")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "period end date is required")
+	})
+
+	t.Run("parse month end rejects wrong format", func(t *testing.T) {
+		_, err := parseMonthEndDate("2026/02/28")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "YYYY-MM-DD")
+	})
+
+	t.Run("parse optional lock handles nil and blank", func(t *testing.T) {
+		parsed, err := parseOptionalLockDate(nil)
+		require.NoError(t, err)
+		assert.Nil(t, parsed)
+
+		parsed, err = parseOptionalLockDate(strPtr(" "))
+		require.NoError(t, err)
+		assert.Nil(t, parsed)
+	})
+
+	t.Run("parse optional lock trims valid date", func(t *testing.T) {
+		parsed, err := parseOptionalLockDate(strPtr(" 2026-02-28 "))
+		require.NoError(t, err)
+		require.NotNil(t, parsed)
+		assert.Equal(t, time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC), *parsed)
+	})
+
+	t.Run("parse optional lock rejects invalid date", func(t *testing.T) {
+		_, err := parseOptionalLockDate(strPtr("2026/02/28"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid tenant period lock date")
+	})
+
+	t.Run("format optional string date handles nil and blank", func(t *testing.T) {
+		assert.Nil(t, formatOptionalDateFromString(nil))
+		assert.Nil(t, formatOptionalDateFromString(strPtr(" ")))
+		formatted := formatOptionalDateFromString(strPtr(" 2026-02-28 "))
+		require.NotNil(t, formatted)
+		assert.Equal(t, "2026-02-28", *formatted)
+	})
 }
 
 func TestService_DeleteTenant(t *testing.T) {
@@ -1276,6 +1444,50 @@ func TestService_GetUserRole(t *testing.T) {
 		_, err := svc.GetUserRole(context.Background(), "tenant-1", "user-999")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "user not member of tenant")
+	})
+}
+
+func TestService_GetTenantUser(t *testing.T) {
+	t.Run("returns inactive membership", func(t *testing.T) {
+		repo := NewMockRepository()
+		createdAt := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+		repo.AddTestTenantUser(TenantUser{
+			TenantID:  "tenant-1",
+			UserID:    "user-1",
+			Role:      RoleViewer,
+			IsActive:  false,
+			CreatedAt: createdAt,
+		})
+		svc := newTestServiceWithRepository(repo)
+
+		membership, err := svc.GetTenantUser(context.Background(), "tenant-1", "user-1")
+
+		require.NoError(t, err)
+		require.NotNil(t, membership)
+		assert.Equal(t, RoleViewer, membership.Role)
+		assert.False(t, membership.IsActive)
+		assert.Equal(t, createdAt, membership.CreatedAt)
+	})
+
+	t.Run("maps missing membership", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := newTestServiceWithRepository(repo)
+
+		_, err := svc.GetTenantUser(context.Background(), "tenant-1", "missing")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user not member of tenant")
+	})
+
+	t.Run("propagates repository error", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.getTenantUserErr = errors.New("database error")
+		svc := newTestServiceWithRepository(repo)
+
+		_, err := svc.GetTenantUser(context.Background(), "tenant-1", "user-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "database error")
 	})
 }
 
@@ -1997,6 +2209,40 @@ func TestService_SetTenantUserActive(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cannot change owner membership status")
+	})
+
+	t.Run("no-op when membership already has requested status", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleViewer, IsActive: true})
+		svc := newTestServiceWithRepository(repo)
+
+		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "user-1", true)
+
+		require.NoError(t, err)
+		membership, err := repo.GetTenantUser(context.Background(), "tenant-1", "user-1")
+		require.NoError(t, err)
+		assert.True(t, membership.IsActive)
+	})
+
+	t.Run("maps missing membership", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := newTestServiceWithRepository(repo)
+
+		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "missing", false)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user not found in tenant")
+	})
+
+	t.Run("wraps membership lookup error", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.getTenantUserErr = errors.New("database error")
+		svc := newTestServiceWithRepository(repo)
+
+		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "user-1", false)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "check current membership")
 	})
 }
 
