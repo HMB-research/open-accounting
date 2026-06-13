@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19233,9 +19234,40 @@ func cliPayrollRunPayload(id, status string, year, month int) map[string]any {
 		"total_net":           "2534.80",
 		"total_employer_cost": "4281.60",
 		"notes":               "March payroll",
+		"remediation_actions": cliPayrollRunRemediationPayload(id, status, year, month),
 		"created_at":          "2026-03-20T12:00:00Z",
 		"updated_at":          "2026-03-20T12:00:00Z",
 	}
+}
+
+func cliPayrollRunRemediationPayload(id, status string, year, month int) []map[string]any {
+	code := "payroll_run_calculate"
+	action := "Verify active employees and salary components, then calculate payslips for the period."
+	command := "oa payroll runs calculate --id " + id
+	switch status {
+	case "CALCULATED":
+		code = "payroll_run_approve"
+		action = "Review payroll totals and payslips, then approve the run for salary payment and TSD generation."
+		command = "oa payroll runs approve --id " + id
+	case "APPROVED":
+		code = "payroll_generate_tsd"
+		action = "Generate the TSD declaration, export it, and file it through e-MTA."
+		command = "oa tsd generate --run-id " + id
+	}
+	period := fmt.Sprintf("%04d-%02d", year, month)
+	return []map[string]any{{
+		"code":        code,
+		"severity":    "ACTION",
+		"scope":       "payroll",
+		"owner_role":  "accountant",
+		"message":     fmt.Sprintf("Payroll run %s has follow-up.", period),
+		"action":      action,
+		"period":      period,
+		"entity_type": "payroll_run",
+		"entity_id":   id,
+		"ui_path":     "/payroll?run_id=" + id,
+		"cli_command": command,
+	}}
 }
 
 func cliPayslipPayload(id, runID string) map[string]any {
@@ -19852,17 +19884,21 @@ func TestCLIPayrollRunCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Payroll run 2026-03")
 	assert.Contains(t, stdout.String(), "Mari Maasikas")
+	assert.Contains(t, stdout.String(), "Payroll remediation actions")
+	assert.Contains(t, stdout.String(), "payroll_run_calculate")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"payroll", "runs", "calculate", "--id", "run-1"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "CALCULATED")
+	assert.Contains(t, stdout.String(), "payroll_run_approve")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"payroll", "runs", "process", "--id", "run-1", "--approve"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Processed payroll run run-1 with 1 payslips")
 	assert.Contains(t, stdout.String(), "Payroll run was approved")
+	assert.Contains(t, stdout.String(), "payroll_generate_tsd")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"payroll", "runs", "approve", "--id", "run-1"})

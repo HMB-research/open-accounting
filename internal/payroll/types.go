@@ -111,24 +111,40 @@ const (
 
 // PayrollRun represents a monthly payroll calculation
 type PayrollRun struct {
-	ID                string          `json:"id"`
-	TenantID          string          `json:"tenant_id"`
-	PeriodYear        int             `json:"period_year"`
-	PeriodMonth       int             `json:"period_month"`
-	Status            PayrollStatus   `json:"status"`
-	PaymentDate       *time.Time      `json:"payment_date,omitempty"`
-	TotalGross        decimal.Decimal `json:"total_gross"`
-	TotalNet          decimal.Decimal `json:"total_net"`
-	TotalEmployerCost decimal.Decimal `json:"total_employer_cost"`
-	Notes             string          `json:"notes,omitempty"`
-	CreatedBy         string          `json:"created_by,omitempty"`
-	ApprovedBy        string          `json:"approved_by,omitempty"`
-	ApprovedAt        *time.Time      `json:"approved_at,omitempty"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
+	ID                 string                        `json:"id"`
+	TenantID           string                        `json:"tenant_id"`
+	PeriodYear         int                           `json:"period_year"`
+	PeriodMonth        int                           `json:"period_month"`
+	Status             PayrollStatus                 `json:"status"`
+	PaymentDate        *time.Time                    `json:"payment_date,omitempty"`
+	TotalGross         decimal.Decimal               `json:"total_gross"`
+	TotalNet           decimal.Decimal               `json:"total_net"`
+	TotalEmployerCost  decimal.Decimal               `json:"total_employer_cost"`
+	Notes              string                        `json:"notes,omitempty"`
+	RemediationActions []PayrollRunRemediationAction `json:"remediation_actions,omitempty"`
+	CreatedBy          string                        `json:"created_by,omitempty"`
+	ApprovedBy         string                        `json:"approved_by,omitempty"`
+	ApprovedAt         *time.Time                    `json:"approved_at,omitempty"`
+	CreatedAt          time.Time                     `json:"created_at"`
+	UpdatedAt          time.Time                     `json:"updated_at"`
 
 	// Loaded relations
 	Payslips []Payslip `json:"payslips,omitempty"`
+}
+
+// PayrollRunRemediationAction describes one operator action for payroll run follow-up.
+type PayrollRunRemediationAction struct {
+	Code       string `json:"code"`
+	Severity   string `json:"severity"`
+	Scope      string `json:"scope"`
+	OwnerRole  string `json:"owner_role"`
+	Message    string `json:"message"`
+	Action     string `json:"action"`
+	Period     string `json:"period,omitempty"`
+	EntityType string `json:"entity_type,omitempty"`
+	EntityID   string `json:"entity_id,omitempty"`
+	UIPath     string `json:"ui_path,omitempty"`
+	CLICommand string `json:"cli_command,omitempty"`
 }
 
 // Payslip represents an individual employee's payslip

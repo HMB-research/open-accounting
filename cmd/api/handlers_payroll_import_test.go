@@ -264,6 +264,7 @@ func TestPayrollBusinessHandlersRunLifecycleAndTSD(t *testing.T) {
 	))
 	require.Equal(t, "payroll-1", createdRun.ID)
 	require.Equal(t, payroll.PayrollDraft, createdRun.Status)
+	require.Contains(t, payrollRunRemediationCodes(createdRun.RemediationActions), "payroll_run_calculate")
 
 	runs := invokePayrollImportJSON[[]payroll.PayrollRun](t, http.StatusOK, h.ListPayrollRuns, payrollHandlerRequest(
 		http.MethodGet,
@@ -273,6 +274,7 @@ func TestPayrollBusinessHandlersRunLifecycleAndTSD(t *testing.T) {
 	))
 	require.Len(t, runs, 1)
 	require.Equal(t, createdRun.ID, runs[0].ID)
+	require.NotEmpty(t, runs[0].RemediationActions)
 
 	gotRun := invokePayrollImportJSON[payroll.PayrollRun](t, http.StatusOK, h.GetPayrollRun, payrollHandlerRequest(
 		http.MethodGet,
@@ -281,6 +283,7 @@ func TestPayrollBusinessHandlersRunLifecycleAndTSD(t *testing.T) {
 		map[string]string{"tenantID": "tenant-1", "runID": createdRun.ID},
 	))
 	require.Equal(t, "March payroll", gotRun.Notes)
+	require.NotEmpty(t, gotRun.RemediationActions)
 
 	calculated := invokePayrollImportJSON[payroll.PayrollRun](t, http.StatusOK, h.CalculatePayroll, payrollHandlerRequest(
 		http.MethodPost,
@@ -291,6 +294,7 @@ func TestPayrollBusinessHandlersRunLifecycleAndTSD(t *testing.T) {
 	require.Equal(t, payroll.PayrollCalculated, calculated.Status)
 	require.Len(t, calculated.Payslips, 1)
 	require.True(t, calculated.TotalGross.Equal(decimal.RequireFromString("3000.00")))
+	require.Contains(t, payrollRunRemediationCodes(calculated.RemediationActions), "payroll_run_approve")
 
 	payslips := invokePayrollImportJSON[[]payroll.Payslip](t, http.StatusOK, h.GetPayslips, payrollHandlerRequest(
 		http.MethodGet,
@@ -328,6 +332,7 @@ func TestPayrollBusinessHandlersRunLifecycleAndTSD(t *testing.T) {
 	require.True(t, processResult.Approved)
 	require.Equal(t, 1, processResult.PayslipCount)
 	require.Equal(t, payroll.PayrollApproved, processResult.PayrollRun.Status)
+	require.Contains(t, payrollRunRemediationCodes(processResult.PayrollRun.RemediationActions), "payroll_generate_tsd")
 
 	tsd := invokePayrollImportJSON[payroll.TSDDeclaration](t, http.StatusOK, h.GenerateTSD, payrollHandlerRequest(
 		http.MethodPost,
@@ -716,6 +721,14 @@ func invokePayrollImportRaw(t *testing.T, wantStatus int, handler func(http.Resp
 	handler(rec, req)
 	require.Equal(t, wantStatus, rec.Code, rec.Body.String())
 	return rec
+}
+
+func payrollRunRemediationCodes(actions []payroll.PayrollRunRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }
 
 func payrollImportHandlerByName(h *Handlers, name string) func(http.ResponseWriter, *http.Request) {

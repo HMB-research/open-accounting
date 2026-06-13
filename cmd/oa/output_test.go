@@ -2221,9 +2221,17 @@ func TestPrintPayrollOutputs(t *testing.T) {
 		TotalNet:          decimal.NewFromFloat(2534.8),
 		TotalEmployerCost: decimal.NewFromFloat(4281.6),
 		Notes:             "March payroll",
-		CreatedAt:         now,
-		UpdatedAt:         now,
-		Payslips:          []payroll.Payslip{payslip},
+		RemediationActions: []payroll.PayrollRunRemediationAction{{
+			Code:       "payroll_run_approve",
+			Severity:   "ACTION",
+			Scope:      "payroll",
+			OwnerRole:  "accountant",
+			Action:     "Review payroll totals and payslips, then approve the run for salary payment and TSD generation.",
+			CLICommand: "oa payroll runs approve --id run-1",
+		}},
+		CreatedAt: now,
+		UpdatedAt: now,
+		Payslips:  []payroll.Payslip{payslip},
 	}
 
 	var runsBuf bytes.Buffer
@@ -2235,11 +2243,17 @@ func TestPrintPayrollOutputs(t *testing.T) {
 	printPayrollRun(&runBuf, &run)
 	assert.Contains(t, runBuf.String(), "Payroll run 2026-03")
 	assert.Contains(t, runBuf.String(), "Mari Maasikas")
+	assert.Contains(t, runBuf.String(), "Payroll remediation actions")
+	assert.Contains(t, runBuf.String(), "payroll_run_approve")
 
 	var payslipsBuf bytes.Buffer
 	printPayslipsTable(&payslipsBuf, []payroll.Payslip{payslip})
 	assert.Contains(t, payslipsBuf.String(), "Mari Maasikas")
 	assert.Contains(t, payslipsBuf.String(), "2534.8")
+
+	var emptyPayrollRemediationBuf bytes.Buffer
+	printPayrollRunRemediationActions(&emptyPayrollRemediationBuf, nil)
+	assert.Empty(t, emptyPayrollRemediationBuf.String())
 
 	var componentsBuf bytes.Buffer
 	printSalaryComponentsTable(&componentsBuf, []payroll.SalaryComponent{

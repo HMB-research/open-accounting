@@ -1238,6 +1238,8 @@ Authorization: Bearer <token>
 
 - `year` (integer): optional period-year filter
 
+Payroll run responses include `remediation_actions` with `code`, `severity`, `scope`, `owner_role`, `message`, `action`, `period`, optional entity context, UI path, and CLI command fields for accountant follow-up on draft calculation, missing payment dates, zero-payslip runs, approval, TSD generation, paid-run declaration follow-up, and declared payroll archive evidence.
+
 ### Create Payroll Run
 
 ```http
