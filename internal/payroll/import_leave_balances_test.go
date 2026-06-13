@@ -256,6 +256,81 @@ func TestImportLeaveBalancesCSV_MatchesAbsenceTypesByIDAndNameWithDefaults(t *te
 	assert.True(t, sickByNameET.RemainingDays.Equal(decimal.NewFromInt(8)))
 }
 
+func TestImportLeaveBalancesCSV_ResolvesDuplicateAndAmbiguousAbsenceTypeNames(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockAbsenceRepository()
+	repo.Employees["emp-study"] = &Employee{
+		ID:             "emp-study",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-300",
+		FirstName:      "Marta",
+		LastName:       "Mets",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.Employees["emp-annual"] = &Employee{
+		ID:             "emp-annual",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-301",
+		FirstName:      "Peeter",
+		LastName:       "Pihl",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.AbsenceTypes["type-study"] = &AbsenceType{
+		ID:                 "type-study",
+		TenantID:           "tenant-1",
+		Code:               "STUDY_LEAVE",
+		Name:               "Study leave",
+		NameET:             "Study leave",
+		DefaultDaysPerYear: decimal.NewFromInt(5),
+		IsActive:           true,
+	}
+	repo.AbsenceTypes["type-annual"] = &AbsenceType{
+		ID:                 "type-annual",
+		TenantID:           "tenant-1",
+		Code:               "ANNUAL_LEAVE",
+		Name:               "Shared leave",
+		DefaultDaysPerYear: decimal.NewFromInt(28),
+		IsActive:           true,
+	}
+	repo.AbsenceTypes["type-sick"] = &AbsenceType{
+		ID:                 "type-sick",
+		TenantID:           "tenant-1",
+		Code:               "SICK_LEAVE",
+		Name:               "Shared leave",
+		DefaultDaysPerYear: decimal.NewFromInt(10),
+		IsActive:           true,
+	}
+	service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+	result, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", &ImportLeaveBalancesRequest{
+		CSVContent: "year,employee_number,absence_type_code,absence_type,entitled_days,notes\n" +
+			"2025,EMP-300,,Study leave,,Localized duplicate name\n" +
+			"2025,EMP-301,ANNUAL_LEAVE,Shared leave,28,Explicit code disambiguates name\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Equal(t, 2, result.LeaveBalancesCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Nil(t, result.Errors)
+
+	study := repo.LeaveBalances["tenant-1-emp-study-type-study-2025"]
+	require.NotNil(t, study)
+	assert.True(t, study.EntitledDays.Equal(decimal.NewFromInt(5)))
+	assert.True(t, study.RemainingDays.Equal(decimal.NewFromInt(5)))
+	assert.Equal(t, "Localized duplicate name", study.Notes)
+
+	annual := repo.LeaveBalances["tenant-1-emp-annual-type-annual-2025"]
+	require.NotNil(t, annual)
+	assert.True(t, annual.EntitledDays.Equal(decimal.NewFromInt(28)))
+	assert.True(t, annual.RemainingDays.Equal(decimal.NewFromInt(28)))
+	assert.Equal(t, "Explicit code disambiguates name", annual.Notes)
+}
+
 func TestImportLeaveBalancesCSV_RejectsAmbiguousAndMismatchedAbsenceTypes(t *testing.T) {
 	t.Parallel()
 
@@ -385,6 +460,56 @@ func TestImportLeaveBalancesCSV_SkipsInvalidRows(t *testing.T) {
 	assert.Contains(t, result.Errors[2].Message, "entitled_days must be zero or greater")
 }
 
+func TestImportLeaveBalancesCSV_RejectsMalformedYearTypeAndAmountRows(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := NewMockAbsenceRepository()
+	repo.Employees["emp-1"] = &Employee{
+		ID:             "emp-1",
+		TenantID:       "tenant-1",
+		EmployeeNumber: "EMP-100",
+		FirstName:      "Mari",
+		LastName:       "Maasikas",
+		StartDate:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		IsActive:       true,
+	}
+	repo.AbsenceTypes["type-annual"] = &AbsenceType{
+		ID:                 "type-annual",
+		TenantID:           "tenant-1",
+		Code:               "ANNUAL_LEAVE",
+		Name:               "Annual leave",
+		DefaultDaysPerYear: decimal.NewFromInt(28),
+		IsActive:           true,
+	}
+	service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
+
+	result, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", &ImportLeaveBalancesRequest{
+		CSVContent: "year,employee_number,absence_type_id,absence_type_code,absence_type,entitled_days,carryover_days,used_days,pending_days\n" +
+			"2019,EMP-100,,ANNUAL_LEAVE,,28,0,0,0\n" +
+			"2025,EMP-100,33333333-3333-4333-8333-333333333333,,,28,0,0,0\n" +
+			"2025,EMP-100,,,,28,0,0,0\n" +
+			"2025,EMP-100,,ANNUAL_LEAVE,,invalid,0,0,0\n" +
+			"2025,EMP-100,,ANNUAL_LEAVE,,28,-1,0,0\n" +
+			"2025,EMP-100,,ANNUAL_LEAVE,,28,0,used,0\n" +
+			"2025,EMP-100,,ANNUAL_LEAVE,,28,0,0,-1\n",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 7, result.RowsProcessed)
+	assert.Zero(t, result.LeaveBalancesCreated)
+	assert.Zero(t, result.LeaveBalancesUpdated)
+	assert.Equal(t, 7, result.RowsSkipped)
+	require.Len(t, result.Errors, 7)
+	assert.Contains(t, result.Errors[0].Message, "period_year must be between 2020 and 2100")
+	assert.Contains(t, result.Errors[1].Message, "absence_type_id \"33333333-3333-4333-8333-333333333333\" not found")
+	assert.Contains(t, result.Errors[2].Message, "absence_type_code, absence_type, or absence_type_id is required")
+	assert.Contains(t, result.Errors[3].Message, "invalid entitled_days")
+	assert.Contains(t, result.Errors[4].Message, "carryover_days must be zero or greater")
+	assert.Contains(t, result.Errors[5].Message, "invalid used_days")
+	assert.Contains(t, result.Errors[6].Message, "pending_days must be zero or greater")
+}
+
 func TestImportLeaveBalancesCSV_RejectsInvalidAbsenceTypeID(t *testing.T) {
 	t.Parallel()
 
@@ -422,9 +547,30 @@ func TestImportLeaveBalancesCSV_RejectsMissingHeaders(t *testing.T) {
 	repo := NewMockAbsenceRepository()
 	service := NewAbsenceService(repo, &MockUUIDGenerator{prefix: "leave"})
 
-	_, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", &ImportLeaveBalancesRequest{
-		CSVContent: "employee_number,entitled_days\nEMP-100,28\n",
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing required year column")
+	tests := []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{
+			name:    "missing year",
+			content: "employee_number,absence_type_code,entitled_days\nEMP-100,ANNUAL_LEAVE,28\n",
+			wantErr: "missing required year column",
+		},
+		{
+			name:    "missing absence type",
+			content: "year,employee_number,entitled_days\n2025,EMP-100,28\n",
+			wantErr: "missing required absence_type_code, absence_type, or absence_type_id column",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := service.ImportLeaveBalancesCSV(ctx, "tenant_schema", "tenant-1", &ImportLeaveBalancesRequest{
+				CSVContent: tt.content,
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
 }
