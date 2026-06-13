@@ -685,6 +685,17 @@ class ApiClient {
     );
   }
 
+  async planMigrationExecution(
+    tenantId: string,
+    data: PlanMigrationExecutionRequest,
+  ) {
+    return this.request<MigrationExecutionPlan>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/migration/execution-plan`,
+      data,
+    );
+  }
+
   async listExpenses(
     tenantId: string,
     filter: ListExpensesFilter = {},
@@ -3332,6 +3343,11 @@ export interface ValidateBundleRequest {
   provider_preset?: MigrationProviderPreset;
 }
 
+export interface PlanMigrationExecutionRequest extends ValidateBundleRequest {
+  bank_transaction_account_id?: string;
+  opening_balance_entry_date?: string;
+}
+
 export interface BundleValidationSummary {
   files_validated: number;
   rows_validated: number;
@@ -3382,6 +3398,41 @@ export interface BundleValidationReport {
   summary: BundleValidationSummary;
   files: FileValidation[];
   issues?: ValidationIssue[];
+  remediation_actions?: MigrationRemediationAction[];
+}
+
+export type MigrationExecutionStepStatus =
+  | "READY"
+  | "NEEDS_CONTEXT"
+  | "BLOCKED";
+
+export interface MigrationExecutionPlanSummary {
+  validation_ready: boolean;
+  ready: boolean;
+  step_count: number;
+  ready_step_count: number;
+  needs_context_count: number;
+  blocked_step_count: number;
+}
+
+export interface MigrationExecutionStep {
+  step_number: number;
+  kind: MigrationFileKind;
+  file_name: string;
+  status: MigrationExecutionStepStatus;
+  message: string;
+  action: string;
+  api_method?: string;
+  api_path?: string;
+  cli_command?: string;
+  depends_on?: MigrationFileKind[];
+  context_fields?: string[];
+}
+
+export interface MigrationExecutionPlan {
+  summary: MigrationExecutionPlanSummary;
+  validation: BundleValidationReport;
+  steps?: MigrationExecutionStep[];
   remediation_actions?: MigrationRemediationAction[];
 }
 

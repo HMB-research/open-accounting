@@ -558,6 +558,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 				// Migration cutover preflight
 				r.Post("/migration/validate", h.ValidateMigrationBundle)
+				r.Post("/migration/execution-plan", h.PlanMigrationExecution)
 
 				// Accounts
 				r.Get("/accounts", h.ListAccounts)

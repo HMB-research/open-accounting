@@ -100,3 +100,61 @@ func TestValidateMigrationBundleHandlerRejectsUnsupportedProviderPreset(t *testi
 	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 	assert.Contains(t, w.Body.String(), "unsupported provider_preset")
 }
+
+func TestPlanMigrationExecutionHandler(t *testing.T) {
+	h := &Handlers{}
+	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
+	req := withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/migration/execution-plan", cutover.PlanMigrationExecutionRequest{
+		OpeningBalanceEntryDate: "2026-01-01",
+		Files: []cutover.BundleFile{
+			{
+				Kind:       cutover.KindOpeningBalances,
+				FileName:   "opening.csv",
+				CSVContent: "account_code,debit,credit\n1000,100,0\n3000,0,100\n",
+			},
+			{
+				Kind:       cutover.KindBankTransactions,
+				FileName:   "bank.csv",
+				CSVContent: "date,amount\n2026-01-02,42.50\n",
+			},
+			{
+				Kind:       cutover.KindBankAccounts,
+				FileName:   "bank-accounts.csv",
+				CSVContent: "name,account_number\nMain,EE471000001020145685\n",
+			},
+			{
+				Kind:       cutover.KindAccounts,
+				FileName:   "accounts.csv",
+				CSVContent: "code,name,account_type\n1000,Cash,ASSET\n3000,Equity,EQUITY\n",
+			},
+		},
+	}, claims), map[string]string{"tenantID": "tenant-1"})
+
+	w := httptest.NewRecorder()
+	h.PlanMigrationExecution(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var plan cutover.MigrationExecutionPlan
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&plan))
+	assert.True(t, plan.Summary.ValidationReady)
+	assert.False(t, plan.Summary.Ready)
+	assert.Equal(t, 4, plan.Summary.StepCount)
+	assert.Equal(t, 1, plan.Summary.NeedsContextCount)
+	require.Len(t, plan.Steps, 4)
+	assert.Equal(t, cutover.KindAccounts, plan.Steps[0].Kind)
+	assert.Equal(t, cutover.MigrationExecutionStepNeedsContext, plan.Steps[2].Status)
+	assert.Equal(t, []string{"bank_transaction_account_id"}, plan.Steps[2].ContextFields)
+	assert.Contains(t, plan.Steps[3].CLICommand, "oa journal import-opening-balances --entry-date 2026-01-01")
+	assert.Contains(t, migrationRemediationCodes(plan.RemediationActions), "ready_to_import")
+}
+
+func TestPlanMigrationExecutionHandlerRejectsInvalidRequest(t *testing.T) {
+	h := &Handlers{}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/migration/execution-plan", cutover.PlanMigrationExecutionRequest{}, createTestClaims("user-1", "user@example.com", "tenant-1", "admin"))
+
+	w := httptest.NewRecorder()
+	h.PlanMigrationExecution(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "at least one migration file is required")
+}

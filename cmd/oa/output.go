@@ -109,6 +109,71 @@ func printMigrationValidationReport(w io.Writer, report *cutover.BundleValidatio
 	_ = tw.Flush()
 }
 
+func printMigrationExecutionPlan(w io.Writer, plan *cutover.MigrationExecutionPlan) {
+	if plan == nil {
+		_, _ = fmt.Fprintln(w, "No migration execution plan")
+		return
+	}
+	status := "ready"
+	if !plan.Summary.Ready {
+		status = "needs attention"
+	}
+	if !plan.Summary.ValidationReady {
+		status = "blocked"
+	}
+	_, _ = fmt.Fprintf(
+		w,
+		"Migration execution plan: %s (%d steps, %d ready, %d need context, %d blocked)\n",
+		status,
+		plan.Summary.StepCount,
+		plan.Summary.ReadyStepCount,
+		plan.Summary.NeedsContextCount,
+		plan.Summary.BlockedStepCount,
+	)
+
+	if len(plan.Steps) > 0 {
+		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "STEP\tSTATUS\tKIND\tFILE\tDEPENDS ON\tCONTEXT\tAPI\tCOMMAND")
+		for _, step := range plan.Steps {
+			dependsOn := "-"
+			if len(step.DependsOn) > 0 {
+				parts := make([]string, 0, len(step.DependsOn))
+				for _, kind := range step.DependsOn {
+					parts = append(parts, string(kind))
+				}
+				dependsOn = strings.Join(parts, ",")
+			}
+			contextFields := "-"
+			if len(step.ContextFields) > 0 {
+				contextFields = strings.Join(step.ContextFields, ",")
+			}
+			apiPath := step.APIPath
+			if apiPath == "" {
+				apiPath = "-"
+			}
+			command := step.CLICommand
+			if command == "" {
+				command = "-"
+			}
+			_, _ = fmt.Fprintf(
+				tw,
+				"%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				step.StepNumber,
+				step.Status,
+				step.Kind,
+				step.FileName,
+				dependsOn,
+				contextFields,
+				apiPath,
+				command,
+			)
+		}
+		_ = tw.Flush()
+	}
+
+	printMigrationRemediationActions(w, plan.RemediationActions)
+}
+
 func printMigrationRemediationActions(w io.Writer, actions []cutover.MigrationRemediationAction) {
 	if len(actions) == 0 {
 		return
