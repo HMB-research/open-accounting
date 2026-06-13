@@ -99,16 +99,20 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 			Message:  "missing required field",
 		}},
 		RemediationActions: []cutover.MigrationRemediationAction{{
-			Code:       "missing_required_columns",
-			Severity:   "BLOCKER",
-			Scope:      "migration",
-			OwnerRole:  "accountant",
-			Kind:       cutover.KindAccounts,
-			FileName:   "accounts.csv",
-			Field:      "name",
-			IssueCount: 1,
-			Action:     "Add one accepted column from each missing required group or rerun with the correct provider preset.",
-			CLICommand: "oa migration validate --accounts <file> --provider-preset generic --json",
+			Code:           "missing_required_columns",
+			Severity:       "BLOCKER",
+			Scope:          "migration",
+			OwnerRole:      "accountant",
+			WorkspaceQueue: "migration_cutover",
+			AssignmentKey:  "migration:missing-required-columns:accounts:accounts-csv:name:-",
+			Priority:       "high",
+			DueInDays:      1,
+			Kind:           cutover.KindAccounts,
+			FileName:       "accounts.csv",
+			Field:          "name",
+			IssueCount:     1,
+			Action:         "Add one accepted column from each missing required group or rerun with the correct provider preset.",
+			CLICommand:     "oa migration validate --accounts <file> --provider-preset generic --json",
 		}},
 	})
 	assert.Contains(t, buf.String(), "blocked")
@@ -116,6 +120,10 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 	assert.Contains(t, buf.String(), "missing required field")
 	assert.Contains(t, buf.String(), "Migration remediation actions")
 	assert.Contains(t, buf.String(), "missing_required_columns")
+	assert.Contains(t, buf.String(), "migration_cutover")
+	assert.Contains(t, buf.String(), "migration:missing-required-columns:accounts:accounts-csv:name:-")
+	assert.Contains(t, buf.String(), "high")
+	assert.Contains(t, buf.String(), "1d")
 	assert.Contains(t, buf.String(), "oa migration validate --accounts")
 
 	buf.Reset()
@@ -134,16 +142,20 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 			Message:  "uses fallback currency",
 		}},
 		RemediationActions: []cutover.MigrationRemediationAction{{
-			Code:       "warning_review",
-			Severity:   "WARNING",
-			Scope:      "migration",
-			OwnerRole:  "accountant",
-			Kind:       cutover.KindInvoices,
-			FileName:   "invoices.csv",
-			Field:      "amount",
-			IssueCount: 1,
-			Action:     "Review the warning before import.",
-			CLICommand: "oa migration validate --invoices <file> --provider-preset generic --json",
+			Code:           "warning_review",
+			Severity:       "WARNING",
+			Scope:          "migration",
+			OwnerRole:      "accountant",
+			WorkspaceQueue: "migration_cutover",
+			AssignmentKey:  "migration:warning-review:invoices:invoices-csv:amount:-",
+			Priority:       "normal",
+			DueInDays:      3,
+			Kind:           cutover.KindInvoices,
+			FileName:       "invoices.csv",
+			Field:          "amount",
+			IssueCount:     1,
+			Action:         "Review the warning before import.",
+			CLICommand:     "oa migration validate --invoices <file> --provider-preset generic --json",
 		}},
 	})
 	assert.Contains(t, buf.String(), "ready")
@@ -151,6 +163,8 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 	assert.Contains(t, buf.String(), "amount")
 	assert.Contains(t, buf.String(), "uses fallback currency")
 	assert.Contains(t, buf.String(), "WARNING")
+	assert.Contains(t, buf.String(), "normal")
+	assert.Contains(t, buf.String(), "3d")
 
 	buf.Reset()
 	printMigrationRemediationActions(&buf, []cutover.MigrationRemediationAction{{

@@ -24746,11 +24746,17 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "assignment_key": {
+                    "type": "string"
+                },
                 "cli_command": {
                     "type": "string"
                 },
                 "code": {
                     "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
                 },
                 "field": {
                     "type": "string"
@@ -24770,6 +24776,9 @@ const docTemplate = `{
                 "owner_role": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "scope": {
                     "type": "string"
                 },
@@ -24778,6 +24787,9 @@ const docTemplate = `{
                 },
                 "target_kind": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                },
+                "workspace_queue": {
+                    "type": "string"
                 }
             }
         },

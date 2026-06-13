@@ -101,16 +101,20 @@ type ValidationIssue struct {
 }
 
 type MigrationRemediationAction struct {
-	Code       string   `json:"code"`
-	Severity   string   `json:"severity"`
-	Scope      string   `json:"scope"`
-	OwnerRole  string   `json:"owner_role"`
-	Message    string   `json:"message"`
-	Action     string   `json:"action"`
-	Kind       FileKind `json:"kind,omitempty"`
-	FileName   string   `json:"file_name,omitempty"`
-	Field      string   `json:"field,omitempty"`
-	TargetKind FileKind `json:"target_kind,omitempty"`
-	IssueCount int      `json:"issue_count"`
-	CLICommand string   `json:"cli_command,omitempty"`
+	Code           string   `json:"code"`
+	Severity       string   `json:"severity"`
+	Scope          string   `json:"scope"`
+	OwnerRole      string   `json:"owner_role"`
+	WorkspaceQueue string   `json:"workspace_queue,omitempty"`
+	AssignmentKey  string   `json:"assignment_key,omitempty"`
+	Priority       string   `json:"priority,omitempty"`
+	DueInDays      int      `json:"due_in_days,omitempty"`
+	Message        string   `json:"message"`
+	Action         string   `json:"action"`
+	Kind           FileKind `json:"kind,omitempty"`
+	FileName       string   `json:"file_name,omitempty"`
+	Field          string   `json:"field,omitempty"`
+	TargetKind     FileKind `json:"target_kind,omitempty"`
+	IssueCount     int      `json:"issue_count"`
+	CLICommand     string   `json:"cli_command,omitempty"`
 }
