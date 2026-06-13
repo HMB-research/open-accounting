@@ -23,6 +23,10 @@ type accountingPoster interface {
 	PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID string) error
 }
 
+type inventoryLedgerTransactioner interface {
+	WithInventoryLedgerTransaction(ctx context.Context, ledger accountingPoster, fn func(repo Repository, ledger accountingPoster) error) error
+}
+
 const (
 	inventoryIssueSourceTypeDefault     = "INVENTORY_ISSUE"
 	inventoryIssueAccountingRoleCOGS    = "COST_OF_GOODS_SOLD"
@@ -1226,6 +1230,31 @@ func (s *Service) TransferStock(ctx context.Context, tenantID, schemaName string
 
 // IssueStock consumes positive available stock from a warehouse and returns costed movements plus optional accounting lines.
 func (s *Service) IssueStock(ctx context.Context, tenantID, schemaName string, req *IssueStockRequest) (*IssueStockResult, error) {
+	if req.PostToLedger {
+		if transactioner, ok := s.repo.(inventoryLedgerTransactioner); ok {
+			var result *IssueStockResult
+			err := transactioner.WithInventoryLedgerTransaction(ctx, s.ledger, func(txRepo Repository, txLedger accountingPoster) error {
+				if txLedger == nil {
+					return fmt.Errorf("accounting transaction is unavailable for issue ledger posting")
+				}
+				txService := *s
+				txService.repo = txRepo
+				txService.accounts = txLedger
+				txService.ledger = txLedger
+				var err error
+				result, err = txService.issueStock(ctx, tenantID, schemaName, req)
+				return err
+			})
+			if err != nil {
+				return nil, err
+			}
+			return result, nil
+		}
+	}
+	return s.issueStock(ctx, tenantID, schemaName, req)
+}
+
+func (s *Service) issueStock(ctx context.Context, tenantID, schemaName string, req *IssueStockRequest) (*IssueStockResult, error) {
 	quantity, err := parsePositiveStockQuantity(req.Quantity)
 	if err != nil {
 		return nil, err

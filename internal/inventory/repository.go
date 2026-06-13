@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -79,6 +80,16 @@ func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName 
 		return nil, fmt.Errorf("inventory repository database is not configured")
 	}
 	return r.db.WithContext(ctx).Table(qualifiedTable), nil
+}
+
+func (r *GORMRepository) WithInventoryLedgerTransaction(ctx context.Context, _ accountingPoster, fn func(repo Repository, ledger accountingPoster) error) error {
+	if r.db == nil {
+		return fmt.Errorf("inventory repository database is not configured")
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txLedger := accounting.NewServiceWithRepository(accounting.NewGORMRepository(tx))
+		return fn(&GORMRepository{db: tx}, txLedger)
+	})
 }
 
 func qualifiedInventoryTable(schemaName, tableName string) (string, error) {
