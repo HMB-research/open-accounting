@@ -1005,7 +1005,7 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 			{
 				Kind:       KindFixedAssets,
 				FileName:   "directo-fixed-assets.csv",
-				CSVContent: "inventar,nimetus,soetuskuupaev,soetusmaksumus,eluiga_kuud,akumuleeritud_kulum,jaakmaksumus\nFA-1,Laptop,2026-01-01,1200,36,200,1000\n",
+				CSVContent: "inventar,nimetus,soetuskuupaev,soetusmaksumus,eluiga_kuud,akumuleeritud_kulum,jaakmaksumus,hankija\nFA-1,Laptop,2026-01-01,1200,36,200,1000,SUP-1\n",
 			},
 			{
 				Kind:     KindKMDHistory,
@@ -1032,6 +1032,7 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 	assert.Contains(t, report.Files[7].Headers, "supplier_code")
 	assert.Contains(t, report.Files[8].Headers, "serial_number")
 	assert.Contains(t, report.Files[9].Headers, "purchase_cost")
+	assert.Contains(t, report.Files[9].Headers, "supplier_code")
 	assert.Contains(t, report.Files[10].Headers, "total_output_vat")
 }
 
@@ -4198,6 +4199,52 @@ func TestValidateBundleReportsMissingProductSupplierCodeReference(t *testing.T) 
 	assert.Equal(t, 1, report.Summary.ErrorCount)
 	require.Len(t, report.Issues, 1)
 	assert.Equal(t, KindProducts, report.Issues[0].Kind)
+	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
+	assert.Equal(t, "supplier_code", report.Issues[0].Field)
+	assert.Equal(t, "SUP-404", report.Issues[0].Value)
+}
+
+func TestValidateBundleAcceptsFixedAssetSupplierCodeReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,Supplier One\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_code\nFA-1,Laptop,2026-05-30,1200,SUP-1\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsMissingFixedAssetSupplierCodeReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,SUP-404\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_code\nFA-1,Laptop,2026-05-30,1200,SUP-404\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindFixedAssets, report.Issues[0].Kind)
 	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
 	assert.Equal(t, "supplier_code", report.Issues[0].Field)
 	assert.Equal(t, "SUP-404", report.Issues[0].Value)

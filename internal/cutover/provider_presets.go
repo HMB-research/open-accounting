@@ -272,6 +272,9 @@ var providerPresetAliases = map[MigrationProviderPreset]map[FileKind]map[string]
 			"akumuleeritud_kulum_konto":       "accumulated_depreciation_account_code",
 			"akumuleeritud_kulumi_konto_kood": "accumulated_depreciation_account_code",
 			"akumuleeritud_kulum_konto_kood":  "accumulated_depreciation_account_code",
+			"hankija":                         "supplier_code",
+			"hankija_kood":                    "supplier_code",
+			"hankijakood":                     "supplier_code",
 		},
 		KindOpeningBalances: {
 			"konto":     "account_code",
@@ -584,6 +587,12 @@ var providerPresetAliases = map[MigrationProviderPreset]map[FileKind]map[string]
 			"fixed_asset_account":                 "asset_account_code",
 			"depreciation_expense_account_no":     "depreciation_expense_account_code",
 			"accumulated_depreciation_account_no": "accumulated_depreciation_account_code",
+			"supplier_no":                         "supplier_code",
+			"supplier_number":                     "supplier_code",
+			"supplier_code":                       "supplier_code",
+			"vendor_no":                           "supplier_code",
+			"vendor_number":                       "supplier_code",
+			"vendor_code":                         "supplier_code",
 		},
 		KindOpeningBalances: {
 			"account_no":     "account_code",
@@ -1106,6 +1115,9 @@ func directoProviderPresetAliases() map[FileKind]map[string]string {
 			"kulumi_konto":               "depreciation_expense_account_code",
 			"akumuleeritud_kulumi_konto": "accumulated_depreciation_account_code",
 			"akumuleeritud_kulum_konto":  "accumulated_depreciation_account_code",
+			"hankija":                    "supplier_code",
+			"hankija_kood":               "supplier_code",
+			"hankijakood":                "supplier_code",
 		},
 		KindOpeningBalances: {
 			"konto":     "account_code",

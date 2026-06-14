@@ -729,6 +729,7 @@ var fileSpecs = map[FileKind]fileSpec{
 			"cost":                                  "purchase_cost",
 			"price":                                 "purchase_cost",
 			"supplier_id":                           "supplier_id",
+			"supplier_code":                         "supplier_code",
 			"invoice_id":                            "invoice_id",
 			"serial_number":                         "serial_number",
 			"serial_no":                             "serial_number",
@@ -1865,7 +1866,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkAccountReference(report, indexes, file, row, "sale_account_id", "sale_account_code")
 			checkAccountReference(report, indexes, file, row, "purchase_account_id", "purchase_account_code")
 			checkAccountReference(report, indexes, file, row, "inventory_account_id", "inventory_account_code")
-			checkProductSupplierReference(report, indexes, file, row)
+			checkSupplierReference(report, indexes, file, row)
 		case KindStockAdjustments:
 			checkProductReference(report, indexes, file, row)
 			checkWarehouseReference(report, indexes, file, row)
@@ -1874,7 +1875,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkAccountReference(report, indexes, file, row, "asset_account_id", "asset_account_code")
 			checkAccountReference(report, indexes, file, row, "depreciation_expense_account_id", "depreciation_expense_account_code")
 			checkAccountReference(report, indexes, file, row, "accumulated_depreciation_account_id", "accumulated_depreciation_account_code")
-			checkContactIDReference(report, indexes, file, row, "supplier_id")
+			checkSupplierReference(report, indexes, file, row)
 			if checkOptionalUUID(report, file, row, "invoice_id") {
 				checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 					[]string{"invoice_id"})
@@ -5583,7 +5584,7 @@ func checkContactIDReference(report *BundleValidationReport, indexes bundleIndex
 	checkReferenceValues(report, indexes.contactIDs, file, row, KindContacts, idField, []string{contactID})
 }
 
-func checkProductSupplierReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+func checkSupplierReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
 	if strings.TrimSpace(row.values["supplier_id"]) != "" {
 		checkContactIDReference(report, indexes, file, row, "supplier_id")
 		return
