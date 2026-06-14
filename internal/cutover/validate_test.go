@@ -4417,6 +4417,8 @@ func TestValidateBundleAcceptsEInvoiceXMLAndPaymentReference(t *testing.T) {
 	assert.Equal(t, 3, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
 	require.Len(t, report.Files, 3)
+	assert.Contains(t, report.Files[1].Headers, "issue_date")
+	assert.Contains(t, report.Files[1].Headers, "due_date")
 	assert.Contains(t, report.Files[1].Headers, "invoice_total")
 	assert.Contains(t, report.Files[1].Headers, "currency")
 }
@@ -4447,6 +4449,38 @@ func TestValidateBundleAcceptsSplitPaymentAllocationsWithinEInvoiceTotal(t *test
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 4, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsPaymentAllocationBeforeEInvoiceIssueDate(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "name,reg_code\nSupplier OÜ,12345678\n",
+		},
+		{
+			Kind:       KindEInvoices,
+			FileName:   "e-invoices.xml",
+			XMLContent: cutoverEInvoiceXML("BILL-2026-001", "Supplier OÜ", "12345678"),
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number,allocation_amount\nMADE,2026-03-14,100,BILL-2026-001,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, 2, report.Issues[0].Row)
+	assert.Equal(t, "payment_date", report.Issues[0].Field)
+	assert.Equal(t, "2026-03-14", report.Issues[0].Value)
+	assert.Equal(t, KindEInvoices, report.Issues[0].TargetKind)
+	assert.Contains(t, report.Issues[0].Message, `payment_date "2026-03-14" cannot be before imported invoice "BILL-2026-001" issue_date "2026-03-15"`)
 }
 
 func TestValidateBundleReportsPaymentAllocationsExceedEInvoiceTotal(t *testing.T) {
@@ -4857,6 +4891,64 @@ func TestValidateBundleReportsPaymentContactMismatchForImportedInvoice(t *testin
 	assert.Equal(t, "CUST-2", report.Issues[0].Value)
 	assert.Equal(t, KindInvoices, report.Issues[0].TargetKind)
 	assert.Contains(t, report.Issues[0].Message, `payment contact_code "CUST-2" does not match imported invoice "INV-1" contact_code "CUST-1"`)
+}
+
+func TestValidateBundleAcceptsPaymentAllocationOnImportedInvoiceIssueDate(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number,allocation_amount\nRECEIVED,2026-05-30,100,INV-1,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.RowsValidated)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsPaymentAllocationBeforeImportedInvoiceIssueDate(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number,allocation_amount\nRECEIVED,2026-05-29,100,INV-1,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, 2, report.Issues[0].Row)
+	assert.Equal(t, "payment_date", report.Issues[0].Field)
+	assert.Equal(t, "2026-05-29", report.Issues[0].Value)
+	assert.Equal(t, KindInvoices, report.Issues[0].TargetKind)
+	assert.Contains(t, report.Issues[0].Message, `payment_date "2026-05-29" cannot be before imported invoice "INV-1" issue_date "2026-05-30"`)
 }
 
 func TestValidateBundleAcceptsImportedInvoiceAmountPaidWithinTotal(t *testing.T) {
