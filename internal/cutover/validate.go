@@ -1644,20 +1644,25 @@ func parseEInvoiceBundleFile(file BundleFile) (parsedFile, FileValidation, error
 
 	rows := make([]parsedRow, 0, len(invoices))
 	for index, invoice := range invoices {
+		invoiceTotal, hasInvoiceTotal := cutoverEInvoiceTotal(invoice)
+		values := map[string]string{
+			"invoice_id":          invoice.ID,
+			"invoice_number":      invoice.Number,
+			"contact_reg_code":    invoice.Seller.RegNumber,
+			"contact_vat_number":  invoice.Seller.VATRegNumber,
+			"contact_email":       invoice.Seller.Email,
+			"contact_name":        invoice.Seller.Name,
+			"buyer_reg_code":      invoice.Buyer.RegNumber,
+			"buyer_vat_number":    invoice.Buyer.VATRegNumber,
+			"buyer_contact_email": invoice.Buyer.Email,
+			"buyer_contact_name":  invoice.Buyer.Name,
+		}
+		if hasInvoiceTotal {
+			values["invoice_total"] = invoiceTotal.String()
+		}
 		rows = append(rows, parsedRow{
 			number: index + 1,
-			values: map[string]string{
-				"invoice_id":          invoice.ID,
-				"invoice_number":      invoice.Number,
-				"contact_reg_code":    invoice.Seller.RegNumber,
-				"contact_vat_number":  invoice.Seller.VATRegNumber,
-				"contact_email":       invoice.Seller.Email,
-				"contact_name":        invoice.Seller.Name,
-				"buyer_reg_code":      invoice.Buyer.RegNumber,
-				"buyer_vat_number":    invoice.Buyer.VATRegNumber,
-				"buyer_contact_email": invoice.Buyer.Email,
-				"buyer_contact_name":  invoice.Buyer.Name,
-			},
+			values: values,
 		})
 	}
 
@@ -1779,6 +1784,7 @@ func eInvoiceValidationHeaders() []string {
 	return []string{
 		"invoice_id",
 		"invoice_number",
+		"invoice_total",
 		"contact_reg_code",
 		"contact_vat_number",
 		"contact_email",
@@ -1963,6 +1969,7 @@ type cutoverInvoiceAllocationTarget struct {
 	key          string
 	display      string
 	total        decimal.Decimal
+	targetKind   FileKind
 	invoiceCount int
 }
 
@@ -2369,7 +2376,7 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 					Row:        row.number,
 					Field:      "invoice_number",
 					Value:      target.display,
-					TargetKind: KindInvoices,
+					TargetKind: target.targetKind,
 					Message:    fmt.Sprintf("invoice_number %q matched multiple imported invoices; use invoice_id for payment allocation", target.display),
 				})
 				continue
@@ -2385,7 +2392,7 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 					Row:        row.number,
 					Field:      "allocation_amount",
 					Value:      allocationAmount.String(),
-					TargetKind: KindInvoices,
+					TargetKind: target.targetKind,
 					Message: fmt.Sprintf(
 						"payment allocations for invoice %q exceed imported invoice total: allocations=%s invoice_total=%s",
 						target.display,
@@ -2402,6 +2409,18 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutover
 	targets := map[string]cutoverInvoiceAllocationTarget{}
 	for _, file := range files {
 		if file.kind != KindInvoices {
+			if file.kind == KindEInvoices {
+				for _, row := range file.rows {
+					total, ok := cutoverEInvoiceRowTotal(row)
+					if !ok {
+						continue
+					}
+					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total)
+					if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
+						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total)
+					}
+				}
+			}
 			continue
 		}
 		for _, group := range cutoverInvoiceGroups(file) {
@@ -2409,13 +2428,44 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutover
 			if !ok {
 				continue
 			}
-			addCutoverInvoiceAllocationTarget(targets, "invoice_number", group.number, total)
+			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total)
 			if id := strings.TrimSpace(group.id); id != "" {
-				addCutoverInvoiceAllocationTarget(targets, "invoice_id", id, total)
+				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total)
 			}
 		}
 	}
 	return targets
+}
+
+func cutoverEInvoiceRowTotal(row parsedRow) (decimal.Decimal, bool) {
+	total, issue := parseCutoverRequiredImportDecimal(row.values["invoice_total"], "invoice_total")
+	if issue != nil || total.IsZero() || total.IsNegative() {
+		return decimal.Zero, false
+	}
+	return total, true
+}
+
+func cutoverEInvoiceTotal(invoice einvoice.Invoice) (decimal.Decimal, bool) {
+	total := decimal.Zero
+	for _, line := range invoice.Lines {
+		if line.Quantity.LessThanOrEqual(decimal.Zero) ||
+			line.UnitPrice.IsNegative() ||
+			line.DiscountPercent.IsNegative() ||
+			line.DiscountPercent.GreaterThan(decimal.NewFromInt(100)) ||
+			line.VATRate.IsNegative() {
+			return decimal.Zero, false
+		}
+
+		lineSubtotal := line.Quantity.Mul(line.UnitPrice)
+		discountAmount := lineSubtotal.Mul(line.DiscountPercent).Div(decimal.NewFromInt(100))
+		lineSubtotal = lineSubtotal.Sub(discountAmount).Round(2)
+		lineVAT := lineSubtotal.Mul(line.VATRate).Div(decimal.NewFromInt(100)).Round(2)
+		total = total.Add(lineSubtotal).Add(lineVAT)
+	}
+	if total.IsZero() {
+		return decimal.Zero, false
+	}
+	return total, true
 }
 
 type cutoverInvoiceGroup struct {
@@ -2513,7 +2563,7 @@ func cutoverInvoiceLineReverseCharge(row parsedRow) bool {
 	}
 }
 
-func addCutoverInvoiceAllocationTarget(targets map[string]cutoverInvoiceAllocationTarget, field, value string, total decimal.Decimal) {
+func addCutoverInvoiceAllocationTarget(targets map[string]cutoverInvoiceAllocationTarget, targetKind FileKind, field, value string, total decimal.Decimal) {
 	display := strings.TrimSpace(value)
 	if display == "" {
 		return
@@ -2524,6 +2574,7 @@ func addCutoverInvoiceAllocationTarget(targets map[string]cutoverInvoiceAllocati
 		target.key = key
 		target.display = display
 		target.total = total
+		target.targetKind = targetKind
 	}
 	target.invoiceCount++
 	targets[key] = target

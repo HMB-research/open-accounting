@@ -3868,6 +3868,71 @@ func TestValidateBundleAcceptsEInvoiceXMLAndPaymentReference(t *testing.T) {
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 3, report.Summary.RowsValidated)
 	assert.Empty(t, report.Issues)
+	require.Len(t, report.Files, 3)
+	assert.Contains(t, report.Files[1].Headers, "invoice_total")
+}
+
+func TestValidateBundleAcceptsSplitPaymentAllocationsWithinEInvoiceTotal(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "name,reg_code\nSupplier OÜ,12345678\n",
+		},
+		{
+			Kind:       KindEInvoices,
+			FileName:   "e-invoices.xml",
+			XMLContent: cutoverEInvoiceXML("BILL-2026-001", "Supplier OÜ", "12345678"),
+		},
+		{
+			Kind:     KindPayments,
+			FileName: "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number,allocation_amount\n" +
+				"MADE,2026-05-31,60,BILL-2026-001,60\n" +
+				"MADE,2026-06-01,62,BILL-2026-001,\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 4, report.Summary.RowsValidated)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsPaymentAllocationsExceedEInvoiceTotal(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "name,reg_code\nSupplier OÜ,12345678\n",
+		},
+		{
+			Kind:       KindEInvoices,
+			FileName:   "e-invoices.xml",
+			XMLContent: cutoverEInvoiceXML("BILL-2026-001", "Supplier OÜ", "12345678"),
+		},
+		{
+			Kind:     KindPayments,
+			FileName: "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number\n" +
+				"MADE,2026-05-31,100,BILL-2026-001\n" +
+				"MADE,2026-06-01,30,BILL-2026-001\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, 3, report.Issues[0].Row)
+	assert.Equal(t, "allocation_amount", report.Issues[0].Field)
+	assert.Equal(t, KindEInvoices, report.Issues[0].TargetKind)
+	assert.Contains(t, report.Issues[0].Message, "payment allocations for invoice \"BILL-2026-001\" exceed imported invoice total")
+	assert.Contains(t, report.Issues[0].Message, "allocations=130")
+	assert.Contains(t, report.Issues[0].Message, "invoice_total=122")
 }
 
 func TestValidateBundleAcceptsEInvoiceCustomerContactMode(t *testing.T) {
