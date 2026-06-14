@@ -1219,6 +1219,7 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 		validateGroupedDocumentPreflight(report, file)
 		validateAccountingPreflight(report, file)
 	}
+	validateCrossFileConsistency(report, parsed)
 
 	sort.SliceStable(report.Issues, func(i, j int) bool {
 		if report.Issues[i].Severity != report.Issues[j].Severity {
@@ -1958,6 +1959,13 @@ type journalValidationGroup struct {
 	rows      []parsedRow
 }
 
+type cutoverInvoiceAllocationTarget struct {
+	key          string
+	display      string
+	total        decimal.Decimal
+	invoiceCount int
+}
+
 func validateDuplicateIdentifierPreflight(report *BundleValidationReport, file parsedFile) {
 	specs := duplicateIdentifierPreflightSpecs[file.kind]
 	if len(specs) == 0 {
@@ -2331,6 +2339,222 @@ func validateGroupedDocumentPreflight(report *BundleValidationReport, file parse
 			})
 		}
 	}
+}
+
+func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile) {
+	invoiceTargets := buildCutoverInvoiceAllocationTargets(files)
+	if len(invoiceTargets) == 0 {
+		return
+	}
+
+	allocationTotals := map[string]decimal.Decimal{}
+	for _, file := range files {
+		if file.kind != KindPayments {
+			continue
+		}
+		for _, row := range file.rows {
+			target, ok := cutoverPaymentAllocationTarget(invoiceTargets, row)
+			if !ok {
+				continue
+			}
+			allocationAmount, ok := cutoverPaymentAllocationAmount(row)
+			if !ok {
+				continue
+			}
+			if target.invoiceCount > 1 {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindPayments,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "invoice_number",
+					Value:      target.display,
+					TargetKind: KindInvoices,
+					Message:    fmt.Sprintf("invoice_number %q matched multiple imported invoices; use invoice_id for payment allocation", target.display),
+				})
+				continue
+			}
+
+			nextTotal := allocationTotals[target.key].Add(allocationAmount)
+			allocationTotals[target.key] = nextTotal
+			if nextTotal.GreaterThan(target.total) {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindPayments,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "allocation_amount",
+					Value:      allocationAmount.String(),
+					TargetKind: KindInvoices,
+					Message: fmt.Sprintf(
+						"payment allocations for invoice %q exceed imported invoice total: allocations=%s invoice_total=%s",
+						target.display,
+						nextTotal.String(),
+						target.total.String(),
+					),
+				})
+			}
+		}
+	}
+}
+
+func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutoverInvoiceAllocationTarget {
+	targets := map[string]cutoverInvoiceAllocationTarget{}
+	for _, file := range files {
+		if file.kind != KindInvoices {
+			continue
+		}
+		for _, group := range cutoverInvoiceGroups(file) {
+			total, ok := cutoverInvoiceGroupTotal(group.rows)
+			if !ok {
+				continue
+			}
+			addCutoverInvoiceAllocationTarget(targets, "invoice_number", group.number, total)
+			if id := strings.TrimSpace(group.id); id != "" {
+				addCutoverInvoiceAllocationTarget(targets, "invoice_id", id, total)
+			}
+		}
+	}
+	return targets
+}
+
+type cutoverInvoiceGroup struct {
+	id      string
+	number  string
+	display string
+	rows    []parsedRow
+}
+
+func cutoverInvoiceGroups(file parsedFile) []cutoverInvoiceGroup {
+	groups := map[string]*cutoverInvoiceGroup{}
+	groupOrder := []string{}
+	spec := groupedDocumentPreflightSpecs[KindInvoices]
+	for _, row := range file.rows {
+		key, display, ok := groupedDocumentKey(row, spec)
+		if !ok {
+			continue
+		}
+		group, exists := groups[key]
+		if !exists {
+			group = &cutoverInvoiceGroup{
+				id:      strings.TrimSpace(row.values["id"]),
+				number:  strings.TrimSpace(row.values["invoice_number"]),
+				display: display,
+			}
+			groups[key] = group
+			groupOrder = append(groupOrder, key)
+		}
+		group.rows = append(group.rows, row)
+	}
+
+	result := make([]cutoverInvoiceGroup, 0, len(groupOrder))
+	for _, key := range groupOrder {
+		result = append(result, *groups[key])
+	}
+	return result
+}
+
+func cutoverInvoiceGroupTotal(rows []parsedRow) (decimal.Decimal, bool) {
+	total := decimal.Zero
+	for _, row := range rows {
+		lineTotal, ok := cutoverInvoiceLineTotal(row)
+		if !ok {
+			return decimal.Zero, false
+		}
+		total = total.Add(lineTotal)
+	}
+	if total.IsZero() {
+		return decimal.Zero, false
+	}
+	return total, true
+}
+
+func cutoverInvoiceLineTotal(row parsedRow) (decimal.Decimal, bool) {
+	quantity, issue := parseCutoverRequiredImportDecimal(row.values["quantity"], "quantity")
+	if issue != nil || quantity.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, false
+	}
+	unitPrice, issue := parseCutoverRequiredImportDecimal(row.values["unit_price"], "unit_price")
+	if issue != nil || unitPrice.IsNegative() {
+		return decimal.Zero, false
+	}
+	discountPercent := decimal.Zero
+	if strings.TrimSpace(row.values["discount_percent"]) != "" {
+		parsed, issue := parseCutoverRequiredImportDecimal(row.values["discount_percent"], "discount_percent")
+		if issue != nil || parsed.IsNegative() || parsed.GreaterThan(decimal.NewFromInt(100)) {
+			return decimal.Zero, false
+		}
+		discountPercent = parsed
+	}
+	vatRate, issue := parseCutoverRequiredImportDecimal(row.values["vat_rate"], "vat_rate")
+	if issue != nil || vatRate.IsNegative() {
+		return decimal.Zero, false
+	}
+
+	lineSubtotal := quantity.Mul(unitPrice)
+	discountAmount := lineSubtotal.Mul(discountPercent).Div(decimal.NewFromInt(100))
+	lineSubtotal = lineSubtotal.Sub(discountAmount).Round(2)
+	if cutoverInvoiceLineReverseCharge(row) {
+		return lineSubtotal, true
+	}
+	lineVAT := lineSubtotal.Mul(vatRate).Div(decimal.NewFromInt(100)).Round(2)
+	return lineSubtotal.Add(lineVAT), true
+}
+
+func cutoverInvoiceLineReverseCharge(row parsedRow) bool {
+	if strings.TrimSpace(row.values["reverse_charge"]) != "" {
+		return normalizeCutoverBoolComparable(row.values["reverse_charge"]) == "true"
+	}
+	switch normalizedValue(row.values["vat_treatment"]) {
+	case "reverse_charge", "reversecharge", "reverse charge", "rc":
+		return true
+	default:
+		return false
+	}
+}
+
+func addCutoverInvoiceAllocationTarget(targets map[string]cutoverInvoiceAllocationTarget, field, value string, total decimal.Decimal) {
+	display := strings.TrimSpace(value)
+	if display == "" {
+		return
+	}
+	key := cutoverInvoiceAllocationTargetKey(field, display)
+	target := targets[key]
+	if target.key == "" {
+		target.key = key
+		target.display = display
+		target.total = total
+	}
+	target.invoiceCount++
+	targets[key] = target
+}
+
+func cutoverPaymentAllocationTarget(
+	targets map[string]cutoverInvoiceAllocationTarget,
+	row parsedRow,
+) (cutoverInvoiceAllocationTarget, bool) {
+	if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
+		target, ok := targets[cutoverInvoiceAllocationTargetKey("invoice_id", id)]
+		return target, ok
+	}
+	if number := strings.TrimSpace(row.values["invoice_number"]); number != "" {
+		target, ok := targets[cutoverInvoiceAllocationTargetKey("invoice_number", number)]
+		return target, ok
+	}
+	return cutoverInvoiceAllocationTarget{}, false
+}
+
+func cutoverPaymentAllocationAmount(row parsedRow) (decimal.Decimal, bool) {
+	if allocationValue := strings.TrimSpace(row.values["allocation_amount"]); allocationValue != "" {
+		amount, issue := parseCutoverPositiveDecimal(allocationValue, "allocation_amount")
+		return amount, issue == nil
+	}
+	amount, issue := parseCutoverPositiveDecimal(row.values["amount"], "amount")
+	return amount, issue == nil
+}
+
+func cutoverInvoiceAllocationTargetKey(field, value string) string {
+	return field + ":" + normalizedValue(value)
 }
 
 func groupedDocumentKey(row parsedRow, spec groupedDocumentSpec) (string, string, bool) {
