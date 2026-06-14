@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -202,6 +203,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  plugins list              List tenant plugins")
 	_, _ = fmt.Fprintln(a.stdout, "  plugins enable            Enable a tenant plugin")
 	_, _ = fmt.Fprintln(a.stdout, "  plugins disable           Disable a tenant plugin")
+	_, _ = fmt.Fprintln(a.stdout, "  plugins runtime invoke    Invoke a tenant plugin runtime route")
 	_, _ = fmt.Fprintln(a.stdout, "  plugins settings get      Show tenant plugin settings")
 	_, _ = fmt.Fprintln(a.stdout, "  plugins settings update   Update tenant plugin settings")
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks events           List webhook event types")
@@ -1806,6 +1808,8 @@ func (a *cliApp) runPlugins(ctx context.Context, args []string) error {
 
 	case "settings":
 		return a.runPluginSettings(ctx, cfg, client, args[1:])
+	case "runtime":
+		return a.runPluginRuntime(ctx, cfg, client, args[1:])
 
 	default:
 		return fmt.Errorf("unknown plugins subcommand %q", args[0])
@@ -2349,6 +2353,62 @@ func (a *cliApp) runPluginSettings(ctx context.Context, cfg *cliConfig, client *
 
 	default:
 		return fmt.Errorf("unknown plugins settings subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runPluginRuntime(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("plugins runtime subcommand required")
+	}
+
+	switch args[0] {
+	case "invoke":
+		fs := flag.NewFlagSet("plugins runtime invoke", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		method := fs.String("method", http.MethodGet, "HTTP method")
+		routePath := fs.String("path", "", "Plugin route path")
+		rawQuery := fs.String("query", "", "Raw query string without leading question mark")
+		bodyJSON := fs.String("body-json", "", "JSON request body")
+		bodyFile := fs.String("body-file", "", "Path to JSON request body file")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*routePath) == "" {
+			return errors.New("path is required")
+		}
+		methodValue := strings.ToUpper(strings.TrimSpace(*method))
+		switch methodValue {
+		case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		default:
+			return fmt.Errorf("unsupported method %q", strings.TrimSpace(*method))
+		}
+
+		body, err := parseRawJSONInput(*bodyJSON, *bodyFile, "")
+		if err != nil {
+			return err
+		}
+		payload, err := client.invokeTenantPluginRuntime(ctx, cfg.TenantID, strings.TrimSpace(*pluginID), methodValue, strings.TrimSpace(*routePath), strings.TrimSpace(*rawQuery), body)
+		if err != nil {
+			return err
+		}
+		if len(payload) == 0 {
+			return nil
+		}
+		if _, err := a.stdout.Write(payload); err != nil {
+			return err
+		}
+		if payload[len(payload)-1] != '\n' {
+			_, err = fmt.Fprintln(a.stdout)
+			return err
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("unknown plugins runtime subcommand %q", args[0])
 	}
 }
 

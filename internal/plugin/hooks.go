@@ -114,20 +114,25 @@ func (r *HookRegistry) Register(eventType string, handler HookHandler) {
 
 // registerPluginHook registers a plugin's hook handler
 func (r *HookRegistry) registerPluginHook(pluginID uuid.UUID, eventType, handlerName string) {
+	r.registerPluginHookHandler(pluginID, eventType, handlerName, func(ctx context.Context, event Event) error {
+		log.Error().
+			Str("plugin_id", pluginID.String()).
+			Str("handler", handlerName).
+			Str("event", eventType).
+			Msg("Plugin hook declared but backend runtime is unavailable")
+		return ErrPluginRuntimeUnavailable
+	})
+}
+
+// registerPluginHookHandler registers a plugin hook with an executable handler.
+func (r *HookRegistry) registerPluginHookHandler(pluginID uuid.UUID, eventType, handlerName string, handler HookHandler) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	r.handlers[eventType] = append(r.handlers[eventType], pluginHookHandler{
 		PluginID:    pluginID,
 		HandlerName: handlerName,
-		Handler: func(ctx context.Context, event Event) error {
-			log.Error().
-				Str("plugin_id", pluginID.String()).
-				Str("handler", handlerName).
-				Str("event", eventType).
-				Msg("Plugin hook declared but backend runtime is unavailable")
-			return ErrPluginRuntimeUnavailable
-		},
+		Handler:     handler,
 	})
 }
 

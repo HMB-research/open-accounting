@@ -46,6 +46,12 @@ func newTestCLIApp() (*cliApp, *strings.Builder, *strings.Builder) {
 	return &cliApp{stdout: stdout, stderr: stderr}, stdout, stderr
 }
 
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, fmt.Errorf("write failed")
+}
+
 func configureCLIEnv(t *testing.T) {
 	t.Helper()
 
@@ -3078,6 +3084,12 @@ func TestCLIPluginCommands(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&settings))
 			assert.Equal(t, float64(8), settings["threshold"])
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/runtime/status":
+			assert.Equal(t, "dry_run=true", r.URL.RawQuery)
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, true, req["ok"])
+			_ = json.NewEncoder(w).Encode(map[string]any{"handled": true})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -3106,6 +3118,11 @@ func TestCLIPluginCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"plugins", "settings", "update", "--id", pluginID, "--settings-json", `{"threshold":8}`})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Updated tenant plugin")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"plugins", "runtime", "invoke", "--id", pluginID, "--method", "post", "--path", "/status", "--query", "dry_run=true", "--body-json", `{"ok":true}`})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"handled":true`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"plugins", "disable", "--id", pluginID})
@@ -3138,6 +3155,12 @@ func TestCLIPluginBranches(t *testing.T) {
 		{name: "enable invalid settings json", args: []string{"plugins", "enable", "--id", pluginID, "--settings-json", "{"}, want: "parse JSON"},
 		{name: "enable conflicting settings sources", args: []string{"plugins", "enable", "--id", pluginID, "--settings-json", `{}`, "--settings-file", "settings.json"}, want: "use either settings-json or settings-file"},
 		{name: "disable missing id", args: []string{"plugins", "disable", "--id", " "}, want: "id is required"},
+		{name: "runtime missing subcommand", args: []string{"plugins", "runtime"}, want: "plugins runtime subcommand required"},
+		{name: "runtime unknown subcommand", args: []string{"plugins", "runtime", "archive"}, want: `unknown plugins runtime subcommand "archive"`},
+		{name: "runtime invoke missing id", args: []string{"plugins", "runtime", "invoke", "--path", "/status"}, want: "id is required"},
+		{name: "runtime invoke missing path", args: []string{"plugins", "runtime", "invoke", "--id", pluginID}, want: "path is required"},
+		{name: "runtime invoke unsupported method", args: []string{"plugins", "runtime", "invoke", "--id", pluginID, "--path", "/status", "--method", "trace"}, want: "unsupported method"},
+		{name: "runtime invoke invalid body json", args: []string{"plugins", "runtime", "invoke", "--id", pluginID, "--path", "/status", "--body-json", "{"}, want: "parse JSON"},
 	}
 	for _, tc := range validationCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3214,6 +3237,7 @@ func TestCLIPluginRoutingAndAPIErrorBranches(t *testing.T) {
 		{name: "list bad flag", args: []string{"plugins", "list", "--bogus"}},
 		{name: "enable bad flag", args: []string{"plugins", "enable", "--bogus"}},
 		{name: "disable bad flag", args: []string{"plugins", "disable", "--bogus"}},
+		{name: "runtime invoke bad flag", args: []string{"plugins", "runtime", "invoke", "--bogus"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout.Reset()
@@ -3232,7 +3256,8 @@ func TestCLIPluginRoutingAndAPIErrorBranches(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins",
 			r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/enable",
-			r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/disable":
+			r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/disable",
+			r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/runtime/error":
 			w.WriteHeader(http.StatusBadGateway)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "plugin service unavailable"})
 		default:
@@ -3249,6 +3274,7 @@ func TestCLIPluginRoutingAndAPIErrorBranches(t *testing.T) {
 		{name: "list API error", args: []string{"plugins", "list"}},
 		{name: "enable API error", args: []string{"plugins", "enable", "--id", pluginID}},
 		{name: "disable API error", args: []string{"plugins", "disable", "--id", pluginID}},
+		{name: "runtime invoke API error", args: []string{"plugins", "runtime", "invoke", "--id", pluginID, "--path", "/error"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout.Reset()
@@ -3258,6 +3284,52 @@ func TestCLIPluginRoutingAndAPIErrorBranches(t *testing.T) {
 			assert.Empty(t, stdout.String())
 		})
 	}
+}
+
+func TestCLIPluginRuntimeOutputBranches(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	const pluginID = "11111111-1111-1111-1111-111111111111"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/runtime/empty":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/runtime/text":
+			_, _ = w.Write([]byte("runtime text"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/runtime/write-error":
+			_, _ = w.Write([]byte("runtime write error"))
+		default:
+			t.Fatalf("unexpected runtime request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"plugins", "runtime", "invoke", "--id", pluginID, "--path", "/empty"})
+	require.NoError(t, err)
+	assert.Empty(t, stdout.String())
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"plugins", "runtime", "invoke", "--id", pluginID, "--path", "/text"})
+	require.NoError(t, err)
+	assert.Equal(t, "runtime text\n", stdout.String())
+
+	stderr := &strings.Builder{}
+	failingApp := &cliApp{stdout: failingWriter{}, stderr: stderr}
+	err = failingApp.run(context.Background(), []string{"plugins", "runtime", "invoke", "--id", pluginID, "--path", "/write-error"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "write failed")
+	assert.Empty(t, stderr.String())
 }
 
 func TestCLIPluginSettingsBranches(t *testing.T) {

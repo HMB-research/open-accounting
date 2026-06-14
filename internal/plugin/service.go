@@ -3,7 +3,11 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/HMB-research/open-accounting/internal/database"
@@ -377,7 +381,8 @@ func (s *Service) IsPluginEnabledForTenant(ctx context.Context, tenantID, plugin
 // Internal methods
 
 func (s *Service) loadPlugin(plugin *Plugin, manifest *Manifest) error {
-	if err := validateSupportedPluginRuntime(manifest); err != nil {
+	runtime, err := backendRuntimeForManifest(manifest)
+	if err != nil {
 		return err
 	}
 
@@ -393,30 +398,121 @@ func (s *Service) loadPlugin(plugin *Plugin, manifest *Manifest) error {
 	// Register hooks if any
 	if manifest.Backend != nil {
 		for _, hook := range manifest.Backend.Hooks {
-			s.hooks.registerPluginHook(plugin.ID, hook.Event, hook.Handler)
+			if runtime == nil {
+				s.hooks.registerPluginHook(plugin.ID, hook.Event, hook.Handler)
+				continue
+			}
+			hook := hook
+			s.hooks.registerPluginHookHandler(plugin.ID, hook.Event, hook.Handler, func(ctx context.Context, event Event) error {
+				return runtime.invokeHook(ctx, plugin.ID, plugin.Name, hook, event)
+			})
 		}
 	}
 
 	return nil
 }
 
-func validateSupportedPluginRuntime(manifest *Manifest) error {
+func backendRuntimeForManifest(manifest *Manifest) (*runtimeHTTPClient, error) {
 	if manifest.Backend == nil {
-		return nil
+		return nil, nil
 	}
 
 	hasHooks := len(manifest.Backend.Hooks) > 0
 	hasRoutes := len(manifest.Backend.Routes) > 0
+	if !hasHooks && !hasRoutes {
+		return nil, nil
+	}
+
+	runtime, err := newRuntimeHTTPClient(manifest.Backend)
+	if err == nil {
+		return runtime, nil
+	}
+	if !errors.Is(err, ErrPluginRuntimeUnavailable) {
+		return nil, err
+	}
 	switch {
 	case hasHooks && hasRoutes:
-		return fmt.Errorf("backend hooks and routes are declared but plugin backend runtime execution is not implemented")
+		return nil, fmt.Errorf("backend hooks and routes are declared but plugin backend runtime execution is not implemented")
 	case hasHooks:
-		return fmt.Errorf("backend hooks are declared but plugin backend runtime execution is not implemented")
+		return nil, fmt.Errorf("backend hooks are declared but plugin backend runtime execution is not implemented")
 	case hasRoutes:
-		return fmt.Errorf("backend routes are declared but plugin backend runtime execution is not implemented")
+		return nil, fmt.Errorf("backend routes are declared but plugin backend runtime execution is not implemented")
 	default:
-		return nil
+		return nil, nil
 	}
+}
+
+func (s *Service) InvokeTenantPluginRoute(
+	ctx context.Context,
+	tenantID uuid.UUID,
+	pluginID uuid.UUID,
+	method string,
+	path string,
+	rawQuery string,
+	headers http.Header,
+	body io.Reader,
+) (*RuntimeRouteResponse, error) {
+	enabled, err := s.IsPluginEnabledForTenant(ctx, tenantID, pluginID)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, ErrPluginNotEnabled
+	}
+
+	plugin, err := s.GetPlugin(ctx, pluginID)
+	if err != nil {
+		return nil, err
+	}
+	if plugin.State != StateEnabled {
+		return nil, ErrPluginNotEnabled
+	}
+
+	var manifest Manifest
+	if err := json.Unmarshal(plugin.Manifest, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to parse manifest: %w", err)
+	}
+	route, ok := findRuntimeRoute(&manifest, method, normalizeRuntimePath(path))
+	if !ok {
+		return nil, ErrPluginRouteNotFound
+	}
+	runtime, err := backendRuntimeForManifest(&manifest)
+	if err != nil {
+		return nil, err
+	}
+	if runtime == nil {
+		return nil, ErrPluginRuntimeUnavailable
+	}
+	if body == nil {
+		body = strings.NewReader("")
+	}
+	return runtime.invokeRoute(ctx, plugin.ID, tenantID, route, method, normalizeRuntimePath(path), rawQuery, headers, body)
+}
+
+func findRuntimeRoute(manifest *Manifest, method string, path string) (RouteConfig, bool) {
+	if manifest.Backend == nil {
+		return RouteConfig{}, false
+	}
+	normalizedMethod := strings.ToUpper(strings.TrimSpace(method))
+	normalizedPath := normalizeRuntimePath(path)
+	for _, route := range manifest.Backend.Routes {
+		if strings.ToUpper(strings.TrimSpace(route.Method)) == normalizedMethod &&
+			normalizeRuntimePath(route.Path) == normalizedPath {
+			return route, true
+		}
+	}
+	return RouteConfig{}, false
+}
+
+func normalizeRuntimePath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" || trimmed == "/" {
+		return "/"
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	return trimmed
 }
 
 func (s *Service) unloadPlugin(name string) {

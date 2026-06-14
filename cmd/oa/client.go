@@ -679,6 +679,22 @@ func (c *apiClient) updateTenantPluginSettings(ctx context.Context, tenantID, pl
 	return c.request(ctx, http.MethodPut, path.Join("/api/v1/tenants", tenantID, "plugins", pluginID, "settings"), settings, c.apiToken, nil)
 }
 
+func (c *apiClient) invokeTenantPluginRuntime(ctx context.Context, tenantID, pluginID, method, routePath, rawQuery string, body json.RawMessage) ([]byte, error) {
+	apiPath := path.Join("/api/v1/tenants", tenantID, "plugins", pluginID, "runtime")
+	if trimmedPath := strings.TrimLeft(strings.TrimSpace(routePath), "/"); trimmedPath != "" {
+		apiPath += "/" + trimmedPath
+	}
+	if trimmedQuery := strings.TrimPrefix(strings.TrimSpace(rawQuery), "?"); trimmedQuery != "" {
+		apiPath += "?" + trimmedQuery
+	}
+
+	var reqBody any
+	if len(body) > 0 {
+		reqBody = body
+	}
+	return c.requestRaw(ctx, method, apiPath, reqBody, c.apiToken)
+}
+
 func (c *apiClient) createAPIToken(ctx context.Context, tenantID string, req *apitoken.CreateRequest, bearerToken string) (*apitoken.CreateResult, error) {
 	var resp apitoken.CreateResult
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "api-tokens"), req, bearerToken, &resp); err != nil {
