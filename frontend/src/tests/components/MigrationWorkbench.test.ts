@@ -244,6 +244,23 @@ function providerPresets(): MigrationProviderPresetInfo[] {
       preset_alias_count: 58,
       file_kinds: [],
     },
+    {
+      preset: "directo",
+      label: "Directo",
+      description: "Adds Directo aliases.",
+      file_kind_count: 24,
+      preset_alias_count: 61,
+      file_kinds: [
+        {
+          kind: "invoices",
+          required_column_groups: [["invoice_number"], ["issue_date"]],
+          preset_alias_count: 4,
+          sample_aliases: [
+            { source_header: "arve", canonical_header: "invoice_number" },
+          ],
+        },
+      ],
+    },
   ];
 }
 
@@ -329,6 +346,13 @@ describe("MigrationWorkbench", () => {
     expect(screen.getByText("6 aliases")).toBeInTheDocument();
     expect(screen.getByText("konto -> code")).toBeInTheDocument();
     expect(screen.getByText("code, name, account_type")).toBeInTheDocument();
+
+    await fireEvent.change(screen.getByLabelText("Provider preset"), {
+      target: { value: "directo" },
+    });
+
+    expect(screen.getByText(/61 aliases/)).toBeInTheDocument();
+    expect(screen.getByText("arve -> invoice_number")).toBeInTheDocument();
   });
 
   it("opens saved execution runs for monitoring", async () => {

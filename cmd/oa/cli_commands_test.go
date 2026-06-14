@@ -4157,6 +4157,22 @@ func TestCLIMigrationProviderPresetsCommand(t *testing.T) {
 					}},
 				}},
 			},
+			{
+				Preset:           cutover.MigrationProviderPresetDirecto,
+				Label:            "Directo",
+				Description:      "Adds Directo aliases.",
+				FileKindCount:    2,
+				PresetAliasCount: 4,
+				FileKinds: []cutover.MigrationProviderPresetKindInfo{{
+					Kind:                 cutover.KindInvoices,
+					RequiredColumnGroups: [][]string{{"invoice_number"}, {"issue_date"}},
+					PresetAliasCount:     4,
+					SampleAliases: []cutover.MigrationProviderPresetAlias{{
+						SourceHeader:    "arve",
+						CanonicalHeader: "invoice_number",
+					}},
+				}},
+			},
 		})
 	}))
 	defer server.Close()
@@ -4168,12 +4184,15 @@ func TestCLIMigrationProviderPresetsCommand(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Migration provider presets")
 	assert.Contains(t, stdout.String(), "merit")
+	assert.Contains(t, stdout.String(), "directo")
 	assert.Contains(t, stdout.String(), "konto->code")
+	assert.Contains(t, stdout.String(), "arve->invoice_number")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"migration", "presets", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"preset": "merit"`)
+	assert.Contains(t, stdout.String(), `"preset": "directo"`)
 
 	err = app.run(context.Background(), []string{"migration", "presets", "--bogus"})
 	require.Error(t, err)

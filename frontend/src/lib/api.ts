@@ -3482,7 +3482,7 @@ export type MigrationFileKind =
   | "opening_balances"
   | "journal_entries";
 
-export type MigrationProviderPreset = "generic" | "merit" | "smartaccounts";
+export type MigrationProviderPreset = "generic" | "merit" | "smartaccounts" | "directo";
 export type EInvoiceContactMode = "supplier" | "customer" | "both";
 export type MigrationIssueSeverity = "ERROR" | "WARNING";
 

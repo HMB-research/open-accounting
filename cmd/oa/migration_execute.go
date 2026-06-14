@@ -58,7 +58,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 	eInvoicesFile := fs.String("e-invoices", "", "Estonian e-invoice XML file")
 	eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
 	eInvoiceInvoiceType := fs.String("e-invoice-invoice-type", "", "Override executed e-invoice type: SALES, PURCHASE, or CREDIT_NOTE")
-	providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, or smartaccounts")
+	providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, smartaccounts, or directo")
 	paymentsFile := fs.String("payments", "", "Payments CSV file")
 	bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
 	bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")

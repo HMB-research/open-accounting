@@ -79,6 +79,15 @@
 			file_kind_count: fileKinds.length,
 			preset_alias_count: 0,
 			file_kinds: []
+		},
+		{
+			preset: 'directo',
+			label: 'Directo',
+			description:
+				'Adds Directo mass-import and XML Direct-style CSV header aliases before canonical validation.',
+			file_kind_count: fileKinds.length,
+			preset_alias_count: 0,
+			file_kinds: []
 		}
 	];
 

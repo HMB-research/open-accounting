@@ -126,12 +126,14 @@ func TestListMigrationProviderPresetsHandler(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	var presets []cutover.MigrationProviderPresetInfo
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&presets))
-	require.Len(t, presets, 3)
+	require.Len(t, presets, 4)
 	assert.Equal(t, cutover.MigrationProviderPresetGeneric, presets[0].Preset)
 	assert.Equal(t, cutover.MigrationProviderPresetMerit, presets[1].Preset)
 	assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, presets[2].Preset)
+	assert.Equal(t, cutover.MigrationProviderPresetDirecto, presets[3].Preset)
 	assert.Greater(t, presets[1].PresetAliasCount, 0)
 	assert.NotEmpty(t, presets[1].FileKinds)
+	assert.Greater(t, presets[3].PresetAliasCount, 0)
 }
 
 func TestValidateMigrationBundleHandlerRejectsEmptyRequest(t *testing.T) {

@@ -25601,12 +25601,14 @@ const docTemplate = `{
             "enum": [
                 "generic",
                 "merit",
-                "smartaccounts"
+                "smartaccounts",
+                "directo"
             ],
             "x-enum-varnames": [
                 "MigrationProviderPresetGeneric",
                 "MigrationProviderPresetMerit",
-                "MigrationProviderPresetSmartAccounts"
+                "MigrationProviderPresetSmartAccounts",
+                "MigrationProviderPresetDirecto"
             ]
         },
         "github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetAlias": {
