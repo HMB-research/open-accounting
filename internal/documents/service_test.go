@@ -23,6 +23,7 @@ type mockRepository struct {
 	getErr                error
 	updateRetentionErr    error
 	updateLifecycleErr    error
+	updateLegalHoldErr    error
 	reviewErr             error
 	deleteErr             error
 	reviewCount           int
@@ -198,6 +199,21 @@ func (m *mockRepository) UpdateDocumentLifecycle(ctx context.Context, schemaName
 	doc.LifecycleBy = nilIfEmpty(lifecycleBy)
 	doc.LifecycleAt = &lifecycleAt
 	doc.SupersededBy = supersededBy
+	return nil
+}
+
+func (m *mockRepository) UpdateDocumentLegalHold(ctx context.Context, schemaName, tenantID, documentID string, legalHold bool, note, actionedBy string, actionedAt time.Time) error {
+	if m.updateLegalHoldErr != nil {
+		return m.updateLegalHoldErr
+	}
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return os.ErrNotExist
+	}
+	doc.LegalHold = legalHold
+	doc.LegalHoldNote = note
+	doc.LegalHoldBy = nilIfEmpty(actionedBy)
+	doc.LegalHoldAt = &actionedAt
 	return nil
 }
 
@@ -669,6 +685,89 @@ func TestService_UpdateDocumentLifecycleValidationAndAudit(t *testing.T) {
 	}
 	if superseded.LifecycleStatus != LifecycleStatusSuperseded || superseded.SupersededBy == nil || *superseded.SupersededBy != "doc-replacement" {
 		t.Fatalf("unexpected superseded document: %#v", superseded)
+	}
+}
+
+func TestService_DocumentLegalHoldAuditAndGuards(t *testing.T) {
+	t.Parallel()
+
+	store := &mockStore{}
+	repo := newMockRepository()
+	svc := NewService(repo, store)
+	repo.docs["doc-held"] = &Document{
+		ID:              "doc-held",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "receipt.pdf",
+		StorageKey:      "tenant-1/doc-held.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+	}
+	repo.docs["doc-replacement"] = &Document{
+		ID:              "doc-replacement",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "receipt-v2.pdf",
+		StorageKey:      "tenant-1/doc-replacement.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	if _, err := svc.UpdateDocumentLegalHold(context.Background(), "tenant_demo", "tenant-1", "doc-held", "legal-1", &DocumentLegalHoldRequest{
+		LegalHold: true,
+	}); err == nil || !strings.Contains(err.Error(), "note is required") {
+		t.Fatalf("expected note-required error, got %v", err)
+	}
+
+	held, err := svc.UpdateDocumentLegalHold(context.Background(), "tenant_demo", "tenant-1", "doc-held", "legal-1", &DocumentLegalHoldRequest{
+		LegalHold: true,
+		Note:      "Litigation hold for supplier dispute",
+	})
+	if err != nil {
+		t.Fatalf("UpdateDocumentLegalHold failed: %v", err)
+	}
+	if !held.LegalHold || held.LegalHoldNote != "Litigation hold for supplier dispute" || held.LegalHoldBy == nil || *held.LegalHoldBy != "legal-1" || held.LegalHoldAt == nil {
+		t.Fatalf("expected legal hold audit metadata: %#v", held)
+	}
+
+	if _, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-held", "reviewer-1", &DocumentLifecycleRequest{
+		LifecycleStatus: LifecycleStatusDisposed,
+		LifecycleNote:   "Retention expired",
+	}); err == nil || !strings.Contains(err.Error(), "legal hold") {
+		t.Fatalf("expected legal hold to block disposal, got %v", err)
+	}
+	if _, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-held", "reviewer-1", &DocumentLifecycleRequest{
+		LifecycleStatus:      LifecycleStatusSuperseded,
+		LifecycleNote:        "Corrected evidence attached",
+		SupersededByDocument: "doc-replacement",
+	}); err == nil || !strings.Contains(err.Error(), "legal hold") {
+		t.Fatalf("expected legal hold to block supersession, got %v", err)
+	}
+
+	if err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", "doc-held"); err == nil || !strings.Contains(err.Error(), "legal hold") {
+		t.Fatalf("expected legal hold to block delete, got %v", err)
+	}
+	if len(store.deleted) != 0 {
+		t.Fatalf("delete should not touch storage while legal hold is active: %#v", store.deleted)
+	}
+
+	released, err := svc.UpdateDocumentLegalHold(context.Background(), "tenant_demo", "tenant-1", "doc-held", "legal-2", &DocumentLegalHoldRequest{
+		LegalHold: false,
+		Note:      "Supplier dispute resolved",
+	})
+	if err != nil {
+		t.Fatalf("UpdateDocumentLegalHold release failed: %v", err)
+	}
+	if released.LegalHold || released.LegalHoldNote != "Supplier dispute resolved" || released.LegalHoldBy == nil || *released.LegalHoldBy != "legal-2" {
+		t.Fatalf("expected released hold audit metadata: %#v", released)
 	}
 }
 

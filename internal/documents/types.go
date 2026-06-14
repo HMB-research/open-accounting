@@ -66,6 +66,10 @@ type Document struct {
 	SupersededBy    *string    `json:"superseded_by_document_id,omitempty"`
 	LifecycleBy     *string    `json:"lifecycle_actioned_by,omitempty"`
 	LifecycleAt     *time.Time `json:"lifecycle_actioned_at,omitempty"`
+	LegalHold       bool       `json:"legal_hold"`
+	LegalHoldNote   string     `json:"legal_hold_note,omitempty"`
+	LegalHoldBy     *string    `json:"legal_hold_actioned_by,omitempty"`
+	LegalHoldAt     *time.Time `json:"legal_hold_actioned_at,omitempty"`
 	UploadedBy      string     `json:"uploaded_by"`
 	CreatedAt       time.Time  `json:"created_at"`
 }
@@ -94,6 +98,11 @@ type DocumentLifecycleRequest struct {
 	LifecycleStatus      string `json:"lifecycle_status"`
 	LifecycleNote        string `json:"lifecycle_note,omitempty"`
 	SupersededByDocument string `json:"superseded_by_document_id,omitempty"`
+}
+
+type DocumentLegalHoldRequest struct {
+	LegalHold bool   `json:"legal_hold"`
+	Note      string `json:"note"`
 }
 
 type ReviewSummary struct {

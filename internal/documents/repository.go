@@ -24,6 +24,7 @@ type Repository interface {
 	GetDocumentByID(ctx context.Context, schemaName, tenantID, documentID string) (*Document, error)
 	UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error
 	UpdateDocumentLifecycle(ctx context.Context, schemaName, tenantID, documentID, lifecycleStatus, lifecycleNote, lifecycleBy string, lifecycleAt time.Time, supersededBy *string) error
+	UpdateDocumentLegalHold(ctx context.Context, schemaName, tenantID, documentID string, legalHold bool, note, actionedBy string, actionedAt time.Time) error
 	ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error
 	DeleteDocument(ctx context.Context, schemaName, tenantID, documentID string) error
 }
@@ -267,6 +268,28 @@ func (r *GORMRepository) UpdateDocumentLifecycle(ctx context.Context, schemaName
 	return nil
 }
 
+func (r *GORMRepository) UpdateDocumentLegalHold(ctx context.Context, schemaName, tenantID, documentID string, legalHold bool, note, actionedBy string, actionedAt time.Time) error {
+	db, err := r.documentsTable(ctx, schemaName)
+	if err != nil {
+		return fmt.Errorf("qualify documents table: %w", err)
+	}
+
+	result := db.Where("tenant_id = ? AND id = ?", tenantID, documentID).
+		Updates(map[string]interface{}{
+			"legal_hold":             legalHold,
+			"legal_hold_note":        nilIfEmpty(note),
+			"legal_hold_actioned_by": nilIfEmpty(actionedBy),
+			"legal_hold_actioned_at": actionedAt,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update document legal hold: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("document not found")
+	}
+	return nil
+}
+
 func (r *GORMRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {
 	db, err := r.documentsTable(ctx, schemaName)
 	if err != nil {
@@ -327,6 +350,10 @@ func documentToModel(doc *Document) *models.Document {
 		SupersededBy:    doc.SupersededBy,
 		LifecycleBy:     doc.LifecycleBy,
 		LifecycleAt:     doc.LifecycleAt,
+		LegalHold:       doc.LegalHold,
+		LegalHoldNote:   nilIfEmpty(doc.LegalHoldNote),
+		LegalHoldBy:     doc.LegalHoldBy,
+		LegalHoldAt:     doc.LegalHoldAt,
 		UploadedBy:      doc.UploadedBy,
 		CreatedAt:       doc.CreatedAt,
 	}
@@ -354,6 +381,10 @@ func modelToDocument(doc *models.Document) *Document {
 		SupersededBy:    doc.SupersededBy,
 		LifecycleBy:     doc.LifecycleBy,
 		LifecycleAt:     doc.LifecycleAt,
+		LegalHold:       doc.LegalHold,
+		LegalHoldNote:   valueOrEmpty(doc.LegalHoldNote),
+		LegalHoldBy:     doc.LegalHoldBy,
+		LegalHoldAt:     doc.LegalHoldAt,
 		UploadedBy:      doc.UploadedBy,
 		CreatedAt:       doc.CreatedAt,
 	}

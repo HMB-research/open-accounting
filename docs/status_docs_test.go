@@ -21,6 +21,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"README.md":                                           read(filepath.Join("..", "README.md")),
 		"docs/DEVELOPMENT_STATUS.md":                          read("DEVELOPMENT_STATUS.md"),
 		"docs/ARCHITECTURE.md":                                read("ARCHITECTURE.md"),
+		"docs/USE_CASE_COVERAGE.md":                           read("USE_CASE_COVERAGE.md"),
 		"docs/demo-e2e-testing.md":                            read("demo-e2e-testing.md"),
 		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md":         read("FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md"),
 		".agents/skills/open-accounting-development/SKILL.md": read(filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md")),
@@ -309,6 +310,11 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"`DATABASE_URL=... make test-integration-coverage` must pass",
 			"`INTEGRATION_SHARD` and `INTEGRATION_SHARDS`",
 			"Blocking smoke E2E plus blocking local seeded demo shards",
+		},
+		"docs/USE_CASE_COVERAGE.md": {
+			"legal hold placement/release audit metadata with disposal, replacement, and hard-delete guards",
+			"focused document lifecycle/legal-hold service/API/CLI tests",
+			"purge automation beyond legal-hold guards",
 		},
 		"docs/demo-e2e-testing.md": {
 			"The broader `e2e` job runs the full `demo-chromium` project across four shards and is blocking.",
