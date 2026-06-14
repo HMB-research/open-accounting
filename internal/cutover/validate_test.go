@@ -5134,6 +5134,70 @@ func TestValidateBundleReportsSalesEInvoicePaymentCustomerContactMismatch(t *tes
 	assert.Contains(t, report.Issues[0].Message, `payment contact_reg_code "99999999" does not match imported invoice "INV-2026-001" contact_reg_code "87654321"`)
 }
 
+func TestValidateBundleAcceptsCreditNoteEInvoicePaymentCustomerContactMatch(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		EInvoiceContactMode: EInvoiceContactModeCustomer,
+		EInvoiceInvoiceType: " credit_note ",
+		Files: []BundleFile{
+			{
+				Kind:       KindContacts,
+				FileName:   "contacts.csv",
+				CSVContent: "name,reg_code\nBuyer OÜ,87654321\n",
+			},
+			{
+				Kind:       KindEInvoices,
+				FileName:   "e-invoices.xml",
+				XMLContent: cutoverEInvoiceXML("CN-2026-001", "Seller OÜ", "12345678"),
+			},
+			{
+				Kind:       KindPayments,
+				FileName:   "payments.csv",
+				CSVContent: "payment_type,payment_date,contact_reg_code,amount,invoice_number,allocation_amount\nRECEIVED,2026-05-31,87654321,100,CN-2026-001,100\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.RowsValidated)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsCreditNoteEInvoicePaymentSupplierContactMismatch(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		EInvoiceInvoiceType: " credit_note ",
+		Files: []BundleFile{
+			{
+				Kind:       KindContacts,
+				FileName:   "contacts.csv",
+				CSVContent: "name,reg_code\nSupplier OÜ,12345678\nOther Supplier,99999999\n",
+			},
+			{
+				Kind:       KindEInvoices,
+				FileName:   "e-invoices.xml",
+				XMLContent: cutoverEInvoiceXML("CN-2026-001", "Supplier OÜ", "12345678"),
+			},
+			{
+				Kind:       KindPayments,
+				FileName:   "payments.csv",
+				CSVContent: "payment_type,payment_date,contact_reg_code,amount,invoice_number,allocation_amount\nMADE,2026-05-31,99999999,100,CN-2026-001,100\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, "contact_reg_code", report.Issues[0].Field)
+	assert.Equal(t, "99999999", report.Issues[0].Value)
+	assert.Equal(t, KindEInvoices, report.Issues[0].TargetKind)
+	assert.Contains(t, report.Issues[0].Message, `payment contact_reg_code "99999999" does not match imported invoice "CN-2026-001" contact_reg_code "12345678"`)
+}
+
 func TestValidateBundleRejectsUnsupportedEInvoiceInvoiceTypeOverride(t *testing.T) {
 	_, err := ValidateBundle(&ValidateBundleRequest{
 		EInvoiceInvoiceType: "memo",
