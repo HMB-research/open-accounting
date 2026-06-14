@@ -3787,7 +3787,7 @@ POST /tenants/{tenantId}/tax/kmd/{year}/{month}/accept
 Authorization: Bearer <token>
 ```
 
-Marks an existing KMD declaration as accepted by e-MTA. Returns `{ "status": "accepted" }` when the transition succeeds and powers the accountant workspace KMD acceptance assignment action.
+Marks an existing KMD declaration as accepted by e-MTA. Marking a KMD declaration accepted requires an approved `tax_support` or `supporting_document` attached to the `kmd_declaration` entity with the declaration ID as `entity_id`. Missing or pending evidence returns `409 Conflict` and leaves the declaration status unchanged. Returns `{ "status": "accepted" }` when the transition succeeds and powers the accountant workspace KMD acceptance assignment action.
 
 ### Generate EU VAT OSS Report
 
@@ -3906,6 +3906,8 @@ Marking a TSD declaration submitted requires an approved `tax_support` or `suppo
 POST /tenants/{tenantId}/tsd/{year}/{month}/accept
 Authorization: Bearer <token>
 ```
+
+Marking a TSD declaration accepted requires an approved `tax_support` or `supporting_document` attached to the `tsd_declaration` entity with the declaration ID as `entity_id`. Missing or pending evidence returns `409 Conflict` and leaves the declaration status unchanged.
 
 ### Mark TSD Rejected
 

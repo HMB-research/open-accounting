@@ -579,6 +579,61 @@ func TestMarkTSDSubmittedRequiresApprovedTaxEvidence(t *testing.T) {
 	require.Equal(t, "EMTA-2026-03", repo.tsdDeclarations["tsd-1"].EMTAReference)
 }
 
+func TestMarkTSDAcceptedRequiresApprovedTaxEvidence(t *testing.T) {
+	h, repo, _ := setupPayrollImportHandlerTest(t)
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+	repo.tsdDeclarations["tsd-1"] = &payroll.TSDDeclaration{
+		ID:            "tsd-1",
+		TenantID:      "tenant-1",
+		PeriodYear:    2026,
+		PeriodMonth:   3,
+		Status:        payroll.TSDSubmitted,
+		TotalPayments: decimal.RequireFromString("3000.00"),
+		EMTAReference: "EMTA-2026-03",
+	}
+
+	errorBody := invokePayrollImportJSON[map[string]string](t, http.StatusConflict, h.MarkTSDAccepted, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tsd/2026/3/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved TSD acceptance evidence is required")
+	require.Equal(t, payroll.TSDSubmitted, repo.tsdDeclarations["tsd-1"].Status)
+
+	now := time.Now()
+	docRepo.docs["tsd-acceptance-support"] = &documents.Document{
+		ID:           "tsd-acceptance-support",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeTSD,
+		EntityID:     "tsd-1",
+		DocumentType: documents.DocumentTypeSupportingDocument,
+		FileName:     "tsd-acceptance.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+	errorBody = invokePayrollImportJSON[map[string]string](t, http.StatusConflict, h.MarkTSDAccepted, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tsd/2026/3/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved TSD acceptance evidence is required")
+	require.Equal(t, payroll.TSDSubmitted, repo.tsdDeclarations["tsd-1"].Status)
+
+	docRepo.docs["tsd-acceptance-support"].ReviewStatus = documents.ReviewStatusApproved
+	accepted := invokePayrollImportJSON[map[string]string](t, http.StatusOK, h.MarkTSDAccepted, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tsd/2026/3/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Equal(t, "accepted", accepted["status"])
+	require.Equal(t, payroll.TSDAccepted, repo.tsdDeclarations["tsd-1"].Status)
+}
+
 func TestLeaveBusinessHandlersBalanceAndRecordWorkflow(t *testing.T) {
 	h, _, absenceRepo := setupPayrollImportHandlerTest(t)
 	employee := payrollImportEmployee("emp-700", "EMP-700")
