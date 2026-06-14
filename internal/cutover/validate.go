@@ -1981,8 +1981,25 @@ type cutoverInvoiceAllocationTarget struct {
 	amountPaidSpecified bool
 	currency            string
 	invoiceType         string
+	contactReferences   cutoverContactReferences
 	targetKind          FileKind
 	invoiceCount        int
+}
+
+type cutoverContactReference struct {
+	display    string
+	normalized string
+}
+
+type cutoverContactReferences map[string]cutoverContactReference
+
+var cutoverContactReferenceFields = []string{
+	"contact_id",
+	"contact_code",
+	"contact_reg_code",
+	"contact_vat_number",
+	"contact_email",
+	"contact_name",
 }
 
 func validateDuplicateIdentifierPreflight(report *BundleValidationReport, file parsedFile) {
@@ -2401,6 +2418,9 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 			if hasPaymentInvoiceTypeMismatch(report, file, row, target) {
 				continue
 			}
+			if hasPaymentInvoiceContactMismatch(report, file, row, target) {
+				continue
+			}
 
 			nextAllocationTotal := allocationTotals[target.key].Add(allocationAmount)
 			allocationTotals[target.key] = nextAllocationTotal
@@ -2564,9 +2584,10 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutover
 					if !ok {
 						continue
 					}
-					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"])
+					contactReferences := cutoverContactReferencesFromRow(row)
+					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], contactReferences)
 					if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
-						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"])
+						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], contactReferences)
 					}
 				}
 			}
@@ -2578,9 +2599,9 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutover
 				continue
 			}
 			amountPaid, _, amountPaidSpecified := cutoverInvoiceGroupAmountPaid(group)
-			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType)
+			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, group.contactReferences)
 			if id := strings.TrimSpace(group.id); id != "" {
-				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType)
+				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, group.contactReferences)
 			}
 		}
 	}
@@ -2619,12 +2640,13 @@ func cutoverEInvoiceTotal(invoice einvoice.Invoice) (decimal.Decimal, bool) {
 }
 
 type cutoverInvoiceGroup struct {
-	id          string
-	number      string
-	currency    string
-	invoiceType string
-	display     string
-	rows        []parsedRow
+	id                string
+	number            string
+	currency          string
+	invoiceType       string
+	contactReferences cutoverContactReferences
+	display           string
+	rows              []parsedRow
 }
 
 func cutoverInvoiceGroups(file parsedFile) []cutoverInvoiceGroup {
@@ -2639,11 +2661,12 @@ func cutoverInvoiceGroups(file parsedFile) []cutoverInvoiceGroup {
 		group, exists := groups[key]
 		if !exists {
 			group = &cutoverInvoiceGroup{
-				id:          strings.TrimSpace(row.values["id"]),
-				number:      strings.TrimSpace(row.values["invoice_number"]),
-				currency:    cutoverInvoiceRowCurrency(row),
-				invoiceType: normalizeCutoverInvoiceType(row.values["invoice_type"]),
-				display:     display,
+				id:                strings.TrimSpace(row.values["id"]),
+				number:            strings.TrimSpace(row.values["invoice_number"]),
+				currency:          cutoverInvoiceRowCurrency(row),
+				invoiceType:       normalizeCutoverInvoiceType(row.values["invoice_type"]),
+				contactReferences: cutoverContactReferencesFromRow(row),
+				display:           display,
 			}
 			groups[key] = group
 			groupOrder = append(groupOrder, key)
@@ -2841,6 +2864,77 @@ func hasPaymentInvoiceTypeMismatch(
 	return true
 }
 
+func hasPaymentInvoiceContactMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	if len(target.contactReferences) == 0 {
+		return false
+	}
+	paymentReferences := cutoverContactReferencesFromRow(row)
+	if len(paymentReferences) == 0 {
+		return false
+	}
+
+	for _, field := range cutoverContactReferenceFields {
+		paymentReference, paymentHasField := paymentReferences[field]
+		targetReference, targetHasField := target.contactReferences[field]
+		if !paymentHasField || !targetHasField {
+			continue
+		}
+		if paymentReference.normalized == targetReference.normalized {
+			continue
+		}
+		report.addIssue(ValidationIssue{
+			Severity:   SeverityError,
+			Kind:       KindPayments,
+			FileName:   file.fileName,
+			Row:        row.number,
+			Field:      field,
+			Value:      paymentReference.display,
+			TargetKind: target.targetKind,
+			Message: fmt.Sprintf(
+				"payment %s %q does not match imported invoice %q %s %q",
+				field,
+				paymentReference.display,
+				target.display,
+				field,
+				targetReference.display,
+			),
+		})
+		return true
+	}
+	return false
+}
+
+func cutoverContactReferencesFromRow(row parsedRow) cutoverContactReferences {
+	references := cutoverContactReferences{}
+	for _, field := range cutoverContactReferenceFields {
+		display := strings.TrimSpace(row.values[field])
+		if display == "" {
+			continue
+		}
+		references[field] = cutoverContactReference{
+			display:    display,
+			normalized: normalizedValue(display),
+		}
+	}
+	return references
+}
+
+func copyCutoverContactReferences(references cutoverContactReferences) cutoverContactReferences {
+	if len(references) == 0 {
+		return nil
+	}
+	copied := make(cutoverContactReferences, len(references))
+	for field, reference := range references {
+		copied[field] = reference
+	}
+	return copied
+}
+
 func addCutoverInvoiceAllocationTarget(
 	targets map[string]cutoverInvoiceAllocationTarget,
 	targetKind FileKind,
@@ -2851,6 +2945,7 @@ func addCutoverInvoiceAllocationTarget(
 	amountPaidSpecified bool,
 	currency string,
 	invoiceType string,
+	contactReferences cutoverContactReferences,
 ) {
 	display := strings.TrimSpace(value)
 	if display == "" {
@@ -2866,6 +2961,7 @@ func addCutoverInvoiceAllocationTarget(
 		target.amountPaidSpecified = amountPaidSpecified
 		target.currency = strings.ToUpper(strings.TrimSpace(currency))
 		target.invoiceType = strings.ToUpper(strings.TrimSpace(invoiceType))
+		target.contactReferences = copyCutoverContactReferences(contactReferences)
 		target.targetKind = targetKind
 	}
 	target.invoiceCount++
