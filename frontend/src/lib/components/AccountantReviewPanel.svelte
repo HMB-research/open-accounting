@@ -397,6 +397,14 @@
 		return ['tsd_export_and_submit', 'tsd_accepted_archive'].includes(action.code);
 	}
 
+	function canAcceptAssignmentTSD(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'tsd' &&
+			action.code === 'tsd_awaiting_authority_acceptance' &&
+			parseAssignmentPeriod(action) !== null
+		);
+	}
+
 	function canExecuteAssignmentMigration(action: WorkspaceAssignmentAction): boolean {
 		return (
 			action.source === 'migration' &&
@@ -690,6 +698,30 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentTsdExportError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function acceptAssignmentTSD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.markTSDAccepted(tenant.id, period.year, period.month);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentTsdAccepted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentTsdAcceptError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -1269,6 +1301,18 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: m.dashboard_reviewAssignmentsExportTsdXml()}
+										</button>
+									{/if}
+									{#if canAcceptAssignmentTSD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => acceptAssignmentTSD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsAcceptTsd()}
 										</button>
 									{/if}
 									{#if canExecuteAssignmentMigration(action)}
