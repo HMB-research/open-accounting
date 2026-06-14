@@ -1021,9 +1021,7 @@ describe("API Client - Core Functionality", () => {
 
       expect(mockFetch).toHaveBeenNthCalledWith(
         1,
-        expect.stringContaining(
-          "/api/v1/tenants/tenant-123/migration/execute",
-        ),
+        expect.stringContaining("/api/v1/tenants/tenant-123/migration/execute"),
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({
@@ -1059,6 +1057,109 @@ describe("API Client - Core Functionality", () => {
       expect(executed.steps?.[0].duration_ms).toBe(1500);
       expect(runs[0].id).toBe("run-1");
       expect(loaded.steps?.[0].status).toBe("SUCCEEDED");
+    });
+
+    it("should watch saved migration execution run event streams", async () => {
+      const runningRun = {
+        id: "run-1",
+        tenant_id: "tenant-123",
+        summary: {
+          status: "running",
+          confirmed: true,
+          resumed: false,
+          plan_ready: true,
+          validation_ready: true,
+          step_count: 2,
+          running_step_count: 1,
+          succeeded_step_count: 1,
+          failed_step_count: 0,
+          skipped_step_count: 0,
+          planned_step_count: 0,
+          resumed_step_count: 0,
+          completed_step_count: 1,
+          remaining_step_count: 1,
+          progress_percent: 50,
+          needs_context_count: 0,
+          blocked_step_count: 0,
+          active_step_number: 2,
+          active_step_kind: "contacts",
+          active_step_file_name: "contacts.csv",
+          active_step_status: "RUNNING",
+        },
+      };
+      const completedRun = {
+        ...runningRun,
+        summary: {
+          ...runningRun.summary,
+          status: "succeeded",
+          running_step_count: 0,
+          succeeded_step_count: 2,
+          completed_step_count: 2,
+          remaining_step_count: 0,
+          progress_percent: 100,
+        },
+      };
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `event: snapshot\nid: 1\ndata: ${JSON.stringify({
+                type: "snapshot",
+                sequence: 1,
+                run: runningRun,
+              })}\n\n`,
+            ),
+          );
+          controller.enqueue(
+            encoder.encode(
+              `event: complete\nid: 2\ndata: ${JSON.stringify({
+                type: "complete",
+                sequence: 2,
+                run: completedRun,
+              })}\n\n`,
+            ),
+          );
+          controller.close();
+        },
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: stream,
+      });
+      api.setTokens("valid-token", "refresh-token");
+      const events: Array<{
+        type: string;
+        sequence: number;
+        run?: typeof runningRun;
+      }> = [];
+
+      await api.watchMigrationExecutionRun("tenant-123", "run-1", {
+        intervalMs: 250,
+        maxEvents: 2,
+        onEvent: (event) => {
+          events.push(event as (typeof events)[number]);
+        },
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-runs/run-1/events?interval_ms=250&max_events=2",
+        ),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Accept: "text/event-stream",
+            Authorization: "Bearer valid-token",
+          }),
+        }),
+      );
+      expect(events).toHaveLength(2);
+      expect(events[0].type).toBe("snapshot");
+      expect(events[0].run?.summary.active_step_file_name).toBe("contacts.csv");
+      expect(events[1].type).toBe("complete");
+      expect(events[1].run?.summary.progress_percent).toBe(100);
     });
 
     it("should list expense claims with remediation actions", async () => {
@@ -1133,9 +1234,13 @@ describe("API Client - Core Functionality", () => {
         }),
       });
 
-      const result = await api.updatePayrollPaymentDate("tenant-123", "payroll-1", {
-        payment_date: "2026-02-28",
-      });
+      const result = await api.updatePayrollPaymentDate(
+        "tenant-123",
+        "payroll-1",
+        {
+          payment_date: "2026-02-28",
+        },
+      );
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining(
@@ -2083,7 +2188,9 @@ describe("API Client - Core Functionality", () => {
         reference: "REV-PMT-001",
       });
 
-      expect(result.original_payment.reversed_by_payment_id).toBe("pay-reversal");
+      expect(result.original_payment.reversed_by_payment_id).toBe(
+        "pay-reversal",
+      );
       expect(result.reversal_payment.reversal_of_payment_id).toBe("pay-1");
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining("/payments/pay-1/reverse"),
@@ -4497,11 +4604,14 @@ describe("API Client - Core Functionality", () => {
         }),
       });
 
-      const result = await api.getInventorySubledgerReconciliation("tenant-123", {
-        warehouse_id: "warehouse-1",
-        method: "weighted-average",
-        as_of_date: "2026-06-13",
-      });
+      const result = await api.getInventorySubledgerReconciliation(
+        "tenant-123",
+        {
+          warehouse_id: "warehouse-1",
+          method: "weighted-average",
+          as_of_date: "2026-06-13",
+        },
+      );
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining(

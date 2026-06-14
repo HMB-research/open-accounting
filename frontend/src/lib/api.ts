@@ -674,10 +674,7 @@ class ApiClient {
     );
   }
 
-  async validateMigrationBundle(
-    tenantId: string,
-    data: ValidateBundleRequest,
-  ) {
+  async validateMigrationBundle(tenantId: string, data: ValidateBundleRequest) {
     return this.request<BundleValidationReport>(
       "POST",
       `/api/v1/tenants/${tenantId}/migration/validate`,
@@ -722,10 +719,136 @@ class ApiClient {
     );
   }
 
-  async listExpenses(
+  async watchMigrationExecutionRun(
     tenantId: string,
-    filter: ListExpensesFilter = {},
-  ) {
+    runId: string,
+    options: WatchMigrationExecutionRunOptions,
+  ): Promise<void> {
+    const params = new URLSearchParams();
+    if (options.intervalMs !== undefined) {
+      params.set("interval_ms", String(options.intervalMs));
+    }
+    if (options.maxEvents !== undefined) {
+      params.set("max_events", String(options.maxEvents));
+    }
+    const query = params.toString();
+    const path = `/api/v1/tenants/${tenantId}/migration/execution-runs/${runId}/events${query ? `?${query}` : ""}`;
+    const headers: Record<string, string> = {
+      Accept: "text/event-stream",
+    };
+    if (this.accessToken) {
+      headers["Authorization"] = `Bearer ${this.accessToken}`;
+    }
+
+    let response = await fetch(`${getApiBase()}${path}`, {
+      method: "GET",
+      headers,
+      signal: options.signal,
+    });
+
+    if (response.status === 401) {
+      if (this.refreshToken) {
+        const refreshed = await this.refreshAccessToken();
+        if (refreshed && this.accessToken) {
+          headers["Authorization"] = `Bearer ${this.accessToken}`;
+          response = await fetch(`${getApiBase()}${path}`, {
+            method: "GET",
+            headers,
+            signal: options.signal,
+          });
+        }
+      }
+      if (response.status === 401) {
+        this.clearTokens();
+        if (browser) {
+          window.location.href = "/login";
+        }
+        throw new Error("Session expired. Please log in again.");
+      }
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}) as ApiError);
+      throw new Error(
+        error.error ||
+          `Migration execution run stream failed with status ${response.status}`,
+      );
+    }
+
+    if (!response.body) {
+      throw new Error("Migration execution run stream is not available.");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const emitFrame = async (frame: string) => {
+      const dataLines: string[] = [];
+      let eventType = "";
+      let sequence = 0;
+
+      for (const line of frame.split("\n")) {
+        if (!line || line.startsWith(":")) {
+          continue;
+        }
+        if (line.startsWith("event:")) {
+          eventType = line.slice("event:".length).trim();
+          continue;
+        }
+        if (line.startsWith("id:")) {
+          const parsed = Number(line.slice("id:".length).trim());
+          if (Number.isFinite(parsed)) {
+            sequence = parsed;
+          }
+          continue;
+        }
+        if (line.startsWith("data:")) {
+          dataLines.push(line.slice("data:".length).trimStart());
+        }
+      }
+
+      if (dataLines.length === 0) {
+        return;
+      }
+
+      const parsed = JSON.parse(
+        dataLines.join("\n"),
+      ) as Partial<MigrationExecutionRunEvent>;
+      const event = this.parseDecimals({
+        ...parsed,
+        type: parsed.type || eventType,
+        sequence: parsed.sequence || sequence,
+      }) as MigrationExecutionRunEvent;
+      await options.onEvent(event);
+    };
+
+    const flushFrames = async () => {
+      let frameEnd = buffer.indexOf("\n\n");
+      while (frameEnd >= 0) {
+        const frame = buffer.slice(0, frameEnd);
+        buffer = buffer.slice(frameEnd + 2);
+        await emitFrame(frame);
+        frameEnd = buffer.indexOf("\n\n");
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      await flushFrames();
+    }
+
+    buffer += decoder.decode().replace(/\r\n/g, "\n");
+    if (buffer.trim()) {
+      await emitFrame(buffer);
+    }
+  }
+
+  async listExpenses(tenantId: string, filter: ListExpensesFilter = {}) {
     const query = buildQuery(filter);
     return this.request<ExpenseClaim[]>(
       "GET",
@@ -3536,6 +3659,19 @@ export interface MigrationExecutionRun {
   plan?: MigrationExecutionPlan;
   steps?: MigrationExecutionStepRun[];
   remediation_actions?: MigrationRemediationAction[];
+}
+
+export interface MigrationExecutionRunEvent {
+  type: string;
+  sequence: number;
+  run?: MigrationExecutionRun;
+}
+
+export interface WatchMigrationExecutionRunOptions {
+  intervalMs?: number;
+  maxEvents?: number;
+  signal?: AbortSignal;
+  onEvent: (event: MigrationExecutionRunEvent) => void | Promise<void>;
 }
 
 export type ExpenseStatus =

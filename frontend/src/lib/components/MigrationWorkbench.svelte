@@ -8,6 +8,7 @@
 		type ExecuteMigrationRequest,
 		type MigrationExecutionPlan,
 		type MigrationExecutionRun,
+		type MigrationExecutionRunEvent,
 		type MigrationExecutionRunSummary,
 		type MigrationFileKind,
 		type MigrationProviderPreset,
@@ -77,6 +78,9 @@
 	let run = $state<MigrationExecutionRun | null>(null);
 	let savedRuns = $state<MigrationExecutionRun[]>([]);
 	let selectedRun = $state<MigrationExecutionRun | null>(null);
+	let streamingRunId = $state('');
+	let streamStatus = $state('');
+	let streamController: AbortController | null = null;
 	let loadedDeepLinkKey = '';
 
 	let canSubmitBundle = $derived(tenantId.trim().length > 0 && bundleFiles.length > 0 && !working);
@@ -84,6 +88,7 @@
 
 	onMount(() => {
 		void initializeWorkbench();
+		return () => stopRunStream();
 	});
 
 	$effect(() => {
@@ -266,12 +271,10 @@
 		error = '';
 		success = '';
 		try {
-			run = await api.executeMigration(tenantId, buildExecuteRequest(false));
-			selectedRun = run;
-			plan = run.plan ?? plan;
-			validation = run.plan?.validation ?? validation;
+			applyRunSnapshot(await api.executeMigration(tenantId, buildExecuteRequest(false)));
 			success = 'Planned migration run saved.';
 			await loadRunHistory();
+			maybeStartRunStream(run);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to save planned migration run.';
 		} finally {
@@ -285,13 +288,11 @@
 		error = '';
 		success = '';
 		try {
-			run = await api.executeMigration(tenantId, buildExecuteRequest(true));
-			selectedRun = run;
-			plan = run.plan ?? plan;
-			validation = run.plan?.validation ?? validation;
+			applyRunSnapshot(await api.executeMigration(tenantId, buildExecuteRequest(true)));
 			executionConfirmed = false;
 			success = 'Migration execution run completed.';
 			await loadRunHistory();
+			maybeStartRunStream(run);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to execute migration run.';
 		} finally {
@@ -338,17 +339,131 @@
 		error = '';
 		success = '';
 		try {
-			selectedRun = await api.getMigrationExecutionRun(tenantId, savedRunId);
-			run = selectedRun;
-			plan = selectedRun.plan ?? plan;
-			validation = selectedRun.plan?.validation ?? validation;
+			applyRunSnapshot(await api.getMigrationExecutionRun(tenantId, savedRunId));
 			loadedDeepLinkKey = `${tenantId.trim()}:${savedRunId}`;
 			success = 'Saved migration run loaded.';
+			maybeStartRunStream(run);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load saved migration run.';
 		} finally {
 			working = false;
 		}
+	}
+
+	function applyRunSnapshot(nextRun: MigrationExecutionRun) {
+		run = nextRun;
+		selectedRun = nextRun;
+		plan = nextRun.plan ?? plan;
+		validation = nextRun.plan?.validation ?? validation;
+
+		if (!nextRun.id) {
+			return;
+		}
+
+		savedRuns = savedRuns.some((saved) => saved.id === nextRun.id)
+			? savedRuns.map((saved) => (saved.id === nextRun.id ? nextRun : saved))
+			: [nextRun, ...savedRuns];
+	}
+
+	function isTerminalRunStatus(status: string | undefined): boolean {
+		switch ((status ?? '').toLowerCase()) {
+			case 'succeeded':
+			case 'failed':
+			case 'blocked':
+			case 'needs_confirmation':
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	function isAbortError(err: unknown): boolean {
+		return err instanceof Error && err.name === 'AbortError';
+	}
+
+	function stopRunStream(message = '') {
+		if (streamController && !streamController.signal.aborted) {
+			streamController.abort();
+		}
+		streamController = null;
+		streamingRunId = '';
+		streamStatus = message;
+	}
+
+	function finishRunStream(controller: AbortController, message: string) {
+		if (streamController !== controller) return;
+		streamController = null;
+		streamingRunId = '';
+		streamStatus = message;
+	}
+
+	function maybeStartRunStream(nextRun: MigrationExecutionRun | null) {
+		if (!nextRun?.id) return;
+		if (isTerminalRunStatus(nextRun.summary.status)) {
+			if (streamingRunId === nextRun.id) {
+				stopRunStream('Migration run stream completed.');
+			}
+			return;
+		}
+		startRunStream(nextRun.id);
+	}
+
+	function handleRunStreamEvent(event: MigrationExecutionRunEvent, controller: AbortController) {
+		if (event.type === 'error') {
+			throw new Error('Migration run stream returned an error event.');
+		}
+		if (event.run) {
+			applyRunSnapshot(event.run);
+		}
+		if (event.type === 'complete' || isTerminalRunStatus(event.run?.summary.status)) {
+			finishRunStream(controller, 'Migration run stream completed.');
+		}
+	}
+
+	function startRunStream(savedRunId: string | undefined) {
+		const trimmedRunId = savedRunId?.trim() ?? '';
+		if (!tenantId.trim() || !trimmedRunId) return;
+		if (streamingRunId === trimmedRunId && streamController && !streamController.signal.aborted) {
+			return;
+		}
+
+		stopRunStream();
+		const controller = new AbortController();
+		let streamReachedTerminal = false;
+		streamController = controller;
+		streamingRunId = trimmedRunId;
+		streamStatus = 'Streaming saved run telemetry.';
+
+		void api
+			.watchMigrationExecutionRun(tenantId, trimmedRunId, {
+				intervalMs: 1000,
+				maxEvents: 1000,
+				signal: controller.signal,
+				onEvent: (event) => {
+					streamReachedTerminal =
+						streamReachedTerminal ||
+						event.type === 'complete' ||
+						isTerminalRunStatus(event.run?.summary.status);
+					handleRunStreamEvent(event, controller);
+				}
+			})
+			.then(() => {
+				finishRunStream(
+					controller,
+					streamReachedTerminal
+						? 'Migration run stream completed.'
+						: 'Migration run stream ended after reaching the event limit.'
+				);
+			})
+			.catch((err) => {
+				if (isAbortError(err)) return;
+				if (streamController === controller) {
+					streamController = null;
+					streamingRunId = '';
+				}
+				error = err instanceof Error ? err.message : 'Migration run stream stopped.';
+				streamStatus = 'Migration run stream stopped.';
+			});
 	}
 
 	function setResumeRun(runId: string | undefined) {
@@ -679,6 +794,37 @@
 					<p class="muted">Active step: {activeStepLabel(run.summary)}</p>
 				</div>
 
+				{#if run.id}
+					<div class="stream-controls">
+						<div>
+							<strong>Live telemetry</strong>
+							<span aria-live="polite">
+								{streamStatus ||
+									(isTerminalRunStatus(run.summary.status) ? 'Run is terminal.' : 'Stream idle.')}
+							</span>
+						</div>
+						<div class="row-actions">
+							<button
+								type="button"
+								class="link-button"
+								disabled={streamingRunId === run?.id || isTerminalRunStatus(run?.summary.status)}
+								onclick={() => startRunStream(run?.id)}
+							>
+								Stream live
+							</button>
+							{#if streamingRunId === run?.id}
+								<button
+									type="button"
+									class="link-button"
+									onclick={() => stopRunStream('Migration run stream stopped.')}
+								>
+									Stop stream
+								</button>
+							{/if}
+						</div>
+					</div>
+				{/if}
+
 				<div class="table-wrap">
 					<table class="table compact-table">
 						<thead>
@@ -757,14 +903,22 @@
 									<td>{formatDateTime(saved.updated_at ?? saved.created_at)}</td>
 									<td>{saved.summary.progress_percent ?? 0}%</td>
 									<td>{formatDurationMs(saved.summary.duration_ms)}</td>
-									<td>{activeStepLabel(saved.summary)}</td>
-									<td>{saved.summary.succeeded_step_count}/{saved.summary.step_count}</td>
-									<td>
-										<div class="row-actions">
-											<button type="button" class="link-button" onclick={() => openSavedRun(saved)}>Open</button>
-											<button type="button" class="link-button" onclick={() => setResumeRun(saved.id)}>Resume</button>
-										</div>
-									</td>
+										<td>{activeStepLabel(saved.summary)}</td>
+										<td>{saved.summary.succeeded_step_count}/{saved.summary.step_count}</td>
+										<td>
+											<div class="row-actions">
+												<button type="button" class="link-button" onclick={() => openSavedRun(saved)}>Open</button>
+												<button
+													type="button"
+													class="link-button"
+													disabled={streamingRunId === saved.id || isTerminalRunStatus(saved.summary.status)}
+													onclick={() => openSavedRun(saved)}
+												>
+													Stream
+												</button>
+												<button type="button" class="link-button" onclick={() => setResumeRun(saved.id)}>Resume</button>
+											</div>
+										</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -952,6 +1106,23 @@
 		padding: 0.85rem;
 	}
 
+	.stream-controls {
+		align-items: center;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		display: flex;
+		gap: 1rem;
+		justify-content: space-between;
+		padding: 0.8rem 0.85rem;
+	}
+
+	.stream-controls span {
+		color: var(--color-text-muted);
+		display: block;
+		font-size: 0.82rem;
+		margin-top: 0.2rem;
+	}
+
 	.progress-line {
 		align-items: baseline;
 		display: flex;
@@ -1001,6 +1172,12 @@
 
 	.link-button:hover {
 		text-decoration: underline;
+	}
+
+	.link-button:disabled {
+		color: var(--color-text-muted);
+		cursor: not-allowed;
+		text-decoration: none;
 	}
 
 	.status-success,
