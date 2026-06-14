@@ -390,15 +390,23 @@
 	}
 
 	function canGenerateAssignmentTSD(action: WorkspaceAssignmentAction): boolean {
-		return action.source === 'payroll' && action.code === 'payroll_generate_tsd' && Boolean(action.entityId);
+		return (
+			action.source === 'payroll' &&
+			['payroll_generate_tsd', 'payroll_paid_tsd_followup'].includes(action.code) &&
+			Boolean(action.entityId)
+		);
 	}
 
 	function canExportAssignmentTSD(action: WorkspaceAssignmentAction): boolean {
-		if (action.source !== 'tsd' || parseAssignmentPeriod(action) === null) {
+		if (parseAssignmentPeriod(action) === null) {
 			return false;
 		}
 
-		return ['tsd_export_and_submit', 'tsd_accepted_archive'].includes(action.code);
+		if (action.source === 'tsd') {
+			return ['tsd_export_and_submit', 'tsd_accepted_archive'].includes(action.code);
+		}
+
+		return action.source === 'payroll' && action.code === 'payroll_declared_archive';
 	}
 
 	function canAcceptAssignmentTSD(action: WorkspaceAssignmentAction): boolean {

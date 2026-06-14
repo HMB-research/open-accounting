@@ -1259,6 +1259,177 @@ describe('AccountantReviewPanel', () => {
 		});
 	});
 
+	it('generates TSD from paid payroll follow-up assignment rows', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-04-11',
+			cutoff_date: '2026-05-11',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+		apiMock.listPayrollRuns.mockResolvedValue([
+			{
+				id: 'payroll-paid-1',
+				tenant_id: 'tenant-1',
+				period_year: 2026,
+				period_month: 4,
+				status: 'PAID',
+				total_gross: new Decimal(5400),
+				total_net: new Decimal(4212),
+				total_employer_cost: new Decimal(7236),
+				payment_date: '2026-04-30',
+				remediation_actions: [
+					{
+						code: 'payroll_paid_tsd_followup',
+						severity: 'ACTION',
+						scope: 'payroll',
+						owner_role: 'accountant',
+						workspace_queue: 'payroll_runs',
+						assignment_key:
+							'payroll-runs:payroll-paid-tsd-followup:payroll-run:payroll-paid-1:2026-04',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'Payroll run 2026-04 is paid and still needs declaration follow-up.',
+						action: 'Reconcile salary payments, generate the TSD declaration, and retain payment evidence.',
+						entity_type: 'payroll_run',
+						entity_id: 'payroll-paid-1',
+						period: '2026-04',
+						ui_path: '/payroll?run_id=payroll-paid-1',
+						cli_command: 'oa tsd generate --run-id payroll-paid-1'
+					}
+				],
+				created_at: '2026-04-01T00:00:00Z',
+				updated_at: '2026-04-30T00:00:00Z'
+			}
+		]);
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(
+				screen.getByText('Payroll run 2026-04 is paid and still needs declaration follow-up.')
+			).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Generate TSD' }));
+
+		await waitFor(() => {
+			expect(apiMock.generateTSD).toHaveBeenCalledWith('tenant-1', 'payroll-paid-1');
+			expect(screen.getByText('TSD generated from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it('exports TSD XML from declared payroll archive assignment rows', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-04-11',
+			cutoff_date: '2026-05-11',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+		apiMock.listPayrollRuns.mockResolvedValue([
+			{
+				id: 'payroll-declared-1',
+				tenant_id: 'tenant-1',
+				period_year: 2026,
+				period_month: 4,
+				status: 'DECLARED',
+				total_gross: new Decimal(5400),
+				total_net: new Decimal(4212),
+				total_employer_cost: new Decimal(7236),
+				payment_date: '2026-04-30',
+				remediation_actions: [
+					{
+						code: 'payroll_declared_archive',
+						severity: 'INFO',
+						scope: 'payroll',
+						owner_role: 'accountant',
+						workspace_queue: 'payroll_runs',
+						assignment_key:
+							'payroll-runs:payroll-declared-archive:payroll-run:payroll-declared-1:2026-04',
+						priority: 'low',
+						due_in_days: 14,
+						message: 'Payroll run 2026-04 is declared.',
+						action:
+							'Archive the accepted TSD export, payslips, and salary payment evidence with the monthly close support.',
+						entity_type: 'payroll_run',
+						entity_id: 'payroll-declared-1',
+						period: '2026-04',
+						ui_path: '/payroll?run_id=payroll-declared-1',
+						cli_command: 'oa tsd export-xml --year 2026 --month 4 --output ./tsd-2026-04.xml'
+					}
+				],
+				created_at: '2026-04-01T00:00:00Z',
+				updated_at: '2026-05-10T00:00:00Z'
+			}
+		]);
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('Payroll run 2026-04 is declared.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Export TSD XML' }));
+
+		await waitFor(() => {
+			expect(apiMock.downloadTSDXml).toHaveBeenCalledWith('tenant-1', 2026, 4);
+			expect(screen.getByText('TSD XML exported from workspace.')).toBeInTheDocument();
+		});
+	});
+
 	it('exports TSD XML from declaration assignment rows', async () => {
 		apiMock.listBankTransactions.mockResolvedValue([]);
 		apiMock.getDocumentRetentionReview.mockResolvedValue({
