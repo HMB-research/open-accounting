@@ -248,7 +248,7 @@ func (s *Service) EvaluateEvidencePolicy(ctx context.Context, schemaName, tenant
 			return nil, err
 		}
 		result := evaluateEvidencePolicyForDocuments(normalizedType, entityID, docs, rules)
-		result.RemediationActions = BuildEvidencePolicyRemediationActions(&result)
+		result.RemediationActions = BuildEvidencePolicyRemediationActions(&result, docs...)
 		results = append(results, result)
 	}
 

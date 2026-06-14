@@ -262,7 +262,11 @@
 	}
 
 	function canApproveAssignmentDocument(action: WorkspaceAssignmentAction): boolean {
-		return action.source === 'documents' && action.code === 'document_review_pending' && Boolean(action.documentId);
+		return (
+			action.source === 'documents' &&
+			['document_review_pending', 'document_evidence_unapproved'].includes(action.code) &&
+			Boolean(action.documentId)
+		);
 	}
 
 	function canSetAssignmentDocumentRetention(action: WorkspaceAssignmentAction): boolean {
