@@ -34,4 +34,10 @@ type Repository interface {
 
 	// ListDeclarations lists all KMD declarations for a tenant
 	ListDeclarations(ctx context.Context, schemaName, tenantID string) ([]KMDDeclaration, error)
+
+	// MarkKMDSubmitted records an e-MTA submission timestamp for a declaration.
+	MarkKMDSubmitted(ctx context.Context, schemaName, tenantID, declarationID string, submittedAt time.Time) error
+
+	// UpdateKMDStatus updates a declaration status without replacing rows.
+	UpdateKMDStatus(ctx context.Context, schemaName, tenantID, declarationID, status string, updatedAt time.Time) error
 }

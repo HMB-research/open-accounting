@@ -600,6 +600,83 @@ func TestRepository_SaveDeclaration_Update(t *testing.T) {
 	}
 }
 
+func TestRepository_MarkKMDStatusTransitions(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	repo := newTaxGORMRepository(t, pool)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	decl := &KMDDeclaration{
+		ID:             uuid.New().String(),
+		TenantID:       tenant.ID,
+		Year:           2026,
+		Month:          6,
+		TotalOutputVAT: decimal.NewFromInt(220),
+		TotalInputVAT:  decimal.NewFromInt(40),
+		Status:         KMDStatusDraft,
+		Rows: []KMDRow{{
+			Code:        KMDRow1,
+			Description: "Taxable sales",
+			TaxBase:     decimal.NewFromInt(1000),
+			TaxAmount:   decimal.NewFromInt(220),
+		}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if err := repo.SaveDeclaration(ctx, tenant.SchemaName, decl); err != nil {
+		t.Fatalf("SaveDeclaration failed: %v", err)
+	}
+
+	submittedAt := now.Add(time.Hour)
+	if err := repo.MarkKMDSubmitted(ctx, tenant.SchemaName, tenant.ID, decl.ID, submittedAt); err != nil {
+		t.Fatalf("MarkKMDSubmitted failed: %v", err)
+	}
+
+	retrieved, err := repo.GetDeclaration(ctx, tenant.SchemaName, tenant.ID, 2026, 6)
+	if err != nil {
+		t.Fatalf("GetDeclaration after submit failed: %v", err)
+	}
+	if retrieved == nil {
+		t.Fatal("expected KMD declaration after submit")
+	}
+	if retrieved.Status != KMDStatusSubmitted {
+		t.Fatalf("expected status %s, got %s", KMDStatusSubmitted, retrieved.Status)
+	}
+	if retrieved.SubmittedAt == nil || !retrieved.SubmittedAt.Equal(submittedAt) {
+		t.Fatalf("expected submitted_at %v, got %v", submittedAt, retrieved.SubmittedAt)
+	}
+	if len(retrieved.Rows) != 1 || retrieved.Rows[0].Code != KMDRow1 {
+		t.Fatalf("expected status update to preserve rows, got %#v", retrieved.Rows)
+	}
+
+	if err := repo.UpdateKMDStatus(ctx, tenant.SchemaName, tenant.ID, decl.ID, KMDStatusAccepted, submittedAt.Add(time.Hour)); err != nil {
+		t.Fatalf("UpdateKMDStatus failed: %v", err)
+	}
+
+	retrieved, err = repo.GetDeclaration(ctx, tenant.SchemaName, tenant.ID, 2026, 6)
+	if err != nil {
+		t.Fatalf("GetDeclaration after accept failed: %v", err)
+	}
+	if retrieved == nil {
+		t.Fatal("expected KMD declaration after accept")
+	}
+	if retrieved.Status != KMDStatusAccepted {
+		t.Fatalf("expected status %s, got %s", KMDStatusAccepted, retrieved.Status)
+	}
+	if retrieved.SubmittedAt == nil || !retrieved.SubmittedAt.Equal(submittedAt) {
+		t.Fatalf("expected submitted_at to remain %v, got %v", submittedAt, retrieved.SubmittedAt)
+	}
+
+	if err := repo.MarkKMDSubmitted(ctx, tenant.SchemaName, tenant.ID, uuid.NewString(), submittedAt); err != ErrKMDDeclarationNotFound {
+		t.Fatalf("expected missing submitted declaration error, got %v", err)
+	}
+	if err := repo.UpdateKMDStatus(ctx, tenant.SchemaName, tenant.ID, uuid.NewString(), KMDStatusAccepted, submittedAt); err != ErrKMDDeclarationNotFound {
+		t.Fatalf("expected missing accepted declaration error, got %v", err)
+	}
+}
+
 func TestRepository_SaveDeclaration_UpdateWithDifferentIDReplacesRows(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)

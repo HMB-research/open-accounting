@@ -2393,6 +2393,20 @@ class ApiClient {
     );
   }
 
+  async markKMDSubmitted(tenantId: string, year: number, month: number) {
+    return this.request<{ status: string }>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/tax/kmd/${year}/${month}/submit`,
+    );
+  }
+
+  async markKMDAccepted(tenantId: string, year: number, month: number) {
+    return this.request<{ status: string }>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/tax/kmd/${year}/${month}/accept`,
+    );
+  }
+
   async downloadKMDXml(tenantId: string, year: number, month: number) {
     const headers: Record<string, string> = {};
     if (this.accessToken) {

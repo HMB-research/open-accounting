@@ -2,6 +2,7 @@ package tax
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -13,6 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
+
+var ErrKMDDeclarationNotFound = errors.New("kmd declaration not found")
 
 // VATEntry represents a VAT entry for aggregation
 type VATEntry struct {
@@ -225,13 +228,9 @@ func (s *Service) GenerateEUVATOSS(ctx context.Context, tenantID, schemaName str
 
 // GetKMD retrieves a KMD declaration for a given period
 func (s *Service) GetKMD(ctx context.Context, tenantID, schemaName, yearStr, monthStr string) (*KMDDeclaration, error) {
-	year, err := strconv.Atoi(yearStr)
+	year, month, err := parseKMDPeriod(yearStr, monthStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid year: %w", err)
-	}
-	month, err := strconv.Atoi(monthStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid month: %w", err)
+		return nil, err
 	}
 
 	declaration, err := s.repo.GetDeclaration(ctx, schemaName, tenantID, year, month)
@@ -254,6 +253,61 @@ func (s *Service) ListKMD(ctx context.Context, tenantID, schemaName string) ([]K
 		declarations[i].RemediationActions = BuildKMDRemediationActions(&declarations[i])
 	}
 	return declarations, nil
+}
+
+// MarkKMDSubmitted marks a KMD declaration as submitted to e-MTA.
+func (s *Service) MarkKMDSubmitted(ctx context.Context, tenantID, schemaName, yearStr, monthStr string) error {
+	declaration, err := s.getKMDByPeriod(ctx, tenantID, schemaName, yearStr, monthStr)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	if err := s.repo.MarkKMDSubmitted(ctx, schemaName, tenantID, declaration.ID, now); err != nil {
+		return fmt.Errorf("mark KMD submitted: %w", err)
+	}
+	return nil
+}
+
+// MarkKMDAccepted marks a KMD declaration as accepted by e-MTA.
+func (s *Service) MarkKMDAccepted(ctx context.Context, tenantID, schemaName, yearStr, monthStr string) error {
+	declaration, err := s.getKMDByPeriod(ctx, tenantID, schemaName, yearStr, monthStr)
+	if err != nil {
+		return err
+	}
+
+	if err := s.repo.UpdateKMDStatus(ctx, schemaName, tenantID, declaration.ID, KMDStatusAccepted, time.Now()); err != nil {
+		return fmt.Errorf("mark KMD accepted: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) getKMDByPeriod(ctx context.Context, tenantID, schemaName, yearStr, monthStr string) (*KMDDeclaration, error) {
+	year, month, err := parseKMDPeriod(yearStr, monthStr)
+	if err != nil {
+		return nil, err
+	}
+
+	declaration, err := s.repo.GetDeclaration(ctx, schemaName, tenantID, year, month)
+	if err != nil {
+		return nil, err
+	}
+	if declaration == nil {
+		return nil, ErrKMDDeclarationNotFound
+	}
+	return declaration, nil
+}
+
+func parseKMDPeriod(yearStr, monthStr string) (int, int, error) {
+	year, err := strconv.Atoi(yearStr)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid year: %w", err)
+	}
+	month, err := strconv.Atoi(monthStr)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid month: %w", err)
+	}
+	return year, month, nil
 }
 
 // mapVATRateToKMDCode maps a VAT rate to the appropriate KMD row code

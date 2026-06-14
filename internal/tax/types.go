@@ -23,6 +23,12 @@ type KMDDeclaration struct {
 	UpdatedAt          time.Time              `json:"updated_at"`
 }
 
+const (
+	KMDStatusDraft     = "DRAFT"
+	KMDStatusSubmitted = "SUBMITTED"
+	KMDStatusAccepted  = "ACCEPTED"
+)
+
 // KMDRemediationAction describes one operator action for VAT declaration review or submission.
 type KMDRemediationAction struct {
 	Code           string `json:"code"`

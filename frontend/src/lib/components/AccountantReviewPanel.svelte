@@ -491,6 +491,14 @@
 		].includes(action.code);
 	}
 
+	function canAcceptAssignmentKMD(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'kmd' &&
+			action.code === 'kmd_awaiting_authority_acceptance' &&
+			parseAssignmentPeriod(action) !== null
+		);
+	}
+
 	function isReviewDirty(transaction: BankTransaction): boolean {
 		const draft = reviewDrafts[transaction.id];
 		if (!draft) {
@@ -936,6 +944,30 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdExportError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function acceptAssignmentKMD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.markKMDAccepted(tenant.id, period.year, period.month);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentKmdAccepted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdAcceptError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -1397,6 +1429,18 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: m.dashboard_reviewAssignmentsExportKmdXml()}
+										</button>
+									{/if}
+									{#if canAcceptAssignmentKMD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => acceptAssignmentKMD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsAcceptKmd()}
 										</button>
 									{/if}
 									{#if assignmentCompletionErrorId === action.id}

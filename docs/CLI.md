@@ -535,13 +535,17 @@ go run ./cmd/oa tax kmd inf --year 2026 --month 3 --threshold 1000 --json
 go run ./cmd/oa tax kmd import-history --file ./kmd-history.csv
 go run ./cmd/oa tax kmd import-history --file ./kmd-history.csv --json
 go run ./cmd/oa tax kmd export-xml --year 2026 --month 3 --output ./kmd-2026-03.xml
+go run ./cmd/oa tax kmd mark-submitted --year 2026 --month 3
+go run ./cmd/oa tax kmd mark-accepted --year 2026 --month 3
 go run ./cmd/oa tax oss report --year 2026 --quarter 1
 go run ./cmd/oa tax oss report --year 2026 --quarter 1 --include-b2b --json
 ```
 
-KMD period commands require `--year` and `--month`; `--month` must be between 1 and 12. Use `--json` on `list`, `generate`, `inf`, and `import-history` for automation.
+KMD period commands require `--year` and `--month`; `--month` must be between 1 and 12. Use `--json` on `list`, `generate`, `inf`, `import-history`, `mark-submitted`, and `mark-accepted` for automation.
 
 KMD declaration human output includes a remediation action table for accountant follow-up. The table covers draft payable/refund/zero declarations, empty VAT periods, submitted declarations awaiting e-MTA acceptance, missing submission timestamps, and accepted declarations that should be archived with supporting VAT evidence; it includes workspace queue, priority, due window, and assignment key columns. JSON output exposes the same `remediation_actions` array.
+
+`tax kmd mark-submitted` records the declaration as submitted with the current server timestamp. `tax kmd mark-accepted` records e-MTA acceptance for a submitted KMD period. Both commands return a status payload in JSON mode and power the accountant workspace KMD acceptance assignment action.
 
 Historical KMD import expects `year`, `month`, and `row_code` columns, plus `tax_base` or `tax_amount` on each row. Optional `status`, `submitted_at`, `description`, `total_output_vat`, and `total_input_vat` columns are validated by `migration validate`, including duplicate period row codes, same-period status, submitted date, output VAT, and input VAT consistency. Existing declaration periods are skipped instead of overwritten.
 
