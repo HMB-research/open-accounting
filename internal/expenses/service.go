@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,15 +25,22 @@ type evidenceEvaluator interface {
 	EvaluateEvidencePolicy(ctx context.Context, schemaName, tenantID string, req *documents.EvidencePolicyRequest) ([]documents.EvidencePolicyResult, error)
 }
 
+type contactLister interface {
+	List(ctx context.Context, tenantID, schemaName string, filter *contacts.ContactFilter) ([]contacts.Contact, error)
+}
+
 type Service struct {
 	repo       Repository
 	accounting accountingPoster
 	evidence   evidenceEvaluator
+	contacts   contactLister
 	now        func() time.Time
 }
 
 func NewService(db *pgxpool.Pool, evidence evidenceEvaluator) *Service {
-	return NewServiceWithRepository(NewRepository(db), accounting.NewService(db), evidence)
+	service := NewServiceWithRepository(NewRepository(db), accounting.NewService(db), evidence)
+	service.contacts = contacts.NewService(db)
+	return service
 }
 
 func NewServiceWithRepository(repo Repository, accounting accountingPoster, evidence evidenceEvaluator) *Service {

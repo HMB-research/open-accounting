@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+
+	"github.com/HMB-research/open-accounting/internal/contactrefs"
 )
 
 type paymentImportRow struct {
@@ -18,30 +20,41 @@ type paymentImportRow struct {
 }
 
 var paymentImportHeaderAliases = map[string]string{
-	"payment_number":    "payment_number",
-	"number":            "payment_number",
-	"payment_no":        "payment_number",
-	"type":              "payment_type",
-	"payment_type":      "payment_type",
-	"date":              "payment_date",
-	"payment_date":      "payment_date",
-	"contact_id":        "contact_id",
-	"customer_id":       "contact_id",
-	"supplier_id":       "contact_id",
-	"amount":            "amount",
-	"currency":          "currency",
-	"exchange_rate":     "exchange_rate",
-	"method":            "payment_method",
-	"payment_method":    "payment_method",
-	"bank_account":      "bank_account",
-	"reference":         "reference",
-	"notes":             "notes",
-	"description":       "notes",
-	"invoice_id":        "invoice_id",
-	"invoice_number":    "invoice_number",
-	"invoice_no":        "invoice_number",
-	"allocation_amount": "allocation_amount",
-	"allocated_amount":  "allocation_amount",
+	"payment_number":     "payment_number",
+	"number":             "payment_number",
+	"payment_no":         "payment_number",
+	"type":               "payment_type",
+	"payment_type":       "payment_type",
+	"date":               "payment_date",
+	"payment_date":       "payment_date",
+	"contact_id":         "contact_id",
+	"customer_id":        "contact_id",
+	"supplier_id":        "contact_id",
+	"contact_code":       "contact_code",
+	"customer_code":      "contact_code",
+	"supplier_code":      "contact_code",
+	"contact_reg_code":   "contact_reg_code",
+	"contact_vat_number": "contact_vat_number",
+	"vat_number":         "contact_vat_number",
+	"contact_email":      "contact_email",
+	"email":              "contact_email",
+	"contact_name":       "contact_name",
+	"customer_name":      "contact_name",
+	"supplier_name":      "contact_name",
+	"amount":             "amount",
+	"currency":           "currency",
+	"exchange_rate":      "exchange_rate",
+	"method":             "payment_method",
+	"payment_method":     "payment_method",
+	"bank_account":       "bank_account",
+	"reference":          "reference",
+	"notes":              "notes",
+	"description":        "notes",
+	"invoice_id":         "invoice_id",
+	"invoice_number":     "invoice_number",
+	"invoice_no":         "invoice_number",
+	"allocation_amount":  "allocation_amount",
+	"allocated_amount":   "allocation_amount",
 }
 
 // ImportPaymentsCSV imports historical payments from CSV content.
@@ -75,11 +88,15 @@ func (s *Service) ImportPaymentsCSV(ctx context.Context, tenantID, schemaName st
 		FileName: req.FileName,
 		Errors:   []ImportPaymentsRowError{},
 	}
+	contactLookup, err := s.paymentImportContactLookup(ctx, schemaName, tenantID, rows)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		payment, allocation, err := s.buildPaymentFromImportRow(ctx, tenantID, schemaName, row, req.UserID, req.LockDate)
+		payment, allocation, err := s.buildPaymentFromImportRow(ctx, tenantID, schemaName, row, req.UserID, req.LockDate, contactLookup)
 		if err != nil {
 			appendPaymentImportRowError(result, row, err)
 			continue
@@ -243,6 +260,7 @@ func (s *Service) buildPaymentFromImportRow(
 	row paymentImportRow,
 	userID string,
 	lockDate *time.Time,
+	contactLookup contactrefs.ContactLookup,
 ) (*Payment, *PaymentAllocation, error) {
 	paymentType, err := parsePaymentImportType(row.values["payment_type"])
 	if err != nil {
@@ -263,7 +281,7 @@ func (s *Service) buildPaymentFromImportRow(
 	if err != nil {
 		return nil, nil, err
 	}
-	contactID, err := parseOptionalPaymentImportUUID("contact_id", row.values["contact_id"])
+	contactID, err := resolveOptionalPaymentImportContactID(row, contactLookup)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -367,6 +385,51 @@ func (s *Service) resolvePaymentImportInvoiceID(ctx context.Context, tenantID, s
 	return invoiceID, nil
 }
 
+func (s *Service) paymentImportContactLookup(ctx context.Context, schemaName, tenantID string, rows []paymentImportRow) (contactrefs.ContactLookup, error) {
+	usesContactReferences := false
+	for _, row := range rows {
+		if hasPaymentImportContactLookupReference(row) {
+			usesContactReferences = true
+			break
+		}
+	}
+	if !usesContactReferences {
+		return contactrefs.ContactLookup{}, nil
+	}
+	if s.contacts == nil {
+		return contactrefs.ContactLookup{}, fmt.Errorf("contact service is required to resolve payment contact references")
+	}
+
+	contacts, err := s.contacts.List(ctx, tenantID, schemaName, nil)
+	if err != nil {
+		return contactrefs.ContactLookup{}, fmt.Errorf("list contacts for payment import: %w", err)
+	}
+	return contactrefs.NewContactLookup(contacts), nil
+}
+
+func resolveOptionalPaymentImportContactID(row paymentImportRow, contactLookup contactrefs.ContactLookup) (*string, error) {
+	return contactLookup.ResolveID(row.values["contact_id"], paymentImportContactReferences(row)...)
+}
+
+func hasPaymentImportContactLookupReference(row paymentImportRow) bool {
+	for _, ref := range paymentImportContactReferences(row) {
+		if strings.TrimSpace(ref.Value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func paymentImportContactReferences(row paymentImportRow) []contactrefs.Reference {
+	return []contactrefs.Reference{
+		{Field: "contact_code", Value: row.values["contact_code"]},
+		{Field: "contact_reg_code", Value: row.values["contact_reg_code"]},
+		{Field: "contact_vat_number", Value: row.values["contact_vat_number"]},
+		{Field: "contact_email", Value: row.values["contact_email"]},
+		{Field: "contact_name", Value: row.values["contact_name"]},
+	}
+}
+
 func parsePaymentImportType(value string) (PaymentType, error) {
 	normalized := strings.ToUpper(strings.TrimSpace(value))
 	switch PaymentType(normalized) {
@@ -412,19 +475,6 @@ func parsePaymentImportOptionalPositiveDecimal(field, value string, fallback dec
 		return fallback, nil
 	}
 	return parsePaymentImportPositiveDecimal(field, value)
-}
-
-func parseOptionalPaymentImportUUID(field, value string) (*string, error) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil, nil
-	}
-	parsedID, err := uuid.Parse(trimmed)
-	if err != nil {
-		return nil, fmt.Errorf("%s must be a valid UUID", field)
-	}
-	canonicalID := parsedID.String()
-	return &canonicalID, nil
 }
 
 func detectPaymentImportDelimiter(content string) rune {

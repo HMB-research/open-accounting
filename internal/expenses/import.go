@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+
+	"github.com/HMB-research/open-accounting/internal/contactrefs"
 )
 
 type expenseImportRow struct {
@@ -30,6 +32,19 @@ var expenseImportHeaderAliases = map[string]string{
 	"notes":                "description",
 	"employee_id":          "employee_id",
 	"contact_id":           "contact_id",
+	"customer_id":          "contact_id",
+	"supplier_id":          "contact_id",
+	"contact_code":         "contact_code",
+	"customer_code":        "contact_code",
+	"supplier_code":        "contact_code",
+	"contact_reg_code":     "contact_reg_code",
+	"contact_vat_number":   "contact_vat_number",
+	"vat_number":           "contact_vat_number",
+	"contact_email":        "contact_email",
+	"email":                "contact_email",
+	"contact_name":         "contact_name",
+	"customer_name":        "contact_name",
+	"supplier_name":        "contact_name",
 	"expense_account_id":   "expense_account_id",
 	"expense_account":      "expense_account_id",
 	"expense_account_code": "expense_account_code",
@@ -74,11 +89,15 @@ func (s *Service) ImportExpensesCSV(ctx context.Context, schemaName, tenantID st
 	if err != nil {
 		return nil, err
 	}
+	contactLookup, err := s.expenseImportContactLookup(ctx, schemaName, tenantID, rows)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		expense, err := s.buildExpenseFromImportRow(ctx, schemaName, tenantID, userID, row, req.LockDate, usedNumbers, accountIDsByCode)
+		expense, err := s.buildExpenseFromImportRow(ctx, schemaName, tenantID, userID, row, req.LockDate, usedNumbers, accountIDsByCode, contactLookup)
 		if err != nil {
 			appendExpenseImportRowError(result, row, err)
 			continue
@@ -105,6 +124,7 @@ func (s *Service) buildExpenseFromImportRow(
 	lockDate *time.Time,
 	usedNumbers map[string]bool,
 	accountIDsByCode map[string]string,
+	contactLookup contactrefs.ContactLookup,
 ) (*Expense, error) {
 	expenseDate, err := parseExpenseImportDate(row.values["expense_date"], "expense_date")
 	if err != nil {
@@ -130,7 +150,7 @@ func (s *Service) buildExpenseFromImportRow(
 	if err != nil {
 		return nil, err
 	}
-	contactID, err := parseOptionalExpenseImportUUID("contact_id", row.values["contact_id"])
+	contactID, err := resolveOptionalExpenseImportContactID(row, contactLookup)
 	if err != nil {
 		return nil, err
 	}
@@ -256,6 +276,51 @@ func applyExpenseImportStatusMetadata(expense *Expense, row expenseImportRow, us
 		expense.RejectionReason = reason
 	}
 	return nil
+}
+
+func (s *Service) expenseImportContactLookup(ctx context.Context, schemaName, tenantID string, rows []expenseImportRow) (contactrefs.ContactLookup, error) {
+	usesContactReferences := false
+	for _, row := range rows {
+		if hasExpenseImportContactLookupReference(row) {
+			usesContactReferences = true
+			break
+		}
+	}
+	if !usesContactReferences {
+		return contactrefs.ContactLookup{}, nil
+	}
+	if s.contacts == nil {
+		return contactrefs.ContactLookup{}, fmt.Errorf("contact service is required to resolve expense contact references")
+	}
+
+	contacts, err := s.contacts.List(ctx, tenantID, schemaName, nil)
+	if err != nil {
+		return contactrefs.ContactLookup{}, fmt.Errorf("list contacts for expense import: %w", err)
+	}
+	return contactrefs.NewContactLookup(contacts), nil
+}
+
+func resolveOptionalExpenseImportContactID(row expenseImportRow, contactLookup contactrefs.ContactLookup) (*string, error) {
+	return contactLookup.ResolveID(row.values["contact_id"], expenseImportContactReferences(row)...)
+}
+
+func hasExpenseImportContactLookupReference(row expenseImportRow) bool {
+	for _, ref := range expenseImportContactReferences(row) {
+		if strings.TrimSpace(ref.Value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func expenseImportContactReferences(row expenseImportRow) []contactrefs.Reference {
+	return []contactrefs.Reference{
+		{Field: "contact_code", Value: row.values["contact_code"]},
+		{Field: "contact_reg_code", Value: row.values["contact_reg_code"]},
+		{Field: "contact_vat_number", Value: row.values["contact_vat_number"]},
+		{Field: "contact_email", Value: row.values["contact_email"]},
+		{Field: "contact_name", Value: row.values["contact_name"]},
+	}
 }
 
 func (s *Service) expenseImportAccountIDsByCode(ctx context.Context, schemaName, tenantID string, rows []expenseImportRow) (map[string]string, error) {
