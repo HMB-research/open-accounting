@@ -33,6 +33,7 @@
 > The follow-up commercial-document contact identity migration stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up commercial-document VAT contact import stage was locally revalidated with focused quote, order, and recurring-invoice importer tests.
 > The follow-up payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+> The follow-up payment allocation amount decimal validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up e-invoice payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up payment allocation currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up payment bank-account default-currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
