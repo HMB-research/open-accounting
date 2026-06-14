@@ -23,6 +23,7 @@ type Repository interface {
 	ListReviewSummaries(ctx context.Context, schemaName, tenantID, entityType string, entityIDs []string) (map[string]ReviewSummary, error)
 	GetDocumentByID(ctx context.Context, schemaName, tenantID, documentID string) (*Document, error)
 	UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error
+	UpdateDocumentLifecycle(ctx context.Context, schemaName, tenantID, documentID, lifecycleStatus, lifecycleNote, lifecycleBy string, lifecycleAt time.Time, supersededBy *string) error
 	ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error
 	DeleteDocument(ctx context.Context, schemaName, tenantID, documentID string) error
 }
@@ -243,6 +244,29 @@ func (r *GORMRepository) UpdateDocumentRetention(ctx context.Context, schemaName
 	return nil
 }
 
+func (r *GORMRepository) UpdateDocumentLifecycle(ctx context.Context, schemaName, tenantID, documentID, lifecycleStatus, lifecycleNote, lifecycleBy string, lifecycleAt time.Time, supersededBy *string) error {
+	db, err := r.documentsTable(ctx, schemaName)
+	if err != nil {
+		return fmt.Errorf("qualify documents table: %w", err)
+	}
+
+	result := db.Where("tenant_id = ? AND id = ?", tenantID, documentID).
+		Updates(map[string]interface{}{
+			"lifecycle_status":          lifecycleStatus,
+			"lifecycle_note":            nilIfEmpty(lifecycleNote),
+			"superseded_by_document_id": supersededBy,
+			"lifecycle_actioned_by":     nilIfEmpty(lifecycleBy),
+			"lifecycle_actioned_at":     lifecycleAt,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update document lifecycle: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("document not found")
+	}
+	return nil
+}
+
 func (r *GORMRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {
 	db, err := r.documentsTable(ctx, schemaName)
 	if err != nil {
@@ -283,45 +307,55 @@ func (r *GORMRepository) DeleteDocument(ctx context.Context, schemaName, tenantI
 
 func documentToModel(doc *Document) *models.Document {
 	return &models.Document{
-		ID:             doc.ID,
-		TenantID:       doc.TenantID,
-		EntityType:     doc.EntityType,
-		EntityID:       doc.EntityID,
-		DocumentType:   doc.DocumentType,
-		FileName:       doc.FileName,
-		ContentType:    doc.ContentType,
-		FileSize:       doc.FileSize,
-		StorageKey:     doc.StorageKey,
-		Notes:          doc.Notes,
-		RetentionUntil: doc.RetentionUntil,
-		ReviewStatus:   doc.ReviewStatus,
-		ReviewNote:     nilIfEmpty(doc.ReviewNote),
-		ReviewedBy:     doc.ReviewedBy,
-		ReviewedAt:     doc.ReviewedAt,
-		UploadedBy:     doc.UploadedBy,
-		CreatedAt:      doc.CreatedAt,
+		ID:              doc.ID,
+		TenantID:        doc.TenantID,
+		EntityType:      doc.EntityType,
+		EntityID:        doc.EntityID,
+		DocumentType:    doc.DocumentType,
+		FileName:        doc.FileName,
+		ContentType:     doc.ContentType,
+		FileSize:        doc.FileSize,
+		StorageKey:      doc.StorageKey,
+		Notes:           doc.Notes,
+		RetentionUntil:  doc.RetentionUntil,
+		ReviewStatus:    doc.ReviewStatus,
+		ReviewNote:      nilIfEmpty(doc.ReviewNote),
+		ReviewedBy:      doc.ReviewedBy,
+		ReviewedAt:      doc.ReviewedAt,
+		LifecycleStatus: normalizeStoredLifecycleStatus(doc.LifecycleStatus),
+		LifecycleNote:   nilIfEmpty(doc.LifecycleNote),
+		SupersededBy:    doc.SupersededBy,
+		LifecycleBy:     doc.LifecycleBy,
+		LifecycleAt:     doc.LifecycleAt,
+		UploadedBy:      doc.UploadedBy,
+		CreatedAt:       doc.CreatedAt,
 	}
 }
 
 func modelToDocument(doc *models.Document) *Document {
 	return &Document{
-		ID:             doc.ID,
-		TenantID:       doc.TenantID,
-		EntityType:     doc.EntityType,
-		EntityID:       doc.EntityID,
-		DocumentType:   doc.DocumentType,
-		FileName:       doc.FileName,
-		ContentType:    doc.ContentType,
-		FileSize:       doc.FileSize,
-		StorageKey:     doc.StorageKey,
-		Notes:          doc.Notes,
-		RetentionUntil: doc.RetentionUntil,
-		ReviewStatus:   doc.ReviewStatus,
-		ReviewNote:     valueOrEmpty(doc.ReviewNote),
-		ReviewedBy:     doc.ReviewedBy,
-		ReviewedAt:     doc.ReviewedAt,
-		UploadedBy:     doc.UploadedBy,
-		CreatedAt:      doc.CreatedAt,
+		ID:              doc.ID,
+		TenantID:        doc.TenantID,
+		EntityType:      doc.EntityType,
+		EntityID:        doc.EntityID,
+		DocumentType:    doc.DocumentType,
+		FileName:        doc.FileName,
+		ContentType:     doc.ContentType,
+		FileSize:        doc.FileSize,
+		StorageKey:      doc.StorageKey,
+		Notes:           doc.Notes,
+		RetentionUntil:  doc.RetentionUntil,
+		ReviewStatus:    doc.ReviewStatus,
+		ReviewNote:      valueOrEmpty(doc.ReviewNote),
+		ReviewedBy:      doc.ReviewedBy,
+		ReviewedAt:      doc.ReviewedAt,
+		LifecycleStatus: normalizeStoredLifecycleStatus(doc.LifecycleStatus),
+		LifecycleNote:   valueOrEmpty(doc.LifecycleNote),
+		SupersededBy:    doc.SupersededBy,
+		LifecycleBy:     doc.LifecycleBy,
+		LifecycleAt:     doc.LifecycleAt,
+		UploadedBy:      doc.UploadedBy,
+		CreatedAt:       doc.CreatedAt,
 	}
 }
 
@@ -345,6 +379,14 @@ func valueOrEmpty(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func normalizeStoredLifecycleStatus(value string) string {
+	trimmed := strings.TrimSpace(strings.ToUpper(value))
+	if trimmed == "" {
+		return LifecycleStatusActive
+	}
+	return trimmed
 }
 
 func entityTableName(entityType string) (string, error) {

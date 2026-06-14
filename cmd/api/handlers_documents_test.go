@@ -150,6 +150,19 @@ func (m *mockDocumentRepository) UpdateDocumentRetention(ctx context.Context, sc
 	return nil
 }
 
+func (m *mockDocumentRepository) UpdateDocumentLifecycle(ctx context.Context, schemaName, tenantID, documentID, lifecycleStatus, lifecycleNote, lifecycleBy string, lifecycleAt time.Time, supersededBy *string) error {
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return io.EOF
+	}
+	doc.LifecycleStatus = lifecycleStatus
+	doc.LifecycleNote = lifecycleNote
+	doc.LifecycleBy = &lifecycleBy
+	doc.LifecycleAt = &lifecycleAt
+	doc.SupersededBy = supersededBy
+	return nil
+}
+
 func (m *mockDocumentRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {
 	doc, ok := m.docs[documentID]
 	if !ok || doc.TenantID != tenantID {
@@ -372,6 +385,30 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, "document_evidence_missing", policyResults[1].RemediationActions[0].Code)
 	require.Equal(t, "oa documents upload --entity-type bank_transaction --entity-id txn-2 --document-type reconciliation_evidence --file <file>", policyResults[1].RemediationActions[0].CLICommand)
 
+	lifecycleNoNoteReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/lifecycle", map[string]any{
+		"lifecycle_status": documents.LifecycleStatusDisposed,
+	}, claims)
+	lifecycleNoNoteReq = withURLParams(lifecycleNoNoteReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	lifecycleNoNoteResp := httptest.NewRecorder()
+	h.UpdateDocumentLifecycle(lifecycleNoNoteResp, lifecycleNoNoteReq)
+	require.Equal(t, http.StatusBadRequest, lifecycleNoNoteResp.Code)
+
+	lifecycleReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/lifecycle", map[string]any{
+		"lifecycle_status": documents.LifecycleStatusArchived,
+		"lifecycle_note":   "Retention reviewed for audit archive",
+	}, claims)
+	lifecycleReq = withURLParams(lifecycleReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	lifecycleResp := httptest.NewRecorder()
+	h.UpdateDocumentLifecycle(lifecycleResp, lifecycleReq)
+	require.Equal(t, http.StatusOK, lifecycleResp.Code)
+
+	var lifecycleDoc documents.Document
+	require.NoError(t, json.NewDecoder(lifecycleResp.Body).Decode(&lifecycleDoc))
+	require.Equal(t, documents.LifecycleStatusArchived, lifecycleDoc.LifecycleStatus)
+	require.Equal(t, "Retention reviewed for audit archive", lifecycleDoc.LifecycleNote)
+	require.NotNil(t, lifecycleDoc.LifecycleBy)
+	require.Equal(t, "user-1", *lifecycleDoc.LifecycleBy)
+
 	rejectReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/review", map[string]any{
 		"review_status": "REJECTED",
 	}, claims)
@@ -424,6 +461,57 @@ func TestUploadDocumentRetentionYears(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&uploaded))
 	require.NotNil(t, uploaded.RetentionUntil)
 	require.Equal(t, uploaded.CreatedAt.AddDate(7, 0, 0).Format("2006-01-02"), uploaded.RetentionUntil.Format("2006-01-02"))
+}
+
+func TestUploadDocumentReplacementSupersedesOriginal(t *testing.T) {
+	h, repo := setupDocumentHandlers(t)
+	claims := createTestClaims("reviewer-1", "reviewer@example.com", "tenant-1", "admin")
+	repo.docs["doc-rejected"] = &documents.Document{
+		ID:              "doc-rejected",
+		TenantID:        "tenant-1",
+		EntityType:      documents.EntityTypeExpense,
+		EntityID:        "expense-1",
+		DocumentType:    documents.DocumentTypeReceipt,
+		FileName:        "old-receipt.pdf",
+		ReviewStatus:    documents.ReviewStatusRejected,
+		LifecycleStatus: documents.LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("entity_type", documents.EntityTypeExpense))
+	require.NoError(t, writer.WriteField("entity_id", "expense-1"))
+	require.NoError(t, writer.WriteField("document_type", documents.DocumentTypeReceipt))
+	require.NoError(t, writer.WriteField("replaces_document_id", "doc-rejected"))
+	require.NoError(t, writer.WriteField("replacement_note", "Corrected receipt attached"))
+	part, err := writer.CreateFormFile("file", "corrected-receipt.pdf")
+	require.NoError(t, err)
+	_, err = io.Copy(part, bytes.NewBufferString("corrected receipt"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/documents", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), claims))
+
+	resp := httptest.NewRecorder()
+	h.UploadDocument(resp, req)
+	require.Equal(t, http.StatusCreated, resp.Code)
+
+	var replacement documents.Document
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&replacement))
+	require.NotEmpty(t, replacement.ID)
+	require.Equal(t, documents.LifecycleStatusActive, replacement.LifecycleStatus)
+	original := repo.docs["doc-rejected"]
+	require.Equal(t, documents.LifecycleStatusSuperseded, original.LifecycleStatus)
+	require.Equal(t, "Corrected receipt attached", original.LifecycleNote)
+	require.NotNil(t, original.SupersededBy)
+	require.Equal(t, replacement.ID, *original.SupersededBy)
+	require.NotNil(t, original.LifecycleBy)
+	require.Equal(t, "reviewer-1", *original.LifecycleBy)
 }
 
 func TestUploadDocumentRejectsRetentionConflict(t *testing.T) {

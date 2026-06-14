@@ -500,6 +500,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  documents evidence-policy Evaluate required evidence policy")
 	_, _ = fmt.Fprintln(a.stdout, "  documents retention       List retention-due documents")
 	_, _ = fmt.Fprintln(a.stdout, "  documents retention-set   Set or clear document retention metadata")
+	_, _ = fmt.Fprintln(a.stdout, "  documents lifecycle-set   Mark a document active, superseded, archived, or disposed")
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents download        Download a document")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review          Approve, reject, or mark a document reviewed")
@@ -12354,6 +12355,35 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 		_, _ = fmt.Fprintf(a.stdout, "Set retention for document %s to %s\n", doc.ID, retentionLabel)
 		return nil
 
+	case "lifecycle-set":
+		fs := flag.NewFlagSet("documents lifecycle-set", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		documentID := fs.String("id", "", "Document id")
+		lifecycleStatus := fs.String("status", "", "Lifecycle status: ACTIVE, SUPERSEDED, ARCHIVED, or DISPOSED")
+		lifecycleNote := fs.String("note", "", "Lifecycle audit note; required for archived or disposed documents")
+		supersededBy := fs.String("superseded-by-document-id", "", "Replacement document id when marking the document superseded")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*documentID) == "" || strings.TrimSpace(*lifecycleStatus) == "" {
+			return errors.New("id and status are required")
+		}
+
+		doc, err := client.updateDocumentLifecycle(ctx, cfg.TenantID, strings.TrimSpace(*documentID), &documents.DocumentLifecycleRequest{
+			LifecycleStatus:      strings.ToUpper(strings.TrimSpace(*lifecycleStatus)),
+			LifecycleNote:        strings.TrimSpace(*lifecycleNote),
+			SupersededByDocument: strings.TrimSpace(*supersededBy),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, doc)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Marked document %s lifecycle as %s\n", doc.ID, doc.LifecycleStatus)
+		return nil
+
 	case "upload":
 		fs := flag.NewFlagSet("documents upload", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -12364,6 +12394,8 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 		notes := fs.String("notes", "", "Optional notes")
 		retentionUntil := fs.String("retention-until", "", "Optional retention date in YYYY-MM-DD")
 		retentionYears := fs.Int("retention-years", 0, "Set retention date this many years after upload (1-100)")
+		replacesDocumentID := fs.String("replaces-document-id", "", "Existing document id this upload replaces")
+		replacementNote := fs.String("replacement-note", "", "Audit note for the replacement link")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -12397,13 +12429,15 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 		}
 
 		doc, err := client.uploadDocument(ctx, cfg.TenantID, &documents.UploadDocumentRequest{
-			EntityType:     strings.TrimSpace(*entityType),
-			EntityID:       strings.TrimSpace(*entityID),
-			DocumentType:   strings.TrimSpace(*documentType),
-			FileName:       fileName,
-			Notes:          strings.TrimSpace(*notes),
-			RetentionUntil: retentionDate,
-			RetentionYears: *retentionYears,
+			EntityType:         strings.TrimSpace(*entityType),
+			EntityID:           strings.TrimSpace(*entityID),
+			DocumentType:       strings.TrimSpace(*documentType),
+			FileName:           fileName,
+			Notes:              strings.TrimSpace(*notes),
+			RetentionUntil:     retentionDate,
+			RetentionYears:     *retentionYears,
+			ReplacesDocumentID: strings.TrimSpace(*replacesDocumentID),
+			ReplacementNote:    strings.TrimSpace(*replacementNote),
 		}, content)
 		if err != nil {
 			return err

@@ -1023,16 +1023,18 @@ func TestPrintTables(t *testing.T) {
 
 	var documentBuf bytes.Buffer
 	printDocumentsTable(&documentBuf, []documents.Document{{
-		ID:           "doc-1",
-		EntityType:   documents.EntityTypeBankTxn,
-		EntityID:     "txn-1",
-		DocumentType: documents.DocumentTypeReconciliation,
-		FileName:     "statement.pdf",
-		ReviewStatus: documents.ReviewStatusPending,
-		CreatedAt:    now,
+		ID:              "doc-1",
+		EntityType:      documents.EntityTypeBankTxn,
+		EntityID:        "txn-1",
+		DocumentType:    documents.DocumentTypeReconciliation,
+		FileName:        "statement.pdf",
+		ReviewStatus:    documents.ReviewStatusPending,
+		LifecycleStatus: documents.LifecycleStatusArchived,
+		CreatedAt:       now,
 	}})
 	assert.Contains(t, documentBuf.String(), "ENTITY")
 	assert.Contains(t, documentBuf.String(), "statement.pdf")
+	assert.Contains(t, documentBuf.String(), documents.LifecycleStatusArchived)
 
 	var summaryBuf bytes.Buffer
 	printDocumentReviewSummariesTable(&summaryBuf, []documents.ReviewSummary{{

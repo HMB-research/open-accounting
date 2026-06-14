@@ -30,6 +30,11 @@ const (
 	ReviewStatusApproved = "APPROVED"
 	ReviewStatusRejected = "REJECTED"
 
+	LifecycleStatusActive     = "ACTIVE"
+	LifecycleStatusSuperseded = "SUPERSEDED"
+	LifecycleStatusArchived   = "ARCHIVED"
+	LifecycleStatusDisposed   = "DISPOSED"
+
 	RetentionReminderExpired          = "expired_retention"
 	RetentionReminderDueSoon          = "retention_due_soon"
 	RetentionReminderMissingRetention = "missing_retention"
@@ -41,41 +46,54 @@ const (
 )
 
 type Document struct {
-	ID             string     `json:"id"`
-	TenantID       string     `json:"tenant_id"`
-	EntityType     string     `json:"entity_type"`
-	EntityID       string     `json:"entity_id"`
-	DocumentType   string     `json:"document_type"`
-	FileName       string     `json:"file_name"`
-	ContentType    string     `json:"content_type"`
-	FileSize       int64      `json:"file_size"`
-	StorageKey     string     `json:"-"`
-	Notes          string     `json:"notes,omitempty"`
-	RetentionUntil *time.Time `json:"retention_until,omitempty"`
-	ReviewStatus   string     `json:"review_status"`
-	ReviewNote     string     `json:"review_note,omitempty"`
-	ReviewedBy     *string    `json:"reviewed_by,omitempty"`
-	ReviewedAt     *time.Time `json:"reviewed_at,omitempty"`
-	UploadedBy     string     `json:"uploaded_by"`
-	CreatedAt      time.Time  `json:"created_at"`
+	ID              string     `json:"id"`
+	TenantID        string     `json:"tenant_id"`
+	EntityType      string     `json:"entity_type"`
+	EntityID        string     `json:"entity_id"`
+	DocumentType    string     `json:"document_type"`
+	FileName        string     `json:"file_name"`
+	ContentType     string     `json:"content_type"`
+	FileSize        int64      `json:"file_size"`
+	StorageKey      string     `json:"-"`
+	Notes           string     `json:"notes,omitempty"`
+	RetentionUntil  *time.Time `json:"retention_until,omitempty"`
+	ReviewStatus    string     `json:"review_status"`
+	ReviewNote      string     `json:"review_note,omitempty"`
+	ReviewedBy      *string    `json:"reviewed_by,omitempty"`
+	ReviewedAt      *time.Time `json:"reviewed_at,omitempty"`
+	LifecycleStatus string     `json:"lifecycle_status"`
+	LifecycleNote   string     `json:"lifecycle_note,omitempty"`
+	SupersededBy    *string    `json:"superseded_by_document_id,omitempty"`
+	LifecycleBy     *string    `json:"lifecycle_actioned_by,omitempty"`
+	LifecycleAt     *time.Time `json:"lifecycle_actioned_at,omitempty"`
+	UploadedBy      string     `json:"uploaded_by"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 type UploadDocumentRequest struct {
-	EntityType     string
-	EntityID       string
-	DocumentType   string
-	FileName       string
-	ContentType    string
-	FileSize       int64
-	Notes          string
-	RetentionUntil *time.Time
-	RetentionYears int
-	UploadedBy     string
+	EntityType         string
+	EntityID           string
+	DocumentType       string
+	FileName           string
+	ContentType        string
+	FileSize           int64
+	Notes              string
+	RetentionUntil     *time.Time
+	RetentionYears     int
+	ReplacesDocumentID string
+	ReplacementNote    string
+	UploadedBy         string
 }
 
 type ReviewDocumentRequest struct {
 	ReviewStatus string `json:"review_status"`
 	ReviewNote   string `json:"review_note,omitempty"`
+}
+
+type DocumentLifecycleRequest struct {
+	LifecycleStatus      string `json:"lifecycle_status"`
+	LifecycleNote        string `json:"lifecycle_note,omitempty"`
+	SupersededByDocument string `json:"superseded_by_document_id,omitempty"`
 }
 
 type ReviewSummary struct {

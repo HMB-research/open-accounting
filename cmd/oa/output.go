@@ -2217,17 +2217,18 @@ func printSalaryComponentsTable(w io.Writer, components []payroll.SalaryComponen
 
 func printDocumentsTable(w io.Writer, docs []documents.Document) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tENTITY\tTYPE\tFILE\tREVIEW\tRETENTION\tCREATED")
+	_, _ = fmt.Fprintln(tw, "ID\tENTITY\tTYPE\tFILE\tREVIEW\tLIFECYCLE\tRETENTION\tCREATED")
 	for _, doc := range docs {
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			doc.ID,
 			doc.EntityType,
 			doc.EntityID,
 			doc.DocumentType,
 			doc.FileName,
 			doc.ReviewStatus,
+			documentLifecycleLabel(doc.LifecycleStatus),
 			formatTimePtr(doc.RetentionUntil),
 			doc.CreatedAt.Format(time.RFC3339),
 		)
@@ -2337,17 +2338,18 @@ func printDocumentRetentionReview(w io.Writer, review *documents.RetentionReview
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tENTITY\tTYPE\tFILE\tREVIEW\tRETENTION\tCREATED")
+	_, _ = fmt.Fprintln(tw, "ID\tENTITY\tTYPE\tFILE\tREVIEW\tLIFECYCLE\tRETENTION\tCREATED")
 	for _, doc := range review.Documents {
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			doc.ID,
 			doc.EntityType,
 			doc.EntityID,
 			doc.DocumentType,
 			doc.FileName,
 			doc.ReviewStatus,
+			documentLifecycleLabel(doc.LifecycleStatus),
 			formatTimePtr(doc.RetentionUntil),
 			doc.CreatedAt.Format(time.RFC3339),
 		)
@@ -2375,6 +2377,14 @@ func printDocumentRetentionReview(w io.Writer, review *documents.RetentionReview
 	_ = actionWriter.Flush()
 
 	printDocumentRemediationActions(w, review.RemediationActions)
+}
+
+func documentLifecycleLabel(status string) string {
+	trimmed := strings.TrimSpace(status)
+	if trimmed == "" {
+		return documents.LifecycleStatusActive
+	}
+	return trimmed
 }
 
 func printDocumentRemediationActions(w io.Writer, actions []documents.DocumentRemediationAction) {

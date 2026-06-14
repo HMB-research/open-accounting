@@ -23912,6 +23912,142 @@ func TestCLIDocumentCommands(t *testing.T) {
 	assert.Equal(t, 2, retentionPatchCount)
 }
 
+func TestCLIDocumentLifecycleAndReplacementCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	replacementPath := writeTempCSV(t, "replacement-receipt.txt", "replacement receipt")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
+			require.NoError(t, r.ParseMultipartForm(2<<20))
+			assert.Equal(t, documents.EntityTypeExpense, r.FormValue("entity_type"))
+			assert.Equal(t, "expense-1", r.FormValue("entity_id"))
+			assert.Equal(t, documents.DocumentTypeReceipt, r.FormValue("document_type"))
+			assert.Equal(t, "doc-rejected", r.FormValue("replaces_document_id"))
+			assert.Equal(t, "Corrected receipt attached", r.FormValue("replacement_note"))
+			file, header, err := r.FormFile("file")
+			require.NoError(t, err)
+			defer func() { _ = file.Close() }()
+			payload, err := io.ReadAll(file)
+			require.NoError(t, err)
+			assert.Equal(t, "replacement-receipt.txt", header.Filename)
+			assert.Equal(t, "replacement receipt", string(payload))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":               "doc-replacement",
+				"tenant_id":        "tenant-1",
+				"entity_type":      documents.EntityTypeExpense,
+				"entity_id":        "expense-1",
+				"document_type":    documents.DocumentTypeReceipt,
+				"file_name":        "replacement-receipt.txt",
+				"content_type":     "text/plain",
+				"file_size":        len(payload),
+				"review_status":    documents.ReviewStatusPending,
+				"lifecycle_status": documents.LifecycleStatusActive,
+				"uploaded_by":      "user-1",
+				"created_at":       "2026-03-12T00:00:00Z",
+			})
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-rejected/lifecycle":
+			var req documents.DocumentLifecycleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.LifecycleStatusDisposed, req.LifecycleStatus)
+			assert.Equal(t, "Retention expired; disposal approved", req.LifecycleNote)
+			assert.Empty(t, req.SupersededByDocument)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":                    "doc-rejected",
+				"tenant_id":             "tenant-1",
+				"entity_type":           documents.EntityTypeExpense,
+				"entity_id":             "expense-1",
+				"document_type":         documents.DocumentTypeReceipt,
+				"file_name":             "old-receipt.pdf",
+				"content_type":          "application/pdf",
+				"file_size":             1024,
+				"review_status":         documents.ReviewStatusRejected,
+				"lifecycle_status":      documents.LifecycleStatusDisposed,
+				"lifecycle_note":        "Retention expired; disposal approved",
+				"lifecycle_actioned_by": "user-1",
+				"lifecycle_actioned_at": "2026-03-12T10:00:00Z",
+				"uploaded_by":           "user-1",
+				"created_at":            "2026-03-12T00:00:00Z",
+			})
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-replacement/lifecycle":
+			var req documents.DocumentLifecycleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.LifecycleStatusArchived, req.LifecycleStatus)
+			assert.Equal(t, "Archive replacement", req.LifecycleNote)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":                    "doc-replacement",
+				"tenant_id":             "tenant-1",
+				"entity_type":           documents.EntityTypeExpense,
+				"entity_id":             "expense-1",
+				"document_type":         documents.DocumentTypeReceipt,
+				"file_name":             "replacement-receipt.txt",
+				"content_type":          "text/plain",
+				"file_size":             19,
+				"review_status":         documents.ReviewStatusPending,
+				"lifecycle_status":      documents.LifecycleStatusArchived,
+				"lifecycle_note":        "Archive replacement",
+				"lifecycle_actioned_by": "user-1",
+				"lifecycle_actioned_at": "2026-03-12T10:00:00Z",
+				"uploaded_by":           "user-1",
+				"created_at":            "2026-03-12T00:00:00Z",
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+
+	err := app.run(context.Background(), []string{
+		"documents",
+		"upload",
+		"--entity-type", "expense",
+		"--entity-id", "expense-1",
+		"--file", replacementPath,
+		"--document-type", "receipt",
+		"--replaces-document-id", "doc-rejected",
+		"--replacement-note", "Corrected receipt attached",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Uploaded replacement-receipt.txt (doc-replacement)")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"documents",
+		"lifecycle-set",
+		"--id", "doc-rejected",
+		"--status", "disposed",
+		"--note", "Retention expired; disposal approved",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Marked document doc-rejected lifecycle as DISPOSED")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"documents",
+		"lifecycle-set",
+		"--id", "doc-replacement",
+		"--status", "archived",
+		"--note", "Archive replacement",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"lifecycle_status": "ARCHIVED"`)
+}
+
 func TestCLIDocumentBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -23942,6 +24078,8 @@ func TestCLIDocumentBranches(t *testing.T) {
 		{name: "retention set conflicting clear and date", args: []string{"retention-set", "--id", "doc-1", "--retention-until", "2028-03-31", "--clear"}, want: "retention-until cannot be combined with clear"},
 		{name: "retention set missing date", args: []string{"retention-set", "--id", "doc-1"}, want: "retention-until is required unless clear is set"},
 		{name: "retention set invalid date", args: []string{"retention-set", "--id", "doc-1", "--retention-until", "bad-date"}, want: "parse retention-until"},
+		{name: "lifecycle set missing id", args: []string{"lifecycle-set", "--status", "ARCHIVED", "--note", "Archived"}, want: "id and status are required"},
+		{name: "lifecycle set missing status", args: []string{"lifecycle-set", "--id", "doc-1"}, want: "id and status are required"},
 		{name: "upload missing required fields", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1"}, want: "entity-type, entity-id, and file are required"},
 		{name: "upload invalid retention date", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", "missing.txt", "--retention-until", "bad-date"}, want: "parse retention-until"},
 		{name: "upload negative retention years", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", "missing.txt", "--retention-years", "-1"}, want: "retention-years must be zero or greater"},
@@ -24200,6 +24338,7 @@ func TestCLIDocumentAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "evidence policy bad flag", args: []string{"documents", "evidence-policy", "--bad"}},
 		{name: "retention bad flag", args: []string{"documents", "retention", "--bad"}},
 		{name: "retention set bad flag", args: []string{"documents", "retention-set", "--bad"}},
+		{name: "lifecycle set bad flag", args: []string{"documents", "lifecycle-set", "--bad"}},
 		{name: "upload bad flag", args: []string{"documents", "upload", "--bad"}},
 		{name: "download bad flag", args: []string{"documents", "download", "--bad"}},
 		{name: "mark reviewed bad flag", args: []string{"documents", "mark-reviewed", "--bad"}},
@@ -24292,6 +24431,11 @@ func TestCLIDocumentAuthFlagsAndAPIErrorBranches(t *testing.T) {
 			var req documentRetentionUpdateRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "2028-03-31", req.RetentionUntil)
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-error/lifecycle":
+			var req documents.DocumentLifecycleRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, documents.LifecycleStatusArchived, req.LifecycleStatus)
+			assert.Equal(t, "Archive failed", req.LifecycleNote)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
 			require.NoError(t, r.ParseMultipartForm(2<<20))
 			assert.Equal(t, documents.EntityTypeExpense, r.FormValue("entity_type"))
@@ -24323,6 +24467,7 @@ func TestCLIDocumentAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "evidence policy API error", args: []string{"documents", "evidence-policy", "--entity-type", "expense", "--entity-id", "exp-1", "--document-type", "receipt"}},
 		{name: "retention API error", args: []string{"documents", "retention"}},
 		{name: "retention set API error", args: []string{"documents", "retention-set", "--id", "doc-error", "--retention-until", "2028-03-31"}},
+		{name: "lifecycle set API error", args: []string{"documents", "lifecycle-set", "--id", "doc-error", "--status", "archived", "--note", "Archive failed"}},
 		{name: "upload API error", args: []string{"documents", "upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", uploadPath}},
 		{name: "download API error", args: []string{"documents", "download", "--id", "doc-error", "--output", "-"}},
 		{name: "mark reviewed API error", args: []string{"documents", "mark-reviewed", "--id", "doc-error"}},

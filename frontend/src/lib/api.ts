@@ -3483,6 +3483,11 @@ export interface DocumentAttachment {
   review_note?: string;
   reviewed_by?: string;
   reviewed_at?: string;
+  lifecycle_status?: "ACTIVE" | "SUPERSEDED" | "ARCHIVED" | "DISPOSED";
+  lifecycle_note?: string;
+  superseded_by_document_id?: string;
+  lifecycle_actioned_by?: string;
+  lifecycle_actioned_at?: string;
   uploaded_by: string;
   created_at: string;
 }
