@@ -988,6 +988,8 @@ class ApiClient {
       document_type?: DocumentAttachment["document_type"];
       notes?: string;
       retention_until?: string;
+      replaces_document_id?: string;
+      replacement_note?: string;
     },
   ) {
     const formData = new FormData();
@@ -1002,6 +1004,12 @@ class ApiClient {
     }
     if (options?.retention_until) {
       formData.set("retention_until", options.retention_until);
+    }
+    if (options?.replaces_document_id) {
+      formData.set("replaces_document_id", options.replaces_document_id);
+    }
+    if (options?.replacement_note) {
+      formData.set("replacement_note", options.replacement_note);
     }
 
     return this.request<DocumentAttachment>(

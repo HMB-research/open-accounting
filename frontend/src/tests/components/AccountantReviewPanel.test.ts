@@ -1146,7 +1146,9 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(apiMock.uploadDocument).toHaveBeenCalledWith('tenant-1', 'expense', 'expense-1', replacementFile, {
 				document_type: 'receipt',
-				notes: 'Replacement uploaded from accountant workspace assignment'
+				notes: 'Replacement uploaded from accountant workspace assignment',
+				replaces_document_id: 'doc-rejected-1',
+				replacement_note: 'Replacement uploaded from accountant workspace assignment'
 			});
 			expect(
 				screen.getByText('Payment pay-2 has matching evidence, but not enough approved documents.')

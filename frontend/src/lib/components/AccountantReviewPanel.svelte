@@ -56,6 +56,8 @@
 		documentType: DocumentAttachment['document_type'];
 		notes: string;
 		replacement: boolean;
+		replacesDocumentId?: string;
+		replacementNote?: string;
 	};
 
 	const documentUploadEntityTypes: DocumentAttachment['entity_type'][] = [
@@ -310,14 +312,21 @@
 		}
 
 		const replacement = action.code === 'document_review_rejected';
+		if (replacement && !action.documentId) {
+			return null;
+		}
+
+		const notes = replacement
+			? m.dashboard_reviewAssignmentReplacementUploadNote()
+			: m.dashboard_reviewAssignmentEvidenceUploadNote();
 		return {
 			entityType,
 			entityId: action.entityId,
 			documentType,
-			notes: replacement
-				? m.dashboard_reviewAssignmentReplacementUploadNote()
-				: m.dashboard_reviewAssignmentEvidenceUploadNote(),
-			replacement
+			notes,
+			replacement,
+			replacesDocumentId: replacement ? action.documentId : undefined,
+			replacementNote: replacement ? notes : undefined
 		};
 	}
 
@@ -687,7 +696,9 @@
 		try {
 			await api.uploadDocument(tenant.id, target.entityType, target.entityId, file, {
 				document_type: target.documentType,
-				notes: target.notes
+				notes: target.notes,
+				replaces_document_id: target.replacesDocumentId,
+				replacement_note: target.replacementNote
 			});
 			await loadReviewWorkspace(tenant);
 			assignmentCompletedMessage = m.dashboard_reviewAssignmentEvidenceUploaded();
