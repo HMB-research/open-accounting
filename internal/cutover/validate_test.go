@@ -5869,6 +5869,27 @@ func TestValidateBundleAcceptsPaymentContactIdentityReference(t *testing.T) {
 	assert.Zero(t, report.Summary.ErrorCount)
 }
 
+func TestValidateBundleAcceptsPaymentContactVATNumberReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name,vat_number\nCUST-1,Customer One,EE123456789\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,contact_vat_number,amount\nRECEIVED,2026-05-31,EE123456789,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Zero(t, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
 func TestValidateBundleReportsMissingPaymentContactIdentityReference(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -6215,6 +6236,16 @@ func TestValidateBundleAcceptsProductSupplierVATNumberReference(t *testing.T) {
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 0, report.Summary.ErrorCount)
 	assert.Empty(t, report.Issues)
+}
+
+func TestContactReferenceIndexSelectsVATAndFallbackIndexes(t *testing.T) {
+	indexes := bundleIndexes{
+		contacts:          map[string]bool{"fallback": true},
+		contactVATNumbers: map[string]bool{"EE123456789": true},
+	}
+
+	assert.True(t, contactReferenceIndex(indexes, "contact_vat_number")["EE123456789"])
+	assert.True(t, contactReferenceIndex(indexes, "contact_custom")["fallback"])
 }
 
 func TestSupplierContactIndexSelectsVATAndFallbackIndexes(t *testing.T) {
