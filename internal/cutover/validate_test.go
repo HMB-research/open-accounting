@@ -217,7 +217,7 @@ func TestValidateBundleBuildsRemediationActions(t *testing.T) {
 	assert.Contains(t, referenceAction.Field, "contact_code")
 	assert.Equal(t, 1, referenceAction.IssueCount)
 	assert.Equal(t, "migration_cutover", referenceAction.WorkspaceQueue)
-	assert.Equal(t, "migration:missing-reference:invoices:invoices-csv:contact-code-contact-reg-code-contact-vat-number-contact-email-contact-name:contacts", referenceAction.AssignmentKey)
+	assert.Equal(t, "migration:missing-reference:invoices:invoices-csv:contact-code:contacts", referenceAction.AssignmentKey)
 	assert.Equal(t, "high", referenceAction.Priority)
 	assert.Equal(t, 1, referenceAction.DueInDays)
 	assert.Contains(t, referenceAction.CLICommand, "--invoices")
@@ -6170,6 +6170,81 @@ func TestValidateBundleReportsMissingFixedAssetSupplierIdentityReference(t *test
 	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
 	assert.Equal(t, "supplier_name", report.Issues[0].Field)
 	assert.Equal(t, "Missing Supplier", report.Issues[0].Value)
+}
+
+func TestValidateBundleReportsCommercialContactIdentityFieldMismatch(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,issue_date,due_date,contact_code,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,2026-05-30,2026-06-14,Customer One,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindQuotes,
+			FileName:   "quotes.csv",
+			CSVContent: "quote_number,quote_date,contact_code,line_description,quantity,unit_price,vat_rate\nQ-1,2026-05-30,Customer One,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindOrders,
+			FileName:   "orders.csv",
+			CSVContent: "order_number,order_date,contact_code,line_description,quantity,unit_price,vat_rate\nSO-1,2026-05-31,Customer One,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindRecurringInvoices,
+			FileName:   "recurring.csv",
+			CSVContent: "name,frequency,start_date,contact_code,line_description,quantity,unit_price,vat_rate\nMonthly,MONTHLY,2026-06-01,Customer One,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 4, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindInvoices, "contact_code", "reference")
+	assertValidationIssue(t, report, KindQuotes, "contact_code", "reference")
+	assertValidationIssue(t, report, KindOrders, "contact_code", "reference")
+	assertValidationIssue(t, report, KindRecurringInvoices, "contact_code", "reference")
+}
+
+func TestValidateBundleAcceptsCommercialContactIdentityFields(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name,email,reg_code,vat_number\nCUST-1,Customer One,customer@example.test,12345678,EE123456789\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,issue_date,due_date,contact_code,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,2026-05-30,2026-06-14,CUST-1,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindQuotes,
+			FileName:   "quotes.csv",
+			CSVContent: "quote_number,quote_date,contact_reg_code,line_description,quantity,unit_price,vat_rate\nQ-1,2026-05-30,12345678,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindOrders,
+			FileName:   "orders.csv",
+			CSVContent: "order_number,order_date,contact_email,line_description,quantity,unit_price,vat_rate\nSO-1,2026-05-31,customer@example.test,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindRecurringInvoices,
+			FileName:   "recurring.csv",
+			CSVContent: "name,frequency,start_date,contact_name,line_description,quantity,unit_price,vat_rate\nMonthly,MONTHLY,2026-06-01,Customer One,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
 }
 
 func TestValidateBundleReportsContactIDReferenceWhenValueMatchesLookupField(t *testing.T) {
