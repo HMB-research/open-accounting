@@ -1000,6 +1000,33 @@ func TestFileSpecForProviderPresetFallsBackWhenProviderHasNoAliases(t *testing.T
 	assert.Equal(t, genericSpec.requiredGroups, smartAccountsSpec.requiredGroups)
 }
 
+func TestListMigrationProviderPresetsReturnsOperatorCatalog(t *testing.T) {
+	presets := ListMigrationProviderPresets()
+
+	require.Len(t, presets, 3)
+	assert.Equal(t, MigrationProviderPresetGeneric, presets[0].Preset)
+	assert.Equal(t, MigrationProviderPresetMerit, presets[1].Preset)
+	assert.Equal(t, MigrationProviderPresetSmartAccounts, presets[2].Preset)
+	assert.Equal(t, 0, presets[0].PresetAliasCount)
+	assert.Greater(t, presets[1].PresetAliasCount, 0)
+	assert.Greater(t, presets[2].PresetAliasCount, 0)
+
+	var meritAccounts *MigrationProviderPresetKindInfo
+	for i := range presets[1].FileKinds {
+		if presets[1].FileKinds[i].Kind == KindAccounts {
+			meritAccounts = &presets[1].FileKinds[i]
+			break
+		}
+	}
+	require.NotNil(t, meritAccounts)
+	assert.Contains(t, meritAccounts.RequiredColumnGroups, []string{"code"})
+	assert.Greater(t, meritAccounts.PresetAliasCount, 0)
+	assert.Contains(t, meritAccounts.SampleAliases, MigrationProviderPresetAlias{
+		SourceHeader:    "konto",
+		CanonicalHeader: "code",
+	})
+}
+
 func TestValidateBundleRequiresInvoiceTypeForCSVInvoices(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

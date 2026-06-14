@@ -11,6 +11,8 @@
 		type MigrationExecutionRunEvent,
 		type MigrationExecutionRunSummary,
 		type MigrationFileKind,
+		type MigrationProviderPresetInfo,
+		type MigrationProviderPresetKindInfo,
 		type MigrationProviderPreset,
 		type PlanMigrationExecutionRequest,
 		type ValidateBundleRequest
@@ -53,6 +55,32 @@
 	];
 
 	const statusFilters = ['', 'planned', 'running', 'blocked', 'failed', 'succeeded'];
+	const fallbackProviderPresets: MigrationProviderPresetInfo[] = [
+		{
+			preset: 'generic',
+			label: 'Generic',
+			description: 'Uses Open Accounting canonical cutover headers without vendor-specific alias expansion.',
+			file_kind_count: fileKinds.length,
+			preset_alias_count: 0,
+			file_kinds: []
+		},
+		{
+			preset: 'merit',
+			label: 'Merit',
+			description: 'Adds Merit Aktiva and Merit Palk CSV header aliases before canonical validation.',
+			file_kind_count: fileKinds.length,
+			preset_alias_count: 0,
+			file_kinds: []
+		},
+		{
+			preset: 'smartaccounts',
+			label: 'SmartAccounts',
+			description: 'Adds SmartAccounts CSV export header aliases before canonical validation.',
+			file_kind_count: fileKinds.length,
+			preset_alias_count: 0,
+			file_kinds: []
+		}
+	];
 
 	let nextDraftId = 1;
 	let selectedKind = $state<MigrationFileKind>('accounts');
@@ -70,9 +98,12 @@
 	let runLimit = $state(10);
 	let working = $state(false);
 	let loadingHistory = $state(false);
+	let loadingProviderPresets = $state(false);
+	let providerPresetStatus = $state('');
 	let error = $state('');
 	let success = $state('');
 	let bundleFiles = $state<DraftBundleFile[]>([]);
+	let providerPresets = $state<MigrationProviderPresetInfo[]>(fallbackProviderPresets);
 	let validation = $state<BundleValidationReport | null>(null);
 	let plan = $state<MigrationExecutionPlan | null>(null);
 	let run = $state<MigrationExecutionRun | null>(null);
@@ -85,6 +116,12 @@
 
 	let canSubmitBundle = $derived(tenantId.trim().length > 0 && bundleFiles.length > 0 && !working);
 	let canExecute = $derived(canSubmitBundle && executionConfirmed);
+	let selectedProvider = $derived(
+		providerPresets.find((preset) => preset.preset === providerPreset) ?? fallbackProviderPresets[0]
+	);
+	let selectedProviderAliasKinds = $derived(
+		(selectedProvider.file_kinds ?? []).filter((kind) => kind.preset_alias_count > 0).slice(0, 4)
+	);
 
 	onMount(() => {
 		void initializeWorkbench();
@@ -315,6 +352,23 @@
 		}
 	}
 
+	async function loadProviderPresets() {
+		if (!tenantId.trim()) return;
+		loadingProviderPresets = true;
+		providerPresetStatus = '';
+		try {
+			const presets = await api.listMigrationProviderPresets(tenantId);
+			if (presets.length > 0) {
+				providerPresets = presets;
+			}
+		} catch (err) {
+			providerPresetStatus =
+				err instanceof Error ? err.message : 'Provider preset catalog could not be loaded.';
+		} finally {
+			loadingProviderPresets = false;
+		}
+	}
+
 	async function openSavedRun(savedRun: MigrationExecutionRun) {
 		const savedRunId = savedRun.id;
 		if (!savedRunId) return;
@@ -323,7 +377,7 @@
 	}
 
 	async function initializeWorkbench() {
-		await loadRunHistory();
+		await Promise.all([loadRunHistory(), loadProviderPresets()]);
 		const trimmedRunId = runId.trim();
 		const trimmedTenantId = tenantId.trim();
 		const deepLinkKey = `${trimmedTenantId}:${trimmedRunId}`;
@@ -471,6 +525,22 @@
 		success = resumeRunId ? 'Resume run selected.' : '';
 	}
 
+	function fileKindLabel(kind: MigrationFileKind): string {
+		return fileKinds.find((option) => option.kind === kind)?.label ?? kind.replaceAll('_', ' ');
+	}
+
+	function formatRequiredGroups(groups: string[][] | undefined): string {
+		if (!groups?.length) return '-';
+		return groups.map((group) => group.join(' or ')).join(', ');
+	}
+
+	function formatAliasSamples(kind: MigrationProviderPresetKindInfo): string {
+		if (!kind.sample_aliases?.length) return '-';
+		return kind.sample_aliases
+			.map((sample) => `${sample.source_header} -> ${sample.canonical_header}`)
+			.join(', ');
+	}
+
 	function statusClass(status: string | undefined): string {
 		const normalized = (status ?? '').toLowerCase();
 		if (normalized.includes('success')) return 'status-success';
@@ -559,9 +629,9 @@
 					<div class="form-group">
 						<label class="label" for="migration-provider">Provider preset</label>
 						<select id="migration-provider" class="input" bind:value={providerPreset}>
-							<option value="generic">Generic</option>
-							<option value="merit">Merit</option>
-							<option value="smartaccounts">SmartAccounts</option>
+							{#each providerPresets as preset (preset.preset)}
+								<option value={preset.preset}>{preset.label}</option>
+							{/each}
 						</select>
 					</div>
 					<div class="form-group">
@@ -589,6 +659,32 @@
 							placeholder={defaultFileName(selectedKind)}
 						/>
 					</div>
+				</div>
+
+				<div class="preset-summary" aria-label="Provider preset metadata">
+					<div class="preset-summary-header">
+						<div>
+							<strong>{selectedProvider.label}</strong>
+							<span>
+								{selectedProvider.file_kind_count} file kinds · {selectedProvider.preset_alias_count}
+								aliases
+							</span>
+						</div>
+						<span class="status-neutral">{loadingProviderPresets ? 'Loading' : 'Catalog'}</span>
+					</div>
+					<p>{providerPresetStatus || selectedProvider.description}</p>
+					{#if selectedProviderAliasKinds.length > 0}
+						<div class="preset-kind-grid">
+							{#each selectedProviderAliasKinds as kind (kind.kind)}
+								<div>
+									<strong>{fileKindLabel(kind.kind)}</strong>
+									<span>{kind.preset_alias_count} aliases</span>
+									<small>{formatRequiredGroups(kind.required_column_groups)}</small>
+									<code>{formatAliasSamples(kind)}</code>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
 
 				<div class="form-group">
@@ -903,22 +999,22 @@
 									<td>{formatDateTime(saved.updated_at ?? saved.created_at)}</td>
 									<td>{saved.summary.progress_percent ?? 0}%</td>
 									<td>{formatDurationMs(saved.summary.duration_ms)}</td>
-										<td>{activeStepLabel(saved.summary)}</td>
-										<td>{saved.summary.succeeded_step_count}/{saved.summary.step_count}</td>
-										<td>
-											<div class="row-actions">
-												<button type="button" class="link-button" onclick={() => openSavedRun(saved)}>Open</button>
-												<button
-													type="button"
-													class="link-button"
-													disabled={streamingRunId === saved.id || isTerminalRunStatus(saved.summary.status)}
-													onclick={() => openSavedRun(saved)}
-												>
-													Stream
-												</button>
-												<button type="button" class="link-button" onclick={() => setResumeRun(saved.id)}>Resume</button>
-											</div>
-										</td>
+									<td>{activeStepLabel(saved.summary)}</td>
+									<td>{saved.summary.succeeded_step_count}/{saved.summary.step_count}</td>
+									<td>
+										<div class="row-actions">
+											<button type="button" class="link-button" onclick={() => openSavedRun(saved)}>Open</button>
+											<button
+												type="button"
+												class="link-button"
+												disabled={streamingRunId === saved.id || isTerminalRunStatus(saved.summary.status)}
+												onclick={() => openSavedRun(saved)}
+											>
+												Stream
+											</button>
+											<button type="button" class="link-button" onclick={() => setResumeRun(saved.id)}>Resume</button>
+										</div>
+									</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -1080,6 +1176,62 @@
 		color: var(--color-text-muted);
 		display: block;
 		font-size: 0.8rem;
+	}
+
+	.preset-summary {
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		padding: 0.85rem;
+	}
+
+	.preset-summary-header {
+		align-items: flex-start;
+		display: flex;
+		gap: 1rem;
+		justify-content: space-between;
+	}
+
+	.preset-summary-header span,
+	.preset-summary p,
+	.preset-kind-grid span,
+	.preset-kind-grid small {
+		color: var(--color-text-muted);
+	}
+
+	.preset-summary-header span,
+	.preset-kind-grid span,
+	.preset-kind-grid small {
+		display: block;
+		font-size: 0.8rem;
+	}
+
+	.preset-summary p {
+		font-size: 0.88rem;
+		margin: 0;
+	}
+
+	.preset-kind-grid {
+		display: grid;
+		gap: 0.65rem;
+		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+	}
+
+	.preset-kind-grid div {
+		border-top: 1px solid var(--color-border);
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		min-width: 0;
+		padding-top: 0.65rem;
+	}
+
+	.preset-kind-grid code {
+		font-size: 0.76rem;
+		white-space: normal;
+		word-break: break-word;
 	}
 
 	.action-stack {

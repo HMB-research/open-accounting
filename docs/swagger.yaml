@@ -2460,6 +2460,47 @@ definitions:
     - MigrationProviderPresetGeneric
     - MigrationProviderPresetMerit
     - MigrationProviderPresetSmartAccounts
+  github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetAlias:
+    properties:
+      canonical_header:
+        type: string
+      source_header:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetInfo:
+    properties:
+      description:
+        type: string
+      file_kind_count:
+        type: integer
+      file_kinds:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetKindInfo'
+        type: array
+      label:
+        type: string
+      preset:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset'
+      preset_alias_count:
+        type: integer
+    type: object
+  github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetKindInfo:
+    properties:
+      kind:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind'
+      preset_alias_count:
+        type: integer
+      required_column_groups:
+        items:
+          items:
+            type: string
+          type: array
+        type: array
+      sample_aliases:
+        items:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetAlias'
+        type: array
+    type: object
   github_com_HMB-research_open-accounting_internal_cutover.MigrationRemediationAction:
     properties:
       action:
@@ -15023,6 +15064,42 @@ paths:
                 type: string
             type: object
       summary: Stream migration execution run snapshots
+      tags:
+      - Migration
+  /tenants/{tenantID}/migration/provider-presets:
+    get:
+      description: Return supported CSV provider presets, file-kind coverage, required
+        column groups, and sample provider header aliases for migration cutovers
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetInfo'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: List migration provider presets
       tags:
       - Migration
   /tenants/{tenantID}/migration/validate:

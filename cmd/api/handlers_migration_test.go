@@ -116,6 +116,24 @@ func TestValidateMigrationBundleHandler(t *testing.T) {
 	assert.NotEmpty(t, report.RemediationActions[0].AssignmentKey)
 }
 
+func TestListMigrationProviderPresetsHandler(t *testing.T) {
+	h := &Handlers{}
+	req := withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/migration/provider-presets", nil, createTestClaims("user-1", "user@example.com", "tenant-1", "admin")), map[string]string{"tenantID": "tenant-1"})
+
+	w := httptest.NewRecorder()
+	h.ListMigrationProviderPresets(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var presets []cutover.MigrationProviderPresetInfo
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&presets))
+	require.Len(t, presets, 3)
+	assert.Equal(t, cutover.MigrationProviderPresetGeneric, presets[0].Preset)
+	assert.Equal(t, cutover.MigrationProviderPresetMerit, presets[1].Preset)
+	assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, presets[2].Preset)
+	assert.Greater(t, presets[1].PresetAliasCount, 0)
+	assert.NotEmpty(t, presets[1].FileKinds)
+}
+
 func TestValidateMigrationBundleHandlerRejectsEmptyRequest(t *testing.T) {
 	h := &Handlers{}
 	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/migration/validate", cutover.ValidateBundleRequest{}, createTestClaims("user-1", "user@example.com", "tenant-1", "admin"))

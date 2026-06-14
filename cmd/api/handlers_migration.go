@@ -6,6 +6,20 @@ import (
 	"github.com/HMB-research/open-accounting/internal/cutover"
 )
 
+// ListMigrationProviderPresets lists supported migration provider presets.
+// @Summary List migration provider presets
+// @Description Return supported CSV provider presets, file-kind coverage, required column groups, and sample provider header aliases for migration cutovers
+// @Tags Migration
+// @Produce json
+// @Param tenantID path string true "Tenant ID"
+// @Success 200 {array} cutover.MigrationProviderPresetInfo
+// @Failure 401 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Router /tenants/{tenantID}/migration/provider-presets [get]
+func (h *Handlers) ListMigrationProviderPresets(w http.ResponseWriter, _ *http.Request) {
+	respondJSON(w, http.StatusOK, cutover.ListMigrationProviderPresets())
+}
+
 // ValidateMigrationBundle validates a non-mutating CSV/XML migration bundle.
 // @Summary Validate migration bundle
 // @Description Validate CSV and XML cutover files for required columns and cross-file references before running imports

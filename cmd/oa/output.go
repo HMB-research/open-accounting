@@ -174,6 +174,41 @@ func printMigrationExecutionPlan(w io.Writer, plan *cutover.MigrationExecutionPl
 	printMigrationRemediationActions(w, plan.RemediationActions)
 }
 
+func printMigrationProviderPresets(w io.Writer, presets []cutover.MigrationProviderPresetInfo) {
+	if len(presets) == 0 {
+		_, _ = fmt.Fprintln(w, "No migration provider presets")
+		return
+	}
+	_, _ = fmt.Fprintln(w, "Migration provider presets:")
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PRESET\tLABEL\tFILE KINDS\tALIASES\tDESCRIPTION")
+	for _, preset := range presets {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%s\n", preset.Preset, preset.Label, preset.FileKindCount, preset.PresetAliasCount, preset.Description)
+	}
+	_ = tw.Flush()
+
+	_, _ = fmt.Fprintln(w, "Preset file-kind coverage:")
+	tw = tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PRESET\tKIND\tREQUIRED GROUPS\tALIASES\tSAMPLES")
+	for _, preset := range presets {
+		for _, kind := range preset.FileKinds {
+			if kind.PresetAliasCount == 0 && len(kind.SampleAliases) == 0 {
+				continue
+			}
+			_, _ = fmt.Fprintf(
+				tw,
+				"%s\t%s\t%s\t%d\t%s\n",
+				preset.Preset,
+				kind.Kind,
+				formatRequiredColumnGroups(kind.RequiredColumnGroups),
+				kind.PresetAliasCount,
+				formatPresetAliasSamples(kind.SampleAliases),
+			)
+		}
+	}
+	_ = tw.Flush()
+}
+
 func printMigrationExecutionRun(w io.Writer, run *migrationExecutionRun) {
 	if run == nil {
 		_, _ = fmt.Fprintln(w, "No migration execution run")
@@ -309,6 +344,34 @@ func formatDurationMS(durationMS int64) string {
 		return fmt.Sprintf("%.1fs", seconds)
 	}
 	return duration.Round(time.Second).String()
+}
+
+func formatRequiredColumnGroups(groups [][]string) string {
+	if len(groups) == 0 {
+		return "-"
+	}
+	parts := make([]string, 0, len(groups))
+	for _, group := range groups {
+		if len(group) == 0 {
+			continue
+		}
+		parts = append(parts, strings.Join(group, "|"))
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatPresetAliasSamples(samples []cutover.MigrationProviderPresetAlias) string {
+	if len(samples) == 0 {
+		return "-"
+	}
+	parts := make([]string, 0, len(samples))
+	for _, sample := range samples {
+		parts = append(parts, sample.SourceHeader+"->"+sample.CanonicalHeader)
+	}
+	return strings.Join(parts, ",")
 }
 
 func printMigrationRemediationActions(w io.Writer, actions []cutover.MigrationRemediationAction) {

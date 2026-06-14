@@ -674,6 +674,13 @@ class ApiClient {
     );
   }
 
+  async listMigrationProviderPresets(tenantId: string) {
+    return this.request<MigrationProviderPresetInfo[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/migration/provider-presets`,
+    );
+  }
+
   async validateMigrationBundle(tenantId: string, data: ValidateBundleRequest) {
     return this.request<BundleValidationReport>(
       "POST",
@@ -3478,6 +3485,27 @@ export type MigrationFileKind =
 export type MigrationProviderPreset = "generic" | "merit" | "smartaccounts";
 export type EInvoiceContactMode = "supplier" | "customer" | "both";
 export type MigrationIssueSeverity = "ERROR" | "WARNING";
+
+export interface MigrationProviderPresetAlias {
+  source_header: string;
+  canonical_header: string;
+}
+
+export interface MigrationProviderPresetKindInfo {
+  kind: MigrationFileKind;
+  required_column_groups?: string[][];
+  preset_alias_count: number;
+  sample_aliases?: MigrationProviderPresetAlias[];
+}
+
+export interface MigrationProviderPresetInfo {
+  preset: MigrationProviderPreset;
+  label: string;
+  description: string;
+  file_kind_count: number;
+  preset_alias_count: number;
+  file_kinds?: MigrationProviderPresetKindInfo[];
+}
 
 export interface BundleFile {
   kind: MigrationFileKind;

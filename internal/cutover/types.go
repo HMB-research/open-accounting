@@ -53,6 +53,27 @@ const (
 	MigrationProviderPresetSmartAccounts MigrationProviderPreset = "smartaccounts"
 )
 
+type MigrationProviderPresetInfo struct {
+	Preset           MigrationProviderPreset           `json:"preset"`
+	Label            string                            `json:"label"`
+	Description      string                            `json:"description"`
+	FileKindCount    int                               `json:"file_kind_count"`
+	PresetAliasCount int                               `json:"preset_alias_count"`
+	FileKinds        []MigrationProviderPresetKindInfo `json:"file_kinds,omitempty"`
+}
+
+type MigrationProviderPresetKindInfo struct {
+	Kind                 FileKind                       `json:"kind"`
+	RequiredColumnGroups [][]string                     `json:"required_column_groups,omitempty"`
+	PresetAliasCount     int                            `json:"preset_alias_count"`
+	SampleAliases        []MigrationProviderPresetAlias `json:"sample_aliases,omitempty"`
+}
+
+type MigrationProviderPresetAlias struct {
+	SourceHeader    string `json:"source_header"`
+	CanonicalHeader string `json:"canonical_header"`
+}
+
 type BundleFile struct {
 	Kind       FileKind `json:"kind"`
 	FileName   string   `json:"file_name"`
