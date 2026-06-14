@@ -283,6 +283,8 @@ func TestExecuteMigrationHandlerRunsConfirmedReadySteps(t *testing.T) {
 	assert.Equal(t, cutover.KindContacts, executor.calls[1].Kind)
 	require.Len(t, run.Steps, 2)
 	assert.Equal(t, cutover.MigrationExecutionResultSucceeded, run.Steps[0].Status)
+	assert.NotNil(t, run.Steps[0].StartedAt)
+	assert.NotNil(t, run.Steps[0].CompletedAt)
 	assert.NotNil(t, run.Steps[0].Response)
 }
 
@@ -360,9 +362,12 @@ func TestExecuteMigrationHandlerPersistsRunSnapshots(t *testing.T) {
 	assert.Equal(t, "running", store.saved[1].Summary.Status)
 	assert.Equal(t, 1, store.saved[1].Summary.RunningStepCount)
 	assert.Equal(t, cutover.MigrationExecutionResultRunning, store.saved[1].Summary.ActiveStepStatus)
+	assert.NotNil(t, store.saved[1].Summary.ActiveStepStartedAt)
 	assert.Equal(t, "succeeded", store.saved[len(store.saved)-1].Summary.Status)
 	assert.Equal(t, 1, store.saved[len(store.saved)-1].Summary.SucceededStepCount)
 	assert.Equal(t, 100, store.saved[len(store.saved)-1].Summary.ProgressPercent)
+	assert.NotNil(t, run.Steps[0].StartedAt)
+	assert.NotNil(t, run.Steps[0].CompletedAt)
 }
 
 func TestExecuteMigrationHandlerResumesSavedRunID(t *testing.T) {
@@ -456,6 +461,8 @@ func TestExecuteMigrationHandlerReportsStepFailure(t *testing.T) {
 	assert.Equal(t, cutover.MigrationExecutionResultFailed, run.Summary.ActiveStepStatus)
 	require.Len(t, run.Steps, 1)
 	assert.Equal(t, cutover.MigrationExecutionResultFailed, run.Steps[0].Status)
+	assert.NotNil(t, run.Steps[0].StartedAt)
+	assert.NotNil(t, run.Steps[0].CompletedAt)
 	assert.Contains(t, run.Steps[0].Error, "import failed")
 	require.Len(t, executor.calls, 1)
 }

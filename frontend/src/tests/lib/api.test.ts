@@ -964,6 +964,7 @@ describe("API Client - Core Functionality", () => {
           completed_step_count: 1,
           remaining_step_count: 0,
           progress_percent: 100,
+          duration_ms: 1500,
           needs_context_count: 0,
           blocked_step_count: 0,
         },
@@ -974,6 +975,9 @@ describe("API Client - Core Functionality", () => {
             file_name: "accounts.csv",
             status: "SUCCEEDED",
             message: "Import completed.",
+            started_at: "2026-06-14T12:00:00Z",
+            completed_at: "2026-06-14T12:00:01.500Z",
+            duration_ms: 1500,
             cli_command: "oa accounts import --file <accounts.csv>",
           },
         ],
@@ -1049,6 +1053,8 @@ describe("API Client - Core Functionality", () => {
         expect.objectContaining({ method: "GET" }),
       );
       expect(executed.summary.resumed_step_count).toBe(1);
+      expect(executed.summary.duration_ms).toBe(1500);
+      expect(executed.steps?.[0].duration_ms).toBe(1500);
       expect(runs[0].id).toBe("run-1");
       expect(loaded.steps?.[0].status).toBe("SUCCEEDED");
     });

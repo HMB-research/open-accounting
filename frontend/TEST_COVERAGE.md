@@ -32,7 +32,7 @@
 | `FormModal` | Tested | Dialog content, footer, backdrop, and Escape close |
 | `LanguageSelector` | Tested | Locale switching and labels |
 | `LineItemsEditor` | Tested | Add/remove lines, totals, discounts, and immutable edits |
-| `MigrationWorkbench` | Tested | Bundle assembly, planning, saved-run monitoring, progress telemetry, and resume execution |
+| `MigrationWorkbench` | Tested | Bundle assembly, planning, saved-run monitoring, progress/duration telemetry, and resume execution |
 | `OnboardingWizard` | Tested | Required fields, setup steps, completion |
 | `PeriodSelector` | Tested | Shared period ranges and custom date edits |
 | `SetupCenter` | Tested | Setup progress and guided setup action |
@@ -110,5 +110,6 @@ Run Paraglide/SvelteKit-writing gates serially. `check`, `test`, and `build` can
 | 2026-06-10 | Refreshed frontend test inventory from the current tree | 0 |
 | 2026-06-14 | Added migration workbench coverage for historical cutover launch and monitoring controls | 3 tests |
 | 2026-06-14 | Expanded migration workbench coverage for saved-run progress and active-step telemetry | 0 |
+| 2026-06-14 | Expanded migration workbench coverage for saved-run duration telemetry | 0 |
 | 2026-01-23 | Migrated test commands from npm to bun | 0 |
 | 2026-01-10 | Initial tracking document created | 0 |

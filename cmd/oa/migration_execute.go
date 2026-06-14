@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/assets"
@@ -181,26 +182,16 @@ func executeMigrationRun(ctx context.Context, client *apiClient, tenantID string
 		}
 		file, ok := filesByKey[migrationStepFileKey(step.Kind, step.FileName)]
 		if !ok {
-			run.Steps[i].Status = migrationExecutionResultFailed
-			run.Steps[i].Error = "migration bundle file not found"
-			cutover.RefreshMigrationExecutionRunProgress(run)
+			cutover.CompleteMigrationExecutionStep(run, i, migrationExecutionResultFailed, "Import failed.", "migration bundle file not found", nil, time.Now())
 			return run, fmt.Errorf("migration bundle file not found for step %d (%s)", step.StepNumber, step.Kind)
 		}
-		run.Steps[i].Status = migrationExecutionResultRunning
-		run.Steps[i].Message = "Import running."
-		cutover.RefreshMigrationExecutionRunProgress(run)
+		cutover.MarkMigrationExecutionStepRunning(run, i, time.Now())
 		response, err := executeMigrationImportStep(ctx, client, tenantID, step, file, opts)
 		if err != nil {
-			run.Steps[i].Status = migrationExecutionResultFailed
-			run.Steps[i].Message = "Import failed."
-			run.Steps[i].Error = err.Error()
-			cutover.RefreshMigrationExecutionRunProgress(run)
+			cutover.CompleteMigrationExecutionStep(run, i, migrationExecutionResultFailed, "Import failed.", err.Error(), nil, time.Now())
 			return run, fmt.Errorf("execute migration step %d (%s): %w", step.StepNumber, step.Kind, err)
 		}
-		run.Steps[i].Status = migrationExecutionResultSucceeded
-		run.Steps[i].Message = "Import completed."
-		run.Steps[i].Response = response
-		cutover.RefreshMigrationExecutionRunProgress(run)
+		cutover.CompleteMigrationExecutionStep(run, i, migrationExecutionResultSucceeded, "Import completed.", "", response, time.Now())
 	}
 	run.Summary.Status = "succeeded"
 	cutover.RefreshMigrationExecutionRunProgress(run)

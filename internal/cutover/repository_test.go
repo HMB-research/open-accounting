@@ -22,11 +22,10 @@ func TestMigrationExecutionRunRepositoryMappingRoundTripsPayload(t *testing.T) {
 			{StepNumber: 2, Kind: KindContacts, FileName: "contacts.csv", Status: MigrationExecutionStepReady},
 		},
 	}, true)
-	run.Summary.Status = "succeeded"
-	run.Summary.SucceededStepCount = 2
-	run.Steps[0].Status = MigrationExecutionResultSucceeded
-	run.Steps[0].Response = json.RawMessage(`{"created":1}`)
-	run.Steps[1].Status = MigrationExecutionResultSucceeded
+	MarkMigrationExecutionStepRunning(run, 0, now)
+	CompleteMigrationExecutionStep(run, 0, MigrationExecutionResultSucceeded, "Import completed.", "", json.RawMessage(`{"created":1}`), now.Add(1200*time.Millisecond))
+	MarkMigrationExecutionStepRunning(run, 1, now.Add(2*time.Second))
+	CompleteMigrationExecutionStep(run, 1, MigrationExecutionResultSucceeded, "Import completed.", "", nil, now.Add(2500*time.Millisecond))
 
 	record, err := repo.runToRecord("tenant-1", "user-1", run)
 	require.NoError(t, err)
@@ -49,8 +48,10 @@ func TestMigrationExecutionRunRepositoryMappingRoundTripsPayload(t *testing.T) {
 	assert.Equal(t, 2, roundTripped.Summary.CompletedStepCount)
 	assert.Equal(t, 0, roundTripped.Summary.RemainingStepCount)
 	assert.Equal(t, 100, roundTripped.Summary.ProgressPercent)
+	assert.Equal(t, int64(1700), roundTripped.Summary.DurationMS)
 	require.Len(t, roundTripped.Steps, 2)
 	assert.Equal(t, MigrationExecutionResultSucceeded, roundTripped.Steps[0].Status)
+	assert.Equal(t, int64(1200), roundTripped.Steps[0].DurationMS)
 	assert.Equal(t, now, *roundTripped.CreatedAt)
 	assert.Equal(t, now, *roundTripped.UpdatedAt)
 }
