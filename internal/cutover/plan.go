@@ -257,8 +257,8 @@ func migrationExecutionStepSpec(kind FileKind, fileName string, req *PlanMigrati
 		return migrationExecutionSpec{
 			apiPath:    tenantAPIPath("/tsd/import-history"),
 			cliCommand: "oa tsd import-history --file " + fileRef,
-			dependsOn:  []FileKind{KindEmployees},
-			message:    "Import historical TSD declarations after employees.",
+			dependsOn:  []FileKind{KindEmployees, KindPayrollHistory},
+			message:    "Import historical TSD declarations after employees and payroll history.",
 		}
 	case KindKMDHistory:
 		return migrationExecutionSpec{
