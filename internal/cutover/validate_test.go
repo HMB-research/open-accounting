@@ -976,6 +976,11 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 				CSVContent: "isikukood,aasta,kuu,bruto,tulumaks,sotsiaalmaks\n48901010001,2026,5,2500,500,825\n",
 			},
 			{
+				Kind:       KindContacts,
+				FileName:   "directo-contacts.csv",
+				CSVContent: "hankijakood,nimi\nSUP-1,Supplier One\n",
+			},
+			{
 				Kind:     KindProductCategories,
 				FileName: "directo-product-classes.csv",
 				CSVContent: "klass,ylemklass\n" +
@@ -990,7 +995,7 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 			{
 				Kind:       KindProducts,
 				FileName:   "directo-products.csv",
-				CSVContent: "artikkel,nimetus,klass,myygihind,ostuhind,kaibemaks\nSKU-1,Widget,Widgets,12,6,22\n",
+				CSVContent: "artikkel,nimetus,klass,myygihind,ostuhind,kaibemaks,hankija\nSKU-1,Widget,Widgets,12,6,22,SUP-1\n",
 			},
 			{
 				Kind:       KindStockAdjustments,
@@ -1016,16 +1021,18 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 	require.NotNil(t, report)
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 0, report.Summary.ErrorCount)
-	require.Len(t, report.Files, 10)
+	require.Len(t, report.Files, 11)
 	assert.Contains(t, report.Files[0].Headers, "employee_number")
 	assert.Contains(t, report.Files[1].Headers, "gross_salary")
 	assert.Contains(t, report.Files[2].Headers, "absence_type_code")
 	assert.Contains(t, report.Files[3].Headers, "gross_payment")
-	assert.Contains(t, report.Files[4].Headers, "parent_name")
-	assert.Contains(t, report.Files[6].Headers, "category_name")
-	assert.Contains(t, report.Files[7].Headers, "serial_number")
-	assert.Contains(t, report.Files[8].Headers, "purchase_cost")
-	assert.Contains(t, report.Files[9].Headers, "total_output_vat")
+	assert.Contains(t, report.Files[4].Headers, "code")
+	assert.Contains(t, report.Files[5].Headers, "parent_name")
+	assert.Contains(t, report.Files[7].Headers, "category_name")
+	assert.Contains(t, report.Files[7].Headers, "supplier_code")
+	assert.Contains(t, report.Files[8].Headers, "serial_number")
+	assert.Contains(t, report.Files[9].Headers, "purchase_cost")
+	assert.Contains(t, report.Files[10].Headers, "total_output_vat")
 }
 
 func TestValidateBundleDerivesLeaveBalanceYearFromBalanceDate(t *testing.T) {
@@ -4148,6 +4155,52 @@ func TestValidateBundleReportsMissingContactIDReference(t *testing.T) {
 	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
 	assert.Equal(t, "supplier_id", report.Issues[0].Field)
 	assert.Equal(t, missingContactID, report.Issues[0].Value)
+}
+
+func TestValidateBundleAcceptsProductSupplierCodeReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,Supplier One\n",
+		},
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,sales_price,supplier_code\nSKU-1,Widget,10,SUP-1\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsMissingProductSupplierCodeReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,SUP-404\n",
+		},
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,sales_price,supplier_code\nSKU-1,Widget,10,SUP-404\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindProducts, report.Issues[0].Kind)
+	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
+	assert.Equal(t, "supplier_code", report.Issues[0].Field)
+	assert.Equal(t, "SUP-404", report.Issues[0].Value)
 }
 
 func TestValidateBundleReportsContactIDReferenceWhenValueMatchesLookupField(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -773,6 +774,14 @@ func (f fakeInventoryAccountLister) ListAccounts(_ context.Context, _, _ string,
 	return f.accounts, nil
 }
 
+type fakeInventoryContactLister struct {
+	contacts []contacts.Contact
+}
+
+func (f fakeInventoryContactLister) List(_ context.Context, _, _ string, _ *contacts.ContactFilter) ([]contacts.Contact, error) {
+	return f.contacts, nil
+}
+
 type fakeInventoryLedger struct {
 	accounts       []accounting.Account
 	createdRequest *accounting.CreateJournalEntryRequest
@@ -1189,6 +1198,54 @@ func TestService_ImportProductsCSVReportsInvalidSupplierID(t *testing.T) {
 	assert.Equal(t, 1, result.RowsSkipped)
 	require.Len(t, result.Errors, 1)
 	assert.Contains(t, result.Errors[0].Message, "supplier_id must be a valid UUID")
+}
+
+func TestService_ImportProductsCSVResolvesSupplierCode(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	supplierID := "55555555-5555-4555-8555-555555555555"
+	ts.svc.contacts = fakeInventoryContactLister{contacts: []contacts.Contact{
+		{ID: supplierID, Code: "SUP-001", ContactType: contacts.ContactTypeSupplier},
+	}}
+
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		CSVContent: "code,name,sales_price,supplier_code\nSKU-001,Widget,15.00,SUP-001\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.ProductsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+
+	var imported *Product
+	for _, product := range ts.repo.Products {
+		if product.Code == "SKU-001" {
+			imported = product
+		}
+	}
+	require.NotNil(t, imported)
+	assert.Equal(t, supplierID, imported.SupplierID)
+}
+
+func TestService_ImportProductsCSVReportsMissingSupplierCode(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	ts.svc.contacts = fakeInventoryContactLister{contacts: []contacts.Contact{
+		{ID: "55555555-5555-4555-8555-555555555555", Code: "SUP-001", ContactType: contacts.ContactTypeSupplier},
+	}}
+
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		CSVContent: "code,name,sales_price,supplier_code\nSKU-001,Widget,15.00,SUP-404\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.ProductsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `supplier_code "SUP-404" was not found`)
 }
 
 func TestService_ImportProductsCSVReportsMissingCategoryID(t *testing.T) {

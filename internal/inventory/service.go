@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -26,6 +27,10 @@ type accountingPoster interface {
 	accountingLister
 	CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error)
 	PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID string) error
+}
+
+type contactLister interface {
+	List(ctx context.Context, tenantID, schemaName string, filter *contacts.ContactFilter) ([]contacts.Contact, error)
 }
 
 type inventoryLedgerTransactioner interface {
@@ -49,6 +54,7 @@ type Service struct {
 	repo     Repository
 	accounts accountingLister
 	ledger   accountingPoster
+	contacts contactLister
 }
 
 // NewService creates a new inventory service with an ORM-backed repository.
@@ -58,6 +64,7 @@ func NewService(db *pgxpool.Pool) *Service {
 		repo:     NewGORMRepository(db),
 		accounts: accountingService,
 		ledger:   accountingService,
+		contacts: contacts.NewService(db),
 	}
 }
 
