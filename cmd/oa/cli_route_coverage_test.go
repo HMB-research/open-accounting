@@ -652,6 +652,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"GET": "migration runs list"})
 	case "/migration/execution-runs/{runID}":
 		return commandForMethod(method, map[string]string{"GET": "migration runs get"})
+	case "/migration/execution-runs/{runID}/events":
+		return commandForMethod(method, map[string]string{"GET": "migration runs watch"})
 	case "/accounts":
 		return commandForMethod(method, map[string]string{
 			"GET":  "accounts list",

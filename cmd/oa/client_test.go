@@ -16,6 +16,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/cutover"
 	"github.com/HMB-research/open-accounting/internal/documents"
 )
 
@@ -104,6 +105,83 @@ func TestAPIClientRequestReturnsDecodedAPIError(t *testing.T) {
 	_, err := client.getCurrentUser(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bad request payload")
+}
+
+func TestAPIClientWatchMigrationExecutionRunBranches(t *testing.T) {
+	t.Parallel()
+
+	run := cutover.MigrationExecutionRun{
+		ID: "run-1",
+		Summary: cutover.MigrationExecutionRunSummary{
+			Status:          "running",
+			ProgressPercent: 25,
+		},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/tenants/tenant-1/migration/execution-runs/run-1/events", r.URL.Path)
+		assert.Empty(t, r.URL.Query().Get("interval_ms"))
+		assert.Empty(t, r.URL.Query().Get("max_events"))
+		assert.Equal(t, "text/event-stream", r.Header.Get("Accept"))
+		assert.Empty(t, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: snapshot\n"))
+		_, _ = w.Write([]byte("data: " + mustJSON(t, cutover.MigrationExecutionRunEvent{Type: "snapshot", Sequence: 1, Run: &run}) + "\n"))
+	}))
+	defer server.Close()
+
+	client := newAPIClient(server.URL, "")
+	events := []cutover.MigrationExecutionRunEvent{}
+	require.NoError(t, client.watchMigrationExecutionRun(context.Background(), "tenant-1", "run-1", 0, 0, func(event cutover.MigrationExecutionRunEvent) error {
+		events = append(events, event)
+		return nil
+	}))
+	require.Len(t, events, 1)
+	assert.Equal(t, "snapshot", events[0].Type)
+	assert.Equal(t, 25, events[0].Run.Summary.ProgressPercent)
+
+	badEventServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/tenants/tenant-1/migration/execution-runs/run-1/events", r.URL.Path)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\n\n"))
+	}))
+	defer badEventServer.Close()
+
+	badEventClient := newAPIClient(badEventServer.URL, "")
+	require.ErrorContains(t, badEventClient.watchMigrationExecutionRun(context.Background(), "tenant-1", "run-1", 0, 0, nil), "decode migration run stream event")
+
+	badURLClient := &apiClient{baseURL: "http://[::1", httpClient: http.DefaultClient}
+	require.ErrorContains(t, badURLClient.watchMigrationExecutionRun(context.Background(), "tenant-1", "run-1", 0, 0, nil), "create request")
+
+	requestErrorClient := &apiClient{
+		baseURL: "https://api.example.test",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("network down")
+		})},
+	}
+	require.ErrorContains(t, requestErrorClient.watchMigrationExecutionRun(context.Background(), "tenant-1", "run-1", 0, 0, nil), "network down")
+
+	readErrorClient := &apiClient{
+		baseURL: "https://api.example.test",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       errReadCloser{},
+				Header:     make(http.Header),
+			}, nil
+		})},
+	}
+	require.ErrorContains(t, readErrorClient.watchMigrationExecutionRun(context.Background(), "tenant-1", "run-1", 0, 0, nil), "read migration run stream")
+}
+
+func TestDispatchMigrationExecutionRunEventBranches(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, dispatchMigrationExecutionRunEvent(nil, nil))
+	require.NoError(t, dispatchMigrationExecutionRunEvent([]string{`{"type":"snapshot","sequence":1}`}, nil))
+	require.ErrorContains(t, dispatchMigrationExecutionRunEvent([]string{"{"}, nil), "decode migration run stream event")
+	require.ErrorContains(t, dispatchMigrationExecutionRunEvent([]string{`{"type":"snapshot","sequence":1}`}, func(cutover.MigrationExecutionRunEvent) error {
+		return errors.New("callback failed")
+	}), "callback failed")
 }
 
 func TestAPIClientRequestRawAndDemoBranches(t *testing.T) {

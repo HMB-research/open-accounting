@@ -217,6 +217,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  migration execute         Execute ready cutover imports in planned order")
 	_, _ = fmt.Fprintln(a.stdout, "  migration runs list       List saved migration execution runs")
 	_, _ = fmt.Fprintln(a.stdout, "  migration runs get        Show a saved migration execution run")
+	_, _ = fmt.Fprintln(a.stdout, "  migration runs watch      Stream saved migration execution run telemetry")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins list        List installed plugins")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins search      Search plugin repositories")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins get         Show an installed plugin")

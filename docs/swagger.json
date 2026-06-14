@@ -11633,6 +11633,98 @@
                 }
             }
         },
+        "/tenants/{tenantID}/migration/execution-runs/{runID}/events": {
+            "get": {
+                "description": "Stream tenant-scoped migration execution run snapshots as Server-Sent Events until the run reaches a terminal status or max_events is reached",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Migration"
+                ],
+                "summary": "Stream migration execution run snapshots",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Migration execution run ID",
+                        "name": "runID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Polling interval in milliseconds",
+                        "name": "interval_ms",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum snapshots to emit",
+                        "name": "max_events",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionRunEvent"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/migration/validate": {
             "post": {
                 "description": "Validate CSV and XML cutover files for required columns and cross-file references before running imports",
@@ -25245,6 +25337,20 @@
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionRunEvent": {
+            "type": "object",
+            "properties": {
+                "run": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionRun"
+                },
+                "sequence": {
+                    "type": "integer"
+                },
+                "type": {
                     "type": "string"
                 }
             }
