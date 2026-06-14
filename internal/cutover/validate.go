@@ -1653,6 +1653,8 @@ func parseEInvoiceBundleFile(file BundleFile, eInvoiceInvoiceType string) (parse
 			"invoice_id":          invoice.ID,
 			"invoice_number":      invoice.Number,
 			"invoice_type":        cutoverEInvoiceInvoiceType(invoice.Type, eInvoiceInvoiceType),
+			"issue_date":          invoice.IssueDate.Format("2006-01-02"),
+			"due_date":            invoice.DueDate.Format("2006-01-02"),
 			"currency":            invoice.Currency,
 			"contact_reg_code":    invoice.Seller.RegNumber,
 			"contact_vat_number":  invoice.Seller.VATRegNumber,
@@ -1791,6 +1793,8 @@ func eInvoiceValidationHeaders() []string {
 		"invoice_id",
 		"invoice_number",
 		"invoice_type",
+		"issue_date",
+		"due_date",
 		"invoice_total",
 		"currency",
 		"contact_reg_code",
@@ -1981,6 +1985,8 @@ type cutoverInvoiceAllocationTarget struct {
 	amountPaidSpecified bool
 	currency            string
 	invoiceType         string
+	issueDate           time.Time
+	issueDateSpecified  bool
 	contactReferences   cutoverContactReferences
 	targetKind          FileKind
 	invoiceCount        int
@@ -2430,6 +2436,9 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 				continue
 			}
 			if hasPaymentInvoiceContactMismatch(report, file, row, target) {
+				continue
+			}
+			if hasPaymentBeforeInvoiceIssueDate(report, file, row, target) {
 				continue
 			}
 
@@ -3215,9 +3224,10 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile, eInvoiceContactMod
 						continue
 					}
 					contactReferences := cutoverEInvoicePaymentContactReferences(row, eInvoiceContactMode)
-					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], contactReferences)
+					issueDate, issueDateSpecified := cutoverInvoiceIssueDateFromRow(row)
+					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], issueDate, issueDateSpecified, contactReferences)
 					if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
-						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], contactReferences)
+						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], issueDate, issueDateSpecified, contactReferences)
 					}
 				}
 			}
@@ -3229,9 +3239,9 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile, eInvoiceContactMod
 				continue
 			}
 			amountPaid, _, amountPaidSpecified := cutoverInvoiceGroupAmountPaid(group)
-			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, group.contactReferences)
+			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, group.issueDate, group.issueDateSpecified, group.contactReferences)
 			if id := strings.TrimSpace(group.id); id != "" {
-				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, group.contactReferences)
+				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, group.issueDate, group.issueDateSpecified, group.contactReferences)
 			}
 		}
 	}
@@ -3270,13 +3280,15 @@ func cutoverEInvoiceTotal(invoice einvoice.Invoice) (decimal.Decimal, bool) {
 }
 
 type cutoverInvoiceGroup struct {
-	id                string
-	number            string
-	currency          string
-	invoiceType       string
-	contactReferences cutoverContactReferences
-	display           string
-	rows              []parsedRow
+	id                 string
+	number             string
+	currency           string
+	invoiceType        string
+	issueDate          time.Time
+	issueDateSpecified bool
+	contactReferences  cutoverContactReferences
+	display            string
+	rows               []parsedRow
 }
 
 func cutoverInvoiceGroups(file parsedFile) []cutoverInvoiceGroup {
@@ -3290,13 +3302,16 @@ func cutoverInvoiceGroups(file parsedFile) []cutoverInvoiceGroup {
 		}
 		group, exists := groups[key]
 		if !exists {
+			issueDate, issueDateSpecified := cutoverInvoiceIssueDateFromRow(row)
 			group = &cutoverInvoiceGroup{
-				id:                strings.TrimSpace(row.values["id"]),
-				number:            strings.TrimSpace(row.values["invoice_number"]),
-				currency:          cutoverInvoiceRowCurrency(row),
-				invoiceType:       normalizeCutoverInvoiceType(row.values["invoice_type"]),
-				contactReferences: cutoverContactReferencesFromRow(row),
-				display:           display,
+				id:                 strings.TrimSpace(row.values["id"]),
+				number:             strings.TrimSpace(row.values["invoice_number"]),
+				currency:           cutoverInvoiceRowCurrency(row),
+				invoiceType:        normalizeCutoverInvoiceType(row.values["invoice_type"]),
+				issueDate:          issueDate,
+				issueDateSpecified: issueDateSpecified,
+				contactReferences:  cutoverContactReferencesFromRow(row),
+				display:            display,
 			}
 			groups[key] = group
 			groupOrder = append(groupOrder, key)
@@ -3539,6 +3554,40 @@ func hasPaymentInvoiceContactMismatch(
 	return false
 }
 
+func hasPaymentBeforeInvoiceIssueDate(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	if !target.issueDateSpecified {
+		return false
+	}
+	paymentDate, ok := parseCutoverDateOrRFC3339(row.values["payment_date"])
+	if !ok || paymentDate.IsZero() {
+		return false
+	}
+	if !paymentDate.Before(target.issueDate) {
+		return false
+	}
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindPayments,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "payment_date",
+		Value:      strings.TrimSpace(row.values["payment_date"]),
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"payment_date %q cannot be before imported invoice %q issue_date %q",
+			strings.TrimSpace(row.values["payment_date"]),
+			target.display,
+			target.issueDate.Format("2006-01-02"),
+		),
+	})
+	return true
+}
+
 func cutoverContactReferencesFromRow(row parsedRow) cutoverContactReferences {
 	references := cutoverContactReferences{}
 	for _, field := range cutoverContactReferenceFields {
@@ -3655,6 +3704,8 @@ func addCutoverInvoiceAllocationTarget(
 	amountPaidSpecified bool,
 	currency string,
 	invoiceType string,
+	issueDate time.Time,
+	issueDateSpecified bool,
 	contactReferences cutoverContactReferences,
 ) {
 	display := strings.TrimSpace(value)
@@ -3671,6 +3722,8 @@ func addCutoverInvoiceAllocationTarget(
 		target.amountPaidSpecified = amountPaidSpecified
 		target.currency = strings.ToUpper(strings.TrimSpace(currency))
 		target.invoiceType = strings.ToUpper(strings.TrimSpace(invoiceType))
+		target.issueDate = issueDate
+		target.issueDateSpecified = issueDateSpecified
 		target.contactReferences = copyCutoverContactReferences(contactReferences)
 		target.targetKind = targetKind
 	}
@@ -3704,6 +3757,18 @@ func cutoverPaymentAllocationAmount(row parsedRow) (decimal.Decimal, bool) {
 
 func cutoverInvoiceAllocationTargetKey(field, value string) string {
 	return field + ":" + normalizedValue(value)
+}
+
+func cutoverInvoiceIssueDateFromRow(row parsedRow) (time.Time, bool) {
+	value := strings.TrimSpace(row.values["issue_date"])
+	if value == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return normalizeCutoverDateOnly(parsed), true
 }
 
 func groupedDocumentKey(row parsedRow, spec groupedDocumentSpec) (string, string, bool) {
@@ -6364,10 +6429,7 @@ func checkPaymentDate(report *BundleValidationReport, file parsedFile, row parse
 		})
 		return
 	}
-	if _, err := time.Parse("2006-01-02", value); err == nil {
-		return
-	}
-	if _, err := time.Parse(time.RFC3339, value); err == nil {
+	if _, ok := parseCutoverDateOrRFC3339(value); ok {
 		return
 	}
 	report.addIssue(ValidationIssue{
@@ -6379,6 +6441,17 @@ func checkPaymentDate(report *BundleValidationReport, file parsedFile, row parse
 		Value:    value,
 		Message:  "payment_date must be YYYY-MM-DD or RFC3339",
 	})
+}
+
+func parseCutoverDateOrRFC3339(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	if parsed, err := time.Parse("2006-01-02", trimmed); err == nil {
+		return normalizeCutoverDateOnly(parsed), true
+	}
+	if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return normalizeCutoverDateOnly(parsed), true
+	}
+	return time.Time{}, false
 }
 
 func checkPaymentExchangeRate(report *BundleValidationReport, file parsedFile, row parsedRow) {
