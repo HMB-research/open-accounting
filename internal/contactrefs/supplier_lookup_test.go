@@ -88,3 +88,76 @@ func TestSupplierLookupResolveIDReportsDuplicateReferences(t *testing.T) {
 	require.EqualError(t, err, `supplier_name "Supplier One" matched multiple contacts`)
 	assert.Nil(t, id)
 }
+
+func TestContactLookupResolveID(t *testing.T) {
+	explicitID := "11111111-1111-4111-8111-111111111111"
+	lookup := NewContactLookup([]contacts.Contact{
+		{
+			ID:        "contact-1",
+			Code:      "CUST-001",
+			Name:      "Customer One",
+			RegCode:   "12345678",
+			VATNumber: "EE12345678",
+			Email:     "billing@customer.example",
+		},
+		{
+			ID:    "contact-2",
+			Code:  "CUST-002",
+			Name:  "Customer Two",
+			Email: "accounts@customer.example",
+		},
+	})
+
+	t.Run("preserves explicit contact id", func(t *testing.T) {
+		id, err := lookup.ResolveID(" "+explicitID+" ", Reference{Field: "contact_code", Value: "CUST-001"})
+
+		require.NoError(t, err)
+		require.NotNil(t, id)
+		assert.Equal(t, explicitID, *id)
+	})
+
+	t.Run("reports invalid explicit contact id", func(t *testing.T) {
+		id, err := lookup.ResolveID("legacy-contact", Reference{Field: "contact_code", Value: "CUST-001"})
+
+		require.EqualError(t, err, "contact_id must be a valid UUID")
+		assert.Nil(t, id)
+	})
+
+	t.Run("resolves identity fields in priority order", func(t *testing.T) {
+		id, err := lookup.ResolveID("",
+			Reference{Field: "contact_code"},
+			Reference{Field: "contact_email", Value: "BILLING@CUSTOMER.EXAMPLE"},
+			Reference{Field: "contact_name", Value: "Customer Two"},
+		)
+
+		require.NoError(t, err)
+		require.NotNil(t, id)
+		assert.Equal(t, "contact-1", *id)
+	})
+
+	t.Run("returns nil when no contact reference is present", func(t *testing.T) {
+		id, err := lookup.ResolveID("", Reference{Field: "contact_code"}, Reference{Field: "contact_name"})
+
+		require.NoError(t, err)
+		assert.Nil(t, id)
+	})
+
+	t.Run("reports missing contact reference", func(t *testing.T) {
+		id, err := lookup.ResolveID("", Reference{Field: "contact_name", Value: "Missing Customer"})
+
+		require.EqualError(t, err, `contact_name "Missing Customer" was not found`)
+		assert.Nil(t, id)
+	})
+}
+
+func TestContactLookupResolveIDReportsDuplicateReferences(t *testing.T) {
+	lookup := NewContactLookup([]contacts.Contact{
+		{ID: "contact-1", Name: "Customer One"},
+		{ID: "contact-2", Name: " customer one "},
+	})
+
+	id, err := lookup.ResolveID("", Reference{Field: "contact_name", Value: "Customer One"})
+
+	require.EqualError(t, err, `contact_name "Customer One" matched multiple contacts`)
+	assert.Nil(t, id)
+}

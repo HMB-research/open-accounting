@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
-
-	"github.com/HMB-research/open-accounting/internal/invoicing"
 )
 
 // InvoiceService defines the interface for invoice operations needed by payments
@@ -20,10 +20,15 @@ type InvoiceService interface {
 	ResolveInvoiceIDByNumber(ctx context.Context, tenantID, schemaName, invoiceNumber string) (string, error)
 }
 
+type contactLister interface {
+	List(ctx context.Context, tenantID, schemaName string, filter *contacts.ContactFilter) ([]contacts.Contact, error)
+}
+
 // Service provides payment operations
 type Service struct {
 	repo      Repository
 	invoicing InvoiceService
+	contacts  contactLister
 }
 
 // NewService creates a new payments service with an ORM-backed repository.
@@ -38,6 +43,7 @@ func NewService(db *pgxpool.Pool, invoicingService *invoicing.Service) *Service 
 	return &Service{
 		repo:      NewGORMRepository(gormDB),
 		invoicing: invoicingService,
+		contacts:  contacts.NewService(db),
 	}
 }
 

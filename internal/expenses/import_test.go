@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,6 +39,71 @@ func TestServiceImportExpensesCSV(t *testing.T) {
 	require.NotNil(t, approved.ApprovedAt)
 }
 
+func TestServiceImportExpensesCSVResolvesContactIdentityFields(t *testing.T) {
+	contactID := "55555555-5555-4555-8555-555555555555"
+	repo := newMemoryRepository()
+	service := NewServiceWithRepository(repo, newFakeAccountingPoster(), &fakeEvidenceEvaluator{compliant: true})
+	service.now = fixedExpenseNow
+	service.contacts = &fakeExpenseContactLister{contacts: []contacts.Contact{
+		{
+			ID:        contactID,
+			Code:      "SUP-1",
+			Name:      "Supplier One",
+			RegCode:   "12345678",
+			VATNumber: "EE12345678",
+			Email:     "billing@supplier.example",
+		},
+	}}
+
+	result, err := service.ImportExpensesCSV(context.Background(), "tenant_acme", "tenant-1", &ImportExpensesRequest{
+		FileName: "expenses.csv",
+		UserID:   "user-1",
+		CSVContent: "expense_number,expense_date,merchant,expense_account_code,payment_account_code,amount,contact_code,contact_reg_code,contact_vat_number,contact_email,contact_name\n" +
+			"EXP-CODE,2026-05-30,Supplier One,5500,1000,10,SUP-1,,,,\n" +
+			"EXP-REG,2026-05-31,Supplier One,5500,1000,10,,12345678,,,\n" +
+			"EXP-VAT,2026-06-01,Supplier One,5500,1000,10,,,EE12345678,,\n" +
+			"EXP-EMAIL,2026-06-02,Supplier One,5500,1000,10,,,,BILLING@SUPPLIER.EXAMPLE,\n" +
+			"EXP-NAME,2026-06-03,Supplier One,5500,1000,10,,,,,Supplier One\n",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 5, result.RowsProcessed)
+	assert.Equal(t, 5, result.ExpensesCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+	for _, expense := range repo.expenses {
+		require.NotNil(t, expense.ContactID)
+		assert.Equal(t, contactID, *expense.ContactID)
+	}
+}
+
+func TestServiceImportExpensesCSVReportsAmbiguousContactName(t *testing.T) {
+	repo := newMemoryRepository()
+	service := NewServiceWithRepository(repo, newFakeAccountingPoster(), &fakeEvidenceEvaluator{compliant: true})
+	service.now = fixedExpenseNow
+	service.contacts = &fakeExpenseContactLister{contacts: []contacts.Contact{
+		{ID: "11111111-1111-4111-8111-111111111111", Name: "Supplier One"},
+		{ID: "22222222-2222-4222-8222-222222222222", Name: " supplier one "},
+	}}
+
+	result, err := service.ImportExpensesCSV(context.Background(), "tenant_acme", "tenant-1", &ImportExpensesRequest{
+		FileName: "expenses.csv",
+		UserID:   "user-1",
+		CSVContent: "expense_number,expense_date,merchant,expense_account_code,payment_account_code,amount,contact_name\n" +
+			"EXP-AMBIGUOUS,2026-05-30,Supplier One,5500,1000,10,Supplier One\n",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.ExpensesCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `contact_name "Supplier One" matched multiple contacts`)
+	assert.Empty(t, repo.expenses)
+}
+
 func TestServiceImportExpensesCSVSkipsInvalidRows(t *testing.T) {
 	expenseAccountID := "99999999-9999-4999-8999-999999999999"
 	paymentAccountID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -64,6 +130,18 @@ func TestServiceImportExpensesCSVSkipsInvalidRows(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, "period locked through 2026-05-30")
 	assert.Contains(t, result.Errors[1].Message, "posted expenses must be imported")
 	assert.Equal(t, StatusRejected, repo.expensesByNumber(t, "EXP-REJECTED").Status)
+}
+
+type fakeExpenseContactLister struct {
+	contacts []contacts.Contact
+	err      error
+}
+
+func (f *fakeExpenseContactLister) List(_ context.Context, _, _ string, _ *contacts.ContactFilter) ([]contacts.Contact, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.contacts, nil
 }
 
 func TestServiceImportExpensesCSVReportsInvalidUUIDReferences(t *testing.T) {

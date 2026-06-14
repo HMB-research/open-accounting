@@ -231,6 +231,19 @@ var fileSpecs = map[FileKind]fileSpec{
 			"notes":                "description",
 			"employee_id":          "employee_id",
 			"contact_id":           "contact_id",
+			"customer_id":          "contact_id",
+			"supplier_id":          "contact_id",
+			"contact_code":         "contact_code",
+			"customer_code":        "contact_code",
+			"supplier_code":        "contact_code",
+			"contact_reg_code":     "contact_reg_code",
+			"contact_vat_number":   "contact_vat_number",
+			"vat_number":           "contact_vat_number",
+			"contact_email":        "contact_email",
+			"email":                "contact_email",
+			"contact_name":         "contact_name",
+			"customer_name":        "contact_name",
+			"supplier_name":        "contact_name",
 			"expense_account_id":   "expense_account_id",
 			"expense_account":      "expense_account_id",
 			"expense_account_code": "expense_account_code",
@@ -294,28 +307,39 @@ var fileSpecs = map[FileKind]fileSpec{
 	},
 	KindPayments: {
 		aliases: mergeAliases(commonAliases(), map[string]string{
-			"payment_number":    "payment_number",
-			"payment_no":        "payment_number",
-			"number":            "payment_number",
-			"type":              "payment_type",
-			"payment_type":      "payment_type",
-			"date":              "payment_date",
-			"payment_date":      "payment_date",
-			"contact_id":        "contact_id",
-			"customer_id":       "contact_id",
-			"supplier_id":       "contact_id",
-			"exchange_rate":     "exchange_rate",
-			"method":            "payment_method",
-			"payment_method":    "payment_method",
-			"bank_account":      "bank_account",
-			"reference":         "reference",
-			"notes":             "notes",
-			"description":       "notes",
-			"invoice_id":        "invoice_id",
-			"invoice_number":    "invoice_number",
-			"invoice_no":        "invoice_number",
-			"allocation_amount": "allocation_amount",
-			"allocated_amount":  "allocation_amount",
+			"payment_number":     "payment_number",
+			"payment_no":         "payment_number",
+			"number":             "payment_number",
+			"type":               "payment_type",
+			"payment_type":       "payment_type",
+			"date":               "payment_date",
+			"payment_date":       "payment_date",
+			"contact_id":         "contact_id",
+			"customer_id":        "contact_id",
+			"supplier_id":        "contact_id",
+			"contact_code":       "contact_code",
+			"customer_code":      "contact_code",
+			"supplier_code":      "contact_code",
+			"contact_reg_code":   "contact_reg_code",
+			"contact_vat_number": "contact_vat_number",
+			"vat_number":         "contact_vat_number",
+			"contact_email":      "contact_email",
+			"email":              "contact_email",
+			"contact_name":       "contact_name",
+			"customer_name":      "contact_name",
+			"supplier_name":      "contact_name",
+			"exchange_rate":      "exchange_rate",
+			"method":             "payment_method",
+			"payment_method":     "payment_method",
+			"bank_account":       "bank_account",
+			"reference":          "reference",
+			"notes":              "notes",
+			"description":        "notes",
+			"invoice_id":         "invoice_id",
+			"invoice_number":     "invoice_number",
+			"invoice_no":         "invoice_number",
+			"allocation_amount":  "allocation_amount",
+			"allocated_amount":   "allocation_amount",
 		}),
 		requiredGroups: [][]string{{"payment_type"}, {"payment_date"}, {"amount"}},
 	},
@@ -1847,7 +1871,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindExpenses:
 			checkAccountReference(report, indexes, file, row, "expense_account_id", "expense_account_code")
 			checkAccountReference(report, indexes, file, row, "payment_account_id", "payment_account_code")
-			checkContactIDReference(report, indexes, file, row, "contact_id")
+			checkContactReference(report, indexes, file, row)
 		case KindInvoices:
 			checkOptionalUUID(report, file, row, "id")
 			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
@@ -1871,7 +1895,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 					[]string{"quote_id"})
 			}
 		case KindPayments:
-			checkContactIDReference(report, indexes, file, row, "contact_id")
+			checkContactReference(report, indexes, file, row)
 			if checkOptionalUUID(report, file, row, "invoice_id") {
 				checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
 					[]string{"invoice_id", "invoice_number"})
@@ -5622,6 +5646,41 @@ func checkContactIDReference(report *BundleValidationReport, indexes bundleIndex
 	checkReferenceValues(report, indexes.contactIDs, file, row, KindContacts, idField, []string{contactID})
 }
 
+func checkContactReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["contact_id"]) != "" {
+		checkContactIDReference(report, indexes, file, row, "contact_id")
+		return
+	}
+	if !indexes.files[KindContacts] {
+		return
+	}
+	for _, field := range contactLookupFields() {
+		value := strings.TrimSpace(row.values[field])
+		if value == "" {
+			continue
+		}
+		checkReferenceValues(report, contactReferenceIndex(indexes, field), file, row, KindContacts, field, []string{value})
+		return
+	}
+}
+
+func contactReferenceIndex(indexes bundleIndexes, field string) map[string]bool {
+	switch field {
+	case "contact_code":
+		return indexes.contactCodes
+	case "contact_reg_code":
+		return indexes.contactRegCodes
+	case "contact_vat_number":
+		return indexes.contactVATNumbers
+	case "contact_email":
+		return indexes.contactEmails
+	case "contact_name":
+		return indexes.contactNames
+	default:
+		return indexes.contacts
+	}
+}
+
 func checkSupplierReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
 	if strings.TrimSpace(row.values["supplier_id"]) != "" {
 		checkContactIDReference(report, indexes, file, row, "supplier_id")
@@ -6009,6 +6068,10 @@ func commercialDocumentContactReferenceFields() []string {
 }
 
 func commercialDocumentContactLookupFields() []string {
+	return []string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
+}
+
+func contactLookupFields() []string {
 	return []string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
 }
 

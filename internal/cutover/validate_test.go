@@ -4026,6 +4026,106 @@ func TestValidateBundleReportsPaymentCustomerAliasReferenceIssues(t *testing.T) 
 	assert.Equal(t, missingContactID, report.Issues[0].Value)
 }
 
+func TestValidateBundleAcceptsPaymentContactIdentityReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name,email\nCUST-1,Customer One,billing@example.test\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,contact_email,amount\nRECEIVED,2026-05-31,billing@example.test,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Zero(t, report.Summary.ErrorCount)
+}
+
+func TestValidateBundleReportsMissingPaymentContactIdentityReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,contact_name,amount\nRECEIVED,2026-05-31,Missing Customer,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
+	assert.Equal(t, "contact_name", report.Issues[0].Field)
+	assert.Equal(t, "Missing Customer", report.Issues[0].Value)
+}
+
+func TestValidateBundleAcceptsExpenseContactIdentityReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name,reg_code\nSUP-1,Supplier One,12345678\n",
+		},
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n5500,Office expenses,EXPENSE\n",
+		},
+		{
+			Kind:       KindExpenses,
+			FileName:   "expenses.csv",
+			CSVContent: "expense_date,merchant,expense_account_code,payment_account_code,amount,contact_reg_code\n2026-05-30,Supplier One,5500,1000,42,12345678\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Zero(t, report.Summary.ErrorCount)
+}
+
+func TestValidateBundleReportsMissingExpenseContactIdentityReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,Supplier One\n",
+		},
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n5500,Office expenses,EXPENSE\n",
+		},
+		{
+			Kind:       KindExpenses,
+			FileName:   "expenses.csv",
+			CSVContent: "expense_date,merchant,expense_account_code,payment_account_code,amount,contact_name\n2026-05-30,Supplier One,5500,1000,42,Missing Supplier\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindExpenses, report.Issues[0].Kind)
+	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
+	assert.Equal(t, "contact_name", report.Issues[0].Field)
+	assert.Equal(t, "Missing Supplier", report.Issues[0].Value)
+}
+
 func TestValidateBundleReportsPaymentBankAccountReferenceIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

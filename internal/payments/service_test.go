@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -535,6 +536,18 @@ type MockInvoiceService struct {
 	resolveInvoiceErr  error
 }
 
+type fakePaymentContactLister struct {
+	contacts []contacts.Contact
+	err      error
+}
+
+func (f *fakePaymentContactLister) List(_ context.Context, _, _ string, _ *contacts.ContactFilter) ([]contacts.Contact, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.contacts, nil
+}
+
 func (m *MockInvoiceService) RecordPayment(ctx context.Context, tenantID, schemaName, invoiceID string, amount decimal.Decimal) error {
 	m.recordPaymentCalls = append(m.recordPaymentCalls, struct {
 		tenantID   string
@@ -762,6 +775,69 @@ func TestService_ImportPaymentsCSV(t *testing.T) {
 	require.NotNil(t, generated)
 	assert.Equal(t, "OUT-00001", generated.PaymentNumber)
 	assert.Equal(t, PaymentTypeMade, generated.PaymentType)
+}
+
+func TestService_ImportPaymentsCSVResolvesContactIdentityFields(t *testing.T) {
+	contactID := "55555555-5555-4555-8555-555555555555"
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil)
+	service.contacts = &fakePaymentContactLister{contacts: []contacts.Contact{
+		{
+			ID:        contactID,
+			Code:      "CUST-1",
+			Name:      "Customer One",
+			RegCode:   "12345678",
+			VATNumber: "EE12345678",
+			Email:     "billing@example.test",
+		},
+	}}
+
+	result, err := service.ImportPaymentsCSV(context.Background(), "tenant-1", "test_schema", &ImportPaymentsRequest{
+		FileName: "payments.csv",
+		UserID:   "user-1",
+		CSVContent: "payment_number,payment_type,payment_date,amount,contact_code,contact_reg_code,contact_vat_number,contact_email,contact_name,reference\n" +
+			"PAY-CODE,RECEIVED,2026-03-15,100,CUST-1,,,,,By code\n" +
+			"PAY-REG,RECEIVED,2026-03-16,100,,12345678,,,,By reg\n" +
+			"PAY-VAT,RECEIVED,2026-03-17,100,,,EE12345678,,,By VAT\n" +
+			"PAY-EMAIL,RECEIVED,2026-03-18,100,,,,BILLING@EXAMPLE.TEST,,By email\n" +
+			"PAY-NAME,RECEIVED,2026-03-19,100,,,,,Customer One,By name\n",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 5, result.RowsProcessed)
+	assert.Equal(t, 5, result.PaymentsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+	for _, payment := range repo.payments {
+		require.NotNil(t, payment.ContactID)
+		assert.Equal(t, contactID, *payment.ContactID)
+	}
+}
+
+func TestService_ImportPaymentsCSVReportsAmbiguousContactName(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil)
+	service.contacts = &fakePaymentContactLister{contacts: []contacts.Contact{
+		{ID: "11111111-1111-4111-8111-111111111111", Name: "Customer One"},
+		{ID: "22222222-2222-4222-8222-222222222222", Name: " customer one "},
+	}}
+
+	result, err := service.ImportPaymentsCSV(context.Background(), "tenant-1", "test_schema", &ImportPaymentsRequest{
+		FileName: "payments.csv",
+		UserID:   "user-1",
+		CSVContent: "payment_number,payment_type,payment_date,amount,contact_name\n" +
+			"PAY-AMBIGUOUS,RECEIVED,2026-03-15,100,Customer One\n",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.PaymentsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `contact_name "Customer One" matched multiple contacts`)
+	assert.Empty(t, repo.payments)
 }
 
 func TestService_ImportPaymentsCSVReportsMissingInvoiceNumber(t *testing.T) {
