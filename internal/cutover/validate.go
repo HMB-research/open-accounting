@@ -2382,6 +2382,7 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 	validateStockAdjustmentProductStockability(report, files)
 	validateCostAllocationJournalLineTotals(report, files)
 	validateCostAllocationJournalLinePercentages(report, files)
+	validateCostAllocationAmountPercentageConsistency(report, files)
 
 	invoiceTargets := buildCutoverInvoiceAllocationTargets(files, eInvoiceContactMode)
 	validateFixedAssetInvoiceConsistency(report, files, invoiceTargets)
@@ -2563,6 +2564,57 @@ func validateCostAllocationJournalLinePercentages(report *BundleValidationReport
 					),
 				})
 			}
+		}
+	}
+}
+
+func validateCostAllocationAmountPercentageConsistency(report *BundleValidationReport, files []parsedFile) {
+	targets := buildCutoverJournalLineAmountTargets(files)
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindCostAllocations || !fileHasHeaders(file, "allocation_percentage") {
+			continue
+		}
+		for _, row := range file.rows {
+			journalLineID := strings.TrimSpace(row.values["journal_entry_line_id"])
+			if journalLineID == "" {
+				continue
+			}
+			target, ok := targets[normalizedValue(journalLineID)]
+			if !ok {
+				continue
+			}
+			amount, ok := cutoverCostAllocationAmount(row)
+			if !ok {
+				continue
+			}
+			percentage, ok := cutoverCostAllocationPercentage(row)
+			if !ok {
+				continue
+			}
+			expectedAmount := target.amount.Mul(percentage).Div(decimal.NewFromInt(100)).Round(2)
+			if amount.Round(2).Equal(expectedAmount) {
+				continue
+			}
+			report.addIssue(ValidationIssue{
+				Severity:   SeverityError,
+				Kind:       KindCostAllocations,
+				FileName:   file.fileName,
+				Row:        row.number,
+				Field:      "amount/allocation_percentage",
+				Value:      fmt.Sprintf("amount=%s percentage=%s", amount.String(), percentage.String()),
+				TargetKind: KindJournalEntries,
+				Message: fmt.Sprintf(
+					"cost allocation amount and percentage for journal line %q disagree: amount=%s percentage=%s expected_amount=%s line_amount=%s",
+					target.display,
+					amount.String(),
+					percentage.String(),
+					expectedAmount.String(),
+					target.amount.String(),
+				),
+			})
 		}
 	}
 }
