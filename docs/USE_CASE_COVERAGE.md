@@ -42,6 +42,7 @@ Status values:
 - The follow-up Merit/Directo commercial contact alias stage was locally revalidated with focused cutover validator tests.
 - The follow-up provider opening-balance amount alias stage was locally revalidated with focused accounting importer and cutover validator tests.
 - The follow-up provider historical-journal import alias stage was locally revalidated with focused accounting importer tests.
+- The follow-up provider cost-center and cost-allocation import alias stage was locally revalidated with focused accounting importer tests.
 - The follow-up migration FK UUID preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up product supplier-code migration stage was locally revalidated with focused inventory importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up fixed-asset supplier-code migration stage was locally revalidated with focused fixed-asset importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
@@ -139,6 +140,10 @@ Provider historical-journal presets and the historical-journal importer now
 canonicalize common Merit, SmartAccounts, and Directo entry, date, preserved
 line ID, account, debit, credit, currency, and exchange-rate aliases before
 validation and import execution run.
+Provider cost-center and cost-allocation presets and importers now canonicalize
+common Merit, SmartAccounts, and Directo center-code, parent-code, journal-line,
+amount, percentage, date, and notes aliases before validation and import
+execution run.
 Merit and Directo commercial-document provider presets now canonicalize common
 Estonian contact registry number, VAT number, and email aliases before the
 same-bundle contact preflight runs.
