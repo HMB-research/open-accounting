@@ -383,6 +383,7 @@ var fileSpecs = map[FileKind]fileSpec{
 			"bank_account":         "source_account",
 			"description":          "description",
 			"details":              "description",
+			"selgitus":             "description",
 			"reference":            "reference",
 			"payment_reference":    "reference",
 			"counterparty_name":    "counterparty_name",
@@ -392,7 +393,7 @@ var fileSpecs = map[FileKind]fileSpec{
 			"external_id":          "external_id",
 			"entry_reference":      "external_id",
 		}),
-		requiredGroups: [][]string{{"date"}, {"amount"}},
+		requiredGroups: [][]string{{"date"}, {"amount"}, {"description"}},
 	},
 	KindPayrollHistory: {
 		aliases: mergeAliases(employeeReferenceAliases(), map[string]string{
@@ -1701,6 +1702,10 @@ func applyDerivedMigrationHeaders(kind FileKind, headerSet map[string]bool, head
 	case KindLeaveBalances:
 		if hasAnyHeader(headerSet, "balance_date") {
 			addHeader("year")
+		}
+	case KindBankTransactions:
+		if bankTransactionHasLHVHeaderSet(headerSet) {
+			addHeader("description")
 		}
 	}
 
@@ -6646,6 +6651,8 @@ func checkBankAccountCurrency(report *BundleValidationReport, file parsedFile, r
 func checkBankTransactionRows(report *BundleValidationReport, file parsedFile) {
 	hasDate := fileHasHeaders(file, "date")
 	hasAmount := fileHasHeaders(file, "amount")
+	hasDescription := fileHasHeaders(file, "description")
+	requiresDescriptionValue := !bankTransactionHasLHVHeaders(file)
 	for _, row := range file.rows {
 		if hasDate {
 			checkBankTransactionDate(report, file, row)
@@ -6653,7 +6660,25 @@ func checkBankTransactionRows(report *BundleValidationReport, file parsedFile) {
 		if hasAmount {
 			checkBankTransactionAmount(report, file, row)
 		}
+		if hasDescription && requiresDescriptionValue {
+			checkRequiredCutoverField(report, file, row, "description")
+		}
 	}
+}
+
+func bankTransactionHasLHVHeaders(file parsedFile) bool {
+	headerSet := make(map[string]bool, len(file.headers))
+	for _, header := range file.headers {
+		headerSet[header] = true
+	}
+	return bankTransactionHasLHVHeaderSet(headerSet)
+}
+
+func bankTransactionHasLHVHeaderSet(headerSet map[string]bool) bool {
+	return hasAnyHeader(headerSet, "source_account", "kliendi_konto") &&
+		hasAnyHeader(headerSet, "document_number", "dokumendi_number") &&
+		hasAnyHeader(headerSet, "debit_credit_d_c", "deebet_kreedit_d_c", "d_c") &&
+		hasAnyHeader(headerSet, "account_service_provider_s_reference", "konto_teenusepakkuja_viide")
 }
 
 func checkBankTransactionDate(report *BundleValidationReport, file parsedFile, row parsedRow) {

@@ -2220,6 +2220,90 @@ func TestValidateBundleReportsBankTransactionRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindBankTransactions, "amount", "amount is required")
 }
 
+func TestValidateBundleReportsBankTransactionDescriptionRequired(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankTransactions,
+			FileName:   "bank.csv",
+			CSVContent: "date,amount\n2026-05-31,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 1)
+	assert.Contains(t, report.Files[0].MissingColumns, "description")
+	require.Len(t, report.Issues, 1)
+	assert.Contains(t, report.Issues[0].Message, "missing required column group: description")
+}
+
+func TestValidateBundleReportsBankTransactionBlankDescription(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankTransactions,
+			FileName:   "bank.csv",
+			CSVContent: "date,amount,description\n2026-05-31,100,\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindBankTransactions, "description", "description is required")
+}
+
+func TestValidateBundleAcceptsBankTransactionSelgitusAlias(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankTransactions,
+			FileName:   "bank.csv",
+			CSVContent: "date,amount,selgitus\n2026-05-31,100,Customer receipt\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+	require.Len(t, report.Files, 1)
+	assert.Contains(t, report.Files[0].Headers, "description")
+}
+
+func TestValidateBundleAcceptsLHVBankTransactionDescriptionFallback(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "account_name,account_number,currency\nMain bank,EE457700771000676899,EUR\n",
+		},
+		{
+			Kind:     KindBankTransactions,
+			FileName: "lhv-bank.csv",
+			CSVContent: "Client account;Document number;Date;Beneficiary's/remitter's account;Beneficiary's/remitter's name;Debit/Credit (D/C);Amount;Reference number;Archival ID;Currency;Personal identification code or registry code;Beneficiary's/remitter's bank's BIC;Payment initiator's name;Entry reference;Account service provider's reference\n" +
+				"EE457700771000676899;123;2026-03-15;EE111;Acme;C;100.00;REF-1;202603150001;EUR;12345678;LHVBEE22;;ENTRY-1;ext-1\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+
+	var bankValidation FileValidation
+	for _, file := range report.Files {
+		if file.Kind == KindBankTransactions {
+			bankValidation = file
+		}
+	}
+	require.Equal(t, KindBankTransactions, bankValidation.Kind)
+	assert.Contains(t, bankValidation.Headers, "description")
+}
+
 func TestValidateBundleReportsOpeningBalanceBalanceIssue(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
