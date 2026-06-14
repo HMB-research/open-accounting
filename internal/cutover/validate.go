@@ -1168,6 +1168,10 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 	if err != nil {
 		return nil, err
 	}
+	eInvoiceInvoiceType, err := normalizeCutoverOptionalInvoiceType(req.EInvoiceInvoiceType)
+	if err != nil {
+		return nil, err
+	}
 	providerPreset, err := normalizeMigrationProviderPreset(req.ProviderPreset)
 	if err != nil {
 		return nil, err
@@ -1186,7 +1190,7 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 			continue
 		}
 
-		parsedFile, validation, err := parseBundleFileByKind(file, providerPreset)
+		parsedFile, validation, err := parseBundleFileByKind(file, providerPreset, eInvoiceInvoiceType)
 		report.Files = append(report.Files, validation)
 		if err != nil {
 			report.addIssue(ValidationIssue{
@@ -1537,9 +1541,9 @@ func normalizeEInvoiceContactMode(mode EInvoiceContactMode) (EInvoiceContactMode
 	}
 }
 
-func parseBundleFileByKind(file BundleFile, providerPreset MigrationProviderPreset) (parsedFile, FileValidation, error) {
+func parseBundleFileByKind(file BundleFile, providerPreset MigrationProviderPreset, eInvoiceInvoiceType string) (parsedFile, FileValidation, error) {
 	if file.Kind == KindEInvoices {
-		return parseEInvoiceBundleFile(file)
+		return parseEInvoiceBundleFile(file, eInvoiceInvoiceType)
 	}
 
 	return parseBundleFile(file, fileSpecForProviderPreset(file.Kind, providerPreset))
@@ -1629,7 +1633,7 @@ func parseBundleFile(file BundleFile, spec fileSpec) (parsedFile, FileValidation
 	return parsedFile{kind: file.Kind, fileName: fileName, headers: validation.Headers, rows: rows}, validation, nil
 }
 
-func parseEInvoiceBundleFile(file BundleFile) (parsedFile, FileValidation, error) {
+func parseEInvoiceBundleFile(file BundleFile, eInvoiceInvoiceType string) (parsedFile, FileValidation, error) {
 	fileName := displayFileName(file)
 	validation := FileValidation{
 		Kind:     file.Kind,
@@ -1648,6 +1652,7 @@ func parseEInvoiceBundleFile(file BundleFile) (parsedFile, FileValidation, error
 		values := map[string]string{
 			"invoice_id":          invoice.ID,
 			"invoice_number":      invoice.Number,
+			"invoice_type":        cutoverEInvoiceInvoiceType(invoice.Type, eInvoiceInvoiceType),
 			"currency":            invoice.Currency,
 			"contact_reg_code":    invoice.Seller.RegNumber,
 			"contact_vat_number":  invoice.Seller.VATRegNumber,
@@ -1785,6 +1790,7 @@ func eInvoiceValidationHeaders() []string {
 	return []string{
 		"invoice_id",
 		"invoice_number",
+		"invoice_type",
 		"invoice_total",
 		"currency",
 		"contact_reg_code",
@@ -1972,6 +1978,7 @@ type cutoverInvoiceAllocationTarget struct {
 	display      string
 	total        decimal.Decimal
 	currency     string
+	invoiceType  string
 	targetKind   FileKind
 	invoiceCount int
 }
@@ -2389,6 +2396,9 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 			if hasPaymentInvoiceCurrencyMismatch(report, file, row, target) {
 				continue
 			}
+			if hasPaymentInvoiceTypeMismatch(report, file, row, target) {
+				continue
+			}
 
 			nextTotal := allocationTotals[target.key].Add(allocationAmount)
 			allocationTotals[target.key] = nextTotal
@@ -2529,9 +2539,9 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutover
 					if !ok {
 						continue
 					}
-					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, row.values["currency"])
+					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, row.values["currency"], row.values["invoice_type"])
 					if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
-						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, row.values["currency"])
+						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, row.values["currency"], row.values["invoice_type"])
 					}
 				}
 			}
@@ -2542,9 +2552,9 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutover
 			if !ok {
 				continue
 			}
-			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, group.currency)
+			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, group.currency, group.invoiceType)
 			if id := strings.TrimSpace(group.id); id != "" {
-				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, group.currency)
+				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, group.currency, group.invoiceType)
 			}
 		}
 	}
@@ -2583,11 +2593,12 @@ func cutoverEInvoiceTotal(invoice einvoice.Invoice) (decimal.Decimal, bool) {
 }
 
 type cutoverInvoiceGroup struct {
-	id       string
-	number   string
-	currency string
-	display  string
-	rows     []parsedRow
+	id          string
+	number      string
+	currency    string
+	invoiceType string
+	display     string
+	rows        []parsedRow
 }
 
 func cutoverInvoiceGroups(file parsedFile) []cutoverInvoiceGroup {
@@ -2602,10 +2613,11 @@ func cutoverInvoiceGroups(file parsedFile) []cutoverInvoiceGroup {
 		group, exists := groups[key]
 		if !exists {
 			group = &cutoverInvoiceGroup{
-				id:       strings.TrimSpace(row.values["id"]),
-				number:   strings.TrimSpace(row.values["invoice_number"]),
-				currency: cutoverInvoiceRowCurrency(row),
-				display:  display,
+				id:          strings.TrimSpace(row.values["id"]),
+				number:      strings.TrimSpace(row.values["invoice_number"]),
+				currency:    cutoverInvoiceRowCurrency(row),
+				invoiceType: normalizeCutoverInvoiceType(row.values["invoice_type"]),
+				display:     display,
 			}
 			groups[key] = group
 			groupOrder = append(groupOrder, key)
@@ -2758,7 +2770,52 @@ func hasPaymentInvoiceCurrencyMismatch(
 	return true
 }
 
-func addCutoverInvoiceAllocationTarget(targets map[string]cutoverInvoiceAllocationTarget, targetKind FileKind, field, value string, total decimal.Decimal, currency string) {
+func hasPaymentInvoiceTypeMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	invoiceType := strings.ToUpper(strings.TrimSpace(target.invoiceType))
+	expectedPaymentType := ""
+	switch invoiceType {
+	case "SALES":
+		expectedPaymentType = "RECEIVED"
+	case "PURCHASE":
+		expectedPaymentType = "MADE"
+	default:
+		return false
+	}
+
+	paymentType := strings.ToUpper(strings.TrimSpace(row.values["payment_type"]))
+	switch paymentType {
+	case "", expectedPaymentType:
+		return false
+	case "RECEIVED", "MADE":
+	default:
+		return false
+	}
+
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindPayments,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "payment_type",
+		Value:      paymentType,
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"payment_type %q does not match imported %s invoice %q; expected %s",
+			paymentType,
+			strings.ToLower(invoiceType),
+			target.display,
+			expectedPaymentType,
+		),
+	})
+	return true
+}
+
+func addCutoverInvoiceAllocationTarget(targets map[string]cutoverInvoiceAllocationTarget, targetKind FileKind, field, value string, total decimal.Decimal, currency, invoiceType string) {
 	display := strings.TrimSpace(value)
 	if display == "" {
 		return
@@ -2770,6 +2827,7 @@ func addCutoverInvoiceAllocationTarget(targets map[string]cutoverInvoiceAllocati
 		target.display = display
 		target.total = total
 		target.currency = strings.ToUpper(strings.TrimSpace(currency))
+		target.invoiceType = strings.ToUpper(strings.TrimSpace(invoiceType))
 		target.targetKind = targetKind
 	}
 	target.invoiceCount++
@@ -2849,6 +2907,31 @@ func normalizeCutoverInvoiceType(value string) string {
 		return canonical
 	}
 	return normalizeCutoverUpper(value)
+}
+
+func normalizeCutoverOptionalInvoiceType(value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := normalizeCutoverInvoiceType(value)
+	switch normalized {
+	case "SALES", "PURCHASE", "CREDIT_NOTE":
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("invalid e_invoice_invoice_type %q", value)
+	}
+}
+
+func cutoverEInvoiceInvoiceType(rawType, requestedType string) string {
+	if requestedType != "" {
+		return requestedType
+	}
+	switch normalizedValue(rawType) {
+	case "cre", "credit", "credit_note", "creditnote":
+		return "CREDIT_NOTE"
+	default:
+		return "PURCHASE"
+	}
 }
 
 func normalizeCutoverInvoiceStatus(value string) string {

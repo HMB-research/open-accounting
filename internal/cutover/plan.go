@@ -17,6 +17,7 @@ const (
 type PlanMigrationExecutionRequest struct {
 	Files                    []BundleFile            `json:"files"`
 	EInvoiceContactMode      EInvoiceContactMode     `json:"e_invoice_contact_mode,omitempty"`
+	EInvoiceInvoiceType      string                  `json:"e_invoice_invoice_type,omitempty"`
 	ProviderPreset           MigrationProviderPreset `json:"provider_preset,omitempty"`
 	BankTransactionAccountID string                  `json:"bank_transaction_account_id,omitempty"`
 	OpeningBalanceEntryDate  string                  `json:"opening_balance_entry_date,omitempty"`
@@ -96,6 +97,7 @@ func BuildMigrationExecutionPlan(req *PlanMigrationExecutionRequest) (*Migration
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		Files:               req.Files,
 		EInvoiceContactMode: req.EInvoiceContactMode,
+		EInvoiceInvoiceType: req.EInvoiceInvoiceType,
 		ProviderPreset:      req.ProviderPreset,
 	})
 	if err != nil {
@@ -194,9 +196,13 @@ func migrationExecutionStepSpec(kind FileKind, fileName string, req *PlanMigrati
 			message:    "Import grouped invoice history after contacts and products.",
 		}
 	case KindEInvoices:
+		invoiceTypeFlag := ""
+		if invoiceType := strings.TrimSpace(req.EInvoiceInvoiceType); invoiceType != "" {
+			invoiceTypeFlag = " --invoice-type " + normalizeCutoverInvoiceType(invoiceType)
+		}
 		return migrationExecutionSpec{
 			apiPath:    tenantAPIPath("/invoices/import-einvoice"),
-			cliCommand: "oa invoices import-einvoice --file " + fileRef,
+			cliCommand: "oa invoices import-einvoice --file " + fileRef + invoiceTypeFlag,
 			dependsOn:  []FileKind{KindContacts},
 			message:    "Import Estonian e-invoice XML after contact references are ready.",
 		}

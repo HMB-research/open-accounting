@@ -80,3 +80,31 @@ func TestBuildMigrationExecutionPlanBlocksStepsWhenValidationFails(t *testing.T)
 	assert.Contains(t, plan.Steps[0].CLICommand, "oa migration validate --contacts")
 	assert.NotEmpty(t, plan.RemediationActions)
 }
+
+func TestBuildMigrationExecutionPlanIncludesEInvoiceInvoiceTypeOverride(t *testing.T) {
+	plan, err := BuildMigrationExecutionPlan(&PlanMigrationExecutionRequest{
+		EInvoiceContactMode: EInvoiceContactModeBoth,
+		EInvoiceInvoiceType: " sales ",
+		Files: []BundleFile{
+			{
+				Kind:       KindContacts,
+				FileName:   "contacts.csv",
+				CSVContent: "name,reg_code\nSupplier OÜ,12345678\nBuyer OÜ,87654321\n",
+			},
+			{
+				Kind:       KindEInvoices,
+				FileName:   "e-invoices.xml",
+				XMLContent: cutoverEInvoiceXML("INV-2026-001", "Supplier OÜ", "12345678"),
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	assert.True(t, plan.Summary.Ready)
+	require.Len(t, plan.Steps, 2)
+	eInvoiceStep := plan.Steps[1]
+	assert.Equal(t, KindEInvoices, eInvoiceStep.Kind)
+	assert.Equal(t, MigrationExecutionStepReady, eInvoiceStep.Status)
+	assert.Contains(t, eInvoiceStep.CLICommand, "oa invoices import-einvoice --file <e-invoices.xml> --invoice-type SALES")
+}

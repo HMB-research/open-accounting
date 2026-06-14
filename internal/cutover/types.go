@@ -85,6 +85,7 @@ type BundleFile struct {
 type ValidateBundleRequest struct {
 	Files               []BundleFile            `json:"files"`
 	EInvoiceContactMode EInvoiceContactMode     `json:"e_invoice_contact_mode,omitempty"`
+	EInvoiceInvoiceType string                  `json:"e_invoice_invoice_type,omitempty"`
 	ProviderPreset      MigrationProviderPreset `json:"provider_preset,omitempty"`
 }
 

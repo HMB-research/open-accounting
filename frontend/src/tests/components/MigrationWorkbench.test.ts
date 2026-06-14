@@ -306,6 +306,9 @@ describe("MigrationWorkbench", () => {
       ),
     );
     await addContactsFile();
+    await fireEvent.input(screen.getByLabelText("E-invoice invoice type"), {
+      target: { value: "sales" },
+    });
     await fireEvent.click(screen.getByRole("button", { name: "Build plan" }));
 
     await waitFor(() =>
@@ -321,6 +324,7 @@ describe("MigrationWorkbench", () => {
       ],
       provider_preset: "generic",
       e_invoice_contact_mode: "supplier",
+      e_invoice_invoice_type: "sales",
     });
     expect(
       await screen.findByText("Migration execution plan is ready."),

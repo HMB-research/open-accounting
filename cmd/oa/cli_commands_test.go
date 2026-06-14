@@ -3999,6 +3999,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 			}
 			if len(req.Files) > 2 {
 				assert.Equal(t, cutover.EInvoiceContactModeBoth, req.EInvoiceContactMode)
+				assert.Equal(t, "SALES", req.EInvoiceInvoiceType)
 				assert.Equal(t, cutover.MigrationProviderPresetMerit, req.ProviderPreset)
 				kinds := map[cutover.FileKind]bool{}
 				for _, file := range req.Files {
@@ -4087,6 +4088,7 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 		"--invoices", invoicesFile,
 		"--e-invoices", eInvoicesFile,
 		"--e-invoice-contact-mode", "both",
+		"--e-invoice-invoice-type", "sales",
 		"--provider-preset", "merit",
 		"--bank-accounts", bankAccountsFile,
 		"--bank-transactions", bankFile,
@@ -4115,6 +4117,12 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 	err = app.run(context.Background(), []string{"migration", "validate", "--contacts", contactsFile, "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"files_validated": 2`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"migration", "validate", "--contacts", contactsFile, "--e-invoice-invoice-type", "memo"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `invalid invoice type "memo"`)
+	assert.Empty(t, stdout.String())
 }
 
 func TestCLIMigrationProviderPresetsCommand(t *testing.T) {
@@ -4235,6 +4243,7 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 		var req cutover.PlanMigrationExecutionRequest
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 		assert.Equal(t, cutover.EInvoiceContactModeSupplier, req.EInvoiceContactMode)
+		assert.Equal(t, "PURCHASE", req.EInvoiceInvoiceType)
 		assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
 		assert.Equal(t, "bank-1", req.BankTransactionAccountID)
 		assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
@@ -4316,6 +4325,7 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 		"--bank-transaction-account-id", "bank-1",
 		"--opening-balances", openingFile,
 		"--opening-balance-entry-date", "2026-01-01",
+		"--e-invoice-invoice-type", "purchase",
 		"--provider-preset", "smartaccounts",
 	})
 	require.NoError(t, err)
@@ -4334,11 +4344,18 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 		"--bank-transaction-account-id", "bank-1",
 		"--opening-balances", openingFile,
 		"--opening-balance-entry-date", "2026-01-01",
+		"--e-invoice-invoice-type", "purchase",
 		"--provider-preset", "smartaccounts",
 		"--json",
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"needs_context_count": 1`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"migration", "plan", "--accounts", accountsFile, "--e-invoice-invoice-type", "memo"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `invalid invoice type "memo"`)
+	assert.Empty(t, stdout.String())
 }
 
 func TestCLIMigrationExecuteCommand(t *testing.T) {
@@ -4388,6 +4405,7 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 			var req cutover.PlanMigrationExecutionRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
+			assert.Equal(t, "PURCHASE", req.EInvoiceInvoiceType)
 			assert.Equal(t, "bank-1", req.BankTransactionAccountID)
 			assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
 			require.Len(t, req.Files, len(expectedImportPaths))

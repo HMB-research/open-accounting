@@ -2074,6 +2074,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		invoicesFile := fs.String("invoices", "", "Invoices CSV file")
 		eInvoicesFile := fs.String("e-invoices", "", "Estonian e-invoice XML file")
 		eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
+		eInvoiceInvoiceType := fs.String("e-invoice-invoice-type", "", "Override e-invoice invoice type for validation: SALES, PURCHASE, or CREDIT_NOTE")
 		providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, smartaccounts, or directo")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
 		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
@@ -2096,6 +2097,10 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		journalFile := fs.String("journal", "", "Historical journal CSV file")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		invoiceType, err := parseOptionalInvoiceType(*eInvoiceInvoiceType)
+		if err != nil {
 			return err
 		}
 
@@ -2136,6 +2141,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		report, err := client.validateMigrationBundle(ctx, cfg.TenantID, &cutover.ValidateBundleRequest{
 			Files:               files,
 			EInvoiceContactMode: cutover.EInvoiceContactMode(strings.TrimSpace(*eInvoiceContactMode)),
+			EInvoiceInvoiceType: string(invoiceType),
 			ProviderPreset:      cutover.MigrationProviderPreset(strings.TrimSpace(*providerPreset)),
 		})
 		if err != nil {
@@ -2157,6 +2163,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		invoicesFile := fs.String("invoices", "", "Invoices CSV file")
 		eInvoicesFile := fs.String("e-invoices", "", "Estonian e-invoice XML file")
 		eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
+		eInvoiceInvoiceType := fs.String("e-invoice-invoice-type", "", "Override e-invoice invoice type for validation: SALES, PURCHASE, or CREDIT_NOTE")
 		providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, smartaccounts, or directo")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
 		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
@@ -2181,6 +2188,10 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		journalFile := fs.String("journal", "", "Historical journal CSV file")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		invoiceType, err := parseOptionalInvoiceType(*eInvoiceInvoiceType)
+		if err != nil {
 			return err
 		}
 
@@ -2221,6 +2232,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		plan, err := client.planMigrationExecution(ctx, cfg.TenantID, &cutover.PlanMigrationExecutionRequest{
 			Files:                    files,
 			EInvoiceContactMode:      cutover.EInvoiceContactMode(strings.TrimSpace(*eInvoiceContactMode)),
+			EInvoiceInvoiceType:      string(invoiceType),
 			ProviderPreset:           cutover.MigrationProviderPreset(strings.TrimSpace(*providerPreset)),
 			BankTransactionAccountID: strings.TrimSpace(*bankTransactionAccountID),
 			OpeningBalanceEntryDate:  strings.TrimSpace(*openingBalanceEntryDate),

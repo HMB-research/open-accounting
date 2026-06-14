@@ -173,11 +173,17 @@
 	}
 
 	function buildValidateRequest(): ValidateBundleRequest {
-		return {
+		const request: ValidateBundleRequest = {
 			files: bundleFiles.map(toBundleFile),
 			provider_preset: providerPreset,
 			e_invoice_contact_mode: eInvoiceContactMode
 		};
+
+		if (eInvoiceInvoiceType.trim()) {
+			request.e_invoice_invoice_type = eInvoiceInvoiceType.trim();
+		}
+
+		return request;
 	}
 
 	function buildPlanRequest(): PlanMigrationExecutionRequest {

@@ -3482,7 +3482,11 @@ export type MigrationFileKind =
   | "opening_balances"
   | "journal_entries";
 
-export type MigrationProviderPreset = "generic" | "merit" | "smartaccounts" | "directo";
+export type MigrationProviderPreset =
+  | "generic"
+  | "merit"
+  | "smartaccounts"
+  | "directo";
 export type EInvoiceContactMode = "supplier" | "customer" | "both";
 export type MigrationIssueSeverity = "ERROR" | "WARNING";
 
@@ -3517,6 +3521,7 @@ export interface BundleFile {
 export interface ValidateBundleRequest {
   files: BundleFile[];
   e_invoice_contact_mode?: EInvoiceContactMode;
+  e_invoice_invoice_type?: string;
   provider_preset?: MigrationProviderPreset;
 }
 
@@ -3526,7 +3531,6 @@ export interface PlanMigrationExecutionRequest extends ValidateBundleRequest {
 }
 
 export interface ExecuteMigrationRequest extends PlanMigrationExecutionRequest {
-  e_invoice_invoice_type?: string;
   bank_transaction_format?: string;
   confirm?: boolean;
   resume_from_run?: MigrationExecutionRun;

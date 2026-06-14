@@ -32,6 +32,7 @@ func (r ExecuteMigrationRequest) PlanRequest() *PlanMigrationExecutionRequest {
 	return &PlanMigrationExecutionRequest{
 		Files:                    r.Files,
 		EInvoiceContactMode:      r.EInvoiceContactMode,
+		EInvoiceInvoiceType:      r.EInvoiceInvoiceType,
 		ProviderPreset:           r.ProviderPreset,
 		BankTransactionAccountID: r.BankTransactionAccountID,
 		OpeningBalanceEntryDate:  r.OpeningBalanceEntryDate,
