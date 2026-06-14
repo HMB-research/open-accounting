@@ -2380,6 +2380,7 @@ func validateGroupedDocumentPreflight(report *BundleValidationReport, file parse
 func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile, eInvoiceContactMode EInvoiceContactMode) {
 	validateImportedInvoiceAmountPaidConsistency(report, files)
 	validateStockAdjustmentProductStockability(report, files)
+	validateCostAllocationJournalLineTotals(report, files)
 
 	invoiceTargets := buildCutoverInvoiceAllocationTargets(files, eInvoiceContactMode)
 	validateFixedAssetInvoiceConsistency(report, files, invoiceTargets)
@@ -2468,6 +2469,100 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 			}
 		}
 	}
+}
+
+type cutoverJournalLineAmountTarget struct {
+	display string
+	amount  decimal.Decimal
+}
+
+func validateCostAllocationJournalLineTotals(report *BundleValidationReport, files []parsedFile) {
+	targets := buildCutoverJournalLineAmountTargets(files)
+	if len(targets) == 0 {
+		return
+	}
+	allocationTotals := map[string]decimal.Decimal{}
+	for _, file := range files {
+		if file.kind != KindCostAllocations {
+			continue
+		}
+		for _, row := range file.rows {
+			journalLineID := strings.TrimSpace(row.values["journal_entry_line_id"])
+			if journalLineID == "" {
+				continue
+			}
+			targetKey := normalizedValue(journalLineID)
+			target, ok := targets[targetKey]
+			if !ok {
+				continue
+			}
+			amount, ok := cutoverCostAllocationAmount(row)
+			if !ok {
+				continue
+			}
+			nextTotal := allocationTotals[targetKey].Add(amount)
+			allocationTotals[targetKey] = nextTotal
+			if nextTotal.GreaterThan(target.amount) {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindCostAllocations,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "amount",
+					Value:      amount.String(),
+					TargetKind: KindJournalEntries,
+					Message: fmt.Sprintf(
+						"cost allocations for journal line %q exceed imported journal line amount: allocations=%s line_amount=%s",
+						target.display,
+						nextTotal.String(),
+						target.amount.String(),
+					),
+				})
+			}
+		}
+	}
+}
+
+func buildCutoverJournalLineAmountTargets(files []parsedFile) map[string]cutoverJournalLineAmountTarget {
+	targets := map[string]cutoverJournalLineAmountTarget{}
+	for _, file := range files {
+		if file.kind != KindJournalEntries || !fileHasHeaders(file, "line_id", "debit", "credit") {
+			continue
+		}
+		for _, row := range file.rows {
+			lineID := strings.TrimSpace(row.values["line_id"])
+			if lineID == "" {
+				continue
+			}
+			if _, err := uuid.Parse(lineID); err != nil {
+				continue
+			}
+			debit, credit, amountIssue := parseCutoverDebitCredit(row)
+			if amountIssue != nil {
+				continue
+			}
+			amount := debit
+			if amount.IsZero() {
+				amount = credit
+			}
+			if amount.LessThanOrEqual(decimal.Zero) {
+				continue
+			}
+			targets[normalizedValue(lineID)] = cutoverJournalLineAmountTarget{
+				display: lineID,
+				amount:  amount,
+			}
+		}
+	}
+	return targets
+}
+
+func cutoverCostAllocationAmount(row parsedRow) (decimal.Decimal, bool) {
+	amount, issue := parseCutoverRequiredDecimal(row.values["amount"], "amount")
+	if issue != nil || amount.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, false
+	}
+	return amount, true
 }
 
 type cutoverProductStockability struct {
