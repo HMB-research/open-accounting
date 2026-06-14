@@ -26,6 +26,7 @@ Status values:
 - The follow-up close remediation actions stage was locally revalidated with focused accounting/API/CLI tests, Swagger regeneration, docs status tests, frontend API type checks, and the CLI coverage gate.
 - The follow-up migration remediation actions stage was locally revalidated with focused cutover/API/CLI tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
 - The follow-up migration remediation assignment stage was locally revalidated with focused cutover/API/CLI/frontend API tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
+- The follow-up migration remediation priority fallback stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up migration execution plan stage was locally revalidated with focused cutover/API/CLI/frontend API tests, Swagger regeneration, docs route coverage, and the CLI coverage gate.
 - The follow-up server-side migration execution stage was locally revalidated with focused API handler, cutover/banking, CLI route-coverage, docs, Swagger, lint, and CLI coverage gates.
 - The follow-up resume-aware migration execution stage was locally revalidated with focused cutover/API/CLI tests, docs updates, Swagger regeneration, lint, and the CLI coverage gate.
@@ -126,6 +127,7 @@ party rather than the seller party. Credit-note e-invoice allocations now select
 The focused e-invoice credit-note payment contact selection migration tests
 cover customer-mode buyer contact matches and default supplier-mode mismatch
 reports.
+Migration remediation priority fallback coverage now locks non-blocking action severities to low priority with no due-date pressure while blockers and warnings retain their existing due windows.
 Commercial-document contact identity
 preflight now checks invoice, quote, order, and recurring-invoice contact
 references against the matching same-bundle contact field, so a value supplied

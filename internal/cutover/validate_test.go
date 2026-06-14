@@ -247,6 +247,12 @@ func TestBuildMigrationRemediationActionsClassifiesWarnings(t *testing.T) {
 	assert.Contains(t, actions[0].Action, "Review the warning")
 }
 
+func TestMigrationAssignmentPriorityDefaultsNonBlockingSeverities(t *testing.T) {
+	priority, dueInDays := migrationAssignmentPriority("ACTION")
+	assert.Equal(t, "low", priority)
+	assert.Equal(t, 0, dueInDays)
+}
+
 func TestValidateBundleAcceptsMeritProviderPresetAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: MigrationProviderPresetMerit,
