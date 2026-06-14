@@ -483,6 +483,94 @@ func TestValidateBundleAcceptsSmartAccountsCommercialContactIdentityAliases(t *t
 	assert.Contains(t, recurringValidation.Headers, "contact_email")
 }
 
+func TestValidateBundleAcceptsEstonianCommercialContactIdentityProviderAliases(t *testing.T) {
+	tests := []struct {
+		name         string
+		preset       MigrationProviderPreset
+		contactsCSV  string
+		quotesCSV    string
+		ordersCSV    string
+		recurringCSV string
+	}{
+		{
+			name:        "merit",
+			preset:      MigrationProviderPresetMerit,
+			contactsCSV: "kliendi_kood,nimi,registri_kood,kmkr,e_post\nCUST-1,Customer One,12345678,EE123456789,billing@example.test\n",
+			quotesCSV: "pakkumise_nr,pakkumise_kuupaev,kliendi_kmkr,rea_kirjeldus,kogus,yhiku_hind,kaibemaks\n" +
+				"Q-1,2026-05-30,EE123456789,Work,1,100,22\n",
+			ordersCSV: "tellimuse_nr,tellimuse_kuupaev,kliendi_reg_kood,rea_kirjeldus,kogus,yhiku_hind,kaibemaks\n" +
+				"SO-1,2026-05-31,12345678,Work,1,100,22\n",
+			recurringCSV: "name,kuupaev,kliendi_epost,rea_kirjeldus,kogus,yhiku_hind,kaibemaks,frequency\n" +
+				"Monthly support,2026-06-01,billing@example.test,Support,1,100,22,monthly\n",
+		},
+		{
+			name:        "directo",
+			preset:      MigrationProviderPresetDirecto,
+			contactsCSV: "kliendikood,nimi,reg_kood,kmkr,epost\nCUST-1,Customer One,12345678,EE123456789,billing@example.test\n",
+			quotesCSV: "pakkumine,pakkumise_kuupaev,kliendi_kmkr,sisu,kogus,hind,km\n" +
+				"Q-1,2026-05-30,EE123456789,Work,1,100,22\n",
+			ordersCSV: "tellimus,tellimuse_kuupaev,kliendi_reg_kood,sisu,kogus,hind,km\n" +
+				"SO-1,2026-05-31,12345678,Work,1,100,22\n",
+			recurringCSV: "leping,alguskuupaev,kliendi_epost,sisu,kogus,hind,km,frequency\n" +
+				"Monthly support,2026-06-01,billing@example.test,Support,1,100,22,monthly\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report, err := ValidateBundle(&ValidateBundleRequest{
+				ProviderPreset: tt.preset,
+				Files: []BundleFile{
+					{
+						Kind:       KindContacts,
+						FileName:   tt.name + "-contacts.csv",
+						CSVContent: tt.contactsCSV,
+					},
+					{
+						Kind:       KindQuotes,
+						FileName:   tt.name + "-quotes.csv",
+						CSVContent: tt.quotesCSV,
+					},
+					{
+						Kind:       KindOrders,
+						FileName:   tt.name + "-orders.csv",
+						CSVContent: tt.ordersCSV,
+					},
+					{
+						Kind:       KindRecurringInvoices,
+						FileName:   tt.name + "-recurring.csv",
+						CSVContent: tt.recurringCSV,
+					},
+				},
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, report)
+			assert.True(t, report.Summary.Ready)
+			assert.Equal(t, 0, report.Summary.ErrorCount)
+			require.Len(t, report.Files, 4)
+
+			var quoteValidation, orderValidation, recurringValidation FileValidation
+			for _, file := range report.Files {
+				switch file.Kind {
+				case KindQuotes:
+					quoteValidation = file
+				case KindOrders:
+					orderValidation = file
+				case KindRecurringInvoices:
+					recurringValidation = file
+				}
+			}
+			require.Equal(t, KindQuotes, quoteValidation.Kind)
+			assert.Contains(t, quoteValidation.Headers, "contact_vat_number")
+			require.Equal(t, KindOrders, orderValidation.Kind)
+			assert.Contains(t, orderValidation.Headers, "contact_reg_code")
+			require.Equal(t, KindRecurringInvoices, recurringValidation.Kind)
+			assert.Contains(t, recurringValidation.Headers, "contact_email")
+		})
+	}
+}
+
 func TestValidateBundleAcceptsMeritKMDHistoryProviderPresetAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: MigrationProviderPresetMerit,
