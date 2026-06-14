@@ -68,6 +68,76 @@ func TestService_ImportCostAllocationsCSV(t *testing.T) {
 		assert.Equal(t, "Shared hosting", allocation.Notes)
 	})
 
+	t.Run("imports provider cost allocation aliases", func(t *testing.T) {
+		tests := []struct {
+			name        string
+			csvContent  string
+			lineID      string
+			amount      string
+			percentage  string
+			notes       string
+			expectedDay int
+		}{
+			{
+				name: "Merit",
+				csvContent: "kulukoha_kood,kanne_rea_id,jaotuse_summa,protsent,kuupaev,selgitus\n" +
+					"OPS," + costAllocationTestJournalLineID + ",110.00,25,2026-03-29,Merit split\n",
+				lineID:      costAllocationTestJournalLineID,
+				amount:      "110.00",
+				percentage:  "25",
+				notes:       "Merit split",
+				expectedDay: 29,
+			},
+			{
+				name: "SmartAccounts",
+				csvContent: "cost_center_no,entry_line_id,allocated_amount,allocated_percent,posting_date,line_memo\n" +
+					"OPS," + costAllocationTestOtherJournalLineID + ",220.50,50,2026-03-30,Smart split\n",
+				lineID:      costAllocationTestOtherJournalLineID,
+				amount:      "220.50",
+				percentage:  "50",
+				notes:       "Smart split",
+				expectedDay: 30,
+			},
+			{
+				name: "Directo",
+				csvContent: "objekt,rea_id,summa,jaotuse_protsent,aeg,kirjeldus\n" +
+					"OPS," + costAllocationTestJournalLineID + ",330.75,75,2026-03-31,Directo split\n",
+				lineID:      costAllocationTestJournalLineID,
+				amount:      "330.75",
+				percentage:  "75",
+				notes:       "Directo split",
+				expectedDay: 31,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				repo := newCostAllocationImportMockRepository()
+				svc := NewCostCenterServiceWithRepository(repo)
+
+				result, err := svc.ImportCostAllocationsCSV(context.Background(), "tenant_1", "tenant-1", &ImportCostAllocationsRequest{
+					FileName:   tt.name + "-cost-allocations.csv",
+					CSVContent: tt.csvContent,
+				})
+
+				require.NoError(t, err)
+				assert.Equal(t, 1, result.RowsProcessed)
+				assert.Equal(t, 1, result.AllocationsImported)
+				assert.Zero(t, result.RowsSkipped)
+				assert.Nil(t, result.Errors)
+
+				require.Len(t, repo.Allocations[costAllocationTestCostCenterID], 1)
+				allocation := repo.Allocations[costAllocationTestCostCenterID][0]
+				assert.Equal(t, tt.lineID, allocation.JournalEntryLineID)
+				assert.True(t, decimal.RequireFromString(tt.amount).Equal(allocation.Amount))
+				require.NotNil(t, allocation.AllocationPercentage)
+				assert.True(t, decimal.RequireFromString(tt.percentage).Equal(*allocation.AllocationPercentage))
+				assert.Equal(t, time.Date(2026, 3, tt.expectedDay, 0, 0, 0, 0, time.UTC), allocation.AllocationDate)
+				assert.Equal(t, tt.notes, allocation.Notes)
+			})
+		}
+	})
+
 	t.Run("requires csv content", func(t *testing.T) {
 		svc := NewCostCenterServiceWithRepository(NewMockCostCenterRepository())
 

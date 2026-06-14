@@ -443,6 +443,73 @@ func TestCostCenterService_ImportCostCentersCSV(t *testing.T) {
 	assert.True(t, child.IsActive)
 }
 
+func TestCostCenterService_ImportCostCentersCSVImportsProviderAliases(t *testing.T) {
+	tests := []struct {
+		name       string
+		csvContent string
+		parentCode string
+		childCode  string
+	}{
+		{
+			name: "Merit",
+			csvContent: "kulukoha_kood,kulukoha_nimetus\n" +
+				"MER-OPS,Merit operations\n",
+		},
+		{
+			name: "SmartAccounts",
+			csvContent: "cost_center_no,cost_center_title,parent_center_no\n" +
+				"SA-PARENT,Smart parent,\n" +
+				"SA-CHILD,Smart child,SA-PARENT\n",
+			parentCode: "SA-PARENT",
+			childCode:  "SA-CHILD",
+		},
+		{
+			name: "Directo",
+			csvContent: "objekt,nimi,ylemobjekt\n" +
+				"DIR-PARENT,Directo parent,\n" +
+				"DIR-CHILD,Directo child,DIR-PARENT\n",
+			parentCode: "DIR-PARENT",
+			childCode:  "DIR-CHILD",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := newTestCostCenterService()
+
+			result, err := ts.svc.ImportCostCentersCSV(context.Background(), "test_schema", "tenant-1", &ImportCostCentersRequest{
+				FileName:   tt.name + "-cost-centers.csv",
+				CSVContent: tt.csvContent,
+			})
+
+			require.NoError(t, err)
+			assert.Zero(t, result.RowsSkipped)
+			assert.Nil(t, result.Errors)
+
+			if tt.childCode == "" {
+				assert.Equal(t, 1, result.CostCentersCreated)
+				return
+			}
+
+			assert.Equal(t, 2, result.CostCentersCreated)
+			var parent *CostCenter
+			var child *CostCenter
+			for _, costCenter := range ts.repo.CostCenters {
+				switch costCenter.Code {
+				case tt.parentCode:
+					parent = costCenter
+				case tt.childCode:
+					child = costCenter
+				}
+			}
+			require.NotNil(t, parent)
+			require.NotNil(t, child)
+			require.NotNil(t, child.ParentID)
+			assert.Equal(t, parent.ID, *child.ParentID)
+		})
+	}
+}
+
 func TestCostCenterService_ImportCostCentersCSVRejectsInvalidParentID(t *testing.T) {
 	ts := newTestCostCenterService()
 	ctx := context.Background()
