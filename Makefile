@@ -7,6 +7,8 @@ GO=go
 DOCKER_COMPOSE=docker-compose
 COVERAGE_PROFILE ?= coverage.out
 CLI_COVERAGE_PROFILE ?= coverage-cli.out
+GO_BIN ?= $(shell $(GO) env GOPATH)/bin
+GOLANGCI_LINT ?= $(GO_BIN)/golangci-lint
 
 INTEGRATION_PACKAGE_LIST = git grep -l '^//go:build .*integration' -- '*_test.go' | while IFS= read -r file; do dirname "$$file"; done | sort -u | sed 's|^|./|'
 INTEGRATION_PACKAGE_SHARD = scripts/select-integration-packages.sh
@@ -71,7 +73,7 @@ verify-cli-coverage:
 
 # Lint code
 lint:
-	golangci-lint run
+	$(GOLANGCI_LINT) run
 
 # Format code
 fmt:
@@ -151,7 +153,7 @@ docs: swagger
 
 # Install development tools
 install-tools:
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	go install mvdan.cc/gofumpt@latest
 	go install github.com/swaggo/swag/cmd/swag@latest
 

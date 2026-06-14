@@ -4209,6 +4209,32 @@ func TestValidateBundleAcceptsImportedInvoiceAmountPaidWithinTotal(t *testing.T)
 	assert.Empty(t, report.Issues)
 }
 
+func TestValidateBundleAcceptsCombinedImportedAmountPaidAndPaymentAllocationsWithinTotal(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,PARTIALLY_PAID,40,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number,allocation_amount\nRECEIVED,2026-05-31,82,INV-1,82\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.RowsValidated)
+	assert.Empty(t, report.Issues)
+}
+
 func TestValidateBundleReportsImportedInvoiceAmountPaidExceedsTotal(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -4233,6 +4259,41 @@ func TestValidateBundleReportsImportedInvoiceAmountPaidExceedsTotal(t *testing.T
 	assert.Equal(t, "amount_paid", report.Issues[0].Field)
 	assert.Contains(t, report.Issues[0].Message, `amount_paid for invoice "INV-1/SALES" exceeds imported invoice total`)
 	assert.Contains(t, report.Issues[0].Message, "amount_paid=130")
+	assert.Contains(t, report.Issues[0].Message, "invoice_total=122")
+}
+
+func TestValidateBundleReportsCombinedImportedAmountPaidAndPaymentAllocationsExceedTotal(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,PARTIALLY_PAID,80,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number,allocation_amount\nRECEIVED,2026-05-31,50,INV-1,50\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, 2, report.Issues[0].Row)
+	assert.Equal(t, "allocation_amount", report.Issues[0].Field)
+	assert.Equal(t, KindInvoices, report.Issues[0].TargetKind)
+	assert.Contains(t, report.Issues[0].Message, `imported invoice paid amount plus payment allocations for invoice "INV-1" exceed imported invoice total`)
+	assert.Contains(t, report.Issues[0].Message, "amount_paid=80")
+	assert.Contains(t, report.Issues[0].Message, "allocations=50")
+	assert.Contains(t, report.Issues[0].Message, "combined_paid=130")
 	assert.Contains(t, report.Issues[0].Message, "invoice_total=122")
 }
 
