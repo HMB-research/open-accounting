@@ -978,7 +978,7 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 			{
 				Kind:       KindContacts,
 				FileName:   "directo-contacts.csv",
-				CSVContent: "hankijakood,nimi\nSUP-1,Supplier One\n",
+				CSVContent: "hankijakood,nimi,registrikood\nSUP-1,Supplier One,12345678\n",
 			},
 			{
 				Kind:     KindProductCategories,
@@ -995,7 +995,7 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 			{
 				Kind:       KindProducts,
 				FileName:   "directo-products.csv",
-				CSVContent: "artikkel,nimetus,klass,myygihind,ostuhind,kaibemaks,hankija\nSKU-1,Widget,Widgets,12,6,22,SUP-1\n",
+				CSVContent: "artikkel,nimetus,klass,myygihind,ostuhind,kaibemaks,hankija_nimi\nSKU-1,Widget,Widgets,12,6,22,Supplier One\n",
 			},
 			{
 				Kind:       KindStockAdjustments,
@@ -1005,7 +1005,7 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 			{
 				Kind:       KindFixedAssets,
 				FileName:   "directo-fixed-assets.csv",
-				CSVContent: "inventar,nimetus,soetuskuupaev,soetusmaksumus,eluiga_kuud,akumuleeritud_kulum,jaakmaksumus,hankija\nFA-1,Laptop,2026-01-01,1200,36,200,1000,SUP-1\n",
+				CSVContent: "inventar,nimetus,soetuskuupaev,soetusmaksumus,eluiga_kuud,akumuleeritud_kulum,jaakmaksumus,hankija_registrikood\nFA-1,Laptop,2026-01-01,1200,36,200,1000,12345678\n",
 			},
 			{
 				Kind:     KindKMDHistory,
@@ -1029,10 +1029,10 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 	assert.Contains(t, report.Files[4].Headers, "code")
 	assert.Contains(t, report.Files[5].Headers, "parent_name")
 	assert.Contains(t, report.Files[7].Headers, "category_name")
-	assert.Contains(t, report.Files[7].Headers, "supplier_code")
+	assert.Contains(t, report.Files[7].Headers, "supplier_name")
 	assert.Contains(t, report.Files[8].Headers, "serial_number")
 	assert.Contains(t, report.Files[9].Headers, "purchase_cost")
-	assert.Contains(t, report.Files[9].Headers, "supplier_code")
+	assert.Contains(t, report.Files[9].Headers, "supplier_reg_code")
 	assert.Contains(t, report.Files[10].Headers, "total_output_vat")
 }
 
@@ -4204,6 +4204,52 @@ func TestValidateBundleReportsMissingProductSupplierCodeReference(t *testing.T) 
 	assert.Equal(t, "SUP-404", report.Issues[0].Value)
 }
 
+func TestValidateBundleAcceptsProductSupplierIdentityReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name,reg_code,email\nSUP-1,Supplier One,12345678,billing@supplier.example\n",
+		},
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,sales_price,supplier_reg_code\nSKU-1,Widget,10,12345678\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsMissingProductSupplierIdentityReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,Supplier One\n",
+		},
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,sales_price,supplier_name\nSKU-1,Widget,10,Missing Supplier\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindProducts, report.Issues[0].Kind)
+	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
+	assert.Equal(t, "supplier_name", report.Issues[0].Field)
+	assert.Equal(t, "Missing Supplier", report.Issues[0].Value)
+}
+
 func TestValidateBundleAcceptsFixedAssetSupplierCodeReference(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -4248,6 +4294,52 @@ func TestValidateBundleReportsMissingFixedAssetSupplierCodeReference(t *testing.
 	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
 	assert.Equal(t, "supplier_code", report.Issues[0].Field)
 	assert.Equal(t, "SUP-404", report.Issues[0].Value)
+}
+
+func TestValidateBundleAcceptsFixedAssetSupplierIdentityReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name,email\nSUP-1,Supplier One,billing@supplier.example\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_email\nFA-1,Laptop,2026-05-30,1200,billing@supplier.example\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsMissingFixedAssetSupplierIdentityReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,Supplier One\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_name\nFA-1,Laptop,2026-05-30,1200,Missing Supplier\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindFixedAssets, report.Issues[0].Kind)
+	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
+	assert.Equal(t, "supplier_name", report.Issues[0].Field)
+	assert.Equal(t, "Missing Supplier", report.Issues[0].Value)
 }
 
 func TestValidateBundleReportsContactIDReferenceWhenValueMatchesLookupField(t *testing.T) {

@@ -39,6 +39,10 @@ type bundleIndexes struct {
 	bankAccounts       map[string]string
 	contactIDs         map[string]bool
 	contactCodes       map[string]bool
+	contactRegCodes    map[string]bool
+	contactVATNumbers  map[string]bool
+	contactEmails      map[string]bool
+	contactNames       map[string]bool
 	contacts           map[string]bool
 	employees          map[string]bool
 	invoices           map[string]bool
@@ -670,6 +674,19 @@ var fileSpecs = map[FileKind]fileSpec{
 			"barcode":                "barcode",
 			"supplier_id":            "supplier_id",
 			"supplier_code":          "supplier_code",
+			"vendor_code":            "supplier_code",
+			"supplier_name":          "supplier_name",
+			"vendor_name":            "supplier_name",
+			"supplier_reg_code":      "supplier_reg_code",
+			"supplier_registration":  "supplier_reg_code",
+			"supplier_registry_code": "supplier_reg_code",
+			"vendor_reg_code":        "supplier_reg_code",
+			"supplier_vat_number":    "supplier_vat_number",
+			"supplier_vat":           "supplier_vat_number",
+			"supplier_vat_no":        "supplier_vat_number",
+			"vendor_vat_number":      "supplier_vat_number",
+			"supplier_email":         "supplier_email",
+			"vendor_email":           "supplier_email",
 			"lead_time_days":         "lead_time_days",
 		}),
 		requiredGroups: [][]string{{"name"}, {"sales_price"}},
@@ -730,6 +747,19 @@ var fileSpecs = map[FileKind]fileSpec{
 			"price":                                 "purchase_cost",
 			"supplier_id":                           "supplier_id",
 			"supplier_code":                         "supplier_code",
+			"vendor_code":                           "supplier_code",
+			"supplier_name":                         "supplier_name",
+			"vendor_name":                           "supplier_name",
+			"supplier_reg_code":                     "supplier_reg_code",
+			"supplier_registration":                 "supplier_reg_code",
+			"supplier_registry_code":                "supplier_reg_code",
+			"vendor_reg_code":                       "supplier_reg_code",
+			"supplier_vat_number":                   "supplier_vat_number",
+			"supplier_vat":                          "supplier_vat_number",
+			"supplier_vat_no":                       "supplier_vat_number",
+			"vendor_vat_number":                     "supplier_vat_number",
+			"supplier_email":                        "supplier_email",
+			"vendor_email":                          "supplier_email",
 			"invoice_id":                            "invoice_id",
 			"serial_number":                         "serial_number",
 			"serial_no":                             "serial_number",
@@ -1743,6 +1773,10 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 		bankAccounts:       map[string]string{},
 		contactIDs:         map[string]bool{},
 		contactCodes:       map[string]bool{},
+		contactRegCodes:    map[string]bool{},
+		contactVATNumbers:  map[string]bool{},
+		contactEmails:      map[string]bool{},
+		contactNames:       map[string]bool{},
 		contacts:           map[string]bool{},
 		employees:          map[string]bool{},
 		invoices:           map[string]bool{},
@@ -1766,6 +1800,10 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 			case KindContacts:
 				addIndexValue(indexes.contactIDs, row.values["id"])
 				addIndexValue(indexes.contactCodes, row.values["code"])
+				addIndexValue(indexes.contactRegCodes, row.values["reg_code"])
+				addIndexValue(indexes.contactVATNumbers, row.values["vat_number"])
+				addIndexValue(indexes.contactEmails, row.values["email"])
+				addIndexValue(indexes.contactNames, row.values["name"])
 				addIndexValue(indexes.contacts, row.values["code"])
 				addIndexValue(indexes.contacts, row.values["reg_code"])
 				addIndexValue(indexes.contacts, row.values["vat_number"])
@@ -5589,8 +5627,38 @@ func checkSupplierReference(report *BundleValidationReport, indexes bundleIndexe
 		checkContactIDReference(report, indexes, file, row, "supplier_id")
 		return
 	}
-	checkTargetReference(report, indexes.files[KindContacts], indexes.contactCodes, file, row, KindContacts,
-		[]string{"supplier_code"})
+	checkSupplierContactReference(report, indexes, file, row)
+}
+
+func checkSupplierContactReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if !indexes.files[KindContacts] {
+		return
+	}
+	for _, field := range supplierContactLookupFields() {
+		value := strings.TrimSpace(row.values[field])
+		if value == "" {
+			continue
+		}
+		checkReferenceValues(report, supplierContactIndex(indexes, field), file, row, KindContacts, field, []string{value})
+		return
+	}
+}
+
+func supplierContactIndex(indexes bundleIndexes, field string) map[string]bool {
+	switch field {
+	case "supplier_code":
+		return indexes.contactCodes
+	case "supplier_reg_code":
+		return indexes.contactRegCodes
+	case "supplier_vat_number":
+		return indexes.contactVATNumbers
+	case "supplier_email":
+		return indexes.contactEmails
+	case "supplier_name":
+		return indexes.contactNames
+	default:
+		return indexes.contacts
+	}
 }
 
 func checkCommercialDocumentContactReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
@@ -5942,6 +6010,10 @@ func commercialDocumentContactReferenceFields() []string {
 
 func commercialDocumentContactLookupFields() []string {
 	return []string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
+}
+
+func supplierContactLookupFields() []string {
+	return []string{"supplier_code", "supplier_reg_code", "supplier_vat_number", "supplier_email", "supplier_name"}
 }
 
 func employeeReferenceRequiredGroups() [][]string {

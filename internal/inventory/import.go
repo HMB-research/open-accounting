@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+
+	"github.com/HMB-research/open-accounting/internal/contactrefs"
 )
 
 type productImportRow struct {
@@ -62,6 +64,19 @@ var productImportHeaderAliases = map[string]string{
 	"barcode":                "barcode",
 	"supplier_id":            "supplier_id",
 	"supplier_code":          "supplier_code",
+	"vendor_code":            "supplier_code",
+	"supplier_name":          "supplier_name",
+	"vendor_name":            "supplier_name",
+	"supplier_reg_code":      "supplier_reg_code",
+	"supplier_registration":  "supplier_reg_code",
+	"supplier_registry_code": "supplier_reg_code",
+	"vendor_reg_code":        "supplier_reg_code",
+	"supplier_vat_number":    "supplier_vat_number",
+	"supplier_vat":           "supplier_vat_number",
+	"supplier_vat_no":        "supplier_vat_number",
+	"vendor_vat_number":      "supplier_vat_number",
+	"supplier_email":         "supplier_email",
+	"vendor_email":           "supplier_email",
 	"lead_time_days":         "lead_time_days",
 }
 
@@ -107,7 +122,7 @@ func (s *Service) ImportProductsCSV(ctx context.Context, tenantID, schemaName st
 	if err != nil {
 		return nil, err
 	}
-	supplierIDsByCode, err := s.productImportSupplierIDsByCode(ctx, schemaName, tenantID, rows)
+	supplierLookup, err := s.productImportSupplierLookup(ctx, schemaName, tenantID, rows)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +135,7 @@ func (s *Service) ImportProductsCSV(ctx context.Context, tenantID, schemaName st
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		product, err := buildProductFromImportRow(row, tenantID, categoryNameToID, categoryIDs, accountIDsByCode, supplierIDsByCode)
+		product, err := buildProductFromImportRow(row, tenantID, categoryNameToID, categoryIDs, accountIDsByCode, supplierLookup)
 		if err != nil {
 			appendProductImportRowError(result, row, err)
 			continue
@@ -257,7 +272,7 @@ func buildProductFromImportRow(
 	categoryNameToID map[string]string,
 	categoryIDs map[string]bool,
 	accountIDsByCode map[string]string,
-	supplierIDsByCode map[string]string,
+	supplierLookup contactrefs.SupplierLookup,
 ) (*Product, error) {
 	name := strings.TrimSpace(row.values["name"])
 	if name == "" {
@@ -316,7 +331,7 @@ func buildProductFromImportRow(
 	if err != nil {
 		return nil, err
 	}
-	supplierID, err := resolveOptionalProductImportSupplierID(row, supplierIDsByCode)
+	supplierID, err := resolveOptionalProductImportSupplierID(row, supplierLookup)
 	if err != nil {
 		return nil, err
 	}
@@ -373,18 +388,6 @@ func buildProductFromImportRow(
 	return product, nil
 }
 
-func parseOptionalProductImportUUID(field, value string) (string, error) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return "", nil
-	}
-	parsedID, err := uuid.Parse(trimmed)
-	if err != nil {
-		return "", fmt.Errorf("%s must be a valid UUID", field)
-	}
-	return parsedID.String(), nil
-}
-
 func (s *Service) productImportAccountIDsByCode(ctx context.Context, schemaName, tenantID string, rows []productImportRow) (map[string]string, error) {
 	usesAccountCodes := false
 	for _, row := range rows {
@@ -416,33 +419,26 @@ func (s *Service) productImportAccountIDsByCode(ctx context.Context, schemaName,
 	return accountIDsByCode, nil
 }
 
-func (s *Service) productImportSupplierIDsByCode(ctx context.Context, schemaName, tenantID string, rows []productImportRow) (map[string]string, error) {
-	usesSupplierCodes := false
+func (s *Service) productImportSupplierLookup(ctx context.Context, schemaName, tenantID string, rows []productImportRow) (contactrefs.SupplierLookup, error) {
+	usesSupplierReferences := false
 	for _, row := range rows {
-		if strings.TrimSpace(row.values["supplier_code"]) != "" {
-			usesSupplierCodes = true
+		if hasProductImportSupplierLookupReference(row) {
+			usesSupplierReferences = true
 			break
 		}
 	}
-	if !usesSupplierCodes {
-		return nil, nil
+	if !usesSupplierReferences {
+		return contactrefs.SupplierLookup{}, nil
 	}
 	if s.contacts == nil {
-		return nil, fmt.Errorf("contact service is required to resolve product supplier codes")
+		return contactrefs.SupplierLookup{}, fmt.Errorf("contact service is required to resolve product supplier references")
 	}
 
 	contacts, err := s.contacts.List(ctx, tenantID, schemaName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("list contacts for product import: %w", err)
+		return contactrefs.SupplierLookup{}, fmt.Errorf("list contacts for product import: %w", err)
 	}
-	supplierIDsByCode := make(map[string]string, len(contacts))
-	for _, contact := range contacts {
-		key := normalizedProductImportKey(contact.Code)
-		if key != "" {
-			supplierIDsByCode[key] = contact.ID
-		}
-	}
-	return supplierIDsByCode, nil
+	return contactrefs.NewSupplierLookup(contacts), nil
 }
 
 func resolveProductImportCategoryID(row productImportRow, categoryNameToID map[string]string, categoryIDs map[string]bool) (string, error) {
@@ -487,19 +483,34 @@ func resolveOptionalProductImportAccountID(row productImportRow, idField, codeFi
 	return accountID, nil
 }
 
-func resolveOptionalProductImportSupplierID(row productImportRow, supplierIDsByCode map[string]string) (string, error) {
-	if supplierID := strings.TrimSpace(row.values["supplier_id"]); supplierID != "" {
-		return parseOptionalProductImportUUID("supplier_id", supplierID)
+func resolveOptionalProductImportSupplierID(row productImportRow, supplierLookup contactrefs.SupplierLookup) (string, error) {
+	supplierID, err := supplierLookup.ResolveID(row.values["supplier_id"], productImportSupplierReferences(row)...)
+	if err != nil {
+		return "", err
 	}
-	supplierCode := strings.TrimSpace(row.values["supplier_code"])
-	if supplierCode == "" {
+	if supplierID == nil {
 		return "", nil
 	}
-	supplierID, ok := supplierIDsByCode[normalizedProductImportKey(supplierCode)]
-	if !ok {
-		return "", fmt.Errorf("supplier_code %q was not found", supplierCode)
+	return *supplierID, nil
+}
+
+func hasProductImportSupplierLookupReference(row productImportRow) bool {
+	for _, ref := range productImportSupplierReferences(row) {
+		if strings.TrimSpace(ref.Value) != "" {
+			return true
+		}
 	}
-	return supplierID, nil
+	return false
+}
+
+func productImportSupplierReferences(row productImportRow) []contactrefs.Reference {
+	return []contactrefs.Reference{
+		{Field: "supplier_code", Value: row.values["supplier_code"]},
+		{Field: "supplier_reg_code", Value: row.values["supplier_reg_code"]},
+		{Field: "supplier_vat_number", Value: row.values["supplier_vat_number"]},
+		{Field: "supplier_email", Value: row.values["supplier_email"]},
+		{Field: "supplier_name", Value: row.values["supplier_name"]},
+	}
 }
 
 func parseProductImportType(value string) (ProductType, error) {
