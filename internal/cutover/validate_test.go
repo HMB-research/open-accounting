@@ -333,6 +333,64 @@ func TestValidateBundleAcceptsSmartAccountsProviderPresetAliases(t *testing.T) {
 	assert.Contains(t, report.Files[4].Headers, "entry_reference")
 }
 
+func TestValidateBundleAcceptsProviderOpeningBalanceAmountAliases(t *testing.T) {
+	tests := []struct {
+		name            string
+		provider        MigrationProviderPreset
+		accountsContent string
+		openingContent  string
+	}{
+		{
+			name:            "merit",
+			provider:        MigrationProviderPresetMerit,
+			accountsContent: "konto_kood,konto_nimi,konto_tüüp\n1000,Cash,ASSET\n3000,Equity,EQUITY\n",
+			openingContent:  "konto_kood,deebetsumma,kreeditsumma,selgitus\n1000,100,0,Cash brought forward\n3000,0,100,Equity brought forward\n",
+		},
+		{
+			name:            "smartaccounts",
+			provider:        MigrationProviderPresetSmartAccounts,
+			accountsContent: "account_no,account_title,classification\n1000,Cash,ASSET\n3000,Equity,EQUITY\n",
+			openingContent:  "gl_account_no,opening_debit,opening_credit,memo\n1000,100,0,Cash brought forward\n3000,0,100,Equity brought forward\n",
+		},
+		{
+			name:            "directo",
+			provider:        MigrationProviderPresetDirecto,
+			accountsContent: "konto,kirjeldus,klass\n1000,Cash,ASSET\n3000,Equity,EQUITY\n",
+			openingContent:  "konto_nr,algsaldo_deebet,algsaldo_kreedit,selgitus\n1000,100,0,Cash brought forward\n3000,0,100,Equity brought forward\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report, err := ValidateBundle(&ValidateBundleRequest{
+				ProviderPreset: tt.provider,
+				Files: []BundleFile{
+					{
+						Kind:       KindAccounts,
+						FileName:   tt.name + "-accounts.csv",
+						CSVContent: tt.accountsContent,
+					},
+					{
+						Kind:       KindOpeningBalances,
+						FileName:   tt.name + "-opening-balances.csv",
+						CSVContent: tt.openingContent,
+					},
+				},
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, report)
+			assert.True(t, report.Summary.Ready)
+			assert.Equal(t, 0, report.Summary.ErrorCount)
+			require.Len(t, report.Files, 2)
+			assert.Contains(t, report.Files[1].Headers, "account_code")
+			assert.Contains(t, report.Files[1].Headers, "debit")
+			assert.Contains(t, report.Files[1].Headers, "credit")
+			assert.Contains(t, report.Files[1].Headers, "description")
+		})
+	}
+}
+
 func TestValidateBundleAcceptsMeritInventoryAndAssetProviderPresetAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: MigrationProviderPresetMerit,
