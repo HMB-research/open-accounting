@@ -2477,6 +2477,7 @@ func validateFixedAssetInvoiceConsistency(
 	if len(invoiceTargets) == 0 {
 		return
 	}
+	purchaseCostTotals := map[string]decimal.Decimal{}
 	for _, file := range files {
 		if file.kind != KindFixedAssets {
 			continue
@@ -2493,7 +2494,32 @@ func validateFixedAssetInvoiceConsistency(
 			if hasFixedAssetInvoiceTypeMismatch(report, file, row, target) {
 				continue
 			}
-			hasFixedAssetInvoiceSupplierMismatch(report, file, row, target)
+			if hasFixedAssetInvoiceSupplierMismatch(report, file, row, target) {
+				continue
+			}
+			purchaseCost, ok := cutoverFixedAssetPurchaseCost(row)
+			if !ok {
+				continue
+			}
+			nextTotal := purchaseCostTotals[target.key].Add(purchaseCost)
+			purchaseCostTotals[target.key] = nextTotal
+			if nextTotal.GreaterThan(target.total) {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindFixedAssets,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "purchase_cost",
+					Value:      purchaseCost.String(),
+					TargetKind: target.targetKind,
+					Message: fmt.Sprintf(
+						"fixed asset purchase costs for source invoice %q exceed imported invoice total: purchase_costs=%s invoice_total=%s",
+						target.display,
+						nextTotal.String(),
+						target.total.String(),
+					),
+				})
+			}
 		}
 	}
 }
@@ -2569,6 +2595,14 @@ func hasFixedAssetInvoiceSupplierMismatch(
 		return true
 	}
 	return false
+}
+
+func cutoverFixedAssetPurchaseCost(row parsedRow) (decimal.Decimal, bool) {
+	purchaseCost, issue := parseCutoverRequiredDecimal(row.values["purchase_cost"], "purchase_cost")
+	if issue != nil || purchaseCost.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, false
+	}
+	return purchaseCost, true
 }
 
 func validateImportedInvoiceAmountPaidConsistency(report *BundleValidationReport, files []parsedFile) {

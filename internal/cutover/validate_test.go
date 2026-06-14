@@ -4807,7 +4807,7 @@ func TestValidateBundleAcceptsPreservedContactIDReferences(t *testing.T) {
 		{
 			Kind:       KindInvoices,
 			FileName:   "invoices.csv",
-			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,PURCHASE,SUP-1,2026-05-30,2026-06-14,Work,1,100,22\n",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-1,PURCHASE,SUP-1,2026-05-30,2026-06-14,Work,1,1000,22\n",
 		},
 		{
 			Kind:       KindPayments,
@@ -5135,6 +5135,73 @@ func TestValidateBundleReportsFixedAssetSalesSourceInvoice(t *testing.T) {
 	assert.Equal(t, "invoice_id", report.Issues[0].Field)
 	assert.Equal(t, sourceInvoiceID, report.Issues[0].Value)
 	assert.Contains(t, report.Issues[0].Message, `fixed asset source invoice "`+sourceInvoiceID+`" is SALES; expected PURCHASE invoice`)
+}
+
+func TestValidateBundleAcceptsFixedAssetPurchaseCostsWithinSourceInvoiceTotal(t *testing.T) {
+	sourceInvoiceID := "11111111-1111-1111-1111-111111111111"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,Supplier One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" + sourceInvoiceID + ",BILL-1,PURCHASE,SUP-1,2026-05-30,2026-06-14,Hardware bundle,1,1000,22\n",
+		},
+		{
+			Kind:     KindFixedAssets,
+			FileName: "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_code,invoice_id\n" +
+				"FA-1,Laptop,2026-05-30,600,SUP-1," + sourceInvoiceID + "\n" +
+				"FA-2,Monitor,2026-05-30,500,SUP-1," + sourceInvoiceID + "\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsFixedAssetPurchaseCostsExceedSourceInvoiceTotal(t *testing.T) {
+	sourceInvoiceID := "11111111-1111-1111-1111-111111111111"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,Supplier One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" + sourceInvoiceID + ",BILL-1,PURCHASE,SUP-1,2026-05-30,2026-06-14,Hardware bundle,1,1000,22\n",
+		},
+		{
+			Kind:     KindFixedAssets,
+			FileName: "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_code,invoice_id\n" +
+				"FA-1,Laptop,2026-05-30,800,SUP-1," + sourceInvoiceID + "\n" +
+				"FA-2,Monitor,2026-05-30,500,SUP-1," + sourceInvoiceID + "\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindFixedAssets, report.Issues[0].Kind)
+	assert.Equal(t, KindInvoices, report.Issues[0].TargetKind)
+	assert.Equal(t, "purchase_cost", report.Issues[0].Field)
+	assert.Equal(t, "500", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, `fixed asset purchase costs for source invoice "`+sourceInvoiceID+`" exceed imported invoice total`)
+	assert.Contains(t, report.Issues[0].Message, "purchase_costs=1300")
+	assert.Contains(t, report.Issues[0].Message, "invoice_total=1220")
 }
 
 func TestValidateBundleReportsMissingFixedAssetSupplierIdentityReference(t *testing.T) {
