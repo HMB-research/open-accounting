@@ -5845,6 +5845,67 @@ func TestValidateBundleReportsFixedAssetSalesSourceInvoice(t *testing.T) {
 	assert.Contains(t, report.Issues[0].Message, `fixed asset source invoice "`+sourceInvoiceID+`" is SALES; expected PURCHASE invoice`)
 }
 
+func TestValidateBundleAcceptsFixedAssetPurchaseDateAfterSourceInvoiceIssueDate(t *testing.T) {
+	sourceInvoiceID := "11111111-1111-1111-1111-111111111111"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,Supplier One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" + sourceInvoiceID + ",BILL-1,PURCHASE,SUP-1,2026-05-30,2026-06-14,Laptop,1,1200,22\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_code,invoice_id\nFA-1,Laptop,2026-05-31,1200,SUP-1," + sourceInvoiceID + "\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsFixedAssetPurchaseDateBeforeSourceInvoiceIssueDate(t *testing.T) {
+	sourceInvoiceID := "11111111-1111-1111-1111-111111111111"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nSUP-1,Supplier One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" + sourceInvoiceID + ",BILL-1,PURCHASE,SUP-1,2026-05-30,2026-06-14,Laptop,1,1200,22\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_code,invoice_id\nFA-1,Laptop,2026-05-29,1200,SUP-1," + sourceInvoiceID + "\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindFixedAssets, report.Issues[0].Kind)
+	assert.Equal(t, KindInvoices, report.Issues[0].TargetKind)
+	assert.Equal(t, "purchase_date", report.Issues[0].Field)
+	assert.Equal(t, "2026-05-29", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, `fixed asset purchase_date "2026-05-29" cannot be before imported source invoice "`+sourceInvoiceID+`" issue_date "2026-05-30"`)
+}
+
 func TestValidateBundleAcceptsFixedAssetPurchaseCostsWithinSourceInvoiceTotal(t *testing.T) {
 	sourceInvoiceID := "11111111-1111-1111-1111-111111111111"
 
