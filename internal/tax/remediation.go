@@ -49,7 +49,7 @@ func BuildKMDRemediationActions(declaration *KMDDeclaration) []KMDRemediationAct
 
 	status := strings.ToUpper(strings.TrimSpace(declaration.Status))
 	switch status {
-	case "ACCEPTED":
+	case KMDStatusAccepted:
 		return []KMDRemediationAction{
 			action(
 				"kmd_accepted_archive",
@@ -59,14 +59,14 @@ func BuildKMDRemediationActions(declaration *KMDDeclaration) []KMDRemediationAct
 				fmt.Sprintf("oa tax kmd export-xml %s --output ./kmd-%s.xml", periodFlags, period),
 			),
 		}
-	case "SUBMITTED":
+	case KMDStatusSubmitted:
 		actions := []KMDRemediationAction{
 			action(
 				"kmd_awaiting_authority_acceptance",
 				"ACTION",
 				fmt.Sprintf("KMD %s has been submitted and is awaiting authority acceptance.", period),
 				"Monitor e-MTA acceptance and retain the accepted confirmation with supporting VAT evidence.",
-				fmt.Sprintf("oa tax kmd export-xml %s --output ./kmd-%s.xml", periodFlags, period),
+				fmt.Sprintf("oa tax kmd mark-accepted %s", periodFlags),
 			),
 		}
 		if declaration.SubmittedAt == nil {
@@ -75,7 +75,7 @@ func BuildKMDRemediationActions(declaration *KMDDeclaration) []KMDRemediationAct
 				"WARNING",
 				fmt.Sprintf("KMD %s is marked submitted without a submitted_at timestamp.", period),
 				"Record the submission timestamp or re-import the historical KMD period with submitted_at populated.",
-				"oa tax kmd import-history --file ./kmd-history.csv",
+				fmt.Sprintf("oa tax kmd mark-submitted %s", periodFlags),
 			))
 		}
 		return actions

@@ -3013,6 +3013,36 @@ describe("API Client - Core Functionality", () => {
       expect(result).toHaveLength(1);
     });
 
+    it("should mark KMD submitted and accepted", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "submitted" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "accepted" }),
+        });
+
+      const submitted = await api.markKMDSubmitted("tenant-123", 2024, 1);
+      const accepted = await api.markKMDAccepted("tenant-123", 2024, 1);
+
+      expect(submitted.status).toBe("submitted");
+      expect(accepted.status).toBe("accepted");
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/tax/kmd/2024/1/submit"),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/tax/kmd/2024/1/accept"),
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
     it("should get cash flow statement", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

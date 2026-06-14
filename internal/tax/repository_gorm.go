@@ -451,6 +451,51 @@ func (r *GORMRepository) ListDeclarations(ctx context.Context, schemaName, tenan
 	return declarations, nil
 }
 
+// MarkKMDSubmitted records the e-MTA submission timestamp for a KMD declaration.
+func (r *GORMRepository) MarkKMDSubmitted(ctx context.Context, schemaName, tenantID, declarationID string, submittedAt time.Time) error {
+	db, err := r.tenantTable(ctx, schemaName, "kmd_declarations")
+	if err != nil {
+		return err
+	}
+
+	result := db.
+		Where("tenant_id = ? AND id = ?", tenantID, declarationID).
+		Updates(map[string]any{
+			"status":       KMDStatusSubmitted,
+			"submitted_at": submittedAt,
+			"updated_at":   submittedAt,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("mark KMD submitted: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrKMDDeclarationNotFound
+	}
+	return nil
+}
+
+// UpdateKMDStatus updates a KMD declaration status without replacing its rows.
+func (r *GORMRepository) UpdateKMDStatus(ctx context.Context, schemaName, tenantID, declarationID, status string, updatedAt time.Time) error {
+	db, err := r.tenantTable(ctx, schemaName, "kmd_declarations")
+	if err != nil {
+		return err
+	}
+
+	result := db.
+		Where("tenant_id = ? AND id = ?", tenantID, declarationID).
+		Updates(map[string]any{
+			"status":     status,
+			"updated_at": updatedAt,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update KMD status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrKMDDeclarationNotFound
+	}
+	return nil
+}
+
 // Conversion helpers
 
 func kmdDeclarationToModel(decl *KMDDeclaration) *models.KMDDeclaration {

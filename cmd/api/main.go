@@ -827,6 +827,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/tax/kmd", h.HandleListKMD)
 				r.Get("/tax/kmd/{year}/{month}/xml", h.HandleExportKMD)
 				r.Get("/tax/kmd/{year}/{month}/inf", h.HandleGenerateKMDINF)
+				r.Post("/tax/kmd/{year}/{month}/submit", h.HandleMarkKMDSubmitted)
+				r.Post("/tax/kmd/{year}/{month}/accept", h.HandleMarkKMDAccepted)
 				r.Get("/tax/eu-vat/oss", h.HandleGenerateEUVATOSS)
 
 				// Payroll - Employees

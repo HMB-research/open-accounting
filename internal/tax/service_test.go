@@ -27,6 +27,10 @@ type MockRepository struct {
 	listDeclarationsResult []KMDDeclaration
 	listDeclarationsErr    error
 	savedDeclarations      []*KMDDeclaration
+	markSubmittedErr       error
+	updateStatusErr        error
+	markedSubmittedIDs     []string
+	updatedStatuses        map[string]string
 }
 
 func (m *MockRepository) QueryVATData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]VATAggregateRow, error) {
@@ -75,6 +79,25 @@ func (m *MockRepository) ListDeclarations(ctx context.Context, schemaName, tenan
 	return m.listDeclarationsResult, nil
 }
 
+func (m *MockRepository) MarkKMDSubmitted(ctx context.Context, schemaName, tenantID, declarationID string, submittedAt time.Time) error {
+	if m.markSubmittedErr != nil {
+		return m.markSubmittedErr
+	}
+	m.markedSubmittedIDs = append(m.markedSubmittedIDs, declarationID)
+	return nil
+}
+
+func (m *MockRepository) UpdateKMDStatus(ctx context.Context, schemaName, tenantID, declarationID, status string, updatedAt time.Time) error {
+	if m.updateStatusErr != nil {
+		return m.updateStatusErr
+	}
+	if m.updatedStatuses == nil {
+		m.updatedStatuses = make(map[string]string)
+	}
+	m.updatedStatuses[declarationID] = status
+	return nil
+}
+
 func TestService_AggregateVATByCode(t *testing.T) {
 	rows := aggregateVATByCode([]VATEntry{
 		{VATCode: "1", TaxBase: 1000, TaxAmount: 220, IsOutput: true},
@@ -95,6 +118,53 @@ func TestService_AggregateVATByCode(t *testing.T) {
 	assert.NotNil(t, row1)
 	assert.Equal(t, "1500", row1.TaxBase.String())
 	assert.Equal(t, "330", row1.TaxAmount.String())
+}
+
+func TestService_MarkKMDStatusTransitions(t *testing.T) {
+	repo := &MockRepository{
+		existingDeclarations: map[string]*KMDDeclaration{
+			"2026-03": {
+				ID:       "kmd-1",
+				TenantID: "tenant-1",
+				Year:     2026,
+				Month:    3,
+				Status:   KMDStatusDraft,
+			},
+		},
+	}
+	service := NewServiceWithRepository(repo)
+
+	err := service.MarkKMDSubmitted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+	require.NoError(t, err)
+	require.Equal(t, []string{"kmd-1"}, repo.markedSubmittedIDs)
+
+	err = service.MarkKMDAccepted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+	require.NoError(t, err)
+	require.Equal(t, KMDStatusAccepted, repo.updatedStatuses["kmd-1"])
+}
+
+func TestService_MarkKMDStatusTransitionsErrors(t *testing.T) {
+	service := NewServiceWithRepository(&MockRepository{})
+	err := service.MarkKMDSubmitted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+	require.ErrorIs(t, err, ErrKMDDeclarationNotFound)
+
+	service = NewServiceWithRepository(&MockRepository{
+		existingDeclarations: map[string]*KMDDeclaration{
+			"2026-03": {ID: "kmd-1", TenantID: "tenant-1", Year: 2026, Month: 3},
+		},
+		markSubmittedErr: errors.New("submit failed"),
+	})
+	err = service.MarkKMDSubmitted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+	require.ErrorContains(t, err, "submit failed")
+
+	service = NewServiceWithRepository(&MockRepository{
+		existingDeclarations: map[string]*KMDDeclaration{
+			"2026-03": {ID: "kmd-1", TenantID: "tenant-1", Year: 2026, Month: 3},
+		},
+		updateStatusErr: errors.New("status failed"),
+	})
+	err = service.MarkKMDAccepted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+	require.ErrorContains(t, err, "status failed")
 }
 
 func TestMapVATRateToKMDCode(t *testing.T) {

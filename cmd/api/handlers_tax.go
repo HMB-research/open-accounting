@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -214,6 +216,62 @@ func (h *Handlers) HandleGenerateEUVATOSS(w http.ResponseWriter, r *http.Request
 	}
 
 	respondJSON(w, http.StatusOK, report)
+}
+
+// HandleMarkKMDSubmitted marks a KMD declaration as submitted.
+// @Summary Mark KMD as submitted
+// @Description Mark a KMD declaration as submitted to e-MTA and record the submission timestamp.
+// @Tags Tax
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year path string true "Year"
+// @Param month path string true "Month"
+// @Success 200 {object} object{status=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/tax/kmd/{year}/{month}/submit [post]
+func (h *Handlers) HandleMarkKMDSubmitted(w http.ResponseWriter, r *http.Request) {
+	h.handleKMDStatusTransition(w, r, "submitted", h.taxService.MarkKMDSubmitted)
+}
+
+// HandleMarkKMDAccepted marks a KMD declaration as accepted.
+// @Summary Mark KMD as accepted
+// @Description Mark a KMD declaration as accepted by e-MTA.
+// @Tags Tax
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param year path string true "Year"
+// @Param month path string true "Month"
+// @Success 200 {object} object{status=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/tax/kmd/{year}/{month}/accept [post]
+func (h *Handlers) HandleMarkKMDAccepted(w http.ResponseWriter, r *http.Request) {
+	h.handleKMDStatusTransition(w, r, "accepted", h.taxService.MarkKMDAccepted)
+}
+
+func (h *Handlers) handleKMDStatusTransition(
+	w http.ResponseWriter,
+	r *http.Request,
+	status string,
+	transition func(context.Context, string, string, string, string) error,
+) {
+	tenantCtx := h.tenantContextFromRequest(r)
+	year := chi.URLParam(r, "year")
+	month := chi.URLParam(r, "month")
+
+	if err := transition(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, year, month); err != nil {
+		if errors.Is(err, tax.ErrKMDDeclarationNotFound) {
+			respondError(w, http.StatusNotFound, "Declaration not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
 // HandleExportKMD exports a KMD declaration to XML

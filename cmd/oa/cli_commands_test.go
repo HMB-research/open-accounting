@@ -22517,6 +22517,12 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/xml":
 			w.Header().Set("Content-Type", "application/xml")
 			_, _ = w.Write([]byte("<KMD>ok</KMD>"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/submit":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "submitted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/accept":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/eu-vat/oss":
 			w.Header().Set("Content-Type", "application/json")
 			assert.Equal(t, "2026", r.URL.Query().Get("year"))
@@ -22648,6 +22654,16 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	assert.Equal(t, "<KMD>ok</KMD>", stdout.String())
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "mark-submitted", "--year", "2026", "--month", "3"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Marked KMD 2026-03 as submitted")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "mark-accepted", "--year", "2026", "--month", "3", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "accepted"`)
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"tax", "oss", "report", "--year", "2026", "--quarter", "1", "--include-b2b"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "EU VAT OSS 2026-Q1")
@@ -22761,6 +22777,10 @@ func TestCLITaxBranches(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/xml":
 			w.Header().Set("Content-Type", "application/xml")
 			_, _ = w.Write([]byte("<KMD>file</KMD>"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/submit":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "submitted"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/3/accept":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/eu-vat/oss":
 			assert.Equal(t, "2026", r.URL.Query().Get("year"))
 			assert.Equal(t, "1", r.URL.Query().Get("quarter"))
@@ -22825,6 +22845,16 @@ func TestCLITaxBranches(t *testing.T) {
 	assert.Equal(t, "<KMD>file</KMD>", string(xmlContent))
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "mark-submitted", "--year", "2026", "--month", "3", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "submitted"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"tax", "kmd", "mark-accepted", "--year", "2026", "--month", "3"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Marked KMD 2026-03 as accepted")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"tax", "oss", "report", "--year", "2026", "--quarter", "1", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"include_b2b": false`)
@@ -22864,6 +22894,10 @@ func TestCLITaxValidationBranches(t *testing.T) {
 		{name: "export xml bad flag", args: []string{"kmd", "export-xml", "--bad"}, want: "flag provided but not defined"},
 		{name: "export xml missing year", args: []string{"kmd", "export-xml", "--month", "3"}, want: "year is required"},
 		{name: "export xml non positive month", args: []string{"kmd", "export-xml", "--year", "2026", "--month", "0"}, want: "month must be positive"},
+		{name: "mark submitted bad flag", args: []string{"kmd", "mark-submitted", "--bad"}, want: "flag provided but not defined"},
+		{name: "mark submitted missing year", args: []string{"kmd", "mark-submitted", "--month", "3"}, want: "year is required"},
+		{name: "mark accepted bad flag", args: []string{"kmd", "mark-accepted", "--bad"}, want: "flag provided but not defined"},
+		{name: "mark accepted parse month", args: []string{"kmd", "mark-accepted", "--year", "2026", "--month", "bad"}, want: "parse month"},
 	}
 
 	for _, tc := range tests {
@@ -22913,6 +22947,8 @@ func TestCLITaxKMDAuthAndAPIErrors(t *testing.T) {
 			assert.Equal(t, "kmd-error.csv", req.FileName)
 			assert.Contains(t, req.CSVContent, "1000.00")
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/4/xml":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/4/submit":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/tax/kmd/2026/4/accept":
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
 		}
@@ -22932,6 +22968,8 @@ func TestCLITaxKMDAuthAndAPIErrors(t *testing.T) {
 		{name: "inf api error", args: []string{"tax", "kmd", "inf", "--year", "2026", "--month", "4", "--threshold", "1000"}},
 		{name: "import history api error", args: []string{"tax", "kmd", "import-history", "--file", kmdFile}},
 		{name: "export xml api error", args: []string{"tax", "kmd", "export-xml", "--year", "2026", "--month", "4"}},
+		{name: "mark submitted API error", args: []string{"tax", "kmd", "mark-submitted", "--year", "2026", "--month", "4"}},
+		{name: "mark accepted API error", args: []string{"tax", "kmd", "mark-accepted", "--year", "2026", "--month", "4"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

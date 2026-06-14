@@ -3771,6 +3771,24 @@ Authorization: Bearer <token>
 
 Generates KMD INF A/B appendix rows from domestic VAT-bearing sales and purchase invoices whose partner-period taxable total reaches the threshold excluding VAT. The default threshold is `1000`.
 
+### Mark KMD Submitted
+
+```http
+POST /tenants/{tenantId}/tax/kmd/{year}/{month}/submit
+Authorization: Bearer <token>
+```
+
+Marks an existing KMD declaration as submitted to e-MTA and records the current server timestamp in `submitted_at`. Returns `{ "status": "submitted" }` when the transition succeeds.
+
+### Mark KMD Accepted
+
+```http
+POST /tenants/{tenantId}/tax/kmd/{year}/{month}/accept
+Authorization: Bearer <token>
+```
+
+Marks an existing KMD declaration as accepted by e-MTA. Returns `{ "status": "accepted" }` when the transition succeeds and powers the accountant workspace KMD acceptance assignment action.
+
 ### Generate EU VAT OSS Report
 
 ```http

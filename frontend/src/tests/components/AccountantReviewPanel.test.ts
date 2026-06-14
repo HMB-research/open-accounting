@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import Decimal from 'decimal.js';
 import { baseLocale, setLocale } from '$lib/paraglide/runtime.js';
 import type { Tenant } from '$lib/api';
@@ -22,6 +22,7 @@ const { apiMock } = vi.hoisted(() => ({
 		executeMigration: vi.fn(),
 		generateKMD: vi.fn(),
 		downloadKMDXml: vi.fn(),
+		markKMDAccepted: vi.fn(),
 		submitExpense: vi.fn(),
 		approveExpense: vi.fn(),
 		postExpense: vi.fn(),
@@ -418,6 +419,7 @@ describe('AccountantReviewPanel', () => {
 		apiMock.executeMigration.mockResolvedValue({ id: 'run-executed' });
 		apiMock.generateKMD.mockResolvedValue({ id: 'kmd-1' });
 		apiMock.downloadKMDXml.mockResolvedValue(undefined);
+		apiMock.markKMDAccepted.mockResolvedValue({ status: 'accepted' });
 		apiMock.submitExpense.mockResolvedValue({
 			id: 'expense-draft-1',
 			status: 'SUBMITTED'
@@ -1805,6 +1807,46 @@ describe('AccountantReviewPanel', () => {
 				],
 				created_at: '2026-05-31T00:00:00Z',
 				updated_at: '2026-05-31T00:00:00Z'
+			},
+			{
+				id: 'kmd-submitted-1',
+				tenant_id: 'tenant-1',
+				year: 2026,
+				month: 6,
+				status: 'SUBMITTED',
+				total_output_vat: new Decimal(220),
+				total_input_vat: new Decimal(30),
+				rows: [
+					{
+						code: '1',
+						description: 'Standard rate sales',
+						tax_base: new Decimal(1000),
+						tax_amount: new Decimal(220)
+					}
+				],
+				submitted_at: '2026-06-20T00:00:00Z',
+				remediation_actions: [
+					{
+						code: 'kmd_awaiting_authority_acceptance',
+						severity: 'ACTION',
+						scope: 'tax',
+						owner_role: 'accountant',
+						workspace_queue: 'kmd_declarations',
+						assignment_key:
+							'kmd-declarations:kmd-awaiting-authority-acceptance:kmd-declaration:kmd-submitted-1:2026-06',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'KMD 2026-06 has been submitted and is awaiting authority acceptance.',
+						action: 'Monitor e-MTA acceptance and retain the accepted confirmation with supporting VAT evidence.',
+						entity_type: 'kmd_declaration',
+						entity_id: 'kmd-submitted-1',
+						period: '2026-06',
+						ui_path: '/tax/kmd?year=2026&month=6',
+						cli_command: 'oa tax kmd mark-accepted --year 2026 --month 6'
+					}
+				],
+				created_at: '2026-06-30T00:00:00Z',
+				updated_at: '2026-06-30T00:00:00Z'
 			}
 		]);
 
@@ -1815,6 +1857,9 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(screen.getByText('KMD 2026-04 has no VAT rows or totals.')).toBeInTheDocument();
 			expect(screen.getByText('KMD 2026-05 has VAT payable of 190.')).toBeInTheDocument();
+			expect(
+				screen.getByText('KMD 2026-06 has been submitted and is awaiting authority acceptance.')
+			).toBeInTheDocument();
 		});
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Regenerate KMD' }));
@@ -1827,11 +1872,20 @@ describe('AccountantReviewPanel', () => {
 			expect(screen.getByText('KMD regenerated from workspace.')).toBeInTheDocument();
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Export KMD XML' }));
+		const payableKmdRow = screen.getByText('KMD 2026-05 has VAT payable of 190.').closest('li');
+		expect(payableKmdRow).not.toBeNull();
+		await fireEvent.click(within(payableKmdRow as HTMLElement).getByRole('button', { name: 'Export KMD XML' }));
 
 		await waitFor(() => {
 			expect(apiMock.downloadKMDXml).toHaveBeenCalledWith('tenant-1', 2026, 5);
 			expect(screen.getByText('KMD XML exported from workspace.')).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Mark KMD accepted' }));
+
+		await waitFor(() => {
+			expect(apiMock.markKMDAccepted).toHaveBeenCalledWith('tenant-1', 2026, 6);
+			expect(screen.getByText('KMD marked accepted from workspace.')).toBeInTheDocument();
 		});
 	});
 

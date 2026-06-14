@@ -85,6 +85,14 @@ func (m *mockTaxRepository) ListDeclarations(ctx context.Context, schemaName, te
 	return m.listDeclarationsResult, nil
 }
 
+func (m *mockTaxRepository) MarkKMDSubmitted(ctx context.Context, schemaName, tenantID, declarationID string, submittedAt time.Time) error {
+	return nil
+}
+
+func (m *mockTaxRepository) UpdateKMDStatus(ctx context.Context, schemaName, tenantID, declarationID, status string, updatedAt time.Time) error {
+	return nil
+}
+
 func setupTaxHandlers() (*Handlers, *mockTenantRepository, *mockTaxRepository) {
 	tenantRepo := newMockTenantRepository()
 	tenantSvc := tenant.NewServiceWithRepository(tenantRepo)

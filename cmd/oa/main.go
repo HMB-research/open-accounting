@@ -294,6 +294,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd inf               Generate KMD INF appendix report")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd import-history    Import historical KMD declarations from CSV")
 	_, _ = fmt.Fprintln(a.stdout, "  tax kmd export-xml        Export KMD XML")
+	_, _ = fmt.Fprintln(a.stdout, "  tax kmd mark-submitted    Mark a KMD declaration submitted")
+	_, _ = fmt.Fprintln(a.stdout, "  tax kmd mark-accepted     Mark a KMD declaration accepted")
 	_, _ = fmt.Fprintln(a.stdout, "  tax oss report            Generate EU VAT OSS report")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices list             List invoices")
 	_, _ = fmt.Fprintln(a.stdout, "  invoices create           Create an invoice")
@@ -11166,6 +11168,54 @@ func (a *cliApp) runTax(ctx context.Context, args []string) error {
 			return err
 		}
 		return writeExportOutput(a.stdout, strings.TrimSpace(*outputPath), content, "KMD XML")
+
+	case "mark-submitted":
+		fs := flag.NewFlagSet("tax kmd mark-submitted", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.markKMDSubmitted(ctx, cfg.TenantID, year, month)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Marked KMD %04d-%02d as submitted\n", year, month)
+		return nil
+
+	case "mark-accepted":
+		fs := flag.NewFlagSet("tax kmd mark-accepted", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		yearFlag := fs.String("year", "", "Declaration year")
+		monthFlag := fs.String("month", "", "Declaration month")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		year, month, err := parseYearMonthFlags(*yearFlag, *monthFlag)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.markKMDAccepted(ctx, cfg.TenantID, year, month)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Marked KMD %04d-%02d as accepted\n", year, month)
+		return nil
 
 	default:
 		return fmt.Errorf("unknown tax kmd subcommand %q", args[1])

@@ -1102,6 +1102,10 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"GET": "tax kmd inf"})
 	case "/tax/kmd/{year}/{month}/xml":
 		return commandForMethod(method, map[string]string{"GET": "tax kmd export-xml"})
+	case "/tax/kmd/{year}/{month}/submit":
+		return commandForMethod(method, map[string]string{"POST": "tax kmd mark-submitted"})
+	case "/tax/kmd/{year}/{month}/accept":
+		return commandForMethod(method, map[string]string{"POST": "tax kmd mark-accepted"})
 	case "/tax/eu-vat/oss":
 		return commandForMethod(method, map[string]string{"GET": "tax oss report"})
 	case "/employees":
