@@ -48,6 +48,25 @@ type KMDRemediationAction struct {
 	CLICommand     string `json:"cli_command,omitempty"`
 }
 
+// TaxReportRemediationAction describes one operator action for tax report review or filing.
+type TaxReportRemediationAction struct {
+	Code           string `json:"code"`
+	Severity       string `json:"severity"`
+	Scope          string `json:"scope"`
+	OwnerRole      string `json:"owner_role"`
+	WorkspaceQueue string `json:"workspace_queue,omitempty"`
+	AssignmentKey  string `json:"assignment_key,omitempty"`
+	Priority       string `json:"priority,omitempty"`
+	DueInDays      int    `json:"due_in_days,omitempty"`
+	Message        string `json:"message"`
+	Action         string `json:"action"`
+	Period         string `json:"period,omitempty"`
+	EntityType     string `json:"entity_type,omitempty"`
+	EntityID       string `json:"entity_id,omitempty"`
+	UIPath         string `json:"ui_path,omitempty"`
+	CLICommand     string `json:"cli_command,omitempty"`
+}
+
 // KMDINFPart identifies the sales or purchase side of the KMD INF appendix.
 type KMDINFPart string
 
@@ -61,13 +80,14 @@ var KMDINFDefaultThreshold = decimal.NewFromInt(1000)
 
 // KMDINFReport contains invoice-level KMD INF appendix rows for a VAT period.
 type KMDINFReport struct {
-	TenantID    string              `json:"tenant_id"`
-	Year        int                 `json:"year"`
-	Month       int                 `json:"month"`
-	Threshold   decimal.Decimal     `json:"threshold"`
-	GeneratedAt time.Time           `json:"generated_at"`
-	Summary     []KMDINFPartSummary `json:"summary"`
-	Rows        []KMDINFReportRow   `json:"rows"`
+	TenantID           string                       `json:"tenant_id"`
+	Year               int                          `json:"year"`
+	Month              int                          `json:"month"`
+	Threshold          decimal.Decimal              `json:"threshold"`
+	GeneratedAt        time.Time                    `json:"generated_at"`
+	Summary            []KMDINFPartSummary          `json:"summary"`
+	Rows               []KMDINFReportRow            `json:"rows"`
+	RemediationActions []TaxReportRemediationAction `json:"remediation_actions,omitempty"`
 }
 
 // KMDINFPartSummary summarizes one KMD INF appendix part.
@@ -106,22 +126,23 @@ type KMDINFReportRequest struct {
 
 // EUVATOSSReport contains quarterly EU VAT One Stop Shop reporting totals.
 type EUVATOSSReport struct {
-	TenantID      string                   `json:"tenant_id"`
-	Year          int                      `json:"year"`
-	Quarter       int                      `json:"quarter"`
-	PeriodStart   time.Time                `json:"period_start"`
-	PeriodEnd     time.Time                `json:"period_end"`
-	Scheme        string                   `json:"scheme"`
-	Currency      string                   `json:"currency"`
-	IncludeB2B    bool                     `json:"include_b2b"`
-	GeneratedAt   time.Time                `json:"generated_at"`
-	Summary       []EUVATOSSCountrySummary `json:"summary"`
-	Rows          []EUVATOSSReportRow      `json:"rows"`
-	TaxableAmount decimal.Decimal          `json:"taxable_amount"`
-	VATAmount     decimal.Decimal          `json:"vat_amount"`
-	TotalAmount   decimal.Decimal          `json:"total_amount"`
-	InvoiceCount  int                      `json:"invoice_count"`
-	LineCount     int                      `json:"line_count"`
+	TenantID           string                       `json:"tenant_id"`
+	Year               int                          `json:"year"`
+	Quarter            int                          `json:"quarter"`
+	PeriodStart        time.Time                    `json:"period_start"`
+	PeriodEnd          time.Time                    `json:"period_end"`
+	Scheme             string                       `json:"scheme"`
+	Currency           string                       `json:"currency"`
+	IncludeB2B         bool                         `json:"include_b2b"`
+	GeneratedAt        time.Time                    `json:"generated_at"`
+	Summary            []EUVATOSSCountrySummary     `json:"summary"`
+	Rows               []EUVATOSSReportRow          `json:"rows"`
+	TaxableAmount      decimal.Decimal              `json:"taxable_amount"`
+	VATAmount          decimal.Decimal              `json:"vat_amount"`
+	TotalAmount        decimal.Decimal              `json:"total_amount"`
+	InvoiceCount       int                          `json:"invoice_count"`
+	LineCount          int                          `json:"line_count"`
+	RemediationActions []TaxReportRemediationAction `json:"remediation_actions,omitempty"`
 }
 
 // EUVATOSSCountrySummary summarizes OSS report rows for one member state.

@@ -176,6 +176,7 @@ func (s *Service) GenerateKMDINF(ctx context.Context, tenantID, schemaName strin
 		Rows:        rows,
 		Summary:     summarizeKMDINFRows(rows),
 	}
+	report.RemediationActions = BuildKMDINFRemediationActions(report)
 
 	return report, nil
 }
@@ -222,6 +223,7 @@ func (s *Service) GenerateEUVATOSS(ctx context.Context, tenantID, schemaName str
 		report.LineCount += row.LineCount
 		report.InvoiceCount += row.InvoiceCount
 	}
+	report.RemediationActions = BuildEUVATOSSRemediationActions(report)
 
 	return report, nil
 }

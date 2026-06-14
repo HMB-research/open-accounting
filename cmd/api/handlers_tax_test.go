@@ -180,6 +180,8 @@ func TestTaxHandlersKMDWorkflow(t *testing.T) {
 	require.Len(t, infReport.Rows, 1)
 	require.Equal(t, tax.KMDINFPartSales, infReport.Rows[0].Part)
 	require.True(t, infReport.Threshold.Equal(decimal.NewFromInt(1000)))
+	require.Contains(t, taxReportRemediationCodes(infReport.RemediationActions), "kmd_inf_review_required")
+	require.Equal(t, "tax_reports", infReport.RemediationActions[0].WorkspaceQueue)
 
 	taxRepo.ossRows = []tax.EUVATOSSReportRow{{
 		CountryCode:   "DE",
@@ -200,6 +202,8 @@ func TestTaxHandlersKMDWorkflow(t *testing.T) {
 	require.Equal(t, "DE", ossReport.Rows[0].CountryCode)
 	require.Equal(t, "Germany", ossReport.Rows[0].CountryName)
 	require.True(t, ossReport.IncludeB2B)
+	require.Contains(t, taxReportRemediationCodes(ossReport.RemediationActions), "eu_vat_oss_review_required")
+	require.Equal(t, "tax_reports", ossReport.RemediationActions[0].WorkspaceQueue)
 
 	taxRepo.getDecl = &tax.KMDDeclaration{
 		ID:             "decl-export",
@@ -247,6 +251,14 @@ func TestTaxHandlersKMDWorkflow(t *testing.T) {
 }
 
 func kmdRemediationCodes(actions []tax.KMDRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
+}
+
+func taxReportRemediationCodes(actions []tax.TaxReportRemediationAction) []string {
 	codes := make([]string, 0, len(actions))
 	for _, action := range actions {
 		codes = append(codes, action.Code)

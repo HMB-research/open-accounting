@@ -3770,7 +3770,7 @@ GET /tenants/{tenantId}/tax/kmd/{year}/{month}/inf?threshold=1000
 Authorization: Bearer <token>
 ```
 
-Generates KMD INF A/B appendix rows from domestic VAT-bearing sales and purchase invoices whose partner-period taxable total reaches the threshold excluding VAT. The default threshold is `1000`.
+Generates KMD INF A/B appendix rows from domestic VAT-bearing sales and purchase invoices whose partner-period taxable total reaches the threshold excluding VAT. The default threshold is `1000`. Report responses include `remediation_actions` with `code`, `severity`, `scope`, `owner_role`, `workspace_queue`, stable `assignment_key`, `priority`, `due_in_days`, `message`, `action`, `period`, report entity context, `ui_path`, and a suggested `cli_command` for threshold-row review or empty-report evidence retention.
 
 ### Mark KMD Submitted
 
@@ -3797,7 +3797,7 @@ GET /tenants/{tenantId}/tax/eu-vat/oss?year=2026&quarter=1
 Authorization: Bearer <token>
 ```
 
-Returns quarterly EU VAT One Stop Shop report totals grouped by destination member state and VAT rate from non-Estonian EU sales invoice lines. The report uses base-currency invoice amounts and excludes contacts with VAT numbers by default. Add `include_b2b=true` for a reconciliation view that includes VAT-registered contacts.
+Returns quarterly EU VAT One Stop Shop report totals grouped by destination member state and VAT rate from non-Estonian EU sales invoice lines. The report uses base-currency invoice amounts and excludes contacts with VAT numbers by default. Add `include_b2b=true` for a reconciliation view that includes VAT-registered contacts. Report responses include `remediation_actions` with the same tax-report follow-up fields for manual OSS filing review, filing evidence retention, or empty-quarter confirmation.
 
 ### Import Historical KMD Declarations
 

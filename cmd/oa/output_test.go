@@ -3072,10 +3072,24 @@ func TestPrintTaxReports(t *testing.T) {
 			TotalAmount:                decimal.NewFromInt(1464),
 			PartnerPeriodTaxableAmount: decimal.NewFromInt(1200),
 		}},
+		RemediationActions: []tax.TaxReportRemediationAction{{
+			Code:           "kmd_inf_review_required",
+			Severity:       "ACTION",
+			Scope:          "tax",
+			OwnerRole:      "accountant",
+			WorkspaceQueue: "tax_reports",
+			AssignmentKey:  "tax-reports:kmd-inf-review-required:kmd-inf-report:2026-03:2026-03",
+			Priority:       "high",
+			DueInDays:      1,
+			Action:         "Review KMD INF evidence",
+			CLICommand:     "oa tax kmd inf --year 2026 --month 3 --threshold 1000 --json",
+		}},
 	})
 	assert.Contains(t, infBuf.String(), "KMD INF 2026-03")
 	assert.Contains(t, infBuf.String(), "A sales")
 	assert.Contains(t, infBuf.String(), "Alpha OU")
+	assert.Contains(t, infBuf.String(), "KMD INF remediation actions")
+	assert.Contains(t, infBuf.String(), "kmd_inf_review_required")
 
 	var ossBuf bytes.Buffer
 	printEUVATOSSReport(&ossBuf, &tax.EUVATOSSReport{
@@ -3111,10 +3125,24 @@ func TestPrintTaxReports(t *testing.T) {
 			VATAmount:     decimal.NewFromInt(19),
 			TotalAmount:   decimal.NewFromInt(119),
 		}},
+		RemediationActions: []tax.TaxReportRemediationAction{{
+			Code:           "eu_vat_oss_review_required",
+			Severity:       "ACTION",
+			Scope:          "tax",
+			OwnerRole:      "accountant",
+			WorkspaceQueue: "tax_reports",
+			AssignmentKey:  "tax-reports:eu-vat-oss-review-required:eu-vat-oss-report:2026-q1:2026-q1",
+			Priority:       "high",
+			DueInDays:      1,
+			Action:         "Review OSS filing evidence",
+			CLICommand:     "oa tax oss report --year 2026 --quarter 1 --json",
+		}},
 	})
 	assert.Contains(t, ossBuf.String(), "EU VAT OSS 2026-Q1")
 	assert.Contains(t, ossBuf.String(), "DE Germany")
 	assert.Contains(t, ossBuf.String(), "VAT: 19")
+	assert.Contains(t, ossBuf.String(), "EU VAT OSS remediation actions")
+	assert.Contains(t, ossBuf.String(), "eu_vat_oss_review_required")
 }
 
 func TestFormatHelpers(t *testing.T) {
