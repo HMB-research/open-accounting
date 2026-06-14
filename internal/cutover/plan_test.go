@@ -18,7 +18,7 @@ func TestBuildMigrationExecutionPlanOrdersReadyStepsAndMarksMissingContext(t *te
 			{
 				Kind:       KindBankTransactions,
 				FileName:   "bank.csv",
-				CSVContent: "date,amount\n2026-01-02,42.50\n",
+				CSVContent: "date,amount,description\n2026-01-02,42.50,Customer receipt\n",
 			},
 			{
 				Kind:       KindBankAccounts,
