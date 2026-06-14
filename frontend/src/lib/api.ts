@@ -3585,6 +3585,8 @@ export interface MigrationRemediationAction {
   field?: string;
   target_kind?: MigrationFileKind;
   issue_count: number;
+  entity_type?: string;
+  entity_id?: string;
   ui_path?: string;
   cli_command?: string;
 }

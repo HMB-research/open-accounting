@@ -333,6 +333,8 @@ function buildMigrationRunStatusAction(
 			action:
 				'Open the migration workbench, inspect the failed step, correct the bundle or execution context, and resume the run.',
 			issue_count: run.summary.failed_step_count || 1,
+			entity_type: 'migration_execution_run',
+			entity_id: runId,
 			ui_path: uiPath,
 			cli_command: `oa migration runs get --run-id ${runId} --json`
 		};
@@ -351,6 +353,8 @@ function buildMigrationRunStatusAction(
 			message: `Migration run ${runId} is running${activeStep ? ` at ${activeStep}` : ''}.`,
 			action: 'Open the migration workbench to monitor progress and active-step telemetry.',
 			issue_count: run.summary.running_step_count || 1,
+			entity_type: 'migration_execution_run',
+			entity_id: runId,
 			ui_path: uiPath,
 			cli_command: `oa migration runs get --run-id ${runId} --json`
 		};
@@ -370,6 +374,8 @@ function buildMigrationRunStatusAction(
 			action:
 				'Open the migration workbench, review the saved plan, and execute the confirmed cutover when ready.',
 			issue_count: run.summary.planned_step_count || 1,
+			entity_type: 'migration_execution_run',
+			entity_id: runId,
 			ui_path: uiPath,
 			cli_command: `oa migration execute --resume-run-id ${runId} --confirm --json`
 		};
@@ -389,6 +395,8 @@ function buildMigrationRunStatusAction(
 			action:
 				'Open the migration workbench, resolve preflight or missing-context blockers, and rebuild the execution plan.',
 			issue_count: run.summary.blocked_step_count || run.summary.needs_context_count || 1,
+			entity_type: 'migration_execution_run',
+			entity_id: runId,
 			ui_path: uiPath,
 			cli_command: `oa migration runs get --run-id ${runId} --json`
 		};
