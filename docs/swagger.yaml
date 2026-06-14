@@ -19747,7 +19747,8 @@ paths:
       - Tax
   /tenants/{tenantID}/tax/kmd/{year}/{month}/accept:
     post:
-      description: Mark a KMD declaration as accepted by e-MTA.
+      description: Mark a KMD declaration as accepted by e-MTA after approved tax/support
+        evidence is attached.
       parameters:
       - description: Tenant ID
         in: path
@@ -19776,6 +19777,13 @@ paths:
             type: object
         "404":
           description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
           schema:
             properties:
               error:
@@ -20065,7 +20073,8 @@ paths:
       - Payroll
   /tenants/{tenantID}/tsd/{year}/{month}/accept:
     post:
-      description: Mark a TSD declaration as accepted by e-MTA
+      description: Mark a TSD declaration as accepted by e-MTA after approved tax/support
+        evidence is attached.
       parameters:
       - description: Tenant ID
         in: path
@@ -20094,6 +20103,13 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
           schema:
             properties:
               error:

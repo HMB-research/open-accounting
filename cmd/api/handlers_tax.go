@@ -16,7 +16,10 @@ import (
 	"github.com/HMB-research/open-accounting/internal/tax"
 )
 
-var errApprovedKMDSubmissionEvidenceRequired = errors.New("approved KMD submission evidence is required")
+var (
+	errApprovedKMDSubmissionEvidenceRequired = errors.New("approved KMD submission evidence is required")
+	errApprovedKMDAcceptanceEvidenceRequired = errors.New("approved KMD acceptance evidence is required")
+)
 
 // HandleGenerateKMD generates a KMD declaration for a period
 // @Summary Generate KMD declaration
@@ -269,7 +272,7 @@ func (h *Handlers) HandleMarkKMDSubmitted(w http.ResponseWriter, r *http.Request
 
 // HandleMarkKMDAccepted marks a KMD declaration as accepted.
 // @Summary Mark KMD as accepted
-// @Description Mark a KMD declaration as accepted by e-MTA.
+// @Description Mark a KMD declaration as accepted by e-MTA after approved tax/support evidence is attached.
 // @Tags Tax
 // @Produce json
 // @Security BearerAuth
@@ -277,14 +280,51 @@ func (h *Handlers) HandleMarkKMDSubmitted(w http.ResponseWriter, r *http.Request
 // @Param year path string true "Year"
 // @Param month path string true "Month"
 // @Success 200 {object} object{status=string}
+// @Failure 409 {object} object{error=string}
 // @Failure 404 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/tax/kmd/{year}/{month}/accept [post]
 func (h *Handlers) HandleMarkKMDAccepted(w http.ResponseWriter, r *http.Request) {
-	h.handleKMDStatusTransition(w, r, "accepted", h.taxService.MarkKMDAccepted)
+	tenantCtx := h.tenantContextFromRequest(r)
+	year := chi.URLParam(r, "year")
+	month := chi.URLParam(r, "month")
+
+	declaration, err := h.taxService.GetKMD(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, year, month)
+	if err != nil || declaration == nil {
+		respondError(w, http.StatusNotFound, "Declaration not found")
+		return
+	}
+
+	if err := h.requireApprovedKMDAcceptanceEvidence(r.Context(), tenantCtx.schemaName, tenantCtx.tenantID, declaration.ID); err != nil {
+		if errors.Is(err, errApprovedKMDAcceptanceEvidenceRequired) {
+			respondError(w, http.StatusConflict, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to verify KMD acceptance evidence")
+		return
+	}
+
+	if err := h.taxService.MarkKMDAccepted(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, year, month); err != nil {
+		if errors.Is(err, tax.ErrKMDDeclarationNotFound) {
+			respondError(w, http.StatusNotFound, "Declaration not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 }
 
 func (h *Handlers) requireApprovedKMDSubmissionEvidence(ctx context.Context, schemaName, tenantID, declarationID string) error {
+	return h.requireApprovedKMDEvidence(ctx, schemaName, tenantID, declarationID, "submission", "submitted", errApprovedKMDSubmissionEvidenceRequired)
+}
+
+func (h *Handlers) requireApprovedKMDAcceptanceEvidence(ctx context.Context, schemaName, tenantID, declarationID string) error {
+	return h.requireApprovedKMDEvidence(ctx, schemaName, tenantID, declarationID, "acceptance", "accepted", errApprovedKMDAcceptanceEvidenceRequired)
+}
+
+func (h *Handlers) requireApprovedKMDEvidence(ctx context.Context, schemaName, tenantID, declarationID, evidenceStage, status string, requiredErr error) error {
 	if h.documentsService == nil {
 		return nil
 	}
@@ -302,34 +342,12 @@ func (h *Handlers) requireApprovedKMDSubmissionEvidence(ctx context.Context, sch
 		}},
 	})
 	if err != nil {
-		return fmt.Errorf("evaluate KMD submission evidence: %w", err)
+		return fmt.Errorf("evaluate KMD %s evidence: %w", evidenceStage, err)
 	}
 	if len(results) == 0 || !results[0].Compliant {
-		return fmt.Errorf("%w before marking KMD declaration %s submitted", errApprovedKMDSubmissionEvidenceRequired, declarationID)
+		return fmt.Errorf("%w before marking KMD declaration %s %s", requiredErr, declarationID, status)
 	}
 	return nil
-}
-
-func (h *Handlers) handleKMDStatusTransition(
-	w http.ResponseWriter,
-	r *http.Request,
-	status string,
-	transition func(context.Context, string, string, string, string) error,
-) {
-	tenantCtx := h.tenantContextFromRequest(r)
-	year := chi.URLParam(r, "year")
-	month := chi.URLParam(r, "month")
-
-	if err := transition(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, year, month); err != nil {
-		if errors.Is(err, tax.ErrKMDDeclarationNotFound) {
-			respondError(w, http.StatusNotFound, "Declaration not found")
-			return
-		}
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
 // HandleExportKMD exports a KMD declaration to XML

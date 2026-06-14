@@ -312,6 +312,64 @@ func TestMarkKMDSubmittedRequiresApprovedTaxEvidence(t *testing.T) {
 	require.Equal(t, []string{"kmd-2026-03"}, taxRepo.submittedIDs)
 }
 
+func TestMarkKMDAcceptedRequiresApprovedTaxEvidence(t *testing.T) {
+	h, tenantRepo, taxRepo := setupTaxHandlerTest(t)
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+	taxRepo.getDecl = &tax.KMDDeclaration{
+		ID:             "kmd-2026-03",
+		TenantID:       tenantRecord.ID,
+		Year:           2026,
+		Month:          3,
+		Status:         tax.KMDStatusSubmitted,
+		TotalOutputVAT: decimal.NewFromInt(220),
+		TotalInputVAT:  decimal.NewFromInt(66),
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+	}
+
+	errorBody := invokeTaxHandlerJSON[map[string]string](t, http.StatusConflict, h.HandleMarkKMDAccepted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved KMD acceptance evidence is required")
+	require.Empty(t, taxRepo.statuses)
+
+	now := time.Now().UTC()
+	docRepo.docs["kmd-acceptance-support"] = &documents.Document{
+		ID:           "kmd-acceptance-support",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeKMD,
+		EntityID:     "kmd-2026-03",
+		DocumentType: documents.DocumentTypeSupportingDocument,
+		FileName:     "kmd-acceptance.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+	errorBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusConflict, h.HandleMarkKMDAccepted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved KMD acceptance evidence is required")
+	require.Empty(t, taxRepo.statuses)
+
+	docRepo.docs["kmd-acceptance-support"].ReviewStatus = documents.ReviewStatusApproved
+	accepted := invokeTaxHandlerJSON[map[string]string](t, http.StatusOK, h.HandleMarkKMDAccepted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Equal(t, "accepted", accepted["status"])
+	require.Equal(t, tax.KMDStatusAccepted, taxRepo.statuses["kmd-2026-03"])
+}
+
 func TestTaxHandlersKMDImportHistory(t *testing.T) {
 	h, tenantRepo, taxRepo := setupTaxHandlerTest(t)
 	tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")

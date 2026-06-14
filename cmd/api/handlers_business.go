@@ -45,6 +45,7 @@ var (
 	errApprovedQuoteEvidenceRequired           = errors.New("approved quote evidence is required")
 	errApprovedOrderEvidenceRequired           = errors.New("approved order evidence is required")
 	errApprovedTSDSubmissionEvidenceRequired   = errors.New("approved TSD submission evidence is required")
+	errApprovedTSDAcceptanceEvidenceRequired   = errors.New("approved TSD acceptance evidence is required")
 )
 
 // =============================================================================
@@ -4298,6 +4299,14 @@ func (h *Handlers) MarkTSDSubmitted(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) requireApprovedTSDSubmissionEvidence(ctx context.Context, schemaName, tenantID, declarationID string) error {
+	return h.requireApprovedTSDEvidence(ctx, schemaName, tenantID, declarationID, "submission", "submitted", errApprovedTSDSubmissionEvidenceRequired)
+}
+
+func (h *Handlers) requireApprovedTSDAcceptanceEvidence(ctx context.Context, schemaName, tenantID, declarationID string) error {
+	return h.requireApprovedTSDEvidence(ctx, schemaName, tenantID, declarationID, "acceptance", "accepted", errApprovedTSDAcceptanceEvidenceRequired)
+}
+
+func (h *Handlers) requireApprovedTSDEvidence(ctx context.Context, schemaName, tenantID, declarationID, evidenceStage, status string, requiredErr error) error {
 	if h.documentsService == nil {
 		return nil
 	}
@@ -4315,17 +4324,17 @@ func (h *Handlers) requireApprovedTSDSubmissionEvidence(ctx context.Context, sch
 		}},
 	})
 	if err != nil {
-		return fmt.Errorf("evaluate TSD submission evidence: %w", err)
+		return fmt.Errorf("evaluate TSD %s evidence: %w", evidenceStage, err)
 	}
 	if len(results) == 0 || !results[0].Compliant {
-		return fmt.Errorf("%w before marking TSD declaration %s submitted", errApprovedTSDSubmissionEvidenceRequired, declarationID)
+		return fmt.Errorf("%w before marking TSD declaration %s %s", requiredErr, declarationID, status)
 	}
 	return nil
 }
 
 // MarkTSDAccepted marks a TSD declaration as accepted
 // @Summary Mark TSD as accepted
-// @Description Mark a TSD declaration as accepted by e-MTA
+// @Description Mark a TSD declaration as accepted by e-MTA after approved tax/support evidence is attached.
 // @Tags Payroll
 // @Produce json
 // @Security BearerAuth
@@ -4334,6 +4343,7 @@ func (h *Handlers) requireApprovedTSDSubmissionEvidence(ctx context.Context, sch
 // @Param month path int true "Month"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
 // @Router /tenants/{tenantID}/tsd/{year}/{month}/accept [post]
 func (h *Handlers) MarkTSDAccepted(w http.ResponseWriter, r *http.Request) {
 	h.markTSDStatusByPeriod(w, r, payroll.TSDAccepted, "accepted")
@@ -4379,6 +4389,14 @@ func (h *Handlers) markTSDStatusByPeriod(w http.ResponseWriter, r *http.Request,
 
 	switch status {
 	case payroll.TSDAccepted:
+		if err := h.requireApprovedTSDAcceptanceEvidence(r.Context(), schemaName, tenantID, tsd.ID); err != nil {
+			if errors.Is(err, errApprovedTSDAcceptanceEvidenceRequired) {
+				respondError(w, http.StatusConflict, err.Error())
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "Failed to verify TSD acceptance evidence")
+			return
+		}
 		err = h.payrollService.MarkTSDAccepted(r.Context(), schemaName, tenantID, tsd.ID)
 	case payroll.TSDRejected:
 		err = h.payrollService.MarkTSDRejected(r.Context(), schemaName, tenantID, tsd.ID)
