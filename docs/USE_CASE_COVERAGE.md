@@ -62,6 +62,7 @@ Status values:
 - The follow-up payment allocation direction consistency stage was locally revalidated with focused cutover validator, CLI request, frontend workbench, docs status, lint, and CLI coverage gates.
 - The follow-up payment invoice-contact consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up e-invoice payment invoice-contact consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up e-invoice credit-note payment contact selection stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation date consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation invoice-status consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up fixed-asset source-invoice consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
@@ -119,7 +120,11 @@ Status values:
 Historical migration coverage also includes same-field payment invoice-contact
 consistency for imported invoice CSV and e-invoice XML allocations, including
 customer-mode sales e-invoices where the payment contact must match the buyer
-party rather than the seller party. Commercial-document contact identity
+party rather than the seller party. Credit-note e-invoice allocations now select buyer contact references in customer mode and seller contact references in the default supplier mode before comparing payment contact identity fields.
+The focused e-invoice credit-note payment contact selection migration tests
+cover customer-mode buyer contact matches and default supplier-mode mismatch
+reports.
+Commercial-document contact identity
 preflight now checks invoice, quote, order, and recurring-invoice contact
 references against the matching same-bundle contact field, so a value supplied
 as `contact_code` must match a contact code rather than another contact identity
