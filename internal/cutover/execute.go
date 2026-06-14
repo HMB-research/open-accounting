@@ -35,6 +35,7 @@ func (r ExecuteMigrationRequest) PlanRequest() *PlanMigrationExecutionRequest {
 		EInvoiceInvoiceType:      r.EInvoiceInvoiceType,
 		ProviderPreset:           r.ProviderPreset,
 		BankTransactionAccountID: r.BankTransactionAccountID,
+		BankTransactionFormat:    r.BankTransactionFormat,
 		OpeningBalanceEntryDate:  r.OpeningBalanceEntryDate,
 	}
 }

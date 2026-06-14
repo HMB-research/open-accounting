@@ -25736,6 +25736,9 @@ const docTemplate = `{
                 "bank_transaction_account_id": {
                     "type": "string"
                 },
+                "bank_transaction_format": {
+                    "type": "string"
+                },
                 "e_invoice_contact_mode": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.EInvoiceContactMode"
                 },

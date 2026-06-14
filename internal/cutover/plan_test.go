@@ -32,6 +32,7 @@ func TestBuildMigrationExecutionPlanOrdersReadyStepsAndMarksMissingContext(t *te
 			},
 		},
 		OpeningBalanceEntryDate: "2026-01-01",
+		BankTransactionFormat:   "lhv",
 	})
 
 	require.NoError(t, err)
@@ -53,6 +54,7 @@ func TestBuildMigrationExecutionPlanOrdersReadyStepsAndMarksMissingContext(t *te
 	assert.Equal(t, []string{"bank_transaction_account_id"}, bankStep.ContextFields)
 	assert.Equal(t, "/api/v1/tenants/{tenantID}/bank-accounts/<bank-account-id>/import", bankStep.APIPath)
 	assert.Contains(t, bankStep.CLICommand, "oa banking transactions import --account-id <bank-account-id>")
+	assert.Contains(t, bankStep.CLICommand, "--format lhv")
 	assert.Equal(t, []FileKind{KindBankAccounts}, bankStep.DependsOn)
 
 	openingStep := plan.Steps[3]
