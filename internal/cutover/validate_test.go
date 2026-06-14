@@ -427,6 +427,62 @@ func TestValidateBundleAcceptsSmartAccountsInventoryAndAssetProviderPresetAliase
 	assert.Contains(t, report.Files[4].Headers, "useful_life_months")
 }
 
+func TestValidateBundleAcceptsSmartAccountsCommercialContactIdentityAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{
+			{
+				Kind:     KindContacts,
+				FileName: "smartaccounts-contacts.csv",
+				CSVContent: "client_no,client_name,registration_no,vat_no,email_address\n" +
+					"CUST-1,Customer One,12345678,EE123456789,billing@example.test\n",
+			},
+			{
+				Kind:     KindQuotes,
+				FileName: "smartaccounts-quotes.csv",
+				CSVContent: "document_no,document_date,customer_vat_no,item_description,qty,unit_price,vat_percent\n" +
+					"Q-1,2026-05-30,EE123456789,Work,1,100,22\n",
+			},
+			{
+				Kind:     KindOrders,
+				FileName: "smartaccounts-orders.csv",
+				CSVContent: "document_no,document_date,customer_reg_no,item_description,qty,unit_price,vat_percent\n" +
+					"SO-1,2026-05-31,12345678,Work,1,100,22\n",
+			},
+			{
+				Kind:     KindRecurringInvoices,
+				FileName: "smartaccounts-recurring.csv",
+				CSVContent: "document_no,document_date,customer_email,item_description,qty,unit_price,vat_percent,frequency\n" +
+					"Monthly support,2026-06-01,billing@example.test,Support,1,100,22,monthly\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 4)
+
+	var quoteValidation, orderValidation, recurringValidation FileValidation
+	for _, file := range report.Files {
+		switch file.Kind {
+		case KindQuotes:
+			quoteValidation = file
+		case KindOrders:
+			orderValidation = file
+		case KindRecurringInvoices:
+			recurringValidation = file
+		}
+	}
+	require.Equal(t, KindQuotes, quoteValidation.Kind)
+	assert.Contains(t, quoteValidation.Headers, "contact_vat_number")
+	require.Equal(t, KindOrders, orderValidation.Kind)
+	assert.Contains(t, orderValidation.Headers, "contact_reg_code")
+	require.Equal(t, KindRecurringInvoices, recurringValidation.Kind)
+	assert.Contains(t, recurringValidation.Headers, "contact_email")
+}
+
 func TestValidateBundleAcceptsMeritKMDHistoryProviderPresetAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: MigrationProviderPresetMerit,
