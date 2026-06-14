@@ -2381,6 +2381,7 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 	validateImportedInvoiceAmountPaidConsistency(report, files)
 	validateStockAdjustmentProductStockability(report, files)
 	validateCostAllocationJournalLineTotals(report, files)
+	validateCostAllocationJournalLinePercentages(report, files)
 
 	invoiceTargets := buildCutoverInvoiceAllocationTargets(files, eInvoiceContactMode)
 	validateFixedAssetInvoiceConsistency(report, files, invoiceTargets)
@@ -2523,6 +2524,49 @@ func validateCostAllocationJournalLineTotals(report *BundleValidationReport, fil
 	}
 }
 
+func validateCostAllocationJournalLinePercentages(report *BundleValidationReport, files []parsedFile) {
+	percentageTotals := map[string]decimal.Decimal{}
+	displays := map[string]string{}
+	for _, file := range files {
+		if file.kind != KindCostAllocations || !fileHasHeaders(file, "allocation_percentage") {
+			continue
+		}
+		for _, row := range file.rows {
+			journalLineID := strings.TrimSpace(row.values["journal_entry_line_id"])
+			if journalLineID == "" {
+				continue
+			}
+			if _, err := uuid.Parse(journalLineID); err != nil {
+				continue
+			}
+			percentage, ok := cutoverCostAllocationPercentage(row)
+			if !ok {
+				continue
+			}
+			targetKey := normalizedValue(journalLineID)
+			displays[targetKey] = journalLineID
+			nextTotal := percentageTotals[targetKey].Add(percentage)
+			percentageTotals[targetKey] = nextTotal
+			if nextTotal.GreaterThan(decimal.NewFromInt(100)) {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindCostAllocations,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "allocation_percentage",
+					Value:      percentage.String(),
+					TargetKind: KindJournalEntries,
+					Message: fmt.Sprintf(
+						"cost allocation percentages for journal line %q exceed 100: percentages=%s limit=100",
+						displays[targetKey],
+						nextTotal.String(),
+					),
+				})
+			}
+		}
+	}
+}
+
 func buildCutoverJournalLineAmountTargets(files []parsedFile) map[string]cutoverJournalLineAmountTarget {
 	targets := map[string]cutoverJournalLineAmountTarget{}
 	for _, file := range files {
@@ -2563,6 +2607,17 @@ func cutoverCostAllocationAmount(row parsedRow) (decimal.Decimal, bool) {
 		return decimal.Zero, false
 	}
 	return amount, true
+}
+
+func cutoverCostAllocationPercentage(row parsedRow) (decimal.Decimal, bool) {
+	if strings.TrimSpace(row.values["allocation_percentage"]) == "" {
+		return decimal.Zero, false
+	}
+	percentage, issue := parseCutoverRequiredDecimal(row.values["allocation_percentage"], "allocation_percentage")
+	if issue != nil || percentage.LessThan(decimal.Zero) || percentage.GreaterThan(decimal.NewFromInt(100)) {
+		return decimal.Zero, false
+	}
+	return percentage, true
 }
 
 type cutoverProductStockability struct {

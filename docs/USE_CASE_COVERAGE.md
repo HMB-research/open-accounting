@@ -54,6 +54,7 @@ Status values:
 - The follow-up fixed-asset source-invoice amount consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up stock-adjustment product stockability stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up cost-allocation journal-line total consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up cost-allocation journal-line percentage consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up cross-workspace remediation assignment metadata stage was locally revalidated with focused workspace/accounting/banking/expenses/documents/payroll/tax/CLI tests and frontend API type coverage.
 - The follow-up accountant workspace assignment queue stage was locally revalidated with prepared Svelte checks plus targeted review-panel, portfolio-panel, workspace-helper, and frontend API tests.
 - The follow-up expense assignment queue stage was locally revalidated with focused review-panel, portfolio-panel, frontend API, prepared Svelte, docs, lint, CLI coverage, and backend coverage gates.
@@ -106,6 +107,10 @@ Cost-allocation journal-line total consistency also rejects same-bundle
 allocation totals that exceed the referenced historical journal line debit or
 credit amount. The focused cost-allocation journal-line total consistency migration tests
 cover both accepted split allocations and over-allocated journal lines.
+Cost-allocation journal-line percentage consistency also rejects same-bundle
+allocation percentage totals above 100 percent for one historical journal line.
+The focused cost-allocation journal-line percentage consistency migration tests
+cover both exact 100 percent splits and over-allocated percentage splits.
 
 ## Stage Gates To Keep Current
 
