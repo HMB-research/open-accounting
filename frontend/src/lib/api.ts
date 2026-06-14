@@ -746,6 +746,17 @@ class ApiClient {
     );
   }
 
+  async evaluateDocumentEvidencePolicy(
+    tenantId: string,
+    data: EvidencePolicyRequest,
+  ) {
+    return this.request<EvidencePolicyResult[]>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/documents/evidence-policy`,
+      data,
+    );
+  }
+
   async listMigrationProviderPresets(tenantId: string) {
     return this.request<MigrationProviderPresetInfo[]>(
       "GET",
@@ -3450,7 +3461,9 @@ export interface DocumentAttachment {
     | "quote"
     | "order"
     | "leave_record"
-    | "year_end_close";
+    | "year_end_close"
+    | "tsd_declaration"
+    | "kmd_declaration";
   entity_id: string;
   document_type:
     | "supporting_document"
@@ -3573,6 +3586,18 @@ export interface DocumentRemediationAction {
   days_until_retention?: number;
   ui_path?: string;
   cli_command?: string;
+}
+
+export interface EvidencePolicyRule {
+  document_types?: DocumentAttachment["document_type"][];
+  min_count: number;
+  require_approved?: boolean;
+}
+
+export interface EvidencePolicyRequest {
+  entity_type: DocumentAttachment["entity_type"];
+  entity_ids: string[];
+  rules: EvidencePolicyRule[];
 }
 
 export interface EvidencePolicyRuleResult {

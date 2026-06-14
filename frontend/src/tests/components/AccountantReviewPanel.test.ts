@@ -19,12 +19,14 @@ const { apiMock } = vi.hoisted(() => ({
 		approvePayroll: vi.fn(),
 		generateTSD: vi.fn(),
 		downloadTSDXml: vi.fn(),
+		markTSDSubmitted: vi.fn(),
 		markTSDAccepted: vi.fn(),
 		executeMigration: vi.fn(),
 		generateKMD: vi.fn(),
 		generateKMDINF: vi.fn(),
 		generateEUVATOSS: vi.fn(),
 		downloadKMDXml: vi.fn(),
+		markKMDSubmitted: vi.fn(),
 		markKMDAccepted: vi.fn(),
 		submitExpense: vi.fn(),
 		approveExpense: vi.fn(),
@@ -35,6 +37,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn(),
 		getDocumentRetentionReview: vi.fn(),
+		evaluateDocumentEvidencePolicy: vi.fn(),
 		listExpenses: vi.fn(),
 		listPayrollRuns: vi.fn(),
 		listTSD: vi.fn(),
@@ -477,6 +480,7 @@ describe('AccountantReviewPanel', () => {
 		apiMock.approvePayroll.mockResolvedValue({ status: 'approved' });
 		apiMock.generateTSD.mockResolvedValue({ id: 'tsd-1' });
 		apiMock.downloadTSDXml.mockResolvedValue(undefined);
+		apiMock.markTSDSubmitted.mockResolvedValue({ status: 'submitted' });
 		apiMock.markTSDAccepted.mockResolvedValue({ status: 'accepted' });
 		apiMock.executeMigration.mockResolvedValue({ id: 'run-executed' });
 		apiMock.generateKMD.mockResolvedValue({ id: 'kmd-1' });
@@ -510,6 +514,7 @@ describe('AccountantReviewPanel', () => {
 			remediation_actions: []
 		});
 		apiMock.downloadKMDXml.mockResolvedValue(undefined);
+		apiMock.markKMDSubmitted.mockResolvedValue({ status: 'submitted' });
 		apiMock.markKMDAccepted.mockResolvedValue({ status: 'accepted' });
 		apiMock.submitExpense.mockResolvedValue({
 			id: 'expense-draft-1',
@@ -553,6 +558,7 @@ describe('AccountantReviewPanel', () => {
 			message: 'Sent',
 			reminder_id: 'rem-1'
 		});
+		apiMock.evaluateDocumentEvidencePolicy.mockResolvedValue([]);
 	});
 
 	it('completes close and carry-forward assignments from the workspace', async () => {
@@ -961,6 +967,40 @@ describe('AccountantReviewPanel', () => {
 					cli_command: 'oa documents upload --entity-type expense --entity-id expense-1 --document-type receipt --file <replacement-file>'
 				},
 				{
+					code: 'document_evidence_missing',
+					severity: 'ACTION',
+					scope: 'documents',
+					owner_role: 'accountant',
+					workspace_queue: 'document_evidence',
+					assignment_key: 'document-evidence:document-evidence-missing:tsd-declaration:tsd-1:tax-support',
+					priority: 'high',
+					due_in_days: 0,
+					message: 'TSD declaration tsd-1 is missing required tax support evidence.',
+					action: 'Upload required tax/support evidence before submitting or accepting the declaration.',
+					entity_type: 'tsd_declaration',
+					entity_id: 'tsd-1',
+					document_type: 'tax_support',
+					ui_path: '/documents?entity_type=tsd_declaration&entity_id=tsd-1',
+					cli_command: 'oa documents upload --entity-type tsd_declaration --entity-id tsd-1 --document-type tax_support --file <file>'
+				},
+				{
+					code: 'document_evidence_missing',
+					severity: 'ACTION',
+					scope: 'documents',
+					owner_role: 'accountant',
+					workspace_queue: 'document_evidence',
+					assignment_key: 'document-evidence:document-evidence-missing:kmd-declaration:kmd-1:tax-support',
+					priority: 'high',
+					due_in_days: 0,
+					message: 'KMD declaration kmd-1 is missing required tax support evidence.',
+					action: 'Upload required tax/support evidence before submitting or accepting the declaration.',
+					entity_type: 'kmd_declaration',
+					entity_id: 'kmd-1',
+					document_type: 'tax_support',
+					ui_path: '/documents?entity_type=kmd_declaration&entity_id=kmd-1',
+					cli_command: 'oa documents upload --entity-type kmd_declaration --entity-id kmd-1 --document-type tax_support --file <file>'
+				},
+				{
 					code: 'document_evidence_unapproved',
 					severity: 'ACTION',
 					scope: 'documents',
@@ -1014,6 +1054,8 @@ describe('AccountantReviewPanel', () => {
 			expect(
 				screen.getByText('Document rejected-receipt.pdf was rejected and needs replacement or correction.')
 			).toBeInTheDocument();
+			expect(screen.getByText('TSD declaration tsd-1 is missing required tax support evidence.')).toBeInTheDocument();
+			expect(screen.getByText('KMD declaration kmd-1 is missing required tax support evidence.')).toBeInTheDocument();
 			expect(
 				screen.getByText('Payment pay-2 has matching evidence, but not enough approved documents.')
 			).toBeInTheDocument();
@@ -1059,6 +1101,36 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(apiMock.uploadDocument).toHaveBeenCalledWith('tenant-1', 'payment', 'pay-1', missingEvidenceFile, {
 				document_type: 'receipt',
+				notes: 'Uploaded from accountant workspace assignment'
+			});
+			expect(screen.getByText('Evidence uploaded from workspace.')).toBeInTheDocument();
+		});
+
+		const tsdEvidenceFile = new File(['tsd'], 'tsd-tax-support.pdf', { type: 'application/pdf' });
+		await uploadFromAssignmentRow(
+			'TSD declaration tsd-1 is missing required tax support evidence.',
+			'Upload evidence',
+			tsdEvidenceFile
+		);
+
+		await waitFor(() => {
+			expect(apiMock.uploadDocument).toHaveBeenCalledWith('tenant-1', 'tsd_declaration', 'tsd-1', tsdEvidenceFile, {
+				document_type: 'tax_support',
+				notes: 'Uploaded from accountant workspace assignment'
+			});
+			expect(screen.getByText('Evidence uploaded from workspace.')).toBeInTheDocument();
+		});
+
+		const kmdEvidenceFile = new File(['kmd'], 'kmd-tax-support.pdf', { type: 'application/pdf' });
+		await uploadFromAssignmentRow(
+			'KMD declaration kmd-1 is missing required tax support evidence.',
+			'Upload evidence',
+			kmdEvidenceFile
+		);
+
+		await waitFor(() => {
+			expect(apiMock.uploadDocument).toHaveBeenCalledWith('tenant-1', 'kmd_declaration', 'kmd-1', kmdEvidenceFile, {
+				document_type: 'tax_support',
 				notes: 'Uploaded from accountant workspace assignment'
 			});
 			expect(screen.getByText('Evidence uploaded from workspace.')).toBeInTheDocument();
@@ -1668,6 +1740,16 @@ describe('AccountantReviewPanel', () => {
 			expect(apiMock.downloadTSDXml).toHaveBeenCalledWith('tenant-1', 2026, 3);
 			expect(screen.getByText('TSD XML exported from workspace.')).toBeInTheDocument();
 		});
+
+		await fireEvent.input(screen.getByLabelText('e-MTA reference'), {
+			target: { value: 'EMTA-2026-03' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Mark TSD submitted' }));
+
+		await waitFor(() => {
+			expect(apiMock.markTSDSubmitted).toHaveBeenCalledWith('tenant-1', 2026, 3, 'EMTA-2026-03');
+			expect(screen.getByText('TSD marked submitted from workspace.')).toBeInTheDocument();
+		});
 	});
 
 	it('marks submitted TSD assignment rows accepted from the workspace', async () => {
@@ -2028,6 +2110,21 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(apiMock.downloadKMDXml).toHaveBeenCalledWith('tenant-1', 2026, 5);
 			expect(screen.getByText('KMD XML exported from workspace.')).toBeInTheDocument();
+		});
+
+		const getPayableKmdRow = () =>
+			screen.getByText('KMD 2026-05 has VAT payable of 190.').closest('li') as HTMLElement;
+
+		await waitFor(() => {
+			expect(
+				within(getPayableKmdRow()).getByRole('button', { name: 'Mark KMD submitted' })
+			).toBeEnabled();
+		});
+		await fireEvent.click(within(getPayableKmdRow()).getByRole('button', { name: 'Mark KMD submitted' }));
+
+		await waitFor(() => {
+			expect(apiMock.markKMDSubmitted).toHaveBeenCalledWith('tenant-1', 2026, 5);
+			expect(screen.getByText('KMD marked submitted from workspace.')).toBeInTheDocument();
 		});
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Mark KMD accepted' }));

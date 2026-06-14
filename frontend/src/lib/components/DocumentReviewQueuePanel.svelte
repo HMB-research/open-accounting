@@ -402,6 +402,10 @@
         return m.documents_entityLeaveRecord();
       case "year_end_close":
         return m.documents_entityYearEndClose();
+      case "tsd_declaration":
+        return m.documents_entityTSDDeclaration();
+      case "kmd_declaration":
+        return m.documents_entityKMDDeclaration();
     }
   }
 

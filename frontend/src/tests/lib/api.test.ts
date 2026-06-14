@@ -871,6 +871,64 @@ describe("API Client - Core Functionality", () => {
       expect(result.due_soon_count).toBe(1);
     });
 
+    it("should evaluate document evidence policy", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            entity_type: "tsd_declaration",
+            entity_id: "tsd-1",
+            compliant: false,
+            missing_evidence: true,
+            remediation_actions: [
+              {
+                code: "document_evidence_missing",
+                entity_type: "tsd_declaration",
+                entity_id: "tsd-1",
+                document_type: "tax_support",
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await api.evaluateDocumentEvidencePolicy("tenant-123", {
+        entity_type: "tsd_declaration",
+        entity_ids: ["tsd-1"],
+        rules: [
+          {
+            document_types: ["tax_support", "supporting_document"],
+            min_count: 1,
+            require_approved: true,
+          },
+        ],
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/evidence-policy",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            entity_type: "tsd_declaration",
+            entity_ids: ["tsd-1"],
+            rules: [
+              {
+                document_types: ["tax_support", "supporting_document"],
+                min_count: 1,
+                require_approved: true,
+              },
+            ],
+          }),
+        }),
+      );
+      expect(result[0].remediation_actions?.[0].document_type).toBe(
+        "tax_support",
+      );
+    });
+
     it("should list migration provider preset metadata", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

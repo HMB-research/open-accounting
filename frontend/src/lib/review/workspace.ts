@@ -154,15 +154,22 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 
 	const journalEntries = journalResult.status === 'fulfilled' ? journalResult.value : [];
 	const journalEvidence = await loadJournalEvidence(tenant.id, journalEntries);
+	const tsdDeclarations = tsdResult.status === 'fulfilled' ? tsdResult.value : [];
 	const kmdDeclarations = kmdResult.status === 'fulfilled' ? kmdResult.value : [];
+	const taxEvidenceResult = await loadTaxDeclarationEvidencePolicyActions(
+		tenant.id,
+		tsdDeclarations,
+		kmdDeclarations
+	);
 	const taxReportResult = await loadTaxReportRemediationActions(tenant.id, kmdDeclarations);
 	const assignmentActions = buildWorkspaceAssignmentActions({
 		closeStatus: yearEndCloseResult.status === 'fulfilled' ? yearEndCloseResult.value : null,
 		bankExceptions,
 		retentionReview: retentionResult.status === 'fulfilled' ? retentionResult.value : null,
+		taxEvidenceActions: taxEvidenceResult.actions,
 		expenses: expensesResult.status === 'fulfilled' ? expensesResult.value : [],
 		payrollRuns: payrollResult.status === 'fulfilled' ? payrollResult.value : [],
-		tsdDeclarations: tsdResult.status === 'fulfilled' ? tsdResult.value : [],
+		tsdDeclarations,
 		kmdDeclarations,
 		taxReportRemediationActions: taxReportResult.actions,
 		migrationRuns: migrationRunsResult.status === 'fulfilled' ? migrationRunsResult.value : []
@@ -183,6 +190,9 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 	if (taxReportResult.hadError) {
 		assignmentErrorCount += 1;
 	}
+	if (taxEvidenceResult.hadError) {
+		assignmentErrorCount += 1;
+	}
 
 	return {
 		tenant,
@@ -201,6 +211,7 @@ function buildWorkspaceAssignmentActions(input: {
 	closeStatus: YearEndCloseStatus | null;
 	bankExceptions: BankExceptionGroup[];
 	retentionReview: DocumentRetentionReview | null;
+	taxEvidenceActions: DocumentRemediationAction[];
 	expenses: ExpenseClaim[];
 	payrollRuns: PayrollRun[];
 	tsdDeclarations: TSDDeclaration[];
@@ -221,6 +232,7 @@ function buildWorkspaceAssignmentActions(input: {
 			)
 		),
 		...normalizeRemediationActions('documents', input.retentionReview?.remediation_actions ?? []),
+		...normalizeRemediationActions('documents', input.taxEvidenceActions),
 		...normalizeRemediationActions(
 			'expenses',
 			input.expenses.flatMap((expense) => expense.remediation_actions ?? [])
@@ -512,6 +524,11 @@ type TaxReportRemediationLoadResult = {
 	hadError: boolean;
 };
 
+type TaxEvidenceRemediationLoadResult = {
+	actions: DocumentRemediationAction[];
+	hadError: boolean;
+};
+
 type KMDReportPeriod = {
 	year: number;
 	month: number;
@@ -521,6 +538,80 @@ type OSSReportQuarter = {
 	year: number;
 	quarter: number;
 };
+
+async function loadTaxDeclarationEvidencePolicyActions(
+	tenantId: string,
+	tsdDeclarations: TSDDeclaration[],
+	kmdDeclarations: KMDDeclaration[]
+): Promise<TaxEvidenceRemediationLoadResult> {
+	const requests = [
+		...getRecentTSDEvidenceEntityIDs(tsdDeclarations, 12).map((entityIDs) =>
+			api.evaluateDocumentEvidencePolicy(tenantId, {
+				entity_type: 'tsd_declaration',
+				entity_ids: entityIDs,
+				rules: [taxDeclarationEvidenceRule()]
+			})
+		),
+		...getRecentKMDEvidenceEntityIDs(kmdDeclarations, 12).map((entityIDs) =>
+			api.evaluateDocumentEvidencePolicy(tenantId, {
+				entity_type: 'kmd_declaration',
+				entity_ids: entityIDs,
+				rules: [taxDeclarationEvidenceRule()]
+			})
+		)
+	];
+	if (requests.length === 0) {
+		return { actions: [], hadError: false };
+	}
+
+	const results = await Promise.allSettled(requests);
+	const actions = results.flatMap((result) =>
+		result.status === 'fulfilled'
+			? result.value.flatMap((policyResult) => policyResult.remediation_actions ?? [])
+			: []
+	);
+	return {
+		actions,
+		hadError: results.some((result) => result.status === 'rejected')
+	};
+}
+
+function taxDeclarationEvidenceRule() {
+	return {
+		document_types: ['tax_support', 'supporting_document'] as DocumentAttachment['document_type'][],
+		min_count: 1,
+		require_approved: true
+	};
+}
+
+function getRecentTSDEvidenceEntityIDs(
+	declarations: TSDDeclaration[],
+	limit: number
+): string[][] {
+	const entityIDs = declarations
+		.filter((declaration) => declaration.status !== 'ACCEPTED')
+		.sort(
+			(left, right) =>
+				right.period_year - left.period_year || right.period_month - left.period_month
+		)
+		.slice(0, limit)
+		.map((declaration) => declaration.id)
+		.filter((id) => id.trim() !== '');
+	return entityIDs.length > 0 ? [entityIDs] : [];
+}
+
+function getRecentKMDEvidenceEntityIDs(
+	declarations: KMDDeclaration[],
+	limit: number
+): string[][] {
+	const entityIDs = declarations
+		.filter((declaration) => declaration.status !== 'ACCEPTED')
+		.sort((left, right) => right.year - left.year || right.month - left.month)
+		.slice(0, limit)
+		.map((declaration) => declaration.id)
+		.filter((id) => id.trim() !== '');
+	return entityIDs.length > 0 ? [entityIDs] : [];
+}
 
 async function loadTaxReportRemediationActions(
 	tenantId: string,
