@@ -40,6 +40,7 @@ var assetImportHeaderAliases = map[string]string{
 	"cost":                                  "purchase_cost",
 	"price":                                 "purchase_cost",
 	"supplier_id":                           "supplier_id",
+	"supplier_code":                         "supplier_code",
 	"invoice_id":                            "invoice_id",
 	"serial_number":                         "serial_number",
 	"serial_no":                             "serial_number",
@@ -109,6 +110,10 @@ func (s *Service) ImportAssetsCSV(ctx context.Context, tenantID, schemaName stri
 	if err != nil {
 		return nil, err
 	}
+	supplierIDsByCode, err := s.assetImportSupplierIDsByCode(ctx, schemaName, tenantID, rows)
+	if err != nil {
+		return nil, err
+	}
 
 	result := &ImportAssetsResult{
 		FileName: req.FileName,
@@ -118,7 +123,7 @@ func (s *Service) ImportAssetsCSV(ctx context.Context, tenantID, schemaName stri
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		asset, err := buildFixedAssetFromImportRow(row, tenantID, req.UserID, categoryNameToID, accountIDsByCode)
+		asset, err := buildFixedAssetFromImportRow(row, tenantID, req.UserID, categoryNameToID, accountIDsByCode, supplierIDsByCode)
 		if err != nil {
 			appendAssetImportRowError(result, row, err)
 			continue
@@ -257,6 +262,7 @@ func buildFixedAssetFromImportRow(
 	tenantID, userID string,
 	categoryNameToID map[string]string,
 	accountIDsByCode map[string]string,
+	supplierIDsByCode map[string]string,
 ) (*FixedAsset, error) {
 	name := strings.TrimSpace(row.values["name"])
 	if name == "" {
@@ -347,7 +353,7 @@ func buildFixedAssetFromImportRow(
 	if err != nil {
 		return nil, err
 	}
-	supplierID, err := parseOptionalAssetImportUUID("supplier_id", row.values["supplier_id"])
+	supplierID, err := resolveOptionalAssetImportSupplierID(row, supplierIDsByCode)
 	if err != nil {
 		return nil, err
 	}
@@ -431,6 +437,35 @@ func (s *Service) assetImportAccountIDsByCode(ctx context.Context, schemaName, t
 	return accountIDsByCode, nil
 }
 
+func (s *Service) assetImportSupplierIDsByCode(ctx context.Context, schemaName, tenantID string, rows []assetImportRow) (map[string]string, error) {
+	usesSupplierCodes := false
+	for _, row := range rows {
+		if strings.TrimSpace(row.values["supplier_code"]) != "" {
+			usesSupplierCodes = true
+			break
+		}
+	}
+	if !usesSupplierCodes {
+		return nil, nil
+	}
+	if s.contacts == nil {
+		return nil, fmt.Errorf("contact service is required to resolve asset supplier codes")
+	}
+
+	contacts, err := s.contacts.List(ctx, tenantID, schemaName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list contacts for asset import: %w", err)
+	}
+	supplierIDsByCode := make(map[string]string, len(contacts))
+	for _, contact := range contacts {
+		key := normalizedAssetImportKey(contact.Code)
+		if key != "" {
+			supplierIDsByCode[key] = contact.ID
+		}
+	}
+	return supplierIDsByCode, nil
+}
+
 func resolveAssetImportCategoryID(row assetImportRow, categoryNameToID map[string]string) (*string, error) {
 	if categoryID := strings.TrimSpace(row.values["category_id"]); categoryID != "" {
 		return parseOptionalAssetImportUUID("category_id", categoryID)
@@ -459,6 +494,21 @@ func resolveOptionalAssetImportAccountID(row assetImportRow, idField, codeField 
 		return nil, fmt.Errorf("account code %q was not found for %s", accountCode, codeField)
 	}
 	return &accountID, nil
+}
+
+func resolveOptionalAssetImportSupplierID(row assetImportRow, supplierIDsByCode map[string]string) (*string, error) {
+	if supplierID := strings.TrimSpace(row.values["supplier_id"]); supplierID != "" {
+		return parseOptionalAssetImportUUID("supplier_id", supplierID)
+	}
+	supplierCode := strings.TrimSpace(row.values["supplier_code"])
+	if supplierCode == "" {
+		return nil, nil
+	}
+	supplierID, ok := supplierIDsByCode[normalizedAssetImportKey(supplierCode)]
+	if !ok {
+		return nil, fmt.Errorf("supplier_code %q was not found", supplierCode)
+	}
+	return &supplierID, nil
 }
 
 func parseOptionalAssetImportUUID(field, value string) (*string, error) {

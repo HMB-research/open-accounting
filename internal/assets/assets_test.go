@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -824,6 +825,56 @@ func TestService_ImportAssetsCSVReportsMissingAccountCode(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, `account code "MISSING" was not found for asset_account_code`)
 }
 
+func TestService_ImportAssetsCSVResolvesSupplierCode(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	supplierID := "11111111-1111-1111-1111-111111111111"
+	ts.svc.contacts = fakeAssetContactLister{
+		contacts: []contacts.Contact{
+			{ID: supplierID, TenantID: "tenant-1", Name: "Supplier One", Code: "SUP-001", ContactType: contacts.ContactTypeSupplier},
+		},
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_code\nLEG-001,Laptop,2025-01-10,1200.00,SUP-001\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.AssetsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+	require.Len(t, ts.repo.Assets, 1)
+	var imported *FixedAsset
+	for _, asset := range ts.repo.Assets {
+		imported = asset
+	}
+	require.NotNil(t, imported)
+	require.NotNil(t, imported.SupplierID)
+	assert.Equal(t, supplierID, *imported.SupplierID)
+}
+
+func TestService_ImportAssetsCSVReportsMissingSupplierCode(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	ts.svc.contacts = fakeAssetContactLister{
+		contacts: []contacts.Contact{
+			{ID: "11111111-1111-1111-1111-111111111111", TenantID: "tenant-1", Name: "Supplier One", Code: "SUP-001", ContactType: contacts.ContactTypeSupplier},
+		},
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_code\nLEG-001,Laptop,2025-01-10,1200.00,SUP-404\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.AssetsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `supplier_code "SUP-404" was not found`)
+}
+
 func TestService_ImportAssetsCSVReportsInvalidUUIDFields(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
@@ -1605,6 +1656,18 @@ func (f *fakeAssetAccountingPoster) CreateJournalEntry(_ context.Context, _, ten
 func (f *fakeAssetAccountingPoster) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
 	f.postedIDs = append(f.postedIDs, entryID)
 	return nil
+}
+
+type fakeAssetContactLister struct {
+	contacts []contacts.Contact
+	err      error
+}
+
+func (f fakeAssetContactLister) List(_ context.Context, _, _ string, _ *contacts.ContactFilter) ([]contacts.Contact, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.contacts, nil
 }
 
 func TestNewService(t *testing.T) {
