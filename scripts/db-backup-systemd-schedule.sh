@@ -43,8 +43,10 @@ Options:
 
 The generated units reference ENV_FILE for DATABASE_URL, RESTORE_DATABASE_URL,
 RESTORE_DRILL_BACKUP_FILE, and the selected offsite destination credentials.
+The generated preflight helper validates the host environment without calling
+PostgreSQL, object storage, rclone, or systemd.
 The generated install helper copies units to SYSTEMD_UNIT_DIR, preserves an
-existing ENV_FILE, reloads systemd, and enables the four timers.
+existing ENV_FILE, runs preflight, reloads systemd, and enables the four timers.
 EOF
 }
 
@@ -169,6 +171,7 @@ esac
 backup_metrics_file="$STATUS_DIR/openaccounting_backup.prom"
 restore_metrics_file="$STATUS_DIR/openaccounting_restore_drill.prom"
 install_helper="$OUTPUT_DIR/open-accounting-backup-install.sh"
+preflight_helper="$OUTPUT_DIR/open-accounting-backup-preflight.sh"
 
 if [ "$OFFSITE_PROVIDER" = "s3" ]; then
     write_file "$OUTPUT_DIR/open-accounting-backup.env.example" <<EOF
@@ -296,6 +299,130 @@ RandomizedDelaySec=30m
 WantedBy=timers.target
 EOF
 
+write_file "$preflight_helper" <<EOF
+#!/usr/bin/env bash
+# Validate Open Accounting backup operations on a host before enabling timers.
+
+set -euo pipefail
+
+SCRIPTS_DIR="$SCRIPTS_DIR"
+BACKUP_DIR="$BACKUP_DIR"
+STATUS_DIR="$STATUS_DIR"
+ENV_FILE="\${1:-$ENV_FILE}"
+RETENTION_DAYS="$RETENTION_DAYS"
+MAX_AGE_HOURS="$MAX_AGE_HOURS"
+BACKUP_STATUS_FILE="$backup_metrics_file"
+RESTORE_STATUS_FILE="$restore_metrics_file"
+
+fail() {
+  echo "ERROR: \$*" >&2
+  exit 1
+}
+
+log() {
+  echo "\$*"
+}
+
+is_placeholder_value() {
+  local value
+  local lowered
+
+  value="\$(printf '%s' "\$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*\$//')"
+  lowered="\$(printf '%s' "\$value" | tr '[:upper:]' '[:lower:]')"
+
+  case "\$lowered" in
+    replace-me|replace_me|change-me|changeme|todo|tbd|placeholder|example|your-*|"<"*">"|*example.com*|*user:pass*|*company-backups*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+require_config_value() {
+  local name="\$1"
+  local value="\$2"
+
+  [ -n "\$value" ] || fail "\$name is required in \$ENV_FILE"
+  if is_placeholder_value "\$value"; then
+    fail "\$name still contains a placeholder value in \$ENV_FILE"
+  fi
+}
+
+require_postgres_url() {
+  local name="\$1"
+  local value="\$2"
+
+  case "\$value" in
+    postgres://*|postgresql://*)
+      ;;
+    *)
+      fail "\$name must be a PostgreSQL connection URL"
+      ;;
+  esac
+}
+
+require_executable() {
+  local script="\$SCRIPTS_DIR/\$1"
+
+  [ -x "\$script" ] || fail "required backup script is missing or not executable: \$script"
+}
+
+[ -f "\$ENV_FILE" ] || fail "environment file does not exist: \$ENV_FILE"
+[ -r "\$ENV_FILE" ] || fail "environment file is not readable: \$ENV_FILE"
+
+set -a
+# shellcheck source=/dev/null
+. "\$ENV_FILE"
+set +a
+
+require_executable db-backup.sh
+require_executable db-backup-health.sh
+require_executable db-backup-offsite-sync.sh
+require_executable db-restore-drill.sh
+
+require_config_value DATABASE_URL "\${DATABASE_URL:-}"
+require_config_value RESTORE_DATABASE_URL "\${RESTORE_DATABASE_URL:-}"
+require_config_value RESTORE_DRILL_BACKUP_FILE "\${RESTORE_DRILL_BACKUP_FILE:-}"
+require_postgres_url DATABASE_URL "\$DATABASE_URL"
+require_postgres_url RESTORE_DATABASE_URL "\$RESTORE_DATABASE_URL"
+
+if [ "\$DATABASE_URL" = "\$RESTORE_DATABASE_URL" ]; then
+  fail "RESTORE_DATABASE_URL must point at a separate drill database"
+fi
+
+"\$SCRIPTS_DIR/db-backup.sh" \
+  --database-url "\$DATABASE_URL" \
+  --backup-dir "\$BACKUP_DIR" \
+  --retention-days "\$RETENTION_DAYS" \
+  --dry-run >/dev/null
+
+if [ -n "\${BACKUP_OFFSITE_S3_URI:-}" ]; then
+  "\$SCRIPTS_DIR/db-backup-offsite-sync.sh" --s3-uri "\$BACKUP_OFFSITE_S3_URI" --preflight
+elif [ -n "\${BACKUP_OFFSITE_RCLONE_REMOTE:-}" ]; then
+  "\$SCRIPTS_DIR/db-backup-offsite-sync.sh" --rclone-remote "\$BACKUP_OFFSITE_RCLONE_REMOTE" --preflight
+else
+  fail "configure exactly one offsite destination in \$ENV_FILE"
+fi
+
+"\$SCRIPTS_DIR/db-backup-health.sh" \
+  --backup-dir "\$BACKUP_DIR" \
+  --max-age-hours "\$MAX_AGE_HOURS" \
+  --status-file "\$BACKUP_STATUS_FILE" \
+  --dry-run >/dev/null
+
+"\$SCRIPTS_DIR/db-restore-drill.sh" \
+  --backup "\$RESTORE_DRILL_BACKUP_FILE" \
+  --restore-url "\$RESTORE_DATABASE_URL" \
+  --source-url "\$DATABASE_URL" \
+  --status-file "\$RESTORE_STATUS_FILE" \
+  --preflight
+
+[ -z "\$STATUS_DIR" ] || log "Metrics directory configured: \$STATUS_DIR"
+log "Backup operations preflight passed"
+EOF
+
 write_file "$install_helper" <<EOF
 #!/usr/bin/env bash
 # Install generated Open Accounting backup units on a systemd host.
@@ -323,10 +450,12 @@ done
 
 if [ ! -f "\$ENV_FILE" ]; then
   install -m 0600 "\$SOURCE_DIR/open-accounting-backup.env.example" "\$ENV_FILE"
-  echo "Installed environment template at \$ENV_FILE; edit it with live credentials before the next timer run."
+  echo "Installed environment template at \$ENV_FILE; edit it with host values before enabling timers."
 else
   echo "Preserved existing environment file at \$ENV_FILE"
 fi
+
+"\$SOURCE_DIR/open-accounting-backup-preflight.sh" "\$ENV_FILE"
 
 systemctl daemon-reload
 systemctl enable --now \
@@ -339,6 +468,7 @@ EOF
 
 if [ "$DRY_RUN" = false ]; then
     chmod 0755 "$install_helper"
+    chmod 0755 "$preflight_helper"
 fi
 
 if [ "$DRY_RUN" = true ]; then
@@ -346,4 +476,4 @@ if [ "$DRY_RUN" = true ]; then
 else
     log "Generated Open Accounting backup systemd schedule in $OUTPUT_DIR"
 fi
-log "Review $OUTPUT_DIR/open-accounting-backup.env.example, install real secrets at $ENV_FILE, then run $install_helper $SYSTEMD_UNIT_DIR to copy units and enable the four timers."
+log "Review $OUTPUT_DIR/open-accounting-backup.env.example, install host values at $ENV_FILE, run $preflight_helper $ENV_FILE, then run $install_helper $SYSTEMD_UNIT_DIR to copy units and enable the four timers."

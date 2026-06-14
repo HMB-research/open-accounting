@@ -423,6 +423,145 @@ describe("API Client - Core Functionality", () => {
       );
     });
 
+    it("should manage tenant user security controls", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "updated", is_active: false }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: "session-1",
+              user_id: "user-2",
+              created_at: "2026-03-12T10:00:00Z",
+              expires_at: "2026-03-13T10:00:00Z",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "revoked" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "revoked" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: "token-1",
+              tenant_id: "tenant-123",
+              user_id: "user-2",
+              name: "Automation",
+              token_prefix: "oa_live",
+              created_at: "2026-03-12T10:00:00Z",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "revoked" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: "event-1",
+              action: "api_token_revoked",
+              target_user_id: "user-2",
+              metadata: { token_id: "token-1" },
+              created_at: "2026-03-12T10:00:00Z",
+            },
+          ],
+        });
+
+      await api.updateTenantUserStatus("tenant-123", "user-2", false);
+      const sessions = await api.listTenantUserAuthSessions(
+        "tenant-123",
+        "user-2",
+        true,
+      );
+      await api.revokeTenantUserAuthSession(
+        "tenant-123",
+        "user-2",
+        "session-1",
+      );
+      await api.revokeTenantUserAuthSessions("tenant-123", "user-2");
+      const tokens = await api.listTenantUserAPITokens("tenant-123", "user-2");
+      await api.revokeTenantUserAPIToken("tenant-123", "user-2", "token-1");
+      const events = await api.listTenantUserSecurityAuditEvents(
+        "tenant-123",
+        "user-2",
+        25,
+      );
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/status",
+        ),
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ is_active: false }),
+        }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/sessions?include_inactive=true",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/sessions/session-1",
+        ),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        4,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/sessions",
+        ),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        5,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/api-tokens",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        6,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/api-tokens/token-1",
+        ),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        7,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/security-events?limit=25",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(sessions[0].id).toBe("session-1");
+      expect(tokens[0].token_prefix).toBe("oa_live");
+      expect(events[0].action).toBe("api_token_revoked");
+    });
+
     it("should manage tenant invitations", async () => {
       mockFetch
         .mockResolvedValueOnce({
