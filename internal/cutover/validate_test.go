@@ -2986,6 +2986,83 @@ func TestValidateBundleReportsCostAllocationsExceedJournalLineAmount(t *testing.
 	assert.Contains(t, report.Issues[0].Message, "line_amount=100")
 }
 
+func TestValidateBundleAcceptsCostAllocationPercentagesWithinJournalLineLimit(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n5500,Payroll expense,EXPENSE\n",
+		},
+		{
+			Kind:       KindCostCenters,
+			FileName:   "cost-centers.csv",
+			CSVContent: "code,name\nOPS,Operations\nADM,Administration\n",
+		},
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,entry_date,line_id,account_code,debit,credit\n" +
+				"JE-1,2026-05-31," + cutoverJournalLineID1 + ",5500,100.00,0\n" +
+				"JE-1,2026-05-31," + cutoverJournalLineID2 + ",1000,0,100.00\n",
+		},
+		{
+			Kind:     KindCostAllocations,
+			FileName: "cost-allocations.csv",
+			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date\n" +
+				"OPS," + cutoverJournalLineID1 + ",40.00,40,2026-05-31\n" +
+				"ADM," + cutoverJournalLineID1 + ",60.00,60,2026-05-31\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsCostAllocationPercentagesExceedJournalLineLimit(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n5500,Payroll expense,EXPENSE\n",
+		},
+		{
+			Kind:       KindCostCenters,
+			FileName:   "cost-centers.csv",
+			CSVContent: "code,name\nOPS,Operations\nADM,Administration\n",
+		},
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,entry_date,line_id,account_code,debit,credit\n" +
+				"JE-1,2026-05-31," + cutoverJournalLineID1 + ",5500,200.00,0\n" +
+				"JE-1,2026-05-31," + cutoverJournalLineID2 + ",1000,0,200.00\n",
+		},
+		{
+			Kind:     KindCostAllocations,
+			FileName: "cost-allocations.csv",
+			CSVContent: "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date\n" +
+				"OPS," + cutoverJournalLineID1 + ",30.00,70,2026-05-31\n" +
+				"ADM," + cutoverJournalLineID1 + ",40.00,40,2026-05-31\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindCostAllocations, report.Issues[0].Kind)
+	assert.Equal(t, KindJournalEntries, report.Issues[0].TargetKind)
+	assert.Equal(t, "allocation_percentage", report.Issues[0].Field)
+	assert.Equal(t, "40", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, "cost allocation percentages for journal line")
+	assert.Contains(t, report.Issues[0].Message, "percentages=110")
+	assert.Contains(t, report.Issues[0].Message, "limit=100")
+}
+
 func TestValidateBundleReportsMissingCostAllocationJournalLineReference(t *testing.T) {
 	missingJournalLineID := "33333333-3333-4333-8333-333333333333"
 
