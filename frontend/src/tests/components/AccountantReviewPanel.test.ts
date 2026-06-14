@@ -866,6 +866,25 @@ describe('AccountantReviewPanel', () => {
 					file_name: 'rejected-receipt.pdf',
 					ui_path: '/documents?entity_type=expense&entity_id=expense-1&document_id=doc-rejected-1',
 					cli_command: 'oa documents upload --entity-type expense --entity-id expense-1 --document-type receipt --file <replacement-file>'
+				},
+				{
+					code: 'document_evidence_unapproved',
+					severity: 'ACTION',
+					scope: 'documents',
+					owner_role: 'accountant',
+					workspace_queue: 'document_review',
+					assignment_key: 'document-review:document-evidence-unapproved:payment:pay-2:receipt:doc-pending-receipt',
+					priority: 'high',
+					due_in_days: 1,
+					message: 'Payment pay-2 has matching evidence, but not enough approved documents.',
+					action: 'Review and approve enough matching evidence documents to satisfy the workflow policy.',
+					entity_type: 'payment',
+					entity_id: 'pay-2',
+					document_id: 'doc-pending-receipt',
+					document_type: 'receipt',
+					file_name: 'receipt-draft.pdf',
+					ui_path: '/documents?entity_type=payment&entity_id=pay-2&document_id=doc-pending-receipt',
+					cli_command: 'oa documents review --id doc-pending-receipt --status approved'
 				}
 			]
 		});
@@ -901,6 +920,9 @@ describe('AccountantReviewPanel', () => {
 			expect(screen.getByText('Payment pay-1 is missing required receipt evidence.')).toBeInTheDocument();
 			expect(
 				screen.getByText('Document rejected-receipt.pdf was rejected and needs replacement or correction.')
+			).toBeInTheDocument();
+			expect(
+				screen.getByText('Payment pay-2 has matching evidence, but not enough approved documents.')
 			).toBeInTheDocument();
 		});
 
@@ -961,6 +983,26 @@ describe('AccountantReviewPanel', () => {
 				document_type: 'receipt',
 				notes: 'Replacement uploaded from accountant workspace assignment'
 			});
+			expect(
+				screen.getByText('Payment pay-2 has matching evidence, but not enough approved documents.')
+			).toBeInTheDocument();
+		});
+
+		const unapprovedEvidenceRow = screen
+			.getByText('Payment pay-2 has matching evidence, but not enough approved documents.')
+			.closest('.review-list-item-assignment');
+		expect(unapprovedEvidenceRow).not.toBeNull();
+		const approveButton = Array.from(unapprovedEvidenceRow!.querySelectorAll('button')).find(
+			(candidate) => candidate.textContent?.trim() === 'Approve document'
+		);
+		expect(approveButton).toBeDefined();
+		await fireEvent.click(approveButton!);
+
+		await waitFor(() => {
+			expect(apiMock.reviewDocument).toHaveBeenCalledWith('tenant-1', 'doc-pending-receipt', {
+				review_status: 'APPROVED'
+			});
+			expect(screen.getByText('Document approved from workspace.')).toBeInTheDocument();
 		});
 	});
 

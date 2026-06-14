@@ -74,7 +74,7 @@ func BuildRetentionReviewRemediationActions(review *RetentionReview) []DocumentR
 }
 
 // BuildEvidencePolicyRemediationActions turns evidence-policy violations into accountant follow-up actions.
-func BuildEvidencePolicyRemediationActions(result *EvidencePolicyResult) []DocumentRemediationAction {
+func BuildEvidencePolicyRemediationActions(result *EvidencePolicyResult, docs ...Document) []DocumentRemediationAction {
 	if result == nil || result.Compliant {
 		return nil
 	}
@@ -90,6 +90,12 @@ func BuildEvidencePolicyRemediationActions(result *EvidencePolicyResult) []Docum
 			base.Message = fmt.Sprintf("%s %s has matching evidence, but not enough approved documents.", result.EntityType, result.EntityID)
 			base.Action = "Review and approve enough matching evidence documents to satisfy the workflow policy."
 			base.CLICommand = reviewQueueCommand(result.EntityType, documentType)
+			if doc, ok := firstUnapprovedMatchingEvidenceDocument(docs, violation); ok {
+				base.DocumentID = doc.ID
+				base.FileName = doc.FileName
+				base.UIPath = documentRemediationUIPath(result.EntityType, result.EntityID, doc.ID)
+				base.CLICommand = fmt.Sprintf("oa documents review --id %s --status approved", doc.ID)
+			}
 		} else if result.MissingEvidence || violation.MatchingCount == 0 {
 			base.Code = "document_evidence_missing"
 			base.Severity = "ACTION"
@@ -167,6 +173,42 @@ func firstDocumentType(documentTypes []string) string {
 		}
 	}
 	return DocumentTypeSupportingDocument
+}
+
+func firstUnapprovedMatchingEvidenceDocument(docs []Document, violation EvidencePolicyRuleResult) (Document, bool) {
+	for _, preferredStatus := range []string{ReviewStatusPending, ReviewStatusReviewed, ReviewStatusRejected} {
+		for _, doc := range docs {
+			if doc.ReviewStatus != preferredStatus {
+				continue
+			}
+			if evidencePolicyDocumentTypeMatches(violation.DocumentTypes, doc.DocumentType) {
+				return doc, true
+			}
+		}
+	}
+
+	for _, doc := range docs {
+		if doc.ReviewStatus == ReviewStatusApproved {
+			continue
+		}
+		if evidencePolicyDocumentTypeMatches(violation.DocumentTypes, doc.DocumentType) {
+			return doc, true
+		}
+	}
+
+	return Document{}, false
+}
+
+func evidencePolicyDocumentTypeMatches(documentTypes []string, documentType string) bool {
+	if len(documentTypes) == 0 {
+		return true
+	}
+	for _, candidate := range documentTypes {
+		if candidate == documentType {
+			return true
+		}
+	}
+	return false
 }
 
 func uploadEvidenceCommand(entityType, entityID, documentType string) string {

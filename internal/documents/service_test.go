@@ -878,6 +878,12 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	if policyResults[1].RemediationActions[0].WorkspaceQueue != "document_review" || policyResults[1].RemediationActions[0].Priority != "high" || policyResults[1].RemediationActions[0].DueInDays != 1 {
 		t.Fatalf("expected evidence policy assignment metadata: %#v", policyResults[1].RemediationActions[0])
 	}
+	if policyResults[1].RemediationActions[0].DocumentID != "doc-pending-receipt" || policyResults[1].RemediationActions[0].FileName != "receipt-draft.pdf" {
+		t.Fatalf("expected unapproved evidence action to target pending document: %#v", policyResults[1].RemediationActions[0])
+	}
+	if policyResults[1].RemediationActions[0].CLICommand != "oa documents review --id doc-pending-receipt --status approved" {
+		t.Fatalf("expected direct review command, got %q", policyResults[1].RemediationActions[0].CLICommand)
+	}
 	if policyResults[2].Compliant || !policyResults[2].MissingEvidence {
 		t.Fatalf("expected pay-3 policy to fail as missing evidence: %#v", policyResults[2])
 	}
