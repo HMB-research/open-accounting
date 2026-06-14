@@ -37,6 +37,7 @@ Status values:
 - The follow-up migration saved-run event stream stage was locally revalidated with focused API/CLI route coverage, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
 - The follow-up migration dashboard live stream stage was locally revalidated with focused frontend API/workbench tests and prepared Svelte checks.
 - The follow-up migration provider preset catalog stage was locally revalidated with focused cutover/API/CLI/frontend API/workbench tests and prepared Svelte checks.
+- The follow-up SmartAccounts commercial contact alias stage was locally revalidated with focused cutover validator tests.
 - The follow-up migration FK UUID preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up product supplier-code migration stage was locally revalidated with focused inventory importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up fixed-asset supplier-code migration stage was locally revalidated with focused fixed-asset importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
@@ -117,6 +118,9 @@ as `contact_code` must match a contact code rather than another contact identity
 field. Commercial-document import execution now resolves quote, order, and
 recurring-invoice contacts by VAT number when `contact_vat_number` or
 `vat_number` is supplied instead of treating those columns as registry codes.
+SmartAccounts commercial-document provider presets now canonicalize
+quote/order/recurring contact registry number, VAT number, and email aliases
+before the same-bundle contact preflight runs.
 Fixed-asset source-invoice consistency now
 requires same-bundle source invoices to be purchase invoices and rejects
 same-field supplier/contact mismatches before cutover import execution.
