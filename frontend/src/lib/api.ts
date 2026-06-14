@@ -2393,6 +2393,26 @@ class ApiClient {
     );
   }
 
+  async generateKMDINF(tenantId: string, data: KMDINFReportRequest) {
+    const query = buildQuery({ threshold: data.threshold });
+    return this.request<KMDINFReport>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/tax/kmd/${data.year}/${data.month}/inf${query}`,
+    );
+  }
+
+  async generateEUVATOSS(tenantId: string, data: EUVATOSSReportRequest) {
+    const query = buildQuery({
+      year: data.year,
+      quarter: data.quarter,
+      include_b2b: data.include_b2b,
+    });
+    return this.request<EUVATOSSReport>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/tax/eu-vat/oss${query}`,
+    );
+  }
+
   async markKMDSubmitted(tenantId: string, year: number, month: number) {
     return this.request<{ status: string }>(
       "POST",
@@ -5374,9 +5394,116 @@ export interface KMDRemediationAction {
   cli_command?: string;
 }
 
+export interface TaxReportRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  period?: string;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
+}
+
 export interface CreateKMDRequest {
   year: number;
   month: number;
+}
+
+export interface KMDINFReportRequest {
+  year: number;
+  month: number;
+  threshold?: string | number | Decimal;
+}
+
+export interface KMDINFPartSummary {
+  part: "A" | "B";
+  partner_count: number;
+  invoice_count: number;
+  taxable_amount: Decimal;
+  vat_amount: Decimal;
+  total_amount: Decimal;
+}
+
+export interface KMDINFReportRow {
+  part: "A" | "B";
+  contact_id: string;
+  contact_name: string;
+  contact_reg_code?: string;
+  contact_vat_number?: string;
+  invoice_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  invoice_type: string;
+  taxable_amount: Decimal;
+  vat_amount: Decimal;
+  total_amount: Decimal;
+  partner_period_taxable_amount: Decimal;
+}
+
+export interface KMDINFReport {
+  tenant_id: string;
+  year: number;
+  month: number;
+  threshold: Decimal;
+  generated_at: string;
+  summary: KMDINFPartSummary[];
+  rows: KMDINFReportRow[];
+  remediation_actions?: TaxReportRemediationAction[];
+}
+
+export interface EUVATOSSReportRequest {
+  year: number;
+  quarter: number;
+  include_b2b?: boolean;
+}
+
+export interface EUVATOSSCountrySummary {
+  country_code: string;
+  country_name: string;
+  invoice_count: number;
+  line_count: number;
+  taxable_amount: Decimal;
+  vat_amount: Decimal;
+  total_amount: Decimal;
+}
+
+export interface EUVATOSSReportRow {
+  country_code: string;
+  country_name: string;
+  vat_rate: Decimal;
+  invoice_count: number;
+  line_count: number;
+  taxable_amount: Decimal;
+  vat_amount: Decimal;
+  total_amount: Decimal;
+}
+
+export interface EUVATOSSReport {
+  tenant_id: string;
+  year: number;
+  quarter: number;
+  period_start: string;
+  period_end: string;
+  scheme: string;
+  currency: string;
+  include_b2b: boolean;
+  generated_at: string;
+  summary: EUVATOSSCountrySummary[];
+  rows: EUVATOSSReportRow[];
+  taxable_amount: Decimal;
+  vat_amount: Decimal;
+  total_amount: Decimal;
+  invoice_count: number;
+  line_count: number;
+  remediation_actions?: TaxReportRemediationAction[];
 }
 
 // Cash Flow types

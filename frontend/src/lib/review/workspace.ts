@@ -19,6 +19,7 @@ import {
 	type PayrollRun,
 	type PayrollRunRemediationAction,
 	type PeriodCloseEvent,
+	type TaxReportRemediationAction,
 	type Tenant,
 	type TSDDeclaration,
 	type TSDRemediationAction,
@@ -63,6 +64,7 @@ export type WorkspaceAssignmentSource =
 	| 'payroll'
 	| 'tsd'
 	| 'kmd'
+	| 'tax_reports'
 	| 'migration';
 
 export type WorkspaceAssignmentAction = {
@@ -152,6 +154,8 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 
 	const journalEntries = journalResult.status === 'fulfilled' ? journalResult.value : [];
 	const journalEvidence = await loadJournalEvidence(tenant.id, journalEntries);
+	const kmdDeclarations = kmdResult.status === 'fulfilled' ? kmdResult.value : [];
+	const taxReportResult = await loadTaxReportRemediationActions(tenant.id, kmdDeclarations);
 	const assignmentActions = buildWorkspaceAssignmentActions({
 		closeStatus: yearEndCloseResult.status === 'fulfilled' ? yearEndCloseResult.value : null,
 		bankExceptions,
@@ -159,14 +163,15 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 		expenses: expensesResult.status === 'fulfilled' ? expensesResult.value : [],
 		payrollRuns: payrollResult.status === 'fulfilled' ? payrollResult.value : [],
 		tsdDeclarations: tsdResult.status === 'fulfilled' ? tsdResult.value : [],
-		kmdDeclarations: kmdResult.status === 'fulfilled' ? kmdResult.value : [],
+		kmdDeclarations,
+		taxReportRemediationActions: taxReportResult.actions,
 		migrationRuns: migrationRunsResult.status === 'fulfilled' ? migrationRunsResult.value : []
 	});
 
 	const errorCount = [overdueResult, accountsResult, periodCloseResult, journalResult].filter(
 		(result) => result.status === 'rejected'
 	).length;
-	const assignmentErrorCount = [
+	let assignmentErrorCount = [
 		yearEndCloseResult,
 		retentionResult,
 		expensesResult,
@@ -175,6 +180,9 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 		kmdResult,
 		migrationRunsResult
 	].filter((result) => result.status === 'rejected').length;
+	if (taxReportResult.hadError) {
+		assignmentErrorCount += 1;
+	}
 
 	return {
 		tenant,
@@ -197,6 +205,7 @@ function buildWorkspaceAssignmentActions(input: {
 	payrollRuns: PayrollRun[];
 	tsdDeclarations: TSDDeclaration[];
 	kmdDeclarations: KMDDeclaration[];
+	taxReportRemediationActions: TaxReportRemediationAction[];
 	migrationRuns: MigrationExecutionRun[];
 }): WorkspaceAssignmentAction[] {
 	const actions: WorkspaceAssignmentAction[] = [];
@@ -228,6 +237,7 @@ function buildWorkspaceAssignmentActions(input: {
 			'kmd',
 			input.kmdDeclarations.flatMap((declaration) => declaration.remediation_actions ?? [])
 		),
+		...normalizeRemediationActions('tax_reports', input.taxReportRemediationActions),
 		...normalizeRemediationActions(
 			'migration',
 			buildMigrationRunRemediationActions(input.migrationRuns)
@@ -246,6 +256,7 @@ function normalizeRemediationActions(
 		| KMDRemediationAction[]
 		| MigrationRemediationAction[]
 		| PayrollRunRemediationAction[]
+		| TaxReportRemediationAction[]
 		| TSDRemediationAction[]
 		| YearEndCloseRemediationAction[],
 	context: AssignmentActionContext = {}
@@ -494,6 +505,93 @@ function dueWindowForSeverity(severity: string): number {
 		default:
 			return 3;
 	}
+}
+
+type TaxReportRemediationLoadResult = {
+	actions: TaxReportRemediationAction[];
+	hadError: boolean;
+};
+
+type KMDReportPeriod = {
+	year: number;
+	month: number;
+};
+
+type OSSReportQuarter = {
+	year: number;
+	quarter: number;
+};
+
+async function loadTaxReportRemediationActions(
+	tenantId: string,
+	kmdDeclarations: KMDDeclaration[]
+): Promise<TaxReportRemediationLoadResult> {
+	const kmdPeriods = getRecentKMDReportPeriods(kmdDeclarations, 6);
+	const ossQuarters = getRecentOSSReportQuarters(kmdDeclarations, 4);
+	const reportRequests = [
+		...kmdPeriods.map((period) => api.generateKMDINF(tenantId, period)),
+		...ossQuarters.map((quarter) => api.generateEUVATOSS(tenantId, quarter))
+	];
+	if (reportRequests.length === 0) {
+		return { actions: [], hadError: false };
+	}
+
+	const results = await Promise.allSettled(reportRequests);
+	const actions = results.flatMap((result) =>
+		result.status === 'fulfilled' ? (result.value.remediation_actions ?? []) : []
+	);
+	return {
+		actions,
+		hadError: results.some((result) => result.status === 'rejected')
+	};
+}
+
+function getRecentKMDReportPeriods(
+	kmdDeclarations: KMDDeclaration[],
+	limit: number
+): KMDReportPeriod[] {
+	return uniqueKMDReportPeriods(kmdDeclarations)
+		.sort((left, right) => right.year - left.year || right.month - left.month)
+		.slice(0, limit);
+}
+
+function getRecentOSSReportQuarters(
+	kmdDeclarations: KMDDeclaration[],
+	limit: number
+): OSSReportQuarter[] {
+	const seen = new Set<string>();
+	const quarters: OSSReportQuarter[] = [];
+	for (const period of uniqueKMDReportPeriods(kmdDeclarations)) {
+		const quarter = Math.floor((period.month - 1) / 3) + 1;
+		const key = `${period.year}-Q${quarter}`;
+		if (seen.has(key)) {
+			continue;
+		}
+		seen.add(key);
+		quarters.push({ year: period.year, quarter });
+	}
+	return quarters
+		.sort((left, right) => right.year - left.year || right.quarter - left.quarter)
+		.slice(0, limit);
+}
+
+function uniqueKMDReportPeriods(kmdDeclarations: KMDDeclaration[]): KMDReportPeriod[] {
+	const seen = new Set<string>();
+	const periods: KMDReportPeriod[] = [];
+	for (const declaration of kmdDeclarations) {
+		const year = Number(declaration.year);
+		const month = Number(declaration.month);
+		if (!year || month < 1 || month > 12) {
+			continue;
+		}
+		const key = `${year}-${month}`;
+		if (seen.has(key)) {
+			continue;
+		}
+		seen.add(key);
+		periods.push({ year, month });
+	}
+	return periods;
 }
 
 async function loadUnmatchedTransactions(
