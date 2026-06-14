@@ -2381,6 +2381,7 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 	validateImportedInvoiceAmountPaidConsistency(report, files)
 
 	invoiceTargets := buildCutoverInvoiceAllocationTargets(files, eInvoiceContactMode)
+	validateFixedAssetInvoiceConsistency(report, files, invoiceTargets)
 	if len(invoiceTargets) == 0 {
 		return
 	}
@@ -2466,6 +2467,108 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 			}
 		}
 	}
+}
+
+func validateFixedAssetInvoiceConsistency(
+	report *BundleValidationReport,
+	files []parsedFile,
+	invoiceTargets map[string]cutoverInvoiceAllocationTarget,
+) {
+	if len(invoiceTargets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindFixedAssets {
+			continue
+		}
+		for _, row := range file.rows {
+			invoiceID := strings.TrimSpace(row.values["invoice_id"])
+			if invoiceID == "" {
+				continue
+			}
+			target, ok := invoiceTargets[cutoverInvoiceAllocationTargetKey("invoice_id", invoiceID)]
+			if !ok {
+				continue
+			}
+			if hasFixedAssetInvoiceTypeMismatch(report, file, row, target) {
+				continue
+			}
+			hasFixedAssetInvoiceSupplierMismatch(report, file, row, target)
+		}
+	}
+}
+
+func hasFixedAssetInvoiceTypeMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	invoiceType := strings.ToUpper(strings.TrimSpace(target.invoiceType))
+	if invoiceType == "" || invoiceType == "PURCHASE" {
+		return false
+	}
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindFixedAssets,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "invoice_id",
+		Value:      strings.TrimSpace(row.values["invoice_id"]),
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"fixed asset source invoice %q is %s; expected PURCHASE invoice",
+			target.display,
+			invoiceType,
+		),
+	})
+	return true
+}
+
+func hasFixedAssetInvoiceSupplierMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	if len(target.contactReferences) == 0 {
+		return false
+	}
+	supplierReferences := cutoverSupplierContactReferencesFromRow(row)
+	if len(supplierReferences) == 0 {
+		return false
+	}
+
+	for _, field := range cutoverContactReferenceFields {
+		supplierReference, supplierHasField := supplierReferences[field]
+		targetReference, targetHasField := target.contactReferences[field]
+		if !supplierHasField || !targetHasField {
+			continue
+		}
+		if supplierReference.normalized == targetReference.normalized {
+			continue
+		}
+		sourceField := cutoverSupplierContactSourceField(field)
+		report.addIssue(ValidationIssue{
+			Severity:   SeverityError,
+			Kind:       KindFixedAssets,
+			FileName:   file.fileName,
+			Row:        row.number,
+			Field:      sourceField,
+			Value:      supplierReference.display,
+			TargetKind: target.targetKind,
+			Message: fmt.Sprintf(
+				"fixed asset %s %q does not match imported invoice %q %s %q",
+				sourceField,
+				supplierReference.display,
+				target.display,
+				field,
+				targetReference.display,
+			),
+		})
+		return true
+	}
+	return false
 }
 
 func validateImportedInvoiceAmountPaidConsistency(report *BundleValidationReport, files []parsedFile) {
@@ -2957,6 +3060,51 @@ func cutoverEInvoiceBuyerContactReferencesFromRow(row parsedRow) cutoverContactR
 		}
 	}
 	return references
+}
+
+func cutoverSupplierContactReferencesFromRow(row parsedRow) cutoverContactReferences {
+	fieldMap := []struct {
+		source string
+		target string
+	}{
+		{source: "supplier_id", target: "contact_id"},
+		{source: "supplier_code", target: "contact_code"},
+		{source: "supplier_reg_code", target: "contact_reg_code"},
+		{source: "supplier_vat_number", target: "contact_vat_number"},
+		{source: "supplier_email", target: "contact_email"},
+		{source: "supplier_name", target: "contact_name"},
+	}
+	references := cutoverContactReferences{}
+	for _, field := range fieldMap {
+		display := strings.TrimSpace(row.values[field.source])
+		if display == "" {
+			continue
+		}
+		references[field.target] = cutoverContactReference{
+			display:    display,
+			normalized: normalizedValue(display),
+		}
+	}
+	return references
+}
+
+func cutoverSupplierContactSourceField(contactField string) string {
+	switch contactField {
+	case "contact_id":
+		return "supplier_id"
+	case "contact_code":
+		return "supplier_code"
+	case "contact_reg_code":
+		return "supplier_reg_code"
+	case "contact_vat_number":
+		return "supplier_vat_number"
+	case "contact_email":
+		return "supplier_email"
+	case "contact_name":
+		return "supplier_name"
+	default:
+		return contactField
+	}
 }
 
 func copyCutoverContactReferences(references cutoverContactReferences) cutoverContactReferences {
