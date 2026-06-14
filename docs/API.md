@@ -1083,7 +1083,7 @@ Content-Type: application/json
 }
 ```
 
-The import creates a journal entry and posts it immediately. If the tenant period is locked for the chosen date, the API returns `409 Conflict`.
+The import creates a journal entry and posts it immediately. It accepts the same account/debit/credit provider aliases validated by migration preflight, including Merit and Directo `konto_kood`, `deebetsumma`, `kreeditsumma`, `algsaldo_deebet`, and `algsaldo_kreedit`, plus SmartAccounts `gl_account_no`, `opening_debit`, and `opening_credit`, so provider-preset execution can pass through the original opening-balance CSV. If the tenant period is locked for the chosen date, the API returns `409 Conflict`.
 
 ### Import Historical Journal Entries
 

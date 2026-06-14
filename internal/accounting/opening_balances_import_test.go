@@ -92,6 +92,58 @@ func TestService_ImportOpeningBalancesCSV(t *testing.T) {
 		assert.Len(t, result.JournalEntry.Lines, 2)
 	})
 
+	t.Run("imports provider opening balance account and amount aliases", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			csvContent string
+		}{
+			{
+				name: "merit",
+				csvContent: "konto_kood,deebetsumma,kreeditsumma,selgitus\n" +
+					"1000,1500.00,0,Cash brought forward\n" +
+					"3000,0,1500.00,Equity brought forward\n",
+			},
+			{
+				name: "smartaccounts",
+				csvContent: "gl_account_no,opening_debit,opening_credit,memo\n" +
+					"1000,1500.00,0,Cash brought forward\n" +
+					"3000,0,1500.00,Equity brought forward\n",
+			},
+			{
+				name: "directo",
+				csvContent: "konto_nr,algsaldo_deebet,algsaldo_kreedit,selgitus\n" +
+					"1000,1500.00,0,Cash brought forward\n" +
+					"3000,0,1500.00,Equity brought forward\n",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				repo := newOpeningBalanceImportMockRepository(tenantID)
+				svc := NewServiceWithRepository(repo)
+
+				result, err := svc.ImportOpeningBalancesCSV(ctx, schemaName, tenantID, &ImportOpeningBalancesRequest{
+					FileName:   tt.name + "-opening-balances.csv",
+					EntryDate:  "2026-01-01",
+					Reference:  "OB-2026",
+					UserID:     "user-1",
+					CSVContent: tt.csvContent,
+				})
+
+				require.NoError(t, err)
+				assert.Equal(t, 2, result.RowsProcessed)
+				assert.Equal(t, 2, result.LinesImported)
+				assert.True(t, result.TotalDebit.Equal(decimal.NewFromInt(1500)))
+				assert.True(t, result.TotalCredit.Equal(decimal.NewFromInt(1500)))
+				require.NotNil(t, result.JournalEntry)
+				assert.Equal(t, StatusPosted, result.JournalEntry.Status)
+				require.Len(t, result.JournalEntry.Lines, 2)
+				assert.Equal(t, "Cash brought forward", result.JournalEntry.Lines[0].Description)
+				assert.Equal(t, "Equity brought forward", result.JournalEntry.Lines[1].Description)
+			})
+		}
+	})
+
 	t.Run("rejects nil or incomplete requests", func(t *testing.T) {
 		svc := NewServiceWithRepository(NewMockRepository())
 		validCSV := "account_code,debit,credit\n1000,100.00,0\n3000,0,100.00\n"
