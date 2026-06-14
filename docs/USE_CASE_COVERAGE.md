@@ -58,6 +58,7 @@ Status values:
 - The follow-up e-invoice payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment bank-account default-currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up bank-account currency letter validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up bank-transaction source-account omitted-currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up bank-transaction description-source preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up invoice paid-amount consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
@@ -178,6 +179,8 @@ against same-bundle contact VAT numbers before payment imports run.
 Payment bank-account default-currency consistency rejects same-bundle payment
 rows that omit `currency` when the referenced bank account is non-EUR, because
 payment imports default omitted currencies to EUR.
+Bank-account currency letter validation rejects three-character currency values
+that include digits or punctuation instead of ISO letters.
 Bank-transaction source-account omitted-currency consistency accepts
 same-bundle bank transaction rows that omit `currency` for EUR and non-EUR bank
 accounts, because bank transaction imports accept omitted statement currencies

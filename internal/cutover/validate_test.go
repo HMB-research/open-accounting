@@ -2500,6 +2500,27 @@ func TestValidateBundleReportsBankAccountRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindBankAccounts, "currency", "currency must be a 3-letter ISO code")
 }
 
+func TestValidateBundleReportsBankAccountCurrencyCodeWithNonLetters(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "name,account_number,currency,is_default,is_active\nMain bank,EE471000001020145685,EU1,true,true\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindBankAccounts, report.Issues[0].Kind)
+	assert.Equal(t, 2, report.Issues[0].Row)
+	assert.Equal(t, "currency", report.Issues[0].Field)
+	assert.Equal(t, "EU1", report.Issues[0].Value)
+	assert.Equal(t, "currency must be a 3-letter ISO code", report.Issues[0].Message)
+}
+
 func TestValidateBundleReportsBankTransactionRowValueIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
