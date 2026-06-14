@@ -8,6 +8,8 @@ export interface PluginNavigationItem extends PluginNavItem {
 	pluginName: string;
 }
 
+export type PluginSlotKind = 'card' | 'link' | 'action';
+
 /**
  * Slot registration from a plugin
  */
@@ -16,12 +18,18 @@ export interface PluginSlotRegistration {
 	pluginName: string;
 	slotName: string;
 	componentName: string;
+	label: string;
+	description?: string;
+	path?: string;
+	kind: PluginSlotKind;
+	badge?: string;
+	order: number;
 }
 
 /**
  * Plugin Manager State
  */
-interface PluginManagerState {
+export interface PluginManagerState {
 	plugins: TenantPlugin[];
 	navigation: PluginNavigationItem[];
 	slots: Map<string, PluginSlotRegistration[]>;
@@ -93,12 +101,20 @@ function createPluginManager() {
 				if (plugin.manifest?.frontend?.slots) {
 					for (const slot of plugin.manifest.frontend.slots) {
 						const existing = slots.get(slot.name) || [];
+						const path = normalizeSlotPath(slot.path);
 						existing.push({
 							pluginId: plugin.id,
 							pluginName: plugin.name,
 							slotName: slot.name,
-							componentName: slot.component
+							componentName: slot.component,
+							label: slot.label || slot.component,
+							description: slot.description,
+							path,
+							kind: normalizeSlotKind(slot.kind, path),
+							badge: slot.badge,
+							order: parseSlotOrder(slot.order)
 						});
+						existing.sort(compareSlotRegistrations);
 						slots.set(slot.name, existing);
 					}
 				}
@@ -237,11 +253,36 @@ function parsePosition(position?: string): number {
 	return 1000;
 }
 
+function normalizeSlotKind(kind?: string, path?: string): PluginSlotKind {
+	if (kind === 'card' || kind === 'link' || kind === 'action') {
+		return kind;
+	}
+	return path ? 'link' : 'card';
+}
+
+function normalizeSlotPath(path?: string): string | undefined {
+	if (!path || !path.startsWith('/') || path.startsWith('//')) {
+		return undefined;
+	}
+	return path;
+}
+
+function parseSlotOrder(order?: number): number {
+	return typeof order === 'number' && Number.isFinite(order) ? order : 1000;
+}
+
+function compareSlotRegistrations(a: PluginSlotRegistration, b: PluginSlotRegistration): number {
+	if (a.order !== b.order) {
+		return a.order - b.order;
+	}
+	if (a.pluginName !== b.pluginName) {
+		return a.pluginName.localeCompare(b.pluginName);
+	}
+	return a.label.localeCompare(b.label);
+}
+
 // Export singleton instance
 export const pluginManager = createPluginManager();
 
 // Export parsePosition for testing
 export { parsePosition };
-
-// Export types for external use
-export type { PluginManagerState };

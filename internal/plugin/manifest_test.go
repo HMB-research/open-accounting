@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -944,8 +945,13 @@ func TestManifestNavigationPosition(t *testing.T) {
 			},
 			Slots: []SlotConfig{
 				{
-					Name:      "sidebar.main",
-					Component: "SidebarWidget.svelte",
+					Name:        "sidebar.main",
+					Component:   "SidebarWidget.svelte",
+					Label:       "Supplier risk",
+					Description: "Open supplier risk review.",
+					Path:        "/plugins/nav-plugin/supplier-risk",
+					Kind:        "link",
+					Badge:       "Review",
 				},
 			},
 		},
@@ -961,5 +967,101 @@ func TestManifestNavigationPosition(t *testing.T) {
 	frontendPath := manifest.GetFrontendPath(pluginDir)
 	if frontendPath != "/plugins/nav-plugin/frontend" {
 		t.Errorf("GetFrontendPath() = %q, want %q", frontendPath, "/plugins/nav-plugin/frontend")
+	}
+}
+
+func TestManifestValidateFrontendSlotRuntimeMetadata(t *testing.T) {
+	order := 10
+	manifest := Manifest{
+		Name:        "slot-plugin",
+		DisplayName: "Slot Plugin",
+		Version:     "1.0.0",
+		Frontend: &FrontendConfig{
+			Components: "./frontend",
+			Slots: []SlotConfig{
+				{
+					Name:        "dashboard.widgets",
+					Component:   "RiskWidget.svelte",
+					Label:       "Risk dashboard",
+					Description: "Review supplier risk exceptions.",
+					Path:        "/plugins/slot-plugin/risk",
+					Kind:        "card",
+					Badge:       "3 open",
+					Order:       &order,
+				},
+				{
+					Name:      "dashboard.actions",
+					Component: "RiskAction.svelte",
+					Label:     "Review risk",
+					Path:      "/plugins/slot-plugin/risk",
+					Kind:      "action",
+				},
+			},
+		},
+	}
+
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestManifestValidateRejectsInvalidFrontendSlots(t *testing.T) {
+	tests := []struct {
+		name string
+		slot SlotConfig
+		want string
+	}{
+		{
+			name: "missing name",
+			slot: SlotConfig{Component: "Widget.svelte"},
+			want: "name is required",
+		},
+		{
+			name: "missing component",
+			slot: SlotConfig{Name: "dashboard.widgets"},
+			want: "component is required",
+		},
+		{
+			name: "invalid kind",
+			slot: SlotConfig{Name: "dashboard.widgets", Component: "Widget.svelte", Kind: "script"},
+			want: "kind must be one of card, link, or action",
+		},
+		{
+			name: "link missing path",
+			slot: SlotConfig{Name: "dashboard.widgets", Component: "Widget.svelte", Kind: "link"},
+			want: "path is required for link slots",
+		},
+		{
+			name: "external path",
+			slot: SlotConfig{Name: "dashboard.widgets", Component: "Widget.svelte", Kind: "link", Path: "https://example.com/plugin"},
+			want: "path must be an internal route",
+		},
+		{
+			name: "protocol-relative path",
+			slot: SlotConfig{Name: "dashboard.widgets", Component: "Widget.svelte", Kind: "link", Path: "//example.com/plugin"},
+			want: "path must be an internal route",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest := Manifest{
+				Name:        "slot-plugin",
+				DisplayName: "Slot Plugin",
+				Version:     "1.0.0",
+				Frontend: &FrontendConfig{
+					Components: "./frontend",
+					Slots:      []SlotConfig{tt.slot},
+				},
+			}
+
+			err := manifest.Validate()
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q in error, got %v", tt.want, err)
+			}
+		})
 	}
 }

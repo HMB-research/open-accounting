@@ -5999,6 +5999,12 @@ export interface PluginNavItem {
 export interface PluginSlot {
   name: string;
   component: string;
+  label?: string;
+  description?: string;
+  path?: string;
+  kind?: "card" | "link" | "action";
+  badge?: string;
+  order?: number;
 }
 
 export interface PluginDatabaseConfig {
