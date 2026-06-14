@@ -220,6 +220,12 @@ func TestTaxHandlersKMDWorkflow(t *testing.T) {
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-kmd-approved",
+		EntityType:   documents.EntityTypeKMD,
+		EntityID:     "decl-export",
+		DocumentType: documents.DocumentTypeTaxSupport,
+	})
 	xmlResp := invokeTaxHandlerRaw(t, http.StatusOK, h.HandleExportKMD, taxHandlerRequest(
 		http.MethodGet,
 		"/tenants/tenant-1/tax/kmd/2026/2/xml",
@@ -533,6 +539,12 @@ func TestTaxHandlersValidationAndErrorPaths(t *testing.T) {
 	require.Equal(t, "Declaration not found", errBody["error"])
 
 	taxRepo.getDecl = &tax.KMDDeclaration{ID: "decl-error", TenantID: tenantRecord.ID, Year: 2026, Month: 2}
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-kmd-error-approved",
+		EntityType:   documents.EntityTypeKMD,
+		EntityID:     "decl-error",
+		DocumentType: documents.DocumentTypeTaxSupport,
+	})
 	taxRepo.statusErr = errors.New("status update failed")
 	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusInternalServerError, h.HandleMarkKMDSubmitted, taxHandlerRequest(
 		http.MethodPost,

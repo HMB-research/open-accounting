@@ -326,7 +326,7 @@ func (h *Handlers) requireApprovedKMDAcceptanceEvidence(ctx context.Context, sch
 
 func (h *Handlers) requireApprovedKMDEvidence(ctx context.Context, schemaName, tenantID, declarationID, evidenceStage, status string, requiredErr error) error {
 	if h.documentsService == nil {
-		return nil
+		return fmt.Errorf("%w before marking KMD declaration %s %s", requiredErr, declarationID, status)
 	}
 
 	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{

@@ -834,6 +834,13 @@ func TestClosePeriod(t *testing.T) {
 			repo.tenantUsers["tenant-1"] = []tenant.TenantUser{
 				{TenantID: "tenant-1", UserID: "user-1", Role: tt.role},
 			}
+			if periodEndDate, ok := tt.body["period_end_date"].(string); ok && tt.wantStatus == http.StatusOK {
+				isYearEnd, err := accounting.IsFiscalYearEndPeriod(periodEndDate, tenant.DefaultSettings().FiscalYearStart)
+				require.NoError(t, err)
+				if isYearEnd {
+					installApprovedClosePackEvidence(t, h, "tenant-1", periodEndDate)
+				}
+			}
 
 			req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/period-close", tt.body, &auth.Claims{
 				UserID: "user-1",
@@ -937,6 +944,7 @@ func TestClosePeriodRequiresInventoryCostingReady(t *testing.T) {
 		"reviewer_sign_off":          true,
 		"inventory_valuation_method": "standard-cost",
 	}
+	installApprovedClosePackEvidence(t, h, "tenant-1", "2026-12-31")
 	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/period-close", body, &auth.Claims{
 		UserID: "user-1",
 		Email:  "user@example.com",

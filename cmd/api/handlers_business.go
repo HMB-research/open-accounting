@@ -781,16 +781,15 @@ func (h *Handlers) SendInvoice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) requireApprovedPurchaseInvoiceEvidence(ctx context.Context, schemaName, tenantID, invoiceID string) error {
-	if h.documentsService == nil {
-		return nil
-	}
-
 	invoice, err := h.invoicingService.GetByID(ctx, tenantID, schemaName, invoiceID)
 	if err != nil {
 		return fmt.Errorf("get invoice: %w", err)
 	}
 	if invoice.InvoiceType != invoicing.InvoiceTypePurchase || invoice.Status != invoicing.StatusDraft {
 		return nil
+	}
+	if h.documentsService == nil {
+		return fmt.Errorf("%w before sending purchase invoice %s", errApprovedPurchaseInvoiceEvidenceRequired, invoiceID)
 	}
 
 	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
@@ -2631,10 +2630,6 @@ func (h *Handlers) CompleteReconciliation(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handlers) requireApprovedReconciliationEvidence(ctx context.Context, schemaName, tenantID, reconciliationID string) error {
-	if h.documentsService == nil {
-		return nil
-	}
-
 	transactions, err := h.bankingService.ListTransactions(ctx, schemaName, tenantID, &banking.TransactionFilter{
 		ReconciliationID: reconciliationID,
 		Status:           banking.StatusMatched,
@@ -2651,6 +2646,9 @@ func (h *Handlers) requireApprovedReconciliationEvidence(ctx context.Context, sc
 	}
 	if len(transactionIDs) == 0 {
 		return nil
+	}
+	if h.documentsService == nil {
+		return fmt.Errorf("%w before completing reconciliation for bank transactions: %s", errApprovedReconciliationEvidenceRequired, strings.Join(transactionIDs, ", "))
 	}
 
 	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
@@ -4308,7 +4306,7 @@ func (h *Handlers) requireApprovedTSDAcceptanceEvidence(ctx context.Context, sch
 
 func (h *Handlers) requireApprovedTSDEvidence(ctx context.Context, schemaName, tenantID, declarationID, evidenceStage, status string, requiredErr error) error {
 	if h.documentsService == nil {
-		return nil
+		return fmt.Errorf("%w before marking TSD declaration %s %s", requiredErr, declarationID, status)
 	}
 
 	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
@@ -6289,16 +6287,15 @@ func (h *Handlers) ActivateAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) requireApprovedAssetActivationEvidence(ctx context.Context, schemaName, tenantID, assetID string) error {
-	if h.documentsService == nil {
-		return nil
-	}
-
 	asset, err := h.assetsService.GetByID(ctx, tenantID, schemaName, assetID)
 	if err != nil {
 		return fmt.Errorf("get asset: %w", err)
 	}
 	if asset.Status != assets.AssetStatusDraft {
 		return nil
+	}
+	if h.documentsService == nil {
+		return fmt.Errorf("%w before activating fixed asset %s", errApprovedAssetActivationEvidenceRequired, assetID)
 	}
 
 	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
@@ -6373,16 +6370,15 @@ func (h *Handlers) DisposeAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) requireApprovedAssetDisposalEvidence(ctx context.Context, schemaName, tenantID, assetID string) error {
-	if h.documentsService == nil {
-		return nil
-	}
-
 	asset, err := h.assetsService.GetByID(ctx, tenantID, schemaName, assetID)
 	if err != nil {
 		return fmt.Errorf("get asset: %w", err)
 	}
 	if asset.Status != assets.AssetStatusActive {
 		return nil
+	}
+	if h.documentsService == nil {
+		return fmt.Errorf("%w before disposing fixed asset %s", errApprovedAssetDisposalEvidenceRequired, assetID)
 	}
 
 	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{

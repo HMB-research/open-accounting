@@ -477,9 +477,6 @@ func safeArchiveFileName(value string) string {
 }
 
 func (h *Handlers) requireApprovedYearEndClosePackEvidence(ctx context.Context, tenantRecord *tenant.Tenant, rawPeriodEndDate string) error {
-	if h.documentsService == nil {
-		return nil
-	}
 	isYearEnd, err := accounting.IsFiscalYearEndPeriod(rawPeriodEndDate, tenantRecord.Settings.FiscalYearStart)
 	if err != nil {
 		return err
@@ -491,6 +488,9 @@ func (h *Handlers) requireApprovedYearEndClosePackEvidence(ctx context.Context, 
 	entityID, err := accounting.YearEndCloseEvidenceEntityID(tenantRecord.ID, rawPeriodEndDate)
 	if err != nil {
 		return err
+	}
+	if h.documentsService == nil {
+		return fmt.Errorf("%w before completing fiscal-year close workflow for %s (entity_id: %s)", errApprovedClosePackEvidenceRequired, rawPeriodEndDate, entityID)
 	}
 	results, err := h.yearEndClosePackEvidence(ctx, tenantRecord.SchemaName, tenantRecord.ID, entityID)
 	if err != nil {

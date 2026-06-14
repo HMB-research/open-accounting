@@ -530,6 +530,7 @@ func TestCreateYearEndCarryForwardRequiresInventoryCostingReady(t *testing.T) {
 		{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner},
 	}
 	seedYearEndAccountingReady(accountingRepo)
+	installApprovedClosePackEvidence(t, h, "tenant-1", "2025-12-31")
 
 	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/year-end-carry-forward", map[string]any{
 		"period_end_date":            "2025-12-31",
@@ -777,6 +778,7 @@ func TestCreateYearEndCarryForward(t *testing.T) {
 			NetBalance:   decimal.NewFromInt(400),
 		},
 	}
+	installApprovedClosePackEvidence(t, h, "tenant-1", "2025-12-31")
 
 	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/year-end-carry-forward", map[string]interface{}{
 		"period_end_date": "2025-12-31",
@@ -866,6 +868,7 @@ func TestCreateYearEndCarryForwardRequiresClosedYear(t *testing.T) {
 			NetBalance:    decimal.NewFromInt(1000),
 		},
 	}
+	installApprovedClosePackEvidence(t, h, "tenant-1", "2025-12-31")
 
 	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/year-end-carry-forward", map[string]interface{}{
 		"period_end_date": "2025-12-31",

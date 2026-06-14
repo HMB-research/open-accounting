@@ -1649,8 +1649,11 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) requireApprovedJournalEntryEvidence(ctx context.Context, schemaName, tenantID string, entry *accounting.JournalEntry) error {
-	if h.documentsService == nil || entry == nil || !entry.RequiresEvidence {
+	if entry == nil || !entry.RequiresEvidence {
 		return nil
+	}
+	if h.documentsService == nil {
+		return fmt.Errorf("%w before posting journal entry %s", errApprovedJournalEntryEvidenceRequired, entry.ID)
 	}
 
 	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
