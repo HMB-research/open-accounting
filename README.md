@@ -36,6 +36,7 @@
 > The follow-up e-invoice payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up payment allocation currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up payment bank-account default-currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+> The follow-up bank-account currency letter validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up bank-transaction source-account omitted-currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up bank-transaction description-source preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up invoice paid-amount consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
