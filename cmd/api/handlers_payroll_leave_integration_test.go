@@ -16,6 +16,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/pdf"
 	tenantpkg "github.com/HMB-research/open-accounting/internal/tenant"
@@ -199,6 +200,13 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 	if tsd.ID == "" {
 		t.Fatal("expected generated TSD declaration")
 	}
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-tsd-approved-" + tsd.ID,
+		TenantID:     tenant.ID,
+		EntityType:   documents.EntityTypeTSD,
+		EntityID:     tsd.ID,
+		DocumentType: documents.DocumentTypeTaxSupport,
+	})
 
 	gotTSD := invokeJSON[payroll.TSDDeclaration](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
 		h.GetTSD(w, r)
