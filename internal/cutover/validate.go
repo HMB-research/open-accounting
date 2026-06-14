@@ -7121,7 +7121,10 @@ func checkBankTransactionSourceAccount(report *BundleValidationReport, indexes b
 	}
 
 	rowCurrency := strings.ToUpper(strings.TrimSpace(row.values["currency"]))
-	if rowCurrency == "" || accountCurrency == "" || rowCurrency == accountCurrency {
+	if rowCurrency == "" {
+		rowCurrency = "EUR"
+	}
+	if accountCurrency == "" || rowCurrency == accountCurrency {
 		return
 	}
 
