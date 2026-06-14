@@ -11,11 +11,13 @@ import type {
   MigrationExecutionPlan,
   MigrationExecutionRun,
   MigrationExecutionRunEvent,
+  MigrationProviderPresetInfo,
 } from "$lib/api";
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
     validateMigrationBundle: vi.fn(),
+    listMigrationProviderPresets: vi.fn(),
     planMigrationExecution: vi.fn(),
     executeMigration: vi.fn(),
     listMigrationExecutionRuns: vi.fn(),
@@ -207,6 +209,44 @@ function completedStreamingRun(): MigrationExecutionRun {
   };
 }
 
+function providerPresets(): MigrationProviderPresetInfo[] {
+  return [
+    {
+      preset: "generic",
+      label: "Generic",
+      description: "Uses canonical headers.",
+      file_kind_count: 24,
+      preset_alias_count: 0,
+      file_kinds: [],
+    },
+    {
+      preset: "merit",
+      label: "Merit",
+      description: "Adds Merit aliases.",
+      file_kind_count: 24,
+      preset_alias_count: 64,
+      file_kinds: [
+        {
+          kind: "accounts",
+          required_column_groups: [["code"], ["name"], ["account_type"]],
+          preset_alias_count: 6,
+          sample_aliases: [
+            { source_header: "konto", canonical_header: "code" },
+          ],
+        },
+      ],
+    },
+    {
+      preset: "smartaccounts",
+      label: "SmartAccounts",
+      description: "Adds SmartAccounts aliases.",
+      file_kind_count: 24,
+      preset_alias_count: 58,
+      file_kinds: [],
+    },
+  ];
+}
+
 async function addContactsFile() {
   await fireEvent.change(screen.getByLabelText("File kind"), {
     target: { value: "contacts" },
@@ -228,6 +268,7 @@ describe("MigrationWorkbench", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiMock.listMigrationExecutionRuns.mockResolvedValue([]);
+    apiMock.listMigrationProviderPresets.mockResolvedValue(providerPresets());
     apiMock.validateMigrationBundle.mockResolvedValue(validationReport());
     apiMock.planMigrationExecution.mockResolvedValue(executionPlan());
     apiMock.executeMigration.mockResolvedValue(executionRun());
@@ -270,6 +311,24 @@ describe("MigrationWorkbench", () => {
     expect(
       screen.getByText("oa contacts import --file contacts.csv"),
     ).toBeInTheDocument();
+  });
+
+  it("loads provider preset metadata into the bundle controls", async () => {
+    render(MigrationWorkbench, { tenantId: "tenant-1" });
+
+    await waitFor(() =>
+      expect(apiMock.listMigrationProviderPresets).toHaveBeenCalledWith(
+        "tenant-1",
+      ),
+    );
+    await fireEvent.change(screen.getByLabelText("Provider preset"), {
+      target: { value: "merit" },
+    });
+
+    expect(screen.getByText(/64 aliases/)).toBeInTheDocument();
+    expect(screen.getByText("6 aliases")).toBeInTheDocument();
+    expect(screen.getByText("konto -> code")).toBeInTheDocument();
+    expect(screen.getByText("code, name, account_type")).toBeInTheDocument();
   });
 
   it("opens saved execution runs for monitoring", async () => {

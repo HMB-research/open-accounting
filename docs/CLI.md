@@ -283,6 +283,8 @@ go run ./cmd/oa tokens revoke --id <token-id>
 ## Migration validation
 
 ```bash
+go run ./cmd/oa migration presets
+go run ./cmd/oa migration presets --json
 go run ./cmd/oa migration validate \
   --accounts ./accounts.csv \
   --contacts ./contacts.csv \
@@ -313,6 +315,8 @@ go run ./cmd/oa migration validate \
   --journal ./journal-entries.csv
 go run ./cmd/oa migration validate --provider-preset merit --contacts ./contacts.csv --e-invoices ./sales-einvoices.xml --e-invoice-contact-mode customer --json
 ```
+
+`migration presets` lists the supported cutover provider presets, file-kind coverage, total vendor alias counts, required column groups, and sample header mappings. Use it before `migration validate` when an operator needs to confirm whether a Merit or SmartAccounts export header is already mapped to the canonical Open Accounting import field.
 
 `migration validate` is a non-mutating cutover preflight. It checks required CSV column groups, duplicate business identifiers, grouped-document header and preserved-ID consistency, row-value errors, Estonian e-invoice XML payloads, and same-bundle cross-file references for accounts, contacts, employees, expenses, invoices, e-invoices, payments, bank accounts, bank transactions, payroll history, leave balances, TSD history, KMD history, quotes, orders, recurring invoice templates, cost centers, cost allocations, product categories, warehouses, products, stock adjustments, fixed assets, opening balances, and historical journal entries before you run the individual import commands. Human output includes a migration remediation action table that groups blockers and warnings by code, file, kind, field, issue count, workspace queue, priority, due window, assignment key, action text, and a rerunnable CLI command; JSON output exposes the same `remediation_actions` array with `ui_path` fields for accountant review and cutover runbooks. Use `--provider-preset generic`, `--provider-preset merit`, or `--provider-preset smartaccounts` to select CSV header aliases before canonical validation runs; provider presets include employee, payroll-history, leave-balance, TSD/KMD-history, payment/bank-data, expense, cost-center/allocation, product-category/warehouse/product/stock, fixed-asset, opening-balance, and historical-journal aliases, including preserved journal-line IDs and combined period fields such as Merit Palk `Month6`.
 

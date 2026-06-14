@@ -85,6 +85,38 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 	assert.Empty(t, buf.String())
 
 	buf.Reset()
+	printMigrationProviderPresets(&buf, nil)
+	assert.Contains(t, buf.String(), "No migration provider presets")
+
+	buf.Reset()
+	printMigrationProviderPresets(&buf, []cutover.MigrationProviderPresetInfo{{
+		Preset:           cutover.MigrationProviderPresetMerit,
+		Label:            "Merit",
+		Description:      "Adds aliases.",
+		FileKindCount:    2,
+		PresetAliasCount: 1,
+		FileKinds: []cutover.MigrationProviderPresetKindInfo{
+			{
+				Kind:             cutover.KindContacts,
+				PresetAliasCount: 1,
+			},
+			{
+				Kind:                 cutover.KindAccounts,
+				RequiredColumnGroups: [][]string{{}},
+			},
+		},
+	}})
+	assert.Contains(t, buf.String(), "Migration provider presets")
+	assert.Contains(t, buf.String(), "contacts")
+	assert.Contains(t, buf.String(), "contacts  -")
+	assert.Contains(t, buf.String(), "1        -")
+	assert.NotContains(t, buf.String(), "accounts")
+	assert.Equal(t, "-", formatRequiredColumnGroups(nil))
+	assert.Equal(t, "-", formatRequiredColumnGroups([][]string{{}}))
+	assert.Equal(t, "code|account_id", formatRequiredColumnGroups([][]string{{"code", "account_id"}}))
+	assert.Equal(t, "-", formatPresetAliasSamples(nil))
+
+	buf.Reset()
 	printMigrationValidationReport(&buf, &cutover.BundleValidationReport{
 		Summary: cutover.BundleValidationSummary{FilesValidated: 1, RowsValidated: 2, ErrorCount: 1, WarningCount: 1, Ready: false},
 		Files: []cutover.FileValidation{{

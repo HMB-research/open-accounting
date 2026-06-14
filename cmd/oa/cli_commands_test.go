@@ -4117,6 +4117,81 @@ func TestCLIMigrationValidationCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"files_validated": 2`)
 }
 
+func TestCLIMigrationProviderPresetsCommand(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/api/v1/tenants/tenant-1/migration/provider-presets", r.URL.Path)
+
+		_ = json.NewEncoder(w).Encode([]cutover.MigrationProviderPresetInfo{
+			{
+				Preset:           cutover.MigrationProviderPresetGeneric,
+				Label:            "Generic",
+				Description:      "Uses canonical headers.",
+				FileKindCount:    2,
+				PresetAliasCount: 0,
+			},
+			{
+				Preset:           cutover.MigrationProviderPresetMerit,
+				Label:            "Merit",
+				Description:      "Adds Merit aliases.",
+				FileKindCount:    2,
+				PresetAliasCount: 3,
+				FileKinds: []cutover.MigrationProviderPresetKindInfo{{
+					Kind:                 cutover.KindAccounts,
+					RequiredColumnGroups: [][]string{{"code"}, {"name"}, {"account_type"}},
+					PresetAliasCount:     3,
+					SampleAliases: []cutover.MigrationProviderPresetAlias{{
+						SourceHeader:    "konto",
+						CanonicalHeader: "code",
+					}},
+				}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"migration", "presets"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Migration provider presets")
+	assert.Contains(t, stdout.String(), "merit")
+	assert.Contains(t, stdout.String(), "konto->code")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"migration", "presets", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"preset": "merit"`)
+
+	err = app.run(context.Background(), []string{"migration", "presets", "--bogus"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "flag provided but not defined")
+
+	errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "catalog unavailable"})
+	}))
+	defer errorServer.Close()
+
+	t.Setenv("OA_BASE_URL", errorServer.URL)
+	err = app.run(context.Background(), []string{"migration", "provider-presets"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "catalog unavailable")
+}
+
 func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{

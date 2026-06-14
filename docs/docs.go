@@ -11736,6 +11736,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/migration/provider-presets": {
+            "get": {
+                "description": "Return supported CSV provider presets, file-kind coverage, required column groups, and sample provider header aliases for migration cutovers",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Migration"
+                ],
+                "summary": "List migration provider presets",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetInfo"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/migration/validate": {
             "post": {
                 "description": "Validate CSV and XML cutover files for required columns and cross-file references before running imports",
@@ -25554,6 +25608,69 @@ const docTemplate = `{
                 "MigrationProviderPresetMerit",
                 "MigrationProviderPresetSmartAccounts"
             ]
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetAlias": {
+            "type": "object",
+            "properties": {
+                "canonical_header": {
+                    "type": "string"
+                },
+                "source_header": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetInfo": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "file_kind_count": {
+                    "type": "integer"
+                },
+                "file_kinds": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetKindInfo"
+                    }
+                },
+                "label": {
+                    "type": "string"
+                },
+                "preset": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset"
+                },
+                "preset_alias_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetKindInfo": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                },
+                "preset_alias_count": {
+                    "type": "integer"
+                },
+                "required_column_groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "sample_aliases": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPresetAlias"
+                    }
+                }
+            }
         },
         "github_com_HMB-research_open-accounting_internal_cutover.MigrationRemediationAction": {
             "type": "object",

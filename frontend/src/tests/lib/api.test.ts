@@ -732,6 +732,46 @@ describe("API Client - Core Functionality", () => {
       expect(result.due_soon_count).toBe(1);
     });
 
+    it("should list migration provider preset metadata", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            preset: "merit",
+            label: "Merit",
+            description: "Adds Merit aliases.",
+            file_kind_count: 2,
+            preset_alias_count: 3,
+            file_kinds: [
+              {
+                kind: "accounts",
+                required_column_groups: [["code"], ["name"], ["account_type"]],
+                preset_alias_count: 3,
+                sample_aliases: [
+                  { source_header: "konto", canonical_header: "code" },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await api.listMigrationProviderPresets("tenant-123");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/provider-presets",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result[0].preset).toBe("merit");
+      expect(result[0].file_kinds?.[0].sample_aliases?.[0]).toEqual({
+        source_header: "konto",
+        canonical_header: "code",
+      });
+    });
+
     it("should validate a migration bundle with assignment-ready remediation actions", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

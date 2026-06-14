@@ -466,6 +466,15 @@ This currently applies to:
 
 Invoice import also enforces the lock, but because it is a bulk operation, locked invoice rows are returned as row errors in the import summary instead of failing the whole request with `409 Conflict`.
 
+### List Migration Provider Presets
+
+```http
+GET /tenants/{tenantId}/migration/provider-presets
+Authorization: Bearer <token>
+```
+
+Returns the supported migration CSV provider presets. Each preset includes a label, description, supported file-kind count, total preset alias count, required column groups by file kind, and sorted sample header mappings such as `konto -> code` for Merit exports. The endpoint backs `oa migration presets` and the dashboard migration workbench provider selector so operators can confirm vendor mapping coverage before validating or executing a cutover bundle.
+
 ### Validate Migration Bundle
 
 ```http

@@ -642,6 +642,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		})
 	case "/api-tokens/{tokenID}":
 		return commandForMethod(method, map[string]string{"DELETE": "tokens revoke"})
+	case "/migration/provider-presets":
+		return commandForMethod(method, map[string]string{"GET": "migration presets"})
 	case "/migration/validate":
 		return commandForMethod(method, map[string]string{"POST": "migration validate"})
 	case "/migration/execution-plan":

@@ -212,6 +212,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks delete           Delete a webhook endpoint")
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks deliveries       List webhook deliveries")
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks test             Send a test webhook delivery")
+	_, _ = fmt.Fprintln(a.stdout, "  migration presets         List migration provider presets")
 	_, _ = fmt.Fprintln(a.stdout, "  migration validate        Validate CSV/XML migration bundle references")
 	_, _ = fmt.Fprintln(a.stdout, "  migration plan            Plan ordered cutover import execution")
 	_, _ = fmt.Fprintln(a.stdout, "  migration execute         Execute ready cutover imports in planned order")
@@ -2045,6 +2046,24 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 	}
 
 	switch args[0] {
+	case "presets", "provider-presets":
+		fs := flag.NewFlagSet("migration presets", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		presets, err := client.listMigrationProviderPresets(ctx, cfg.TenantID)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, presets)
+		}
+		printMigrationProviderPresets(a.stdout, presets)
+		return nil
+
 	case "validate":
 		fs := flag.NewFlagSet("migration validate", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)

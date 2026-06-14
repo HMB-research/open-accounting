@@ -2,6 +2,7 @@ package cutover
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -719,6 +720,110 @@ func fileSpecForProviderPreset(kind FileKind, preset MigrationProviderPreset) fi
 	}
 	spec.aliases = mergeAliases(spec.aliases, aliases)
 	return spec
+}
+
+func ListMigrationProviderPresets() []MigrationProviderPresetInfo {
+	presets := []MigrationProviderPreset{
+		MigrationProviderPresetGeneric,
+		MigrationProviderPresetMerit,
+		MigrationProviderPresetSmartAccounts,
+	}
+	infos := make([]MigrationProviderPresetInfo, 0, len(presets))
+	for _, preset := range presets {
+		infos = append(infos, buildMigrationProviderPresetInfo(preset))
+	}
+	return infos
+}
+
+func buildMigrationProviderPresetInfo(preset MigrationProviderPreset) MigrationProviderPresetInfo {
+	info := MigrationProviderPresetInfo{
+		Preset:      preset,
+		Label:       migrationProviderPresetLabel(preset),
+		Description: migrationProviderPresetDescription(preset),
+	}
+	for _, kind := range migrationPresetCatalogFileKinds() {
+		spec, ok := fileSpecs[kind]
+		if !ok {
+			continue
+		}
+		presetAliases := providerPresetAliases[preset][kind]
+		kindInfo := MigrationProviderPresetKindInfo{
+			Kind:                 kind,
+			RequiredColumnGroups: cloneRequiredColumnGroups(spec.requiredGroups),
+			PresetAliasCount:     len(presetAliases),
+			SampleAliases:        sampleProviderPresetAliases(presetAliases, 5),
+		}
+		info.FileKinds = append(info.FileKinds, kindInfo)
+		info.PresetAliasCount += kindInfo.PresetAliasCount
+	}
+	info.FileKindCount = len(info.FileKinds)
+	return info
+}
+
+func migrationProviderPresetLabel(preset MigrationProviderPreset) string {
+	switch preset {
+	case MigrationProviderPresetMerit:
+		return "Merit"
+	case MigrationProviderPresetSmartAccounts:
+		return "SmartAccounts"
+	default:
+		return "Generic"
+	}
+}
+
+func migrationProviderPresetDescription(preset MigrationProviderPreset) string {
+	switch preset {
+	case MigrationProviderPresetMerit:
+		return "Adds Merit Aktiva and Merit Palk CSV header aliases before canonical cutover validation."
+	case MigrationProviderPresetSmartAccounts:
+		return "Adds SmartAccounts CSV export header aliases before canonical cutover validation."
+	default:
+		return "Uses Open Accounting canonical cutover headers without vendor-specific alias expansion."
+	}
+}
+
+func migrationPresetCatalogFileKinds() []FileKind {
+	kinds := make([]FileKind, 0, len(fileSpecs))
+	for kind := range fileSpecs {
+		kinds = append(kinds, kind)
+	}
+	sort.Slice(kinds, func(i, j int) bool {
+		return kinds[i] < kinds[j]
+	})
+	return kinds
+}
+
+func cloneRequiredColumnGroups(groups [][]string) [][]string {
+	if len(groups) == 0 {
+		return nil
+	}
+	cloned := make([][]string, 0, len(groups))
+	for _, group := range groups {
+		cloned = append(cloned, append([]string(nil), group...))
+	}
+	return cloned
+}
+
+func sampleProviderPresetAliases(aliases map[string]string, limit int) []MigrationProviderPresetAlias {
+	if len(aliases) == 0 || limit <= 0 {
+		return nil
+	}
+	headers := make([]string, 0, len(aliases))
+	for header := range aliases {
+		headers = append(headers, header)
+	}
+	sort.Strings(headers)
+	if len(headers) > limit {
+		headers = headers[:limit]
+	}
+	samples := make([]MigrationProviderPresetAlias, 0, len(headers))
+	for _, header := range headers {
+		samples = append(samples, MigrationProviderPresetAlias{
+			SourceHeader:    header,
+			CanonicalHeader: aliases[header],
+		})
+	}
+	return samples
 }
 
 func meritCommercialDocumentAliases(numberField, dateField string) map[string]string {
