@@ -1100,7 +1100,7 @@ Content-Type: application/json
 }
 ```
 
-Rows are grouped by `entry_reference`; each group must have one `entry_date`, at least two lines, known `account_code` values, and balanced debit/credit totals. Locked-period groups are skipped with row errors in the import result.
+Rows are grouped by `entry_reference`; each group must have one `entry_date`, at least two lines, known `account_code` values, and balanced debit/credit totals. The import endpoint accepts the same Merit, SmartAccounts, and Directo historical-journal provider aliases validated by migration preflight, including `kanne_nr`, `kuupaev`, `kanne_rea_id`, `entry_no`, `transaction_date`, `entry_line_id`, `account_no`, `number`, `rea_id`, `konto`, `deebet`, `kreedit`, `valuuta`, and `kurss`, so provider-preset execution can pass through the original historical-journal CSV. Locked-period groups are skipped with row errors in the import result.
 
 ---
 
