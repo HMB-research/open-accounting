@@ -5514,6 +5514,40 @@ func TestValidateBundleReportsPaymentAllocationToInactiveImportedInvoiceStatus(t
 	assert.Contains(t, report.Issues[1].Message, `imported invoice "INV-VOID" with status VOIDED`)
 }
 
+func TestValidateBundleReportsPaymentAllocationToInactiveImportedInvoiceStatusByInvoiceID(t *testing.T) {
+	legacyInvoiceID := "11111111-1111-1111-1111-111111111111"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_id,invoice_number,invoice_type,contact_code,issue_date,due_date,status,line_description,quantity,unit_price,vat_rate\n" + legacyInvoiceID + ",INV-VOID,SALES,CUST-1,2026-05-30,2026-06-14,VOIDED,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_id,allocation_amount\nRECEIVED,2026-05-31,100," + legacyInvoiceID + ",100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, 2, report.Issues[0].Row)
+	assert.Equal(t, "invoice_id", report.Issues[0].Field)
+	assert.Equal(t, legacyInvoiceID, report.Issues[0].Value)
+	assert.Equal(t, KindInvoices, report.Issues[0].TargetKind)
+	assert.Contains(t, report.Issues[0].Message, `imported invoice "`+legacyInvoiceID+`" with status VOIDED`)
+}
+
 func TestValidateBundleAcceptsImportedInvoiceAmountPaidWithinTotal(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
