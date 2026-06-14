@@ -5861,6 +5861,26 @@ func TestValidateBundleReportsPaymentAllocationCurrencyMismatchForEInvoice(t *te
 	assert.Contains(t, report.Issues[0].Message, `payment currency "EUR" does not match imported invoice "BILL-2026-001" currency "USD"`)
 }
 
+func TestValidateBundleReportsPaymentCurrencyCodeIssue(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,currency\nRECEIVED,2026-05-31,100,EU1\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, "currency", report.Issues[0].Field)
+	assert.Equal(t, "EU1", report.Issues[0].Value)
+	assert.Equal(t, "currency must be a 3-letter ISO code", report.Issues[0].Message)
+}
+
 func TestValidateBundleReportsAmbiguousPaymentInvoiceNumberReference(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

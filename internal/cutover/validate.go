@@ -6493,6 +6493,7 @@ func checkPaymentRows(report *BundleValidationReport, file parsedFile) {
 				amountOK = true
 			}
 		}
+		checkCutoverOptionalCurrency(report, file, row)
 		checkPaymentExchangeRate(report, file, row)
 		checkPaymentAllocation(report, file, row, amount, amountOK)
 	}
