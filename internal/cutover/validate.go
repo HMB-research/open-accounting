@@ -3003,6 +3003,9 @@ func validateFixedAssetInvoiceConsistency(
 			if hasFixedAssetInvoiceSupplierMismatch(report, file, row, target) {
 				continue
 			}
+			if hasFixedAssetBeforeInvoiceIssueDate(report, file, row, target) {
+				continue
+			}
 			purchaseCost, ok := cutoverFixedAssetPurchaseCost(row)
 			if !ok {
 				continue
@@ -3101,6 +3104,41 @@ func hasFixedAssetInvoiceSupplierMismatch(
 		return true
 	}
 	return false
+}
+
+func hasFixedAssetBeforeInvoiceIssueDate(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	if !target.issueDateSpecified {
+		return false
+	}
+	purchaseDate, ok := parseCutoverDateOrRFC3339(row.values["purchase_date"])
+	if !ok || purchaseDate.IsZero() {
+		return false
+	}
+	if !purchaseDate.Before(target.issueDate) {
+		return false
+	}
+	value := strings.TrimSpace(row.values["purchase_date"])
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindFixedAssets,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "purchase_date",
+		Value:      value,
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"fixed asset purchase_date %q cannot be before imported source invoice %q issue_date %q",
+			value,
+			target.display,
+			target.issueDate.Format("2006-01-02"),
+		),
+	})
+	return true
 }
 
 func cutoverFixedAssetPurchaseCost(row parsedRow) (decimal.Decimal, bool) {
