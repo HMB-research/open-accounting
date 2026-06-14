@@ -113,6 +113,74 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 		assert.Equal(t, lineID2, result.JournalEntries[0].Lines[1].ID)
 	})
 
+	t.Run("imports provider historical journal aliases", func(t *testing.T) {
+		tests := []struct {
+			name        string
+			csvContent  string
+			reference   string
+			description string
+			lineIDs     []string
+		}{
+			{
+				name: "Merit",
+				csvContent: "kanne_nr,kuupaev,kanne_rea_id,konto,deebet,kreedit,selgitus,valuuta,valuutakurss\n" +
+					"MER-001,2026-03-31,11111111-1111-4111-8111-111111111111,1000,150.00,0,Cash receipt,EUR,1\n" +
+					"MER-001,2026-03-31,22222222-2222-4222-8222-222222222222,4000,0,150.00,Sales income,EUR,1\n",
+				reference:   "MER-001",
+				description: "Imported journal MER-001",
+				lineIDs:     []string{"11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"},
+			},
+			{
+				name: "SmartAccounts",
+				csvContent: "entry_no,transaction_date,entry_line_id,account_no,debit_amount,credit_amount,currency_code,line_memo,transaction_memo\n" +
+					"SA-001,2026-03-31,33333333-3333-4333-8333-333333333333,1000,225.00,0,EUR,Bank receipt,Monthly sales\n" +
+					"SA-001,2026-03-31,44444444-4444-4444-8444-444444444444,4000,0,225.00,EUR,Sales revenue,Monthly sales\n",
+				reference:   "SA-001",
+				description: "Monthly sales",
+				lineIDs:     []string{"33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"},
+			},
+			{
+				name: "Directo",
+				csvContent: "number,aeg,rea_id,konto,deebet,kreedit,sisu,valuuta,kurss\n" +
+					"DIR-001,2026-03-31,55555555-5555-4555-8555-555555555555,1000,300.00,0,Cash line,EUR,1\n" +
+					"DIR-001,2026-03-31,66666666-6666-4666-8666-666666666666,4000,0,300.00,Revenue line,EUR,1\n",
+				reference:   "DIR-001",
+				description: "Imported journal DIR-001",
+				lineIDs:     []string{"55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666"},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				repo := newJournalImportMockRepository(tenantID)
+				svc := NewServiceWithRepository(repo)
+
+				result, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
+					FileName:    tt.name + "-journal.csv",
+					PostEntries: true,
+					UserID:      "user-1",
+					CSVContent:  tt.csvContent,
+				})
+
+				require.NoError(t, err)
+				assert.Equal(t, 2, result.RowsProcessed)
+				assert.Equal(t, 1, result.EntriesCreated)
+				assert.Equal(t, 2, result.LinesImported)
+				assert.Equal(t, 0, result.RowsSkipped)
+				require.Len(t, result.JournalEntries, 1)
+				entry := result.JournalEntries[0]
+				assert.Equal(t, StatusPosted, entry.Status)
+				assert.Equal(t, tt.reference, entry.Reference)
+				assert.Equal(t, tt.description, entry.Description)
+				require.Len(t, entry.Lines, 2)
+				assert.Equal(t, tt.lineIDs[0], entry.Lines[0].ID)
+				assert.Equal(t, tt.lineIDs[1], entry.Lines[1].ID)
+				assert.True(t, result.TotalDebit.Equal(result.TotalCredit))
+				assert.Empty(t, result.Errors)
+			})
+		}
+	})
+
 	t.Run("skips invalid groups and imports valid groups", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.accounts["acc-1000"] = &Account{ID: "acc-1000", TenantID: tenantID, Code: "1000", Name: "Cash", AccountType: AccountTypeAsset, IsActive: true}
