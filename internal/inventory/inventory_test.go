@@ -1248,6 +1248,61 @@ func TestService_ImportProductsCSVReportsMissingSupplierCode(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, `supplier_code "SUP-404" was not found`)
 }
 
+func TestService_ImportProductsCSVResolvesSupplierIdentityFields(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	supplierID := "55555555-5555-4555-8555-555555555555"
+	ts.svc.contacts = fakeInventoryContactLister{contacts: []contacts.Contact{
+		{
+			ID:        supplierID,
+			Name:      "Supplier One",
+			RegCode:   "12345678",
+			VATNumber: "EE12345678",
+			Email:     "billing@supplier.example",
+		},
+	}}
+
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		CSVContent: "code,name,sales_price,supplier_reg_code,supplier_vat_number,supplier_email,supplier_name\nSKU-001,Widget,15.00,12345678,EE12345678,billing@supplier.example,Supplier One\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.ProductsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+
+	var imported *Product
+	for _, product := range ts.repo.Products {
+		if product.Code == "SKU-001" {
+			imported = product
+		}
+	}
+	require.NotNil(t, imported)
+	assert.Equal(t, supplierID, imported.SupplierID)
+}
+
+func TestService_ImportProductsCSVReportsAmbiguousSupplierName(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	ts.svc.contacts = fakeInventoryContactLister{contacts: []contacts.Contact{
+		{ID: "55555555-5555-4555-8555-555555555555", Name: "Supplier One", ContactType: contacts.ContactTypeSupplier},
+		{ID: "66666666-6666-4666-8666-666666666666", Name: " supplier one ", ContactType: contacts.ContactTypeSupplier},
+	}}
+
+	result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+		CSVContent: "code,name,sales_price,supplier_name\nSKU-001,Widget,15.00,Supplier One\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.ProductsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `supplier_name "Supplier One" matched multiple contacts`)
+}
+
 func TestService_ImportProductsCSVReportsMissingCategoryID(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()

@@ -875,6 +875,64 @@ func TestService_ImportAssetsCSVReportsMissingSupplierCode(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, `supplier_code "SUP-404" was not found`)
 }
 
+func TestService_ImportAssetsCSVResolvesSupplierIdentityFields(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	supplierID := "11111111-1111-1111-1111-111111111111"
+	ts.svc.contacts = fakeAssetContactLister{
+		contacts: []contacts.Contact{
+			{
+				ID:        supplierID,
+				TenantID:  "tenant-1",
+				Name:      "Supplier One",
+				RegCode:   "12345678",
+				VATNumber: "EE12345678",
+				Email:     "billing@supplier.example",
+			},
+		},
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_email,supplier_name\nLEG-001,Laptop,2025-01-10,1200.00,billing@supplier.example,Supplier One\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.AssetsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+	require.Len(t, ts.repo.Assets, 1)
+	var imported *FixedAsset
+	for _, asset := range ts.repo.Assets {
+		imported = asset
+	}
+	require.NotNil(t, imported)
+	require.NotNil(t, imported.SupplierID)
+	assert.Equal(t, supplierID, *imported.SupplierID)
+}
+
+func TestService_ImportAssetsCSVReportsAmbiguousSupplierName(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	ts.svc.contacts = fakeAssetContactLister{
+		contacts: []contacts.Contact{
+			{ID: "11111111-1111-1111-1111-111111111111", TenantID: "tenant-1", Name: "Supplier One", ContactType: contacts.ContactTypeSupplier},
+			{ID: "22222222-2222-2222-2222-222222222222", TenantID: "tenant-1", Name: " supplier one ", ContactType: contacts.ContactTypeSupplier},
+		},
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_name\nLEG-001,Laptop,2025-01-10,1200.00,Supplier One\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.AssetsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `supplier_name "Supplier One" matched multiple contacts`)
+}
+
 func TestService_ImportAssetsCSVReportsInvalidUUIDFields(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
