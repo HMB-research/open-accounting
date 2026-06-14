@@ -3241,6 +3241,72 @@ func TestValidateBundleDoesNotTreatProductAndWarehouseImportIDsAsPreserved(t *te
 	assert.Empty(t, report.Issues)
 }
 
+func TestValidateBundleAcceptsStockAdjustmentForTrackedGoodsProduct(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,product_type,track_inventory,sales_price\nSKU-GOODS,Widget,GOODS,true,10\n",
+		},
+		{
+			Kind:       KindWarehouses,
+			FileName:   "warehouses.csv",
+			CSVContent: "code,name\nMAIN,Main warehouse\n",
+		},
+		{
+			Kind:       KindStockAdjustments,
+			FileName:   "stock.csv",
+			CSVContent: "product_code,warehouse_code,quantity,unit_cost\nSKU-GOODS,MAIN,3,4.50\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsStockAdjustmentForUnstockableProduct(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindProducts,
+			FileName: "products.csv",
+			CSVContent: "code,name,product_type,track_inventory,sales_price\n" +
+				"SKU-SERVICE,Consulting,SERVICE,,10\n" +
+				"SKU-NOTRACK,Widget,GOODS,false,10\n",
+		},
+		{
+			Kind:       KindWarehouses,
+			FileName:   "warehouses.csv",
+			CSVContent: "code,name\nMAIN,Main warehouse\n",
+		},
+		{
+			Kind:     KindStockAdjustments,
+			FileName: "stock.csv",
+			CSVContent: "product_code,warehouse_code,quantity\n" +
+				"SKU-SERVICE,MAIN,1\n" +
+				"SKU-NOTRACK,MAIN,2\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 2)
+	assert.Equal(t, KindStockAdjustments, report.Issues[0].Kind)
+	assert.Equal(t, KindProducts, report.Issues[0].TargetKind)
+	assert.Equal(t, "product_code", report.Issues[0].Field)
+	assert.Equal(t, "SKU-SERVICE", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, `stock adjustment product_code "SKU-SERVICE" references SERVICE product`)
+	assert.Equal(t, KindStockAdjustments, report.Issues[1].Kind)
+	assert.Equal(t, KindProducts, report.Issues[1].TargetKind)
+	assert.Equal(t, "product_code", report.Issues[1].Field)
+	assert.Equal(t, "SKU-NOTRACK", report.Issues[1].Value)
+	assert.Contains(t, report.Issues[1].Message, `stock adjustment product_code "SKU-NOTRACK" references product with track_inventory=false`)
+}
+
 func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 	accountID := "22222222-2222-2222-2222-222222222222"
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
