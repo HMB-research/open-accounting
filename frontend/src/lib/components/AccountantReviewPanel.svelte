@@ -256,6 +256,14 @@
 		return ['tsd_export_and_submit', 'tsd_accepted_archive'].includes(action.code);
 	}
 
+	function canExecuteAssignmentMigration(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'migration' &&
+			action.code === 'migration_execution_needs_confirmation' &&
+			Boolean(action.entityId)
+		);
+	}
+
 	function canSubmitAssignmentExpense(action: WorkspaceAssignmentAction): boolean {
 		return action.source === 'expenses' && action.code === 'expense_submit_for_approval' && Boolean(action.entityId);
 	}
@@ -475,6 +483,33 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentTsdExportError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function executeAssignmentMigration(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.executeMigration(tenant.id, {
+				files: [],
+				confirm: true,
+				resume_from_run_id: action.entityId
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentMigrationExecuted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentMigrationExecuteError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -988,6 +1023,18 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: m.dashboard_reviewAssignmentsExportTsdXml()}
+										</button>
+									{/if}
+									{#if canExecuteAssignmentMigration(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => executeAssignmentMigration(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsExecuteMigration()}
 										</button>
 									{/if}
 									{#if canSubmitAssignmentExpense(action)}

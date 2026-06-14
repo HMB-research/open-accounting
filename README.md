@@ -23,6 +23,7 @@
 > The follow-up migration saved-run event stream stage was locally revalidated with focused API/CLI route coverage, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
 > The follow-up migration dashboard live stream stage was locally revalidated with focused frontend API/workbench tests and prepared Svelte checks.
 > The follow-up migration provider preset catalog stage was locally revalidated with focused cutover/API/CLI/frontend API/workbench tests and prepared Svelte checks.
+> The follow-up migration saved-bundle workspace execution stage was locally revalidated with focused cutover/repository/API/CLI/review-panel tests and prepared Svelte checks.
 > The follow-up migration FK UUID preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up product supplier-code migration stage was locally revalidated with focused inventory importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
 > The follow-up fixed-asset supplier-code migration stage was locally revalidated with focused fixed-asset importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
@@ -431,7 +432,7 @@ open-accounting/
 
 ### Still missing for reliable production use
 
-- [ ] Remaining mutating migration cutover orchestration beyond the guarded CLI/server-side execution, resume-snapshot, saved-run list/get/event-stream paths, provider preset catalog discovery for Merit, SmartAccounts, and Directo, dashboard workbench live streaming, saved-run progress/duration telemetry, and accountant-workspace launch handoff, especially saved-bundle persistence for one-click assignment execution, further provider-specific cutover depth, additional cross-file validation, and deeper dashboard-side cutover controls
+- [ ] Remaining mutating migration cutover orchestration beyond the guarded CLI/server-side execution, resume-snapshot, saved-run list/get/event-stream paths, provider preset catalog discovery for Merit, SmartAccounts, and Directo, dashboard workbench live streaming, saved-run progress/duration telemetry, accountant-workspace launch handoff, and saved-bundle workspace execution, especially further provider-specific cutover depth, additional cross-file validation, and deeper dashboard-side cutover controls
 - [ ] Remaining tax/payroll edges and deeper accountant-workspace execution beyond the current assignment queue, direct bank follow-up, reminder actions, pending-document assignment approval, payroll-run payment-date setting and approval, payroll TSD assignment generation, TSD declaration XML export, KMD assignment regeneration/export, expense submit/approve/post assignment completion, fiscal-year close/carry-forward assignment completion, and migration saved-run handoff, especially remaining document evidence/policy follow-up
 - [ ] Automated document policy enforcement in remaining workflow blockers
 - [ ] Remaining auth administration hardening beyond tenant-scoped session/status/API-token controls

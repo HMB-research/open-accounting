@@ -36,6 +36,44 @@ func TestExecuteMigrationRequestPlanRequestPreservesExecutionContext(t *testing.
 	assert.Equal(t, "2026-01-01", planReq.OpeningBalanceEntryDate)
 }
 
+func TestStoredMigrationExecutionRequestMergesSavedBundleContext(t *testing.T) {
+	saved := NewStoredMigrationExecutionRequest(&ExecuteMigrationRequest{
+		Files: []BundleFile{{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "code,name,account_type\n1000,Cash,ASSET\n",
+		}},
+		EInvoiceContactMode:      EInvoiceContactModeBoth,
+		EInvoiceInvoiceType:      "sales",
+		ProviderPreset:           MigrationProviderPresetMerit,
+		BankTransactionAccountID: "bank-1",
+		BankTransactionFormat:    "lhv",
+		OpeningBalanceEntryDate:  "2026-01-01",
+		Confirm:                  true,
+		ResumeFromRunID:          "run-1",
+	})
+	require.NotNil(t, saved)
+	assert.False(t, saved.Confirm)
+	assert.Empty(t, saved.ResumeFromRunID)
+
+	req := &ExecuteMigrationRequest{Confirm: true, ResumeFromRunID: "run-1"}
+	MergeSavedMigrationExecutionRequest(req, saved)
+
+	require.Len(t, req.Files, 1)
+	assert.Equal(t, KindAccounts, req.Files[0].Kind)
+	assert.Equal(t, EInvoiceContactModeBoth, req.EInvoiceContactMode)
+	assert.Equal(t, "sales", req.EInvoiceInvoiceType)
+	assert.Equal(t, MigrationProviderPresetMerit, req.ProviderPreset)
+	assert.Equal(t, "bank-1", req.BankTransactionAccountID)
+	assert.Equal(t, "lhv", req.BankTransactionFormat)
+	assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
+	assert.True(t, req.Confirm)
+	assert.Equal(t, "run-1", req.ResumeFromRunID)
+
+	req.Files[0].CSVContent = "changed"
+	assert.Contains(t, saved.Files[0].CSVContent, "1000,Cash")
+}
+
 func TestNewResumableMigrationExecutionRunSkipsPreviouslySucceededSteps(t *testing.T) {
 	plan := &MigrationExecutionPlan{
 		Summary: MigrationExecutionPlanSummary{

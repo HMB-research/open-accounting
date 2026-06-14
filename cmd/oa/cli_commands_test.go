@@ -4624,6 +4624,110 @@ func TestCLIMigrationExecuteResumesRunFile(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"succeeded_step_count": 2`)
 }
 
+func TestCLIMigrationExecuteResumesSavedRunID(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	accountsFile := writeTempCSV(t, "accounts.csv", "code,name,account_type\n1000,Cash,ASSET\n")
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/v1/tenants/tenant-1/migration/execute", r.URL.Path)
+
+		var req cutover.ExecuteMigrationRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		assert.True(t, req.Confirm)
+		assert.Equal(t, "run-ready", req.ResumeFromRunID)
+		requestCount++
+		switch requestCount {
+		case 1, 2:
+			assert.Equal(t, cutover.MigrationProviderPresetDirecto, req.ProviderPreset)
+			assert.Equal(t, "lhv", req.BankTransactionFormat)
+			assert.Empty(t, req.Files)
+		case 3:
+			assert.Empty(t, req.ProviderPreset)
+			assert.Empty(t, req.BankTransactionFormat)
+			assert.Empty(t, req.Files)
+		case 4:
+			assert.Equal(t, cutover.MigrationProviderPresetGeneric, req.ProviderPreset)
+			assert.Equal(t, "auto", req.BankTransactionFormat)
+			assert.Equal(t, cutover.EInvoiceContactModeSupplier, req.EInvoiceContactMode)
+			require.Len(t, req.Files, 1)
+			assert.Equal(t, cutover.KindAccounts, req.Files[0].Kind)
+		default:
+			t.Fatalf("unexpected execute request %d", requestCount)
+		}
+
+		_ = json.NewEncoder(w).Encode(cutover.MigrationExecutionRun{
+			ID: "run-executed",
+			Summary: cutover.MigrationExecutionRunSummary{
+				Status:             "succeeded",
+				Confirmed:          true,
+				StepCount:          2,
+				SucceededStepCount: 2,
+			},
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{
+		"migration", "execute",
+		"--resume-run-id", "run-ready",
+		"--provider-preset", "directo",
+		"--bank-transaction-format", "lhv",
+		"--confirm",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "run-executed"`)
+	assert.Contains(t, stdout.String(), `"status": "succeeded"`)
+	assert.Contains(t, stdout.String(), `"confirmed": true`)
+
+	app, stdout, _ = newTestCLIApp()
+	err = app.run(context.Background(), []string{
+		"migration", "execute",
+		"--resume-run-id", "run-ready",
+		"--provider-preset", "directo",
+		"--bank-transaction-format", "lhv",
+		"--confirm",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Migration execution: succeeded")
+	assert.Contains(t, stdout.String(), "2 succeeded")
+
+	app, stdout, _ = newTestCLIApp()
+	err = app.run(context.Background(), []string{
+		"migration", "execute",
+		"--resume-run-id", "run-ready",
+		"--confirm",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "run-executed"`)
+
+	app, stdout, _ = newTestCLIApp()
+	err = app.run(context.Background(), []string{
+		"migration", "execute",
+		"--accounts", accountsFile,
+		"--resume-run-id", "run-ready",
+		"--confirm",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"status": "succeeded"`)
+}
+
 func TestCLIMigrationRunsListAndGet(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -4852,6 +4956,7 @@ func TestCLIMigrationExecuteSafetyBranches(t *testing.T) {
 		{name: "missing file", args: []string{"migration", "execute", "--accounts", missingFile}, want: "read file"},
 		{name: "missing resume run", args: []string{"migration", "execute", "--accounts", accountsFile, "--resume-run", missingFile}, want: "read migration resume run"},
 		{name: "bad resume run json", args: []string{"migration", "execute", "--accounts", accountsFile, "--resume-run", writeTempCSV(t, "bad-run.json", "{")}, want: "parse migration resume run"},
+		{name: "conflicting resume sources", args: []string{"migration", "execute", "--accounts", accountsFile, "--resume-run", missingFile, "--resume-run-id", "run-1"}, want: "only one of --resume-run or --resume-run-id may be provided"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stdout.Reset()
@@ -4872,6 +4977,19 @@ func TestCLIMigrationExecuteSafetyBranches(t *testing.T) {
 		err := app.run(context.Background(), []string{"migration", "execute", "--accounts", accountsFile})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "plan unavailable")
+	})
+
+	t.Run("remote execute error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "/api/v1/tenants/tenant-1/migration/execute", r.URL.Path)
+			http.Error(w, `{"error":"execute unavailable"}`, http.StatusBadGateway)
+		}))
+		defer server.Close()
+		t.Setenv("OA_BASE_URL", server.URL)
+		stdout.Reset()
+		err := app.run(context.Background(), []string{"migration", "execute", "--resume-run-id", "run-ready", "--confirm"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "execute unavailable")
 	})
 }
 

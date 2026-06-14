@@ -38,6 +38,11 @@ type GORMMigrationExecutionRunRepository struct {
 	now func() time.Time
 }
 
+type migrationExecutionRunRecordPayload struct {
+	MigrationExecutionRun
+	ExecutionRequest *ExecuteMigrationRequest `json:"execution_request,omitempty"`
+}
+
 // NewMigrationExecutionRunRepository creates a migration execution run repository from the shared pgx pool.
 func NewMigrationExecutionRunRepository(pool *pgxpool.Pool) *GORMMigrationExecutionRunRepository {
 	if pool == nil {
@@ -168,7 +173,7 @@ func (r *GORMMigrationExecutionRunRepository) runToRecord(tenantID, createdBy st
 	if strings.TrimSpace(run.CreatedBy) == "" {
 		run.CreatedBy = strings.TrimSpace(createdBy)
 	}
-	payload, err := json.Marshal(run)
+	payload, err := marshalMigrationExecutionRunPayload(run)
 	if err != nil {
 		return nil, fmt.Errorf("marshal migration execution run: %w", err)
 	}
@@ -198,9 +203,12 @@ func recordToMigrationExecutionRun(record *models.MigrationExecutionRunRecord) (
 	}
 	var run MigrationExecutionRun
 	if len(record.RunPayload) > 0 {
-		if err := json.Unmarshal(record.RunPayload, &run); err != nil {
+		payload, err := unmarshalMigrationExecutionRunPayload(record.RunPayload)
+		if err != nil {
 			return nil, fmt.Errorf("parse migration execution run payload: %w", err)
 		}
+		run = payload.MigrationExecutionRun
+		run.ExecutionRequest = payload.ExecutionRequest
 	}
 	run.ID = record.ID
 	run.TenantID = record.TenantID
@@ -220,6 +228,24 @@ func recordToMigrationExecutionRun(record *models.MigrationExecutionRunRecord) (
 	}
 	RefreshMigrationExecutionRunProgress(&run)
 	return &run, nil
+}
+
+func marshalMigrationExecutionRunPayload(run *MigrationExecutionRun) ([]byte, error) {
+	if run == nil {
+		return nil, fmt.Errorf("migration execution run is required")
+	}
+	return json.Marshal(migrationExecutionRunRecordPayload{
+		MigrationExecutionRun: *run,
+		ExecutionRequest:      NewStoredMigrationExecutionRequest(run.ExecutionRequest),
+	})
+}
+
+func unmarshalMigrationExecutionRunPayload(payload json.RawMessage) (*migrationExecutionRunRecordPayload, error) {
+	var runPayload migrationExecutionRunRecordPayload
+	if err := json.Unmarshal(payload, &runPayload); err != nil {
+		return nil, err
+	}
+	return &runPayload, nil
 }
 
 func (r *GORMMigrationExecutionRunRepository) currentTime() time.Time {

@@ -81,6 +81,7 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to load migration execution resume run")
 		return
 	}
+	cutover.MergeSavedMigrationExecutionRequest(&req, savedMigrationExecutionRequest(resumeFromRun))
 
 	plan, err := cutover.BuildMigrationExecutionPlan(req.PlanRequest())
 	if err != nil {
@@ -88,6 +89,7 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	run := cutover.NewResumableMigrationExecutionRun(plan, req.Confirm, resumeFromRun)
+	run.ExecutionRequest = cutover.NewStoredMigrationExecutionRequest(&req)
 	if !req.Confirm {
 		if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
@@ -362,6 +364,13 @@ func (h *Handlers) resolveMigrationExecutionResumeRun(ctx context.Context, schem
 		return h.migrationRunStore.GetExecutionRun(ctx, schemaName, tenantID, runID)
 	}
 	return req.ResumeFromRun, nil
+}
+
+func savedMigrationExecutionRequest(run *cutover.MigrationExecutionRun) *cutover.ExecuteMigrationRequest {
+	if run == nil {
+		return nil
+	}
+	return run.ExecutionRequest
 }
 
 func migrationExecutionRunStreamInterval(r *http.Request) (time.Duration, error) {

@@ -83,6 +83,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 	openingBalanceEntryDate := fs.String("opening-balance-entry-date", "", "Opening balance journal entry date in YYYY-MM-DD")
 	journalFile := fs.String("journal", "", "Historical journal CSV file")
 	resumeRunFile := fs.String("resume-run", "", "Previous migration execution run JSON file to resume from")
+	resumeRunID := fs.String("resume-run-id", "", "Saved migration execution run id to resume from")
 	confirm := fs.Bool("confirm", false, "Execute the planned imports")
 	asJSON := fs.Bool("json", false, "Output JSON")
 	if err := fs.Parse(args); err != nil {
@@ -123,11 +124,50 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 	if err != nil {
 		return err
 	}
-	if len(files) == 0 {
+	trimmedResumeRunID := strings.TrimSpace(*resumeRunID)
+	if strings.TrimSpace(*resumeRunFile) != "" && trimmedResumeRunID != "" {
+		return errors.New("only one of --resume-run or --resume-run-id may be provided")
+	}
+	if len(files) == 0 && trimmedResumeRunID == "" {
 		return errors.New("at least one migration CSV or XML file is required")
 	}
 	resumeFromRun, err := readMigrationExecutionRunFile(*resumeRunFile)
 	if err != nil {
+		return err
+	}
+
+	if trimmedResumeRunID != "" {
+		req := &cutover.ExecuteMigrationRequest{
+			Files:           files,
+			Confirm:         *confirm,
+			ResumeFromRunID: trimmedResumeRunID,
+		}
+		useLocalExecutionDefaults := len(files) > 0
+		if useLocalExecutionDefaults || flagWasPassed(fs, "e-invoice-contact-mode") {
+			req.EInvoiceContactMode = cutover.EInvoiceContactMode(strings.TrimSpace(*eInvoiceContactMode))
+		}
+		if useLocalExecutionDefaults || flagWasPassed(fs, "e-invoice-invoice-type") {
+			req.EInvoiceInvoiceType = string(invoiceType)
+		}
+		if useLocalExecutionDefaults || flagWasPassed(fs, "provider-preset") {
+			req.ProviderPreset = cutover.MigrationProviderPreset(strings.TrimSpace(*providerPreset))
+		}
+		if useLocalExecutionDefaults || flagWasPassed(fs, "bank-transaction-account-id") {
+			req.BankTransactionAccountID = strings.TrimSpace(*bankTransactionAccountID)
+		}
+		if useLocalExecutionDefaults || flagWasPassed(fs, "bank-transaction-format") {
+			req.BankTransactionFormat = strings.TrimSpace(*bankTransactionFormat)
+		}
+		if useLocalExecutionDefaults || flagWasPassed(fs, "opening-balance-entry-date") {
+			req.OpeningBalanceEntryDate = strings.TrimSpace(*openingBalanceEntryDate)
+		}
+
+		run, err := client.executeMigration(ctx, cfg.TenantID, req)
+		if *asJSON {
+			_ = printJSON(a.stdout, run)
+		} else {
+			printMigrationExecutionRun(a.stdout, run)
+		}
 		return err
 	}
 
