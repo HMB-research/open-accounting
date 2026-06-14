@@ -6196,6 +6196,37 @@ func TestValidateBundleAcceptsProductSupplierIdentityReference(t *testing.T) {
 	assert.Empty(t, report.Issues)
 }
 
+func TestValidateBundleAcceptsProductSupplierVATNumberReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name,vat_number\nSUP-1,Supplier One,EE123456789\n",
+		},
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "code,name,sales_price,supplier_vat_number\nSKU-1,Widget,10,EE123456789\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestSupplierContactIndexSelectsVATAndFallbackIndexes(t *testing.T) {
+	indexes := bundleIndexes{
+		contacts:          map[string]bool{"fallback": true},
+		contactVATNumbers: map[string]bool{"EE123456789": true},
+	}
+
+	assert.True(t, supplierContactIndex(indexes, "supplier_vat_number")["EE123456789"])
+	assert.True(t, supplierContactIndex(indexes, "supplier_custom")["fallback"])
+}
+
 func TestValidateBundleReportsMissingProductSupplierIdentityReference(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
