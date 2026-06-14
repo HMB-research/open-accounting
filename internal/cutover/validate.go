@@ -2379,6 +2379,7 @@ func validateGroupedDocumentPreflight(report *BundleValidationReport, file parse
 
 func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile, eInvoiceContactMode EInvoiceContactMode) {
 	validateImportedInvoiceAmountPaidConsistency(report, files)
+	validateExpenseAccountTypeConsistency(report, files)
 	validateStockAdjustmentProductStockability(report, files)
 	validateCostAllocationJournalLineTotals(report, files)
 	validateCostAllocationJournalLinePercentages(report, files)
@@ -2471,6 +2472,109 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 			}
 		}
 	}
+}
+
+type cutoverAccountTypeTarget struct {
+	display     string
+	accountType string
+}
+
+func validateExpenseAccountTypeConsistency(report *BundleValidationReport, files []parsedFile) {
+	targets := buildCutoverAccountTypeTargets(files)
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindExpenses {
+			continue
+		}
+		for _, row := range file.rows {
+			checkExpenseAccountType(report, file, row, targets,
+				"expense_account_id", "expense_account_code",
+				map[string]bool{"EXPENSE": true},
+				"expense account", "EXPENSE")
+			checkExpenseAccountType(report, file, row, targets,
+				"payment_account_id", "payment_account_code",
+				map[string]bool{"ASSET": true, "LIABILITY": true},
+				"payment account", "ASSET or LIABILITY")
+		}
+	}
+}
+
+func checkExpenseAccountType(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	targets map[string]cutoverAccountTypeTarget,
+	idField string,
+	codeField string,
+	allowed map[string]bool,
+	label string,
+	expected string,
+) {
+	field := codeField
+	value := strings.TrimSpace(row.values[codeField])
+	keyPrefix := "code"
+	if accountID := strings.TrimSpace(row.values[idField]); accountID != "" {
+		field = idField
+		value = accountID
+		keyPrefix = "id"
+	}
+	if value == "" {
+		return
+	}
+	target, ok := targets[cutoverAccountTypeTargetKey(keyPrefix, value)]
+	if !ok || allowed[target.accountType] {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindExpenses,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      field,
+		Value:      fmt.Sprintf("%s/%s", value, target.accountType),
+		TargetKind: KindAccounts,
+		Message:    fmt.Sprintf("%s %q is %s; expected %s account", label, target.display, target.accountType, expected),
+	})
+}
+
+func buildCutoverAccountTypeTargets(files []parsedFile) map[string]cutoverAccountTypeTarget {
+	targets := map[string]cutoverAccountTypeTarget{}
+	for _, file := range files {
+		if file.kind != KindAccounts || !fileHasHeaders(file, "account_type") {
+			continue
+		}
+		for _, row := range file.rows {
+			accountType, ok := cutoverNormalizedAccountType(row.values["account_type"])
+			if !ok {
+				continue
+			}
+			code := strings.TrimSpace(row.values["code"])
+			if code != "" {
+				targets[cutoverAccountTypeTargetKey("code", code)] = cutoverAccountTypeTarget{
+					display:     code,
+					accountType: accountType,
+				}
+			}
+			accountID := strings.TrimSpace(row.values["id"])
+			if accountID == "" {
+				continue
+			}
+			if _, err := uuid.Parse(accountID); err != nil {
+				continue
+			}
+			targets[cutoverAccountTypeTargetKey("id", accountID)] = cutoverAccountTypeTarget{
+				display:     accountID,
+				accountType: accountType,
+			}
+		}
+	}
+	return targets
+}
+
+func cutoverAccountTypeTargetKey(prefix, value string) string {
+	return prefix + ":" + normalizedValue(value)
 }
 
 type cutoverJournalLineAmountTarget struct {
@@ -4730,22 +4834,29 @@ func checkAccountType(report *BundleValidationReport, file parsedFile, row parse
 		return
 	}
 
-	if _, ok := cutoverAccountTypeAliases[normalizedValue(value)]; ok {
+	if _, ok := cutoverNormalizedAccountType(value); ok {
 		return
 	}
-	switch normalizeCutoverUpper(value) {
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "account_type",
+		Value:    value,
+		Message:  fmt.Sprintf("invalid account_type %q", value),
+	})
+}
+
+func cutoverNormalizedAccountType(value string) (string, bool) {
+	if accountType, ok := cutoverAccountTypeAliases[normalizedValue(value)]; ok {
+		return accountType, true
+	}
+	switch upper := normalizeCutoverUpper(value); upper {
 	case "ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE":
-		return
+		return upper, true
 	default:
-		report.addIssue(ValidationIssue{
-			Severity: SeverityError,
-			Kind:     file.kind,
-			FileName: file.fileName,
-			Row:      row.number,
-			Field:    "account_type",
-			Value:    value,
-			Message:  fmt.Sprintf("invalid account_type %q", value),
-		})
+		return "", false
 	}
 }
 

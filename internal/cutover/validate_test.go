@@ -1550,7 +1550,8 @@ func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
 			FileName: "accounts.csv",
 			CSVContent: "account_code,account_name,type\n" +
 				"1000,Cash,ASSET\n" +
-				"1000,Duplicate cash,ASSET\n",
+				"1000,Duplicate cash,ASSET\n" +
+				"5500,Office expenses,EXPENSE\n",
 		},
 		{
 			Kind:     KindBankAccounts,
@@ -1563,8 +1564,8 @@ func TestValidateBundleReportsDuplicateMasterIdentifiers(t *testing.T) {
 			Kind:     KindExpenses,
 			FileName: "expenses.csv",
 			CSVContent: "expense_number,expense_date,merchant,expense_account_code,payment_account_code,amount\n" +
-				"EXP-1,2026-05-31,Office,1000,1000,42\n" +
-				"EXP-1,2026-06-01,Office,1000,1000,43\n",
+				"EXP-1,2026-05-31,Office,5500,1000,42\n" +
+				"EXP-1,2026-06-01,Office,5500,1000,43\n",
 		},
 	}})
 
@@ -2559,6 +2560,60 @@ func TestValidateBundleReportsExpenseAccountReferenceIssues(t *testing.T) {
 	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
 	assert.Equal(t, "expense_account_code", report.Issues[0].Field)
 	assert.Equal(t, "5500", report.Issues[0].Value)
+}
+
+func TestValidateBundleAcceptsExpenseAccountTypeReferences(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n2000,Reimbursements,LIABILITY\n5500,Office expenses,EXPENSE\n",
+		},
+		{
+			Kind:     KindExpenses,
+			FileName: "expenses.csv",
+			CSVContent: "expense_number,expense_date,merchant,expense_account_code,payment_account_code,amount\n" +
+				"EXP-1,2026-05-31,Office Store,5500,1000,42\n" +
+				"EXP-2,2026-05-31,Employee Claim,5500,2000,35\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsExpenseAccountTypeMismatches(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,account_name,type\n1000,Cash,ASSET\n4000,Sales,REVENUE\n5500,Office expenses,EXPENSE\n",
+		},
+		{
+			Kind:       KindExpenses,
+			FileName:   "expenses.csv",
+			CSVContent: "expense_date,merchant,expense_account_code,payment_account_code,amount\n2026-05-31,Office Store,1000,4000,42\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 2)
+	assert.Equal(t, KindExpenses, report.Issues[0].Kind)
+	assert.Equal(t, KindAccounts, report.Issues[0].TargetKind)
+	assert.Equal(t, "expense_account_code", report.Issues[0].Field)
+	assert.Equal(t, "1000/ASSET", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, "expected EXPENSE")
+	assert.Equal(t, KindExpenses, report.Issues[1].Kind)
+	assert.Equal(t, KindAccounts, report.Issues[1].TargetKind)
+	assert.Equal(t, "payment_account_code", report.Issues[1].Field)
+	assert.Equal(t, "4000/REVENUE", report.Issues[1].Value)
+	assert.Contains(t, report.Issues[1].Message, "expected ASSET or LIABILITY")
 }
 
 func TestValidateBundleReportsBankAccountReferenceIssues(t *testing.T) {

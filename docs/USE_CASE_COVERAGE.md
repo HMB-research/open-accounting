@@ -56,6 +56,7 @@ Status values:
 - The follow-up cost-allocation journal-line total consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up cost-allocation journal-line percentage consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up cost-allocation amount/percentage consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up expense account-type consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up cross-workspace remediation assignment metadata stage was locally revalidated with focused workspace/accounting/banking/expenses/documents/payroll/tax/CLI tests and frontend API type coverage.
 - The follow-up accountant workspace assignment queue stage was locally revalidated with prepared Svelte checks plus targeted review-panel, portfolio-panel, workspace-helper, and frontend API tests.
 - The follow-up expense assignment queue stage was locally revalidated with focused review-panel, portfolio-panel, frontend API, prepared Svelte, docs, lint, CLI coverage, and backend coverage gates.
@@ -115,6 +116,11 @@ cover both exact 100 percent splits and over-allocated percentage splits.
 Cost-allocation amount/percentage consistency also rejects same-bundle rows
 where `amount` and `allocation_percentage` disagree with the referenced
 historical journal line amount. The focused cost-allocation amount/percentage consistency migration tests cover both matching and mismatched rows.
+Expense account-type consistency also rejects same-bundle expense rows where
+`expense_account_code` does not reference an `EXPENSE` account or
+`payment_account_code` does not reference an `ASSET` or `LIABILITY` account.
+The focused expense account-type consistency migration tests cover accepted
+expense/payment account combinations and rejected type mismatches.
 
 ## Stage Gates To Keep Current
 
