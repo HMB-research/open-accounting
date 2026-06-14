@@ -281,10 +281,12 @@ scripts/db-backup-systemd-schedule.sh \
   --backup-dir /backups \
   --status-dir /var/lib/node_exporter/textfile_collector \
   --env-file /etc/open-accounting/backup.env \
+  --offsite-provider s3 \
+  --systemd-unit-dir /etc/systemd/system \
   --dry-run
 ```
 
-Remove `--dry-run` after reviewing the paths, copy the generated unit files into the host systemd unit directory, install `/etc/open-accounting/backup.env` from the generated example with real secrets, then enable the four timers. Keep `DATABASE_URL`, `RESTORE_DATABASE_URL`, `RESTORE_DRILL_BACKUP_FILE`, and provider credentials outside the repository.
+Remove `--dry-run` after reviewing the paths. The generator writes an `open-accounting-backup.env.example` tailored to `--offsite-provider s3|rclone` and an executable `open-accounting-backup-install.sh` helper. Install real secrets at `/etc/open-accounting/backup.env`, then run the helper with the host unit directory to copy units, preserve any existing secret file, reload systemd, and enable the four timers. Keep `DATABASE_URL`, `RESTORE_DATABASE_URL`, `RESTORE_DRILL_BACKUP_FILE`, and provider credentials outside the repository.
 
 ### Connection Pooling
 

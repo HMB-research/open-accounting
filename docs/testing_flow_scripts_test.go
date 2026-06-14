@@ -118,6 +118,66 @@ func TestParsePlaywrightSpecTimesScript(t *testing.T) {
 	}
 }
 
+func TestBackupSystemdScheduleGeneratesProviderSpecificInstallHelper(t *testing.T) {
+	outputDir := t.TempDir()
+
+	cmd := exec.Command(
+		"../scripts/db-backup-systemd-schedule.sh",
+		"--output-dir", outputDir,
+		"--scripts-dir", "/opt/open-accounting/scripts",
+		"--backup-dir", "/backups",
+		"--status-dir", "/var/lib/node_exporter/textfile_collector",
+		"--env-file", "/etc/open-accounting/backup.env",
+		"--systemd-unit-dir", "/usr/local/lib/systemd/system",
+		"--offsite-provider", "rclone",
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("generate backup systemd schedule: %v\n%s", err, output)
+	}
+
+	envTemplate, err := os.ReadFile(filepath.Join(outputDir, "open-accounting-backup.env.example"))
+	if err != nil {
+		t.Fatalf("read generated env template: %v", err)
+	}
+	env := string(envTemplate)
+	for _, snippet := range []string{
+		"BACKUP_OFFSITE_RCLONE_REMOTE=remote:company-backups/open-accounting/prod",
+		"RCLONE_CONFIG=/etc/open-accounting/rclone.conf",
+	} {
+		if !strings.Contains(env, snippet) {
+			t.Fatalf("generated env template missing %q:\n%s", snippet, env)
+		}
+	}
+	if strings.Contains(env, "AWS_SECRET_ACCESS_KEY") {
+		t.Fatalf("rclone env template should not include S3 credentials:\n%s", env)
+	}
+
+	installHelperPath := filepath.Join(outputDir, "open-accounting-backup-install.sh")
+	installHelper, err := os.ReadFile(installHelperPath)
+	if err != nil {
+		t.Fatalf("read generated install helper: %v", err)
+	}
+	install := string(installHelper)
+	for _, snippet := range []string{
+		`SYSTEMD_UNIT_DIR="${1:-/usr/local/lib/systemd/system}"`,
+		`install -m 0600 "$SOURCE_DIR/open-accounting-backup.env.example" "$ENV_FILE"`,
+		"systemctl daemon-reload",
+		"open-accounting-restore-drill.timer",
+	} {
+		if !strings.Contains(install, snippet) {
+			t.Fatalf("generated install helper missing %q:\n%s", snippet, install)
+		}
+	}
+	info, err := os.Stat(installHelperPath)
+	if err != nil {
+		t.Fatalf("stat generated install helper: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("generated install helper is not executable: %s", info.Mode().Perm())
+	}
+}
+
 func TestRunAffectedTestsScriptSelectsBackendDependants(t *testing.T) {
 	cmd := exec.Command("../scripts/run-affected-tests.sh", "--list", "--changed-file", "internal/cutover/validate.go")
 	output, err := cmd.CombinedOutput()

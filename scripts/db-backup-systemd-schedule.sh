@@ -8,6 +8,8 @@ SCRIPTS_DIR="${BACKUP_SYSTEMD_SCRIPTS_DIR:-/opt/open-accounting/scripts}"
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 STATUS_DIR="${BACKUP_STATUS_DIR:-/var/lib/node_exporter/textfile_collector}"
 ENV_FILE="${BACKUP_SYSTEMD_ENV_FILE:-/etc/open-accounting/backup.env}"
+SYSTEMD_UNIT_DIR="${BACKUP_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+OFFSITE_PROVIDER="${BACKUP_OFFSITE_PROVIDER:-s3}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 MAX_AGE_HOURS="${BACKUP_MAX_AGE_HOURS:-26}"
 BACKUP_CALENDAR="${BACKUP_SYSTEMD_BACKUP_CALENDAR:-*-*-* 02:00:00}"
@@ -27,6 +29,9 @@ Options:
   --status-dir DIR          Prometheus textfile directory. Defaults to BACKUP_STATUS_DIR or /var/lib/node_exporter/textfile_collector.
   --env-file FILE           systemd EnvironmentFile containing credentials and restore settings.
                              Defaults to BACKUP_SYSTEMD_ENV_FILE or /etc/open-accounting/backup.env.
+  --systemd-unit-dir DIR    Host systemd unit directory for the generated install helper.
+                             Defaults to BACKUP_SYSTEMD_UNIT_DIR or /etc/systemd/system.
+  --offsite-provider NAME   Offsite credential template to write: s3 or rclone. Defaults to BACKUP_OFFSITE_PROVIDER or s3.
   --retention-days DAYS     Backup retention passed to db-backup.sh. Defaults to BACKUP_RETENTION_DAYS or 30.
   --max-age-hours HOURS     Backup freshness threshold passed to db-backup-health.sh. Defaults to BACKUP_MAX_AGE_HOURS or 26.
   --backup-calendar VALUE   systemd OnCalendar value for backups. Defaults to daily 02:00 UTC/local system time.
@@ -38,6 +43,8 @@ Options:
 
 The generated units reference ENV_FILE for DATABASE_URL, RESTORE_DATABASE_URL,
 RESTORE_DRILL_BACKUP_FILE, and the selected offsite destination credentials.
+The generated install helper copies units to SYSTEMD_UNIT_DIR, preserves an
+existing ENV_FILE, reloads systemd, and enables the four timers.
 EOF
 }
 
@@ -95,6 +102,16 @@ while [ "$#" -gt 0 ]; do
             ENV_FILE="$2"
             shift 2
             ;;
+        --systemd-unit-dir)
+            [ "$#" -ge 2 ] || fail "--systemd-unit-dir requires a value"
+            SYSTEMD_UNIT_DIR="$2"
+            shift 2
+            ;;
+        --offsite-provider)
+            [ "$#" -ge 2 ] || fail "--offsite-provider requires a value"
+            OFFSITE_PROVIDER="$2"
+            shift 2
+            ;;
         --retention-days)
             [ "$#" -ge 2 ] || fail "--retention-days requires a value"
             RETENTION_DAYS="$2"
@@ -141,21 +158,45 @@ done
 
 is_non_negative_integer "$RETENTION_DAYS" || fail "--retention-days must be a non-negative integer"
 is_non_negative_integer "$MAX_AGE_HOURS" || fail "--max-age-hours must be a non-negative integer"
+case "$OFFSITE_PROVIDER" in
+    s3|rclone)
+        ;;
+    *)
+        fail "--offsite-provider must be either s3 or rclone"
+        ;;
+esac
 
 backup_metrics_file="$STATUS_DIR/openaccounting_backup.prom"
 restore_metrics_file="$STATUS_DIR/openaccounting_restore_drill.prom"
+install_helper="$OUTPUT_DIR/open-accounting-backup-install.sh"
 
-write_file "$OUTPUT_DIR/open-accounting-backup.env.example" <<EOF
+if [ "$OFFSITE_PROVIDER" = "s3" ]; then
+    write_file "$OUTPUT_DIR/open-accounting-backup.env.example" <<EOF
 # Copy to $ENV_FILE and store the real file in the host secret manager or a
 # root-readable path outside the repository. Do not commit live credentials.
 DATABASE_URL=postgres://user:pass@db.example.com:5432/openaccounting?sslmode=require
 RESTORE_DATABASE_URL=postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable
 RESTORE_DRILL_BACKUP_FILE=/backups/offsite-restored/openaccounting_latest.dump
 
-# Configure exactly one offsite destination for db-backup-offsite-sync.sh.
+# S3-compatible offsite destination for db-backup-offsite-sync.sh.
 BACKUP_OFFSITE_S3_URI=s3://company-backups/open-accounting/prod
-# BACKUP_OFFSITE_RCLONE_REMOTE=remote:company-backups/open-accounting/prod
+AWS_REGION=eu-north-1
+AWS_ACCESS_KEY_ID=replace-me
+AWS_SECRET_ACCESS_KEY=replace-me
 EOF
+else
+    write_file "$OUTPUT_DIR/open-accounting-backup.env.example" <<EOF
+# Copy to $ENV_FILE and store the real file in the host secret manager or a
+# root-readable path outside the repository. Do not commit live credentials.
+DATABASE_URL=postgres://user:pass@db.example.com:5432/openaccounting?sslmode=require
+RESTORE_DATABASE_URL=postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable
+RESTORE_DRILL_BACKUP_FILE=/backups/offsite-restored/openaccounting_latest.dump
+
+# rclone-managed offsite destination for db-backup-offsite-sync.sh.
+BACKUP_OFFSITE_RCLONE_REMOTE=remote:company-backups/open-accounting/prod
+RCLONE_CONFIG=/etc/open-accounting/rclone.conf
+EOF
+fi
 
 write_file "$OUTPUT_DIR/open-accounting-backup.service" <<EOF
 [Unit]
@@ -255,9 +296,54 @@ RandomizedDelaySec=30m
 WantedBy=timers.target
 EOF
 
+write_file "$install_helper" <<EOF
+#!/usr/bin/env bash
+# Install generated Open Accounting backup units on a systemd host.
+
+set -euo pipefail
+
+SOURCE_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+SYSTEMD_UNIT_DIR="\${1:-$SYSTEMD_UNIT_DIR}"
+ENV_FILE="$ENV_FILE"
+
+install -d "\$SYSTEMD_UNIT_DIR"
+install -d "\$(dirname "\$ENV_FILE")"
+
+for unit in \
+  open-accounting-backup.service \
+  open-accounting-backup.timer \
+  open-accounting-backup-offsite.service \
+  open-accounting-backup-offsite.timer \
+  open-accounting-backup-health.service \
+  open-accounting-backup-health.timer \
+  open-accounting-restore-drill.service \
+  open-accounting-restore-drill.timer; do
+  install -m 0644 "\$SOURCE_DIR/\$unit" "\$SYSTEMD_UNIT_DIR/\$unit"
+done
+
+if [ ! -f "\$ENV_FILE" ]; then
+  install -m 0600 "\$SOURCE_DIR/open-accounting-backup.env.example" "\$ENV_FILE"
+  echo "Installed environment template at \$ENV_FILE; edit it with live credentials before the next timer run."
+else
+  echo "Preserved existing environment file at \$ENV_FILE"
+fi
+
+systemctl daemon-reload
+systemctl enable --now \
+  open-accounting-backup.timer \
+  open-accounting-backup-offsite.timer \
+  open-accounting-backup-health.timer \
+  open-accounting-restore-drill.timer
+systemctl list-timers 'open-accounting-backup*' 'open-accounting-restore-drill*'
+EOF
+
+if [ "$DRY_RUN" = false ]; then
+    chmod 0755 "$install_helper"
+fi
+
 if [ "$DRY_RUN" = true ]; then
     log "Dry run complete"
 else
     log "Generated Open Accounting backup systemd schedule in $OUTPUT_DIR"
 fi
-log "Copy unit files to the host systemd unit directory, install $ENV_FILE with real secrets, then enable the four timers."
+log "Review $OUTPUT_DIR/open-accounting-backup.env.example, install real secrets at $ENV_FILE, then run $install_helper $SYSTEMD_UNIT_DIR to copy units and enable the four timers."
