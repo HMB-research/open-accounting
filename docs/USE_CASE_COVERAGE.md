@@ -100,6 +100,7 @@ Status values:
 - The follow-up payroll payment-date assignment stage was locally revalidated with focused payroll service/API/CLI, review-panel, and frontend API tests plus prepared Svelte checks.
 - The follow-up close assignment completion stage was locally revalidated with focused review-panel, workspace-helper, and frontend API tests plus prepared Svelte checks.
 - The follow-up KMD assignment execution stage was locally revalidated with focused review-panel, workspace-helper, and frontend API tests plus prepared Svelte checks.
+- The follow-up accountant workspace TSD export and migration confirmation handoff batch was locally revalidated with focused review-panel tests plus prepared Svelte checks.
 - The follow-up KMD tax remediation actions stage was locally revalidated with focused tax/API/CLI tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payroll run remediation actions stage was locally revalidated with focused payroll/API/CLI tests, Swagger regeneration, frontend API type checks, docs status tests, lint, and the CLI coverage gate.
 - The follow-up document retention and evidence remediation actions stage was locally revalidated with focused documents/API/CLI tests, Swagger regeneration, frontend API type checks, docs status tests, lint, and the CLI coverage gate.
@@ -136,6 +137,12 @@ party rather than the seller party. Credit-note e-invoice allocations now select
 The focused e-invoice credit-note payment contact selection migration tests
 cover customer-mode buyer contact matches and default supplier-mode mismatch
 reports.
+Accountant workspace coverage now includes direct TSD XML export for actionable
+declaration assignments and saved migration execution-run handoff for both
+failed and confirmation-ready runs. One-click mutating migration execution from
+the assignment queue remains a separate gap because saved execution runs do not
+yet persist the original cutover bundle payload needed to safely execute import
+steps outside the migration workbench.
 Migration remediation priority fallback coverage now locks non-blocking action severities to low priority with no due-date pressure while blockers and warnings retain their existing due windows.
 Commercial-document contact identity
 preflight now checks invoice, quote, order, and recurring-invoice contact
@@ -287,10 +294,10 @@ gates that protect the changed surface.
 The following items still prevent the project from honestly claiming fully
 working, production-ready accounting software:
 
-1. Extend remediation actions beyond year-end close, migration preflight, KMD tax, TSD declarations, payroll runs, banking transactions, expense claims, and document evidence/retention into remaining non-KMD tax/payroll edges and accountant-workspace follow-up surfaces.
-2. Complete the remaining historical cutover mutating orchestration polish, further provider-specific mapping depth, additional cross-file validation, and deeper dashboard cutover controls.
+1. Extend remediation actions beyond year-end close, migration preflight, KMD tax, TSD declarations including direct XML export, payroll runs, banking transactions, expense claims, and document evidence/retention into remaining non-KMD tax/payroll edges and accountant-workspace follow-up surfaces.
+2. Complete the remaining historical cutover mutating orchestration polish, saved-bundle persistence for one-click assignment execution, further provider-specific mapping depth, additional cross-file validation, and deeper dashboard cutover controls.
 3. Expand document policy enforcement beyond the current workflow blockers and scheduled retention reminder delivery controls.
-4. Add deeper executable accountant workspace exception actions for mutating migration execution beyond saved-run launch handoff and remaining non-KMD tax/payroll/document edges.
+4. Add deeper executable accountant workspace exception actions for mutating migration execution beyond saved-run launch handoff and saved-bundle persistence, plus remaining non-KMD tax/payroll/document edges.
 5. Finish auth administration and operational hardening for accounting-firm pilots.
 6. Harden provider-specific backup credential provisioning and host-specific timer enablement.
 7. Keep replacing uncovered migration validator branches with focused tests until the use-case coverage evidence is no longer mostly indirect.

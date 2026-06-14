@@ -15,6 +15,7 @@ const { apiMock } = vi.hoisted(() => ({
 		updatePayrollPaymentDate: vi.fn(),
 		approvePayroll: vi.fn(),
 		generateTSD: vi.fn(),
+		downloadTSDXml: vi.fn(),
 		generateKMD: vi.fn(),
 		downloadKMDXml: vi.fn(),
 		submitExpense: vi.fn(),
@@ -381,6 +382,7 @@ describe('AccountantReviewPanel', () => {
 		});
 		apiMock.approvePayroll.mockResolvedValue({ status: 'approved' });
 		apiMock.generateTSD.mockResolvedValue({ id: 'tsd-1' });
+		apiMock.downloadTSDXml.mockResolvedValue(undefined);
 		apiMock.generateKMD.mockResolvedValue({ id: 'kmd-1' });
 		apiMock.downloadKMDXml.mockResolvedValue(undefined);
 		apiMock.submitExpense.mockResolvedValue({
@@ -754,6 +756,30 @@ describe('AccountantReviewPanel', () => {
 					active_step_status: 'FAILED'
 				},
 				remediation_actions: []
+			},
+			{
+				id: 'run-ready',
+				tenant_id: 'tenant-1',
+				summary: {
+					status: 'needs_confirmation',
+					confirmed: false,
+					resumed: false,
+					plan_ready: true,
+					validation_ready: true,
+					step_count: 2,
+					running_step_count: 0,
+					succeeded_step_count: 0,
+					failed_step_count: 0,
+					skipped_step_count: 0,
+					planned_step_count: 2,
+					resumed_step_count: 0,
+					completed_step_count: 0,
+					remaining_step_count: 2,
+					progress_percent: 0,
+					needs_context_count: 0,
+					blocked_step_count: 0
+				},
+				remediation_actions: []
 			}
 		]);
 
@@ -765,14 +791,27 @@ describe('AccountantReviewPanel', () => {
 		expect(
 			await screen.findByText('Migration run run-failed failed at step 2 FAILED contacts contacts.csv.')
 		).toBeInTheDocument();
-		expect(screen.getByText('Migration · migration_cutover · ACTION')).toBeInTheDocument();
+		expect(screen.getAllByText('Migration · migration_cutover · ACTION')).toHaveLength(2);
 		expect(
 			screen.getByText('CLI: oa migration runs get --run-id run-failed --json')
 		).toBeInTheDocument();
-		expect(screen.getByRole('link', { name: 'Open action' })).toHaveAttribute(
-			'href',
-			'/migration?run_id=run-failed&tenant=tenant-1'
-		);
+		expect(
+			screen.getByText('Migration run run-ready is ready for accountant confirmation.')
+		).toBeInTheDocument();
+		expect(
+			screen.getByText('CLI: oa migration execute --resume-run-id run-ready --confirm --json')
+		).toBeInTheDocument();
+		const actionLinks = screen.getAllByRole('link', { name: 'Open action' });
+		expect(
+			actionLinks.some(
+				(link) => link.getAttribute('href') === '/migration?run_id=run-failed&tenant=tenant-1'
+			)
+		).toBe(true);
+		expect(
+			actionLinks.some(
+				(link) => link.getAttribute('href') === '/migration?run_id=run-ready&tenant=tenant-1'
+			)
+		).toBe(true);
 	});
 
 	it('generates TSD from approved payroll assignment rows', async () => {
@@ -826,6 +865,95 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(apiMock.generateTSD).toHaveBeenCalledWith('tenant-1', 'payroll-approved-1');
 			expect(screen.getByText('TSD generated from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it('exports TSD XML from declaration assignment rows', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-03-11',
+			cutoff_date: '2026-04-10',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+		apiMock.listTSD.mockResolvedValue([
+			{
+				id: 'tsd-ready-1',
+				tenant_id: 'tenant-1',
+				period_year: 2026,
+				period_month: 3,
+				total_payments: new Decimal(5100),
+				total_income_tax: new Decimal(900),
+				total_social_tax: new Decimal(1683),
+				total_unemployment_employer: new Decimal(41),
+				total_unemployment_employee: new Decimal(82),
+				total_funded_pension: new Decimal(102),
+				status: 'DRAFT',
+				remediation_actions: [
+					{
+						code: 'tsd_export_and_submit',
+						severity: 'ACTION',
+						scope: 'tax',
+						owner_role: 'accountant',
+						workspace_queue: 'tsd_declarations',
+						assignment_key:
+							'tsd-declarations:tsd-export-and-submit:tsd-declaration:tsd-ready-1:2026-03',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'TSD 2026-03 is ready for export and submission review.',
+						action:
+							'Review declaration totals, export XML or CSV, submit through e-MTA, and mark the declaration submitted with the e-MTA reference.',
+						entity_type: 'tsd_declaration',
+						entity_id: 'tsd-ready-1',
+						period: '2026-03',
+						ui_path: '/tsd?year=2026&month=3',
+						cli_command: 'oa tsd export-xml --year 2026 --month 3 --output ./tsd-2026-03.xml'
+					}
+				],
+				created_at: '2026-03-31T00:00:00Z',
+				updated_at: '2026-03-31T00:00:00Z'
+			}
+		]);
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(
+				screen.getByText('TSD 2026-03 is ready for export and submission review.')
+			).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Export TSD XML' }));
+
+		await waitFor(() => {
+			expect(apiMock.downloadTSDXml).toHaveBeenCalledWith('tenant-1', 2026, 3);
+			expect(screen.getByText('TSD XML exported from workspace.')).toBeInTheDocument();
 		});
 	});
 
