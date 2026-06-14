@@ -443,6 +443,16 @@ func migrationExecutionStepFileKey(kind cutover.FileKind, fileName string) strin
 
 func (e *handlerMigrationStepExecutor) ExecuteMigrationStep(ctx context.Context, tenantID, schemaName, userID string, step cutover.MigrationExecutionStep, file cutover.BundleFile, req *cutover.ExecuteMigrationRequest) (any, error) {
 	h := e.h
+	providerPreset := cutover.MigrationProviderPresetGeneric
+	if req != nil {
+		providerPreset = req.ProviderPreset
+	}
+	canonicalFile, err := cutover.CanonicalizeBundleFileCSV(file, providerPreset)
+	if err != nil {
+		return nil, err
+	}
+	file = canonicalFile
+
 	switch step.Kind {
 	case cutover.KindAccounts:
 		return h.accountingService.ImportAccountsCSV(ctx, schemaName, tenantID, &accounting.ImportAccountsRequest{CSVContent: file.CSVContent, FileName: file.FileName})
