@@ -4951,6 +4951,74 @@ func TestValidateBundleReportsPaymentAllocationBeforeImportedInvoiceIssueDate(t 
 	assert.Contains(t, report.Issues[0].Message, `payment_date "2026-05-29" cannot be before imported invoice "INV-1" issue_date "2026-05-30"`)
 }
 
+func TestValidateBundleAcceptsPaymentAllocationToSentImportedInvoice(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,status,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,SENT,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number,allocation_amount\nRECEIVED,2026-05-31,100,INV-1,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.RowsValidated)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsPaymentAllocationToInactiveImportedInvoiceStatus(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,status,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-DRAFT,SALES,CUST-1,2026-05-30,2026-06-14,DRAFT,Work,1,100,22\n" +
+				"INV-VOID,SALES,CUST-1,2026-05-30,2026-06-14,VOIDED,Work,1,100,22\n",
+		},
+		{
+			Kind:     KindPayments,
+			FileName: "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number,allocation_amount\n" +
+				"RECEIVED,2026-05-31,100,INV-DRAFT,100\n" +
+				"RECEIVED,2026-05-31,100,INV-VOID,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 2)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, 2, report.Issues[0].Row)
+	assert.Equal(t, "invoice_number", report.Issues[0].Field)
+	assert.Equal(t, "INV-DRAFT", report.Issues[0].Value)
+	assert.Equal(t, KindInvoices, report.Issues[0].TargetKind)
+	assert.Contains(t, report.Issues[0].Message, `imported invoice "INV-DRAFT" with status DRAFT`)
+	assert.Equal(t, KindPayments, report.Issues[1].Kind)
+	assert.Equal(t, 3, report.Issues[1].Row)
+	assert.Equal(t, "invoice_number", report.Issues[1].Field)
+	assert.Equal(t, "INV-VOID", report.Issues[1].Value)
+	assert.Equal(t, KindInvoices, report.Issues[1].TargetKind)
+	assert.Contains(t, report.Issues[1].Message, `imported invoice "INV-VOID" with status VOIDED`)
+}
+
 func TestValidateBundleAcceptsImportedInvoiceAmountPaidWithinTotal(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

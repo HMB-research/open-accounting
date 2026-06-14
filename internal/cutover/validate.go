@@ -1985,6 +1985,7 @@ type cutoverInvoiceAllocationTarget struct {
 	amountPaidSpecified bool
 	currency            string
 	invoiceType         string
+	status              string
 	issueDate           time.Time
 	issueDateSpecified  bool
 	contactReferences   cutoverContactReferences
@@ -2439,6 +2440,9 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 				continue
 			}
 			if hasPaymentBeforeInvoiceIssueDate(report, file, row, target) {
+				continue
+			}
+			if hasPaymentInvoiceStatusMismatch(report, file, row, target) {
 				continue
 			}
 
@@ -3225,9 +3229,9 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile, eInvoiceContactMod
 					}
 					contactReferences := cutoverEInvoicePaymentContactReferences(row, eInvoiceContactMode)
 					issueDate, issueDateSpecified := cutoverInvoiceIssueDateFromRow(row)
-					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], issueDate, issueDateSpecified, contactReferences)
+					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], "", issueDate, issueDateSpecified, contactReferences)
 					if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
-						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], issueDate, issueDateSpecified, contactReferences)
+						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], "", issueDate, issueDateSpecified, contactReferences)
 					}
 				}
 			}
@@ -3239,9 +3243,13 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile, eInvoiceContactMod
 				continue
 			}
 			amountPaid, _, amountPaidSpecified := cutoverInvoiceGroupAmountPaid(group)
-			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, group.issueDate, group.issueDateSpecified, group.contactReferences)
+			status, _, statusSpecified := cutoverInvoiceGroupStatus(group)
+			if !statusSpecified {
+				status = ""
+			}
+			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, status, group.issueDate, group.issueDateSpecified, group.contactReferences)
 			if id := strings.TrimSpace(group.id); id != "" {
-				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, group.issueDate, group.issueDateSpecified, group.contactReferences)
+				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, status, group.issueDate, group.issueDateSpecified, group.contactReferences)
 			}
 		}
 	}
@@ -3343,19 +3351,29 @@ func cutoverInvoiceGroupAmountPaid(group cutoverInvoiceGroup) (decimal.Decimal, 
 
 func cutoverInvoiceGroupStatus(group cutoverInvoiceGroup) (string, parsedRow, bool) {
 	for _, row := range group.rows {
-		value := strings.TrimSpace(row.values["status"])
-		if value == "" {
-			continue
-		}
-		status := normalizeCutoverInvoiceStatus(value)
-		switch status {
-		case "DRAFT", "SENT", "PARTIALLY_PAID", "PAID", "OVERDUE", "VOIDED":
+		status := cutoverInvoiceRowStatus(row)
+		if status != "" {
 			return status, row, true
-		default:
+		}
+		if strings.TrimSpace(row.values["status"]) != "" {
 			return "", parsedRow{}, false
 		}
 	}
 	return "", parsedRow{}, false
+}
+
+func cutoverInvoiceRowStatus(row parsedRow) string {
+	value := strings.TrimSpace(row.values["status"])
+	if value == "" {
+		return ""
+	}
+	status := normalizeCutoverInvoiceStatus(value)
+	switch status {
+	case "DRAFT", "SENT", "PARTIALLY_PAID", "PAID", "OVERDUE", "VOIDED":
+		return status
+	default:
+		return ""
+	}
 }
 
 func cutoverInvoiceGroupTotal(rows []parsedRow) (decimal.Decimal, bool) {
@@ -3588,6 +3606,42 @@ func hasPaymentBeforeInvoiceIssueDate(
 	return true
 }
 
+func hasPaymentInvoiceStatusMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	status := strings.ToUpper(strings.TrimSpace(target.status))
+	if status != "DRAFT" && status != "VOIDED" {
+		return false
+	}
+	field := "invoice_number"
+	value := strings.TrimSpace(row.values[field])
+	if invoiceID := strings.TrimSpace(row.values["invoice_id"]); invoiceID != "" {
+		field = "invoice_id"
+		value = invoiceID
+	}
+	if value == "" {
+		value = target.display
+	}
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindPayments,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      field,
+		Value:      value,
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"payment allocation references imported invoice %q with status %s; payments cannot be allocated to draft or voided invoices",
+			target.display,
+			status,
+		),
+	})
+	return true
+}
+
 func cutoverContactReferencesFromRow(row parsedRow) cutoverContactReferences {
 	references := cutoverContactReferences{}
 	for _, field := range cutoverContactReferenceFields {
@@ -3704,6 +3758,7 @@ func addCutoverInvoiceAllocationTarget(
 	amountPaidSpecified bool,
 	currency string,
 	invoiceType string,
+	status string,
 	issueDate time.Time,
 	issueDateSpecified bool,
 	contactReferences cutoverContactReferences,
@@ -3722,6 +3777,7 @@ func addCutoverInvoiceAllocationTarget(
 		target.amountPaidSpecified = amountPaidSpecified
 		target.currency = strings.ToUpper(strings.TrimSpace(currency))
 		target.invoiceType = strings.ToUpper(strings.TrimSpace(invoiceType))
+		target.status = strings.ToUpper(strings.TrimSpace(status))
 		target.issueDate = issueDate
 		target.issueDateSpecified = issueDateSpecified
 		target.contactReferences = copyCutoverContactReferences(contactReferences)
