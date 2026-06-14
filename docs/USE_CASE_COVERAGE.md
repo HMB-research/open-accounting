@@ -49,6 +49,7 @@ Status values:
 - The follow-up fixed-asset supplier-code migration stage was locally revalidated with focused fixed-asset importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up supplier identity migration stage was locally revalidated with focused contact reference, product importer, fixed-asset importer, and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up supplier VAT-number migration reference stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up payment contact VAT-number migration reference stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment and expense contact identity migration stage was locally revalidated with focused contact reference, payment importer, expense importer, and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up commercial-document contact identity migration stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up commercial-document VAT contact import stage was locally revalidated with focused quote, order, and recurring-invoice importer tests.
@@ -168,6 +169,8 @@ and `supplier_name` mismatches against the corresponding same-field imported
 invoice contact values.
 Product supplier VAT-number preflight now validates `supplier_vat_number` values
 against same-bundle contact VAT numbers before product imports run.
+Payment contact VAT-number preflight now validates `contact_vat_number` values
+against same-bundle contact VAT numbers before payment imports run.
 Payment bank-account default-currency consistency rejects same-bundle payment
 rows that omit `currency` when the referenced bank account is non-EUR, because
 payment imports default omitted currencies to EUR.
