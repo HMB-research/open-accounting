@@ -62,6 +62,7 @@ Status values:
 - The follow-up bank-account currency letter validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up bank-transaction source-account omitted-currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up bank-transaction description-source preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up bank-transaction format execution-plan stage was locally revalidated with focused cutover execution-plan tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
 - The follow-up invoice paid-amount consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up combined invoice paid/allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation direction consistency stage was locally revalidated with focused cutover validator, CLI request, frontend workbench, docs status, lint, and CLI coverage gates.
@@ -190,6 +191,8 @@ Bank-transaction description-source preflight rejects generic rows without
 `description`, `details`, or `selgitus` before cutover execution while allowing
 LHV statement headers to use the same fallback description sources as the LHV
 bank-statement importer.
+Bank-transaction execution plans preserve the requested import format in both
+server-side planning context and generated CLI commands.
 Fixed-asset source-invoice date consistency rejects same-bundle fixed-asset rows
 where `purchase_date` is before the imported source invoice issue date.
 Payment allocation date consistency rejects same-bundle payment rows whose

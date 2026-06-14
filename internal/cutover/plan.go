@@ -20,6 +20,7 @@ type PlanMigrationExecutionRequest struct {
 	EInvoiceInvoiceType      string                  `json:"e_invoice_invoice_type,omitempty"`
 	ProviderPreset           MigrationProviderPreset `json:"provider_preset,omitempty"`
 	BankTransactionAccountID string                  `json:"bank_transaction_account_id,omitempty"`
+	BankTransactionFormat    string                  `json:"bank_transaction_format,omitempty"`
 	OpeningBalanceEntryDate  string                  `json:"opening_balance_entry_date,omitempty"`
 }
 
@@ -227,9 +228,13 @@ func migrationExecutionStepSpec(kind FileKind, fileName string, req *PlanMigrati
 			accountID = "<bank-account-id>"
 			contextFields = []string{"bank_transaction_account_id"}
 		}
+		formatFlag := ""
+		if format := strings.TrimSpace(req.BankTransactionFormat); format != "" {
+			formatFlag = " --format " + format
+		}
 		return migrationExecutionSpec{
 			apiPath:       tenantAPIPath(fmt.Sprintf("/bank-accounts/%s/import", accountID)),
-			cliCommand:    fmt.Sprintf("oa banking transactions import --account-id %s --file %s", accountID, fileRef),
+			cliCommand:    fmt.Sprintf("oa banking transactions import --account-id %s --file %s%s", accountID, fileRef, formatFlag),
 			dependsOn:     []FileKind{KindBankAccounts},
 			contextFields: contextFields,
 			message:       "Import bank transactions after selecting the target bank account.",

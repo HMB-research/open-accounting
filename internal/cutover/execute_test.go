@@ -8,6 +8,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestExecuteMigrationRequestPlanRequestPreservesExecutionContext(t *testing.T) {
+	files := []BundleFile{{
+		Kind:       KindBankTransactions,
+		FileName:   "bank.csv",
+		CSVContent: "date,amount,description\n2026-01-02,42.50,Customer receipt\n",
+	}}
+	req := ExecuteMigrationRequest{
+		Files:                    files,
+		EInvoiceContactMode:      EInvoiceContactModeBoth,
+		EInvoiceInvoiceType:      "sales",
+		ProviderPreset:           MigrationProviderPresetDirecto,
+		BankTransactionAccountID: "bank-1",
+		BankTransactionFormat:    "lhv",
+		OpeningBalanceEntryDate:  "2026-01-01",
+	}
+
+	planReq := req.PlanRequest()
+
+	require.NotNil(t, planReq)
+	assert.Equal(t, files, planReq.Files)
+	assert.Equal(t, EInvoiceContactModeBoth, planReq.EInvoiceContactMode)
+	assert.Equal(t, "sales", planReq.EInvoiceInvoiceType)
+	assert.Equal(t, MigrationProviderPresetDirecto, planReq.ProviderPreset)
+	assert.Equal(t, "bank-1", planReq.BankTransactionAccountID)
+	assert.Equal(t, "lhv", planReq.BankTransactionFormat)
+	assert.Equal(t, "2026-01-01", planReq.OpeningBalanceEntryDate)
+}
+
 func TestNewResumableMigrationExecutionRunSkipsPreviouslySucceededSteps(t *testing.T) {
 	plan := &MigrationExecutionPlan{
 		Summary: MigrationExecutionPlanSummary{
