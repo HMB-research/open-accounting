@@ -19194,7 +19194,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Mark a KMD declaration as submitted to e-MTA and record the submission timestamp.",
+                "description": "Mark a KMD declaration as submitted to e-MTA after approved tax/support evidence is attached, and record the submission timestamp.",
                 "produces": [
                     "application/json"
                 ],
@@ -19239,6 +19239,17 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "properties": {

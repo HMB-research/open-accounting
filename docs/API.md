@@ -3778,7 +3778,7 @@ POST /tenants/{tenantId}/tax/kmd/{year}/{month}/submit
 Authorization: Bearer <token>
 ```
 
-Marks an existing KMD declaration as submitted to e-MTA and records the current server timestamp in `submitted_at`. Returns `{ "status": "submitted" }` when the transition succeeds.
+Marks an existing KMD declaration as submitted to e-MTA and records the current server timestamp in `submitted_at`. Marking a KMD declaration submitted requires an approved `tax_support` or `supporting_document` attached to the `kmd_declaration` entity with the declaration ID as `entity_id`. Missing or pending evidence returns `409 Conflict` and leaves the declaration in draft status. Returns `{ "status": "submitted" }` when the transition succeeds.
 
 ### Mark KMD Accepted
 

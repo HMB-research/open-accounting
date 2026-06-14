@@ -12,8 +12,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shopspring/decimal"
 
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tax"
 )
+
+var errApprovedKMDSubmissionEvidenceRequired = errors.New("approved KMD submission evidence is required")
 
 // HandleGenerateKMD generates a KMD declaration for a period
 // @Summary Generate KMD declaration
@@ -220,7 +223,7 @@ func (h *Handlers) HandleGenerateEUVATOSS(w http.ResponseWriter, r *http.Request
 
 // HandleMarkKMDSubmitted marks a KMD declaration as submitted.
 // @Summary Mark KMD as submitted
-// @Description Mark a KMD declaration as submitted to e-MTA and record the submission timestamp.
+// @Description Mark a KMD declaration as submitted to e-MTA after approved tax/support evidence is attached, and record the submission timestamp.
 // @Tags Tax
 // @Produce json
 // @Security BearerAuth
@@ -228,11 +231,40 @@ func (h *Handlers) HandleGenerateEUVATOSS(w http.ResponseWriter, r *http.Request
 // @Param year path string true "Year"
 // @Param month path string true "Month"
 // @Success 200 {object} object{status=string}
+// @Failure 409 {object} object{error=string}
 // @Failure 404 {object} object{error=string}
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/tax/kmd/{year}/{month}/submit [post]
 func (h *Handlers) HandleMarkKMDSubmitted(w http.ResponseWriter, r *http.Request) {
-	h.handleKMDStatusTransition(w, r, "submitted", h.taxService.MarkKMDSubmitted)
+	tenantCtx := h.tenantContextFromRequest(r)
+	year := chi.URLParam(r, "year")
+	month := chi.URLParam(r, "month")
+
+	declaration, err := h.taxService.GetKMD(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, year, month)
+	if err != nil || declaration == nil {
+		respondError(w, http.StatusNotFound, "Declaration not found")
+		return
+	}
+
+	if err := h.requireApprovedKMDSubmissionEvidence(r.Context(), tenantCtx.schemaName, tenantCtx.tenantID, declaration.ID); err != nil {
+		if errors.Is(err, errApprovedKMDSubmissionEvidenceRequired) {
+			respondError(w, http.StatusConflict, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to verify KMD submission evidence")
+		return
+	}
+
+	if err := h.taxService.MarkKMDSubmitted(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, year, month); err != nil {
+		if errors.Is(err, tax.ErrKMDDeclarationNotFound) {
+			respondError(w, http.StatusNotFound, "Declaration not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "submitted"})
 }
 
 // HandleMarkKMDAccepted marks a KMD declaration as accepted.
@@ -250,6 +282,32 @@ func (h *Handlers) HandleMarkKMDSubmitted(w http.ResponseWriter, r *http.Request
 // @Router /tenants/{tenantID}/tax/kmd/{year}/{month}/accept [post]
 func (h *Handlers) HandleMarkKMDAccepted(w http.ResponseWriter, r *http.Request) {
 	h.handleKMDStatusTransition(w, r, "accepted", h.taxService.MarkKMDAccepted)
+}
+
+func (h *Handlers) requireApprovedKMDSubmissionEvidence(ctx context.Context, schemaName, tenantID, declarationID string) error {
+	if h.documentsService == nil {
+		return nil
+	}
+
+	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: documents.EntityTypeKMD,
+		EntityIDs:  []string{declarationID},
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes: []string{
+				documents.DocumentTypeTaxSupport,
+				documents.DocumentTypeSupportingDocument,
+			},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("evaluate KMD submission evidence: %w", err)
+	}
+	if len(results) == 0 || !results[0].Compliant {
+		return fmt.Errorf("%w before marking KMD declaration %s submitted", errApprovedKMDSubmissionEvidenceRequired, declarationID)
+	}
+	return nil
 }
 
 func (h *Handlers) handleKMDStatusTransition(
