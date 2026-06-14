@@ -235,6 +235,7 @@
   "dashboard_reviewAssignmentSourcePayroll": "Payroll",
   "dashboard_reviewAssignmentSourceTsd": "TSD",
   "dashboard_reviewAssignmentSourceKmd": "KMD",
+  "dashboard_reviewAssignmentSourceMigration": "Migration",
   "dashboard_reviewOverdueTitle": "Overdue receivables",
   "dashboard_reviewOpenReminders": "Open reminders",
   "dashboard_reviewOutstandingBalance": "Outstanding balance",

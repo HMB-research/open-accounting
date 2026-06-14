@@ -202,6 +202,8 @@
 				return m.dashboard_reviewAssignmentSourceTsd();
 			case 'kmd':
 				return m.dashboard_reviewAssignmentSourceKmd();
+			case 'migration':
+				return m.dashboard_reviewAssignmentSourceMigration();
 		}
 	}
 

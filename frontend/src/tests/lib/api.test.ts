@@ -775,6 +775,7 @@ describe("API Client - Core Functionality", () => {
               field: "contact_code",
               target_kind: "contacts",
               issue_count: 1,
+              ui_path: "/migration",
               cli_command:
                 "oa migration validate --invoices <file> --provider-preset generic --json",
             },
@@ -817,6 +818,7 @@ describe("API Client - Core Functionality", () => {
         "migration_cutover",
       );
       expect(result.remediation_actions?.[0].priority).toBe("high");
+      expect(result.remediation_actions?.[0].ui_path).toBe("/migration");
     });
 
     it("should plan migration execution with context-aware import steps", async () => {
