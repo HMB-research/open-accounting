@@ -810,6 +810,82 @@ func TestValidateBundleAcceptsSmartAccountsPaymentAndBankProviderPresetAliases(t
 	assert.Contains(t, report.Files[5].Headers, "external_id")
 }
 
+func TestValidateBundleAcceptsDirectoCommercialBankAndJournalProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetDirecto,
+		Files: []BundleFile{
+			{
+				Kind:       KindAccounts,
+				FileName:   "directo-accounts.csv",
+				CSVContent: "konto,kirjeldus,klass\n1000,Main bank,ASSET\n3000,Equity,EQUITY\n4000,Sales,REVENUE\n",
+			},
+			{
+				Kind:       KindContacts,
+				FileName:   "directo-contacts.csv",
+				CSVContent: "kliendikood,nimi,registrikood,kmkr\nCUST-1,Customer One,12345678,EE12345678\n",
+			},
+			{
+				Kind:       KindInvoices,
+				FileName:   "directo-invoices.csv",
+				CSVContent: "arve,arve_liik,aeg,tahtaeg,klient,sisu,kogus,hind,km\nINV-1,SALES,2026-05-30,2026-06-14,CUST-1,Work,1,100,22\n",
+			},
+			{
+				Kind:     KindPayments,
+				FileName: "directo-payments.csv",
+				CSVContent: "laekumine,makse_tyyp,kuupaev,summa,arve,makseviis,pangakonto,viitenr,selgitus,jaotatud_summa\n" + //nolint:misspell // Directo CSV header alias.
+					"PAY-1,RECEIVED,2026-05-31,100,INV-1,BANK_TRANSFER,EE471000001020145685,REF-1,Customer payment,100\n",
+			},
+			{
+				Kind:       KindBankAccounts,
+				FileName:   "directo-bank-accounts.csv",
+				CSVContent: "nimi,pangakonto,pank,valuuta,konto_kood,vaikimisi,aktiivne\nMain bank,EE471000001020145685,LHV,EUR,1000,true,true\n",
+			},
+			{
+				Kind:       KindBankTransactions,
+				FileName:   "directo-bank-transactions.csv",
+				CSVContent: "kuupaev,summa,konto,valuuta,sisu,viitenr,vastaspool,vastaspoole_konto\n2026-05-31,100,EE471000001020145685,EUR,Customer payment,REF-1,Customer One,EE111\n",
+			},
+			{
+				Kind:       KindCostCenters,
+				FileName:   "directo-objects.csv",
+				CSVContent: "objekt,nimi\nOPS,Operations\n",
+			},
+			{
+				Kind:     KindJournalEntries,
+				FileName: "directo-journal.csv",
+				CSVContent: "kanne,kuupaev,rea_id,konto,deebet,kreedit,valuuta,selgitus\n" +
+					"JE-1,2026-05-31," + cutoverJournalLineID1 + ",1000,125.50,0,EUR,Receipt\n" +
+					"JE-1,2026-05-31," + cutoverJournalLineID2 + ",4000,0,125.50,EUR,Receipt\n",
+			},
+			{
+				Kind:     KindCostAllocations,
+				FileName: "directo-cost-allocations.csv",
+				CSVContent: "objekt,rea_id,jaotuse_summa,kuupaev,selgitus\n" +
+					"OPS," + cutoverJournalLineID1 + ",125.50,2026-05-31,Shared rent\n",
+			},
+			{
+				Kind:       KindOpeningBalances,
+				FileName:   "directo-opening-balances.csv",
+				CSVContent: "konto,deebet,kreedit\n1000,100,0\n3000,0,100\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 10)
+	assert.Contains(t, report.Files[0].Headers, "account_type")
+	assert.Contains(t, report.Files[2].Headers, "invoice_number")
+	assert.Contains(t, report.Files[3].Headers, "payment_number")
+	assert.Contains(t, report.Files[4].Headers, "account_number")
+	assert.Contains(t, report.Files[5].Headers, "source_account")
+	assert.Contains(t, report.Files[7].Headers, "line_id")
+	assert.Contains(t, report.Files[8].Headers, "journal_entry_line_id")
+	assert.Contains(t, report.Files[9].Headers, "account_code")
+}
+
 func TestValidateBundleDefaultsDisplayFileNames(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -873,6 +949,83 @@ func TestValidateBundleAcceptsMeritPayrollProviderPresetAliases(t *testing.T) {
 	assert.Contains(t, report.Files[2].Headers, "carryover_days")
 	assert.Contains(t, report.Files[3].Headers, "period_year")
 	assert.Contains(t, report.Files[3].Headers, "gross_payment")
+}
+
+func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: "directo-erp",
+		Files: []BundleFile{
+			{
+				Kind:       KindEmployees,
+				FileName:   "directo-employees.csv",
+				CSVContent: "tootaja,eesnimi,perenimi,isikukood,algus,brutopalk\nEMP-1,Mari,Maasikas,48901010001,2026-01-15,3200\n",
+			},
+			{
+				Kind:       KindPayrollHistory,
+				FileName:   "directo-payroll.csv",
+				CSVContent: "tootaja,aasta,kuu,bruto,sotsiaalmaks,tulumaks\nEMP-1,2026,5,2500,825,500\n",
+			},
+			{
+				Kind:       KindLeaveBalances,
+				FileName:   "directo-leave.csv",
+				CSVContent: "tootaja,aasta,puudumise_liik,paevi,jaak,kasutatud\nEMP-1,2026,ANNUAL,28,4,6\n",
+			},
+			{
+				Kind:       KindTSDHistory,
+				FileName:   "directo-tsd.csv",
+				CSVContent: "isikukood,aasta,kuu,bruto,tulumaks,sotsiaalmaks\n48901010001,2026,5,2500,500,825\n",
+			},
+			{
+				Kind:     KindProductCategories,
+				FileName: "directo-product-classes.csv",
+				CSVContent: "klass,ylemklass\n" +
+					"Root,\n" +
+					"Widgets,Root\n",
+			},
+			{
+				Kind:       KindWarehouses,
+				FileName:   "directo-warehouses.csv",
+				CSVContent: "ladu,nimi,vaikimisi\nMAIN,Main warehouse,true\n",
+			},
+			{
+				Kind:       KindProducts,
+				FileName:   "directo-products.csv",
+				CSVContent: "artikkel,nimetus,klass,myygihind,ostuhind,kaibemaks\nSKU-1,Widget,Widgets,12,6,22\n",
+			},
+			{
+				Kind:       KindStockAdjustments,
+				FileName:   "directo-stock.csv",
+				CSVContent: "artikkel,ladu,kogus,hind,partii,sn,aegumisaeg\nSKU-1,MAIN,1,6,LOT-1,SN-1,2027-01-31\n",
+			},
+			{
+				Kind:       KindFixedAssets,
+				FileName:   "directo-fixed-assets.csv",
+				CSVContent: "inventar,nimetus,soetuskuupaev,soetusmaksumus,eluiga_kuud,akumuleeritud_kulum,jaakmaksumus\nFA-1,Laptop,2026-01-01,1200,36,200,1000\n",
+			},
+			{
+				Kind:     KindKMDHistory,
+				FileName: "directo-kmd.csv",
+				CSVContent: "aasta,kuu,staatus,rea_kood,rea_nimetus,maksustatav_kaive,kaibemaks,valjundkaibemaks,sisendkaibemaks\n" +
+					"2025,12,accepted,1,Taxable sales,1000,220,220,80\n" +
+					"2025,12,accepted,4,Input VAT,363.64,80,220,80\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 10)
+	assert.Contains(t, report.Files[0].Headers, "employee_number")
+	assert.Contains(t, report.Files[1].Headers, "gross_salary")
+	assert.Contains(t, report.Files[2].Headers, "absence_type_code")
+	assert.Contains(t, report.Files[3].Headers, "gross_payment")
+	assert.Contains(t, report.Files[4].Headers, "parent_name")
+	assert.Contains(t, report.Files[6].Headers, "category_name")
+	assert.Contains(t, report.Files[7].Headers, "serial_number")
+	assert.Contains(t, report.Files[8].Headers, "purchase_cost")
+	assert.Contains(t, report.Files[9].Headers, "total_output_vat")
 }
 
 func TestValidateBundleDerivesLeaveBalanceYearFromBalanceDate(t *testing.T) {
@@ -1003,13 +1156,15 @@ func TestFileSpecForProviderPresetFallsBackWhenProviderHasNoAliases(t *testing.T
 func TestListMigrationProviderPresetsReturnsOperatorCatalog(t *testing.T) {
 	presets := ListMigrationProviderPresets()
 
-	require.Len(t, presets, 3)
+	require.Len(t, presets, 4)
 	assert.Equal(t, MigrationProviderPresetGeneric, presets[0].Preset)
 	assert.Equal(t, MigrationProviderPresetMerit, presets[1].Preset)
 	assert.Equal(t, MigrationProviderPresetSmartAccounts, presets[2].Preset)
+	assert.Equal(t, MigrationProviderPresetDirecto, presets[3].Preset)
 	assert.Equal(t, 0, presets[0].PresetAliasCount)
 	assert.Greater(t, presets[1].PresetAliasCount, 0)
 	assert.Greater(t, presets[2].PresetAliasCount, 0)
+	assert.Greater(t, presets[3].PresetAliasCount, 0)
 
 	var meritAccounts *MigrationProviderPresetKindInfo
 	for i := range presets[1].FileKinds {
@@ -1024,6 +1179,20 @@ func TestListMigrationProviderPresetsReturnsOperatorCatalog(t *testing.T) {
 	assert.Contains(t, meritAccounts.SampleAliases, MigrationProviderPresetAlias{
 		SourceHeader:    "konto",
 		CanonicalHeader: "code",
+	})
+
+	var directoInvoices *MigrationProviderPresetKindInfo
+	for i := range presets[3].FileKinds {
+		if presets[3].FileKinds[i].Kind == KindInvoices {
+			directoInvoices = &presets[3].FileKinds[i]
+			break
+		}
+	}
+	require.NotNil(t, directoInvoices)
+	assert.Greater(t, directoInvoices.PresetAliasCount, 0)
+	assert.Contains(t, directoInvoices.SampleAliases, MigrationProviderPresetAlias{
+		SourceHeader:    "aeg",
+		CanonicalHeader: "issue_date",
 	})
 }
 

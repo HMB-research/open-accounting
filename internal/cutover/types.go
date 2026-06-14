@@ -51,6 +51,7 @@ const (
 	MigrationProviderPresetGeneric       MigrationProviderPreset = "generic"
 	MigrationProviderPresetMerit         MigrationProviderPreset = "merit"
 	MigrationProviderPresetSmartAccounts MigrationProviderPreset = "smartaccounts"
+	MigrationProviderPresetDirecto       MigrationProviderPreset = "directo"
 )
 
 type MigrationProviderPresetInfo struct {

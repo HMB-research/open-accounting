@@ -754,6 +754,23 @@ describe("API Client - Core Functionality", () => {
               },
             ],
           },
+          {
+            preset: "directo",
+            label: "Directo",
+            description: "Adds Directo aliases.",
+            file_kind_count: 2,
+            preset_alias_count: 4,
+            file_kinds: [
+              {
+                kind: "invoices",
+                required_column_groups: [["invoice_number"], ["issue_date"]],
+                preset_alias_count: 4,
+                sample_aliases: [
+                  { source_header: "arve", canonical_header: "invoice_number" },
+                ],
+              },
+            ],
+          },
         ],
       });
 
@@ -766,6 +783,7 @@ describe("API Client - Core Functionality", () => {
         expect.objectContaining({ method: "GET" }),
       );
       expect(result[0].preset).toBe("merit");
+      expect(result[1].preset).toBe("directo");
       expect(result[0].file_kinds?.[0].sample_aliases?.[0]).toEqual({
         source_header: "konto",
         canonical_header: "code",
