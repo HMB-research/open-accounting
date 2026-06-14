@@ -6292,6 +6292,7 @@ func checkExpenseRows(report *BundleValidationReport, file parsedFile) {
 		if hasAmount {
 			checkExpenseAmount(report, file, row)
 		}
+		checkCutoverOptionalCurrency(report, file, row)
 		checkExpenseExchangeRate(report, file, row)
 		checkOptionalUUID(report, file, row, "employee_id")
 		checkExpenseRequiresReceipt(report, file, row)
@@ -6613,6 +6614,10 @@ func checkBankAccountRows(report *BundleValidationReport, file parsedFile) {
 }
 
 func checkBankAccountCurrency(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	checkCutoverOptionalCurrency(report, file, row)
+}
+
+func checkCutoverOptionalCurrency(report *BundleValidationReport, file parsedFile, row parsedRow) {
 	if !fileHasHeaders(file, "currency") {
 		return
 	}
