@@ -6285,6 +6285,93 @@ func TestValidateBundleReportsFixedAssetSupplierSourceInvoiceMismatch(t *testing
 	assert.Contains(t, report.Issues[0].Message, `fixed asset supplier_code "SUP-2" does not match imported invoice "`+sourceInvoiceID+`" contact_code "SUP-1"`)
 }
 
+func TestValidateBundleReportsFixedAssetSupplierSourceInvoiceIdentityMismatches(t *testing.T) {
+	sourceInvoiceID := "11111111-1111-1111-1111-111111111111"
+	tests := []struct {
+		name              string
+		invoiceField      string
+		invoiceValue      string
+		invoiceExtraField string
+		invoiceExtraValue string
+		assetField        string
+		assetValue        string
+	}{
+		{
+			name:              "supplier id",
+			invoiceField:      "contact_id",
+			invoiceValue:      "22222222-2222-2222-2222-222222222222",
+			invoiceExtraField: "contact_code",
+			invoiceExtraValue: "SUP-1",
+			assetField:        "supplier_id",
+			assetValue:        "33333333-3333-3333-3333-333333333333",
+		},
+		{
+			name:         "supplier registry code",
+			invoiceField: "contact_reg_code",
+			invoiceValue: "12345678",
+			assetField:   "supplier_reg_code",
+			assetValue:   "87654321",
+		},
+		{
+			name:         "supplier VAT number",
+			invoiceField: "contact_vat_number",
+			invoiceValue: "EE123456789",
+			assetField:   "supplier_vat_number",
+			assetValue:   "EE987654321",
+		},
+		{
+			name:         "supplier email",
+			invoiceField: "contact_email",
+			invoiceValue: "billing@supplier.example",
+			assetField:   "supplier_email",
+			assetValue:   "assets@supplier.example",
+		},
+		{
+			name:         "supplier name",
+			invoiceField: "contact_name",
+			invoiceValue: "Supplier One",
+			assetField:   "supplier_name",
+			assetValue:   "Supplier Two",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invoiceExtraHeader := ""
+			invoiceExtraValue := ""
+			if tt.invoiceExtraField != "" {
+				invoiceExtraHeader = "," + tt.invoiceExtraField
+				invoiceExtraValue = "," + tt.invoiceExtraValue
+			}
+			report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+				{
+					Kind:     KindInvoices,
+					FileName: "invoices.csv",
+					CSVContent: "invoice_id,invoice_number,invoice_type," + tt.invoiceField + invoiceExtraHeader + ",issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+						sourceInvoiceID + ",BILL-1,PURCHASE," + tt.invoiceValue + invoiceExtraValue + ",2026-05-30,2026-06-14,Laptop,1,1200,22\n",
+				},
+				{
+					Kind:     KindFixedAssets,
+					FileName: "assets.csv",
+					CSVContent: "asset_number,name,purchase_date,purchase_cost," + tt.assetField + ",invoice_id\n" +
+						"FA-1,Laptop,2026-05-30,1200," + tt.assetValue + "," + sourceInvoiceID + "\n",
+				},
+			}})
+
+			require.NoError(t, err)
+			require.NotNil(t, report)
+			assert.False(t, report.Summary.Ready)
+			assert.Equal(t, 1, report.Summary.ErrorCount)
+			require.Len(t, report.Issues, 1)
+			assert.Equal(t, KindFixedAssets, report.Issues[0].Kind)
+			assert.Equal(t, KindInvoices, report.Issues[0].TargetKind)
+			assert.Equal(t, tt.assetField, report.Issues[0].Field)
+			assert.Equal(t, tt.assetValue, report.Issues[0].Value)
+			assert.Contains(t, report.Issues[0].Message, `fixed asset `+tt.assetField+` "`+tt.assetValue+`" does not match imported invoice "`+sourceInvoiceID+`" `+tt.invoiceField+` "`+tt.invoiceValue+`"`)
+		})
+	}
+}
+
 func TestValidateBundleReportsFixedAssetSalesSourceInvoice(t *testing.T) {
 	sourceInvoiceID := "11111111-1111-1111-1111-111111111111"
 
