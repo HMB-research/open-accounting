@@ -830,6 +830,23 @@ describe('AccountantReviewPanel', () => {
 			documents: [],
 			remediation_actions: [
 				{
+					code: 'document_evidence_missing',
+					severity: 'ACTION',
+					scope: 'documents',
+					owner_role: 'accountant',
+					workspace_queue: 'document_evidence',
+					assignment_key: 'document-evidence:document-evidence-missing:payment:pay-1:receipt',
+					priority: 'high',
+					due_in_days: 0,
+					message: 'Payment pay-1 is missing required receipt evidence.',
+					action: 'Upload required evidence before continuing the protected workflow.',
+					entity_type: 'payment',
+					entity_id: 'pay-1',
+					document_type: 'receipt',
+					ui_path: '/documents?entity_type=payment&entity_id=pay-1',
+					cli_command: 'oa documents upload --entity-type payment --entity-id pay-1 --document-type receipt --file <file>'
+				},
+				{
 					code: 'document_review_rejected',
 					severity: 'ACTION',
 					scope: 'documents',
@@ -879,16 +896,33 @@ describe('AccountantReviewPanel', () => {
 			expect(
 				screen.getByText('Bank transaction tx-evidence requires approved reconciliation evidence.')
 			).toBeInTheDocument();
+			expect(screen.getByText('Payment pay-1 is missing required receipt evidence.')).toBeInTheDocument();
 			expect(
 				screen.getByText('Document rejected-receipt.pdf was rejected and needs replacement or correction.')
 			).toBeInTheDocument();
 		});
 
+		const uploadFromAssignmentRow = async (message: string, buttonLabel: string, file: File) => {
+			const row = screen.getByText(message).closest('.review-list-item-assignment');
+			expect(row).not.toBeNull();
+			const input = row!.querySelector('input[type="file"]');
+			expect(input).not.toBeNull();
+			await fireEvent.change(input!, {
+				target: { files: [file] }
+			});
+			const button = Array.from(row!.querySelectorAll('button')).find(
+				(candidate) => candidate.textContent?.trim() === buttonLabel
+			);
+			expect(button).toBeDefined();
+			await fireEvent.click(button!);
+		};
+
 		const evidenceFile = new File(['evidence'], 'evidence.pdf', { type: 'application/pdf' });
-		await fireEvent.change(screen.getByLabelText('Evidence file'), {
-			target: { files: [evidenceFile] }
-		});
-		await fireEvent.click(screen.getByRole('button', { name: 'Upload evidence' }));
+		await uploadFromAssignmentRow(
+			'Bank transaction tx-evidence requires approved reconciliation evidence.',
+			'Upload evidence',
+			evidenceFile
+		);
 
 		await waitFor(() => {
 			expect(apiMock.uploadDocument).toHaveBeenCalledWith('tenant-1', 'bank_transaction', 'tx-evidence', evidenceFile, {
@@ -898,11 +932,27 @@ describe('AccountantReviewPanel', () => {
 			expect(screen.getByText('Evidence uploaded from workspace.')).toBeInTheDocument();
 		});
 
-		const replacementFile = new File(['replacement'], 'replacement.pdf', { type: 'application/pdf' });
-		await fireEvent.change(screen.getByLabelText('Replacement file'), {
-			target: { files: [replacementFile] }
+		const missingEvidenceFile = new File(['receipt'], 'receipt.pdf', { type: 'application/pdf' });
+		await uploadFromAssignmentRow(
+			'Payment pay-1 is missing required receipt evidence.',
+			'Upload evidence',
+			missingEvidenceFile
+		);
+
+		await waitFor(() => {
+			expect(apiMock.uploadDocument).toHaveBeenCalledWith('tenant-1', 'payment', 'pay-1', missingEvidenceFile, {
+				document_type: 'receipt',
+				notes: 'Uploaded from accountant workspace assignment'
+			});
+			expect(screen.getByText('Evidence uploaded from workspace.')).toBeInTheDocument();
 		});
-		await fireEvent.click(screen.getByRole('button', { name: 'Upload replacement' }));
+
+		const replacementFile = new File(['replacement'], 'replacement.pdf', { type: 'application/pdf' });
+		await uploadFromAssignmentRow(
+			'Document rejected-receipt.pdf was rejected and needs replacement or correction.',
+			'Upload replacement',
+			replacementFile
+		);
 
 		await waitFor(() => {
 			expect(apiMock.uploadDocument).toHaveBeenCalledWith('tenant-1', 'expense', 'expense-1', replacementFile, {
