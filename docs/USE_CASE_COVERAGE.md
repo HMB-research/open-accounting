@@ -55,6 +55,7 @@ Status values:
 - The follow-up commercial-document contact identity migration stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up commercial-document VAT contact import stage was locally revalidated with focused quote, order, and recurring-invoice importer tests.
 - The follow-up payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up payment allocation amount decimal validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up e-invoice payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment bank-account default-currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
@@ -198,6 +199,8 @@ same-day payments and rejected CSV/XML allocations dated before invoice issue.
 Payment allocation malformed-date guard coverage confirms malformed
 `payment_date` values are reported as row-value errors without also emitting
 imported-invoice date-ordering errors.
+Payment allocation amount decimal validation rejects malformed
+`allocation_amount` values before allocation totals are compared.
 Payment allocation invoice-status consistency rejects same-bundle payment rows
 allocated to imported invoice CSV targets with `DRAFT` or `VOIDED` status. The
 payment allocation invoice-status consistency stage still accepts allocatable

@@ -2440,6 +2440,27 @@ func TestValidateBundleReportsPaymentRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindPayments, "allocation_amount", "allocation_amount exceeds payment amount")
 }
 
+func TestValidateBundleReportsPaymentAllocationAmountDecimalIssue(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_number,payment_type,payment_date,amount,allocation_amount,invoice_number\nPAY-1,RECEIVED,2026-05-31,100,abc,INV-1\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, 2, report.Issues[0].Row)
+	assert.Equal(t, "allocation_amount", report.Issues[0].Field)
+	assert.Equal(t, "abc", report.Issues[0].Value)
+	assert.Equal(t, "allocation_amount must be a decimal", report.Issues[0].Message)
+}
+
 func TestValidateBundleReportsPaymentAmountRequiredAndDecimalIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
