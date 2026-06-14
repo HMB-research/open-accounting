@@ -50,6 +50,15 @@ func (s *Service) UploadDocument(ctx context.Context, schemaName, tenantID strin
 		return nil, fmt.Errorf("uploaded by user is required")
 	}
 
+	var replacesDocument *Document
+	replacesDocumentID := strings.TrimSpace(req.ReplacesDocumentID)
+	if replacesDocumentID != "" {
+		replacesDocument, err = s.validateReplacementDocument(ctx, schemaName, tenantID, replacesDocumentID, entityType, entityID, documentType)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	fileName := sanitizeFileName(req.FileName)
 	if fileName == "" {
 		return nil, fmt.Errorf("file name is required")
@@ -76,19 +85,20 @@ func (s *Service) UploadDocument(ctx context.Context, schemaName, tenantID strin
 	}
 
 	doc := &Document{
-		ID:             uuid.New().String(),
-		TenantID:       tenantID,
-		EntityType:     entityType,
-		EntityID:       entityID,
-		DocumentType:   documentType,
-		FileName:       fileName,
-		ContentType:    normalizeContentType(req.ContentType, fileName),
-		FileSize:       req.FileSize,
-		Notes:          strings.TrimSpace(req.Notes),
-		RetentionUntil: retentionUntil,
-		ReviewStatus:   ReviewStatusPending,
-		UploadedBy:     strings.TrimSpace(req.UploadedBy),
-		CreatedAt:      createdAt,
+		ID:              uuid.New().String(),
+		TenantID:        tenantID,
+		EntityType:      entityType,
+		EntityID:        entityID,
+		DocumentType:    documentType,
+		FileName:        fileName,
+		ContentType:     normalizeContentType(req.ContentType, fileName),
+		FileSize:        req.FileSize,
+		Notes:           strings.TrimSpace(req.Notes),
+		RetentionUntil:  retentionUntil,
+		ReviewStatus:    ReviewStatusPending,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      strings.TrimSpace(req.UploadedBy),
+		CreatedAt:       createdAt,
 	}
 	doc.StorageKey = buildStorageKey(tenantID, doc.CreatedAt, doc.ID, fileName)
 
@@ -101,6 +111,36 @@ func (s *Service) UploadDocument(ctx context.Context, schemaName, tenantID strin
 		return nil, err
 	}
 
+	if replacesDocument != nil {
+		note := strings.TrimSpace(req.ReplacementNote)
+		if note == "" {
+			note = fmt.Sprintf("Replaced by %s", doc.ID)
+		}
+		replacementID := doc.ID
+		if err := s.repo.UpdateDocumentLifecycle(ctx, schemaName, tenantID, replacesDocument.ID, LifecycleStatusSuperseded, note, strings.TrimSpace(req.UploadedBy), createdAt, &replacementID); err != nil {
+			_ = s.store.Delete(ctx, doc.StorageKey)
+			_ = s.repo.DeleteDocument(ctx, schemaName, tenantID, doc.ID)
+			return nil, err
+		}
+	}
+
+	return doc, nil
+}
+
+func (s *Service) validateReplacementDocument(ctx context.Context, schemaName, tenantID, documentID, entityType, entityID, documentType string) (*Document, error) {
+	doc, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, strings.TrimSpace(documentID))
+	if err != nil {
+		return nil, err
+	}
+	if documentLifecycleStatus(doc) != LifecycleStatusActive {
+		return nil, fmt.Errorf("replacement source document must be active")
+	}
+	if doc.EntityType != entityType || doc.EntityID != entityID {
+		return nil, fmt.Errorf("replacement document must target the same entity")
+	}
+	if doc.DocumentType != documentType {
+		return nil, fmt.Errorf("replacement document type must match the original document")
+	}
 	return doc, nil
 }
 
@@ -248,7 +288,7 @@ func (s *Service) EvaluateEvidencePolicy(ctx context.Context, schemaName, tenant
 			return nil, err
 		}
 		result := evaluateEvidencePolicyForDocuments(normalizedType, entityID, docs, rules)
-		result.RemediationActions = BuildEvidencePolicyRemediationActions(&result, docs...)
+		result.RemediationActions = BuildEvidencePolicyRemediationActions(&result, activeEvidenceDocuments(docs)...)
 		results = append(results, result)
 	}
 
@@ -340,6 +380,66 @@ func (s *Service) UpdateDocumentRetention(ctx context.Context, schemaName, tenan
 	}
 
 	if err := s.repo.UpdateDocumentRetention(ctx, schemaName, tenantID, trimmedID, normalizedRetention); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID)
+}
+
+func (s *Service) UpdateDocumentLifecycle(ctx context.Context, schemaName, tenantID, documentID, actionedBy string, req *DocumentLifecycleRequest) (*Document, error) {
+	trimmedID := strings.TrimSpace(documentID)
+	if trimmedID == "" {
+		return nil, fmt.Errorf("document ID is required")
+	}
+	if strings.TrimSpace(actionedBy) == "" {
+		return nil, fmt.Errorf("lifecycle actioned by user is required")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("lifecycle request is required")
+	}
+
+	status, err := normalizeLifecycleStatus(req.LifecycleStatus)
+	if err != nil {
+		return nil, err
+	}
+	note := strings.TrimSpace(req.LifecycleNote)
+	if len(note) > 2000 {
+		return nil, fmt.Errorf("lifecycle note must be 2000 characters or less")
+	}
+	if status == LifecycleStatusArchived || status == LifecycleStatusDisposed {
+		if note == "" {
+			return nil, fmt.Errorf("lifecycle note is required when archiving or disposing a document")
+		}
+	}
+
+	doc, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID)
+	if err != nil {
+		return nil, err
+	}
+
+	var supersededBy *string
+	if status == LifecycleStatusSuperseded {
+		replacementID := strings.TrimSpace(req.SupersededByDocument)
+		if replacementID == "" {
+			return nil, fmt.Errorf("superseded_by_document_id is required when superseding a document")
+		}
+		if replacementID == trimmedID {
+			return nil, fmt.Errorf("document cannot supersede itself")
+		}
+		replacement, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, replacementID)
+		if err != nil {
+			return nil, fmt.Errorf("replacement document not found: %w", err)
+		}
+		if replacement.EntityType != doc.EntityType || replacement.EntityID != doc.EntityID || replacement.DocumentType != doc.DocumentType {
+			return nil, fmt.Errorf("replacement document must match entity and document type")
+		}
+		supersededBy = &replacementID
+	}
+	if status == LifecycleStatusActive && note == "" {
+		note = "Document lifecycle restored to active"
+	}
+
+	if err := s.repo.UpdateDocumentLifecycle(ctx, schemaName, tenantID, trimmedID, status, note, strings.TrimSpace(actionedBy), time.Now().UTC(), supersededBy); err != nil {
 		return nil, err
 	}
 
@@ -516,6 +616,21 @@ func normalizeReviewStatus(value string) (string, error) {
 	}
 }
 
+func normalizeLifecycleStatus(value string) (string, error) {
+	switch strings.TrimSpace(strings.ToUpper(value)) {
+	case LifecycleStatusActive:
+		return LifecycleStatusActive, nil
+	case LifecycleStatusSuperseded:
+		return LifecycleStatusSuperseded, nil
+	case LifecycleStatusArchived:
+		return LifecycleStatusArchived, nil
+	case LifecycleStatusDisposed:
+		return LifecycleStatusDisposed, nil
+	default:
+		return "", fmt.Errorf("lifecycle_status must be ACTIVE, SUPERSEDED, ARCHIVED, or DISPOSED")
+	}
+}
+
 func normalizeReviewQueueStatus(value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -661,18 +776,19 @@ func normalizeEvidencePolicyRules(rules []EvidencePolicyRule) ([]EvidencePolicyR
 }
 
 func evaluateEvidencePolicyForDocuments(entityType, entityID string, docs []Document, rules []EvidencePolicyRule) EvidencePolicyResult {
+	activeDocs := activeEvidenceDocuments(docs)
 	result := EvidencePolicyResult{
 		EntityType:                 entityType,
 		EntityID:                   entityID,
 		Compliant:                  true,
-		MissingEvidence:            len(docs) == 0,
+		MissingEvidence:            len(activeDocs) == 0,
 		DocumentTypeCounts:         make(map[string]int),
 		ApprovedDocumentTypeCounts: make(map[string]int),
 		RuleResults:                make([]EvidencePolicyRuleResult, 0, len(rules)),
 		Violations:                 make([]EvidencePolicyRuleResult, 0),
 	}
 
-	for _, doc := range docs {
+	for _, doc := range activeDocs {
 		result.TotalCount++
 		result.DocumentTypeCounts[doc.DocumentType]++
 		switch doc.ReviewStatus {
@@ -691,7 +807,7 @@ func evaluateEvidencePolicyForDocuments(entityType, entityID string, docs []Docu
 	}
 
 	for idx, rule := range rules {
-		ruleResult := evaluateEvidencePolicyRule(idx+1, docs, rule)
+		ruleResult := evaluateEvidencePolicyRule(idx+1, activeDocs, rule)
 		result.RuleResults = append(result.RuleResults, ruleResult)
 		if !ruleResult.Compliant {
 			result.Compliant = false
@@ -700,6 +816,28 @@ func evaluateEvidencePolicyForDocuments(entityType, entityID string, docs []Docu
 	}
 
 	return result
+}
+
+func activeEvidenceDocuments(docs []Document) []Document {
+	active := make([]Document, 0, len(docs))
+	for _, doc := range docs {
+		switch documentLifecycleStatus(&doc) {
+		case LifecycleStatusActive, LifecycleStatusArchived:
+			active = append(active, doc)
+		}
+	}
+	return active
+}
+
+func documentLifecycleStatus(doc *Document) string {
+	if doc == nil {
+		return LifecycleStatusActive
+	}
+	status := strings.TrimSpace(strings.ToUpper(doc.LifecycleStatus))
+	if status == "" {
+		return LifecycleStatusActive
+	}
+	return status
 }
 
 func evaluateEvidencePolicyRule(ruleIndex int, docs []Document, rule EvidencePolicyRule) EvidencePolicyRuleResult {

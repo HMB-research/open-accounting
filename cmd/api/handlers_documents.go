@@ -313,6 +313,8 @@ func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	notes := strings.TrimSpace(r.FormValue("notes"))
 	rawRetention := strings.TrimSpace(r.FormValue("retention_until"))
 	rawRetentionYears := strings.TrimSpace(r.FormValue("retention_years"))
+	replacesDocumentID := strings.TrimSpace(r.FormValue("replaces_document_id"))
+	replacementNote := strings.TrimSpace(r.FormValue("replacement_note"))
 	if rawRetention != "" && rawRetentionYears != "" {
 		respondError(w, http.StatusBadRequest, "retention_until and retention_years cannot be combined")
 		return
@@ -350,16 +352,18 @@ func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	doc, err := h.documentsService.UploadDocument(r.Context(), schemaName, tenantID, &documents.UploadDocumentRequest{
-		EntityType:     entityType,
-		EntityID:       entityID,
-		DocumentType:   documentType,
-		FileName:       header.Filename,
-		ContentType:    header.Header.Get("Content-Type"),
-		FileSize:       header.Size,
-		Notes:          notes,
-		RetentionUntil: retentionUntil,
-		RetentionYears: retentionYears,
-		UploadedBy:     claims.UserID,
+		EntityType:         entityType,
+		EntityID:           entityID,
+		DocumentType:       documentType,
+		FileName:           header.Filename,
+		ContentType:        header.Header.Get("Content-Type"),
+		FileSize:           header.Size,
+		Notes:              notes,
+		RetentionUntil:     retentionUntil,
+		RetentionYears:     retentionYears,
+		ReplacesDocumentID: replacesDocumentID,
+		ReplacementNote:    replacementNote,
+		UploadedBy:         claims.UserID,
 	}, file)
 	if err != nil {
 		respondDocumentError(w, err)
@@ -367,6 +371,42 @@ func (h *Handlers) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, doc)
+}
+
+// UpdateDocumentLifecycle records a document lifecycle decision.
+// @Summary Update document lifecycle
+// @Description Mark a document active, superseded, archived, or disposed while preserving metadata for audit
+// @Tags Documents
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param documentID path string true "Document ID"
+// @Param request body documents.DocumentLifecycleRequest true "Lifecycle update"
+// @Success 200 {object} documents.Document
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/{documentID}/lifecycle [patch]
+func (h *Handlers) UpdateDocumentLifecycle(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	documentID := chi.URLParam(r, "documentID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req documents.DocumentLifecycleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	doc, err := h.documentsService.UpdateDocumentLifecycle(r.Context(), schemaName, tenantID, documentID, claims.UserID, &req)
+	if err != nil {
+		respondDocumentError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, doc)
 }
 
 // MarkDocumentReviewed marks a document as reviewed.

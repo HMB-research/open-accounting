@@ -3533,6 +3533,12 @@ func (c *apiClient) uploadDocument(ctx context.Context, tenantID string, req *do
 	if req.RetentionYears > 0 {
 		_ = writer.WriteField("retention_years", strconv.Itoa(req.RetentionYears))
 	}
+	if strings.TrimSpace(req.ReplacesDocumentID) != "" {
+		_ = writer.WriteField("replaces_document_id", strings.TrimSpace(req.ReplacesDocumentID))
+	}
+	if strings.TrimSpace(req.ReplacementNote) != "" {
+		_ = writer.WriteField("replacement_note", strings.TrimSpace(req.ReplacementNote))
+	}
 
 	part, _ := writer.CreateFormFile("file", strings.TrimSpace(req.FileName))
 	_, _ = part.Write(fileContent)
@@ -3617,6 +3623,14 @@ func (c *apiClient) updateDocumentRetention(ctx context.Context, tenantID, docum
 
 	var resp documents.Document
 	if err := c.request(ctx, http.MethodPatch, path.Join("/api/v1/tenants", tenantID, "documents", documentID, "retention"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) updateDocumentLifecycle(ctx context.Context, tenantID, documentID string, req *documents.DocumentLifecycleRequest) (*documents.Document, error) {
+	var resp documents.Document
+	if err := c.request(ctx, http.MethodPatch, path.Join("/api/v1/tenants", tenantID, "documents", documentID, "lifecycle"), req, c.apiToken, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

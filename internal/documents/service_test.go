@@ -22,6 +22,7 @@ type mockRepository struct {
 	reviewSummaryErr      error
 	getErr                error
 	updateRetentionErr    error
+	updateLifecycleErr    error
 	reviewErr             error
 	deleteErr             error
 	reviewCount           int
@@ -181,6 +182,22 @@ func (m *mockRepository) UpdateDocumentRetention(ctx context.Context, schemaName
 		return os.ErrNotExist
 	}
 	doc.RetentionUntil = retentionUntil
+	return nil
+}
+
+func (m *mockRepository) UpdateDocumentLifecycle(ctx context.Context, schemaName, tenantID, documentID, lifecycleStatus, lifecycleNote, lifecycleBy string, lifecycleAt time.Time, supersededBy *string) error {
+	if m.updateLifecycleErr != nil {
+		return m.updateLifecycleErr
+	}
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return os.ErrNotExist
+	}
+	doc.LifecycleStatus = lifecycleStatus
+	doc.LifecycleNote = lifecycleNote
+	doc.LifecycleBy = nilIfEmpty(lifecycleBy)
+	doc.LifecycleAt = &lifecycleAt
+	doc.SupersededBy = supersededBy
 	return nil
 }
 
@@ -535,6 +552,201 @@ func TestService_UploadAcceptsWorkflowDocuments(t *testing.T) {
 				t.Fatalf("unexpected workflow document: %#v", doc)
 			}
 		})
+	}
+}
+
+func TestService_UploadReplacementSupersedesOriginalDocument(t *testing.T) {
+	t.Parallel()
+
+	store, err := NewLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocalStore failed: %v", err)
+	}
+	repo := newMockRepository()
+	svc := NewService(repo, store)
+	repo.docs["doc-rejected"] = &Document{
+		ID:              "doc-rejected",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypeBankTxn,
+		EntityID:        "txn-1",
+		DocumentType:    DocumentTypeReconciliation,
+		FileName:        "old-evidence.pdf",
+		ReviewStatus:    ReviewStatusRejected,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+	}
+
+	replacement, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", &UploadDocumentRequest{
+		EntityType:         EntityTypeBankTxn,
+		EntityID:           "txn-1",
+		DocumentType:       DocumentTypeReconciliation,
+		FileName:           "replacement.pdf",
+		ContentType:        "application/pdf",
+		FileSize:           int64(len("replacement")),
+		ReplacesDocumentID: "doc-rejected",
+		ReplacementNote:    "Corrected statement evidence",
+		UploadedBy:         "reviewer-1",
+	}, bytes.NewBufferString("replacement"))
+	if err != nil {
+		t.Fatalf("UploadDocument replacement failed: %v", err)
+	}
+	if replacement.LifecycleStatus != LifecycleStatusActive {
+		t.Fatalf("expected replacement to stay active, got %#v", replacement)
+	}
+	original := repo.docs["doc-rejected"]
+	if original.LifecycleStatus != LifecycleStatusSuperseded {
+		t.Fatalf("expected original to be superseded, got %#v", original)
+	}
+	if original.SupersededBy == nil || *original.SupersededBy != replacement.ID {
+		t.Fatalf("expected original to link to replacement %s, got %#v", replacement.ID, original.SupersededBy)
+	}
+	if original.LifecycleNote != "Corrected statement evidence" {
+		t.Fatalf("unexpected lifecycle note %q", original.LifecycleNote)
+	}
+	if original.LifecycleBy == nil || *original.LifecycleBy != "reviewer-1" || original.LifecycleAt == nil {
+		t.Fatalf("expected audited lifecycle actor/time, got %#v", original)
+	}
+}
+
+func TestService_UpdateDocumentLifecycleValidationAndAudit(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepository()
+	svc := NewService(repo, &mockStore{})
+	repo.docs["doc-1"] = &Document{
+		ID:              "doc-1",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "receipt.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+	}
+	repo.docs["doc-replacement"] = &Document{
+		ID:              "doc-replacement",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "receipt-v2.pdf",
+		ReviewStatus:    ReviewStatusPending,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	if _, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-1", "reviewer-1", &DocumentLifecycleRequest{
+		LifecycleStatus: LifecycleStatusDisposed,
+	}); err == nil {
+		t.Fatal("expected disposed lifecycle to require an audit note")
+	}
+
+	archived, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-1", "reviewer-1", &DocumentLifecycleRequest{
+		LifecycleStatus: LifecycleStatusArchived,
+		LifecycleNote:   "Retention reviewed; archive for audit",
+	})
+	if err != nil {
+		t.Fatalf("UpdateDocumentLifecycle archive failed: %v", err)
+	}
+	if archived.LifecycleStatus != LifecycleStatusArchived || archived.LifecycleNote != "Retention reviewed; archive for audit" {
+		t.Fatalf("unexpected archived document: %#v", archived)
+	}
+	if archived.LifecycleBy == nil || *archived.LifecycleBy != "reviewer-1" || archived.LifecycleAt == nil {
+		t.Fatalf("expected lifecycle audit metadata: %#v", archived)
+	}
+
+	superseded, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-1", "reviewer-2", &DocumentLifecycleRequest{
+		LifecycleStatus:      LifecycleStatusSuperseded,
+		LifecycleNote:        "Replacement approved",
+		SupersededByDocument: "doc-replacement",
+	})
+	if err != nil {
+		t.Fatalf("UpdateDocumentLifecycle superseded failed: %v", err)
+	}
+	if superseded.LifecycleStatus != LifecycleStatusSuperseded || superseded.SupersededBy == nil || *superseded.SupersededBy != "doc-replacement" {
+		t.Fatalf("unexpected superseded document: %#v", superseded)
+	}
+}
+
+func TestService_EvidencePolicyIgnoresSupersededAndDisposedDocuments(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepository()
+	svc := NewService(repo, &mockStore{})
+	repo.docs["doc-superseded"] = &Document{
+		ID:              "doc-superseded",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "old-receipt.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusSuperseded,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	repo.docs["doc-disposed"] = &Document{
+		ID:              "doc-disposed",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "disposed-receipt.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusDisposed,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+
+	results, err := svc.EvaluateEvidencePolicy(context.Background(), "tenant_demo", "tenant-1", &EvidencePolicyRequest{
+		EntityType: EntityTypePayment,
+		EntityIDs:  []string{"pay-1"},
+		Rules: []EvidencePolicyRule{{
+			DocumentTypes:   []string{DocumentTypeReceipt},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateEvidencePolicy failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Compliant || !results[0].MissingEvidence || results[0].ApprovedCount != 0 {
+		t.Fatalf("expected superseded/disposed evidence to be ignored: %#v", results[0])
+	}
+
+	repo.docs["doc-active"] = &Document{
+		ID:              "doc-active",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "active-receipt.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	results, err = svc.EvaluateEvidencePolicy(context.Background(), "tenant_demo", "tenant-1", &EvidencePolicyRequest{
+		EntityType: EntityTypePayment,
+		EntityIDs:  []string{"pay-1"},
+		Rules: []EvidencePolicyRule{{
+			DocumentTypes:   []string{DocumentTypeReceipt},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateEvidencePolicy with active replacement failed: %v", err)
+	}
+	if !results[0].Compliant || results[0].ApprovedCount != 1 {
+		t.Fatalf("expected active replacement to satisfy policy: %#v", results[0])
 	}
 }
 

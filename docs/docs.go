@@ -6976,6 +6976,92 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/documents/{documentID}/lifecycle": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mark a document active, superseded, archived, or disposed while preserving metadata for audit",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Documents"
+                ],
+                "summary": "Update document lifecycle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Document ID",
+                        "name": "documentID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Lifecycle update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/documents/{documentID}/mark-reviewed": {
             "post": {
                 "security": [
@@ -26496,6 +26582,18 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "lifecycle_actioned_at": {
+                    "type": "string"
+                },
+                "lifecycle_actioned_by": {
+                    "type": "string"
+                },
+                "lifecycle_note": {
+                    "type": "string"
+                },
+                "lifecycle_status": {
+                    "type": "string"
+                },
                 "notes": {
                     "type": "string"
                 },
@@ -26514,10 +26612,27 @@ const docTemplate = `{
                 "reviewed_by": {
                     "type": "string"
                 },
+                "superseded_by_document_id": {
+                    "type": "string"
+                },
                 "tenant_id": {
                     "type": "string"
                 },
                 "uploaded_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_documents.DocumentLifecycleRequest": {
+            "type": "object",
+            "properties": {
+                "lifecycle_note": {
+                    "type": "string"
+                },
+                "lifecycle_status": {
+                    "type": "string"
+                },
+                "superseded_by_document_id": {
                     "type": "string"
                 }
             }

@@ -2609,6 +2609,14 @@ definitions:
         type: integer
       id:
         type: string
+      lifecycle_actioned_at:
+        type: string
+      lifecycle_actioned_by:
+        type: string
+      lifecycle_note:
+        type: string
+      lifecycle_status:
+        type: string
       notes:
         type: string
       retention_until:
@@ -2621,9 +2629,20 @@ definitions:
         type: string
       reviewed_by:
         type: string
+      superseded_by_document_id:
+        type: string
       tenant_id:
         type: string
       uploaded_by:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_documents.DocumentLifecycleRequest:
+    properties:
+      lifecycle_note:
+        type: string
+      lifecycle_status:
+        type: string
+      superseded_by_document_id:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction:
@@ -11858,6 +11877,62 @@ paths:
       security:
       - BearerAuth: []
       summary: Download document
+      tags:
+      - Documents
+  /tenants/{tenantID}/documents/{documentID}/lifecycle:
+    patch:
+      consumes:
+      - application/json
+      description: Mark a document active, superseded, archived, or disposed while
+        preserving metadata for audit
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Document ID
+        in: path
+        name: documentID
+        required: true
+        type: string
+      - description: Lifecycle update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update document lifecycle
       tags:
       - Documents
   /tenants/{tenantID}/documents/{documentID}/mark-reviewed:

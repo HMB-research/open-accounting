@@ -642,6 +642,7 @@ file=<binary>
 - supported `document_type` values currently include `supporting_document`, `receipt`, `reconciliation_evidence`, `contract`, `asset_record`, `tax_support`, `close_pack`, and `other`
 - uploads start in `PENDING` review status and can carry optional retention metadata
 - set either `retention_until=YYYY-MM-DD` or `retention_years=N` up to `100`; `retention_years` derives `retention_until` from the upload date, and the two fields cannot be combined
+- pass `replaces_document_id=<documentId>` with an optional `replacement_note` when uploading corrected evidence; the replaced document is retained for audit and marked `SUPERSEDED`
 
 #### Download Document
 
@@ -716,6 +717,21 @@ Content-Type: application/json
 ```
 
 Use `{"clear_retention": true}` to clear retention metadata. `retention_until` uses `YYYY-MM-DD` and cannot be sent together with `clear_retention`.
+
+#### Update Lifecycle Status
+
+```http
+PATCH /tenants/{tenantId}/documents/{documentId}/lifecycle
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "lifecycle_status": "ARCHIVED",
+  "lifecycle_note": "Retention reviewed and archived for audit"
+}
+```
+
+Lifecycle statuses are `ACTIVE`, `SUPERSEDED`, `ARCHIVED`, and `DISPOSED`. `ARCHIVED` and `DISPOSED` require `lifecycle_note`, and `SUPERSEDED` requires `superseded_by_document_id` pointing at a replacement document for the same entity and document type. Superseded and disposed documents remain listed for audit but no longer satisfy evidence-policy counts.
 
 #### Mark Document Reviewed
 
