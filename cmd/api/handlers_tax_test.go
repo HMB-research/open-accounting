@@ -14,6 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -251,6 +252,64 @@ func kmdRemediationCodes(actions []tax.KMDRemediationAction) []string {
 		codes = append(codes, action.Code)
 	}
 	return codes
+}
+
+func TestMarkKMDSubmittedRequiresApprovedTaxEvidence(t *testing.T) {
+	h, tenantRepo, taxRepo := setupTaxHandlerTest(t)
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+	taxRepo.getDecl = &tax.KMDDeclaration{
+		ID:             "kmd-2026-03",
+		TenantID:       tenantRecord.ID,
+		Year:           2026,
+		Month:          3,
+		Status:         tax.KMDStatusDraft,
+		TotalOutputVAT: decimal.NewFromInt(220),
+		TotalInputVAT:  decimal.NewFromInt(66),
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+	}
+
+	errorBody := invokeTaxHandlerJSON[map[string]string](t, http.StatusConflict, h.HandleMarkKMDSubmitted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/submit",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved KMD submission evidence is required")
+	require.Empty(t, taxRepo.submittedIDs)
+
+	now := time.Now().UTC()
+	docRepo.docs["kmd-tax-support"] = &documents.Document{
+		ID:           "kmd-tax-support",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeKMD,
+		EntityID:     "kmd-2026-03",
+		DocumentType: documents.DocumentTypeTaxSupport,
+		FileName:     "kmd-submission.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+	errorBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusConflict, h.HandleMarkKMDSubmitted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/submit",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved KMD submission evidence is required")
+	require.Empty(t, taxRepo.submittedIDs)
+
+	docRepo.docs["kmd-tax-support"].ReviewStatus = documents.ReviewStatusApproved
+	submitted := invokeTaxHandlerJSON[map[string]string](t, http.StatusOK, h.HandleMarkKMDSubmitted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/submit",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Equal(t, "submitted", submitted["status"])
+	require.Equal(t, []string{"kmd-2026-03"}, taxRepo.submittedIDs)
 }
 
 func TestTaxHandlersKMDImportHistory(t *testing.T) {

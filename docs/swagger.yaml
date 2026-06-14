@@ -19845,8 +19845,8 @@ paths:
       - Tax
   /tenants/{tenantID}/tax/kmd/{year}/{month}/submit:
     post:
-      description: Mark a KMD declaration as submitted to e-MTA and record the submission
-        timestamp.
+      description: Mark a KMD declaration as submitted to e-MTA after approved tax/support
+        evidence is attached, and record the submission timestamp.
       parameters:
       - description: Tenant ID
         in: path
@@ -19875,6 +19875,13 @@ paths:
             type: object
         "404":
           description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
           schema:
             properties:
               error:
