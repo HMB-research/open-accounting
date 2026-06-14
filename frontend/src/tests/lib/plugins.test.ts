@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { parsePosition, pluginManager } from '$lib/plugins/manager';
-import { SLOT_NAMES, type SlotName } from '$lib/plugins';
+import {
+	getPluginFrontendComponentCandidateIds,
+	normalizePluginComponentReference,
+	registerPluginFrontendComponent,
+	SLOT_NAMES,
+	type PluginFrontendComponent,
+	type SlotName
+} from '$lib/plugins';
 import { api } from '$lib/api';
 
 describe('parsePosition', () => {
@@ -200,6 +207,7 @@ describe('pluginManager.loadPlugins', () => {
 		expect(pluginManager.getSlotRegistrations('dashboard-widgets')).toHaveLength(1);
 		expect(pluginManager.getSlotRegistrations('dashboard-widgets')[0]).toMatchObject({
 			componentName: 'TestWidget',
+			componentRef: 'TestWidget',
 			label: 'Review exceptions',
 			description: 'Open the plugin exception queue',
 			path: '/plugins/test-plugin/exceptions',
@@ -267,6 +275,58 @@ describe('pluginManager.loadPlugins', () => {
 			path: undefined,
 			kind: 'card'
 		});
+	});
+
+	it('should reject unsafe slot component references for dynamic resolution', async () => {
+		const mockPlugins = [
+			{
+				id: 'tp-1',
+				tenant_id: 'tenant-1',
+				plugin_id: 'plugin-1',
+				is_enabled: true,
+				config: {},
+				settings: {},
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
+				plugin: {
+					id: 'plugin-1',
+					name: 'Alpha Plugin',
+					version: '1.0.0',
+					description: 'Test',
+					manifest: {
+						id: 'plugin-1',
+						name: 'Alpha',
+						version: '1.0.0',
+						frontend: {
+							slots: [
+								{
+									name: 'dashboard.widgets',
+									component: '../UnsafeWidget.svelte',
+									label: 'Unsafe widget',
+									path: '/plugins/alpha/unsafe',
+									order: 10
+								}
+							]
+						}
+					}
+				}
+			}
+		];
+
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(
+			mockPlugins as unknown as import('$lib/api').TenantPlugin[]
+		);
+
+		await pluginManager.loadPlugins('tenant-1');
+
+		const [registration] = pluginManager.getSlotRegistrations('dashboard.widgets');
+		expect(registration).toMatchObject({
+			componentName: '../UnsafeWidget.svelte',
+			componentRef: undefined,
+			label: 'Unsafe widget',
+			path: '/plugins/alpha/unsafe'
+		});
+		expect(getPluginFrontendComponentCandidateIds(registration)).toEqual([]);
 	});
 
 	it('should skip already loaded tenant', async () => {
@@ -443,6 +503,45 @@ describe('pluginManager.loadPlugins', () => {
 
 		const nav = pluginManager.getNavigation();
 		expect(nav.map((n) => n.label)).toEqual(['First', 'Middle', 'Last']);
+	});
+});
+
+describe('plugin frontend component registry', () => {
+	const component = (() => null) as unknown as PluginFrontendComponent;
+
+	it('should normalize safe component references', () => {
+		expect(normalizePluginComponentReference('RiskWidget.svelte')).toBe('RiskWidget.svelte');
+		expect(normalizePluginComponentReference('risk-tools/RiskWidget.svelte')).toBe(
+			'risk-tools/RiskWidget.svelte'
+		);
+	});
+
+	it('should reject unsafe component references', () => {
+		expect(normalizePluginComponentReference('../RiskWidget.svelte')).toBeUndefined();
+		expect(normalizePluginComponentReference('./RiskWidget.svelte')).toBeUndefined();
+		expect(normalizePluginComponentReference('/RiskWidget.svelte')).toBeUndefined();
+		expect(
+			normalizePluginComponentReference('https://example.com/RiskWidget.svelte')
+		).toBeUndefined();
+		expect(normalizePluginComponentReference('RiskWidget.svelte?raw')).toBeUndefined();
+		expect(() => registerPluginFrontendComponent('../RiskWidget.svelte', component)).toThrow(
+			/Unsafe plugin frontend component id/
+		);
+	});
+
+	it('should generate deterministic component lookup candidates', () => {
+		expect(
+			getPluginFrontendComponentCandidateIds({
+				pluginId: 'plugin-1',
+				pluginName: 'risk-tools',
+				slotName: 'dashboard.widgets',
+				componentName: 'RiskWidget.svelte',
+				componentRef: 'RiskWidget.svelte',
+				label: 'Risk widget',
+				kind: 'card',
+				order: 10
+			})
+		).toEqual(['plugin-1/RiskWidget.svelte', 'risk-tools/RiskWidget.svelte']);
 	});
 });
 

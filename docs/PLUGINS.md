@@ -22,7 +22,7 @@ Open Accounting supports a plugin marketplace that allows extending functionalit
 2. **Git-Based Distribution**: Plugins are cloned from repositories, no package registry
 3. **Two-Level Enablement**: Installed instance-wide by admins, enabled per-tenant by users
 4. **Permission-Based Security**: Plugins declare required permissions, users approve them
-5. **Full-Stack Manifest Support**: Plugins can declare backend, frontend, and database components. Backend hooks and routes can run through the loopback HTTP runtime; the supervised package runtime has a validated manifest contract for the process supervisor slice. Frontend slots support safe declarative cards, links, and actions.
+5. **Full-Stack Manifest Support**: Plugins can declare backend, frontend, and database components. Backend hooks and routes can run through loopback HTTP runtimes or supervised package runtimes. Frontend slots support safe declarative cards, links, actions, and operator-bundled registered components.
 
 ### Plugin Lifecycle
 
@@ -34,7 +34,7 @@ Not Installed → Installed → Enabled ↔ Disabled → Uninstalled
 
 - **Not Installed**: Plugin exists in registry but not on this instance
 - **Installed**: Plugin code downloaded, awaiting enablement
-- **Enabled**: Plugin active for supported capabilities. Declarative frontend slots and navigation are available. Backend hooks and routes are available for `runtime: http`; `runtime: package` manifests validate package metadata now and wait for the supervised process runtime before execution.
+- **Enabled**: Plugin active for supported capabilities. Declarative frontend slots and navigation are available. Backend hooks and routes are available for `runtime: http` and supervised `runtime: package` executables.
 - **Disabled**: Plugin present but inactive
 - **Failed**: Plugin encountered an error during loading
 
@@ -177,7 +177,7 @@ settings:
 |---------|--------|-----------------|-------------|
 | omitted | Legacy manifest metadata | `package`, `entry` | Preserves old manifests. Hook and route declarations without an executable runtime are rejected during enablement. |
 | `http` | Supported | `base_url` | Open Accounting proxies hooks and tenant plugin routes to an operator-managed HTTP process on loopback. `base_url` must use `http` and a loopback host such as `127.0.0.1`, `::1`, or `localhost`. |
-| `package` | Contract validated, supervisor pending | `package`, `executable` | Declares a plugin-local runtime package for the future supervised process runner. Install-time manifest validation rejects unsafe paths before the supervisor is allowed to launch anything. |
+| `package` | Supported, conservative supervisor | `package`, `executable` | Starts a plugin-local executable directly, waits for its loopback health endpoint, and proxies hooks and tenant plugin routes to declared handler paths. |
 
 HTTP runtime manifests may keep legacy `package` and `entry` fields for compatibility, but the HTTP runtime uses `base_url` and handler paths. `backend.executable` is not valid with `runtime: http`.
 
@@ -201,6 +201,16 @@ Package runtime path rules are intentionally narrow:
 - Paths must stay inside the plugin package; `..` traversal is rejected.
 - Paths must use `/` separators and must not contain whitespace or shell metacharacters.
 - `base_url` is only valid for `runtime: http`.
+
+Package runtime process contract:
+
+- Open Accounting executes the resolved file directly with no shell and sets the working directory to `backend.package`.
+- The executable must read `OPEN_ACCOUNTING_RUNTIME_ADDR` and listen on that loopback `host:port`.
+- The executable must return a 2xx response from `OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH` before hooks or routes are considered available.
+- `OPEN_ACCOUNTING_RUNTIME_BASE_URL`, `OPEN_ACCOUNTING_PLUGIN_ID`, and `OPEN_ACCOUNTING_PLUGIN_NAME` are also provided for diagnostics.
+- On unload or disable, Open Accounting unregisters hooks, sends an interrupt to the process, and kills it if it does not stop within the shutdown timeout.
+
+Current limitation: package runtimes are supervised for startup, proxying, and shutdown, but there is no restart/backoff manager or operating-system sandbox/resource isolation yet.
 
 ## Permission System
 
@@ -260,9 +270,7 @@ Package runtime path rules are intentionally narrow:
 
 ## Event Hooks
 
-Backend event hooks execute through `runtime: http` when the manifest declares a loopback `base_url` and the plugin has `hooks:register` permission. The application sends each hook invocation to the declared handler path on the runtime process.
-
-`runtime: package` hook and route declarations are validated at install time, but process supervision and launch are not part of this slice. Until that runtime is implemented, package-runtime backend execution remains unavailable.
+Backend event hooks execute through `runtime: http` when the manifest declares a loopback `base_url`, or through `runtime: package` after the supervised executable exposes its health endpoint. The plugin must have `hooks:register` permission. The application sends each hook invocation to the declared handler path on the runtime process.
 
 Tenant outbound webhooks are the supported runtime notification path today. Use `webhooks create`, `webhooks test`, and `webhooks deliveries` in the CLI, or the `/tenants/{tenantId}/webhooks` API, to subscribe external systems to these events with signed HTTP delivery.
 
@@ -447,7 +455,7 @@ func listExpenses(w http.ResponseWriter, r *http.Request) {
 
 For `runtime: http`, run this process outside Open Accounting and point `backend.base_url` at its loopback address. Open Accounting forwards route requests with tenant and plugin headers and forwards hook payloads to the configured handler paths.
 
-For `runtime: package`, build a self-contained executable inside the plugin repository and declare the containing package directory plus the executable path. The manifest contract is validated now; process launch, restart, and sandboxing are implemented by the supervised runtime slice.
+For `runtime: package`, build a self-contained executable inside the plugin repository and declare the containing package directory plus the executable path. Open Accounting launches the executable directly, waits for `OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH`, and forwards requests over loopback. Restart policies and OS-level sandboxing remain outside the current supervisor.
 
 ### Frontend Development
 
@@ -606,7 +614,7 @@ Response:
 3. **Permission Review**: Admins must approve each permission
 4. **Risk Warnings**: High-risk permissions highlighted in UI
 5. **Tenant Isolation**: Plugin data scoped to tenant schemas
-6. **Runtime Boundaries**: HTTP runtimes must be loopback-only. Package runtimes must declare safe plugin-relative package and executable paths; process supervision and sandboxing are handled by the supervised runtime implementation.
+6. **Runtime Boundaries**: HTTP runtimes must be loopback-only. Package runtimes must declare safe plugin-relative package and executable paths, expose the assigned loopback health endpoint before use, and are stopped on unload. Restart policies and OS-level sandboxing are not included yet.
 
 ## Troubleshooting
 

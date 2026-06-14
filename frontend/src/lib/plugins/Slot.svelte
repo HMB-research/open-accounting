@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { pluginManager, type PluginSlotRegistration } from './manager';
+	import { resolvePluginFrontendComponent } from './componentRegistry';
 
 	interface Props {
 		/** The slot name to render (e.g., "dashboard.widgets", "invoice.sidebar") */
@@ -10,7 +11,7 @@
 		fallback?: import('svelte').Snippet;
 	}
 
-	let { name, fallback }: Props = $props();
+	let { name, props = {}, fallback }: Props = $props();
 
 	let registrations = $state<PluginSlotRegistration[]>([]);
 
@@ -24,42 +25,57 @@
 	});
 </script>
 
+{#snippet declarativeSlotItem(registration: PluginSlotRegistration)}
+	{#if registration.path}
+		<a
+			class={`plugin-slot-item plugin-slot-item-${registration.kind}`}
+			href={registration.path}
+			data-plugin-id={registration.pluginId}
+			data-plugin-name={registration.pluginName}
+		>
+			<span class="plugin-slot-text">
+				<span class="plugin-slot-title">{registration.label}</span>
+				{#if registration.description}
+					<span class="plugin-slot-description">{registration.description}</span>
+				{/if}
+			</span>
+			{#if registration.badge}
+				<span class="plugin-slot-badge">{registration.badge}</span>
+			{/if}
+		</a>
+	{:else}
+		<section
+			class={`plugin-slot-item plugin-slot-item-${registration.kind}`}
+			data-plugin-id={registration.pluginId}
+			data-plugin-name={registration.pluginName}
+		>
+			<span class="plugin-slot-text">
+				<span class="plugin-slot-title">{registration.label}</span>
+				{#if registration.description}
+					<span class="plugin-slot-description">{registration.description}</span>
+				{/if}
+			</span>
+			{#if registration.badge}
+				<span class="plugin-slot-badge">{registration.badge}</span>
+			{/if}
+		</section>
+	{/if}
+{/snippet}
+
 {#if registrations.length > 0}
 	<div class="plugin-slot" data-slot={name}>
 		{#each registrations as registration (registration.pluginId + registration.componentName)}
-			{#if registration.path}
-				<a
-					class={`plugin-slot-item plugin-slot-item-${registration.kind}`}
-					href={registration.path}
-					data-plugin-id={registration.pluginId}
-					data-plugin-name={registration.pluginName}
-				>
-					<span class="plugin-slot-text">
-						<span class="plugin-slot-title">{registration.label}</span>
-						{#if registration.description}
-							<span class="plugin-slot-description">{registration.description}</span>
-						{/if}
-					</span>
-					{#if registration.badge}
-						<span class="plugin-slot-badge">{registration.badge}</span>
-					{/if}
-				</a>
+			{@const PluginComponent = resolvePluginFrontendComponent(registration)}
+			{#if PluginComponent}
+				<svelte:boundary>
+					<PluginComponent {...props} {registration} />
+
+					{#snippet failed()}
+						{@render declarativeSlotItem(registration)}
+					{/snippet}
+				</svelte:boundary>
 			{:else}
-				<section
-					class={`plugin-slot-item plugin-slot-item-${registration.kind}`}
-					data-plugin-id={registration.pluginId}
-					data-plugin-name={registration.pluginName}
-				>
-					<span class="plugin-slot-text">
-						<span class="plugin-slot-title">{registration.label}</span>
-						{#if registration.description}
-							<span class="plugin-slot-description">{registration.description}</span>
-						{/if}
-					</span>
-					{#if registration.badge}
-						<span class="plugin-slot-badge">{registration.badge}</span>
-					{/if}
-				</section>
+				{@render declarativeSlotItem(registration)}
 			{/if}
 		{/each}
 	</div>

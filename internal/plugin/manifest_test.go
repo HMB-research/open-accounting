@@ -458,6 +458,16 @@ func TestManifestValidateBackendRuntimeModes(t *testing.T) {
 			errMsg:  "backend.executable must stay within the plugin package",
 		},
 		{
+			name: "Package runtime rejects absolute executable path",
+			backend: BackendConfig{
+				Runtime:    BackendRuntimePackage,
+				Package:    "./backend",
+				Executable: "/tmp/plugin-runtime",
+			},
+			wantErr: true,
+			errMsg:  "backend.executable must be a plugin-relative path",
+		},
+		{
 			name: "Package runtime rejects shell metacharacters",
 			backend: BackendConfig{
 				Runtime:    BackendRuntimePackage,

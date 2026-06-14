@@ -15,6 +15,7 @@ const { apiMock } = vi.hoisted(() => ({
 		uploadDocument: vi.fn(),
 		updateDocumentRetention: vi.fn(),
 		updatePayrollPaymentDate: vi.fn(),
+		calculatePayroll: vi.fn(),
 		approvePayroll: vi.fn(),
 		generateTSD: vi.fn(),
 		downloadTSDXml: vi.fn(),
@@ -74,6 +75,52 @@ function createTenant(overrides: Partial<Tenant> = {}): Tenant {
 		created_at: '2026-01-01T00:00:00Z',
 		updated_at: '2026-01-01T00:00:00Z',
 		...overrides
+	};
+}
+
+type PayrollCalculateActionCode = 'payroll_run_calculate' | 'payroll_no_payslips';
+
+function createPayrollRunWithCalculateAssignment(
+	code: PayrollCalculateActionCode,
+	runId: string,
+	period: string,
+	message: string
+) {
+	const [year, month] = period.split('-').map(Number);
+
+	return {
+		id: runId,
+		tenant_id: 'tenant-1',
+		period_year: year,
+		period_month: month,
+		status: 'DRAFT',
+		total_gross: new Decimal(0),
+		total_net: new Decimal(0),
+		total_employer_cost: new Decimal(0),
+		remediation_actions: [
+			{
+				code,
+				severity: 'ACTION',
+				scope: 'payroll',
+				owner_role: 'accountant',
+				workspace_queue: 'payroll_runs',
+				assignment_key: `payroll-runs:${code.replaceAll('_', '-')}:payroll-run:${runId}:${period}`,
+				priority: 'high',
+				due_in_days: 1,
+				message,
+				action:
+					code === 'payroll_no_payslips'
+						? 'Recalculate payroll so payslips can be generated and reviewed.'
+						: 'Calculate payroll totals and payslips for accountant review.',
+				entity_type: 'payroll_run',
+				entity_id: runId,
+				period,
+				ui_path: `/payroll?run_id=${runId}`,
+				cli_command: `oa payroll runs calculate --id ${runId}`
+			}
+		],
+		created_at: `${period}-01T00:00:00Z`,
+		updated_at: `${period}-01T00:00:00Z`
 	};
 }
 
@@ -407,6 +454,19 @@ describe('AccountantReviewPanel', () => {
 			period_month: 2,
 			status: 'CALCULATED',
 			payment_date: '2026-02-28T00:00:00Z',
+			total_gross: new Decimal(4200),
+			total_net: new Decimal(3260),
+			total_employer_cost: new Decimal(5628),
+			remediation_actions: [],
+			created_at: '2026-02-01T00:00:00Z',
+			updated_at: '2026-02-01T00:00:00Z'
+		});
+		apiMock.calculatePayroll.mockResolvedValue({
+			id: 'payroll-calculated-1',
+			tenant_id: 'tenant-1',
+			period_year: 2026,
+			period_month: 2,
+			status: 'CALCULATED',
 			total_gross: new Decimal(4200),
 			total_net: new Decimal(3260),
 			total_employer_cost: new Decimal(5628),
@@ -1235,6 +1295,64 @@ describe('AccountantReviewPanel', () => {
 				resume_from_run_id: 'run-ready'
 			});
 			expect(screen.getByText('Migration executed from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it.each([
+		[
+			'payroll_run_calculate',
+			'payroll-calculate-1',
+			'2026-05',
+			'Payroll run 2026-05 is ready for calculation.'
+		],
+		[
+			'payroll_no_payslips',
+			'payroll-no-payslips-1',
+			'2026-06',
+			'Payroll run 2026-06 has no payslips and needs recalculation.'
+		]
+	] as const)('calculates %s assignment rows from the workspace', async (code, runId, period, message) => {
+		apiMock.listPayrollRuns.mockResolvedValue([
+			createPayrollRunWithCalculateAssignment(code, runId, period, message)
+		]);
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText(message)).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Calculate payroll' }));
+
+		await waitFor(() => {
+			expect(apiMock.calculatePayroll).toHaveBeenCalledWith('tenant-1', runId);
+			expect(screen.getByText('Payroll run calculated from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it('shows assignment errors when payroll calculation fails from the workspace', async () => {
+		const runId = 'payroll-no-payslips-error-1';
+		const message = 'Payroll run 2026-07 has no payslips and needs recalculation.';
+		apiMock.listPayrollRuns.mockResolvedValue([
+			createPayrollRunWithCalculateAssignment('payroll_no_payslips', runId, '2026-07', message)
+		]);
+		apiMock.calculatePayroll.mockRejectedValueOnce(new Error('Payroll calculation failed'));
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText(message)).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Calculate payroll' }));
+
+		await waitFor(() => {
+			expect(apiMock.calculatePayroll).toHaveBeenCalledWith('tenant-1', runId);
+			expect(screen.getByText('Payroll calculation failed')).toBeInTheDocument();
 		});
 	});
 

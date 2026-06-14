@@ -1,4 +1,5 @@
 import { api, type TenantPlugin, type PluginNavItem } from '$lib/api';
+import { normalizePluginComponentReference } from './componentRegistry';
 
 /**
  * Plugin navigation item with plugin metadata
@@ -18,6 +19,7 @@ export interface PluginSlotRegistration {
 	pluginName: string;
 	slotName: string;
 	componentName: string;
+	componentRef?: string;
 	label: string;
 	description?: string;
 	path?: string;
@@ -107,6 +109,7 @@ function createPluginManager() {
 							pluginName: plugin.name,
 							slotName: slot.name,
 							componentName: slot.component,
+							componentRef: normalizePluginComponentReference(slot.component),
 							label: slot.label || slot.component,
 							description: slot.description,
 							path,
