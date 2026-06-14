@@ -244,6 +244,38 @@ func printMigrationExecutionRunsTable(w io.Writer, runs []cutover.MigrationExecu
 	_ = tw.Flush()
 }
 
+func printMigrationExecutionRunEvent(w io.Writer, event cutover.MigrationExecutionRunEvent) {
+	runID := "-"
+	status := "-"
+	progress := 0
+	active := "-"
+	updated := "-"
+	if event.Run != nil {
+		runID = event.Run.ID
+		if strings.TrimSpace(runID) == "" {
+			runID = "-"
+		}
+		status = event.Run.Summary.Status
+		if strings.TrimSpace(status) == "" {
+			status = "-"
+		}
+		progress = event.Run.Summary.ProgressPercent
+		active = formatMigrationActiveStep(event.Run.Summary)
+		updated = formatTimePtr(event.Run.UpdatedAt)
+	}
+	_, _ = fmt.Fprintf(
+		w,
+		"%d\t%s\t%s\t%s\t%d%%\t%s\t%s\n",
+		event.Sequence,
+		event.Type,
+		runID,
+		status,
+		progress,
+		active,
+		updated,
+	)
+}
+
 func formatMigrationActiveStep(summary cutover.MigrationExecutionRunSummary) string {
 	if summary.ActiveStepNumber <= 0 {
 		return "-"

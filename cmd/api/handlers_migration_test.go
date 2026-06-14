@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/HMB-research/open-accounting/internal/cutover"
@@ -36,6 +37,8 @@ type fakeMigrationRunStore struct {
 	saved      []cutover.MigrationExecutionRun
 	listRuns   []cutover.MigrationExecutionRun
 	getRun     *cutover.MigrationExecutionRun
+	getRuns    []*cutover.MigrationExecutionRun
+	getCalls   int
 	saveErr    error
 	listErr    error
 	getErr     error
@@ -66,6 +69,14 @@ func (f *fakeMigrationRunStore) ListExecutionRuns(_ context.Context, _, _ string
 func (f *fakeMigrationRunStore) GetExecutionRun(_ context.Context, _, _, _ string) (*cutover.MigrationExecutionRun, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
+	}
+	if len(f.getRuns) > 0 {
+		index := f.getCalls
+		f.getCalls++
+		if index >= len(f.getRuns) {
+			index = len(f.getRuns) - 1
+		}
+		return f.getRuns[index], nil
 	}
 	return f.getRun, nil
 }
@@ -511,6 +522,55 @@ func TestMigrationExecutionRunHandlersListAndGetSavedRuns(t *testing.T) {
 	var run cutover.MigrationExecutionRun
 	require.NoError(t, json.NewDecoder(getW.Body).Decode(&run))
 	assert.Equal(t, "run-1", run.ID)
+}
+
+func TestStreamMigrationExecutionRunHandlerEmitsRunSnapshots(t *testing.T) {
+	runningRun := &cutover.MigrationExecutionRun{
+		ID: "run-1",
+		Summary: cutover.MigrationExecutionRunSummary{
+			Status:             "running",
+			Confirmed:          true,
+			StepCount:          2,
+			SucceededStepCount: 1,
+			RunningStepCount:   1,
+			ProgressPercent:    50,
+			ActiveStepNumber:   2,
+			ActiveStepKind:     cutover.KindContacts,
+			ActiveStepFileName: "contacts.csv",
+			ActiveStepStatus:   cutover.MigrationExecutionResultRunning,
+		},
+	}
+	succeededRun := &cutover.MigrationExecutionRun{
+		ID: "run-1",
+		Summary: cutover.MigrationExecutionRunSummary{
+			Status:             "succeeded",
+			Confirmed:          true,
+			StepCount:          2,
+			SucceededStepCount: 2,
+			ProgressPercent:    100,
+		},
+	}
+	store := &fakeMigrationRunStore{getRuns: []*cutover.MigrationExecutionRun{runningRun, succeededRun}}
+	h := &Handlers{migrationRunStore: store}
+
+	req := withURLParams(
+		makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/migration/execution-runs/run-1/events?interval_ms=1&max_events=3", nil, createTestClaims("user-1", "user@example.com", "tenant-1", "admin")),
+		map[string]string{"tenantID": "tenant-1", "runID": "run-1"},
+	)
+	w := httptest.NewRecorder()
+	h.StreamMigrationExecutionRun(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.True(t, strings.HasPrefix(w.Header().Get("Content-Type"), "text/event-stream"))
+	body := w.Body.String()
+	assert.Contains(t, body, "event: snapshot")
+	assert.Contains(t, body, `"sequence":1`)
+	assert.Contains(t, body, `"status":"running"`)
+	assert.Contains(t, body, `"active_step_kind":"contacts"`)
+	assert.Contains(t, body, "event: complete")
+	assert.Contains(t, body, `"sequence":2`)
+	assert.Contains(t, body, `"status":"succeeded"`)
+	assert.Equal(t, 2, store.getCalls)
 }
 
 func TestGetMigrationExecutionRunHandlerReturnsNotFound(t *testing.T) {

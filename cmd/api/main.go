@@ -565,6 +565,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/migration/execute", h.ExecuteMigration)
 				r.Get("/migration/execution-runs", h.ListMigrationExecutionRuns)
 				r.Get("/migration/execution-runs/{runID}", h.GetMigrationExecutionRun)
+				r.Get("/migration/execution-runs/{runID}/events", h.StreamMigrationExecutionRun)
 
 				// Accounts
 				r.Get("/accounts", h.ListAccounts)

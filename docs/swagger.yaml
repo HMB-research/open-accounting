@@ -2323,6 +2323,15 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionRunEvent:
+    properties:
+      run:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionRun'
+      sequence:
+        type: integer
+      type:
+        type: string
+    type: object
   github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionRunSummary:
     properties:
       active_step_completed_at:
@@ -14953,6 +14962,67 @@ paths:
                 type: string
             type: object
       summary: Get migration execution run
+      tags:
+      - Migration
+  /tenants/{tenantID}/migration/execution-runs/{runID}/events:
+    get:
+      description: Stream tenant-scoped migration execution run snapshots as Server-Sent
+        Events until the run reaches a terminal status or max_events is reached
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Migration execution run ID
+        in: path
+        name: runID
+        required: true
+        type: string
+      - description: Polling interval in milliseconds
+        in: query
+        name: interval_ms
+        type: integer
+      - description: Maximum snapshots to emit
+        in: query
+        name: max_events
+        type: integer
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionRunEvent'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: Stream migration execution run snapshots
       tags:
       - Migration
   /tenants/{tenantID}/migration/validate:

@@ -4516,6 +4516,76 @@ func TestCLIMigrationRunsListAndGet(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"succeeded_step_count": 1`)
 }
 
+func TestCLIMigrationRunsWatch(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	runningRun := cutover.MigrationExecutionRun{
+		ID: "run-1",
+		Summary: cutover.MigrationExecutionRunSummary{
+			Status:             "running",
+			Confirmed:          true,
+			StepCount:          2,
+			SucceededStepCount: 1,
+			RunningStepCount:   1,
+			ProgressPercent:    50,
+			ActiveStepNumber:   2,
+			ActiveStepKind:     cutover.KindContacts,
+			ActiveStepFileName: "contacts.csv",
+			ActiveStepStatus:   cutover.MigrationExecutionResultRunning,
+		},
+	}
+	succeededRun := runningRun
+	succeededRun.Summary.Status = "succeeded"
+	succeededRun.Summary.SucceededStepCount = 2
+	succeededRun.Summary.RunningStepCount = 0
+	succeededRun.Summary.ProgressPercent = 100
+	succeededRun.Summary.ActiveStepNumber = 0
+	succeededRun.Summary.ActiveStepKind = ""
+	succeededRun.Summary.ActiveStepFileName = ""
+	succeededRun.Summary.ActiveStepStatus = ""
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		require.Equal(t, "/api/v1/tenants/tenant-1/migration/execution-runs/run-1/events", r.URL.Path)
+		require.Equal(t, "1", r.URL.Query().Get("interval_ms"))
+		require.Equal(t, "2", r.URL.Query().Get("max_events"))
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(w, "event: snapshot\nid: 1\ndata: %s\n\n", mustJSON(t, cutover.MigrationExecutionRunEvent{Type: "snapshot", Sequence: 1, Run: &runningRun}))
+		_, _ = fmt.Fprintf(w, "event: complete\nid: 2\ndata: %s\n\n", mustJSON(t, cutover.MigrationExecutionRunEvent{Type: "complete", Sequence: 2, Run: &succeededRun}))
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{"migration", "runs", "watch", "--id", "run-1", "--interval-ms", "1", "--max-events", "2"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "1\tsnapshot\trun-1\trunning\t50%\t#2 RUNNING contacts contacts.csv")
+	assert.Contains(t, stdout.String(), "2\tcomplete\trun-1\tsucceeded\t100%\t-")
+
+	app, stdout, _ = newTestCLIApp()
+	err = app.run(context.Background(), []string{"migration", "runs", "watch", "--id", "run-1", "--interval-ms", "1", "--max-events", "2", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"type":"snapshot"`)
+	assert.Contains(t, stdout.String(), `"sequence":1`)
+	assert.Contains(t, stdout.String(), `"status":"running"`)
+	assert.Contains(t, stdout.String(), `"type":"complete"`)
+}
+
+func mustJSON(t *testing.T, value any) string {
+	t.Helper()
+	payload, err := json.Marshal(value)
+	require.NoError(t, err)
+	return string(payload)
+}
+
 func TestCLIMigrationRunsBranches(t *testing.T) {
 	savedRun := cutover.MigrationExecutionRun{
 		ID: "run-table",
@@ -4544,6 +4614,14 @@ func TestCLIMigrationRunsBranches(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(savedRun)
 		case "/api/v1/tenants/tenant-1/migration/execution-runs/error":
 			http.Error(w, `{"error":"failed"}`, http.StatusInternalServerError)
+		case "/api/v1/tenants/tenant-1/migration/execution-runs/run-table/events":
+			require.Equal(t, http.MethodGet, r.Method)
+			assert.Equal(t, "1", r.URL.Query().Get("interval_ms"))
+			assert.Equal(t, "1", r.URL.Query().Get("max_events"))
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintf(w, "event: complete\nid: 1\ndata: %s\n\n", mustJSON(t, cutover.MigrationExecutionRunEvent{Type: "complete", Sequence: 1, Run: &savedRun}))
+		case "/api/v1/tenants/tenant-1/migration/execution-runs/error/events":
+			http.Error(w, `{"error":"failed"}`, http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected request: %s", r.URL.Path)
 		}
@@ -4559,9 +4637,16 @@ func TestCLIMigrationRunsBranches(t *testing.T) {
 	require.ErrorContains(t, app.runMigrationRuns(ctx, cfg, client, []string{"unknown"}), `unknown migration runs subcommand "unknown"`)
 	require.Error(t, app.runMigrationRuns(ctx, cfg, client, []string{"list", "--unknown"}))
 	require.Error(t, app.runMigrationRuns(ctx, cfg, client, []string{"get", "--unknown"}))
+	require.Error(t, app.runMigrationRuns(ctx, cfg, client, []string{"watch", "--unknown"}))
 	require.EqualError(t, app.runMigrationRuns(ctx, cfg, client, []string{"get"}), "migration run id is required")
+	require.EqualError(t, app.runMigrationRuns(ctx, cfg, client, []string{"watch"}), "migration run id is required")
 	require.Error(t, app.runMigrationRuns(ctx, cfg, client, []string{"list", "--status", "fail", "--limit", "0"}))
 	require.Error(t, app.runMigrationRuns(ctx, cfg, client, []string{"get", "--id", "error"}))
+	require.EqualError(t, app.runMigrationRuns(ctx, cfg, client, []string{"watch", "--id", "run-table", "--interval-ms", "0"}), "interval-ms must be between 1 and 30000")
+	require.EqualError(t, app.runMigrationRuns(ctx, cfg, client, []string{"watch", "--id", "run-table", "--interval-ms", "30001"}), "interval-ms must be between 1 and 30000")
+	require.EqualError(t, app.runMigrationRuns(ctx, cfg, client, []string{"watch", "--id", "run-table", "--max-events", "-1"}), "max-events must be between 0 and 1000")
+	require.EqualError(t, app.runMigrationRuns(ctx, cfg, client, []string{"watch", "--id", "run-table", "--max-events", "1001"}), "max-events must be between 0 and 1000")
+	require.Error(t, app.runMigrationRuns(ctx, cfg, client, []string{"watch", "--id", "error"}))
 
 	require.NoError(t, app.runMigrationRuns(ctx, cfg, client, []string{"list", "--limit", "0", "--json"}))
 	assert.Contains(t, stdout.String(), `"id": "run-table"`)
@@ -4570,6 +4655,10 @@ func TestCLIMigrationRunsBranches(t *testing.T) {
 	require.NoError(t, app.runMigrationRuns(ctx, cfg, client, []string{"get", "--id", "run-table"}))
 	assert.Contains(t, stdout.String(), "Migration execution")
 	assert.Contains(t, stdout.String(), "succeeded")
+
+	app, stdout, _ = newTestCLIApp()
+	require.NoError(t, app.runMigrationRuns(ctx, cfg, client, []string{"watch", "--interval-ms", "1", "--max-events", "1", "run-table"}))
+	assert.Contains(t, stdout.String(), "1\tcomplete\trun-table\tsucceeded")
 }
 
 func TestCLIMigrationExecuteSafetyBranches(t *testing.T) {
@@ -4778,6 +4867,20 @@ func TestPrintMigrationExecutionRunBranches(t *testing.T) {
 	})
 	assert.Contains(t, buf.String(), "Migration execution: succeeded")
 	assert.Contains(t, buf.String(), "accounts.csv")
+
+	buf.Reset()
+	printMigrationExecutionRunEvent(&buf, cutover.MigrationExecutionRunEvent{Type: "error", Sequence: 3})
+	assert.Contains(t, buf.String(), "3\terror\t-\t-\t0%\t-\t-")
+
+	buf.Reset()
+	printMigrationExecutionRunEvent(&buf, cutover.MigrationExecutionRunEvent{
+		Type:     "snapshot",
+		Sequence: 4,
+		Run: &cutover.MigrationExecutionRun{
+			Summary: cutover.MigrationExecutionRunSummary{ProgressPercent: 5},
+		},
+	})
+	assert.Contains(t, buf.String(), "4\tsnapshot\t-\t-\t5%\t-\t-")
 }
 
 func migrationExecuteTestFiles(t *testing.T) map[cutover.FileKind]string {

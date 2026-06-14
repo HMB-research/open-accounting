@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -739,6 +740,77 @@ func (c *apiClient) getMigrationExecutionRun(ctx context.Context, tenantID, runI
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *apiClient) watchMigrationExecutionRun(ctx context.Context, tenantID, runID string, intervalMS, maxEvents int, onEvent func(cutover.MigrationExecutionRunEvent) error) error {
+	values := url.Values{}
+	if intervalMS > 0 {
+		values.Set("interval_ms", strconv.Itoa(intervalMS))
+	}
+	if maxEvents > 0 {
+		values.Set("max_events", strconv.Itoa(maxEvents))
+	}
+	apiPath := path.Join("/api/v1/tenants", tenantID, "migration", "execution-runs", runID, "events")
+	if encoded := values.Encode(); encoded != "" {
+		apiPath += "?" + encoded
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+apiPath, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	if strings.TrimSpace(c.apiToken) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.apiToken))
+	}
+
+	//nolint:gosec // The CLI intentionally talks to a user-configured Open Accounting base URL.
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request %s %s: %w", http.MethodGet, apiPath, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return decodeAPIError(resp)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	dataLines := make([]string, 0, 1)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if err := dispatchMigrationExecutionRunEvent(dataLines, onEvent); err != nil {
+				return err
+			}
+			dataLines = dataLines[:0]
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read migration run stream: %w", err)
+	}
+	return dispatchMigrationExecutionRunEvent(dataLines, onEvent)
+}
+
+func dispatchMigrationExecutionRunEvent(dataLines []string, onEvent func(cutover.MigrationExecutionRunEvent) error) error {
+	if len(dataLines) == 0 {
+		return nil
+	}
+	var event cutover.MigrationExecutionRunEvent
+	if err := json.Unmarshal([]byte(strings.Join(dataLines, "\n")), &event); err != nil {
+		return fmt.Errorf("decode migration run stream event: %w", err)
+	}
+	if onEvent == nil {
+		return nil
+	}
+	return onEvent(event)
 }
 
 func (c *apiClient) listAccounts(ctx context.Context, tenantID string, activeOnly bool) ([]accounting.Account, error) {

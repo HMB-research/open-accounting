@@ -50,6 +50,12 @@ type MigrationExecutionRun struct {
 	RemediationActions []MigrationRemediationAction `json:"remediation_actions,omitempty"`
 }
 
+type MigrationExecutionRunEvent struct {
+	Type     string                 `json:"type"`
+	Sequence int                    `json:"sequence"`
+	Run      *MigrationExecutionRun `json:"run,omitempty"`
+}
+
 type MigrationExecutionRunSummary struct {
 	Status                string                         `json:"status"`
 	Confirmed             bool                           `json:"confirmed"`

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -245,6 +246,111 @@ func (h *Handlers) GetMigrationExecutionRun(w http.ResponseWriter, r *http.Reque
 	respondJSON(w, http.StatusOK, run)
 }
 
+// StreamMigrationExecutionRun streams saved migration execution run snapshots.
+// @Summary Stream migration execution run snapshots
+// @Description Stream tenant-scoped migration execution run snapshots as Server-Sent Events until the run reaches a terminal status or max_events is reached
+// @Tags Migration
+// @Produce text/event-stream
+// @Param tenantID path string true "Tenant ID"
+// @Param runID path string true "Migration execution run ID"
+// @Param interval_ms query int false "Polling interval in milliseconds"
+// @Param max_events query int false "Maximum snapshots to emit"
+// @Success 200 {object} cutover.MigrationExecutionRunEvent
+// @Failure 400 {object} object{error=string}
+// @Failure 401 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /tenants/{tenantID}/migration/execution-runs/{runID}/events [get]
+func (h *Handlers) StreamMigrationExecutionRun(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(chi.URLParam(r, "tenantID"))
+	runID := strings.TrimSpace(chi.URLParam(r, "runID"))
+	if tenantID == "" {
+		respondError(w, http.StatusBadRequest, "tenantID is required")
+		return
+	}
+	if runID == "" {
+		respondError(w, http.StatusBadRequest, "runID is required")
+		return
+	}
+	store := h.migrationRunStore
+	if store == nil {
+		respondError(w, http.StatusInternalServerError, "Migration execution run storage is not configured")
+		return
+	}
+	interval, err := migrationExecutionRunStreamInterval(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	maxEvents, err := migrationExecutionRunStreamMaxEvents(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+	firstRun, err := store.GetExecutionRun(r.Context(), schemaName, tenantID, runID)
+	if errors.Is(err, cutover.ErrMigrationExecutionRunNotFound) {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load migration execution run")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		respondError(w, http.StatusInternalServerError, "Streaming is not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	currentRun := firstRun
+	for sequence := 1; sequence <= maxEvents; sequence++ {
+		eventType := "snapshot"
+		if migrationExecutionRunStreamTerminal(currentRun) {
+			eventType = "complete"
+		}
+		if err := writeMigrationExecutionRunSSE(w, flusher, cutover.MigrationExecutionRunEvent{
+			Type:     eventType,
+			Sequence: sequence,
+			Run:      currentRun,
+		}); err != nil {
+			return
+		}
+		if eventType == "complete" {
+			return
+		}
+
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(interval):
+		}
+
+		currentRun, err = store.GetExecutionRun(r.Context(), schemaName, tenantID, runID)
+		if errors.Is(err, cutover.ErrMigrationExecutionRunNotFound) {
+			_ = writeMigrationExecutionRunSSE(w, flusher, cutover.MigrationExecutionRunEvent{
+				Type:     "error",
+				Sequence: sequence + 1,
+			})
+			return
+		}
+		if err != nil {
+			_ = writeMigrationExecutionRunSSE(w, flusher, cutover.MigrationExecutionRunEvent{
+				Type:     "error",
+				Sequence: sequence + 1,
+			})
+			return
+		}
+	}
+}
+
 func (h *Handlers) resolveMigrationExecutionResumeRun(ctx context.Context, schemaName, tenantID string, req *cutover.ExecuteMigrationRequest) (*cutover.MigrationExecutionRun, error) {
 	if req == nil {
 		return nil, nil
@@ -256,6 +362,56 @@ func (h *Handlers) resolveMigrationExecutionResumeRun(ctx context.Context, schem
 		return h.migrationRunStore.GetExecutionRun(ctx, schemaName, tenantID, runID)
 	}
 	return req.ResumeFromRun, nil
+}
+
+func migrationExecutionRunStreamInterval(r *http.Request) (time.Duration, error) {
+	const defaultInterval = time.Second
+	raw := strings.TrimSpace(r.URL.Query().Get("interval_ms"))
+	if raw == "" {
+		return defaultInterval, nil
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed < 1 || parsed > 30000 {
+		return 0, errors.New("interval_ms must be between 1 and 30000")
+	}
+	return time.Duration(parsed) * time.Millisecond, nil
+}
+
+func migrationExecutionRunStreamMaxEvents(r *http.Request) (int, error) {
+	const defaultMaxEvents = 100
+	raw := strings.TrimSpace(r.URL.Query().Get("max_events"))
+	if raw == "" {
+		return defaultMaxEvents, nil
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed < 1 || parsed > 1000 {
+		return 0, errors.New("max_events must be between 1 and 1000")
+	}
+	return parsed, nil
+}
+
+func migrationExecutionRunStreamTerminal(run *cutover.MigrationExecutionRun) bool {
+	if run == nil {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(run.Summary.Status)) {
+	case "succeeded", "failed", "blocked", "needs_confirmation":
+		return true
+	default:
+		return false
+	}
+}
+
+func writeMigrationExecutionRunSSE(w http.ResponseWriter, flusher http.Flusher, event cutover.MigrationExecutionRunEvent) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\nid: %d\ndata: %s\n\n", event.Type, event.Sequence, payload); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
 }
 
 func (h *Handlers) saveMigrationExecutionRun(ctx context.Context, schemaName, tenantID, createdBy string, run *cutover.MigrationExecutionRun) error {
