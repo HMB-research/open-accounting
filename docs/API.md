@@ -598,6 +598,8 @@ Cost-allocation validation checks required `journal_entry_line_id`, `amount`, `a
 
 When the related files are present in the same bundle, the validator also checks references such as commercial documents by contact ID/code/registry/VAT/email/name, e-invoice seller and/or buyer parties to contacts according to `e_invoice_contact_mode`, payments to contacts by ID/code/registry/VAT/email/name and to CSV or XML invoices by ID or number with allocation total, currency, payment-direction consistency, and same-field imported-invoice/e-invoice contact consistency, expenses to contacts by ID/code/registry/VAT/email/name plus expense/payment accounts and account types, employee master rows for importer-compatible dates, employment settings, salary values, and tax settings, payroll-history rows for importer-compatible periods, statuses, dates, amounts, and duplicate employee-period keys, leave-balance rows for importer-compatible years, day totals, and duplicate employee/year/absence-type keys, TSD-history rows for importer-compatible periods, statuses, dates, amounts, and duplicate employee-period keys, KMD-history rows for importer-compatible periods, statuses, dates, amounts, same-period VAT totals, and duplicate period row codes, payroll/leave/TSD rows to employees by employee number, personal code, email, full name, or complete first and last name, account parent codes, and bank-account ledger account ID fields as preserved account UUIDs and ledger account-code fields as account codes, bank-account master rows for required names/account numbers, currency codes, and optional boolean flags, bank-statement source accounts and currencies to bank accounts, order quote IDs to imported quote IDs, fixed-asset supplier identity fields to contacts, fixed-asset invoice IDs to imported invoices, fixed-asset source-invoice purchase type, same-field supplier/contact consistency, and purchase-cost totals, fixed-asset account ID/code references to accounts plus asset/depreciation account-type consistency, product category IDs as preserved category UUIDs or product category names as names, product account ID/code references to accounts plus sales/purchase/inventory account-type consistency, product supplier identity fields to contacts, stock `product_id`/`warehouse_id` values as UUIDs and stock product/warehouse codes against same-bundle product and warehouse files, cost centers to parent cost centers, cost allocations to cost centers, product category parent IDs as preserved category UUIDs or parent names as names, and opening balances or journals to accounts. Hierarchy files also reject self-parent rows before import.
 
+Bank-account GL account preflight rejects same-bundle `gl_account_id` or `gl_account_code` references where the linked cash/ledger account is not an `ASSET` account.
+
 ### List Recent Journal Entries
 
 ```http
@@ -3167,6 +3169,8 @@ Import bank account master data:
 ```
 
 Bank account imports require `name` and `account_number`, can link the cash/ledger account by UUID `gl_account_id` or by `gl_account_code`, skip duplicate account numbers when `skip_duplicates` is true, and report invalid or duplicate rows without creating placeholder accounts.
+
+When an accounts file is included in the same migration bundle, bank account import preflight rejects linked GL accounts that are not `ASSET` accounts.
 
 ### Bank Auto-Match Rules
 

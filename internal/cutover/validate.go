@@ -2383,6 +2383,7 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 	validateExpenseAccountTypeConsistency(report, files, accountTypeTargets)
 	validateProductAccountTypeConsistency(report, files, accountTypeTargets)
 	validateFixedAssetAccountTypeConsistency(report, files, accountTypeTargets)
+	validateBankAccountAccountTypeConsistency(report, files, accountTypeTargets)
 	validateStockAdjustmentProductStockability(report, files)
 	validateCostAllocationJournalLineTotals(report, files)
 	validateCostAllocationJournalLinePercentages(report, files)
@@ -2549,6 +2550,23 @@ func validateFixedAssetAccountTypeConsistency(report *BundleValidationReport, fi
 				"accumulated_depreciation_account_id", "accumulated_depreciation_account_code",
 				map[string]bool{"ASSET": true},
 				"accumulated depreciation account", "ASSET")
+		}
+	}
+}
+
+func validateBankAccountAccountTypeConsistency(report *BundleValidationReport, files []parsedFile, targets map[string]cutoverAccountTypeTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindBankAccounts {
+			continue
+		}
+		for _, row := range file.rows {
+			checkCutoverAccountType(report, file, row, targets,
+				"gl_account_id", "gl_account_code",
+				map[string]bool{"ASSET": true},
+				"bank account GL account", "ASSET")
 		}
 	}
 }
