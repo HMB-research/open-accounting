@@ -67,6 +67,7 @@ Status values:
 - The follow-up e-invoice payment invoice-contact consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up e-invoice credit-note payment contact selection stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation date consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up payment allocation malformed-date guard stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation invoice-status consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation invoice-ID status consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up fixed-asset source-invoice consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
@@ -191,6 +192,9 @@ Payment allocation date consistency rejects same-bundle payment rows whose
 `payment_date` is before the imported invoice CSV or e-invoice XML issue date.
 The focused payment allocation date consistency migration tests cover accepted
 same-day payments and rejected CSV/XML allocations dated before invoice issue.
+Payment allocation malformed-date guard coverage confirms malformed
+`payment_date` values are reported as row-value errors without also emitting
+imported-invoice date-ordering errors.
 Payment allocation invoice-status consistency rejects same-bundle payment rows
 allocated to imported invoice CSV targets with `DRAFT` or `VOIDED` status. The
 payment allocation invoice-status consistency stage still accepts allocatable

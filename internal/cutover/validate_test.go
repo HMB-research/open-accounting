@@ -5446,6 +5446,38 @@ func TestValidateBundleReportsPaymentAllocationBeforeImportedInvoiceIssueDate(t 
 	assert.Contains(t, report.Issues[0].Message, `payment_date "2026-05-29" cannot be before imported invoice "INV-1" issue_date "2026-05-30"`)
 }
 
+func TestValidateBundleReportsMalformedPaymentAllocationDateWithoutOrderingIssue(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,Work,1,100,22\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number,allocation_amount\nRECEIVED,not-a-date,100,INV-1,100\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, 2, report.Issues[0].Row)
+	assert.Equal(t, "payment_date", report.Issues[0].Field)
+	assert.Equal(t, "not-a-date", report.Issues[0].Value)
+	assert.Empty(t, report.Issues[0].TargetKind)
+	assert.Equal(t, "payment_date must be YYYY-MM-DD or RFC3339", report.Issues[0].Message)
+}
+
 func TestValidateBundleAcceptsPaymentAllocationToSentImportedInvoice(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
