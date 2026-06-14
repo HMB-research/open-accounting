@@ -7,6 +7,7 @@ BACKUP_DIR="${BACKUP_DIR:-./backups}"
 S3_URI="${BACKUP_OFFSITE_S3_URI:-}"
 RCLONE_REMOTE="${BACKUP_OFFSITE_RCLONE_REMOTE:-}"
 DRY_RUN=false
+PREFLIGHT=false
 BACKUP_FILES=()
 FILES_TO_SYNC=()
 
@@ -19,6 +20,7 @@ Options:
   --backup FILE             Exact backup file to sync. Can be repeated. Defaults to all openaccounting_*.dump files in backup dir.
   --s3-uri URI              Destination S3 URI, for example s3://bucket/prefix. Defaults to BACKUP_OFFSITE_S3_URI.
   --rclone-remote REMOTE    Destination rclone remote path, for example remote:bucket/prefix. Defaults to BACKUP_OFFSITE_RCLONE_REMOTE.
+  --preflight               Validate destination and auth environment without scanning backups or calling providers.
   --dry-run                 Validate inputs and print planned uploads without calling aws or rclone.
   -h, --help                Show this help.
 
@@ -38,6 +40,107 @@ log() {
 
 require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "$1 is required but was not found in PATH"
+}
+
+is_placeholder_value() {
+    local value
+    local lowered
+
+    value="$(printf '%s' "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    lowered="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+
+    case "$lowered" in
+        replace-me|replace_me|change-me|changeme|todo|tbd|placeholder|example|your-*|"<"*">"|*example.com*|*user:pass*|*company-backups*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+require_config_value() {
+    local name="$1"
+    local value="$2"
+
+    [ -n "$value" ] || fail "$name is required for backup offsite preflight"
+    if is_placeholder_value "$value"; then
+        fail "$name still contains a placeholder value; replace it before enabling backup operations"
+    fi
+}
+
+validate_readable_file_if_set() {
+    local name="$1"
+    local path="$2"
+
+    [ -z "$path" ] && return
+    require_config_value "$name" "$path"
+    [ -r "$path" ] || fail "$name points to a file that is not readable: $path"
+}
+
+validate_s3_auth_config() {
+    local has_auth=false
+
+    [ -z "${AWS_REGION:-}" ] || require_config_value AWS_REGION "${AWS_REGION:-}"
+    [ -z "${AWS_DEFAULT_REGION:-}" ] || require_config_value AWS_DEFAULT_REGION "${AWS_DEFAULT_REGION:-}"
+
+    if [ -n "${AWS_ACCESS_KEY_ID:-}" ] || [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+        require_config_value AWS_ACCESS_KEY_ID "${AWS_ACCESS_KEY_ID:-}"
+        require_config_value AWS_SECRET_ACCESS_KEY "${AWS_SECRET_ACCESS_KEY:-}"
+        [ -z "${AWS_SESSION_TOKEN:-}" ] || require_config_value AWS_SESSION_TOKEN "${AWS_SESSION_TOKEN:-}"
+        has_auth=true
+    fi
+
+    if [ -n "${AWS_PROFILE:-}" ]; then
+        require_config_value AWS_PROFILE "${AWS_PROFILE:-}"
+        has_auth=true
+    fi
+
+    if [ -n "${AWS_SHARED_CREDENTIALS_FILE:-}" ]; then
+        validate_readable_file_if_set AWS_SHARED_CREDENTIALS_FILE "${AWS_SHARED_CREDENTIALS_FILE:-}"
+        has_auth=true
+    fi
+
+    if [ -n "${AWS_WEB_IDENTITY_TOKEN_FILE:-}" ] || [ -n "${AWS_ROLE_ARN:-}" ]; then
+        validate_readable_file_if_set AWS_WEB_IDENTITY_TOKEN_FILE "${AWS_WEB_IDENTITY_TOKEN_FILE:-}"
+        require_config_value AWS_ROLE_ARN "${AWS_ROLE_ARN:-}"
+        has_auth=true
+    fi
+
+    if [ -n "${AWS_CONTAINER_CREDENTIALS_RELATIVE_URI:-}" ]; then
+        require_config_value AWS_CONTAINER_CREDENTIALS_RELATIVE_URI "${AWS_CONTAINER_CREDENTIALS_RELATIVE_URI:-}"
+        has_auth=true
+    fi
+
+    if [ -n "${AWS_CONTAINER_CREDENTIALS_FULL_URI:-}" ]; then
+        require_config_value AWS_CONTAINER_CREDENTIALS_FULL_URI "${AWS_CONTAINER_CREDENTIALS_FULL_URI:-}"
+        has_auth=true
+    fi
+
+    [ "$has_auth" = true ] || fail "S3 preflight requires AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, AWS_PROFILE, AWS_SHARED_CREDENTIALS_FILE, web identity, or container credential environment"
+}
+
+validate_rclone_config() {
+    local default_config
+
+    require_config_value BACKUP_OFFSITE_RCLONE_REMOTE "$RCLONE_REMOTE"
+    if [ -n "${RCLONE_CONFIG:-}" ]; then
+        validate_readable_file_if_set RCLONE_CONFIG "${RCLONE_CONFIG:-}"
+        return
+    fi
+
+    default_config="${HOME:-}/.config/rclone/rclone.conf"
+    [ -n "${HOME:-}" ] && [ -r "$default_config" ] || fail "RCLONE_CONFIG is required for rclone preflight, or the default rclone config must exist at \$HOME/.config/rclone/rclone.conf"
+}
+
+validate_destination_config() {
+    if [ -n "$S3_URI" ]; then
+        require_config_value BACKUP_OFFSITE_S3_URI "$S3_URI"
+        validate_s3_auth_config
+        return
+    fi
+
+    validate_rclone_config
 }
 
 contains_file() {
@@ -119,6 +222,10 @@ while [ "$#" -gt 0 ]; do
             RCLONE_REMOTE="$2"
             shift 2
             ;;
+        --preflight)
+            PREFLIGHT=true
+            shift
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -140,6 +247,13 @@ destination_count=0
 
 if [ -n "$S3_URI" ] && [[ "$S3_URI" != s3://* ]]; then
     fail "--s3-uri must start with s3://"
+fi
+
+validate_destination_config
+
+if [ "$PREFLIGHT" = true ]; then
+    log "Offsite backup preflight passed"
+    exit 0
 fi
 
 if [ "${#BACKUP_FILES[@]}" -gt 0 ]; then

@@ -235,7 +235,7 @@ RESTORE_DATABASE_URL="postgres://user:pass@localhost:5432/openaccounting_restore
 dropdb openaccounting_restore_drill
 ```
 
-The restore drill refuses to use the same URL as `DATABASE_URL`, checks the `.sha256` file when present, and verifies that core Open Accounting tables and migrations were restored. Pass `--status-file` to publish Prometheus textfile metrics for restore-drill health, last success time, restored migration/user/tenant counts, and the structured failure code from `ERROR[code]` output when a scheduled drill fails.
+The restore drill refuses to use the same URL as `DATABASE_URL`, checks the `.sha256` file when present, and verifies that core Open Accounting tables and migrations were restored. Pass `--status-file` to publish Prometheus textfile metrics for restore-drill health, last success time, restored migration/user/tenant counts, and the structured failure code from `ERROR[code]` output when a scheduled drill fails. Use `--preflight` to check the configured backup file, placeholder-free source/restore URLs, and source-vs-drill separation without running `psql` or `pg_restore`.
 
 Check backup freshness and checksum from cron, systemd timers, or monitoring agents:
 
@@ -302,7 +302,13 @@ BACKUP_OFFSITE_RCLONE_REMOTE="b2:company-backups/open-accounting/prod" \
   scripts/db-backup-offsite-sync.sh --backup-dir ./backups
 ```
 
-The offsite sync helper copies selected `openaccounting_*.dump` files plus matching `.sha256` files and never deletes remote objects. Use `--backup FILE` to sync one specific dump, and `--dry-run` to verify the planned uploads from cron, systemd timers, or deployment automation.
+The offsite sync helper copies selected `openaccounting_*.dump` files plus matching `.sha256` files and never deletes remote objects. Use `--backup FILE` to sync one specific dump, and `--dry-run` to verify the planned uploads from cron, systemd timers, or deployment automation. Use `--preflight` on the host to validate destination and auth environment without scanning backups or calling S3/rclone:
+
+```bash
+RCLONE_CONFIG=/etc/open-accounting/rclone.conf \
+  BACKUP_OFFSITE_RCLONE_REMOTE=backup-remote:open-accounting/prod \
+  scripts/db-backup-offsite-sync.sh --preflight
+```
 
 Generate systemd service and timer templates for the full backup chain:
 
@@ -324,7 +330,43 @@ go run ./cmd/oa ops backup schedule-systemd \
   --dry-run
 ```
 
-The generator writes units and timers for backup creation, offsite sync, backup health, and weekly restore drills. It also writes a provider-specific example environment file for `s3` or `rclone`, plus an executable `open-accounting-backup-install.sh` helper that copies units into the target systemd unit directory, preserves an existing secret file, reloads systemd, and enables the four timers. Keep the real `DATABASE_URL`, `RESTORE_DATABASE_URL`, restore backup path, and offsite credentials in the host secret manager or a root-readable file outside the repository.
+The generator writes units and timers for backup creation, offsite sync, backup health, and weekly restore drills. It also writes a provider-specific example environment file for `s3` or `rclone`, an `open-accounting-backup-preflight.sh` helper, and an executable `open-accounting-backup-install.sh` helper that copies units into the target systemd unit directory, preserves an existing environment file, runs preflight, reloads systemd, and enables the four timers. Keep the real `DATABASE_URL`, `RESTORE_DATABASE_URL`, restore backup path, and offsite credentials in the host secret manager or a root-readable file outside the repository.
+
+Run the preflight helper before enabling timers. It rejects missing values and generated placeholders such as `replace-me`, `user:pass@db.example.com`, and `company-backups`, but it does not connect to PostgreSQL or offsite storage:
+
+```bash
+install -d /etc/open-accounting /backups/offsite-restored
+install -m 0600 ./deploy/systemd/open-accounting-backup.env.example /etc/open-accounting/backup.env
+
+# Edit /etc/open-accounting/backup.env through the host secret workflow, then:
+./deploy/systemd/open-accounting-backup-preflight.sh /etc/open-accounting/backup.env
+./deploy/systemd/open-accounting-backup-install.sh /etc/systemd/system
+```
+
+For non-secret rehearsal in CI or a staging shell, use local-only values and scratch files:
+
+```bash
+tmpdir="$(mktemp -d)"
+mkdir -p "$tmpdir/backups" "$tmpdir/status"
+printf 'scratch backup\n' > "$tmpdir/backups/openaccounting_latest.dump"
+printf '[preflight]\ntype = s3\nprovider = Other\n' > "$tmpdir/rclone.conf"
+cat > "$tmpdir/backup.env" <<EOF
+DATABASE_URL=postgres://backup_preflight:local_only@db.internal:5432/openaccounting?sslmode=require
+RESTORE_DATABASE_URL=postgres://restore_preflight:local_only@localhost:5432/openaccounting_restore_drill?sslmode=disable
+RESTORE_DRILL_BACKUP_FILE=$tmpdir/backups/openaccounting_latest.dump
+BACKUP_OFFSITE_RCLONE_REMOTE=preflight:open-accounting/prod
+RCLONE_CONFIG=$tmpdir/rclone.conf
+EOF
+
+scripts/db-backup-systemd-schedule.sh \
+  --output-dir "$tmpdir/systemd" \
+  --scripts-dir "$PWD/scripts" \
+  --backup-dir "$tmpdir/backups" \
+  --status-dir "$tmpdir/status" \
+  --env-file "$tmpdir/backup.env" \
+  --offsite-provider rclone
+"$tmpdir/systemd/open-accounting-backup-preflight.sh" "$tmpdir/backup.env"
+```
 
 ---
 

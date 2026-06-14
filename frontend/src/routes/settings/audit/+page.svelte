@@ -70,6 +70,16 @@
 				return 'Invitation created';
 			case 'invitation_revoked':
 				return 'Invitation revoked';
+			case 'tenant_updated':
+				return 'Tenant updated';
+			case 'user_session_revoked':
+				return 'Session revoked';
+			case 'user_sessions_revoked':
+				return 'Sessions revoked';
+			case 'user_api_token_revoked':
+				return 'API token revoked';
+			case 'user_status_updated':
+				return 'User status updated';
 		}
 	}
 
@@ -146,7 +156,10 @@
 		<div class="loading">{m.common_loading()}</div>
 	{:else if !tenantId}
 		<div class="card empty-state">
-			<p>{m.settings_selectTenantDashboard()} <a href="/dashboard">{m.dashboard_title()}</a>.</p>
+			<p>
+				{m.settings_selectTenantDashboard()}
+				<a href="/dashboard">{m.dashboard_title()}</a>.
+			</p>
 		</div>
 	{:else if events.length === 0}
 		<div class="card empty-state">

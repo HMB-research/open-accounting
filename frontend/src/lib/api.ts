@@ -554,10 +554,82 @@ class ApiClient {
     );
   }
 
+  async updateTenantUserStatus(
+    tenantId: string,
+    userId: string,
+    isActive: boolean,
+  ) {
+    return this.request<{ status: string; is_active: boolean }>(
+      "PUT",
+      `/api/v1/tenants/${tenantId}/users/${userId}/status`,
+      { is_active: isActive },
+    );
+  }
+
   async removeTenantUser(tenantId: string, userId: string) {
     return this.request<{ status: string }>(
       "DELETE",
       `/api/v1/tenants/${tenantId}/users/${userId}`,
+    );
+  }
+
+  async listTenantUserAuthSessions(
+    tenantId: string,
+    userId: string,
+    includeInactive = false,
+  ) {
+    const query = buildQuery({ include_inactive: includeInactive });
+    return this.request<RefreshSession[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/users/${userId}/sessions${query}`,
+    );
+  }
+
+  async revokeTenantUserAuthSession(
+    tenantId: string,
+    userId: string,
+    sessionId: string,
+  ) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/users/${userId}/sessions/${sessionId}`,
+    );
+  }
+
+  async revokeTenantUserAuthSessions(tenantId: string, userId: string) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/users/${userId}/sessions`,
+    );
+  }
+
+  async listTenantUserAPITokens(tenantId: string, userId: string) {
+    return this.request<APIToken[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/users/${userId}/api-tokens`,
+    );
+  }
+
+  async revokeTenantUserAPIToken(
+    tenantId: string,
+    userId: string,
+    tokenId: string,
+  ) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/users/${userId}/api-tokens/${tokenId}`,
+    );
+  }
+
+  async listTenantUserSecurityAuditEvents(
+    tenantId: string,
+    userId: string,
+    limit: number = 50,
+  ) {
+    const query = buildQuery({ limit });
+    return this.request<SecurityAuditEvent[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/users/${userId}/security-events${query}`,
     );
   }
 
@@ -3183,9 +3255,14 @@ export type TenantAuditAction =
   | "user_role_updated"
   | "user_removed"
   | "invitation_created"
-  | "invitation_revoked";
+  | "invitation_revoked"
+  | "tenant_updated"
+  | "user_session_revoked"
+  | "user_sessions_revoked"
+  | "user_api_token_revoked"
+  | "user_status_updated";
 
-export type TenantAuditTargetType = "user" | "invitation";
+export type TenantAuditTargetType = "user" | "invitation" | "tenant";
 
 export interface TenantAuditEvent {
   id: string;
@@ -3208,6 +3285,41 @@ export interface TenantUser {
   user_id: string;
   role: TenantRole;
   is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RefreshSession {
+  id: string;
+  user_id: string;
+  created_at: string;
+  last_used_at?: string;
+  expires_at: string;
+  revoked_at?: string;
+}
+
+export interface APIToken {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  name: string;
+  token_prefix: string;
+  last_used_at?: string;
+  expires_at?: string;
+  revoked_at?: string;
+  created_at: string;
+}
+
+export interface SecurityAuditEvent {
+  id: string;
+  actor_user_id?: string;
+  actor_email?: string;
+  action: string;
+  target_user_id?: string;
+  target_email?: string;
+  request_ip?: string;
+  user_agent?: string;
+  metadata?: Record<string, string>;
   created_at: string;
 }
 

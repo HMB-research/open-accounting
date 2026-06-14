@@ -9,6 +9,7 @@ SOURCE_DATABASE_URL_VALUE="${DATABASE_URL:-}"
 ALLOW_NON_EMPTY=false
 SKIP_CHECKSUM=false
 DRY_RUN=false
+PREFLIGHT=false
 STATUS_FILE="${RESTORE_DRILL_STATUS_FILE:-}"
 
 FAILURE_CODE=""
@@ -27,6 +28,7 @@ Options:
   --allow-non-empty        Allow restoring into a database that already has application tables.
   --skip-checksum          Skip .sha256 verification when the checksum file exists.
   --status-file FILE       Write Prometheus textfile metrics. Defaults to RESTORE_DRILL_STATUS_FILE.
+  --preflight              Validate restore drill environment without running PostgreSQL commands.
   --dry-run                Validate arguments and print the planned restore without running pg_restore.
   -h, --help               Show this help.
 
@@ -52,6 +54,57 @@ log() {
 
 require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "missing_dependency" "$1 is required but was not found in PATH"
+}
+
+is_placeholder_value() {
+    local value
+    local lowered
+
+    value="$(printf '%s' "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    lowered="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+
+    case "$lowered" in
+        replace-me|replace_me|change-me|changeme|todo|tbd|placeholder|example|your-*|"<"*">"|*example.com*|*user:pass*|*company-backups*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+require_config_value() {
+    local name="$1"
+    local value="$2"
+
+    [ -n "$value" ] || fail "invalid_arguments" "$name is required for restore drill preflight"
+    if is_placeholder_value "$value"; then
+        fail "invalid_arguments" "$name still contains a placeholder value; replace it before enabling restore drills"
+    fi
+}
+
+require_postgres_url() {
+    local name="$1"
+    local value="$2"
+
+    case "$value" in
+        postgres://*|postgresql://*)
+            ;;
+        *)
+            fail "invalid_arguments" "$name must be a PostgreSQL connection URL"
+            ;;
+    esac
+}
+
+validate_restore_config() {
+    require_config_value BACKUP_FILE "$BACKUP_FILE"
+    require_config_value RESTORE_DATABASE_URL "$RESTORE_DATABASE_URL_VALUE"
+    require_postgres_url RESTORE_DATABASE_URL "$RESTORE_DATABASE_URL_VALUE"
+
+    if [ -n "$SOURCE_DATABASE_URL_VALUE" ]; then
+        require_config_value DATABASE_URL "$SOURCE_DATABASE_URL_VALUE"
+        require_postgres_url DATABASE_URL "$SOURCE_DATABASE_URL_VALUE"
+    fi
 }
 
 trim_space() {
@@ -185,6 +238,10 @@ while [ "$#" -gt 0 ]; do
             STATUS_FILE="$2"
             shift 2
             ;;
+        --preflight)
+            PREFLIGHT=true
+            shift
+            ;;
         --allow-non-empty)
             ALLOW_NON_EMPTY=true
             shift
@@ -207,12 +264,19 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-[ -n "$BACKUP_FILE" ] || fail "invalid_arguments" "backup file is required; pass --backup or set BACKUP_FILE"
-[ -n "$RESTORE_DATABASE_URL_VALUE" ] || fail "invalid_arguments" "restore database URL is required; pass --restore-url or set RESTORE_DATABASE_URL"
+validate_restore_config
 [ -f "$BACKUP_FILE" ] || fail "backup_not_found" "backup file does not exist: $BACKUP_FILE"
 
 if [ -n "$SOURCE_DATABASE_URL_VALUE" ] && [ "$SOURCE_DATABASE_URL_VALUE" = "$RESTORE_DATABASE_URL_VALUE" ]; then
     fail "unsafe_restore_target" "restore URL matches the source DATABASE_URL; refusing to restore into the source database"
+fi
+
+if [ "$PREFLIGHT" = true ]; then
+    log "Restore drill preflight passed"
+    log "Backup file: $BACKUP_FILE"
+    log "Restore target is configured separately from the source database"
+    [ -z "$STATUS_FILE" ] || log "Status metrics path: $STATUS_FILE"
+    exit 0
 fi
 
 if [ "$DRY_RUN" = true ]; then

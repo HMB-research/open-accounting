@@ -434,14 +434,14 @@ open-accounting/
 - [x] Optional approved evidence blockers for quote send and order confirmation
 - [x] Purchase-invoice evidence enforcement on send and email paths
 - [x] Reconciliation completion blocks bank transactions marked as requiring evidence until approved evidence is attached
-- [x] Backup creation, offsite sync, health-check, restore-drill, and systemd schedule template scripts for self-hosted operations
+- [x] Backup creation, offsite sync, health-check, restore-drill, offline host preflight, and systemd schedule template scripts for self-hosted operations
 
 ### Still missing for reliable production use
 
 - [ ] Remaining mutating migration cutover orchestration beyond the guarded CLI/server-side execution, resume-snapshot, saved-run list/get/event-stream paths, provider preset catalog discovery for Merit, SmartAccounts, and Directo, dashboard workbench live streaming, saved-run progress/duration telemetry, accountant-workspace launch handoff, and saved-bundle workspace execution, especially further provider-specific cutover depth, additional cross-file validation, and deeper dashboard-side cutover controls
 - [ ] Remaining payroll/document/evidence-policy edges and deeper accountant-workspace execution beyond the current assignment queue, direct bank follow-up, reminder actions, pending-document assignment approval, document-retention date setting, evidence/missing-document upload and replacement, unapproved-evidence approval, payroll-run payment-date setting and approval, payroll TSD assignment generation, payroll paid-run TSD follow-up generation, declared payroll archive XML export, TSD declaration XML export and acceptance marking, KMD assignment regeneration/export/acceptance marking, KMD INF/EU VAT OSS report generation, expense submit/approve/post assignment completion, fiscal-year close/carry-forward assignment completion, and migration saved-run handoff, especially remaining document evidence-policy follow-up
 - [ ] Automated document policy enforcement in remaining workflow blockers
-- [ ] Remaining auth administration hardening beyond tenant-scoped session/status/API-token controls
+- [ ] Remaining auth hardening beyond the current API/CLI/settings controls for tenant member status, sessions, API tokens, and audit visibility
 - [ ] Plugin runtime process supervision/packaging and dynamic frontend plugin component loading beyond the current loopback HTTP backend runtime
 - [ ] Direct e-invoice operator send/receive, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 

@@ -22,7 +22,7 @@ Open Accounting supports a plugin marketplace that allows extending functionalit
 2. **Git-Based Distribution**: Plugins are cloned from repositories, no package registry
 3. **Two-Level Enablement**: Installed instance-wide by admins, enabled per-tenant by users
 4. **Permission-Based Security**: Plugins declare required permissions, users approve them
-5. **Full-Stack Manifest Support**: Plugins can declare backend, frontend, and database components; backend hook/route execution is not yet available in the runtime, while frontend slots support safe declarative cards, links, and actions.
+5. **Full-Stack Manifest Support**: Plugins can declare backend, frontend, and database components. Backend hooks and routes can run through the loopback HTTP runtime; the supervised package runtime has a validated manifest contract for the process supervisor slice. Frontend slots support safe declarative cards, links, and actions.
 
 ### Plugin Lifecycle
 
@@ -34,7 +34,7 @@ Not Installed → Installed → Enabled ↔ Disabled → Uninstalled
 
 - **Not Installed**: Plugin exists in registry but not on this instance
 - **Installed**: Plugin code downloaded, awaiting enablement
-- **Enabled**: Plugin active for supported capabilities. Declarative frontend slots and navigation are available; plugins declaring backend hooks or routes are rejected until a backend plugin runtime exists.
+- **Enabled**: Plugin active for supported capabilities. Declarative frontend slots and navigation are available. Backend hooks and routes are available for `runtime: http`; `runtime: package` manifests validate package metadata now and wait for the supervised process runtime before execution.
 - **Disabled**: Plugin present but inactive
 - **Failed**: Plugin encountered an error during loading
 
@@ -109,8 +109,8 @@ permissions:
 
 # Backend configuration (optional)
 backend:
-  package: ./backend           # Go package path
-  entry: NewService            # Service constructor function
+  runtime: http                # http = externally managed loopback runtime
+  base_url: http://127.0.0.1:9123
 
   hooks:                       # Event subscriptions
     - event: invoice.created
@@ -168,6 +168,39 @@ settings:
       default: 100
       description: Expenses above this amount require approval
 ```
+
+### Backend Runtime Modes
+
+`backend.runtime` selects how backend hooks and routes are executed:
+
+| Runtime | Status | Required fields | Description |
+|---------|--------|-----------------|-------------|
+| omitted | Legacy manifest metadata | `package`, `entry` | Preserves old manifests. Hook and route declarations without an executable runtime are rejected during enablement. |
+| `http` | Supported | `base_url` | Open Accounting proxies hooks and tenant plugin routes to an operator-managed HTTP process on loopback. `base_url` must use `http` and a loopback host such as `127.0.0.1`, `::1`, or `localhost`. |
+| `package` | Contract validated, supervisor pending | `package`, `executable` | Declares a plugin-local runtime package for the future supervised process runner. Install-time manifest validation rejects unsafe paths before the supervisor is allowed to launch anything. |
+
+HTTP runtime manifests may keep legacy `package` and `entry` fields for compatibility, but the HTTP runtime uses `base_url` and handler paths. `backend.executable` is not valid with `runtime: http`.
+
+Supervised package runtime manifests use plugin-relative paths only:
+
+```yaml
+backend:
+  runtime: package
+  package: ./backend            # Plugin-relative package directory
+  executable: bin/expense-plugin # Slash-separated path inside package
+
+  routes:
+    - method: POST
+      path: /expenses/import
+      handler: /routes/import
+```
+
+Package runtime path rules are intentionally narrow:
+
+- `package` and `executable` must be relative to the plugin repository, not absolute paths or URLs.
+- Paths must stay inside the plugin package; `..` traversal is rejected.
+- Paths must use `/` separators and must not contain whitespace or shell metacharacters.
+- `base_url` is only valid for `runtime: http`.
 
 ## Permission System
 
@@ -227,7 +260,9 @@ settings:
 
 ## Event Hooks
 
-Backend event hooks are currently manifest-level only. The manifest parser and permission checks validate hook declarations, but the application does not yet load or execute plugin backend code. Enabling a plugin that declares backend hooks or routes fails explicitly so operators do not mistake a no-op plugin for a running integration.
+Backend event hooks execute through `runtime: http` when the manifest declares a loopback `base_url` and the plugin has `hooks:register` permission. The application sends each hook invocation to the declared handler path on the runtime process.
+
+`runtime: package` hook and route declarations are validated at install time, but process supervision and launch are not part of this slice. Until that runtime is implemented, package-runtime backend execution remains unavailable.
 
 Tenant outbound webhooks are the supported runtime notification path today. Use `webhooks create`, `webhooks test`, and `webhooks deliveries` in the CLI, or the `/tenants/{tenantId}/webhooks` API, to subscribe external systems to these events with signed HTTP delivery.
 
@@ -380,33 +415,39 @@ my-plugin/
 
 ```go
 // backend/service.go
-package myplugin
+package main
 
 import (
-    "context"
-    "github.com/jackc/pgx/v5/pgxpool"
+    "encoding/json"
+    "net/http"
 )
 
-type Service struct {
-    pool *pgxpool.Pool
+func main() {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/hooks/invoice", onInvoiceCreated)
+    mux.HandleFunc("/routes/expenses", listExpenses)
+    _ = http.ListenAndServe("127.0.0.1:9123", mux)
 }
 
-// NewService is the entry point called by the plugin system
-func NewService(pool *pgxpool.Pool) *Service {
-    return &Service{pool: pool}
+func onInvoiceCreated(w http.ResponseWriter, r *http.Request) {
+    var payload struct {
+        PluginID string          `json:"plugin_id"`
+        Handler  string          `json:"handler"`
+        Event    json.RawMessage `json:"event"`
+    }
+    _ = json.NewDecoder(r.Body).Decode(&payload)
+    w.WriteHeader(http.StatusAccepted)
 }
 
-// OnInvoiceCreated handles the invoice.created event
-func (s *Service) OnInvoiceCreated(ctx context.Context, event plugin.Event) error {
-    // Process event
-    return nil
-}
-
-// ListExpenses handles GET /expenses
-func (s *Service) ListExpenses(w http.ResponseWriter, r *http.Request) {
-    // Handle request
+func listExpenses(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    _, _ = w.Write([]byte(`{"expenses":[]}`))
 }
 ```
+
+For `runtime: http`, run this process outside Open Accounting and point `backend.base_url` at its loopback address. Open Accounting forwards route requests with tenant and plugin headers and forwards hook payloads to the configured handler paths.
+
+For `runtime: package`, build a self-contained executable inside the plugin repository and declare the containing package directory plus the executable path. The manifest contract is validated now; process launch, restart, and sandboxing are implemented by the supervised runtime slice.
 
 ### Frontend Development
 
@@ -565,7 +606,7 @@ Response:
 3. **Permission Review**: Admins must approve each permission
 4. **Risk Warnings**: High-risk permissions highlighted in UI
 5. **Tenant Isolation**: Plugin data scoped to tenant schemas
-6. **No Code Execution**: Plugins run in same process (future: sandboxing)
+6. **Runtime Boundaries**: HTTP runtimes must be loopback-only. Package runtimes must declare safe plugin-relative package and executable paths; process supervision and sandboxing are handled by the supervised runtime implementation.
 
 ## Troubleshooting
 
@@ -587,5 +628,6 @@ Response:
 
 ### Events Not Firing
 - Confirm hooks:register permission granted
+- For backend hooks, confirm `backend.runtime: http` and a loopback `backend.base_url` are configured
 - Check event type spelling in manifest
-- Review handler implementation
+- Review handler implementation and runtime process logs
