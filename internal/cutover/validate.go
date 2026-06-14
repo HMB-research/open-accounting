@@ -2352,6 +2352,8 @@ func validateGroupedDocumentPreflight(report *BundleValidationReport, file parse
 }
 
 func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile) {
+	validateImportedInvoiceAmountPaidConsistency(report, files)
+
 	invoiceTargets := buildCutoverInvoiceAllocationTargets(files)
 	if len(invoiceTargets) == 0 {
 		return
@@ -2408,6 +2410,112 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 				})
 			}
 		}
+	}
+}
+
+func validateImportedInvoiceAmountPaidConsistency(report *BundleValidationReport, files []parsedFile) {
+	for _, file := range files {
+		if file.kind != KindInvoices || !fileHasHeaders(file, "amount_paid") {
+			continue
+		}
+		for _, group := range cutoverInvoiceGroups(file) {
+			total, ok := cutoverInvoiceGroupTotal(group.rows)
+			if !ok {
+				continue
+			}
+			amountPaid, amountPaidRow, amountPaidSpecified := cutoverInvoiceGroupAmountPaid(group)
+			if amountPaidSpecified && amountPaid.GreaterThan(total) {
+				report.addIssue(ValidationIssue{
+					Severity: SeverityError,
+					Kind:     KindInvoices,
+					FileName: file.fileName,
+					Row:      amountPaidRow.number,
+					Field:    "amount_paid",
+					Value:    amountPaid.String(),
+					Message: fmt.Sprintf(
+						"amount_paid for invoice %q exceeds imported invoice total: amount_paid=%s invoice_total=%s",
+						group.display,
+						amountPaid.String(),
+						total.String(),
+					),
+				})
+				continue
+			}
+			status, statusRow, statusSpecified := cutoverInvoiceGroupStatus(group)
+			if !statusSpecified {
+				continue
+			}
+			validateImportedInvoiceAmountPaidStatus(report, file, group, total, amountPaid, amountPaidRow, amountPaidSpecified, status, statusRow)
+		}
+	}
+}
+
+func validateImportedInvoiceAmountPaidStatus(
+	report *BundleValidationReport,
+	file parsedFile,
+	group cutoverInvoiceGroup,
+	total decimal.Decimal,
+	amountPaid decimal.Decimal,
+	amountPaidRow parsedRow,
+	amountPaidSpecified bool,
+	status string,
+	statusRow parsedRow,
+) {
+	row := statusRow
+	value := ""
+	if amountPaidSpecified {
+		row = amountPaidRow
+		value = amountPaid.String()
+	}
+
+	switch status {
+	case "DRAFT", "SENT", "OVERDUE", "VOIDED":
+		if amountPaid.IsZero() {
+			return
+		}
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     KindInvoices,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "amount_paid",
+			Value:    value,
+			Message:  fmt.Sprintf("amount_paid must be zero when status is %s", status),
+		})
+	case "PARTIALLY_PAID":
+		if amountPaidSpecified && amountPaid.GreaterThan(decimal.Zero) && amountPaid.LessThan(total) {
+			return
+		}
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     KindInvoices,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "amount_paid",
+			Value:    value,
+			Message: fmt.Sprintf(
+				"amount_paid for invoice %q must be greater than zero and less than imported invoice total when status is PARTIALLY_PAID",
+				group.display,
+			),
+		})
+	case "PAID":
+		if !amountPaidSpecified || amountPaid.Equal(total) {
+			return
+		}
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     KindInvoices,
+			FileName: file.fileName,
+			Row:      amountPaidRow.number,
+			Field:    "amount_paid",
+			Value:    amountPaid.String(),
+			Message: fmt.Sprintf(
+				"amount_paid for invoice %q must equal imported invoice total when status is PAID: amount_paid=%s invoice_total=%s",
+				group.display,
+				amountPaid.String(),
+				total.String(),
+			),
+		})
 	}
 }
 
@@ -2510,6 +2618,38 @@ func cutoverInvoiceGroups(file parsedFile) []cutoverInvoiceGroup {
 		result = append(result, *groups[key])
 	}
 	return result
+}
+
+func cutoverInvoiceGroupAmountPaid(group cutoverInvoiceGroup) (decimal.Decimal, parsedRow, bool) {
+	for _, row := range group.rows {
+		value := strings.TrimSpace(row.values["amount_paid"])
+		if value == "" {
+			continue
+		}
+		amount, issue := parseCutoverRequiredImportDecimal(value, "amount_paid")
+		if issue != nil || amount.IsNegative() {
+			return decimal.Zero, parsedRow{}, false
+		}
+		return amount, row, true
+	}
+	return decimal.Zero, parsedRow{}, false
+}
+
+func cutoverInvoiceGroupStatus(group cutoverInvoiceGroup) (string, parsedRow, bool) {
+	for _, row := range group.rows {
+		value := strings.TrimSpace(row.values["status"])
+		if value == "" {
+			continue
+		}
+		status := normalizeCutoverInvoiceStatus(value)
+		switch status {
+		case "DRAFT", "SENT", "PARTIALLY_PAID", "PAID", "OVERDUE", "VOIDED":
+			return status, row, true
+		default:
+			return "", parsedRow{}, false
+		}
+	}
+	return "", parsedRow{}, false
 }
 
 func cutoverInvoiceGroupTotal(rows []parsedRow) (decimal.Decimal, bool) {

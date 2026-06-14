@@ -4049,6 +4049,79 @@ func TestValidateBundleAcceptsSplitPaymentAllocationsWithinImportedInvoiceTotal(
 	assert.Empty(t, report.Issues)
 }
 
+func TestValidateBundleAcceptsImportedInvoiceAmountPaidWithinTotal(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,PARTIALLY_PAID,60,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.RowsValidated)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsImportedInvoiceAmountPaidExceedsTotal(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,PARTIALLY_PAID,130,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindInvoices, report.Issues[0].Kind)
+	assert.Equal(t, 2, report.Issues[0].Row)
+	assert.Equal(t, "amount_paid", report.Issues[0].Field)
+	assert.Contains(t, report.Issues[0].Message, `amount_paid for invoice "INV-1/SALES" exceeds imported invoice total`)
+	assert.Contains(t, report.Issues[0].Message, "amount_paid=130")
+	assert.Contains(t, report.Issues[0].Message, "invoice_total=122")
+}
+
+func TestValidateBundleReportsImportedInvoiceAmountPaidStatusMismatch(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,status,amount_paid,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-SENT,SALES,CUST-1,2026-05-30,2026-06-14,SENT,10,Work,1,100,22\n" +
+				"INV-PAID,SALES,CUST-1,2026-05-30,2026-06-14,PAID,60,Work,1,100,22\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 2)
+	assertValidationIssue(t, report, KindInvoices, "amount_paid", "amount_paid must be zero when status is SENT")
+	assertValidationIssue(t, report, KindInvoices, "amount_paid", "must equal imported invoice total when status is PAID")
+}
+
 func TestValidateBundleReportsPaymentAllocationsExceedImportedInvoiceTotal(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
