@@ -419,10 +419,14 @@ func TestCLIGuideDocumentsPayrollMigrationSamples(t *testing.T) {
 		"go run ./cmd/oa tax kmd mark-accepted --year 2026 --month 3",
 		"`tax kmd mark-submitted` and `tax kmd mark-accepted` require one approved `tax_support` or `supporting_document` uploaded to `--entity-type kmd_declaration`",
 		"`tax kmd mark-submitted` records the declaration as submitted with the current server timestamp.",
+		"Backend hook and route manifest entries are executable when they declare a supported `backend.runtime`: `http` proxies to an operator-managed loopback process with `backend.base_url`, while `package` starts a plugin-local executable and waits for its loopback health endpoint before proxying hooks and tenant runtime routes.",
 	} {
 		if !strings.Contains(guide, snippet) {
 			t.Fatalf("CLI guide missing payroll migration sample snippet %q", snippet)
 		}
+	}
+	if strings.Contains(guide, "Backend hook and route manifest entries are still rejected during plugin enablement until a backend runtime exists.") {
+		t.Fatal("CLI guide still describes backend plugin runtime as unavailable")
 	}
 }
 
