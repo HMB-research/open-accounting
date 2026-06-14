@@ -3955,6 +3955,102 @@ func TestValidateBundleAcceptsPaymentInvoiceIDReference(t *testing.T) {
 	assert.Contains(t, invoiceValidation.Headers, "id")
 }
 
+func TestValidateBundleAcceptsSplitPaymentAllocationsWithinImportedInvoiceTotal(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,Work,1,100,22\n",
+		},
+		{
+			Kind:     KindPayments,
+			FileName: "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number,allocation_amount\n" +
+				"RECEIVED,2026-05-31,60,INV-1,60\n" +
+				"RECEIVED,2026-06-01,62,INV-1,\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 4, report.Summary.RowsValidated)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsPaymentAllocationsExceedImportedInvoiceTotal(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-05-30,2026-06-14,Work,1,100,22\n",
+		},
+		{
+			Kind:     KindPayments,
+			FileName: "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number\n" +
+				"RECEIVED,2026-05-31,100,INV-1\n" +
+				"RECEIVED,2026-06-01,30,INV-1\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, 3, report.Issues[0].Row)
+	assert.Equal(t, "allocation_amount", report.Issues[0].Field)
+	assert.Equal(t, KindInvoices, report.Issues[0].TargetKind)
+	assert.Contains(t, report.Issues[0].Message, "payment allocations for invoice \"INV-1\" exceed imported invoice total")
+	assert.Contains(t, report.Issues[0].Message, "allocations=130")
+	assert.Contains(t, report.Issues[0].Message, "invoice_total=122")
+}
+
+func TestValidateBundleReportsAmbiguousPaymentInvoiceNumberReference(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer One\nSUP-1,Supplier One\n",
+		},
+		{
+			Kind:     KindInvoices,
+			FileName: "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-1,SALES,CUST-1,2026-05-30,2026-06-14,Sale,1,100,22\n" +
+				"INV-1,PURCHASE,SUP-1,2026-05-30,2026-06-14,Purchase,1,50,22\n",
+		},
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_type,payment_date,amount,invoice_number\nRECEIVED,2026-05-31,10,INV-1\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayments, report.Issues[0].Kind)
+	assert.Equal(t, "invoice_number", report.Issues[0].Field)
+	assert.Equal(t, "INV-1", report.Issues[0].Value)
+	assert.Equal(t, KindInvoices, report.Issues[0].TargetKind)
+	assert.Contains(t, report.Issues[0].Message, `invoice_number "INV-1" matched multiple imported invoices`)
+}
+
 func TestValidateBundleAcceptsPaymentImporterReferenceAliases(t *testing.T) {
 	legacyContactID := "11111111-1111-1111-1111-111111111111"
 
