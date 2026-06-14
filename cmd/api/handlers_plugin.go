@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -584,4 +585,82 @@ func (h *Handlers) UpdateTenantPluginSettings(w http.ResponseWriter, r *http.Req
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// InvokeTenantPluginRoute proxies a declared plugin runtime route for a tenant.
+// @Summary Invoke tenant plugin route
+// @Description Invoke a manifest-declared plugin runtime route through the out-of-process HTTP plugin runtime
+// @Tags Plugins
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param pluginID path string true "Plugin ID"
+// @Param path path string true "Plugin route path"
+// @Success 200 {object} object
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 502 {object} object{error=string}
+// @Router /tenants/{tenantID}/plugins/{pluginID}/runtime/{path} [get]
+// @Router /tenants/{tenantID}/plugins/{pluginID}/runtime/{path} [post]
+// @Router /tenants/{tenantID}/plugins/{pluginID}/runtime/{path} [put]
+// @Router /tenants/{tenantID}/plugins/{pluginID}/runtime/{path} [patch]
+// @Router /tenants/{tenantID}/plugins/{pluginID}/runtime/{path} [delete]
+func (h *Handlers) InvokeTenantPluginRoute(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	tenantID, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid tenant ID")
+		return
+	}
+
+	pluginID, err := uuid.Parse(chi.URLParam(r, "pluginID"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid plugin ID")
+		return
+	}
+
+	if _, err := h.tenantService.GetUserRole(r.Context(), tenantID.String(), claims.UserID); err != nil {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
+	runtimePath := "/" + chi.URLParam(r, "*")
+	resp, err := h.pluginService.InvokeTenantPluginRoute(
+		r.Context(),
+		tenantID,
+		pluginID,
+		r.Method,
+		runtimePath,
+		r.URL.RawQuery,
+		r.Header,
+		r.Body,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, plugin.ErrPluginNotEnabled):
+			respondError(w, http.StatusForbidden, "Plugin is not enabled for this tenant")
+		case errors.Is(err, plugin.ErrPluginRouteNotFound):
+			respondError(w, http.StatusNotFound, "Plugin route is not registered")
+		case errors.Is(err, plugin.ErrPluginRuntimeUnavailable), errors.Is(err, plugin.ErrPluginRuntimeUnsupported):
+			respondError(w, http.StatusBadGateway, err.Error())
+		default:
+			respondError(w, http.StatusBadGateway, "Plugin runtime request failed")
+		}
+		return
+	}
+
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(resp.Body)
 }

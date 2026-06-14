@@ -47,6 +47,8 @@ type Manifest struct {
 type BackendConfig struct {
 	Package string        `yaml:"package" json:"package"`
 	Entry   string        `yaml:"entry" json:"entry"`
+	Runtime string        `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	BaseURL string        `yaml:"base_url,omitempty" json:"base_url,omitempty"`
 	Hooks   []HookConfig  `yaml:"hooks,omitempty" json:"hooks,omitempty"`
 	Routes  []RouteConfig `yaml:"routes,omitempty" json:"routes,omitempty"`
 }

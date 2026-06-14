@@ -1234,6 +1234,14 @@ func tenantCLICommand(method, path string) (string, bool) {
 			"GET": "plugins settings get",
 			"PUT": "plugins settings update",
 		})
+	case "/plugins/{pluginID}/runtime/*":
+		return commandForMethod(method, map[string]string{
+			"GET":    "plugins runtime invoke",
+			"POST":   "plugins runtime invoke",
+			"PUT":    "plugins runtime invoke",
+			"PATCH":  "plugins runtime invoke",
+			"DELETE": "plugins runtime invoke",
+		})
 	default:
 		return "", false
 	}

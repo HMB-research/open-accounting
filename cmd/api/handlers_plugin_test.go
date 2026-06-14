@@ -563,3 +563,92 @@ func TestTenantPluginEnableHandlerReturnsUpdatedTenantPlugin(t *testing.T) {
 	require.NotNil(t, enabled.Plugin)
 	assert.Equal(t, "demo-bank-import", enabled.Plugin.Name)
 }
+
+func TestInvokeTenantPluginRouteProxiesDeclaredRuntimeRoute(t *testing.T) {
+	h, repo := setupPluginTestHandlers(t)
+
+	tenantID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	pluginID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	userID := "user-1"
+	var runtimeTenantHeader string
+	var runtimePluginHeader string
+	var runtimeBody map[string]string
+
+	runtimeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/routes/status", r.URL.Path)
+		runtimeTenantHeader = r.Header.Get("X-Open-Accounting-Tenant-ID")
+		runtimePluginHeader = r.Header.Get("X-Open-Accounting-Plugin-ID")
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&runtimeBody))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"handled"}`))
+	}))
+	defer runtimeServer.Close()
+
+	tenantRepo := newMockTenantRepository()
+	tenantRepo.addTestTenant(tenantID.String(), "Demo Tenant", "demo-tenant")
+	tenantRepo.tenantUsers[tenantID.String()] = []tenant.TenantUser{{
+		TenantID: tenantID.String(),
+		UserID:   userID,
+		Role:     tenant.RoleAdmin,
+		IsActive: true,
+	}}
+	h.tenantService = tenant.NewServiceWithRepository(tenantRepo)
+
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	repo.plugins[pluginID] = &plugin.Plugin{
+		ID:                 pluginID,
+		Name:               "runtime-plugin",
+		DisplayName:        "Runtime Plugin",
+		Description:        "Demo runtime plugin",
+		Version:            "1.0.0",
+		RepositoryURL:      "https://github.com/HMB-research/open-accounting-runtime-plugin",
+		RepositoryType:     plugin.RepoGitHub,
+		State:              plugin.StateEnabled,
+		GrantedPermissions: []string{"routes:register"},
+		Manifest: json.RawMessage(fmt.Sprintf(`{
+			"name":"runtime-plugin",
+			"display_name":"Runtime Plugin",
+			"version":"1.0.0",
+			"permissions":["routes:register"],
+			"backend":{
+				"package":"./backend",
+				"entry":"main",
+				"runtime":"http",
+				"base_url":%q,
+				"routes":[{"method":"POST","path":"/status","handler":"/routes/status"}]
+			}
+		}`, runtimeServer.URL)),
+		InstalledAt: now,
+		UpdatedAt:   now,
+	}
+	repo.tenantPlugins[pluginTenantKey(tenantID, pluginID)] = &plugin.TenantPlugin{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		PluginID:  pluginID,
+		IsEnabled: true,
+		EnabledAt: &now,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	req := makeAuthenticatedRequest(
+		http.MethodPost,
+		"/tenants/"+tenantID.String()+"/plugins/"+pluginID.String()+"/runtime/status",
+		map[string]string{"ping": "pong"},
+		&auth.Claims{UserID: userID, TenantID: tenantID.String(), Role: tenant.RoleAdmin},
+	)
+	req = withURLParams(req, map[string]string{
+		"tenantID": tenantID.String(),
+		"pluginID": pluginID.String(),
+		"*":        "status",
+	})
+	resp := httptest.NewRecorder()
+	h.InvokeTenantPluginRoute(resp, req)
+
+	require.Equal(t, http.StatusAccepted, resp.Code)
+	assert.JSONEq(t, `{"status":"handled"}`, resp.Body.String())
+	assert.Equal(t, tenantID.String(), runtimeTenantHeader)
+	assert.Equal(t, pluginID.String(), runtimePluginHeader)
+	assert.Equal(t, "pong", runtimeBody["ping"])
+}

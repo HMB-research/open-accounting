@@ -205,6 +205,7 @@ go run ./cmd/oa plugins enable --id <plugin-id> --settings-json '{"enabled":true
 go run ./cmd/oa plugins enable --id <plugin-id> --settings-file ./plugin-settings.json
 go run ./cmd/oa plugins settings get --id <plugin-id>
 go run ./cmd/oa plugins settings update --id <plugin-id> --settings-file ./plugin-settings.json
+go run ./cmd/oa plugins runtime invoke --id <plugin-id> --method POST --path /status --body-json '{"ok":true}'
 go run ./cmd/oa plugins disable --id <plugin-id>
 
 go run ./cmd/oa admin registries list

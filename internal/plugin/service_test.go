@@ -3,7 +3,10 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"strings"
 	"testing"
@@ -1421,6 +1424,176 @@ func TestService_LoadPlugin_WithHooksRequiresRuntime(t *testing.T) {
 	}
 	if hooks.HasHandlers("invoice.created") {
 		t.Error("expected hook not to be registered when hook runtime is unavailable")
+	}
+}
+
+func TestService_LoadPlugin_WithHTTPHookRuntime(t *testing.T) {
+	repo := NewMockRepository()
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, "/tmp/plugins")
+	pluginID := uuid.New()
+	tenantID := uuid.New()
+	var received runtimeHookPayload
+
+	runtimeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hooks/invoice" {
+			t.Errorf("runtime path = %q, want /hooks/invoice", r.URL.Path)
+		}
+		if r.Header.Get("X-Open-Accounting-Plugin-ID") != pluginID.String() {
+			t.Errorf("plugin header = %q", r.Header.Get("X-Open-Accounting-Plugin-ID"))
+		}
+		if r.Header.Get("X-Open-Accounting-Event") != EventInvoiceCreated {
+			t.Errorf("event header = %q", r.Header.Get("X-Open-Accounting-Event"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Errorf("decode runtime payload: %v", err)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer runtimeServer.Close()
+
+	plugin := &Plugin{
+		ID:   pluginID,
+		Name: "hooks-plugin",
+	}
+	manifest := &Manifest{
+		Name:    "hooks-plugin",
+		Version: "1.0.0",
+		Backend: &BackendConfig{
+			Package: "internal/plugin",
+			Entry:   "main.go",
+			Runtime: BackendRuntimeHTTP,
+			BaseURL: runtimeServer.URL,
+			Hooks: []HookConfig{
+				{Event: EventInvoiceCreated, Handler: "/hooks/invoice"},
+			},
+		},
+	}
+
+	if err := service.loadPlugin(plugin, manifest); err != nil {
+		t.Fatalf("loadPlugin failed: %v", err)
+	}
+	if !hooks.HasHandlers(EventInvoiceCreated) {
+		t.Fatal("expected invoice hook to be registered")
+	}
+
+	event := Event{Type: EventInvoiceCreated, TenantID: tenantID, Time: time.Now()}
+	if err := hooks.Emit(context.Background(), event); err != nil {
+		t.Fatalf("emit hook: %v", err)
+	}
+	if received.PluginID != pluginID {
+		t.Errorf("payload plugin ID = %s, want %s", received.PluginID, pluginID)
+	}
+	if received.PluginName != "hooks-plugin" {
+		t.Errorf("payload plugin name = %q", received.PluginName)
+	}
+	if received.Event.TenantID != tenantID {
+		t.Errorf("payload tenant ID = %s, want %s", received.Event.TenantID, tenantID)
+	}
+}
+
+func TestService_InvokeTenantPluginRoute_HTTPRuntime(t *testing.T) {
+	ctx := context.Background()
+	tenantID := uuid.New()
+	pluginID := uuid.New()
+	var runtimeTenantHeader string
+	var runtimeBody map[string]string
+
+	runtimeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/routes/status" {
+			t.Errorf("runtime path = %q, want /routes/status", r.URL.Path)
+		}
+		runtimeTenantHeader = r.Header.Get("X-Open-Accounting-Tenant-ID")
+		if err := json.NewDecoder(r.Body).Decode(&runtimeBody); err != nil {
+			t.Errorf("decode route body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer runtimeServer.Close()
+
+	manifestJSON := json.RawMessage(fmt.Sprintf(`{
+		"name":"runtime-plugin",
+		"display_name":"Runtime Plugin",
+		"version":"1.0.0",
+		"permissions":["routes:register"],
+		"backend":{
+			"package":"./backend",
+			"entry":"main",
+			"runtime":"http",
+			"base_url":%q,
+			"routes":[{"method":"POST","path":"/status","handler":"/routes/status"}]
+		}
+	}`, runtimeServer.URL))
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:                 pluginID,
+		Name:               "runtime-plugin",
+		DisplayName:        "Runtime Plugin",
+		Version:            "1.0.0",
+		State:              StateEnabled,
+		GrantedPermissions: []string{"routes:register"},
+		Manifest:           manifestJSON,
+	}
+	now := time.Now()
+	repo.tenantPlugins[fmt.Sprintf("%s:%s", tenantID, pluginID)] = &TenantPlugin{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		PluginID:  pluginID,
+		IsEnabled: true,
+		EnabledAt: &now,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	resp, err := service.InvokeTenantPluginRoute(
+		ctx,
+		tenantID,
+		pluginID,
+		http.MethodPost,
+		"/status",
+		"",
+		http.Header{"Content-Type": []string{"application/json"}},
+		strings.NewReader(`{"ping":"pong"}`),
+	)
+	if err != nil {
+		t.Fatalf("InvokeTenantPluginRoute failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("status code = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	if string(resp.Body) != `{"ok":true}` {
+		t.Errorf("body = %s", resp.Body)
+	}
+	if runtimeTenantHeader != tenantID.String() {
+		t.Errorf("tenant header = %q, want %s", runtimeTenantHeader, tenantID)
+	}
+	if runtimeBody["ping"] != "pong" {
+		t.Errorf("runtime body = %#v", runtimeBody)
+	}
+}
+
+func TestService_InvokeTenantPluginRoute_RequiresEnabledTenantPlugin(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+
+	_, err := service.InvokeTenantPluginRoute(
+		context.Background(),
+		uuid.New(),
+		uuid.New(),
+		http.MethodGet,
+		"/status",
+		"",
+		nil,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected disabled tenant plugin error")
+	}
+	if !errors.Is(err, ErrPluginNotEnabled) {
+		t.Fatalf("expected ErrPluginNotEnabled, got %v", err)
 	}
 }
 

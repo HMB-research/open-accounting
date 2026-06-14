@@ -926,6 +926,11 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/plugins/{pluginID}/disable", h.DisableTenantPlugin)
 				r.Get("/plugins/{pluginID}/settings", h.GetTenantPluginSettings)
 				r.Put("/plugins/{pluginID}/settings", h.UpdateTenantPluginSettings)
+				r.Get("/plugins/{pluginID}/runtime/*", h.InvokeTenantPluginRoute)
+				r.Post("/plugins/{pluginID}/runtime/*", h.InvokeTenantPluginRoute)
+				r.Put("/plugins/{pluginID}/runtime/*", h.InvokeTenantPluginRoute)
+				r.Patch("/plugins/{pluginID}/runtime/*", h.InvokeTenantPluginRoute)
+				r.Delete("/plugins/{pluginID}/runtime/*", h.InvokeTenantPluginRoute)
 			})
 
 			// Register exact tenant management routes after the tenant-scoped

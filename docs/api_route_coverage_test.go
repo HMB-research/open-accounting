@@ -261,6 +261,7 @@ func apiReferenceRoute(route documentedRoute) (documentedRoute, bool) {
 func normalizeRoutePlaceholders(value string) string {
 	replacer := strings.NewReplacer(
 		"ID}", "Id}",
+		"/runtime/{path}", "/runtime/*",
 	)
 	return replacer.Replace(value)
 }

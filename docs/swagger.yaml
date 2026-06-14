@@ -17131,6 +17131,312 @@ paths:
       summary: Enable plugin for tenant
       tags:
       - Plugins
+  /tenants/{tenantID}/plugins/{pluginID}/runtime/{path}:
+    delete:
+      consumes:
+      - application/json
+      description: Invoke a manifest-declared plugin runtime route through the out-of-process
+        HTTP plugin runtime
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Plugin ID
+        in: path
+        name: pluginID
+        required: true
+        type: string
+      - description: Plugin route path
+        in: path
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Invoke tenant plugin route
+      tags:
+      - Plugins
+    get:
+      consumes:
+      - application/json
+      description: Invoke a manifest-declared plugin runtime route through the out-of-process
+        HTTP plugin runtime
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Plugin ID
+        in: path
+        name: pluginID
+        required: true
+        type: string
+      - description: Plugin route path
+        in: path
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Invoke tenant plugin route
+      tags:
+      - Plugins
+    patch:
+      consumes:
+      - application/json
+      description: Invoke a manifest-declared plugin runtime route through the out-of-process
+        HTTP plugin runtime
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Plugin ID
+        in: path
+        name: pluginID
+        required: true
+        type: string
+      - description: Plugin route path
+        in: path
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Invoke tenant plugin route
+      tags:
+      - Plugins
+    post:
+      consumes:
+      - application/json
+      description: Invoke a manifest-declared plugin runtime route through the out-of-process
+        HTTP plugin runtime
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Plugin ID
+        in: path
+        name: pluginID
+        required: true
+        type: string
+      - description: Plugin route path
+        in: path
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Invoke tenant plugin route
+      tags:
+      - Plugins
+    put:
+      consumes:
+      - application/json
+      description: Invoke a manifest-declared plugin runtime route through the out-of-process
+        HTTP plugin runtime
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Plugin ID
+        in: path
+        name: pluginID
+        required: true
+        type: string
+      - description: Plugin route path
+        in: path
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Invoke tenant plugin route
+      tags:
+      - Plugins
   /tenants/{tenantID}/plugins/{pluginID}/settings:
     get:
       description: Get the settings for a plugin for a specific tenant

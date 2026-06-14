@@ -3342,11 +3342,16 @@ POST /tenants/{tenantId}/plugins/{pluginId}/enable
 POST /tenants/{tenantId}/plugins/{pluginId}/disable
 GET /tenants/{tenantId}/plugins/{pluginId}/settings
 PUT /tenants/{tenantId}/plugins/{pluginId}/settings
+GET /tenants/{tenantId}/plugins/{pluginId}/runtime/*
+POST /tenants/{tenantId}/plugins/{pluginId}/runtime/*
+PUT /tenants/{tenantId}/plugins/{pluginId}/runtime/*
+PATCH /tenants/{tenantId}/plugins/{pluginId}/runtime/*
+DELETE /tenants/{tenantId}/plugins/{pluginId}/runtime/*
 Authorization: Bearer <token>
 ```
 
 Tenant plugin enable and settings update requests accept arbitrary plugin-specific JSON settings.
-Tenant plugin list responses include each plugin manifest. Frontend slot entries may declare safe `card`, `link`, or `action` runtime metadata with `label`, `description`, internal `path`, `badge`, and `order` fields; backend hook and route declarations are rejected during plugin enablement until a backend plugin runtime exists.
+Tenant plugin list responses include each plugin manifest. Frontend slot entries may declare safe `card`, `link`, or `action` runtime metadata with `label`, `description`, internal `path`, `badge`, and `order` fields. Backend hook and route declarations can run through an out-of-process HTTP runtime when the manifest declares `backend.runtime: http` and a loopback `backend.base_url`; tenant routes are exposed under `/api/v1/tenants/{tenantID}/plugins/{pluginID}/runtime/...` after tenant enablement.
 
 ---
 
