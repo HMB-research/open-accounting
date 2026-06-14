@@ -1223,7 +1223,7 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 		validateGroupedDocumentPreflight(report, file)
 		validateAccountingPreflight(report, file)
 	}
-	validateCrossFileConsistency(report, parsed)
+	validateCrossFileConsistency(report, parsed, eInvoiceContactMode)
 
 	sort.SliceStable(report.Issues, func(i, j int) bool {
 		if report.Issues[i].Severity != report.Issues[j].Severity {
@@ -2377,10 +2377,10 @@ func validateGroupedDocumentPreflight(report *BundleValidationReport, file parse
 	}
 }
 
-func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile) {
+func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile, eInvoiceContactMode EInvoiceContactMode) {
 	validateImportedInvoiceAmountPaidConsistency(report, files)
 
-	invoiceTargets := buildCutoverInvoiceAllocationTargets(files)
+	invoiceTargets := buildCutoverInvoiceAllocationTargets(files, eInvoiceContactMode)
 	if len(invoiceTargets) == 0 {
 		return
 	}
@@ -2574,7 +2574,7 @@ func validateImportedInvoiceAmountPaidStatus(
 	}
 }
 
-func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutoverInvoiceAllocationTarget {
+func buildCutoverInvoiceAllocationTargets(files []parsedFile, eInvoiceContactMode EInvoiceContactMode) map[string]cutoverInvoiceAllocationTarget {
 	targets := map[string]cutoverInvoiceAllocationTarget{}
 	for _, file := range files {
 		if file.kind != KindInvoices {
@@ -2584,7 +2584,7 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutover
 					if !ok {
 						continue
 					}
-					contactReferences := cutoverContactReferencesFromRow(row)
+					contactReferences := cutoverEInvoicePaymentContactReferences(row, eInvoiceContactMode)
 					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], contactReferences)
 					if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
 						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], contactReferences)
@@ -2917,6 +2917,41 @@ func cutoverContactReferencesFromRow(row parsedRow) cutoverContactReferences {
 			continue
 		}
 		references[field] = cutoverContactReference{
+			display:    display,
+			normalized: normalizedValue(display),
+		}
+	}
+	return references
+}
+
+func cutoverEInvoicePaymentContactReferences(row parsedRow, mode EInvoiceContactMode) cutoverContactReferences {
+	switch normalizeCutoverInvoiceType(row.values["invoice_type"]) {
+	case "SALES":
+		return cutoverEInvoiceBuyerContactReferencesFromRow(row)
+	case "PURCHASE":
+		return cutoverContactReferencesFromRow(row)
+	default:
+		if mode == EInvoiceContactModeCustomer {
+			return cutoverEInvoiceBuyerContactReferencesFromRow(row)
+		}
+		return cutoverContactReferencesFromRow(row)
+	}
+}
+
+func cutoverEInvoiceBuyerContactReferencesFromRow(row parsedRow) cutoverContactReferences {
+	fieldMap := map[string]string{
+		"buyer_reg_code":      "contact_reg_code",
+		"buyer_vat_number":    "contact_vat_number",
+		"buyer_contact_email": "contact_email",
+		"buyer_contact_name":  "contact_name",
+	}
+	references := cutoverContactReferences{}
+	for sourceField, contactField := range fieldMap {
+		display := strings.TrimSpace(row.values[sourceField])
+		if display == "" {
+			continue
+		}
+		references[contactField] = cutoverContactReference{
 			display:    display,
 			normalized: normalizedValue(display),
 		}

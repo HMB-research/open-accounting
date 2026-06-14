@@ -49,6 +49,7 @@ Status values:
 - The follow-up combined invoice paid/allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation direction consistency stage was locally revalidated with focused cutover validator, CLI request, frontend workbench, docs status, lint, and CLI coverage gates.
 - The follow-up payment invoice-contact consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up e-invoice payment invoice-contact consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up cross-workspace remediation assignment metadata stage was locally revalidated with focused workspace/accounting/banking/expenses/documents/payroll/tax/CLI tests and frontend API type coverage.
 - The follow-up accountant workspace assignment queue stage was locally revalidated with prepared Svelte checks plus targeted review-panel, portfolio-panel, workspace-helper, and frontend API tests.
 - The follow-up expense assignment queue stage was locally revalidated with focused review-panel, portfolio-panel, frontend API, prepared Svelte, docs, lint, CLI coverage, and backend coverage gates.
@@ -88,9 +89,9 @@ Status values:
 | Direct bank feeds, direct SEPA initiation, e-invoice operator exchange, OCR, and automatic authority filing | `Blocked` | Manual export/import alternatives exist for several flows. | Documented as blocked in status and roadmap docs. | Requires external partnerships, licensing, certification, or additional infrastructure. |
 
 Historical migration coverage also includes same-field payment invoice-contact
-consistency for imported invoice CSV allocations, so payment rows that name one
-contact and allocate against another same-bundle imported invoice contact are
-reported before allocation totals are accumulated.
+consistency for imported invoice CSV and e-invoice XML allocations, including
+customer-mode sales e-invoices where the payment contact must match the buyer
+party rather than the seller party.
 
 ## Stage Gates To Keep Current
 
