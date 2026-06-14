@@ -17,6 +17,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listPayrollRuns: vi.fn(),
 		listTSD: vi.fn(),
 		listKMD: vi.fn(),
+		listMigrationExecutionRuns: vi.fn(),
 		getYearEndCloseStatus: vi.fn()
 	}
 }));
@@ -367,6 +368,7 @@ describe('AccountantPortfolioPanel', () => {
 		);
 		apiMock.listTSD.mockResolvedValue([]);
 		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.listMigrationExecutionRuns.mockResolvedValue([]);
 		apiMock.getYearEndCloseStatus.mockImplementation(async (tenantId: string) => ({
 			period_end_date: '2025-12-31',
 			fiscal_year_label: '2025',
