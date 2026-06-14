@@ -979,8 +979,8 @@ func TestValidateBundleAcceptsMeritPaymentAndBankProviderPresetAliases(t *testin
 			{
 				Kind:     KindPayments,
 				FileName: "merit-payments.csv",
-				CSVContent: "makse_nr,makse_tyyp,kuupaev,summa,arve_nr,viitenumber,selgitus,makseviis,pangakonto,jaotuse_summa\n" + //nolint:misspell // Estonian CSV header aliases.
-					"PAY-1,RECEIVED,2026-05-31,100,INV-1,REF-1,Customer payment,BANK_TRANSFER,EE471000001020145685,100\n",
+				CSVContent: "makse_nr,makse_tyyp,kuupaev,summa,valuuta,arve_nr,viitenumber,selgitus,makseviis,pangakonto,jaotuse_summa\n" + //nolint:misspell // Estonian CSV header aliases.
+					"PAY-1,RECEIVED,2026-05-31,100,EUR,INV-1,REF-1,Customer payment,BANK_TRANSFER,EE471000001020145685,100\n",
 			},
 			{
 				Kind:       KindBankAccounts,
@@ -1001,6 +1001,7 @@ func TestValidateBundleAcceptsMeritPaymentAndBankProviderPresetAliases(t *testin
 	assert.Equal(t, 0, report.Summary.ErrorCount)
 	require.Len(t, report.Files, 6)
 	assert.Contains(t, report.Files[3].Headers, "payment_number")
+	assert.Contains(t, report.Files[3].Headers, "currency")
 	assert.Contains(t, report.Files[3].Headers, "payment_method")
 	assert.Contains(t, report.Files[3].Headers, "bank_account")
 	assert.Contains(t, report.Files[3].Headers, "allocation_amount")
@@ -1034,8 +1035,8 @@ func TestValidateBundleAcceptsSmartAccountsPaymentAndBankProviderPresetAliases(t
 			{
 				Kind:     KindPayments,
 				FileName: "smartaccounts-payments.csv",
-				CSVContent: "payment_no,payment_kind,payment_date,paid_amount,document_no,payment_method,bank_account_no,reference_no,payment_memo,allocated_amount\n" +
-					"PAY-1,RECEIVED,2026-05-31,100,INV-1,BANK_TRANSFER,EE471000001020145685,REF-1,Customer payment,100\n",
+				CSVContent: "payment_no,payment_kind,payment_date,paid_amount,currency_code,document_no,payment_method,bank_account_no,reference_no,payment_memo,allocated_amount\n" +
+					"PAY-1,RECEIVED,2026-05-31,100,EUR,INV-1,BANK_TRANSFER,EE471000001020145685,REF-1,Customer payment,100\n",
 			},
 			{
 				Kind:       KindBankAccounts,
@@ -1056,6 +1057,7 @@ func TestValidateBundleAcceptsSmartAccountsPaymentAndBankProviderPresetAliases(t
 	assert.Equal(t, 0, report.Summary.ErrorCount)
 	require.Len(t, report.Files, 6)
 	assert.Contains(t, report.Files[3].Headers, "payment_number")
+	assert.Contains(t, report.Files[3].Headers, "currency")
 	assert.Contains(t, report.Files[3].Headers, "payment_method")
 	assert.Contains(t, report.Files[3].Headers, "bank_account")
 	assert.Contains(t, report.Files[3].Headers, "allocation_amount")
@@ -1091,8 +1093,8 @@ func TestValidateBundleAcceptsDirectoCommercialBankAndJournalProviderPresetAlias
 			{
 				Kind:     KindPayments,
 				FileName: "directo-payments.csv",
-				CSVContent: "laekumine,makse_tyyp,kuupaev,summa,arve,makseviis,pangakonto,viitenr,selgitus,jaotatud_summa\n" + //nolint:misspell // Directo CSV header alias.
-					"PAY-1,RECEIVED,2026-05-31,100,INV-1,BANK_TRANSFER,EE471000001020145685,REF-1,Customer payment,100\n",
+				CSVContent: "laekumine,makse_tyyp,kuupaev,summa,valuuta,arve,makseviis,pangakonto,viitenr,selgitus,jaotatud_summa\n" + //nolint:misspell // Directo CSV header alias.
+					"PAY-1,RECEIVED,2026-05-31,100,EUR,INV-1,BANK_TRANSFER,EE471000001020145685,REF-1,Customer payment,100\n",
 			},
 			{
 				Kind:       KindBankAccounts,
@@ -1138,6 +1140,7 @@ func TestValidateBundleAcceptsDirectoCommercialBankAndJournalProviderPresetAlias
 	assert.Contains(t, report.Files[0].Headers, "account_type")
 	assert.Contains(t, report.Files[2].Headers, "invoice_number")
 	assert.Contains(t, report.Files[3].Headers, "payment_number")
+	assert.Contains(t, report.Files[3].Headers, "currency")
 	assert.Contains(t, report.Files[4].Headers, "account_number")
 	assert.Contains(t, report.Files[5].Headers, "source_account")
 	assert.Contains(t, report.Files[7].Headers, "line_id")

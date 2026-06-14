@@ -457,6 +457,10 @@ func normalizeEntityType(value string) (string, error) {
 		return EntityTypeYearEndClose, nil
 	case EntityTypeLeaveRecord:
 		return EntityTypeLeaveRecord, nil
+	case EntityTypeTSD:
+		return EntityTypeTSD, nil
+	case EntityTypeKMD:
+		return EntityTypeKMD, nil
 	default:
 		return "", fmt.Errorf("unsupported document entity type")
 	}

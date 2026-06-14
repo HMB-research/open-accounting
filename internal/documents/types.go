@@ -13,6 +13,8 @@ const (
 	EntityTypeOrder        = "order"
 	EntityTypeYearEndClose = "year_end_close"
 	EntityTypeLeaveRecord  = "leave_record"
+	EntityTypeTSD          = "tsd_declaration"
+	EntityTypeKMD          = "kmd_declaration"
 
 	DocumentTypeSupportingDocument = "supporting_document"
 	DocumentTypeReceipt            = "receipt"

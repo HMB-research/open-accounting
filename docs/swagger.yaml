@@ -20090,7 +20090,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Mark a TSD declaration as submitted to e-MTA
+      description: Mark a TSD declaration as submitted to e-MTA after approved tax/support
+        evidence is attached.
       parameters:
       - description: Tenant ID
         in: path
@@ -20128,6 +20129,13 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: Conflict
           schema:
             properties:
               error:

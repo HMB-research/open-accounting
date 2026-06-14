@@ -513,6 +513,8 @@ func TestService_UploadAcceptsWorkflowDocuments(t *testing.T) {
 		{name: "quote", entityType: EntityTypeQuote, entityID: "quote-1"},
 		{name: "order", entityType: EntityTypeOrder, entityID: "order-1"},
 		{name: "leave", entityType: EntityTypeLeaveRecord, entityID: "leave-1"},
+		{name: "TSD", entityType: EntityTypeTSD, entityID: "tsd-1"},
+		{name: "KMD", entityType: EntityTypeKMD, entityID: "kmd-1"},
 	}
 
 	for _, tt := range tests {

@@ -512,12 +512,15 @@ go run ./cmd/oa tsd export-xml --year 2026 --month 3 --output ./tsd-2026-03.xml
 go run ./cmd/oa tsd export-csv --year 2026 --month 3 --output ./tsd-2026-03.csv
 go run ./cmd/oa tsd import-history --file ./tsd-history.csv
 go run ./cmd/oa tsd import-history --file ./tsd-history.csv --json
+go run ./cmd/oa documents upload --entity-type tsd_declaration --entity-id <tsd-declaration-id> --file ./emta-receipt.pdf --document-type tax_support
+go run ./cmd/oa documents review --id <document-id> --status APPROVED --note "e-MTA submission evidence accepted"
 go run ./cmd/oa tsd mark-submitted --year 2026 --month 3 --emta-reference EMTA-123
 go run ./cmd/oa tsd mark-accepted --year 2026 --month 3
 go run ./cmd/oa tsd mark-rejected --year 2026 --month 3
 ```
 
 `tsd list` accepts optional `--year` and `--month` filters; `--month` must be between 1 and 12 when provided. TSD period commands require `--year` and `--month`; `--month` must be between 1 and 12. Omit `--output` on export commands to write the raw XML or CSV to stdout. TSD get/generate human output includes a remediation action table for empty rows/totals, draft export/submission, submitted declarations awaiting acceptance, missing submission timestamps, rejected declaration review, and accepted declaration archiving; the table includes workspace queue, priority, due window, and assignment key columns. JSON output exposes the same `remediation_actions` array for list/get/generate responses. Use `--json` on list/get/generate/import-history/mark-submitted/mark-accepted/mark-rejected for automation.
+`tsd mark-submitted` requires one approved `tax_support` or `supporting_document` uploaded to `--entity-type tsd_declaration` with the declaration ID as `--entity-id`; missing or pending evidence is returned as a conflict and the declaration remains draft.
 
 Historical TSD imports use one CSV row per employee declaration row and group rows by `year` + `month`. Required columns are `year`, `month`, `gross_payment`, and an employee identifier (`employee_number`, `personal_code`, `email`, `name`, or `first_name` + `last_name`). Optional columns include `status`, `submitted_at`, `emta_reference`, `payment_type`, `basic_exemption`, `taxable_amount`, `income_tax`, `social_tax`, `unemployment_insurance_employer`, `unemployment_insurance_employee`, and `funded_pension`. Migration aliases include `declaration_year`/`tsd_year`, `declaration_month`/`tsd_month`, `declaration_status`, `submitted_date`/`submission_date`, `emta_ref`/`submission_reference`, `employee_no`/`employee_id`, `isikukood`, `e_mail`, `payment_code`/`tsd_payment_type`, `gross_salary`/`gross`, `basic_exemption_applied`, `taxable_income`, `unemployment_employer`/`unemployment_insurance_er`, `unemployment_employee`/`unemployment_insurance_ee`, and `pension`. SmartAccounts presets also accept `pay_period_year`, `pay_period_month`, `filing_date`, `payment_kind`, `basic_exemption_amount`, `tax_free_amount`, `employee_unemployment_amount`, `employer_unemployment_amount`, and `pension_amount`. `FILED` maps to `SUBMITTED`; `APPROVED` and `CONFIRMED` map to `ACCEPTED`. Migration preflight checks period bounds, supported statuses, submitted-date format, positive gross payment, non-negative tax/pension amounts, duplicate employee-period rows, and consistent status, submitted date, and EMTA reference inside each TSD period. Existing TSD declaration periods are skipped instead of overwritten.
 
@@ -1137,6 +1140,16 @@ go run ./cmd/oa documents upload \
   --entity-id <quote-id> \
   --file ./signed-offer.pdf \
   --document-type contract
+go run ./cmd/oa documents upload \
+  --entity-type tsd_declaration \
+  --entity-id <tsd-declaration-id> \
+  --file ./emta-submission.pdf \
+  --document-type tax_support
+go run ./cmd/oa documents upload \
+  --entity-type kmd_declaration \
+  --entity-id <kmd-declaration-id> \
+  --file ./kmd-support.pdf \
+  --document-type tax_support
 go run ./cmd/oa documents review-queue \
   --entity-type year_end_close \
   --document-type close_pack \
@@ -1153,7 +1166,7 @@ go run ./cmd/oa documents mark-reviewed --id <document-id>
 go run ./cmd/oa documents delete --id <document-id>
 ```
 
-`documents upload` accepts either `--retention-until YYYY-MM-DD` or `--retention-years N` up to `100`; `--retention-years` sets `retention_until` to the upload date plus the selected number of years, and the two retention flags cannot be combined. Supported entity types include invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, orders, year-end close packs, and leave records. `documents review-queue` returns a tenant-wide reviewer queue, defaulting to `PENDING` documents; filter by `--entity-type year_end_close --document-type close_pack` for fiscal-year close-pack approvals or `--entity-type leave_record` for leave evidence approvals, and use `--status all` for audit review. `documents evidence-policy` checks required evidence for one or more entity IDs. Repeat `--document-type` or `--required-document-type` to allow several document types in the rule, set `--min-count` for the required count, and use `--require-approved` when pending or reviewed-but-unapproved evidence must fail. Human output includes a document remediation action table for missing, unapproved, or otherwise non-compliant evidence; the table includes workspace queue, priority, due window, and assignment key columns. JSON output exposes the same `remediation_actions` array. `documents retention` returns a tenant-wide queue of documents whose `retention_until` is due by the cutoff, with optional missing-retention records, and prints reminder actions plus document remediation actions for expired, due-soon, missing-retention, pending-review, and rejected document follow-up. JSON output exposes `reminder_actions` and `remediation_actions`. `documents retention-set` corrects one document's `retention_until` date or clears it with `--clear`. `documents review` supports `REVIEWED`, `APPROVED`, and `REJECTED`; rejected documents require a review note. `documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
+`documents upload` accepts either `--retention-until YYYY-MM-DD` or `--retention-years N` up to `100`; `--retention-years` sets `retention_until` to the upload date plus the selected number of years, and the two retention flags cannot be combined. Supported entity types include invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, orders, year-end close packs, leave records, TSD declarations, and KMD declarations. `documents review-queue` returns a tenant-wide reviewer queue, defaulting to `PENDING` documents; filter by `--entity-type year_end_close --document-type close_pack` for fiscal-year close-pack approvals, `--entity-type leave_record` for leave evidence approvals, or `--entity-type tsd_declaration --document-type tax_support` for TSD submission evidence, and use `--status all` for audit review. `documents evidence-policy` checks required evidence for one or more entity IDs. Repeat `--document-type` or `--required-document-type` to allow several document types in the rule, set `--min-count` for the required count, and use `--require-approved` when pending or reviewed-but-unapproved evidence must fail. Human output includes a document remediation action table for missing, unapproved, or otherwise non-compliant evidence; the table includes workspace queue, priority, due window, and assignment key columns. JSON output exposes the same `remediation_actions` array. `documents retention` returns a tenant-wide queue of documents whose `retention_until` is due by the cutoff, with optional missing-retention records, and prints reminder actions plus document remediation actions for expired, due-soon, missing-retention, pending-review, and rejected document follow-up. JSON output exposes `reminder_actions` and `remediation_actions`. `documents retention-set` corrects one document's `retention_until` date or clears it with `--clear`. `documents review` supports `REVIEWED`, `APPROVED`, and `REJECTED`; rejected documents require a review note. `documents download` uses the server-provided filename when `--output` is omitted. Use `--output -` to stream the document content to stdout.
 
 ## Journal entries
 

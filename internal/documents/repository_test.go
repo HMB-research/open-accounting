@@ -20,6 +20,8 @@ func TestEntityTableName(t *testing.T) {
 		{name: "quote", entityType: EntityTypeQuote, wantTable: "quotes"},
 		{name: "order", entityType: EntityTypeOrder, wantTable: "orders"},
 		{name: "leave record", entityType: EntityTypeLeaveRecord, wantTable: "leave_records"},
+		{name: "TSD declaration", entityType: EntityTypeTSD, wantTable: "tsd_declarations"},
+		{name: "KMD declaration", entityType: EntityTypeKMD, wantTable: "kmd_declarations"},
 		{name: "unsupported", entityType: "contact", wantErr: true},
 	}
 
