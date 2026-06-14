@@ -7163,7 +7163,10 @@ func checkPaymentBankAccountReference(report *BundleValidationReport, indexes bu
 	}
 
 	paymentCurrency := strings.ToUpper(strings.TrimSpace(row.values["currency"]))
-	if paymentCurrency == "" || accountCurrency == "" || paymentCurrency == accountCurrency {
+	if paymentCurrency == "" {
+		paymentCurrency = "EUR"
+	}
+	if accountCurrency == "" || paymentCurrency == accountCurrency {
 		return
 	}
 
