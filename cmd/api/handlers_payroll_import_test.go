@@ -460,6 +460,12 @@ func TestPayrollBusinessHandlersPayslipPDFAndTSDExports(t *testing.T) {
 
 func TestPayrollBusinessHandlersTSDPeriodActions(t *testing.T) {
 	h, repo, _ := setupPayrollImportHandlerTest(t)
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-tsd-approved",
+		EntityType:   documents.EntityTypeTSD,
+		EntityID:     "tsd-1",
+		DocumentType: documents.DocumentTypeTaxSupport,
+	})
 	repo.tsdDeclarations["tsd-1"] = &payroll.TSDDeclaration{
 		ID:            "tsd-1",
 		TenantID:      "tenant-1",

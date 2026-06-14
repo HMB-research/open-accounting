@@ -768,6 +768,12 @@ func TestActivateAsset(t *testing.T) {
 		UsefulLifeMonths: 36,
 		ResidualValue:    decimal.NewFromInt(100),
 	}
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-asset-activation",
+		EntityType:   documents.EntityTypeAsset,
+		EntityID:     "asset-1",
+		DocumentType: documents.DocumentTypeAssetRecord,
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/asset-1/activate", nil)
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "assetID": "asset-1"})
@@ -852,6 +858,12 @@ func TestDisposeAsset(t *testing.T) {
 		AssetAccountID:                stringPtr("fixed-assets"),
 		AccumulatedDepreciationAcctID: stringPtr("accumulated-depreciation"),
 	}
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-asset-disposal",
+		EntityType:   documents.EntityTypeAsset,
+		EntityID:     "asset-1",
+		DocumentType: documents.DocumentTypeSupportingDocument,
+	})
 
 	body := map[string]interface{}{
 		"disposal_date":                 time.Now().Format(time.RFC3339),
