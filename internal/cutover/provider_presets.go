@@ -1047,6 +1047,8 @@ func directoProviderPresetAliases() map[FileKind]map[string]string {
 			"ostu_konto":   "purchase_account_code",
 			"lao_konto":    "inventory_account_code",
 			"hankija":      "supplier_code",
+			"hankija_kood": "supplier_code",
+			"hankijakood":  "supplier_code",
 		},
 		KindStockAdjustments: {
 			"artikkel":       "product_code",

@@ -61,6 +61,7 @@ var productImportHeaderAliases = map[string]string{
 	"active":                 "is_active",
 	"barcode":                "barcode",
 	"supplier_id":            "supplier_id",
+	"supplier_code":          "supplier_code",
 	"lead_time_days":         "lead_time_days",
 }
 
@@ -106,6 +107,10 @@ func (s *Service) ImportProductsCSV(ctx context.Context, tenantID, schemaName st
 	if err != nil {
 		return nil, err
 	}
+	supplierIDsByCode, err := s.productImportSupplierIDsByCode(ctx, schemaName, tenantID, rows)
+	if err != nil {
+		return nil, err
+	}
 
 	result := &ImportProductsResult{
 		FileName: req.FileName,
@@ -115,7 +120,7 @@ func (s *Service) ImportProductsCSV(ctx context.Context, tenantID, schemaName st
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		product, err := buildProductFromImportRow(row, tenantID, categoryNameToID, categoryIDs, accountIDsByCode)
+		product, err := buildProductFromImportRow(row, tenantID, categoryNameToID, categoryIDs, accountIDsByCode, supplierIDsByCode)
 		if err != nil {
 			appendProductImportRowError(result, row, err)
 			continue
@@ -252,6 +257,7 @@ func buildProductFromImportRow(
 	categoryNameToID map[string]string,
 	categoryIDs map[string]bool,
 	accountIDsByCode map[string]string,
+	supplierIDsByCode map[string]string,
 ) (*Product, error) {
 	name := strings.TrimSpace(row.values["name"])
 	if name == "" {
@@ -310,7 +316,7 @@ func buildProductFromImportRow(
 	if err != nil {
 		return nil, err
 	}
-	supplierID, err := parseOptionalProductImportUUID("supplier_id", row.values["supplier_id"])
+	supplierID, err := resolveOptionalProductImportSupplierID(row, supplierIDsByCode)
 	if err != nil {
 		return nil, err
 	}
@@ -410,6 +416,35 @@ func (s *Service) productImportAccountIDsByCode(ctx context.Context, schemaName,
 	return accountIDsByCode, nil
 }
 
+func (s *Service) productImportSupplierIDsByCode(ctx context.Context, schemaName, tenantID string, rows []productImportRow) (map[string]string, error) {
+	usesSupplierCodes := false
+	for _, row := range rows {
+		if strings.TrimSpace(row.values["supplier_code"]) != "" {
+			usesSupplierCodes = true
+			break
+		}
+	}
+	if !usesSupplierCodes {
+		return nil, nil
+	}
+	if s.contacts == nil {
+		return nil, fmt.Errorf("contact service is required to resolve product supplier codes")
+	}
+
+	contacts, err := s.contacts.List(ctx, tenantID, schemaName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list contacts for product import: %w", err)
+	}
+	supplierIDsByCode := make(map[string]string, len(contacts))
+	for _, contact := range contacts {
+		key := normalizedProductImportKey(contact.Code)
+		if key != "" {
+			supplierIDsByCode[key] = contact.ID
+		}
+	}
+	return supplierIDsByCode, nil
+}
+
 func resolveProductImportCategoryID(row productImportRow, categoryNameToID map[string]string, categoryIDs map[string]bool) (string, error) {
 	if categoryID := strings.TrimSpace(row.values["category_id"]); categoryID != "" {
 		parsedID, err := uuid.Parse(categoryID)
@@ -450,6 +485,21 @@ func resolveOptionalProductImportAccountID(row productImportRow, idField, codeFi
 		return "", fmt.Errorf("account code %q was not found for %s", accountCode, codeField)
 	}
 	return accountID, nil
+}
+
+func resolveOptionalProductImportSupplierID(row productImportRow, supplierIDsByCode map[string]string) (string, error) {
+	if supplierID := strings.TrimSpace(row.values["supplier_id"]); supplierID != "" {
+		return parseOptionalProductImportUUID("supplier_id", supplierID)
+	}
+	supplierCode := strings.TrimSpace(row.values["supplier_code"])
+	if supplierCode == "" {
+		return "", nil
+	}
+	supplierID, ok := supplierIDsByCode[normalizedProductImportKey(supplierCode)]
+	if !ok {
+		return "", fmt.Errorf("supplier_code %q was not found", supplierCode)
+	}
+	return supplierID, nil
 }
 
 func parseProductImportType(value string) (ProductType, error) {

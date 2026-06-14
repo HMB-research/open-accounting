@@ -38,6 +38,7 @@ type bundleIndexes struct {
 	accountIDs         map[string]bool
 	bankAccounts       map[string]string
 	contactIDs         map[string]bool
+	contactCodes       map[string]bool
 	contacts           map[string]bool
 	employees          map[string]bool
 	invoices           map[string]bool
@@ -668,6 +669,7 @@ var fileSpecs = map[FileKind]fileSpec{
 			"active":                 "is_active",
 			"barcode":                "barcode",
 			"supplier_id":            "supplier_id",
+			"supplier_code":          "supplier_code",
 			"lead_time_days":         "lead_time_days",
 		}),
 		requiredGroups: [][]string{{"name"}, {"sales_price"}},
@@ -1739,6 +1741,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 		accountIDs:         map[string]bool{},
 		bankAccounts:       map[string]string{},
 		contactIDs:         map[string]bool{},
+		contactCodes:       map[string]bool{},
 		contacts:           map[string]bool{},
 		employees:          map[string]bool{},
 		invoices:           map[string]bool{},
@@ -1761,6 +1764,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 				addBankAccountIndexValue(indexes.bankAccounts, row.values["account_number"], row.values["currency"])
 			case KindContacts:
 				addIndexValue(indexes.contactIDs, row.values["id"])
+				addIndexValue(indexes.contactCodes, row.values["code"])
 				addIndexValue(indexes.contacts, row.values["code"])
 				addIndexValue(indexes.contacts, row.values["reg_code"])
 				addIndexValue(indexes.contacts, row.values["vat_number"])
@@ -1861,7 +1865,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkAccountReference(report, indexes, file, row, "sale_account_id", "sale_account_code")
 			checkAccountReference(report, indexes, file, row, "purchase_account_id", "purchase_account_code")
 			checkAccountReference(report, indexes, file, row, "inventory_account_id", "inventory_account_code")
-			checkContactIDReference(report, indexes, file, row, "supplier_id")
+			checkProductSupplierReference(report, indexes, file, row)
 		case KindStockAdjustments:
 			checkProductReference(report, indexes, file, row)
 			checkWarehouseReference(report, indexes, file, row)
@@ -5577,6 +5581,15 @@ func checkContactIDReference(report *BundleValidationReport, indexes bundleIndex
 		return
 	}
 	checkReferenceValues(report, indexes.contactIDs, file, row, KindContacts, idField, []string{contactID})
+}
+
+func checkProductSupplierReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["supplier_id"]) != "" {
+		checkContactIDReference(report, indexes, file, row, "supplier_id")
+		return
+	}
+	checkTargetReference(report, indexes.files[KindContacts], indexes.contactCodes, file, row, KindContacts,
+		[]string{"supplier_code"})
 }
 
 func checkCommercialDocumentContactReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
