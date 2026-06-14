@@ -378,6 +378,14 @@
 		};
 	}
 
+	function canCalculateAssignmentPayroll(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'payroll' &&
+			['payroll_run_calculate', 'payroll_no_payslips'].includes(action.code) &&
+			Boolean(action.entityId)
+		);
+	}
+
 	function canApproveAssignmentPayroll(action: WorkspaceAssignmentAction): boolean {
 		return action.source === 'payroll' && action.code === 'payroll_run_approve' && Boolean(action.entityId);
 	}
@@ -660,6 +668,29 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentEvidenceUploadError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function calculateAssignmentPayroll(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.calculatePayroll(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentPayrollCalculated();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentPayrollCalculateError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -1383,6 +1414,18 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: getAssignmentUploadButtonLabel(action)}
+										</button>
+									{/if}
+									{#if canCalculateAssignmentPayroll(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => calculateAssignmentPayroll(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsCalculatePayroll()}
 										</button>
 									{/if}
 									{#if canApproveAssignmentPayroll(action)}

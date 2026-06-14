@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1575,6 +1577,211 @@ func TestService_InvokeTenantPluginRoute_HTTPRuntime(t *testing.T) {
 	}
 }
 
+func TestService_InvokeTenantPluginRoute_PackageRuntime(t *testing.T) {
+	ctx := context.Background()
+	tenantID := uuid.New()
+	pluginID := uuid.New()
+	pluginDir, manifest := createPackageRuntimePluginFixture(t, "package-runtime-plugin", []RouteConfig{
+		{Method: http.MethodPost, Path: "/status", Handler: "/routes/status"},
+	}, nil)
+	manifestJSON, err := manifest.ToJSON()
+	if err != nil {
+		t.Fatalf("serialize manifest: %v", err)
+	}
+
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:                 pluginID,
+		Name:               manifest.Name,
+		DisplayName:        manifest.DisplayName,
+		Version:            manifest.Version,
+		State:              StateEnabled,
+		GrantedPermissions: []string{"routes:register"},
+		Manifest:           manifestJSON,
+	}
+	now := time.Now()
+	repo.tenantPlugins[fmt.Sprintf("%s:%s", tenantID, pluginID)] = &TenantPlugin{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		PluginID:  pluginID,
+		IsEnabled: true,
+		EnabledAt: &now,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	service := NewServiceWithRepository(repo, nil, pluginDir)
+	if err := service.loadPlugin(repo.plugins[pluginID], manifest); err != nil {
+		t.Fatalf("load package runtime plugin: %v", err)
+	}
+	t.Cleanup(func() {
+		service.unloadPlugin(manifest.Name)
+	})
+
+	resp, err := service.InvokeTenantPluginRoute(
+		ctx,
+		tenantID,
+		pluginID,
+		http.MethodPost,
+		"/status",
+		"debug=true",
+		http.Header{"Content-Type": []string{"application/json"}},
+		strings.NewReader(`{"ping":"package"}`),
+	)
+	if err != nil {
+		t.Fatalf("InvokeTenantPluginRoute failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("status code = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		t.Fatalf("decode runtime response: %v", err)
+	}
+	if body["tenant_id"] != tenantID.String() {
+		t.Errorf("tenant_id = %q, want %s", body["tenant_id"], tenantID)
+	}
+	if body["route_path"] != "/status" {
+		t.Errorf("route_path = %q, want /status", body["route_path"])
+	}
+	if body["body"] != `{"ping":"package"}` {
+		t.Errorf("body = %q", body["body"])
+	}
+}
+
+func TestService_LoadPlugin_PackageRuntimeHook(t *testing.T) {
+	pluginID := uuid.New()
+	tenantID := uuid.New()
+	hookFile := filepath.Join(t.TempDir(), "hook.json")
+	t.Setenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_HOOK_FILE", hookFile)
+	pluginDir, manifest := createPackageRuntimePluginFixture(t, "package-hook-plugin", nil, []HookConfig{
+		{Event: EventInvoiceCreated, Handler: "/hooks/invoice"},
+	})
+
+	repo := NewMockRepository()
+	hooks := NewHookRegistry()
+	service := NewServiceWithRepository(repo, hooks, pluginDir)
+	plugin := &Plugin{
+		ID:      pluginID,
+		Name:    manifest.Name,
+		Version: manifest.Version,
+		State:   StateEnabled,
+	}
+
+	if err := service.loadPlugin(plugin, manifest); err != nil {
+		t.Fatalf("load package runtime plugin: %v", err)
+	}
+	t.Cleanup(func() {
+		service.unloadPlugin(manifest.Name)
+	})
+	if !hooks.HasHandlers(EventInvoiceCreated) {
+		t.Fatal("expected invoice hook to be registered")
+	}
+
+	event := Event{Type: EventInvoiceCreated, TenantID: tenantID, Time: time.Now()}
+	if err := hooks.Emit(context.Background(), event); err != nil {
+		t.Fatalf("emit hook: %v", err)
+	}
+
+	data, err := os.ReadFile(hookFile)
+	if err != nil {
+		t.Fatalf("read hook payload: %v", err)
+	}
+	var payload runtimeHookPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("decode hook payload: %v", err)
+	}
+	if payload.PluginID != pluginID {
+		t.Errorf("payload plugin ID = %s, want %s", payload.PluginID, pluginID)
+	}
+	if payload.PluginName != manifest.Name {
+		t.Errorf("payload plugin name = %q, want %q", payload.PluginName, manifest.Name)
+	}
+	if payload.Event.TenantID != tenantID {
+		t.Errorf("payload tenant ID = %s, want %s", payload.Event.TenantID, tenantID)
+	}
+}
+
+func TestService_LoadPlugin_PackageRuntimeStartupFailure(t *testing.T) {
+	pluginID := uuid.New()
+	t.Setenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_TEST_MODE", "exit")
+	pluginDir, manifest := createPackageRuntimePluginFixture(t, "package-fail-plugin", []RouteConfig{
+		{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"},
+	}, nil)
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil, pluginDir)
+
+	err := service.loadPlugin(&Plugin{ID: pluginID, Name: manifest.Name, State: StateEnabled}, manifest)
+	if err == nil {
+		t.Fatal("expected startup failure")
+	}
+	if !errors.Is(err, ErrPluginRuntimeUnavailable) {
+		t.Fatalf("expected ErrPluginRuntimeUnavailable, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "exited before exposing") {
+		t.Fatalf("expected endpoint exposure error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "fixture forced exit") {
+		t.Fatalf("expected runtime output in error, got %v", err)
+	}
+	if _, exists := service.GetLoadedPlugin(manifest.Name); exists {
+		t.Fatal("expected plugin not to be loaded after startup failure")
+	}
+}
+
+func TestService_UnloadPlugin_StopsPackageRuntime(t *testing.T) {
+	ctx := context.Background()
+	tenantID := uuid.New()
+	pluginID := uuid.New()
+	stopFile := filepath.Join(t.TempDir(), "stopped")
+	t.Setenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_STOP_FILE", stopFile)
+	pluginDir, manifest := createPackageRuntimePluginFixture(t, "package-unload-plugin", []RouteConfig{
+		{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"},
+	}, nil)
+	manifestJSON, err := manifest.ToJSON()
+	if err != nil {
+		t.Fatalf("serialize manifest: %v", err)
+	}
+
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:                 pluginID,
+		Name:               manifest.Name,
+		DisplayName:        manifest.DisplayName,
+		Version:            manifest.Version,
+		State:              StateEnabled,
+		GrantedPermissions: []string{"routes:register"},
+		Manifest:           manifestJSON,
+	}
+	now := time.Now()
+	repo.tenantPlugins[fmt.Sprintf("%s:%s", tenantID, pluginID)] = &TenantPlugin{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		PluginID:  pluginID,
+		IsEnabled: true,
+		EnabledAt: &now,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	service := NewServiceWithRepository(repo, nil, pluginDir)
+	if err := service.loadPlugin(repo.plugins[pluginID], manifest); err != nil {
+		t.Fatalf("load package runtime plugin: %v", err)
+	}
+
+	service.unloadPlugin(manifest.Name)
+	if _, exists := service.GetLoadedPlugin(manifest.Name); exists {
+		t.Fatal("expected plugin to be unloaded")
+	}
+	waitForFile(t, stopFile, time.Second)
+
+	_, err = service.InvokeTenantPluginRoute(ctx, tenantID, pluginID, http.MethodGet, "/status", "", nil, nil)
+	if err == nil {
+		t.Fatal("expected unloaded package runtime error")
+	}
+	if !errors.Is(err, ErrPluginRuntimeUnavailable) {
+		t.Fatalf("expected ErrPluginRuntimeUnavailable, got %v", err)
+	}
+}
+
 func TestService_InvokeTenantPluginRoute_RequiresEnabledTenantPlugin(t *testing.T) {
 	repo := NewMockRepository()
 	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
@@ -2600,3 +2807,149 @@ func TestMockRepository_Errors(t *testing.T) {
 		})
 	}
 }
+
+func createPackageRuntimePluginFixture(t *testing.T, name string, routes []RouteConfig, hooks []HookConfig) (string, *Manifest) {
+	t.Helper()
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go binary is required to build package runtime fixture")
+	}
+
+	pluginDir := t.TempDir()
+	pluginRoot := filepath.Join(pluginDir, "fixture-"+name)
+	runtimeBinDir := filepath.Join(pluginRoot, "backend", "bin")
+	if err := os.MkdirAll(runtimeBinDir, 0750); err != nil {
+		t.Fatalf("create package runtime fixture: %v", err)
+	}
+
+	manifest := &Manifest{
+		Name:        name,
+		DisplayName: "Package Runtime Plugin",
+		Version:     "1.0.0",
+		Backend: &BackendConfig{
+			Runtime:    BackendRuntimePackage,
+			Package:    "backend",
+			Executable: "bin/runtime",
+			Routes:     routes,
+			Hooks:      hooks,
+		},
+	}
+	if len(routes) > 0 {
+		manifest.Permissions = append(manifest.Permissions, "routes:register")
+	}
+	if len(hooks) > 0 {
+		manifest.Permissions = append(manifest.Permissions, "hooks:register")
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("fixture manifest is invalid: %v", err)
+	}
+
+	manifestYAML := fmt.Sprintf("name: %s\ndisplay_name: %s\nversion: %s\n", manifest.Name, manifest.DisplayName, manifest.Version)
+	if err := os.WriteFile(filepath.Join(pluginRoot, "plugin.yaml"), []byte(manifestYAML), 0600); err != nil {
+		t.Fatalf("write fixture manifest: %v", err)
+	}
+
+	sourcePath := filepath.Join(t.TempDir(), "runtime.go")
+	if err := os.WriteFile(sourcePath, []byte(packageRuntimeFixtureSource), 0600); err != nil {
+		t.Fatalf("write package runtime fixture source: %v", err)
+	}
+	executablePath := filepath.Join(runtimeBinDir, "runtime")
+	cmd := exec.Command("go", "build", "-o", executablePath, sourcePath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("build package runtime fixture: %s: %v", output, err)
+	}
+
+	return pluginDir, manifest
+}
+
+func waitForFile(t *testing.T, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", path)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+const packageRuntimeFixtureSource = `package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
+)
+
+func main() {
+	if os.Getenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_TEST_MODE") == "exit" {
+		fmt.Fprintln(os.Stderr, "fixture forced exit")
+		os.Exit(42)
+	}
+
+	addr := os.Getenv("OPEN_ACCOUNTING_RUNTIME_ADDR")
+	if addr == "" {
+		fmt.Fprintln(os.Stderr, "missing OPEN_ACCOUNTING_RUNTIME_ADDR")
+		os.Exit(2)
+	}
+	healthPath := os.Getenv("OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH")
+	if healthPath == "" {
+		healthPath = "/__open_accounting/health"
+	}
+	if pidFile := os.Getenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_PID_FILE"); pidFile != "" {
+		_ = os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0600)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(healthPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("/routes/status", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"body":       string(body),
+			"method":     r.Header.Get("X-Open-Accounting-Route-Method"),
+			"query":      r.URL.RawQuery,
+			"route_path": r.Header.Get("X-Open-Accounting-Route-Path"),
+			"tenant_id":  r.Header.Get("X-Open-Accounting-Tenant-ID"),
+		})
+	})
+	mux.HandleFunc("/hooks/invoice", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if hookFile := os.Getenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_HOOK_FILE"); hookFile != "" {
+			_ = os.WriteFile(hookFile, body, 0600)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	server := &http.Server{Addr: addr, Handler: mux}
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-signals
+		if stopFile := os.Getenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_STOP_FILE"); stopFile != "" {
+			_ = os.WriteFile(stopFile, []byte("stopped"), 0600)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+	}()
+
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+`

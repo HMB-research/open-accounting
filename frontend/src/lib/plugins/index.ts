@@ -6,6 +6,15 @@ export type {
 	PluginSlotRegistration,
 	PluginManagerState
 } from './manager';
+export {
+	clearPluginFrontendComponents,
+	getPluginFrontendComponentCandidateIds,
+	normalizePluginComponentReference,
+	registerPluginFrontendComponent,
+	resolvePluginFrontendComponent,
+	unregisterPluginFrontendComponent
+} from './componentRegistry';
+export type { PluginFrontendComponent, PluginFrontendComponentProps } from './componentRegistry';
 
 // Re-export Slot component
 export { default as Slot } from './Slot.svelte';

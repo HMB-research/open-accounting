@@ -33,6 +33,7 @@ type Service struct {
 type LoadedPlugin struct {
 	Plugin   *Plugin
 	Manifest *Manifest
+	Runtime  pluginBackendRuntime
 }
 
 // NewService creates a new plugin service with an ORM-backed repository.
@@ -381,18 +382,29 @@ func (s *Service) IsPluginEnabledForTenant(ctx context.Context, tenantID, plugin
 // Internal methods
 
 func (s *Service) loadPlugin(plugin *Plugin, manifest *Manifest) error {
-	runtime, err := backendRuntimeForManifest(manifest)
+	runtime, err := s.backendRuntimeForPlugin(plugin, manifest)
 	if err != nil {
 		return err
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Store in memory
+	previous := s.plugins[plugin.Name]
 	s.plugins[plugin.Name] = &LoadedPlugin{
 		Plugin:   plugin,
 		Manifest: manifest,
+		Runtime:  runtime,
+	}
+	s.mu.Unlock()
+
+	if previous != nil {
+		s.hooks.unregisterPluginHooks(previous.Plugin.ID)
+		if previous.Runtime != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), packageRuntimeShutdownTimeout)
+			if err := previous.Runtime.close(ctx); err != nil {
+				log.Warn().Err(err).Str("plugin", previous.Plugin.Name).Msg("Failed to stop previous plugin runtime")
+			}
+			cancel()
+		}
 	}
 
 	// Register hooks if any
@@ -412,7 +424,7 @@ func (s *Service) loadPlugin(plugin *Plugin, manifest *Manifest) error {
 	return nil
 }
 
-func backendRuntimeForManifest(manifest *Manifest) (*runtimeHTTPClient, error) {
+func (s *Service) backendRuntimeForPlugin(plugin *Plugin, manifest *Manifest) (pluginBackendRuntime, error) {
 	if manifest.Backend == nil {
 		return nil, nil
 	}
@@ -421,6 +433,10 @@ func backendRuntimeForManifest(manifest *Manifest) (*runtimeHTTPClient, error) {
 	hasRoutes := len(manifest.Backend.Routes) > 0
 	if !hasHooks && !hasRoutes {
 		return nil, nil
+	}
+
+	if strings.EqualFold(strings.TrimSpace(manifest.Backend.Runtime), BackendRuntimePackage) {
+		return s.startPackageBackendRuntime(plugin, manifest)
 	}
 
 	runtime, err := newRuntimeHTTPClient(manifest.Backend)
@@ -476,7 +492,7 @@ func (s *Service) InvokeTenantPluginRoute(
 	if !ok {
 		return nil, ErrPluginRouteNotFound
 	}
-	runtime, err := backendRuntimeForManifest(&manifest)
+	runtime, err := s.runtimeForTenantPluginRoute(plugin, &manifest)
 	if err != nil {
 		return nil, err
 	}
@@ -487,6 +503,22 @@ func (s *Service) InvokeTenantPluginRoute(
 		body = strings.NewReader("")
 	}
 	return runtime.invokeRoute(ctx, plugin.ID, tenantID, route, method, normalizeRuntimePath(path), rawQuery, headers, body)
+}
+
+func (s *Service) runtimeForTenantPluginRoute(plugin *Plugin, manifest *Manifest) (pluginBackendRuntime, error) {
+	if manifest.Backend == nil {
+		return nil, nil
+	}
+	if strings.EqualFold(strings.TrimSpace(manifest.Backend.Runtime), BackendRuntimePackage) {
+		s.mu.RLock()
+		loaded, ok := s.plugins[plugin.Name]
+		s.mu.RUnlock()
+		if !ok || loaded.Runtime == nil {
+			return nil, fmt.Errorf("%w: package runtime for plugin %q is not loaded", ErrPluginRuntimeUnavailable, plugin.Name)
+		}
+		return loaded.Runtime, nil
+	}
+	return s.backendRuntimeForPlugin(plugin, manifest)
 }
 
 func findRuntimeRoute(manifest *Manifest, method string, path string) (RouteConfig, bool) {
@@ -517,17 +549,24 @@ func normalizeRuntimePath(path string) string {
 
 func (s *Service) unloadPlugin(name string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	loaded, exists := s.plugins[name]
 	if !exists {
+		s.mu.Unlock()
 		return
 	}
+	delete(s.plugins, name)
+	s.mu.Unlock()
 
 	// Unregister hooks
 	s.hooks.unregisterPluginHooks(loaded.Plugin.ID)
 
-	delete(s.plugins, name)
+	if loaded.Runtime != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), packageRuntimeShutdownTimeout)
+		if err := loaded.Runtime.close(ctx); err != nil {
+			log.Warn().Err(err).Str("plugin", loaded.Plugin.Name).Msg("Failed to stop plugin runtime")
+		}
+		cancel()
+	}
 }
 
 // GetLoadedPlugin returns a loaded plugin by name
