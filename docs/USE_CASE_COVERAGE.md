@@ -68,6 +68,7 @@ Status values:
 - The follow-up e-invoice credit-note payment contact selection stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation date consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation invoice-status consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up payment allocation invoice-ID status consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up fixed-asset source-invoice consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up fixed-asset source-invoice date consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up fixed-asset source-invoice amount consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
@@ -194,6 +195,9 @@ Payment allocation invoice-status consistency rejects same-bundle payment rows
 allocated to imported invoice CSV targets with `DRAFT` or `VOIDED` status. The
 payment allocation invoice-status consistency stage still accepts allocatable
 open statuses such as `SENT`.
+Payment allocation invoice-ID status consistency coverage now locks
+preserved-UUID invoice references to the same draft/voided rejection behavior
+as invoice-number payment allocations.
 Fixed-asset source-invoice amount consistency also rejects same-bundle asset
 purchase costs that exceed the imported source invoice total.
 Stock-adjustment product stockability also rejects same-bundle stock rows for
