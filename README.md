@@ -212,7 +212,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Permission System** | Fine-grained permissions with risk levels                                                                     |
 | **Event Hooks**       | 27+ events for plugin integration                                                                             |
 | **Outbound Webhooks** | Tenant webhook endpoints with event subscriptions, HMAC signatures, test delivery, and delivery audit history |
-| **UI Slots**          | Extend dashboard, invoices, and more                                                                          |
+| **UI Slots**          | Extend dashboard, invoices, and more with safe manifest-declared cards, links, and actions                    |
 | **Two-Level Control** | Instance-wide install, per-tenant enable                                                                      |
 
 > 📖 See [Plugin Documentation](docs/PLUGINS.md) for development guide

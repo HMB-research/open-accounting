@@ -3,9 +3,11 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -79,8 +81,14 @@ type NavigationItem struct {
 
 // SlotConfig represents a UI slot injection
 type SlotConfig struct {
-	Name      string `yaml:"name" json:"name"`
-	Component string `yaml:"component" json:"component"`
+	Name        string `yaml:"name" json:"name"`
+	Component   string `yaml:"component" json:"component"`
+	Label       string `yaml:"label,omitempty" json:"label,omitempty"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Path        string `yaml:"path,omitempty" json:"path,omitempty"`
+	Kind        string `yaml:"kind,omitempty" json:"kind,omitempty"`
+	Badge       string `yaml:"badge,omitempty" json:"badge,omitempty"`
+	Order       *int   `yaml:"order,omitempty" json:"order,omitempty"`
 }
 
 // DatabaseConfig represents the database section of the manifest
@@ -194,6 +202,11 @@ func (m *Manifest) Validate() error {
 		if m.Frontend.Components == "" {
 			return fmt.Errorf("frontend.components is required when frontend is specified")
 		}
+		for i, slot := range m.Frontend.Slots {
+			if err := validateSlotConfig(slot); err != nil {
+				return fmt.Errorf("frontend.slots[%d]: %w", i, err)
+			}
+		}
 	}
 
 	// Validate database config
@@ -206,6 +219,45 @@ func (m *Manifest) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+func validateSlotConfig(slot SlotConfig) error {
+	if strings.TrimSpace(slot.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	if strings.TrimSpace(slot.Component) == "" {
+		return fmt.Errorf("component is required")
+	}
+	if slot.Kind != "" {
+		switch slot.Kind {
+		case "card", "link", "action":
+		default:
+			return fmt.Errorf("kind must be one of card, link, or action")
+		}
+	}
+	if (slot.Kind == "link" || slot.Kind == "action") && strings.TrimSpace(slot.Path) == "" {
+		return fmt.Errorf("path is required for %s slots", slot.Kind)
+	}
+	if slot.Path != "" {
+		if err := validateFrontendSlotPath(slot.Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFrontendSlotPath(path string) error {
+	parsed, err := url.Parse(path)
+	if err != nil {
+		return fmt.Errorf("path must be a valid internal route")
+	}
+	if parsed.Scheme != "" || parsed.Host != "" {
+		return fmt.Errorf("path must be an internal route")
+	}
+	if !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(parsed.Path, "//") {
+		return fmt.Errorf("path must start with a single slash")
+	}
 	return nil
 }
 

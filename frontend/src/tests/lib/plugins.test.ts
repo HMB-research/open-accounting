@@ -169,7 +169,13 @@ describe('pluginManager.loadPlugins', () => {
 							slots: [
 								{
 									name: 'dashboard-widgets',
-									component: 'TestWidget'
+									component: 'TestWidget',
+									label: 'Review exceptions',
+									description: 'Open the plugin exception queue',
+									path: '/plugins/test-plugin/exceptions',
+									kind: 'card',
+									badge: '2 open',
+									order: 25
 								}
 							]
 						}
@@ -192,6 +198,75 @@ describe('pluginManager.loadPlugins', () => {
 		});
 		expect(pluginManager.hasSlotContent('dashboard-widgets')).toBe(true);
 		expect(pluginManager.getSlotRegistrations('dashboard-widgets')).toHaveLength(1);
+		expect(pluginManager.getSlotRegistrations('dashboard-widgets')[0]).toMatchObject({
+			componentName: 'TestWidget',
+			label: 'Review exceptions',
+			description: 'Open the plugin exception queue',
+			path: '/plugins/test-plugin/exceptions',
+			kind: 'card',
+			badge: '2 open',
+			order: 25
+		});
+	});
+
+	it('should sort slot registrations and strip unsafe paths', async () => {
+		const mockPlugins = [
+			{
+				id: 'tp-1',
+				tenant_id: 'tenant-1',
+				plugin_id: 'plugin-1',
+				is_enabled: true,
+				config: {},
+				settings: {},
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
+				plugin: {
+					id: 'plugin-1',
+					name: 'Alpha Plugin',
+					version: '1.0.0',
+					description: 'Test',
+					manifest: {
+						id: 'plugin-1',
+						name: 'Alpha',
+						version: '1.0.0',
+						frontend: {
+							slots: [
+								{
+									name: 'dashboard.widgets',
+									component: 'LateWidget',
+									label: 'Late',
+									path: 'https://example.com/unsafe',
+									order: 50
+								},
+								{
+									name: 'dashboard.widgets',
+									component: 'EarlyWidget',
+									label: 'Early',
+									path: '/plugins/alpha/early',
+									kind: 'action',
+									order: 10
+								}
+							]
+						}
+					}
+				}
+			}
+		];
+
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(mockPlugins as unknown as import('$lib/api').TenantPlugin[]);
+
+		await pluginManager.loadPlugins('tenant-1');
+
+		const registrations = pluginManager.getSlotRegistrations('dashboard.widgets');
+		expect(registrations.map((slot) => slot.label)).toEqual(['Early', 'Late']);
+		expect(registrations[0]).toMatchObject({
+			path: '/plugins/alpha/early',
+			kind: 'action'
+		});
+		expect(registrations[1]).toMatchObject({
+			path: undefined,
+			kind: 'card'
+		});
 	});
 
 	it('should skip already loaded tenant', async () => {

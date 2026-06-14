@@ -22,7 +22,7 @@ Open Accounting supports a plugin marketplace that allows extending functionalit
 2. **Git-Based Distribution**: Plugins are cloned from repositories, no package registry
 3. **Two-Level Enablement**: Installed instance-wide by admins, enabled per-tenant by users
 4. **Permission-Based Security**: Plugins declare required permissions, users approve them
-5. **Full-Stack Manifest Support**: Plugins can declare backend, frontend, and database components; backend hook/route execution is not yet available in the runtime.
+5. **Full-Stack Manifest Support**: Plugins can declare backend, frontend, and database components; backend hook/route execution is not yet available in the runtime, while frontend slots support safe declarative cards, links, and actions.
 
 ### Plugin Lifecycle
 
@@ -34,7 +34,7 @@ Not Installed → Installed → Enabled ↔ Disabled → Uninstalled
 
 - **Not Installed**: Plugin exists in registry but not on this instance
 - **Installed**: Plugin code downloaded, awaiting enablement
-- **Enabled**: Plugin active for supported capabilities. Plugins declaring backend hooks or routes are rejected until a backend plugin runtime exists.
+- **Enabled**: Plugin active for supported capabilities. Declarative frontend slots and navigation are available; plugins declaring backend hooks or routes are rejected until a backend plugin runtime exists.
 - **Disabled**: Plugin present but inactive
 - **Failed**: Plugin encountered an error during loading
 
@@ -139,8 +139,17 @@ frontend:
   slots:                       # UI injection points
     - name: dashboard.widgets
       component: ExpenseWidget.svelte
+      label: Expense exceptions
+      description: Review expenses that need receipts or approval
+      path: /plugins/expense-tracker/exceptions
+      kind: card               # card, link, or action
+      badge: 4 open
+      order: 100
     - name: invoice.sidebar
       component: ExpenseLink.svelte
+      label: Related expenses
+      path: /plugins/expense-tracker/invoices
+      kind: link
 
 # Database configuration (optional)
 database:
@@ -290,7 +299,7 @@ type Event struct {
 
 ## UI Extension Points
 
-Frontend slot declarations are currently metadata-only. Host components keep rendering their fallback content, and the runtime logs a browser warning if enabled plugin metadata declares slot content. Plugin Svelte components are not dynamically loaded yet.
+Frontend slot declarations render safe manifest-defined cards, links, and actions in host slot locations. The runtime uses `label`, `description`, `path`, `kind`, `badge`, and `order` from the manifest; `path` must be an internal application route. Plugin Svelte components are still not dynamically loaded, so `component` remains the stable component identifier and fallback label for future component-runtime work.
 
 ### Available Slots
 
@@ -316,6 +325,24 @@ Frontend slot declarations are currently metadata-only. Host components keep ren
 <!-- In your page component -->
 <Slot name="dashboard.widgets" props={{ tenantId }} />
 ```
+
+### Declarative Slot Entries
+
+```yaml
+frontend:
+  components: ./frontend/components
+  slots:
+    - name: dashboard.widgets
+      component: ExpenseWidget.svelte
+      label: Expense exceptions
+      description: Review expenses that need receipts or approval
+      path: /plugins/expense-tracker/exceptions
+      kind: card
+      badge: 4 open
+      order: 100
+```
+
+Supported `kind` values are `card`, `link`, and `action`. Links and actions require an internal `path`; external URLs and protocol-relative URLs are rejected by manifest validation.
 
 ### Navigation Positioning
 
