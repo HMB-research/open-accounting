@@ -58,6 +58,7 @@ Full local baseline last completed on 2026-06-08. On 2026-06-12, the current bra
 - `go test ./internal/cutover -run 'TestValidateBundle(AcceptsCostAllocationPercentagesWithinJournalLineLimit|ReportsCostAllocationPercentagesExceedJournalLineLimit)' -count=1`, `go test -timeout=3m ./docs -count=1`, `golangci-lint run`, and `make test-cli-coverage` pass focused cost-allocation journal-line percentage consistency migration coverage
 - `go test ./internal/cutover -run 'TestValidateBundle(AcceptsCostAllocationAmountPercentageMatch|ReportsCostAllocationAmountPercentageMismatch)' -count=1`, `go test -timeout=3m ./docs -count=1`, `golangci-lint run`, and `make test-cli-coverage` pass focused cost-allocation amount/percentage consistency migration coverage
 - `go test ./internal/cutover -run 'TestValidateBundle(AcceptsExpenseAccountTypeReferences|ReportsExpenseAccountTypeMismatches)' -count=1`, `go test -timeout=3m ./docs -count=1`, `golangci-lint run`, and `make test-cli-coverage` pass focused expense account-type consistency migration coverage
+- `go test ./internal/cutover -run 'TestValidateBundle(AcceptsProductAccountTypeReferences|ReportsProductAccountTypeMismatches)' -count=1`, `go test -timeout=3m ./docs -count=1`, `golangci-lint run`, and `make test-cli-coverage` pass focused product account-type consistency migration coverage
 - `cd frontend && BASE_URL=http://localhost:5174 PUBLIC_API_URL=http://localhost:18081 DEMO_RESET_SECRET=test-demo-secret bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium e2e/demo/quotes.spec.ts e2e/demo/orders.spec.ts --workers=1` passes with auth setup plus quote and order delivery workflows
 - `cd frontend && bun run test:e2e:smoke` passes against a fresh locally seeded demo environment with 8 passed
 - `cd frontend && bun run test:e2e` passes against a fresh locally seeded demo environment with 260 passed and 12 intentionally skipped reset tests under `CI=true`
@@ -158,6 +159,7 @@ Cost-allocation migration preflight also rejects same-bundle cost allocation tot
 Cost-allocation migration preflight also rejects same-bundle allocation percentage totals above 100 percent for one historical journal line.
 Cost-allocation migration preflight also rejects same-bundle rows where `amount` and `allocation_percentage` disagree with the referenced historical journal line amount.
 Expense migration preflight also rejects same-bundle account-code references where expense accounts are not `EXPENSE` or payment accounts are not `ASSET`/`LIABILITY`.
+Product migration preflight also rejects same-bundle account references where sales accounts are not `REVENUE`, purchase accounts are not `EXPENSE`, or inventory accounts are not `ASSET`.
 
 ## What The Project Can Honestly Claim Today
 

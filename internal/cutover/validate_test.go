@@ -3586,7 +3586,7 @@ func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 		{
 			Kind:       KindAccounts,
 			FileName:   "accounts.csv",
-			CSVContent: "id,account_code,account_name,type\n" + accountID + ",4000,Sales,REVENUE\n",
+			CSVContent: "id,account_code,account_name,type\n" + accountID + ",4000,Sales,REVENUE\n33333333-3333-3333-3333-333333333333,1400,Inventory,ASSET\n",
 		},
 		{
 			Kind:       KindProductCategories,
@@ -3597,7 +3597,7 @@ func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 			Kind:     KindProducts,
 			FileName: "products.csv",
 			CSVContent: "code,name,category_id,sales_price,sale_account_id,purchase_account_code,inventory_account_code\n" +
-				"SKU-1,Widget,33333333-3333-3333-3333-333333333333,10,missing-sales,5999,4000\n",
+				"SKU-1,Widget,33333333-3333-3333-3333-333333333333,10,missing-sales,5999,1400\n",
 		},
 	}})
 
@@ -3608,6 +3608,60 @@ func TestValidateBundleReportsProductAccountReferenceIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindProducts, "category_id", "reference")
 	assertValidationIssue(t, report, KindProducts, "sale_account_id", "sale_account_id must be a valid UUID")
 	assertValidationIssue(t, report, KindProducts, "purchase_account_code", "reference")
+}
+
+func TestValidateBundleAcceptsProductAccountTypeReferences(t *testing.T) {
+	saleAccountID := "11111111-1111-1111-1111-111111111111"
+	purchaseAccountID := "22222222-2222-2222-2222-222222222222"
+	inventoryAccountID := "33333333-3333-3333-3333-333333333333"
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "id,account_code,account_name,type\n" +
+				saleAccountID + ",4000,Sales,REVENUE\n" +
+				purchaseAccountID + ",5500,Cost of goods sold,EXPENSE\n" +
+				inventoryAccountID + ",1400,Inventory,ASSET\n",
+		},
+		{
+			Kind:     KindProducts,
+			FileName: "products.csv",
+			CSVContent: "code,name,sales_price,sale_account_code,purchase_account_id,inventory_account_code\n" +
+				"SKU-1,Widget,10,4000," + purchaseAccountID + ",1400\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsProductAccountTypeMismatches(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "account_code,account_name,type\n" +
+				"4000,Sales holding,ASSET\n" +
+				"5500,Purchase clearing,REVENUE\n" +
+				"1400,Inventory expense,EXPENSE\n",
+		},
+		{
+			Kind:     KindProducts,
+			FileName: "products.csv",
+			CSVContent: "code,name,sales_price,sale_account_code,purchase_account_code,inventory_account_code\n" +
+				"SKU-1,Widget,10,4000,5500,1400\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindProducts, "sale_account_code", `sale account "4000" is ASSET; expected REVENUE account`)
+	assertValidationIssue(t, report, KindProducts, "purchase_account_code", `purchase account "5500" is REVENUE; expected EXPENSE account`)
+	assertValidationIssue(t, report, KindProducts, "inventory_account_code", `inventory account "1400" is EXPENSE; expected ASSET account`)
 }
 
 func TestValidateBundleAcceptsProductTypeValuesAndBlank(t *testing.T) {

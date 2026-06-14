@@ -2379,7 +2379,9 @@ func validateGroupedDocumentPreflight(report *BundleValidationReport, file parse
 
 func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile, eInvoiceContactMode EInvoiceContactMode) {
 	validateImportedInvoiceAmountPaidConsistency(report, files)
-	validateExpenseAccountTypeConsistency(report, files)
+	accountTypeTargets := buildCutoverAccountTypeTargets(files)
+	validateExpenseAccountTypeConsistency(report, files, accountTypeTargets)
+	validateProductAccountTypeConsistency(report, files, accountTypeTargets)
 	validateStockAdjustmentProductStockability(report, files)
 	validateCostAllocationJournalLineTotals(report, files)
 	validateCostAllocationJournalLinePercentages(report, files)
@@ -2479,8 +2481,7 @@ type cutoverAccountTypeTarget struct {
 	accountType string
 }
 
-func validateExpenseAccountTypeConsistency(report *BundleValidationReport, files []parsedFile) {
-	targets := buildCutoverAccountTypeTargets(files)
+func validateExpenseAccountTypeConsistency(report *BundleValidationReport, files []parsedFile, targets map[string]cutoverAccountTypeTarget) {
 	if len(targets) == 0 {
 		return
 	}
@@ -2489,11 +2490,11 @@ func validateExpenseAccountTypeConsistency(report *BundleValidationReport, files
 			continue
 		}
 		for _, row := range file.rows {
-			checkExpenseAccountType(report, file, row, targets,
+			checkCutoverAccountType(report, file, row, targets,
 				"expense_account_id", "expense_account_code",
 				map[string]bool{"EXPENSE": true},
 				"expense account", "EXPENSE")
-			checkExpenseAccountType(report, file, row, targets,
+			checkCutoverAccountType(report, file, row, targets,
 				"payment_account_id", "payment_account_code",
 				map[string]bool{"ASSET": true, "LIABILITY": true},
 				"payment account", "ASSET or LIABILITY")
@@ -2501,7 +2502,32 @@ func validateExpenseAccountTypeConsistency(report *BundleValidationReport, files
 	}
 }
 
-func checkExpenseAccountType(
+func validateProductAccountTypeConsistency(report *BundleValidationReport, files []parsedFile, targets map[string]cutoverAccountTypeTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindProducts {
+			continue
+		}
+		for _, row := range file.rows {
+			checkCutoverAccountType(report, file, row, targets,
+				"sale_account_id", "sale_account_code",
+				map[string]bool{"REVENUE": true},
+				"sale account", "REVENUE")
+			checkCutoverAccountType(report, file, row, targets,
+				"purchase_account_id", "purchase_account_code",
+				map[string]bool{"EXPENSE": true},
+				"purchase account", "EXPENSE")
+			checkCutoverAccountType(report, file, row, targets,
+				"inventory_account_id", "inventory_account_code",
+				map[string]bool{"ASSET": true},
+				"inventory account", "ASSET")
+		}
+	}
+}
+
+func checkCutoverAccountType(
 	report *BundleValidationReport,
 	file parsedFile,
 	row parsedRow,
@@ -2529,7 +2555,7 @@ func checkExpenseAccountType(
 	}
 	report.addIssue(ValidationIssue{
 		Severity:   SeverityError,
-		Kind:       KindExpenses,
+		Kind:       file.kind,
 		FileName:   file.fileName,
 		Row:        row.number,
 		Field:      field,
