@@ -2379,6 +2379,7 @@ func validateGroupedDocumentPreflight(report *BundleValidationReport, file parse
 
 func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile, eInvoiceContactMode EInvoiceContactMode) {
 	validateImportedInvoiceAmountPaidConsistency(report, files)
+	validateStockAdjustmentProductStockability(report, files)
 
 	invoiceTargets := buildCutoverInvoiceAllocationTargets(files, eInvoiceContactMode)
 	validateFixedAssetInvoiceConsistency(report, files, invoiceTargets)
@@ -2466,6 +2467,104 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 				}
 			}
 		}
+	}
+}
+
+type cutoverProductStockability struct {
+	productType    string
+	trackInventory bool
+}
+
+func validateStockAdjustmentProductStockability(report *BundleValidationReport, files []parsedFile) {
+	products := buildCutoverProductStockabilityTargets(files)
+	if len(products) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindStockAdjustments {
+			continue
+		}
+		for _, row := range file.rows {
+			productCode := strings.TrimSpace(row.values["product_code"])
+			if productCode == "" {
+				continue
+			}
+			product, ok := products[normalizedValue(productCode)]
+			if !ok {
+				continue
+			}
+			if product.productType != "GOODS" {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindStockAdjustments,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "product_code",
+					Value:      productCode,
+					TargetKind: KindProducts,
+					Message:    fmt.Sprintf("stock adjustment product_code %q references %s product; stock adjustments require tracked GOODS products", productCode, product.productType),
+				})
+				continue
+			}
+			if !product.trackInventory {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindStockAdjustments,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "product_code",
+					Value:      productCode,
+					TargetKind: KindProducts,
+					Message:    fmt.Sprintf("stock adjustment product_code %q references product with track_inventory=false; stock adjustments require tracked GOODS products", productCode),
+				})
+			}
+		}
+	}
+}
+
+func buildCutoverProductStockabilityTargets(files []parsedFile) map[string]cutoverProductStockability {
+	products := map[string]cutoverProductStockability{}
+	for _, file := range files {
+		if file.kind != KindProducts {
+			continue
+		}
+		for _, row := range file.rows {
+			code := strings.TrimSpace(row.values["code"])
+			if code == "" {
+				continue
+			}
+			productType := strings.ToUpper(strings.TrimSpace(row.values["product_type"]))
+			if productType == "" {
+				productType = "GOODS"
+			}
+			if productType != "GOODS" && productType != "SERVICE" {
+				continue
+			}
+			trackInventory, ok := cutoverProductTrackInventory(row, productType)
+			if !ok {
+				continue
+			}
+			products[normalizedValue(code)] = cutoverProductStockability{
+				productType:    productType,
+				trackInventory: trackInventory,
+			}
+		}
+	}
+	return products
+}
+
+func cutoverProductTrackInventory(row parsedRow, productType string) (bool, bool) {
+	value := strings.TrimSpace(row.values["track_inventory"])
+	if value == "" {
+		return productType == "GOODS", true
+	}
+	switch normalizeCutoverBoolComparable(value) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	default:
+		return false, false
 	}
 }
 
