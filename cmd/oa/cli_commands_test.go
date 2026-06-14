@@ -3130,6 +3130,95 @@ func TestCLIPluginCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Disabled tenant plugin")
 }
 
+func TestCLIPluginRuntimeInvokeMethodVariants(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	const pluginID = "11111111-1111-1111-1111-111111111111"
+	seen := map[string]bool{
+		http.MethodPut:    false,
+		http.MethodPatch:  false,
+		http.MethodDelete: false,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		require.Equal(t, "*/*", r.Header.Get("Accept"))
+
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/runtime/settings/update":
+			seen[http.MethodPut] = true
+			require.Equal(t, "force=true&source=cli", r.URL.RawQuery)
+			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "strict", req["mode"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"method": http.MethodPut})
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/runtime/settings/partial":
+			seen[http.MethodPatch] = true
+			require.Equal(t, "dry_run=false", r.URL.RawQuery)
+			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "enabled", req["status"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"method": http.MethodPatch})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/runtime/cache/item-1":
+			seen[http.MethodDelete] = true
+			require.Equal(t, "hard=true", r.URL.RawQuery)
+			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "expired", req["reason"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"method": http.MethodDelete})
+		default:
+			t.Fatalf("unexpected runtime request: %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "PUT with leading query marker",
+			args: []string{"plugins", "runtime", "invoke", "--id", pluginID, "--method", "put", "--path", "/settings/update", "--query", "?force=true&source=cli", "--body-json", `{"mode":"strict"}`},
+			want: `"method":"PUT"`,
+		},
+		{
+			name: "PATCH with nested path",
+			args: []string{"plugins", "runtime", "invoke", "--id", pluginID, "--method", "patch", "--path", "settings/partial", "--query", "dry_run=false", "--body-json", `{"status":"enabled"}`},
+			want: `"method":"PATCH"`,
+		},
+		{
+			name: "DELETE with body",
+			args: []string{"plugins", "runtime", "invoke", "--id", pluginID, "--method", "delete", "--path", "cache/item-1", "--query", "?hard=true", "--body-json", `{"reason":"expired"}`},
+			want: `"method":"DELETE"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(context.Background(), tc.args)
+			require.NoError(t, err)
+			assert.Contains(t, stdout.String(), tc.want)
+		})
+	}
+
+	for method, wasSeen := range seen {
+		assert.Truef(t, wasSeen, "expected runtime invocation for %s", method)
+	}
+}
+
 func TestCLIPluginBranches(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -4530,6 +4619,24 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "einvoices.xml", req.FileName)
 			assert.Equal(t, invoicing.InvoiceTypePurchase, req.InvoiceType)
+		case "/api/v1/tenants/tenant-1/payroll-runs/import-history":
+			var req payroll.ImportPayrollHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "payroll-history.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "gross_pay")
+			assert.Contains(t, req.CSVContent, "Mari,Mets")
+		case "/api/v1/tenants/tenant-1/tsd/import-history":
+			var req payroll.ImportTSDHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "tsd-history.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "gross_payment")
+			assert.Contains(t, req.CSVContent, "Mari,Mets")
+		case "/api/v1/tenants/tenant-1/tax/kmd/import-history":
+			var req tax.ImportKMDHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "kmd-history.csv", req.FileName)
+			assert.Contains(t, req.CSVContent, "row_code")
+			assert.Contains(t, req.CSVContent, "2026,1,1,22")
 		case "/api/v1/tenants/tenant-1/journal-entries/import-opening-balances":
 			var req accounting.ImportOpeningBalancesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -19478,8 +19585,21 @@ func TestCLIReportsCommands(t *testing.T) {
 					"count":  3,
 				}},
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/aging/payables":
+			require.Empty(t, r.URL.Query().Get("format"))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"report_type": "payables",
+				"as_of_date":  "2026-03-31T00:00:00Z",
+				"total":       "450.00",
+				"buckets": []map[string]any{{
+					"label":  "Current",
+					"amount": "450.00",
+					"count":  2,
+				}},
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/balance-confirmations":
-			require.Equal(t, "RECEIVABLE", r.URL.Query().Get("type"))
+			balanceType := r.URL.Query().Get("type")
+			require.Contains(t, []string{"RECEIVABLE", "PAYABLE"}, balanceType)
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
 			if r.URL.Query().Get("format") == "xlsx" {
 				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -19492,7 +19612,7 @@ func TestCLIReportsCommands(t *testing.T) {
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"type":          "RECEIVABLE",
+				"type":          balanceType,
 				"as_of_date":    "2026-03-31",
 				"total_balance": "900.00",
 				"contact_count": 1,
@@ -19508,7 +19628,8 @@ func TestCLIReportsCommands(t *testing.T) {
 				"generated_at": "2026-03-31T12:00:00Z",
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/balance-confirmations/contact-1":
-			require.Equal(t, "RECEIVABLE", r.URL.Query().Get("type"))
+			balanceType := r.URL.Query().Get("type")
+			require.Contains(t, []string{"RECEIVABLE", "PAYABLE"}, balanceType)
 			require.Equal(t, "2026-03-31", r.URL.Query().Get("as_of_date"))
 			if r.URL.Query().Get("format") == "csv" {
 				w.Header().Set("Content-Type", "text/csv")
@@ -19526,7 +19647,7 @@ func TestCLIReportsCommands(t *testing.T) {
 				"contact_id":    "contact-1",
 				"contact_name":  "Acme",
 				"contact_code":  "CUST-1",
-				"type":          "RECEIVABLE",
+				"type":          balanceType,
 				"as_of_date":    "2026-03-31",
 				"total_balance": "900.00",
 				"invoices": []map[string]any{{
@@ -19543,7 +19664,8 @@ func TestCLIReportsCommands(t *testing.T) {
 				"generated_at": "2026-03-31T12:00:00Z",
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/reports/contact-statements/contact-1":
-			require.Equal(t, "RECEIVABLE", r.URL.Query().Get("type"))
+			balanceType := r.URL.Query().Get("type")
+			require.Contains(t, []string{"RECEIVABLE", "PAYABLE"}, balanceType)
 			require.Equal(t, "2026-01-01", r.URL.Query().Get("start_date"))
 			require.Equal(t, "2026-01-31", r.URL.Query().Get("end_date"))
 			if r.URL.Query().Get("format") == "csv" {
@@ -19567,7 +19689,7 @@ func TestCLIReportsCommands(t *testing.T) {
 				"contact_id":      "contact-1",
 				"contact_name":    "Acme",
 				"contact_code":    "CUST-1",
-				"type":            "RECEIVABLE",
+				"type":            balanceType,
 				"start_date":      "2026-01-01",
 				"end_date":        "2026-01-31",
 				"opening_balance": "100.00",
@@ -19914,6 +20036,11 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"report_type": "receivables"`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "aging", "--type", "payables", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"report_type": "payables"`)
+
+	stdout.Reset()
 	agingCSVPath := filepath.Join(t.TempDir(), "aging.csv")
 	err = app.run(context.Background(), []string{"reports", "aging", "--type", "receivables", "--csv", "--output", agingCSVPath})
 	require.NoError(t, err)
@@ -20207,6 +20334,11 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"total_balance": "900"`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "balance-confirmations", "--type", "payable", "--as-of", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"type": "PAYABLE"`)
+
+	stdout.Reset()
 	confirmationSummaryCSVPath := filepath.Join(t.TempDir(), "balance-confirmations.csv")
 	err = app.run(context.Background(), []string{"reports", "balance-confirmations", "--type", "receivable", "--as-of", "2026-03-31", "--csv", "--output", confirmationSummaryCSVPath})
 	require.NoError(t, err)
@@ -20221,6 +20353,11 @@ func TestCLIReportsCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"contact_id": "contact-1"`)
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "payable", "--as-of", "2026-03-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"type": "PAYABLE"`)
+
+	stdout.Reset()
 	confirmationXLSXPath := filepath.Join(t.TempDir(), "balance-confirmation.xlsx")
 	err = app.run(context.Background(), []string{"reports", "balance-confirmation", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--as-of", "2026-03-31", "--xlsx", "--output", confirmationXLSXPath})
 	require.NoError(t, err)
@@ -20233,6 +20370,11 @@ func TestCLIReportsCommands(t *testing.T) {
 	err = app.run(context.Background(), []string{"reports", "contact-statement", "--contact-id", "contact-1", "--type", "RECEIVABLE", "--start", "2026-01-01", "--end", "2026-01-31", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"closing_balance": "1050"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"reports", "contact-statement", "--contact-id", "contact-1", "--type", "payable", "--start", "2026-01-01", "--end", "2026-01-31", "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"type": "PAYABLE"`)
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"reports", "sales-margin", "--start", "2026-01-01", "--end", "2026-03-31", "--json"})
