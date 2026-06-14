@@ -2382,6 +2382,7 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 	accountTypeTargets := buildCutoverAccountTypeTargets(files)
 	validateExpenseAccountTypeConsistency(report, files, accountTypeTargets)
 	validateProductAccountTypeConsistency(report, files, accountTypeTargets)
+	validateFixedAssetAccountTypeConsistency(report, files, accountTypeTargets)
 	validateStockAdjustmentProductStockability(report, files)
 	validateCostAllocationJournalLineTotals(report, files)
 	validateCostAllocationJournalLinePercentages(report, files)
@@ -2523,6 +2524,31 @@ func validateProductAccountTypeConsistency(report *BundleValidationReport, files
 				"inventory_account_id", "inventory_account_code",
 				map[string]bool{"ASSET": true},
 				"inventory account", "ASSET")
+		}
+	}
+}
+
+func validateFixedAssetAccountTypeConsistency(report *BundleValidationReport, files []parsedFile, targets map[string]cutoverAccountTypeTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindFixedAssets {
+			continue
+		}
+		for _, row := range file.rows {
+			checkCutoverAccountType(report, file, row, targets,
+				"asset_account_id", "asset_account_code",
+				map[string]bool{"ASSET": true},
+				"asset account", "ASSET")
+			checkCutoverAccountType(report, file, row, targets,
+				"depreciation_expense_account_id", "depreciation_expense_account_code",
+				map[string]bool{"EXPENSE": true},
+				"depreciation expense account", "EXPENSE")
+			checkCutoverAccountType(report, file, row, targets,
+				"accumulated_depreciation_account_id", "accumulated_depreciation_account_code",
+				map[string]bool{"ASSET": true},
+				"accumulated depreciation account", "ASSET")
 		}
 	}
 }
