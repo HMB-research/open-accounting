@@ -25739,6 +25739,9 @@ const docTemplate = `{
                 "e_invoice_contact_mode": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.EInvoiceContactMode"
                 },
+                "e_invoice_invoice_type": {
+                    "type": "string"
+                },
                 "files": {
                     "type": "array",
                     "items": {
@@ -25758,6 +25761,9 @@ const docTemplate = `{
             "properties": {
                 "e_invoice_contact_mode": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.EInvoiceContactMode"
+                },
+                "e_invoice_invoice_type": {
+                    "type": "string"
                 },
                 "files": {
                     "type": "array",

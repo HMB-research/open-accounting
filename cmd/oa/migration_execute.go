@@ -133,6 +133,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 	plan, err := client.planMigrationExecution(ctx, cfg.TenantID, &cutover.PlanMigrationExecutionRequest{
 		Files:                    files,
 		EInvoiceContactMode:      cutover.EInvoiceContactMode(strings.TrimSpace(*eInvoiceContactMode)),
+		EInvoiceInvoiceType:      string(invoiceType),
 		ProviderPreset:           cutover.MigrationProviderPreset(strings.TrimSpace(*providerPreset)),
 		BankTransactionAccountID: strings.TrimSpace(*bankTransactionAccountID),
 		OpeningBalanceEntryDate:  strings.TrimSpace(*openingBalanceEntryDate),

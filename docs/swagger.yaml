@@ -2546,6 +2546,8 @@ definitions:
         type: string
       e_invoice_contact_mode:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.EInvoiceContactMode'
+      e_invoice_invoice_type:
+        type: string
       files:
         items:
           $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleFile'
@@ -2559,6 +2561,8 @@ definitions:
     properties:
       e_invoice_contact_mode:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.EInvoiceContactMode'
+      e_invoice_invoice_type:
+        type: string
       files:
         items:
           $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.BundleFile'
