@@ -40,7 +40,7 @@ Status values:
 - The follow-up SmartAccounts commercial contact alias stage was locally revalidated with focused cutover validator tests.
 - The follow-up SmartAccounts payroll/TSD year-month alias stage was locally revalidated with focused cutover validator tests.
 - The follow-up Merit/Directo commercial contact alias stage was locally revalidated with focused cutover validator tests.
-- The follow-up provider opening-balance amount alias stage was locally revalidated with focused cutover validator tests.
+- The follow-up provider opening-balance amount alias stage was locally revalidated with focused accounting importer and cutover validator tests.
 - The follow-up migration FK UUID preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up product supplier-code migration stage was locally revalidated with focused inventory importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up fixed-asset supplier-code migration stage was locally revalidated with focused fixed-asset importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
@@ -128,11 +128,12 @@ before the same-bundle contact preflight runs.
 SmartAccounts payroll and TSD-history provider presets now canonicalize separate
 payroll/pay-period year and month headers plus common exported payroll tax amount
 labels before period and amount validation runs.
-Provider opening-balance presets now canonicalize common Merit and Directo
+Provider opening-balance presets and the opening-balance importer now
+canonicalize common Merit and Directo
 account and amount headers such as `konto_kood`, `deebetsumma`,
 `kreeditsumma`, `algsaldo_deebet`, and `algsaldo_kreedit`, plus SmartAccounts
 `gl_account_no`, `opening_debit`, and `opening_credit`, before balance
-validation runs.
+validation and import execution run.
 Merit and Directo commercial-document provider presets now canonicalize common
 Estonian contact registry number, VAT number, and email aliases before the
 same-bundle contact preflight runs.

@@ -1206,6 +1206,8 @@ go run ./cmd/oa journal import-opening-balances \
   --reference OB-2026
 ```
 
+Opening-balance imports accept the same account/debit/credit provider aliases validated by migration preflight, including Merit and Directo `konto_kood`, `deebetsumma`, `kreeditsumma`, `algsaldo_deebet`, and `algsaldo_kreedit`, plus SmartAccounts `gl_account_no`, `opening_debit`, and `opening_credit`. This lets `migration execute --provider-preset ... --opening-balances ...` send the original vendor CSV to the import API after validation.
+
 ## Example CSV shapes
 
 The CSV importers accept comma, semicolon, or tab delimiters.
