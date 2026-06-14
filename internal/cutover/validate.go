@@ -6293,6 +6293,7 @@ func checkExpenseRows(report *BundleValidationReport, file parsedFile) {
 			checkExpenseAmount(report, file, row)
 		}
 		checkExpenseExchangeRate(report, file, row)
+		checkOptionalUUID(report, file, row, "employee_id")
 		checkExpenseRequiresReceipt(report, file, row)
 		status, statusOK := checkExpenseStatus(report, file, row)
 		if statusOK {

@@ -82,6 +82,7 @@ Status values:
 - The follow-up cost-allocation journal-line percentage consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up cost-allocation amount/percentage consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up expense account-type consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up expense employee-ID UUID preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up product account-type consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up fixed-asset account-type consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up bank-account GL account-type consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
@@ -231,6 +232,7 @@ Expense account-type consistency also rejects same-bundle expense rows where
 `payment_account_code` does not reference an `ASSET` or `LIABILITY` account.
 The focused expense account-type consistency migration tests cover accepted
 expense/payment account combinations and rejected type mismatches.
+Expense employee-ID preflight rejects non-UUID values with expense `employee_id` UUID syntax checks before expense cutover execution reaches the mutating importer.
 Product account-type consistency also rejects same-bundle product rows where
 `sale_account_code` does not reference a `REVENUE` account,
 `purchase_account_code` does not reference an `EXPENSE` account, or

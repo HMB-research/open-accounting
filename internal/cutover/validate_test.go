@@ -2384,20 +2384,20 @@ func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
 		{
 			Kind:     KindExpenses,
 			FileName: "expenses.csv",
-			CSVContent: "expense_number,expense_date,merchant,expense_account_code,payment_account_code,amount,exchange_rate,status,requires_receipt,submitted_at,approved_at,rejected_at,rejection_reason\n" +
-				"EXP-1,bad-date,, , ,0,0,POSTED,maybe,,,,\n" +
-				"EXP-2,2026-05-31,Office,5500,1000,abc,abc,UNKNOWN,true,,,,\n" +
-				"EXP-3,2026-05-31,Office,5500,1000,10,1,REJECTED,true,bad-date,,bad-date,\n" +
-				"EXP-4,2026-05-31T12:00:00Z,Office,5500,1000,10,1,APPROVED,false,bad-date,bad-date,,\n" +
-				"EXP-5,2026-05-31,Office,5500,1000,\"10,50\",\"1,2\",SUBMITTED,no,2026-05-31,,,\n" +
-				"EXP-6,,Office,5500,1000,10,1,DRAFT,true,,,,\n",
+			CSVContent: "expense_number,expense_date,merchant,expense_account_code,payment_account_code,amount,exchange_rate,employee_id,status,requires_receipt,submitted_at,approved_at,rejected_at,rejection_reason\n" +
+				"EXP-1,bad-date,, , ,0,0,legacy-employee,POSTED,maybe,,,,\n" +
+				"EXP-2,2026-05-31,Office,5500,1000,abc,abc,,UNKNOWN,true,,,,\n" +
+				"EXP-3,2026-05-31,Office,5500,1000,10,1,,REJECTED,true,bad-date,,bad-date,\n" +
+				"EXP-4,2026-05-31T12:00:00Z,Office,5500,1000,10,1,,APPROVED,false,bad-date,bad-date,,\n" +
+				"EXP-5,2026-05-31,Office,5500,1000,\"10,50\",\"1,2\",,SUBMITTED,no,2026-05-31,,,\n" +
+				"EXP-6,,Office,5500,1000,10,1,,DRAFT,true,,,,\n",
 		},
 	}})
 
 	require.NoError(t, err)
 	require.NotNil(t, report)
 	assert.False(t, report.Summary.Ready)
-	assert.Equal(t, 17, report.Summary.ErrorCount)
+	assert.Equal(t, 18, report.Summary.ErrorCount)
 	assertValidationIssue(t, report, KindExpenses, "expense_date", "expense_date must be YYYY-MM-DD or RFC3339")
 	assertValidationIssue(t, report, KindExpenses, "expense_date", "expense_date is required")
 	assertValidationIssue(t, report, KindExpenses, "merchant", "merchant is required")
@@ -2407,6 +2407,7 @@ func TestValidateBundleReportsExpenseRowValueIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindExpenses, "amount", "amount must be a decimal")
 	assertValidationIssue(t, report, KindExpenses, "exchange_rate", "exchange_rate must be positive")
 	assertValidationIssue(t, report, KindExpenses, "exchange_rate", "exchange_rate must be a decimal")
+	assertValidationIssue(t, report, KindExpenses, "employee_id", "employee_id must be a valid UUID")
 	assertValidationIssue(t, report, KindExpenses, "status", "posted expenses must be imported as approved and posted through the expense workflow")
 	assertValidationIssue(t, report, KindExpenses, "status", `invalid status "UNKNOWN"`)
 	assertValidationIssue(t, report, KindExpenses, "requires_receipt", "invalid requires_receipt")
