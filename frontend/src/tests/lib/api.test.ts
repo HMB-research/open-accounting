@@ -3013,6 +3013,58 @@ describe("API Client - Core Functionality", () => {
       expect(result).toHaveLength(1);
     });
 
+    it("should generate KMD INF and EU VAT OSS reports", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            tenant_id: "tenant-123",
+            year: 2026,
+            month: 3,
+            remediation_actions: [{ code: "kmd_inf_review_required" }],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            tenant_id: "tenant-123",
+            year: 2026,
+            quarter: 1,
+            remediation_actions: [{ code: "eu_vat_oss_review_required" }],
+          }),
+        });
+
+      const inf = await api.generateKMDINF("tenant-123", {
+        year: 2026,
+        month: 3,
+        threshold: "1000",
+      });
+      const oss = await api.generateEUVATOSS("tenant-123", {
+        year: 2026,
+        quarter: 1,
+        include_b2b: true,
+      });
+
+      expect(inf.remediation_actions?.[0].code).toBe("kmd_inf_review_required");
+      expect(oss.remediation_actions?.[0].code).toBe(
+        "eu_vat_oss_review_required",
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/tax/kmd/2026/3/inf?threshold=1000"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(
+          "/tax/eu-vat/oss?year=2026&quarter=1&include_b2b=true",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+    });
+
     it("should mark KMD submitted and accepted", async () => {
       mockFetch
         .mockResolvedValueOnce({

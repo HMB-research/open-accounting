@@ -21,6 +21,8 @@ const { apiMock } = vi.hoisted(() => ({
 		markTSDAccepted: vi.fn(),
 		executeMigration: vi.fn(),
 		generateKMD: vi.fn(),
+		generateKMDINF: vi.fn(),
+		generateEUVATOSS: vi.fn(),
 		downloadKMDXml: vi.fn(),
 		markKMDAccepted: vi.fn(),
 		submitExpense: vi.fn(),
@@ -418,6 +420,35 @@ describe('AccountantReviewPanel', () => {
 		apiMock.markTSDAccepted.mockResolvedValue({ status: 'accepted' });
 		apiMock.executeMigration.mockResolvedValue({ id: 'run-executed' });
 		apiMock.generateKMD.mockResolvedValue({ id: 'kmd-1' });
+		apiMock.generateKMDINF.mockResolvedValue({
+			tenant_id: 'tenant-1',
+			year: 2026,
+			month: 3,
+			threshold: new Decimal(1000),
+			generated_at: '2026-03-31T00:00:00Z',
+			summary: [],
+			rows: [],
+			remediation_actions: []
+		});
+		apiMock.generateEUVATOSS.mockResolvedValue({
+			tenant_id: 'tenant-1',
+			year: 2026,
+			quarter: 1,
+			period_start: '2026-01-01T00:00:00Z',
+			period_end: '2026-03-31T23:59:59Z',
+			scheme: 'UNION',
+			currency: 'EUR',
+			include_b2b: false,
+			generated_at: '2026-03-31T00:00:00Z',
+			summary: [],
+			rows: [],
+			taxable_amount: new Decimal(0),
+			vat_amount: new Decimal(0),
+			total_amount: new Decimal(0),
+			invoice_count: 0,
+			line_count: 0,
+			remediation_actions: []
+		});
 		apiMock.downloadKMDXml.mockResolvedValue(undefined);
 		apiMock.markKMDAccepted.mockResolvedValue({ status: 'accepted' });
 		apiMock.submitExpense.mockResolvedValue({
@@ -1886,6 +1917,155 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(apiMock.markKMDAccepted).toHaveBeenCalledWith('tenant-1', 2026, 6);
 			expect(screen.getByText('KMD marked accepted from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it('executes tax report assignment rows from the workspace', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-03-31',
+			cutoff_date: '2026-04-30',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+		apiMock.listKMD.mockResolvedValue([
+			{
+				id: 'kmd-2026-03',
+				tenant_id: 'tenant-1',
+				year: 2026,
+				month: 3,
+				status: 'DRAFT',
+				total_output_vat: new Decimal(220),
+				total_input_vat: new Decimal(80),
+				rows: [],
+				remediation_actions: [],
+				created_at: '2026-03-31T00:00:00Z',
+				updated_at: '2026-03-31T00:00:00Z'
+			}
+		]);
+		apiMock.generateKMDINF.mockResolvedValue({
+			tenant_id: 'tenant-1',
+			year: 2026,
+			month: 3,
+			threshold: new Decimal(1000),
+			generated_at: '2026-03-31T00:00:00Z',
+			summary: [],
+			rows: [],
+			remediation_actions: [
+				{
+					code: 'kmd_inf_review_required',
+					severity: 'ACTION',
+					scope: 'tax',
+					owner_role: 'accountant',
+					workspace_queue: 'tax_reports',
+					assignment_key: 'tax-reports:kmd-inf-review-required:kmd-inf-report:2026-03:2026-03',
+					priority: 'high',
+					due_in_days: 1,
+					message: 'KMD INF 2026-03 has 2 threshold invoice rows.',
+					action: 'Review partner-period threshold totals and archive the report.',
+					entity_type: 'kmd_inf_report',
+					entity_id: '2026-03',
+					period: '2026-03',
+					ui_path: '/tax/kmd?year=2026&month=3&view=inf',
+					cli_command: 'oa tax kmd inf --year 2026 --month 3 --threshold 1000 --json'
+				}
+			]
+		});
+		apiMock.generateEUVATOSS.mockResolvedValue({
+			tenant_id: 'tenant-1',
+			year: 2026,
+			quarter: 1,
+			period_start: '2026-01-01T00:00:00Z',
+			period_end: '2026-03-31T23:59:59Z',
+			scheme: 'UNION',
+			currency: 'EUR',
+			include_b2b: false,
+			generated_at: '2026-03-31T00:00:00Z',
+			summary: [],
+			rows: [],
+			taxable_amount: new Decimal(100),
+			vat_amount: new Decimal(19),
+			total_amount: new Decimal(119),
+			invoice_count: 1,
+			line_count: 1,
+			remediation_actions: [
+				{
+					code: 'eu_vat_oss_review_required',
+					severity: 'ACTION',
+					scope: 'tax',
+					owner_role: 'accountant',
+					workspace_queue: 'tax_reports',
+					assignment_key: 'tax-reports:eu-vat-oss-review-required:eu-vat-oss-report:2026-q1:2026-q1',
+					priority: 'high',
+					due_in_days: 1,
+					message: 'EU VAT OSS 2026-Q1 has VAT due of 19.',
+					action: 'Review destination-country VAT totals and file the OSS return manually.',
+					entity_type: 'eu_vat_oss_report',
+					entity_id: '2026-Q1',
+					period: '2026-Q1',
+					ui_path: '/tax/oss?year=2026&quarter=1',
+					cli_command: 'oa tax oss report --year 2026 --quarter 1 --json'
+				}
+			]
+		});
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('KMD INF 2026-03 has 2 threshold invoice rows.')).toBeInTheDocument();
+			expect(screen.getByText('EU VAT OSS 2026-Q1 has VAT due of 19.')).toBeInTheDocument();
+		});
+
+		const kmdInfRow = screen
+			.getByText('KMD INF 2026-03 has 2 threshold invoice rows.')
+			.closest('li');
+		expect(kmdInfRow).not.toBeNull();
+		await fireEvent.click(within(kmdInfRow as HTMLElement).getByRole('button', { name: 'Generate KMD INF' }));
+
+		await waitFor(() => {
+			expect(apiMock.generateKMDINF).toHaveBeenCalledWith('tenant-1', {
+				year: 2026,
+				month: 3
+			});
+			expect(screen.getByText('KMD INF generated from workspace.')).toBeInTheDocument();
+		});
+
+		const ossRow = screen.getByText('EU VAT OSS 2026-Q1 has VAT due of 19.').closest('li');
+		expect(ossRow).not.toBeNull();
+		await fireEvent.click(within(ossRow as HTMLElement).getByRole('button', { name: 'Generate OSS report' }));
+
+		await waitFor(() => {
+			expect(apiMock.generateEUVATOSS).toHaveBeenCalledWith('tenant-1', {
+				year: 2026,
+				quarter: 1
+			});
+			expect(screen.getByText('OSS report generated from workspace.')).toBeInTheDocument();
 		});
 	});
 

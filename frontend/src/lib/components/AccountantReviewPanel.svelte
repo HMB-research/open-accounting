@@ -236,6 +236,8 @@
 				return m.dashboard_reviewAssignmentSourceTsd();
 			case 'kmd':
 				return m.dashboard_reviewAssignmentSourceKmd();
+			case 'tax_reports':
+				return m.dashboard_reviewAssignmentSourceTaxReports();
 			case 'migration':
 				return m.dashboard_reviewAssignmentSourceMigration();
 		}
@@ -497,6 +499,42 @@
 			action.code === 'kmd_awaiting_authority_acceptance' &&
 			parseAssignmentPeriod(action) !== null
 		);
+	}
+
+	function canGenerateAssignmentKMDINF(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'tax_reports' &&
+			['kmd_inf_review_required', 'kmd_inf_no_threshold_rows'].includes(action.code) &&
+			parseAssignmentPeriod(action) !== null
+		);
+	}
+
+	function canGenerateAssignmentOSS(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'tax_reports' &&
+			['eu_vat_oss_review_required', 'eu_vat_oss_no_rows'].includes(action.code) &&
+			parseAssignmentQuarter(action) !== null
+		);
+	}
+
+	type AssignmentQuarter = {
+		year: number;
+		quarter: number;
+	};
+
+	function parseAssignmentQuarter(action: WorkspaceAssignmentAction): AssignmentQuarter | null {
+		const match = action.period?.match(/^(\d{4})-Q([1-4])$/);
+		if (!match) {
+			return null;
+		}
+
+		const year = Number(match[1]);
+		const quarter = Number(match[2]);
+		if (!year || quarter < 1 || quarter > 4) {
+			return null;
+		}
+
+		return { year, quarter };
 	}
 
 	function isReviewDirty(transaction: BankTransaction): boolean {
@@ -973,6 +1011,54 @@
 		}
 	}
 
+	async function generateAssignmentKMDINF(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.generateKMDINF(tenant.id, period);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentKmdInfGenerated();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdInfGenerateError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function generateAssignmentOSS(action: WorkspaceAssignmentAction) {
+		const quarter = parseAssignmentQuarter(action);
+		if (!quarter) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.generateEUVATOSS(tenant.id, quarter);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentOssGenerated();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentOssGenerateError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
 	async function sendInvoiceReminder(invoice: OverdueInvoice) {
 		if (!invoice.contact_email) {
 			return;
@@ -1441,6 +1527,30 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: m.dashboard_reviewAssignmentsAcceptKmd()}
+										</button>
+									{/if}
+									{#if canGenerateAssignmentKMDINF(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => generateAssignmentKMDINF(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsGenerateKmdInf()}
+										</button>
+									{/if}
+									{#if canGenerateAssignmentOSS(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => generateAssignmentOSS(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsGenerateOss()}
 										</button>
 									{/if}
 									{#if assignmentCompletionErrorId === action.id}
