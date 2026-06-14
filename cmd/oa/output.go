@@ -193,10 +193,13 @@ func printMigrationExecutionRun(w io.Writer, run *migrationExecutionRun) {
 	if active := formatMigrationActiveStep(run.Summary); active != "-" {
 		_, _ = fmt.Fprintf(w, "Active step: %s\n", active)
 	}
+	if duration := formatDurationMS(run.Summary.DurationMS); duration != "-" {
+		_, _ = fmt.Fprintf(w, "Duration: %s\n", duration)
+	}
 
 	if len(run.Steps) > 0 {
 		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(tw, "STEP\tSTATUS\tKIND\tFILE\tMESSAGE\tERROR\tCOMMAND")
+		_, _ = fmt.Fprintln(tw, "STEP\tSTATUS\tKIND\tFILE\tDURATION\tMESSAGE\tERROR\tCOMMAND")
 		for _, step := range run.Steps {
 			message := step.Message
 			if message == "" {
@@ -210,7 +213,7 @@ func printMigrationExecutionRun(w io.Writer, run *migrationExecutionRun) {
 			if command == "" {
 				command = "-"
 			}
-			_, _ = fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", step.StepNumber, step.Status, step.Kind, step.FileName, message, errText, command)
+			_, _ = fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", step.StepNumber, step.Status, step.Kind, step.FileName, formatDurationMS(step.DurationMS), message, errText, command)
 		}
 		_ = tw.Flush()
 	}
@@ -220,15 +223,16 @@ func printMigrationExecutionRun(w io.Writer, run *migrationExecutionRun) {
 
 func printMigrationExecutionRunsTable(w io.Writer, runs []cutover.MigrationExecutionRun) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tSTATUS\tCONFIRMED\tPROGRESS\tSTEPS\tSUCCEEDED\tFAILED\tRESUMED\tACTIVE\tUPDATED")
+	_, _ = fmt.Fprintln(tw, "ID\tSTATUS\tCONFIRMED\tPROGRESS\tDURATION\tSTEPS\tSUCCEEDED\tFAILED\tRESUMED\tACTIVE\tUPDATED")
 	for _, run := range runs {
 		_, _ = fmt.Fprintf(
 			tw,
-			"%s\t%s\t%t\t%d%%\t%d\t%d\t%d\t%d\t%s\t%s\n",
+			"%s\t%s\t%t\t%d%%\t%s\t%d\t%d\t%d\t%d\t%s\t%s\n",
 			run.ID,
 			run.Summary.Status,
 			run.Summary.Confirmed,
 			run.Summary.ProgressPercent,
+			formatDurationMS(run.Summary.DurationMS),
 			run.Summary.StepCount,
 			run.Summary.SucceededStepCount,
 			run.Summary.FailedStepCount,
@@ -255,6 +259,24 @@ func formatMigrationActiveStep(summary cutover.MigrationExecutionRunSummary) str
 		parts = append(parts, summary.ActiveStepFileName)
 	}
 	return strings.Join(parts, " ")
+}
+
+func formatDurationMS(durationMS int64) string {
+	if durationMS <= 0 {
+		return "-"
+	}
+	if durationMS < 1000 {
+		return fmt.Sprintf("%dms", durationMS)
+	}
+	duration := time.Duration(durationMS) * time.Millisecond
+	if durationMS < 60000 {
+		seconds := float64(durationMS) / 1000
+		if durationMS%1000 == 0 {
+			return fmt.Sprintf("%.0fs", seconds)
+		}
+		return fmt.Sprintf("%.1fs", seconds)
+	}
+	return duration.Round(time.Second).String()
 }
 
 func printMigrationRemediationActions(w io.Writer, actions []cutover.MigrationRemediationAction) {

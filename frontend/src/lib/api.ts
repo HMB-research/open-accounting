@@ -3498,12 +3498,16 @@ export interface MigrationExecutionRunSummary {
   completed_step_count: number;
   remaining_step_count: number;
   progress_percent: number;
+  duration_ms?: number;
   needs_context_count: number;
   blocked_step_count: number;
   active_step_number?: number;
   active_step_kind?: MigrationFileKind;
   active_step_file_name?: string;
   active_step_status?: MigrationExecutionResultStatus;
+  active_step_started_at?: string;
+  active_step_completed_at?: string;
+  active_step_duration_ms?: number;
 }
 
 export interface MigrationExecutionStepRun {
@@ -3516,6 +3520,9 @@ export interface MigrationExecutionStepRun {
   api_path?: string;
   cli_command?: string;
   response?: unknown;
+  started_at?: string;
+  completed_at?: string;
+  duration_ms?: number;
 }
 
 export interface MigrationExecutionRun {

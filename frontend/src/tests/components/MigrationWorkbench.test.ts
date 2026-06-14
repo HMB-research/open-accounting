@@ -98,6 +98,7 @@ function executionRun(overrides: Partial<MigrationExecutionRun> = {}): Migration
 			completed_step_count: 1,
 			remaining_step_count: 0,
 			progress_percent: 100,
+			duration_ms: 1500,
 			needs_context_count: 0,
 			blocked_step_count: 0
 		},
@@ -109,6 +110,9 @@ function executionRun(overrides: Partial<MigrationExecutionRun> = {}): Migration
 				file_name: 'contacts.csv',
 				status: 'SUCCEEDED',
 				message: 'Imported contacts.',
+				started_at: '2026-06-14T09:00:00Z',
+				completed_at: '2026-06-14T09:00:01.500Z',
+				duration_ms: 1500,
 				api_path: '/api/v1/tenants/tenant-1/contacts/import',
 				cli_command: 'oa contacts import --file contacts.csv'
 			}
@@ -134,6 +138,7 @@ function runningExecutionRun(): MigrationExecutionRun {
 			active_step_kind: 'contacts',
 			active_step_file_name: 'contacts-next.csv',
 			active_step_status: 'RUNNING',
+			active_step_started_at: '2026-06-14T09:00:02Z',
 			step_count: 2
 		},
 		steps: [
@@ -144,6 +149,7 @@ function runningExecutionRun(): MigrationExecutionRun {
 				file_name: 'contacts-next.csv',
 				status: 'RUNNING',
 				message: 'Import running.',
+				started_at: '2026-06-14T09:00:02Z',
 				api_path: '/api/v1/tenants/tenant-1/contacts/import',
 				cli_command: 'oa contacts import --file contacts-next.csv'
 			}
@@ -219,6 +225,7 @@ describe('MigrationWorkbench', () => {
 		expect(await screen.findByText('Saved migration run loaded.')).toBeInTheDocument();
 		expect(screen.getByText('Import running.')).toBeInTheDocument();
 		expect(screen.getAllByText('50%').length).toBeGreaterThan(0);
+		expect(screen.getAllByText('1.5s').length).toBeGreaterThan(0);
 		expect(screen.getByText('Active step: #2 RUNNING contacts contacts-next.csv')).toBeInTheDocument();
 	});
 

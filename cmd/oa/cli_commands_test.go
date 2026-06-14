@@ -4377,8 +4377,14 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 		"--json",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), `"status": "succeeded"`)
-	assert.Contains(t, stdout.String(), `"succeeded_step_count": 25`)
+	var run migrationExecutionRun
+	require.NoError(t, json.Unmarshal([]byte(stdout.String()), &run))
+	assert.Equal(t, "succeeded", run.Summary.Status)
+	assert.Equal(t, 25, run.Summary.SucceededStepCount)
+	assert.GreaterOrEqual(t, run.Summary.DurationMS, int64(0))
+	require.NotEmpty(t, run.Steps)
+	assert.NotNil(t, run.Steps[0].StartedAt)
+	assert.NotNil(t, run.Steps[0].CompletedAt)
 	for path, seen := range expectedImportPaths {
 		assert.Truef(t, seen, "expected import request for %s", path)
 	}

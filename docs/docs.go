@@ -25209,12 +25209,14 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "PLANNED",
+                "RUNNING",
                 "SKIPPED",
                 "SUCCEEDED",
                 "FAILED"
             ],
             "x-enum-varnames": [
                 "MigrationExecutionResultPlanned",
+                "MigrationExecutionResultRunning",
                 "MigrationExecutionResultSkipped",
                 "MigrationExecutionResultSucceeded",
                 "MigrationExecutionResultFailed"
@@ -25261,11 +25263,38 @@ const docTemplate = `{
         "github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionRunSummary": {
             "type": "object",
             "properties": {
+                "active_step_completed_at": {
+                    "type": "string"
+                },
+                "active_step_duration_ms": {
+                    "type": "integer"
+                },
+                "active_step_file_name": {
+                    "type": "string"
+                },
+                "active_step_kind": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.FileKind"
+                },
+                "active_step_number": {
+                    "type": "integer"
+                },
+                "active_step_started_at": {
+                    "type": "string"
+                },
+                "active_step_status": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionResultStatus"
+                },
                 "blocked_step_count": {
+                    "type": "integer"
+                },
+                "completed_step_count": {
                     "type": "integer"
                 },
                 "confirmed": {
                     "type": "boolean"
+                },
+                "duration_ms": {
+                    "type": "integer"
                 },
                 "failed_step_count": {
                     "type": "integer"
@@ -25279,10 +25308,19 @@ const docTemplate = `{
                 "planned_step_count": {
                     "type": "integer"
                 },
+                "progress_percent": {
+                    "type": "integer"
+                },
+                "remaining_step_count": {
+                    "type": "integer"
+                },
                 "resumed": {
                     "type": "boolean"
                 },
                 "resumed_step_count": {
+                    "type": "integer"
+                },
+                "running_step_count": {
                     "type": "integer"
                 },
                 "skipped_step_count": {
@@ -25355,6 +25393,12 @@ const docTemplate = `{
                 "cli_command": {
                     "type": "string"
                 },
+                "completed_at": {
+                    "type": "string"
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
                 "error": {
                     "type": "string"
                 },
@@ -25368,6 +25412,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "response": {},
+                "started_at": {
+                    "type": "string"
+                },
                 "status": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationExecutionResultStatus"
                 },

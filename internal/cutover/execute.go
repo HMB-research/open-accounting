@@ -51,39 +51,46 @@ type MigrationExecutionRun struct {
 }
 
 type MigrationExecutionRunSummary struct {
-	Status             string                         `json:"status"`
-	Confirmed          bool                           `json:"confirmed"`
-	Resumed            bool                           `json:"resumed"`
-	PlanReady          bool                           `json:"plan_ready"`
-	ValidationReady    bool                           `json:"validation_ready"`
-	StepCount          int                            `json:"step_count"`
-	RunningStepCount   int                            `json:"running_step_count"`
-	SucceededStepCount int                            `json:"succeeded_step_count"`
-	FailedStepCount    int                            `json:"failed_step_count"`
-	SkippedStepCount   int                            `json:"skipped_step_count"`
-	PlannedStepCount   int                            `json:"planned_step_count"`
-	ResumedStepCount   int                            `json:"resumed_step_count"`
-	CompletedStepCount int                            `json:"completed_step_count"`
-	RemainingStepCount int                            `json:"remaining_step_count"`
-	ProgressPercent    int                            `json:"progress_percent"`
-	NeedsContextCount  int                            `json:"needs_context_count"`
-	BlockedStepCount   int                            `json:"blocked_step_count"`
-	ActiveStepNumber   int                            `json:"active_step_number,omitempty"`
-	ActiveStepKind     FileKind                       `json:"active_step_kind,omitempty"`
-	ActiveStepFileName string                         `json:"active_step_file_name,omitempty"`
-	ActiveStepStatus   MigrationExecutionResultStatus `json:"active_step_status,omitempty"`
+	Status                string                         `json:"status"`
+	Confirmed             bool                           `json:"confirmed"`
+	Resumed               bool                           `json:"resumed"`
+	PlanReady             bool                           `json:"plan_ready"`
+	ValidationReady       bool                           `json:"validation_ready"`
+	StepCount             int                            `json:"step_count"`
+	RunningStepCount      int                            `json:"running_step_count"`
+	SucceededStepCount    int                            `json:"succeeded_step_count"`
+	FailedStepCount       int                            `json:"failed_step_count"`
+	SkippedStepCount      int                            `json:"skipped_step_count"`
+	PlannedStepCount      int                            `json:"planned_step_count"`
+	ResumedStepCount      int                            `json:"resumed_step_count"`
+	CompletedStepCount    int                            `json:"completed_step_count"`
+	RemainingStepCount    int                            `json:"remaining_step_count"`
+	ProgressPercent       int                            `json:"progress_percent"`
+	DurationMS            int64                          `json:"duration_ms,omitempty"`
+	NeedsContextCount     int                            `json:"needs_context_count"`
+	BlockedStepCount      int                            `json:"blocked_step_count"`
+	ActiveStepNumber      int                            `json:"active_step_number,omitempty"`
+	ActiveStepKind        FileKind                       `json:"active_step_kind,omitempty"`
+	ActiveStepFileName    string                         `json:"active_step_file_name,omitempty"`
+	ActiveStepStatus      MigrationExecutionResultStatus `json:"active_step_status,omitempty"`
+	ActiveStepStartedAt   *time.Time                     `json:"active_step_started_at,omitempty"`
+	ActiveStepCompletedAt *time.Time                     `json:"active_step_completed_at,omitempty"`
+	ActiveStepDurationMS  int64                          `json:"active_step_duration_ms,omitempty"`
 }
 
 type MigrationExecutionStepRun struct {
-	StepNumber int                            `json:"step_number"`
-	Kind       FileKind                       `json:"kind"`
-	FileName   string                         `json:"file_name"`
-	Status     MigrationExecutionResultStatus `json:"status"`
-	Message    string                         `json:"message,omitempty"`
-	Error      string                         `json:"error,omitempty"`
-	APIPath    string                         `json:"api_path,omitempty"`
-	CLICommand string                         `json:"cli_command,omitempty"`
-	Response   interface{}                    `json:"response,omitempty"`
+	StepNumber  int                            `json:"step_number"`
+	Kind        FileKind                       `json:"kind"`
+	FileName    string                         `json:"file_name"`
+	Status      MigrationExecutionResultStatus `json:"status"`
+	Message     string                         `json:"message,omitempty"`
+	Error       string                         `json:"error,omitempty"`
+	APIPath     string                         `json:"api_path,omitempty"`
+	CLICommand  string                         `json:"cli_command,omitempty"`
+	Response    interface{}                    `json:"response,omitempty"`
+	StartedAt   *time.Time                     `json:"started_at,omitempty"`
+	CompletedAt *time.Time                     `json:"completed_at,omitempty"`
+	DurationMS  int64                          `json:"duration_ms,omitempty"`
 }
 
 func NewMigrationExecutionRun(plan *MigrationExecutionPlan, confirmed bool) *MigrationExecutionRun {
@@ -168,6 +175,9 @@ func ApplyMigrationExecutionResume(run *MigrationExecutionRun, resumeFrom *Migra
 		current.Status = MigrationExecutionResultSucceeded
 		current.Message = "Step already succeeded in the previous run; skipping on resume."
 		current.Response = previous.Response
+		current.StartedAt = previous.StartedAt
+		current.CompletedAt = previous.CompletedAt
+		current.DurationMS = previous.DurationMS
 		resumedCount++
 	}
 
@@ -197,9 +207,20 @@ func RefreshMigrationExecutionRunProgress(run *MigrationExecutionRun) {
 		summary.ActiveStepKind = ""
 		summary.ActiveStepFileName = ""
 		summary.ActiveStepStatus = ""
+		summary.ActiveStepStartedAt = nil
+		summary.ActiveStepCompletedAt = nil
+		summary.ActiveStepDurationMS = 0
+		summary.DurationMS = 0
 
 		activePriority := 0
-		for _, step := range run.Steps {
+		for index := range run.Steps {
+			step := &run.Steps[index]
+			if step.DurationMS == 0 {
+				step.DurationMS = migrationExecutionStepDurationMS(step.StartedAt, step.CompletedAt)
+			}
+			if step.DurationMS > 0 {
+				summary.DurationMS += step.DurationMS
+			}
 			switch step.Status {
 			case MigrationExecutionResultRunning:
 				summary.RunningStepCount++
@@ -245,7 +266,7 @@ func RefreshMigrationExecutionRunProgress(run *MigrationExecutionRun) {
 	}
 }
 
-func setMigrationExecutionActiveStep(summary *MigrationExecutionRunSummary, step MigrationExecutionStepRun, currentPriority, priority int) int {
+func setMigrationExecutionActiveStep(summary *MigrationExecutionRunSummary, step *MigrationExecutionStepRun, currentPriority, priority int) int {
 	if priority <= currentPriority {
 		return currentPriority
 	}
@@ -253,7 +274,75 @@ func setMigrationExecutionActiveStep(summary *MigrationExecutionRunSummary, step
 	summary.ActiveStepKind = step.Kind
 	summary.ActiveStepFileName = step.FileName
 	summary.ActiveStepStatus = step.Status
+	summary.ActiveStepStartedAt = step.StartedAt
+	summary.ActiveStepCompletedAt = step.CompletedAt
+	summary.ActiveStepDurationMS = step.DurationMS
 	return priority
+}
+
+func MarkMigrationExecutionStepRunning(run *MigrationExecutionRun, index int, now time.Time) {
+	step := migrationExecutionStepRunAt(run, index)
+	if step == nil {
+		return
+	}
+	startedAt := normalizeMigrationExecutionTime(now)
+	if step.StartedAt == nil {
+		step.StartedAt = &startedAt
+	}
+	step.CompletedAt = nil
+	step.DurationMS = 0
+	step.Status = MigrationExecutionResultRunning
+	step.Message = "Import running."
+	step.Error = ""
+	RefreshMigrationExecutionRunProgress(run)
+}
+
+func CompleteMigrationExecutionStep(run *MigrationExecutionRun, index int, status MigrationExecutionResultStatus, message, errorText string, response interface{}, now time.Time) {
+	step := migrationExecutionStepRunAt(run, index)
+	if step == nil {
+		return
+	}
+	completedAt := normalizeMigrationExecutionTime(now)
+	if step.StartedAt == nil {
+		startedAt := completedAt
+		step.StartedAt = &startedAt
+	}
+	step.CompletedAt = &completedAt
+	step.DurationMS = migrationExecutionStepDurationMS(step.StartedAt, step.CompletedAt)
+	step.Status = status
+	step.Message = message
+	step.Error = errorText
+	step.Response = response
+	RefreshMigrationExecutionRunProgress(run)
+}
+
+func migrationExecutionStepRunAt(run *MigrationExecutionRun, index int) *MigrationExecutionStepRun {
+	if run == nil || index < 0 || index >= len(run.Steps) {
+		return nil
+	}
+	return &run.Steps[index]
+}
+
+func normalizeMigrationExecutionTime(value time.Time) time.Time {
+	if value.IsZero() {
+		return time.Now().UTC()
+	}
+	return value.UTC()
+}
+
+func migrationExecutionStepDurationMS(startedAt, completedAt *time.Time) int64 {
+	if startedAt == nil || completedAt == nil {
+		return 0
+	}
+	duration := completedAt.Sub(*startedAt)
+	if duration < 0 {
+		return 0
+	}
+	ms := duration.Milliseconds()
+	if ms == 0 && duration > 0 {
+		return 1
+	}
+	return ms
 }
 
 func migrationExecutionRunStepKey(stepNumber int, kind FileKind, fileName string) string {

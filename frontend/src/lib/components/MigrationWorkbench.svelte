@@ -356,6 +356,18 @@
 		if (summary.active_step_file_name) parts.push(summary.active_step_file_name);
 		return parts.join(' ');
 	}
+
+	function formatDurationMs(value: number | undefined): string {
+		if (!value || value <= 0) return '-';
+		if (value < 1000) return `${value}ms`;
+		if (value < 60000) {
+			const seconds = value / 1000;
+			return `${Number.isInteger(seconds) ? seconds.toFixed(0) : seconds.toFixed(1)}s`;
+		}
+		const minutes = Math.floor(value / 60000);
+		const seconds = Math.round((value % 60000) / 1000);
+		return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+	}
 </script>
 
 {#if !tenantId.trim()}
@@ -625,6 +637,7 @@
 					<div><strong>{run.summary.succeeded_step_count}</strong><span>succeeded</span></div>
 					<div><strong>{run.summary.failed_step_count}</strong><span>failed</span></div>
 					<div><strong>{run.summary.resumed_step_count}</strong><span>resumed</span></div>
+					<div><strong>{formatDurationMs(run.summary.duration_ms)}</strong><span>duration</span></div>
 				</div>
 				<div class="progress-summary">
 					<div class="progress-line">
@@ -645,6 +658,7 @@
 								<th>Kind</th>
 								<th>Status</th>
 								<th>File</th>
+								<th>Duration</th>
 								<th>Message</th>
 							</tr>
 						</thead>
@@ -655,6 +669,7 @@
 									<td>{step.kind}</td>
 									<td><span class={statusClass(step.status)}>{step.status}</span></td>
 									<td>{step.file_name}</td>
+									<td>{formatDurationMs(step.duration_ms)}</td>
 									<td>{step.error || step.message || '-'}</td>
 								</tr>
 							{/each}
@@ -699,6 +714,7 @@
 								<th>Status</th>
 								<th>Updated</th>
 								<th>Progress</th>
+								<th>Duration</th>
 								<th>Active</th>
 								<th>Steps</th>
 								<th>Actions</th>
@@ -711,6 +727,7 @@
 									<td><span class={statusClass(saved.summary.status)}>{saved.summary.status}</span></td>
 									<td>{formatDateTime(saved.updated_at ?? saved.created_at)}</td>
 									<td>{saved.summary.progress_percent ?? 0}%</td>
+									<td>{formatDurationMs(saved.summary.duration_ms)}</td>
 									<td>{activeStepLabel(saved.summary)}</td>
 									<td>{saved.summary.succeeded_step_count}/{saved.summary.step_count}</td>
 									<td>

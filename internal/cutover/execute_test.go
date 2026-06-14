@@ -2,6 +2,7 @@ package cutover
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,9 +21,11 @@ func TestNewResumableMigrationExecutionRunSkipsPreviouslySucceededSteps(t *testi
 			{StepNumber: 2, Kind: KindContacts, FileName: "contacts.csv", Status: MigrationExecutionStepReady},
 		},
 	}
+	startedAt := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
+	completedAt := startedAt.Add(1500 * time.Millisecond)
 	previous := &MigrationExecutionRun{
 		Steps: []MigrationExecutionStepRun{
-			{StepNumber: 1, Kind: KindAccounts, FileName: "accounts.csv", Status: MigrationExecutionResultSucceeded, Response: map[string]any{"created": 5}},
+			{StepNumber: 1, Kind: KindAccounts, FileName: "accounts.csv", Status: MigrationExecutionResultSucceeded, Response: map[string]any{"created": 5}, StartedAt: &startedAt, CompletedAt: &completedAt, DurationMS: 1500},
 			{StepNumber: 2, Kind: KindContacts, FileName: "contacts.csv", Status: MigrationExecutionResultFailed},
 		},
 	}
@@ -37,11 +40,15 @@ func TestNewResumableMigrationExecutionRunSkipsPreviouslySucceededSteps(t *testi
 	assert.Equal(t, 50, run.Summary.ProgressPercent)
 	assert.Equal(t, 1, run.Summary.CompletedStepCount)
 	assert.Equal(t, 1, run.Summary.RemainingStepCount)
+	assert.Equal(t, int64(1500), run.Summary.DurationMS)
 	assert.Equal(t, 2, run.Summary.ActiveStepNumber)
 	assert.Equal(t, MigrationExecutionResultPlanned, run.Summary.ActiveStepStatus)
 	require.Len(t, run.Steps, 2)
 	assert.Equal(t, MigrationExecutionResultSucceeded, run.Steps[0].Status)
 	assert.Contains(t, run.Steps[0].Message, "previous run")
+	assert.Equal(t, startedAt, *run.Steps[0].StartedAt)
+	assert.Equal(t, completedAt, *run.Steps[0].CompletedAt)
+	assert.Equal(t, int64(1500), run.Steps[0].DurationMS)
 	assert.Equal(t, MigrationExecutionResultPlanned, run.Steps[1].Status)
 }
 
@@ -92,4 +99,29 @@ func TestRefreshMigrationExecutionRunProgressTracksRunningActiveStep(t *testing.
 	assert.Equal(t, KindContacts, run.Summary.ActiveStepKind)
 	assert.Equal(t, "contacts.csv", run.Summary.ActiveStepFileName)
 	assert.Equal(t, MigrationExecutionResultRunning, run.Summary.ActiveStepStatus)
+}
+
+func TestMigrationExecutionStepTimingHelpersTrackDuration(t *testing.T) {
+	run := NewMigrationExecutionRun(&MigrationExecutionPlan{
+		Summary: MigrationExecutionPlanSummary{ValidationReady: true, Ready: true, StepCount: 1, ReadyStepCount: 1},
+		Steps: []MigrationExecutionStep{
+			{StepNumber: 1, Kind: KindAccounts, FileName: "accounts.csv", Status: MigrationExecutionStepReady},
+		},
+	}, true)
+	startedAt := time.Date(2026, 6, 14, 10, 0, 0, 0, time.UTC)
+	completedAt := startedAt.Add(2500 * time.Millisecond)
+
+	MarkMigrationExecutionStepRunning(run, 0, startedAt)
+	require.NotNil(t, run.Steps[0].StartedAt)
+	assert.Equal(t, startedAt, *run.Steps[0].StartedAt)
+	assert.Nil(t, run.Steps[0].CompletedAt)
+	assert.Equal(t, MigrationExecutionResultRunning, run.Summary.ActiveStepStatus)
+	assert.Equal(t, startedAt, *run.Summary.ActiveStepStartedAt)
+
+	CompleteMigrationExecutionStep(run, 0, MigrationExecutionResultSucceeded, "Import completed.", "", map[string]any{"created": 1}, completedAt)
+	require.NotNil(t, run.Steps[0].CompletedAt)
+	assert.Equal(t, completedAt, *run.Steps[0].CompletedAt)
+	assert.Equal(t, int64(2500), run.Steps[0].DurationMS)
+	assert.Equal(t, int64(2500), run.Summary.DurationMS)
+	assert.Equal(t, "succeeded", run.Summary.Status)
 }

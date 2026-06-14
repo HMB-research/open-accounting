@@ -278,18 +278,21 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 			CompletedStepCount: 1,
 			RemainingStepCount: 1,
 			ProgressPercent:    50,
+			DurationMS:         1500,
 			ActiveStepNumber:   2,
 			ActiveStepKind:     cutover.KindContacts,
 			ActiveStepFileName: "contacts.csv",
 			ActiveStepStatus:   cutover.MigrationExecutionResultRunning,
 		},
 		Steps: []migrationExecutionStepRun{
-			{StepNumber: 1, Kind: cutover.KindAccounts, FileName: "accounts.csv", Status: cutover.MigrationExecutionResultSucceeded, Message: "Import completed.", CLICommand: "oa accounts import --file accounts.csv"},
+			{StepNumber: 1, Kind: cutover.KindAccounts, FileName: "accounts.csv", Status: cutover.MigrationExecutionResultSucceeded, Message: "Import completed.", CLICommand: "oa accounts import --file accounts.csv", DurationMS: 1500},
 			{StepNumber: 2, Kind: cutover.KindContacts, FileName: "contacts.csv", Status: cutover.MigrationExecutionResultRunning, Message: "Import running.", CLICommand: "oa contacts import --file contacts.csv"},
 		},
 	})
 	assert.Contains(t, buf.String(), "Migration execution: running (50% complete")
 	assert.Contains(t, buf.String(), "Active step: #2 RUNNING contacts contacts.csv")
+	assert.Contains(t, buf.String(), "Duration: 1.5s")
+	assert.Contains(t, buf.String(), "DURATION")
 	assert.Contains(t, buf.String(), "Import running.")
 
 	buf.Reset()
@@ -301,6 +304,7 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 			StepCount:          2,
 			SucceededStepCount: 1,
 			ProgressPercent:    50,
+			DurationMS:         1500,
 			ActiveStepNumber:   2,
 			ActiveStepKind:     cutover.KindContacts,
 			ActiveStepFileName: "contacts.csv",
@@ -309,7 +313,9 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 		UpdatedAt: &now,
 	}})
 	assert.Contains(t, buf.String(), "PROGRESS")
+	assert.Contains(t, buf.String(), "DURATION")
 	assert.Contains(t, buf.String(), "50%")
+	assert.Contains(t, buf.String(), "1.5s")
 	assert.Contains(t, buf.String(), "#2 RUNNING contacts contacts.csv")
 
 	periodLock := "2026-03-31"
@@ -519,6 +525,29 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 		VoidReason:  "correction",
 	})
 	assert.Contains(t, buf.String(), "Void reason: correction")
+}
+
+func TestFormatDurationMS(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		durationMS int64
+		want       string
+	}{
+		{name: "empty", durationMS: 0, want: "-"},
+		{name: "milliseconds", durationMS: 250, want: "250ms"},
+		{name: "whole seconds", durationMS: 2000, want: "2s"},
+		{name: "fractional seconds", durationMS: 2500, want: "2.5s"},
+		{name: "minutes", durationMS: 65000, want: "1m5s"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, formatDurationMS(tt.durationMS))
+		})
+	}
 }
 
 func TestPrintReportOutputEdgeBranches(t *testing.T) {
