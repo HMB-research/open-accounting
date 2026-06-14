@@ -33,6 +33,7 @@ const { apiMock } = vi.hoisted(() => ({
 		postExpense: vi.fn(),
 		closePeriod: vi.fn(),
 		createYearEndCarryForward: vi.fn(),
+		reverseYearEndCarryForward: vi.fn(),
 		sendPaymentReminder: vi.fn(),
 		listPeriodCloseEvents: vi.fn(),
 		listJournalEntries: vi.fn(),
@@ -551,6 +552,10 @@ describe('AccountantReviewPanel', () => {
 			journal_entry: { id: 'je-carry-forward', entry_number: 'JE-2026-001' },
 			status: { period_end_date: '2025-12-31' }
 		});
+		apiMock.reverseYearEndCarryForward.mockResolvedValue({
+			reversal_journal_entry: { id: 'je-reversal', entry_number: 'JE-2026-002' },
+			status: { period_end_date: '2025-12-31' }
+		});
 		apiMock.sendPaymentReminder.mockResolvedValue({
 			invoice_id: 'inv-1',
 			invoice_number: 'INV-001',
@@ -559,6 +564,97 @@ describe('AccountantReviewPanel', () => {
 			reminder_id: 'rem-1'
 		});
 		apiMock.evaluateDocumentEvidencePolicy.mockResolvedValue([]);
+	});
+
+	it('reverses already-posted carry-forward assignments from the workspace', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.listDocumentReviewSummaries.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-02-11',
+			cutoff_date: '2026-03-13',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: true,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(1200),
+			existing_carry_forward: {
+				id: 'je-carry-forward',
+				entry_number: 'JE-2026-001',
+				entry_date: '2026-01-01',
+				description: 'Year-end carry-forward',
+				status: 'POSTED'
+			},
+			remediation_actions: [
+				{
+					code: 'carry_forward_already_posted',
+					severity: 'INFO',
+					scope: 'close',
+					owner_role: 'accountant',
+					workspace_queue: 'year_end_close',
+					assignment_key:
+						'year-end-close:carry-forward-already-posted:journal-entry:je-carry-forward:2025-12-31',
+					priority: 'low',
+					due_in_days: 0,
+					message: 'Carry-forward journal JE-2026-001 already exists.',
+					action:
+						'Review the posted carry-forward; reverse it only when approved late corrections require a controlled repost.',
+					entity_type: 'journal_entry',
+					entity_id: 'je-carry-forward',
+					ui_path: '/journal',
+					cli_command:
+						'oa close reverse-carry-forward --period-end 2025-12-31 --reason "Approved late correction"'
+				}
+			]
+		});
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		const row = (await screen.findByText('Carry-forward journal JE-2026-001 already exists.')).closest(
+			'li'
+		) as HTMLElement;
+		const reverseButton = within(row).getByRole('button', { name: 'Reverse carry-forward' });
+		expect(reverseButton).toBeDisabled();
+
+		await fireEvent.input(within(row).getByLabelText('Reversal reason'), {
+			target: { value: 'Late supplier accrual' }
+		});
+
+		await waitFor(() => {
+			expect(reverseButton).not.toBeDisabled();
+		});
+
+		await fireEvent.click(reverseButton);
+
+		await waitFor(() => {
+			expect(apiMock.reverseYearEndCarryForward).toHaveBeenCalledWith('tenant-1', {
+				period_end_date: '2025-12-31',
+				reason: 'Late supplier accrual'
+			});
+			expect(screen.getByText('Carry-forward reversed from workspace.')).toBeInTheDocument();
+		});
 	});
 
 	it('completes close and carry-forward assignments from the workspace', async () => {

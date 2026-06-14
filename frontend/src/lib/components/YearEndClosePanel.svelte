@@ -41,6 +41,17 @@
 	let showClosePackDocuments = $state(false);
 	let isDownloadingAuditArchive = $state(false);
 	let auditArchiveError = $state('');
+	let carryForwardReversalReason = $state('');
+	let isReversingCarryForward = $state(false);
+	let carryForwardReversalError = $state('');
+	let carryForwardReversalSuccess = $state('');
+
+	const carryForwardReversalReasonLabel = 'Reversal reason';
+	const carryForwardReversalReasonPlaceholder = 'Approved late correction';
+	const carryForwardReverseButtonLabel = 'Reverse carry-forward';
+	const carryForwardReverseLoadingLabel = 'Reversing...';
+	const carryForwardReversalReasonRequired = 'Enter a reversal reason before reversing carry-forward.';
+	const carryForwardReversalErrorMessage = 'Failed to reverse the year-end carry-forward.';
 
 	function updatePeriodEndDate(event: Event) {
 		onperiodenddatechange?.((event.currentTarget as HTMLInputElement).value);
@@ -133,6 +144,42 @@
 			auditArchiveError = err instanceof Error ? err.message : m.settings_yearEndEvidenceDownloadError();
 		} finally {
 			isDownloadingAuditArchive = false;
+		}
+	}
+
+	function updateCarryForwardReversalReason(event: Event) {
+		carryForwardReversalReason = (event.currentTarget as HTMLInputElement).value;
+		carryForwardReversalError = '';
+		carryForwardReversalSuccess = '';
+	}
+
+	async function reverseCarryForward() {
+		if (!tenantId || !status?.period_end_date) {
+			return;
+		}
+
+		const reason = carryForwardReversalReason.trim();
+		if (!reason) {
+			carryForwardReversalError = carryForwardReversalReasonRequired;
+			return;
+		}
+
+		carryForwardReversalError = '';
+		carryForwardReversalSuccess = '';
+		isReversingCarryForward = true;
+		try {
+			const result = await api.reverseYearEndCarryForward(tenantId, {
+				period_end_date: status.period_end_date,
+				reason
+			});
+			carryForwardReversalReason = '';
+			carryForwardReversalSuccess = `Carry-forward reversed in ${result.reversal_journal_entry.entry_number}.`;
+			await onrefresh?.();
+		} catch (err) {
+			carryForwardReversalError =
+				err instanceof Error ? err.message : carryForwardReversalErrorMessage;
+		} finally {
+			isReversingCarryForward = false;
 		}
 	}
 
@@ -254,6 +301,14 @@
 		<div class="alert alert-error">{auditArchiveError}</div>
 	{/if}
 
+	{#if carryForwardReversalError}
+		<div class="alert alert-error">{carryForwardReversalError}</div>
+	{/if}
+
+	{#if carryForwardReversalSuccess}
+		<div class="alert alert-success">{carryForwardReversalSuccess}</div>
+	{/if}
+
 	{#if isLoading && !status}
 		<p>{m.common_loading()}</p>
 	{:else if status}
@@ -365,6 +420,26 @@
 								date: formatDateLabel(status.existing_carry_forward.entry_date)
 							})}
 						</p>
+						<div class="year-end-reversal-actions">
+							<label>
+								<span>{carryForwardReversalReasonLabel}</span>
+								<input
+									class="input"
+									type="text"
+									placeholder={carryForwardReversalReasonPlaceholder}
+									value={carryForwardReversalReason}
+									oninput={updateCarryForwardReversalReason}
+								/>
+							</label>
+							<button
+								type="button"
+								class="btn btn-secondary"
+								disabled={isReversingCarryForward || !tenantId || !status.period_end_date || !carryForwardReversalReason.trim()}
+								onclick={reverseCarryForward}
+							>
+								{isReversingCarryForward ? carryForwardReverseLoadingLabel : carryForwardReverseButtonLabel}
+							</button>
+						</div>
 					</div>
 				{:else if carryForwardReady}
 					<div class="year-end-note success">
@@ -612,6 +687,22 @@
 		color: var(--color-text-muted);
 	}
 
+	.year-end-reversal-actions {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: end;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+	.year-end-reversal-actions label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-size: 0.82rem;
+		color: var(--color-text-muted);
+	}
+
 	.year-end-note.success {
 		background: color-mix(in srgb, var(--color-success, #16a34a) 8%, white);
 	}
@@ -637,6 +728,10 @@
 		.year-end-summary-grid {
 			grid-template-columns: 1fr;
 			display: grid;
+		}
+
+		.year-end-reversal-actions {
+			grid-template-columns: 1fr;
 		}
 
 		.year-end-summary-grid {
