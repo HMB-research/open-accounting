@@ -4262,6 +4262,61 @@ func TestValidateBundleReportsInvalidInvoiceImportID(t *testing.T) {
 	assert.Contains(t, report.Issues[0].Message, "valid UUID")
 }
 
+func TestValidateBundleReportsInvalidCutoverForeignKeyIDs(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_number,payment_type,payment_date,amount,invoice_id\nPAY-1,RECEIVED,2026-05-31,100,legacy-invoice\n",
+		},
+		{
+			Kind:       KindOrders,
+			FileName:   "orders.csv",
+			CSVContent: "order_number,order_date,contact_name,line_description,quantity,unit_price,vat_rate,quote_id\nSO-1,2026-05-31,Customer One,Work,1,100,22,legacy-quote\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,category_id,invoice_id\nFA-1,Laptop,2026-05-30,1200,legacy-category,legacy-invoice\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 4, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindPayments, "invoice_id", "invoice_id must be a valid UUID")
+	assertValidationIssue(t, report, KindOrders, "quote_id", "quote_id must be a valid UUID")
+	assertValidationIssue(t, report, KindFixedAssets, "category_id", "category_id must be a valid UUID")
+	assertValidationIssue(t, report, KindFixedAssets, "invoice_id", "invoice_id must be a valid UUID")
+}
+
+func TestValidateBundleAcceptsValidExternalCutoverForeignKeyIDs(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindPayments,
+			FileName:   "payments.csv",
+			CSVContent: "payment_number,payment_type,payment_date,amount,invoice_id\nPAY-1,RECEIVED,2026-05-31,100,11111111-1111-1111-1111-111111111111\n",
+		},
+		{
+			Kind:       KindOrders,
+			FileName:   "orders.csv",
+			CSVContent: "order_number,order_date,contact_name,line_description,quantity,unit_price,vat_rate,quote_id\nSO-1,2026-05-31,Customer One,Work,1,100,22,22222222-2222-2222-2222-222222222222\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,category_id,invoice_id\nFA-1,Laptop,2026-05-30,1200,33333333-3333-3333-3333-333333333333,44444444-4444-4444-4444-444444444444\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
 func TestValidateBundleReportsEInvoiceContactReferenceIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
