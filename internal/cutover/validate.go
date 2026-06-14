@@ -1823,12 +1823,16 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindOrders:
 			checkCommercialDocumentContactReference(report, indexes, file, row)
 			checkProductReference(report, indexes, file, row)
-			checkTargetReference(report, indexes.files[KindQuotes], indexes.quotes, file, row, KindQuotes,
-				[]string{"quote_id"})
+			if checkOptionalUUID(report, file, row, "quote_id") {
+				checkTargetReference(report, indexes.files[KindQuotes], indexes.quotes, file, row, KindQuotes,
+					[]string{"quote_id"})
+			}
 		case KindPayments:
 			checkContactIDReference(report, indexes, file, row, "contact_id")
-			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
-				[]string{"invoice_id", "invoice_number"})
+			if checkOptionalUUID(report, file, row, "invoice_id") {
+				checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
+					[]string{"invoice_id", "invoice_number"})
+			}
 			checkPaymentBankAccountReference(report, indexes, file, row)
 		case KindBankAccounts:
 			checkAccountReference(report, indexes, file, row, "gl_account_id", "gl_account_code")
@@ -1862,12 +1866,15 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkProductReference(report, indexes, file, row)
 			checkWarehouseReference(report, indexes, file, row)
 		case KindFixedAssets:
+			checkOptionalUUID(report, file, row, "category_id")
 			checkAccountReference(report, indexes, file, row, "asset_account_id", "asset_account_code")
 			checkAccountReference(report, indexes, file, row, "depreciation_expense_account_id", "depreciation_expense_account_code")
 			checkAccountReference(report, indexes, file, row, "accumulated_depreciation_account_id", "accumulated_depreciation_account_code")
 			checkContactIDReference(report, indexes, file, row, "supplier_id")
-			checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
-				[]string{"invoice_id"})
+			if checkOptionalUUID(report, file, row, "invoice_id") {
+				checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
+					[]string{"invoice_id"})
+			}
 		}
 	}
 }
