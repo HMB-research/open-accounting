@@ -409,6 +409,42 @@ func (h *Handlers) UpdateDocumentLifecycle(w http.ResponseWriter, r *http.Reques
 	respondJSON(w, http.StatusOK, doc)
 }
 
+// UpdateDocumentLegalHold records a document legal hold decision.
+// @Summary Update document legal hold
+// @Description Place or release legal hold on a document and block disposal/deletion while hold is active
+// @Tags Documents
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param documentID path string true "Document ID"
+// @Param request body documents.DocumentLegalHoldRequest true "Legal hold update"
+// @Success 200 {object} documents.Document
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/{documentID}/legal-hold [patch]
+func (h *Handlers) UpdateDocumentLegalHold(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetClaims(r.Context())
+	tenantID := chi.URLParam(r, "tenantID")
+	documentID := chi.URLParam(r, "documentID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req documents.DocumentLegalHoldRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	doc, err := h.documentsService.UpdateDocumentLegalHold(r.Context(), schemaName, tenantID, documentID, claims.UserID, &req)
+	if err != nil {
+		respondDocumentError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, doc)
+}
+
 // MarkDocumentReviewed marks a document as reviewed.
 // @Summary Mark document reviewed
 // @Description Mark a document reviewed by the current user

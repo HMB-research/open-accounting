@@ -733,6 +733,21 @@ Content-Type: application/json
 
 Lifecycle statuses are `ACTIVE`, `SUPERSEDED`, `ARCHIVED`, and `DISPOSED`. `ARCHIVED` and `DISPOSED` require `lifecycle_note`, and `SUPERSEDED` requires `superseded_by_document_id` pointing at a replacement document for the same entity and document type. Superseded and disposed documents remain listed for audit but no longer satisfy evidence-policy counts.
 
+#### Update Legal Hold
+
+```http
+PATCH /tenants/{tenantId}/documents/{documentId}/legal-hold
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "legal_hold": true,
+  "note": "Litigation hold for supplier dispute"
+}
+```
+
+Set `legal_hold` to `false` with a release note to remove the hold. Active legal hold blocks disposal lifecycle changes, replacement supersession, and hard deletion while preserving the document in audit and evidence-policy views.
+
 #### Mark Document Reviewed
 
 ```http

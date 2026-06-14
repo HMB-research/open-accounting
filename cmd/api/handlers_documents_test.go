@@ -163,6 +163,18 @@ func (m *mockDocumentRepository) UpdateDocumentLifecycle(ctx context.Context, sc
 	return nil
 }
 
+func (m *mockDocumentRepository) UpdateDocumentLegalHold(ctx context.Context, schemaName, tenantID, documentID string, legalHold bool, note, actionedBy string, actionedAt time.Time) error {
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return io.EOF
+	}
+	doc.LegalHold = legalHold
+	doc.LegalHoldNote = note
+	doc.LegalHoldBy = &actionedBy
+	doc.LegalHoldAt = &actionedAt
+	return nil
+}
+
 func (m *mockDocumentRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {
 	doc, ok := m.docs[documentID]
 	if !ok || doc.TenantID != tenantID {
@@ -408,6 +420,42 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, "Retention reviewed for audit archive", lifecycleDoc.LifecycleNote)
 	require.NotNil(t, lifecycleDoc.LifecycleBy)
 	require.Equal(t, "user-1", *lifecycleDoc.LifecycleBy)
+
+	legalHoldReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/legal-hold", map[string]any{
+		"legal_hold": true,
+		"note":       "Litigation hold",
+	}, claims)
+	legalHoldReq = withURLParams(legalHoldReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	legalHoldResp := httptest.NewRecorder()
+	h.UpdateDocumentLegalHold(legalHoldResp, legalHoldReq)
+	require.Equal(t, http.StatusOK, legalHoldResp.Code)
+
+	var legalHoldDoc documents.Document
+	require.NoError(t, json.NewDecoder(legalHoldResp.Body).Decode(&legalHoldDoc))
+	require.True(t, legalHoldDoc.LegalHold)
+	require.Equal(t, "Litigation hold", legalHoldDoc.LegalHoldNote)
+	require.NotNil(t, legalHoldDoc.LegalHoldBy)
+	require.Equal(t, "user-1", *legalHoldDoc.LegalHoldBy)
+
+	deleteHeldReq := makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/documents/"+uploaded.ID, nil, claims)
+	deleteHeldReq = withURLParams(deleteHeldReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	deleteHeldResp := httptest.NewRecorder()
+	h.DeleteDocument(deleteHeldResp, deleteHeldReq)
+	require.Equal(t, http.StatusBadRequest, deleteHeldResp.Code)
+
+	releaseHoldReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/legal-hold", map[string]any{
+		"legal_hold": false,
+		"note":       "Litigation hold released",
+	}, claims)
+	releaseHoldReq = withURLParams(releaseHoldReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	releaseHoldResp := httptest.NewRecorder()
+	h.UpdateDocumentLegalHold(releaseHoldResp, releaseHoldReq)
+	require.Equal(t, http.StatusOK, releaseHoldResp.Code)
+
+	var releasedHoldDoc documents.Document
+	require.NoError(t, json.NewDecoder(releaseHoldResp.Body).Decode(&releasedHoldDoc))
+	require.False(t, releasedHoldDoc.LegalHold)
+	require.Equal(t, "Litigation hold released", releasedHoldDoc.LegalHoldNote)
 
 	rejectReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/review", map[string]any{
 		"review_status": "REJECTED",

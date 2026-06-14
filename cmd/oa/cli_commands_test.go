@@ -24066,6 +24066,7 @@ func TestCLIDocumentLifecycleAndReplacementCommands(t *testing.T) {
 
 	replacementPath := writeTempCSV(t, "replacement-receipt.txt", "replacement receipt")
 
+	legalHoldRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
@@ -24144,6 +24145,38 @@ func TestCLIDocumentLifecycleAndReplacementCommands(t *testing.T) {
 				"uploaded_by":           "user-1",
 				"created_at":            "2026-03-12T00:00:00Z",
 			})
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-replacement/legal-hold":
+			legalHoldRequests++
+			var req documents.DocumentLegalHoldRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			wantHold := true
+			wantNote := "Supplier litigation hold"
+			if legalHoldRequests == 2 {
+				wantHold = false
+				wantNote = "Supplier litigation released"
+			}
+			assert.Equal(t, wantHold, req.LegalHold)
+			assert.Equal(t, wantNote, req.Note)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":                     "doc-replacement",
+				"tenant_id":              "tenant-1",
+				"entity_type":            documents.EntityTypeExpense,
+				"entity_id":              "expense-1",
+				"document_type":          documents.DocumentTypeReceipt,
+				"file_name":              "replacement-receipt.txt",
+				"content_type":           "text/plain",
+				"file_size":              19,
+				"review_status":          documents.ReviewStatusPending,
+				"lifecycle_status":       documents.LifecycleStatusArchived,
+				"legal_hold":             wantHold,
+				"legal_hold_note":        wantNote,
+				"legal_hold_actioned_by": "user-1",
+				"legal_hold_actioned_at": "2026-03-12T10:05:00Z",
+				"lifecycle_actioned_by":  "user-1",
+				"lifecycle_actioned_at":  "2026-03-12T10:00:00Z",
+				"uploaded_by":            "user-1",
+				"created_at":             "2026-03-12T00:00:00Z",
+			})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -24188,6 +24221,39 @@ func TestCLIDocumentLifecycleAndReplacementCommands(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"lifecycle_status": "ARCHIVED"`)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"documents",
+		"legal-hold-set",
+		"--id", "doc-replacement",
+		"--note", "Supplier litigation hold",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Legal hold placed for document doc-replacement")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"documents",
+		"legal-hold-set",
+		"--id", "doc-replacement",
+		"--enabled=false",
+		"--note", "Supplier litigation released",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Legal hold released for document doc-replacement")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{
+		"documents",
+		"legal-hold-set",
+		"--id", "doc-replacement",
+		"--note", "Supplier litigation hold",
+		"--json",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"legal_hold": true`)
+	assert.Contains(t, stdout.String(), `"legal_hold_note": "Supplier litigation hold"`)
 }
 
 func TestCLIDocumentBranches(t *testing.T) {
@@ -24222,6 +24288,8 @@ func TestCLIDocumentBranches(t *testing.T) {
 		{name: "retention set invalid date", args: []string{"retention-set", "--id", "doc-1", "--retention-until", "bad-date"}, want: "parse retention-until"},
 		{name: "lifecycle set missing id", args: []string{"lifecycle-set", "--status", "ARCHIVED", "--note", "Archived"}, want: "id and status are required"},
 		{name: "lifecycle set missing status", args: []string{"lifecycle-set", "--id", "doc-1"}, want: "id and status are required"},
+		{name: "legal hold set missing id", args: []string{"legal-hold-set", "--note", "Hold"}, want: "id is required"},
+		{name: "legal hold set missing note", args: []string{"legal-hold-set", "--id", "doc-1"}, want: "note is required"},
 		{name: "upload missing required fields", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1"}, want: "entity-type, entity-id, and file are required"},
 		{name: "upload invalid retention date", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", "missing.txt", "--retention-until", "bad-date"}, want: "parse retention-until"},
 		{name: "upload negative retention years", args: []string{"upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", "missing.txt", "--retention-years", "-1"}, want: "retention-years must be zero or greater"},
@@ -24481,6 +24549,7 @@ func TestCLIDocumentAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "retention bad flag", args: []string{"documents", "retention", "--bad"}},
 		{name: "retention set bad flag", args: []string{"documents", "retention-set", "--bad"}},
 		{name: "lifecycle set bad flag", args: []string{"documents", "lifecycle-set", "--bad"}},
+		{name: "legal hold set bad flag", args: []string{"documents", "legal-hold-set", "--bad"}},
 		{name: "upload bad flag", args: []string{"documents", "upload", "--bad"}},
 		{name: "download bad flag", args: []string{"documents", "download", "--bad"}},
 		{name: "mark reviewed bad flag", args: []string{"documents", "mark-reviewed", "--bad"}},
@@ -24578,6 +24647,11 @@ func TestCLIDocumentAuthFlagsAndAPIErrorBranches(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, documents.LifecycleStatusArchived, req.LifecycleStatus)
 			assert.Equal(t, "Archive failed", req.LifecycleNote)
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-error/legal-hold":
+			var req documents.DocumentLegalHoldRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.LegalHold)
+			assert.Equal(t, "Hold failed", req.Note)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
 			require.NoError(t, r.ParseMultipartForm(2<<20))
 			assert.Equal(t, documents.EntityTypeExpense, r.FormValue("entity_type"))
@@ -24610,6 +24684,7 @@ func TestCLIDocumentAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "retention API error", args: []string{"documents", "retention"}},
 		{name: "retention set API error", args: []string{"documents", "retention-set", "--id", "doc-error", "--retention-until", "2028-03-31"}},
 		{name: "lifecycle set API error", args: []string{"documents", "lifecycle-set", "--id", "doc-error", "--status", "archived", "--note", "Archive failed"}},
+		{name: "legal hold set API error", args: []string{"documents", "legal-hold-set", "--id", "doc-error", "--note", "Hold failed"}},
 		{name: "upload API error", args: []string{"documents", "upload", "--entity-type", "expense", "--entity-id", "exp-1", "--file", uploadPath}},
 		{name: "download API error", args: []string{"documents", "download", "--id", "doc-error", "--output", "-"}},
 		{name: "mark reviewed API error", args: []string{"documents", "mark-reviewed", "--id", "doc-error"}},

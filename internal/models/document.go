@@ -24,6 +24,10 @@ type Document struct {
 	SupersededBy    *string    `gorm:"column:superseded_by_document_id;type:uuid" json:"superseded_by_document_id,omitempty"`
 	LifecycleBy     *string    `gorm:"column:lifecycle_actioned_by;type:uuid" json:"lifecycle_actioned_by,omitempty"`
 	LifecycleAt     *time.Time `gorm:"column:lifecycle_actioned_at" json:"lifecycle_actioned_at,omitempty"`
+	LegalHold       bool       `gorm:"column:legal_hold;not null;default:false" json:"legal_hold"`
+	LegalHoldNote   *string    `gorm:"column:legal_hold_note;type:text" json:"legal_hold_note,omitempty"`
+	LegalHoldBy     *string    `gorm:"column:legal_hold_actioned_by;type:uuid" json:"legal_hold_actioned_by,omitempty"`
+	LegalHoldAt     *time.Time `gorm:"column:legal_hold_actioned_at" json:"legal_hold_actioned_at,omitempty"`
 	UploadedBy      string     `gorm:"column:uploaded_by;type:uuid;not null" json:"uploaded_by"`
 	CreatedAt       time.Time  `gorm:"not null;default:now()" json:"created_at"`
 }

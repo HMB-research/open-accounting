@@ -135,6 +135,9 @@ func (s *Service) validateReplacementDocument(ctx context.Context, schemaName, t
 	if documentLifecycleStatus(doc) != LifecycleStatusActive {
 		return nil, fmt.Errorf("replacement source document must be active")
 	}
+	if doc.LegalHold {
+		return nil, fmt.Errorf("replacement source document is under legal hold")
+	}
 	if doc.EntityType != entityType || doc.EntityID != entityID {
 		return nil, fmt.Errorf("replacement document must target the same entity")
 	}
@@ -416,6 +419,9 @@ func (s *Service) UpdateDocumentLifecycle(ctx context.Context, schemaName, tenan
 	if err != nil {
 		return nil, err
 	}
+	if doc.LegalHold && (status == LifecycleStatusDisposed || status == LifecycleStatusSuperseded) {
+		return nil, fmt.Errorf("document is under legal hold and cannot be disposed or superseded")
+	}
 
 	var supersededBy *string
 	if status == LifecycleStatusSuperseded {
@@ -440,6 +446,36 @@ func (s *Service) UpdateDocumentLifecycle(ctx context.Context, schemaName, tenan
 	}
 
 	if err := s.repo.UpdateDocumentLifecycle(ctx, schemaName, tenantID, trimmedID, status, note, strings.TrimSpace(actionedBy), time.Now().UTC(), supersededBy); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID)
+}
+
+func (s *Service) UpdateDocumentLegalHold(ctx context.Context, schemaName, tenantID, documentID, actionedBy string, req *DocumentLegalHoldRequest) (*Document, error) {
+	trimmedID := strings.TrimSpace(documentID)
+	if trimmedID == "" {
+		return nil, fmt.Errorf("document ID is required")
+	}
+	if strings.TrimSpace(actionedBy) == "" {
+		return nil, fmt.Errorf("legal hold actioned by user is required")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("legal hold request is required")
+	}
+
+	note := strings.TrimSpace(req.Note)
+	if note == "" {
+		return nil, fmt.Errorf("legal hold note is required")
+	}
+	if len(note) > 2000 {
+		return nil, fmt.Errorf("legal hold note must be 2000 characters or less")
+	}
+
+	if _, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID); err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateDocumentLegalHold(ctx, schemaName, tenantID, trimmedID, req.LegalHold, note, strings.TrimSpace(actionedBy), time.Now().UTC()); err != nil {
 		return nil, err
 	}
 
@@ -526,6 +562,9 @@ func (s *Service) DeleteDocument(ctx context.Context, schemaName, tenantID, docu
 	doc, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, strings.TrimSpace(documentID))
 	if err != nil {
 		return err
+	}
+	if doc.LegalHold {
+		return fmt.Errorf("document is under legal hold and cannot be deleted")
 	}
 
 	if err := s.store.Delete(ctx, doc.StorageKey); err != nil {

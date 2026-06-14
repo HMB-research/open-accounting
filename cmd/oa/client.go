@@ -3636,6 +3636,14 @@ func (c *apiClient) updateDocumentLifecycle(ctx context.Context, tenantID, docum
 	return &resp, nil
 }
 
+func (c *apiClient) updateDocumentLegalHold(ctx context.Context, tenantID, documentID string, req *documents.DocumentLegalHoldRequest) (*documents.Document, error) {
+	var resp documents.Document
+	if err := c.request(ctx, http.MethodPatch, path.Join("/api/v1/tenants", tenantID, "documents", documentID, "legal-hold"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) markDocumentReviewed(ctx context.Context, tenantID, documentID string) (*documents.Document, error) {
 	var resp documents.Document
 	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "documents", documentID, "mark-reviewed"), nil, c.apiToken, &resp); err != nil {

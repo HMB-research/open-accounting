@@ -501,6 +501,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  documents retention       List retention-due documents")
 	_, _ = fmt.Fprintln(a.stdout, "  documents retention-set   Set or clear document retention metadata")
 	_, _ = fmt.Fprintln(a.stdout, "  documents lifecycle-set   Mark a document active, superseded, archived, or disposed")
+	_, _ = fmt.Fprintln(a.stdout, "  documents legal-hold-set  Place or release document legal hold")
 	_, _ = fmt.Fprintln(a.stdout, "  documents upload          Upload a document to a record")
 	_, _ = fmt.Fprintln(a.stdout, "  documents download        Download a document")
 	_, _ = fmt.Fprintln(a.stdout, "  documents review          Approve, reject, or mark a document reviewed")
@@ -12382,6 +12383,40 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, doc)
 		}
 		_, _ = fmt.Fprintf(a.stdout, "Marked document %s lifecycle as %s\n", doc.ID, doc.LifecycleStatus)
+		return nil
+
+	case "legal-hold-set":
+		fs := flag.NewFlagSet("documents legal-hold-set", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		documentID := fs.String("id", "", "Document id")
+		enabled := fs.Bool("enabled", true, "Whether legal hold is active")
+		note := fs.String("note", "", "Legal hold audit note")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*documentID) == "" {
+			return errors.New("id is required")
+		}
+		if strings.TrimSpace(*note) == "" {
+			return errors.New("note is required")
+		}
+
+		doc, err := client.updateDocumentLegalHold(ctx, cfg.TenantID, strings.TrimSpace(*documentID), &documents.DocumentLegalHoldRequest{
+			LegalHold: *enabled,
+			Note:      strings.TrimSpace(*note),
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, doc)
+		}
+		state := "released"
+		if doc.LegalHold {
+			state = "placed"
+		}
+		_, _ = fmt.Fprintf(a.stdout, "Legal hold %s for document %s\n", state, doc.ID)
 		return nil
 
 	case "upload":

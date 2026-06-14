@@ -2609,6 +2609,14 @@ definitions:
         type: integer
       id:
         type: string
+      legal_hold:
+        type: boolean
+      legal_hold_actioned_at:
+        type: string
+      legal_hold_actioned_by:
+        type: string
+      legal_hold_note:
+        type: string
       lifecycle_actioned_at:
         type: string
       lifecycle_actioned_by:
@@ -2634,6 +2642,13 @@ definitions:
       tenant_id:
         type: string
       uploaded_by:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_documents.DocumentLegalHoldRequest:
+    properties:
+      legal_hold:
+        type: boolean
+      note:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_documents.DocumentLifecycleRequest:
@@ -11877,6 +11892,62 @@ paths:
       security:
       - BearerAuth: []
       summary: Download document
+      tags:
+      - Documents
+  /tenants/{tenantID}/documents/{documentID}/legal-hold:
+    patch:
+      consumes:
+      - application/json
+      description: Place or release legal hold on a document and block disposal/deletion
+        while hold is active
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenantID
+        required: true
+        type: string
+      - description: Document ID
+        in: path
+        name: documentID
+        required: true
+        type: string
+      - description: Legal hold update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentLegalHoldRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update document legal hold
       tags:
       - Documents
   /tenants/{tenantID}/documents/{documentID}/lifecycle:

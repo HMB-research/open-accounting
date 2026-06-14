@@ -6976,6 +6976,92 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/{tenantID}/documents/{documentID}/legal-hold": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Place or release legal hold on a document and block disposal/deletion while hold is active",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Documents"
+                ],
+                "summary": "Update document legal hold",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Document ID",
+                        "name": "documentID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Legal hold update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentLegalHoldRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.Document"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/documents/{documentID}/lifecycle": {
             "patch": {
                 "security": [
@@ -26582,6 +26668,18 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "legal_hold": {
+                    "type": "boolean"
+                },
+                "legal_hold_actioned_at": {
+                    "type": "string"
+                },
+                "legal_hold_actioned_by": {
+                    "type": "string"
+                },
+                "legal_hold_note": {
+                    "type": "string"
+                },
                 "lifecycle_actioned_at": {
                     "type": "string"
                 },
@@ -26619,6 +26717,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "uploaded_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_documents.DocumentLegalHoldRequest": {
+            "type": "object",
+            "properties": {
+                "legal_hold": {
+                    "type": "boolean"
+                },
+                "note": {
                     "type": "string"
                 }
             }
