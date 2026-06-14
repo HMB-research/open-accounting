@@ -22,7 +22,7 @@
 |-----------|--------|-------|
 | `ActivityFeed` | Tested | Loading, empty, relative time, and amount display |
 | `AccountantPortfolioPanel` | Tested | Cross-tenant review rollup and empty state |
-| `AccountantReviewPanel` | Tested | Review queues, migration saved-run assignments, follow-up updates, reminders |
+| `AccountantReviewPanel` | Tested | Review queues, migration saved-run assignments, TSD/KMD tax evidence and submission actions, follow-up updates, reminders |
 | `ContactFormModal` | Tested | Create, edit, API errors, and cancel close |
 | `DateRangeFilter` | Tested | Presets, manual range edits, clear action |
 | `DocumentManager` | Tested | Upload, download, delete, evidence approval |
@@ -112,5 +112,6 @@ Run Paraglide/SvelteKit-writing gates serially. `check`, `test`, and `build` can
 | 2026-06-14 | Expanded migration workbench coverage for saved-run progress and active-step telemetry | 0 |
 | 2026-06-14 | Expanded migration workbench coverage for saved-run duration telemetry | 0 |
 | 2026-06-14 | Added accountant review and migration workbench coverage for saved-run cutover handoff links | 2 tests |
+| 2026-06-15 | Expanded accountant review/workspace coverage for TSD/KMD tax-support evidence and submission assignment actions | 2 tests |
 | 2026-01-23 | Migrated test commands from npm to bun | 0 |
 | 2026-01-10 | Initial tracking document created | 0 |

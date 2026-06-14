@@ -47,6 +47,7 @@
 	let assignmentCompletionError = $state('');
 	let assignmentRetentionDrafts = $state<Record<string, string>>({});
 	let assignmentUploadDrafts = $state<Record<string, File | undefined>>({});
+	let assignmentTsdReferenceDrafts = $state<Record<string, string>>({});
 	let loadedTenantKey = '';
 
 	type AssignmentEvidenceUploadTarget = {
@@ -67,7 +68,9 @@
 		'quote',
 		'order',
 		'leave_record',
-		'year_end_close'
+		'year_end_close',
+		'tsd_declaration',
+		'kmd_declaration'
 	];
 	const documentUploadTypes: DocumentAttachment['document_type'][] = [
 		'supporting_document',
@@ -338,6 +341,14 @@
 		};
 	}
 
+	function updateAssignmentTsdReferenceDraft(action: WorkspaceAssignmentAction, event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		assignmentTsdReferenceDrafts = {
+			...assignmentTsdReferenceDrafts,
+			[action.id]: target.value
+		};
+	}
+
 	function canUploadAssignmentEvidence(action: WorkspaceAssignmentAction): boolean {
 		return getAssignmentEvidenceUploadTarget(action) !== null;
 	}
@@ -417,6 +428,14 @@
 		}
 
 		return action.source === 'payroll' && action.code === 'payroll_declared_archive';
+	}
+
+	function canSubmitAssignmentTSD(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'tsd' &&
+			action.code === 'tsd_export_and_submit' &&
+			parseAssignmentPeriod(action) !== null
+		);
 	}
 
 	function canAcceptAssignmentTSD(action: WorkspaceAssignmentAction): boolean {
@@ -499,6 +518,14 @@
 			'kmd_awaiting_authority_acceptance',
 			'kmd_accepted_archive'
 		].includes(action.code);
+	}
+
+	function canSubmitAssignmentKMD(action: WorkspaceAssignmentAction): boolean {
+		if (action.source !== 'kmd' || parseAssignmentPeriod(action) === null) {
+			return false;
+		}
+
+		return ['kmd_payable_review', 'kmd_refund_review', 'kmd_zero_payable_review'].includes(action.code);
 	}
 
 	function canAcceptAssignmentKMD(action: WorkspaceAssignmentAction): boolean {
@@ -792,6 +819,31 @@
 		}
 	}
 
+	async function submitAssignmentTSD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		const emtaReference = assignmentTsdReferenceDrafts[action.id]?.trim();
+		if (!period || !emtaReference) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.markTSDSubmitted(tenant.id, period.year, period.month, emtaReference);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentTsdSubmitted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentTsdSubmitError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
 	async function acceptAssignmentTSD(action: WorkspaceAssignmentAction) {
 		const period = parseAssignmentPeriod(action);
 		if (!period) {
@@ -1013,6 +1065,30 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdExportError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function submitAssignmentKMD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.markKMDSubmitted(tenant.id, period.year, period.month);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentKmdSubmitted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdSubmitError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -1476,6 +1552,26 @@
 												: m.dashboard_reviewAssignmentsExportTsdXml()}
 										</button>
 									{/if}
+									{#if canSubmitAssignmentTSD(action)}
+										<label class="review-assignment-inline-field">
+											<span>{m.dashboard_reviewAssignmentsTsdEmtaReference()}</span>
+											<input
+												type="text"
+												value={assignmentTsdReferenceDrafts[action.id] ?? ''}
+												oninput={(event) => updateAssignmentTsdReferenceDraft(action, event)}
+											/>
+										</label>
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => submitAssignmentTSD(action)}
+											disabled={assignmentCompletingId === action.id || !assignmentTsdReferenceDrafts[action.id]?.trim()}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsSubmitTsd()}
+										</button>
+									{/if}
 									{#if canAcceptAssignmentTSD(action)}
 										<button
 											class="review-action review-action-button"
@@ -1558,6 +1654,18 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: m.dashboard_reviewAssignmentsExportKmdXml()}
+										</button>
+									{/if}
+									{#if canSubmitAssignmentKMD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => submitAssignmentKMD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsSubmitKmd()}
 										</button>
 									{/if}
 									{#if canAcceptAssignmentKMD(action)}
