@@ -2641,6 +2641,58 @@ func TestValidateBundleReportsBankAccountReferenceIssues(t *testing.T) {
 	assert.Equal(t, "9999", report.Issues[0].Value)
 }
 
+func TestValidateBundleAcceptsBankAccountAccountTypeReferences(t *testing.T) {
+	cashAccountID := "11111111-1111-1111-1111-111111111111"
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "id,account_code,account_name,type\n" +
+				cashAccountID + ",1000,Main bank,ASSET\n" +
+				"22222222-2222-2222-2222-222222222222,1010,Reserve bank,ASSET\n",
+		},
+		{
+			Kind:     KindBankAccounts,
+			FileName: "bank-accounts.csv",
+			CSVContent: "name,account_number,currency,gl_account_id,gl_account_code\n" +
+				"Main bank,EE471000001020145685,EUR," + cashAccountID + ",\n" +
+				"Reserve bank,EE382200221020145685,EUR,,1010\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsBankAccountAccountTypeMismatches(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "account_code,account_name,type\n" +
+				"1000,Main loan,LIABILITY\n" +
+				"5500,Bank fees,EXPENSE\n",
+		},
+		{
+			Kind:     KindBankAccounts,
+			FileName: "bank-accounts.csv",
+			CSVContent: "name,account_number,currency,gl_account_code\n" +
+				"Main bank,EE471000001020145685,EUR,1000\n" +
+				"Reserve bank,EE382200221020145685,EUR,5500\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindBankAccounts, "gl_account_code", `bank account GL account "1000" is LIABILITY; expected ASSET account`)
+	assertValidationIssue(t, report, KindBankAccounts, "gl_account_code", `bank account GL account "5500" is EXPENSE; expected ASSET account`)
+}
+
 func TestValidateBundleReportsBankTransactionSourceAccountReferenceIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
