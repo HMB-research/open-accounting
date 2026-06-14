@@ -735,6 +735,33 @@ describe("API Client - Core Functionality", () => {
       expect(result.journal_entry.entry_number).toBe("JE-00100");
     });
 
+    it("should reverse a year-end carry-forward", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          reversal_journal_entry: { id: "je-2", entry_number: "JE-00101" },
+          status: { period_end_date: "2025-12-31" },
+        }),
+      });
+
+      const result = await api.reverseYearEndCarryForward("tenant-123", {
+        period_end_date: "2025-12-31",
+        reason: "Late supplier accrual",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/year-end-carry-forward/reverse",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("Late supplier accrual"),
+        }),
+      );
+      expect(result.reversal_journal_entry.entry_number).toBe("JE-00101");
+    });
+
     it("should list recent journal entries", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

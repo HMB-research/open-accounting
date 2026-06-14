@@ -79,6 +79,50 @@ describe('review workspace helpers', () => {
 		expect(getLastCompletedFiscalYearEnd(7, new Date('2026-06-13T12:00:00Z'))).toBe('2025-06-30');
 	});
 
+	it('surfaces already-posted carry-forward actions with period context', async () => {
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			remediation_actions: [
+				{
+					code: 'carry_forward_already_posted',
+					severity: 'INFO',
+					scope: 'close',
+					owner_role: 'accountant',
+					workspace_queue: 'year_end_close',
+					assignment_key: 'year-end-close:carry-forward-already-posted:journal-entry:je-1:2025-12-31',
+					priority: 'low',
+					due_in_days: 0,
+					message: 'Carry-forward journal JE-2026-001 already exists.',
+					action:
+						'Review the posted carry-forward; reverse it only when approved late corrections require a controlled repost.',
+					entity_type: 'journal_entry',
+					entity_id: 'je-1',
+					ui_path: '/journal',
+					cli_command:
+						'oa close reverse-carry-forward --period-end 2025-12-31 --reason "Approved late correction"'
+				}
+			]
+		});
+
+		const snapshot = await loadTenantReviewSnapshot({
+			id: 'tenant-1',
+			settings: { fiscal_year_start_month: 1 }
+		} as never);
+
+		expect(snapshot.assignmentActions).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					source: 'close',
+					code: 'carry_forward_already_posted',
+					periodEndDate: '2025-12-31',
+					entityType: 'journal_entry',
+					entityId: 'je-1',
+					cliCommand: expect.stringContaining('reverse-carry-forward')
+				})
+			])
+		);
+	});
+
 	it('surfaces tax declaration evidence policy actions in the assignment queue', async () => {
 		apiMock.listTSD.mockResolvedValue([
 			{

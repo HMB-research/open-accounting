@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import Decimal from "decimal.js";
 import { baseLocale, setLocale } from "$lib/paraglide/runtime.js";
 import YearEndClosePanel from "$lib/components/YearEndClosePanel.svelte";
@@ -7,6 +7,7 @@ import type { YearEndCloseStatus } from "$lib/api";
 
 const apiMock = vi.hoisted(() => ({
   downloadYearEndCloseAuditArchive: vi.fn(),
+  reverseYearEndCarryForward: vi.fn(),
 }));
 
 vi.mock("$lib/api", async (importOriginal) => {
@@ -16,6 +17,7 @@ vi.mock("$lib/api", async (importOriginal) => {
     api: {
       ...actual.api,
       downloadYearEndCloseAuditArchive: apiMock.downloadYearEndCloseAuditArchive,
+      reverseYearEndCarryForward: apiMock.reverseYearEndCarryForward,
     },
   };
 });
@@ -72,6 +74,14 @@ describe("YearEndClosePanel", () => {
     setLocale(baseLocale, { reload: false });
     apiMock.downloadYearEndCloseAuditArchive.mockReset();
     apiMock.downloadYearEndCloseAuditArchive.mockResolvedValue(undefined);
+    apiMock.reverseYearEndCarryForward.mockReset();
+    apiMock.reverseYearEndCarryForward.mockResolvedValue({
+      reversal_journal_entry: {
+        id: "je-reversal",
+        entry_number: "JE-00101",
+      },
+      status: { period_end_date: "2025-12-31" },
+    });
   });
 
   it("shows a ready carry-forward state and triggers actions", async () => {
@@ -142,6 +152,56 @@ describe("YearEndClosePanel", () => {
     expect(
       screen.getByRole("button", { name: "Run carry-forward" }),
     ).toBeDisabled();
+  });
+
+  it("reverses an already-posted carry-forward with a reason", async () => {
+    const onrefresh = vi.fn();
+
+    render(YearEndClosePanel, {
+      status: createStatus({
+        carry_forward_needed: false,
+        carry_forward_ready: false,
+        existing_carry_forward: {
+          id: "je-1",
+          entry_number: "JE-00100",
+          entry_date: "2026-01-01",
+          description: "Year-end carry-forward",
+          status: "POSTED",
+        },
+      }),
+      tenantId: "tenant-1",
+      periodEndDate: "2025-12-31",
+      onrefresh,
+    });
+
+    const reverseButton = screen.getByRole("button", {
+      name: "Reverse carry-forward",
+    });
+    expect(reverseButton).toBeDisabled();
+
+    await fireEvent.input(screen.getByLabelText("Reversal reason"), {
+      target: { value: "Late supplier accrual" },
+    });
+
+    await waitFor(() => {
+      expect(reverseButton).not.toBeDisabled();
+    });
+
+    await fireEvent.click(reverseButton);
+
+    await waitFor(() => {
+      expect(apiMock.reverseYearEndCarryForward).toHaveBeenCalledWith(
+        "tenant-1",
+        {
+          period_end_date: "2025-12-31",
+          reason: "Late supplier accrual",
+        },
+      );
+      expect(onrefresh).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByText("Carry-forward reversed in JE-00101."),
+      ).toBeInTheDocument();
+    });
   });
 
   it("blocks carry-forward when close-pack evidence still needs approval", () => {

@@ -48,7 +48,15 @@
 	let assignmentRetentionDrafts = $state<Record<string, string>>({});
 	let assignmentUploadDrafts = $state<Record<string, File | undefined>>({});
 	let assignmentTsdReferenceDrafts = $state<Record<string, string>>({});
+	let assignmentCarryForwardReversalReasons = $state<Record<string, string>>({});
 	let loadedTenantKey = '';
+
+	const carryForwardReverseButtonLabel = 'Reverse carry-forward';
+	const carryForwardReverseLoadingLabel = 'Reversing...';
+	const carryForwardReversalReasonLabel = 'Reversal reason';
+	const carryForwardReversalReasonPlaceholder = 'Approved late correction';
+	const carryForwardReversedMessage = 'Carry-forward reversed from workspace.';
+	const carryForwardReverseErrorMessage = 'Could not reverse carry-forward from the workspace.';
 
 	type AssignmentEvidenceUploadTarget = {
 		entityType: DocumentAttachment['entity_type'];
@@ -358,6 +366,18 @@
 		};
 	}
 
+	function getAssignmentCarryForwardReversalReason(action: WorkspaceAssignmentAction): string {
+		return assignmentCarryForwardReversalReasons[action.id] ?? '';
+	}
+
+	function updateAssignmentCarryForwardReversalReason(action: WorkspaceAssignmentAction, event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		assignmentCarryForwardReversalReasons = {
+			...assignmentCarryForwardReversalReasons,
+			[action.id]: target.value
+		};
+	}
+
 	function canUploadAssignmentEvidence(action: WorkspaceAssignmentAction): boolean {
 		return getAssignmentEvidenceUploadTarget(action) !== null;
 	}
@@ -481,6 +501,10 @@
 
 	function canPostAssignmentCarryForward(action: WorkspaceAssignmentAction): boolean {
 		return action.source === 'close' && action.code === 'ready_to_post_carry_forward' && Boolean(action.periodEndDate);
+	}
+
+	function canReverseAssignmentCarryForward(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'close' && action.code === 'carry_forward_already_posted' && Boolean(action.periodEndDate);
 	}
 
 	type AssignmentPeriod = {
@@ -1033,6 +1057,37 @@
 		}
 	}
 
+	async function reverseAssignmentCarryForward(action: WorkspaceAssignmentAction) {
+		const reason = getAssignmentCarryForwardReversalReason(action).trim();
+		if (!action.periodEndDate || !reason) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.reverseYearEndCarryForward(tenant.id, {
+				period_end_date: action.periodEndDate,
+				reason
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCarryForwardReversalReasons = {
+				...assignmentCarryForwardReversalReasons,
+				[action.id]: ''
+			};
+			assignmentCompletedMessage = carryForwardReversedMessage;
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : carryForwardReverseErrorMessage;
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
 	async function regenerateAssignmentKMD(action: WorkspaceAssignmentAction) {
 		const period = parseAssignmentPeriod(action);
 		if (!period) {
@@ -1450,6 +1505,27 @@
 											{assignmentCompletingId === action.id
 												? m.common_loading()
 												: m.dashboard_reviewAssignmentsPostCarryForward()}
+										</button>
+									{/if}
+									{#if canReverseAssignmentCarryForward(action)}
+										<label class="review-assignment-inline-field review-assignment-reversal-field">
+											<span>{carryForwardReversalReasonLabel}</span>
+											<input
+												type="text"
+												placeholder={carryForwardReversalReasonPlaceholder}
+												value={getAssignmentCarryForwardReversalReason(action)}
+												oninput={(event) => updateAssignmentCarryForwardReversalReason(action, event)}
+											/>
+										</label>
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => reverseAssignmentCarryForward(action)}
+											disabled={assignmentCompletingId === action.id || !getAssignmentCarryForwardReversalReason(action).trim()}
+										>
+											{assignmentCompletingId === action.id
+												? carryForwardReverseLoadingLabel
+												: carryForwardReverseButtonLabel}
 										</button>
 									{/if}
 									{#if canApproveAssignmentDocument(action)}
@@ -1956,6 +2032,10 @@
 		color: var(--color-text);
 		background: var(--color-surface);
 		font: inherit;
+	}
+
+	.review-assignment-reversal-field input {
+		width: 12rem;
 	}
 
 	.review-assignment-upload-field {

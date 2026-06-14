@@ -697,6 +697,17 @@ class ApiClient {
     );
   }
 
+  async reverseYearEndCarryForward(
+    tenantId: string,
+    data: ReverseYearEndCarryForwardRequest,
+  ) {
+    return this.request<YearEndCarryForwardReversalResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/year-end-carry-forward/reverse`,
+      data,
+    );
+  }
+
   async listDocuments(
     tenantId: string,
     entityType: DocumentAttachment["entity_type"],
@@ -3453,6 +3464,16 @@ export interface CreateYearEndCarryForwardRequest {
 
 export interface YearEndCarryForwardResult {
   journal_entry: JournalEntry;
+  status: YearEndCloseStatus;
+}
+
+export interface ReverseYearEndCarryForwardRequest {
+  period_end_date: string;
+  reason: string;
+}
+
+export interface YearEndCarryForwardReversalResult {
+  reversal_journal_entry: JournalEntry;
   status: YearEndCloseStatus;
 }
 
