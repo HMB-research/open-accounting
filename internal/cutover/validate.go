@@ -1898,8 +1898,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkContactReference(report, indexes, file, row)
 		case KindInvoices:
 			checkOptionalUUID(report, file, row, "id")
-			checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-				[]string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"})
+			checkCommercialDocumentContactReference(report, indexes, file, row)
 			checkProductReference(report, indexes, file, row)
 		case KindEInvoices:
 			checkEInvoiceContactReferences(report, indexes, file, row, eInvoiceContactMode)
@@ -7325,8 +7324,17 @@ func checkCommercialDocumentContactReference(report *BundleValidationReport, ind
 		checkContactIDReference(report, indexes, file, row, "contact_id")
 		return
 	}
-	checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts,
-		commercialDocumentContactLookupFields())
+	if !indexes.files[KindContacts] {
+		return
+	}
+	for _, field := range commercialDocumentContactLookupFields() {
+		value := strings.TrimSpace(row.values[field])
+		if value == "" {
+			continue
+		}
+		checkReferenceValues(report, contactReferenceIndex(indexes, field), file, row, KindContacts, field, []string{value})
+		return
+	}
 }
 
 func checkCostAllocationReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
