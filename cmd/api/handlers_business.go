@@ -44,6 +44,7 @@ var (
 	errApprovedPurchaseInvoiceEvidenceRequired = errors.New("approved purchase-invoice evidence is required")
 	errApprovedQuoteEvidenceRequired           = errors.New("approved quote evidence is required")
 	errApprovedOrderEvidenceRequired           = errors.New("approved order evidence is required")
+	errApprovedTSDSubmissionEvidenceRequired   = errors.New("approved TSD submission evidence is required")
 )
 
 // =============================================================================
@@ -4235,7 +4236,7 @@ func (h *Handlers) ExportTSDCSV(w http.ResponseWriter, r *http.Request) {
 
 // MarkTSDSubmitted marks a TSD declaration as submitted
 // @Summary Mark TSD as submitted
-// @Description Mark a TSD declaration as submitted to e-MTA
+// @Description Mark a TSD declaration as submitted to e-MTA after approved tax/support evidence is attached.
 // @Tags Payroll
 // @Accept json
 // @Produce json
@@ -4246,6 +4247,7 @@ func (h *Handlers) ExportTSDCSV(w http.ResponseWriter, r *http.Request) {
 // @Param request body object{emta_reference=string} true "EMTA reference"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string}
 // @Router /tenants/{tenantID}/tsd/{year}/{month}/submit [post]
 func (h *Handlers) MarkTSDSubmitted(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -4278,12 +4280,47 @@ func (h *Handlers) MarkTSDSubmitted(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.requireApprovedTSDSubmissionEvidence(r.Context(), schemaName, tenantID, tsd.ID); err != nil {
+		if errors.Is(err, errApprovedTSDSubmissionEvidenceRequired) {
+			respondError(w, http.StatusConflict, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to verify TSD submission evidence")
+		return
+	}
+
 	if err := h.payrollService.MarkTSDSubmitted(r.Context(), schemaName, tenantID, tsd.ID, req.EMTAReference); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "submitted"})
+}
+
+func (h *Handlers) requireApprovedTSDSubmissionEvidence(ctx context.Context, schemaName, tenantID, declarationID string) error {
+	if h.documentsService == nil {
+		return nil
+	}
+
+	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+		EntityType: documents.EntityTypeTSD,
+		EntityIDs:  []string{declarationID},
+		Rules: []documents.EvidencePolicyRule{{
+			DocumentTypes: []string{
+				documents.DocumentTypeTaxSupport,
+				documents.DocumentTypeSupportingDocument,
+			},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("evaluate TSD submission evidence: %w", err)
+	}
+	if len(results) == 0 || !results[0].Compliant {
+		return fmt.Errorf("%w before marking TSD declaration %s submitted", errApprovedTSDSubmissionEvidenceRequired, declarationID)
+	}
+	return nil
 }
 
 // MarkTSDAccepted marks a TSD declaration as accepted

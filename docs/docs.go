@@ -19574,7 +19574,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Mark a TSD declaration as submitted to e-MTA",
+                "description": "Mark a TSD declaration as submitted to e-MTA after approved tax/support evidence is attached.",
                 "consumes": [
                     "application/json"
                 ],
@@ -19636,6 +19636,17 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "properties": {

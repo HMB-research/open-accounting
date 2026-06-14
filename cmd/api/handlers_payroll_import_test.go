@@ -12,6 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/HMB-research/open-accounting/internal/pdf"
 )
@@ -522,6 +523,60 @@ func TestPayrollBusinessHandlersTSDPeriodActions(t *testing.T) {
 		map[string]string{"tenantID": "tenant-1"},
 	))
 	require.Equal(t, "invalid month", errorBody["error"])
+}
+
+func TestMarkTSDSubmittedRequiresApprovedTaxEvidence(t *testing.T) {
+	h, repo, _ := setupPayrollImportHandlerTest(t)
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+	repo.tsdDeclarations["tsd-1"] = &payroll.TSDDeclaration{
+		ID:            "tsd-1",
+		TenantID:      "tenant-1",
+		PeriodYear:    2026,
+		PeriodMonth:   3,
+		Status:        payroll.TSDDraft,
+		TotalPayments: decimal.RequireFromString("3000.00"),
+	}
+
+	errorBody := invokePayrollImportJSON[map[string]string](t, http.StatusConflict, h.MarkTSDSubmitted, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tsd/2026/3/submit",
+		map[string]any{"emta_reference": "EMTA-2026-03"},
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved TSD submission evidence is required")
+	require.Equal(t, payroll.TSDDraft, repo.tsdDeclarations["tsd-1"].Status)
+
+	now := time.Now()
+	docRepo.docs["tsd-tax-support"] = &documents.Document{
+		ID:           "tsd-tax-support",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeTSD,
+		EntityID:     "tsd-1",
+		DocumentType: documents.DocumentTypeTaxSupport,
+		FileName:     "tsd-submission.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+	errorBody = invokePayrollImportJSON[map[string]string](t, http.StatusConflict, h.MarkTSDSubmitted, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tsd/2026/3/submit",
+		map[string]any{"emta_reference": "EMTA-2026-03"},
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved TSD submission evidence is required")
+
+	docRepo.docs["tsd-tax-support"].ReviewStatus = documents.ReviewStatusApproved
+	submitted := invokePayrollImportJSON[map[string]string](t, http.StatusOK, h.MarkTSDSubmitted, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tsd/2026/3/submit",
+		map[string]any{"emta_reference": "EMTA-2026-03"},
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Equal(t, "submitted", submitted["status"])
+	require.Equal(t, payroll.TSDSubmitted, repo.tsdDeclarations["tsd-1"].Status)
+	require.Equal(t, "EMTA-2026-03", repo.tsdDeclarations["tsd-1"].EMTAReference)
 }
 
 func TestLeaveBusinessHandlersBalanceAndRecordWorkflow(t *testing.T) {
