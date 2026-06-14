@@ -3630,6 +3630,24 @@ describe("API Client - Core Functionality", () => {
 
       expect(result.status).toBe("submitted");
     });
+
+    it("should mark TSD accepted", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ status: "accepted" }),
+      });
+
+      const result = await api.markTSDAccepted("tenant-123", 2024, 1);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/tsd/2024/1/accept"),
+        expect.objectContaining({
+          method: "POST",
+        }),
+      );
+      expect(result.status).toBe("accepted");
+    });
   });
 
   describe("Cost Center Endpoints", () => {

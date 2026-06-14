@@ -2847,6 +2847,13 @@ class ApiClient {
     );
   }
 
+  async markTSDAccepted(tenantId: string, year: number, month: number) {
+    return this.request<{ status: string }>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/tsd/${year}/${month}/accept`,
+    );
+  }
+
   // Leave/Absence Management
   async listAbsenceTypes(tenantId: string, activeOnly = false) {
     const query = activeOnly ? "?active_only=true" : "";

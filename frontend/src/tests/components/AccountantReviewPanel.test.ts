@@ -18,6 +18,7 @@ const { apiMock } = vi.hoisted(() => ({
 		approvePayroll: vi.fn(),
 		generateTSD: vi.fn(),
 		downloadTSDXml: vi.fn(),
+		markTSDAccepted: vi.fn(),
 		executeMigration: vi.fn(),
 		generateKMD: vi.fn(),
 		downloadKMDXml: vi.fn(),
@@ -413,6 +414,7 @@ describe('AccountantReviewPanel', () => {
 		apiMock.approvePayroll.mockResolvedValue({ status: 'approved' });
 		apiMock.generateTSD.mockResolvedValue({ id: 'tsd-1' });
 		apiMock.downloadTSDXml.mockResolvedValue(undefined);
+		apiMock.markTSDAccepted.mockResolvedValue({ status: 'accepted' });
 		apiMock.executeMigration.mockResolvedValue({ id: 'run-executed' });
 		apiMock.generateKMD.mockResolvedValue({ id: 'kmd-1' });
 		apiMock.downloadKMDXml.mockResolvedValue(undefined);
@@ -1301,6 +1303,97 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(apiMock.downloadTSDXml).toHaveBeenCalledWith('tenant-1', 2026, 3);
 			expect(screen.getByText('TSD XML exported from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it('marks submitted TSD assignment rows accepted from the workspace', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-03-11',
+			cutoff_date: '2026-04-10',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+		apiMock.listTSD.mockResolvedValue([
+			{
+				id: 'tsd-submitted-1',
+				tenant_id: 'tenant-1',
+				period_year: 2026,
+				period_month: 3,
+				total_payments: new Decimal(5100),
+				total_income_tax: new Decimal(900),
+				total_social_tax: new Decimal(1683),
+				total_unemployment_employer: new Decimal(41),
+				total_unemployment_employee: new Decimal(82),
+				total_funded_pension: new Decimal(102),
+				status: 'SUBMITTED',
+				submitted_at: '2026-04-10T09:30:00Z',
+				emta_reference: 'EMTA-2026-03',
+				remediation_actions: [
+					{
+						code: 'tsd_awaiting_authority_acceptance',
+						severity: 'ACTION',
+						scope: 'tax',
+						owner_role: 'accountant',
+						workspace_queue: 'tsd_declarations',
+						assignment_key:
+							'tsd-declarations:tsd-awaiting-authority-acceptance:tsd-declaration:tsd-submitted-1:2026-03',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'TSD 2026-03 has been submitted and is awaiting authority acceptance.',
+						action:
+							'Monitor e-MTA acceptance, mark the declaration accepted or rejected, and retain the accepted confirmation.',
+						entity_type: 'tsd_declaration',
+						entity_id: 'tsd-submitted-1',
+						period: '2026-03',
+						ui_path: '/tsd?year=2026&month=3',
+						cli_command: 'oa tsd mark-accepted --year 2026 --month 3'
+					}
+				],
+				created_at: '2026-03-31T00:00:00Z',
+				updated_at: '2026-04-10T09:30:00Z'
+			}
+		]);
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(
+				screen.getByText('TSD 2026-03 has been submitted and is awaiting authority acceptance.')
+			).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Mark TSD accepted' }));
+
+		await waitFor(() => {
+			expect(apiMock.markTSDAccepted).toHaveBeenCalledWith('tenant-1', 2026, 3);
+			expect(screen.getByText('TSD marked accepted from workspace.')).toBeInTheDocument();
 		});
 	});
 
