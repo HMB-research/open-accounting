@@ -3525,6 +3525,33 @@ func printKMDRemediationActions(w io.Writer, actions []tax.KMDRemediationAction)
 	_ = tw.Flush()
 }
 
+func printTaxReportRemediationActions(w io.Writer, heading string, actions []tax.TaxReportRemediationAction) {
+	if len(actions) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, heading)
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "SEVERITY\tPRIORITY\tDUE\tQUEUE\tSCOPE\tOWNER\tCODE\tASSIGNMENT KEY\tACTION\tCOMMAND")
+	for _, action := range actions {
+		priority, due, queue, assignmentKey := remediationAssignmentCells(action.WorkspaceQueue, action.Priority, action.DueInDays, action.AssignmentKey)
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			action.Severity,
+			priority,
+			due,
+			queue,
+			action.Scope,
+			action.OwnerRole,
+			action.Code,
+			assignmentKey,
+			action.Action,
+			action.CLICommand,
+		)
+	}
+	_ = tw.Flush()
+}
+
 func printKMDINFReport(w io.Writer, report *tax.KMDINFReport) {
 	_, _ = fmt.Fprintf(w, "KMD INF %04d-%02d\n", report.Year, report.Month)
 	_, _ = fmt.Fprintf(w, "Threshold: %s\n", report.Threshold.String())
@@ -3547,6 +3574,7 @@ func printKMDINFReport(w io.Writer, report *tax.KMDINFReport) {
 		}
 		_ = tw.Flush()
 	}
+	printTaxReportRemediationActions(w, "KMD INF remediation actions", report.RemediationActions)
 	if len(report.Rows) == 0 {
 		return
 	}
@@ -3597,6 +3625,7 @@ func printEUVATOSSReport(w io.Writer, report *tax.EUVATOSSReport) {
 		}
 		_ = tw.Flush()
 	}
+	printTaxReportRemediationActions(w, "EU VAT OSS remediation actions", report.RemediationActions)
 	if len(report.Rows) == 0 {
 		return
 	}

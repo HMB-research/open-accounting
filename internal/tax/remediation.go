@@ -7,6 +7,8 @@ import (
 	"github.com/HMB-research/open-accounting/internal/workspace"
 )
 
+const taxReportWorkspaceQueue = "tax_reports"
+
 // BuildKMDRemediationActions turns a KMD declaration status into accountant follow-up actions.
 func BuildKMDRemediationActions(declaration *KMDDeclaration) []KMDRemediationAction {
 	if declaration == nil {
@@ -121,4 +123,118 @@ func BuildKMDRemediationActions(declaration *KMDDeclaration) []KMDRemediationAct
 	}
 
 	return actions
+}
+
+// BuildKMDINFRemediationActions turns a KMD INF report into accountant follow-up actions.
+func BuildKMDINFRemediationActions(report *KMDINFReport) []TaxReportRemediationAction {
+	if report == nil {
+		return nil
+	}
+
+	period := fmt.Sprintf("%04d-%02d", report.Year, report.Month)
+	threshold := report.Threshold
+	if threshold.IsZero() {
+		threshold = KMDINFDefaultThreshold
+	}
+	periodFlags := fmt.Sprintf("--year %d --month %d --threshold %s", report.Year, report.Month, threshold.String())
+	base := TaxReportRemediationAction{
+		Scope:      "tax",
+		OwnerRole:  "accountant",
+		Period:     period,
+		EntityType: "kmd_inf_report",
+		EntityID:   period,
+		UIPath:     fmt.Sprintf("/tax/kmd?year=%d&month=%d&view=inf", report.Year, report.Month),
+	}
+
+	if len(report.Rows) == 0 {
+		return []TaxReportRemediationAction{
+			taxReportAction(
+				base,
+				"kmd_inf_no_threshold_rows",
+				"WARNING",
+				fmt.Sprintf("KMD INF %s has no partner rows at the %s threshold.", period, threshold.String()),
+				"Confirm that no domestic partner exceeded the KMD INF threshold, then retain the empty report with the VAT period evidence.",
+				fmt.Sprintf("oa tax kmd inf %s --json", periodFlags),
+			),
+		}
+	}
+
+	return []TaxReportRemediationAction{
+		taxReportAction(
+			base,
+			"kmd_inf_review_required",
+			"ACTION",
+			fmt.Sprintf("KMD INF %s has %d threshold invoice row(s).", period, len(report.Rows)),
+			"Review partner-period threshold totals, attach supporting VAT evidence, and archive the KMD INF report with the KMD declaration.",
+			fmt.Sprintf("oa tax kmd inf %s --json", periodFlags),
+		),
+	}
+}
+
+// BuildEUVATOSSRemediationActions turns an EU VAT OSS report into accountant follow-up actions.
+func BuildEUVATOSSRemediationActions(report *EUVATOSSReport) []TaxReportRemediationAction {
+	if report == nil {
+		return nil
+	}
+
+	period := fmt.Sprintf("%04d-Q%d", report.Year, report.Quarter)
+	includeB2BFlag := ""
+	if report.IncludeB2B {
+		includeB2BFlag = " --include-b2b"
+	}
+	command := fmt.Sprintf("oa tax oss report --year %d --quarter %d%s --json", report.Year, report.Quarter, includeB2BFlag)
+	base := TaxReportRemediationAction{
+		Scope:      "tax",
+		OwnerRole:  "accountant",
+		Period:     period,
+		EntityType: "eu_vat_oss_report",
+		EntityID:   period,
+		UIPath:     fmt.Sprintf("/tax/oss?year=%d&quarter=%d", report.Year, report.Quarter),
+	}
+
+	if len(report.Rows) == 0 {
+		return []TaxReportRemediationAction{
+			taxReportAction(
+				base,
+				"eu_vat_oss_no_rows",
+				"WARNING",
+				fmt.Sprintf("EU VAT OSS %s has no qualifying destination-country rows.", period),
+				"Confirm the quarter has no qualifying non-Estonian EU sales or adjust filters before retaining the empty OSS report.",
+				command,
+			),
+		}
+	}
+
+	return []TaxReportRemediationAction{
+		taxReportAction(
+			base,
+			"eu_vat_oss_review_required",
+			"ACTION",
+			fmt.Sprintf("EU VAT OSS %s has VAT due of %s across %d country/rate row(s).", period, report.VATAmount.String(), len(report.Rows)),
+			"Review destination-country VAT totals, file the quarterly OSS return manually, and retain the filing confirmation with the report evidence.",
+			command,
+		),
+	}
+}
+
+func taxReportAction(base TaxReportRemediationAction, code, severity, message, text, command string) TaxReportRemediationAction {
+	action := base
+	action.Code = code
+	action.Severity = severity
+	meta := workspace.RemediationAssignment(
+		taxReportWorkspaceQueue,
+		code,
+		severity,
+		action.EntityType,
+		action.EntityID,
+		action.Period,
+	)
+	action.WorkspaceQueue = meta.WorkspaceQueue
+	action.AssignmentKey = meta.AssignmentKey
+	action.Priority = meta.Priority
+	action.DueInDays = meta.DueInDays
+	action.Message = message
+	action.Action = text
+	action.CLICommand = command
+	return action
 }

@@ -434,6 +434,26 @@ func cliKMDRemediationPayload() []map[string]any {
 	}}
 }
 
+func cliTaxReportRemediationPayload(code, period, entityType, uiPath, command string) []map[string]any {
+	return []map[string]any{{
+		"code":            code,
+		"severity":        "ACTION",
+		"scope":           "tax",
+		"owner_role":      "accountant",
+		"workspace_queue": "tax_reports",
+		"assignment_key":  fmt.Sprintf("tax-reports:%s:%s:%s:%s", strings.ReplaceAll(code, "_", "-"), strings.ReplaceAll(entityType, "_", "-"), strings.ToLower(period), strings.ToLower(period)),
+		"priority":        "high",
+		"due_in_days":     1,
+		"message":         fmt.Sprintf("%s %s needs accountant review.", entityType, period),
+		"action":          "Review the tax report, retain supporting evidence, and complete the external filing step where required.",
+		"period":          period,
+		"entity_type":     entityType,
+		"entity_id":       period,
+		"ui_path":         uiPath,
+		"cli_command":     command,
+	}}
+}
+
 func tenantPluginPayload(tenantPluginID, tenantID, pluginID, name, displayName string, enabled bool, settings map[string]any) map[string]any {
 	if settings == nil {
 		settings = map[string]any{}
@@ -22491,6 +22511,13 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 				"month":        3,
 				"threshold":    "1000.00",
 				"generated_at": "2026-03-31T12:00:00Z",
+				"remediation_actions": cliTaxReportRemediationPayload(
+					"kmd_inf_review_required",
+					"2026-03",
+					"kmd_inf_report",
+					"/tax/kmd?year=2026&month=3&view=inf",
+					"oa tax kmd inf --year 2026 --month 3 --threshold 1000 --json",
+				),
 				"summary": []map[string]any{{
 					"part":           "A",
 					"partner_count":  1,
@@ -22543,6 +22570,13 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 				"total_amount":   "119.00",
 				"invoice_count":  1,
 				"line_count":     1,
+				"remediation_actions": cliTaxReportRemediationPayload(
+					"eu_vat_oss_review_required",
+					"2026-Q1",
+					"eu_vat_oss_report",
+					"/tax/oss?year=2026&quarter=1",
+					"oa tax oss report --year 2026 --quarter 1 --include-b2b --json",
+				),
 				"summary": []map[string]any{{
 					"country_code":   "DE",
 					"country_name":   "Germany",
@@ -22642,6 +22676,8 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "KMD INF 2026-03")
 	assert.Contains(t, stdout.String(), "Alpha OU")
+	assert.Contains(t, stdout.String(), "KMD INF remediation actions")
+	assert.Contains(t, stdout.String(), "kmd_inf_review_required")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"tax", "kmd", "import-history", "--file", kmdFile})
@@ -22668,12 +22704,16 @@ func TestCLITaxAndTSDCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "EU VAT OSS 2026-Q1")
 	assert.Contains(t, stdout.String(), "DE Germany")
+	assert.Contains(t, stdout.String(), "EU VAT OSS remediation actions")
+	assert.Contains(t, stdout.String(), "eu_vat_oss_review_required")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"tax", "oss", "report", "--year", "2026", "--quarter", "1", "--include-b2b", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"country_code": "DE"`)
 	assert.Contains(t, stdout.String(), `"include_b2b": true`)
+	assert.Contains(t, stdout.String(), `"remediation_actions"`)
+	assert.Contains(t, stdout.String(), `"eu_vat_oss_review_required"`)
 }
 
 func TestCLITaxBranches(t *testing.T) {

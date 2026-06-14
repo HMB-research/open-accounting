@@ -493,6 +493,66 @@ func TestBuildKMDRemediationActions(t *testing.T) {
 	assert.Nil(t, BuildKMDRemediationActions(nil))
 }
 
+func TestBuildTaxReportRemediationActions(t *testing.T) {
+	infReport := &KMDINFReport{
+		Year:      2026,
+		Month:     3,
+		Threshold: decimal.NewFromInt(1000),
+		Rows: []KMDINFReportRow{{
+			Part:                       KMDINFPartSales,
+			ContactID:                  "contact-1",
+			ContactName:                "Alpha OU",
+			InvoiceID:                  "invoice-1",
+			InvoiceNumber:              "INV-1",
+			TaxableAmount:              decimal.NewFromInt(1200),
+			PartnerPeriodTaxableAmount: decimal.NewFromInt(1200),
+		}},
+	}
+	infActions := BuildKMDINFRemediationActions(infReport)
+	require.Len(t, infActions, 1)
+	assert.Equal(t, []string{"kmd_inf_review_required"}, taxReportRemediationCodes(infActions))
+	assert.Equal(t, "tax_reports", infActions[0].WorkspaceQueue)
+	assert.Equal(t, "high", infActions[0].Priority)
+	assert.Equal(t, 1, infActions[0].DueInDays)
+	assert.Contains(t, infActions[0].AssignmentKey, "kmd-inf-report")
+	assert.Contains(t, infActions[0].CLICommand, "oa tax kmd inf --year 2026 --month 3 --threshold 1000 --json")
+
+	emptyINFActions := BuildKMDINFRemediationActions(&KMDINFReport{
+		Year:      2026,
+		Month:     4,
+		Threshold: decimal.NewFromInt(1000),
+	})
+	require.Len(t, emptyINFActions, 1)
+	assert.Equal(t, "kmd_inf_no_threshold_rows", emptyINFActions[0].Code)
+	assert.Equal(t, "normal", emptyINFActions[0].Priority)
+	assert.Equal(t, 3, emptyINFActions[0].DueInDays)
+
+	ossReport := &EUVATOSSReport{
+		Year:       2026,
+		Quarter:    1,
+		IncludeB2B: true,
+		VATAmount:  decimal.NewFromInt(19),
+		Rows: []EUVATOSSReportRow{{
+			CountryCode: "DE",
+			VATRate:     decimal.NewFromInt(19),
+		}},
+	}
+	ossActions := BuildEUVATOSSRemediationActions(ossReport)
+	require.Len(t, ossActions, 1)
+	assert.Equal(t, []string{"eu_vat_oss_review_required"}, taxReportRemediationCodes(ossActions))
+	assert.Equal(t, "tax_reports", ossActions[0].WorkspaceQueue)
+	assert.Equal(t, "high", ossActions[0].Priority)
+	assert.Contains(t, ossActions[0].CLICommand, "--include-b2b")
+
+	emptyOSSActions := BuildEUVATOSSRemediationActions(&EUVATOSSReport{Year: 2026, Quarter: 2})
+	require.Len(t, emptyOSSActions, 1)
+	assert.Equal(t, "eu_vat_oss_no_rows", emptyOSSActions[0].Code)
+	assert.Equal(t, "normal", emptyOSSActions[0].Priority)
+
+	assert.Nil(t, BuildKMDINFRemediationActions(nil))
+	assert.Nil(t, BuildEUVATOSSRemediationActions(nil))
+}
+
 func TestService_GenerateKMDINF_Success(t *testing.T) {
 	repo := &MockRepository{
 		queryKMDINFDataResult: []KMDINFReportRow{
@@ -547,6 +607,9 @@ func TestService_GenerateKMDINF_Success(t *testing.T) {
 	assert.True(t, report.Summary[0].TaxableAmount.Equal(decimal.NewFromInt(1200)))
 	assert.Equal(t, KMDINFPartPurchases, report.Summary[1].Part)
 	assert.True(t, report.Summary[1].VATAmount.Equal(decimal.NewFromInt(330)))
+	require.Len(t, report.RemediationActions, 1)
+	assert.Equal(t, "kmd_inf_review_required", report.RemediationActions[0].Code)
+	assert.Equal(t, "tax_reports", report.RemediationActions[0].WorkspaceQueue)
 }
 
 func TestService_GenerateKMDINF_ValidationAndRepositoryErrors(t *testing.T) {
@@ -629,6 +692,9 @@ func TestService_GenerateEUVATOSS_Success(t *testing.T) {
 	assert.Equal(t, "Germany", report.Summary[0].CountryName)
 	assert.Equal(t, "FI", report.Summary[1].CountryCode)
 	assert.Equal(t, "Finland", report.Summary[1].CountryName)
+	require.Len(t, report.RemediationActions, 1)
+	assert.Equal(t, "eu_vat_oss_review_required", report.RemediationActions[0].Code)
+	assert.Equal(t, "tax_reports", report.RemediationActions[0].WorkspaceQueue)
 }
 
 func TestService_GenerateEUVATOSS_ValidationAndRepositoryErrors(t *testing.T) {
@@ -732,6 +798,14 @@ func TestService_ListKMD_Success(t *testing.T) {
 }
 
 func kmdRemediationCodes(actions []KMDRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
+}
+
+func taxReportRemediationCodes(actions []TaxReportRemediationAction) []string {
 	codes := make([]string, 0, len(actions))
 	for _, action := range actions {
 		codes = append(codes, action.Code)

@@ -32594,6 +32594,12 @@ const docTemplate = `{
                 "quarter": {
                     "type": "integer"
                 },
+                "remediation_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.TaxReportRemediationAction"
+                    }
+                },
                 "rows": {
                     "type": "array",
                     "items": {
@@ -32806,6 +32812,12 @@ const docTemplate = `{
                 "month": {
                     "type": "integer"
                 },
+                "remediation_actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_tax.TaxReportRemediationAction"
+                    }
+                },
                 "rows": {
                     "type": "array",
                     "items": {
@@ -32941,6 +32953,56 @@ const docTemplate = `{
                 "tax_base": {
                     "description": "Taxable amount (maksustatav käive)",
                     "type": "number"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_tax.TaxReportRemediationAction": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "assignment_key": {
+                    "type": "string"
+                },
+                "cli_command": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "due_in_days": {
+                    "type": "integer"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "owner_role": {
+                    "type": "string"
+                },
+                "period": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "ui_path": {
+                    "type": "string"
+                },
+                "workspace_queue": {
+                    "type": "string"
                 }
             }
         },

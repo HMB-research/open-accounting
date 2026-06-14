@@ -556,11 +556,11 @@ KMD declaration human output includes a remediation action table for accountant 
 
 Historical KMD import expects `year`, `month`, and `row_code` columns, plus `tax_base` or `tax_amount` on each row. Optional `status`, `submitted_at`, `description`, `total_output_vat`, and `total_input_vat` columns are validated by `migration validate`, including duplicate period row codes, same-period status, submitted date, output VAT, and input VAT consistency. Existing declaration periods are skipped instead of overwritten.
 
-KMD INF generation returns A-part sales and B-part purchase invoice rows for domestic VAT-bearing invoices whose partner-period taxable total reaches the threshold excluding VAT. The default threshold is `1000`; pass `--threshold` only with a positive decimal value when overriding it.
+KMD INF generation returns A-part sales and B-part purchase invoice rows for domestic VAT-bearing invoices whose partner-period taxable total reaches the threshold excluding VAT. The default threshold is `1000`; pass `--threshold` only with a positive decimal value when overriding it. Human output includes a KMD INF remediation action table for threshold-row review or empty-report evidence retention with workspace queue, priority, due window, and assignment key columns. JSON output exposes the same `remediation_actions` array.
 
 KMD export writes e-MTA XML. Omit `--output` to stream the XML to stdout.
 
-EU VAT OSS reporting groups non-Estonian EU sales invoice lines by destination country and VAT rate for quarterly manual filing support. By default it excludes contacts with VAT numbers to focus on B2C OSS rows; add `--include-b2b` only when you need a reconciliation view that includes VAT-registered contacts.
+EU VAT OSS reporting groups non-Estonian EU sales invoice lines by destination country and VAT rate for quarterly manual filing support. By default it excludes contacts with VAT numbers to focus on B2C OSS rows; add `--include-b2b` only when you need a reconciliation view that includes VAT-registered contacts. Human output includes an EU VAT OSS remediation action table for manual filing review, filing evidence retention, or empty-quarter confirmation with workspace queue, priority, due window, and assignment key columns. JSON output exposes the same `remediation_actions` array.
 
 ## Invoices
 
