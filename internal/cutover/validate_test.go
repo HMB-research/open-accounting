@@ -2823,6 +2823,54 @@ func TestValidateBundleReportsBankTransactionCurrencyMismatch(t *testing.T) {
 	assert.Contains(t, report.Issues[0].Message, `currency "USD"`)
 }
 
+func TestValidateBundleAcceptsBankTransactionDefaultCurrencyMatch(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "account_name,account_number,currency\nMain bank,EE471000001020145685,EUR\n",
+		},
+		{
+			Kind:       KindBankTransactions,
+			FileName:   "bank.csv",
+			CSVContent: "date,amount,details,client_account\n2026-05-31,100,Customer receipt,EE471000001020145685\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsBankTransactionDefaultCurrencyMismatch(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindBankAccounts,
+			FileName:   "bank-accounts.csv",
+			CSVContent: "account_name,account_number,currency\nReserve bank,EE471000001020145685,USD\n",
+		},
+		{
+			Kind:       KindBankTransactions,
+			FileName:   "bank.csv",
+			CSVContent: "date,amount,details,client_account\n2026-05-31,100,Customer receipt,EE471000001020145685\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindBankTransactions, report.Issues[0].Kind)
+	assert.Equal(t, KindBankAccounts, report.Issues[0].TargetKind)
+	assert.Equal(t, "source_account/currency", report.Issues[0].Field)
+	assert.Equal(t, "EE471000001020145685/EUR", report.Issues[0].Value)
+	assert.Contains(t, report.Issues[0].Message, `currency "EUR"`)
+	assert.Contains(t, report.Issues[0].Message, `currency "USD"`)
+}
+
 func TestValidateBundleAcceptsBankTransactionStatementAccountAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
