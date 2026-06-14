@@ -630,6 +630,57 @@ func TestValidateBundleAcceptsSmartAccountsKMDHistoryProviderPresetAliases(t *te
 	assert.Contains(t, report.Files[0].Headers, "total_input_vat")
 }
 
+func TestValidateBundleAcceptsSmartAccountsPayrollYearMonthTaxAliases(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{
+			{
+				Kind:       KindEmployees,
+				FileName:   "smartaccounts-employees.csv",
+				CSVContent: "employee_no,first_name,last_name,start_date\nEMP-1,Mari,Maasikas,2026-01-15\n",
+			},
+			{
+				Kind:     KindPayrollHistory,
+				FileName: "smartaccounts-payroll-history.csv",
+				CSVContent: "payroll_year,payroll_month,employee_no,payroll_status,paid_date,gross_amount,taxable_amount,income_tax_amount,social_tax_amount,employee_unemployment_amount,employer_unemployment_amount,pension_amount,net_amount,employer_cost\n" +
+					"2026,5,EMP-1,paid,2026-05-31,2500,2500,500,825,40,20,50,1910,3345\n",
+			},
+			{
+				Kind:     KindTSDHistory,
+				FileName: "smartaccounts-tsd-history.csv",
+				CSVContent: "pay_period_year,pay_period_month,employee_no,declaration_status,filing_date,payment_kind,gross_amount,basic_exemption_amount,taxable_amount,income_tax_amount,social_tax_amount,employee_unemployment_amount,employer_unemployment_amount,pension_amount\n" +
+					"2026,5,EMP-1,accepted,2026-06-10,SALARY,2500,784,1716,343.20,825,40,20,50\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 3)
+
+	payroll := report.Files[1]
+	assert.Contains(t, payroll.Headers, "period_year")
+	assert.Contains(t, payroll.Headers, "period_month")
+	assert.Contains(t, payroll.Headers, "status")
+	assert.Contains(t, payroll.Headers, "payment_date")
+	assert.Contains(t, payroll.Headers, "taxable_income")
+	assert.Contains(t, payroll.Headers, "unemployment_insurance_employee")
+	assert.Contains(t, payroll.Headers, "unemployment_insurance_employer")
+	assert.Contains(t, payroll.Headers, "funded_pension")
+
+	tsd := report.Files[2]
+	assert.Contains(t, tsd.Headers, "period_year")
+	assert.Contains(t, tsd.Headers, "period_month")
+	assert.Contains(t, tsd.Headers, "submitted_at")
+	assert.Contains(t, tsd.Headers, "payment_type")
+	assert.Contains(t, tsd.Headers, "basic_exemption")
+	assert.Contains(t, tsd.Headers, "unemployment_insurance_employee")
+	assert.Contains(t, tsd.Headers, "unemployment_insurance_employer")
+	assert.Contains(t, tsd.Headers, "funded_pension")
+}
+
 func TestValidateBundleAcceptsMeritExpenseProviderPresetAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: MigrationProviderPresetMerit,
