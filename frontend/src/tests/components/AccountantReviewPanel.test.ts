@@ -12,6 +12,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listDocumentReviewSummaries: vi.fn(),
 		reviewBankTransaction: vi.fn(),
 		reviewDocument: vi.fn(),
+		updateDocumentRetention: vi.fn(),
 		updatePayrollPaymentDate: vi.fn(),
 		approvePayroll: vi.fn(),
 		generateTSD: vi.fn(),
@@ -367,6 +368,20 @@ describe('AccountantReviewPanel', () => {
 			reviewed_at: '2026-02-09T09:00:00Z',
 			created_at: '2026-02-08T00:00:00Z'
 		});
+		apiMock.updateDocumentRetention.mockResolvedValue({
+			id: 'doc-retention-1',
+			tenant_id: 'tenant-1',
+			entity_type: 'expense',
+			entity_id: 'expense-1',
+			document_type: 'receipt',
+			file_name: 'receipt.pdf',
+			content_type: 'application/pdf',
+			file_size: 1200,
+			retention_until: '2027-03-01T00:00:00Z',
+			review_status: 'APPROVED',
+			uploaded_by: 'user-1',
+			created_at: '2026-02-01T00:00:00Z'
+		});
 		apiMock.updatePayrollPaymentDate.mockResolvedValue({
 			id: 'payroll-1',
 			tenant_id: 'tenant-1',
@@ -625,6 +640,96 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(apiMock.approvePayroll).toHaveBeenCalledWith('tenant-1', 'payroll-1');
 			expect(screen.getByText('Payroll run approved from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it('sets document retention assignment rows from the workspace', async () => {
+		apiMock.getOverdueInvoices.mockResolvedValue({
+			total_overdue: '0',
+			invoice_count: 0,
+			contact_count: 0,
+			average_days_overdue: 0,
+			invoices: [],
+			generated_at: '2026-02-11T00:00:00Z'
+		});
+		apiMock.listBankAccounts.mockResolvedValue([]);
+		apiMock.listDocumentReviewSummaries.mockResolvedValue([]);
+		apiMock.listPeriodCloseEvents.mockResolvedValue([]);
+		apiMock.listJournalEntries.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-02-11',
+			cutoff_date: '2026-03-13',
+			total_count: 1,
+			expired_count: 0,
+			due_soon_count: 1,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: [
+				{
+					code: 'document_retention_due_soon',
+					severity: 'INFO',
+					scope: 'documents',
+					owner_role: 'accountant',
+					workspace_queue: 'document_review',
+					assignment_key: 'document-review:document-retention-due-soon:expense:expense-1:receipt:doc-retention-1',
+					priority: 'medium',
+					due_in_days: 15,
+					message: 'Document receipt.pdf retention is due soon.',
+					action: 'Review the document before the retention date and either extend retention or complete the disposal workflow.',
+					entity_type: 'expense',
+					entity_id: 'expense-1',
+					document_id: 'doc-retention-1',
+					document_type: 'receipt',
+					file_name: 'receipt.pdf',
+					due_date: '2026-03-01',
+					days_until_retention: 15,
+					ui_path: '/documents?entity_type=expense&entity_id=expense-1&document_id=doc-retention-1',
+					cli_command: 'oa documents retention-set --id doc-retention-1 --retention-until <YYYY-MM-DD>'
+				}
+			]
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.listMigrationExecutionRuns.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('Document receipt.pdf retention is due soon.')).toBeInTheDocument();
+		});
+
+		const retentionInput = screen.getByLabelText('Retention date') as HTMLInputElement;
+		expect(retentionInput.value).toBe('2027-03-01');
+
+		await fireEvent.input(retentionInput, { target: { value: '2028-04-30' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Set retention' }));
+
+		await waitFor(() => {
+			expect(apiMock.updateDocumentRetention).toHaveBeenCalledWith('tenant-1', 'doc-retention-1', {
+				retention_until: '2028-04-30'
+			});
+			expect(screen.getByText('Document retention set from workspace.')).toBeInTheDocument();
 		});
 	});
 

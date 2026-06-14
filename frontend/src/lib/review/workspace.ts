@@ -82,6 +82,8 @@ export type WorkspaceAssignmentAction = {
 	entityId?: string;
 	documentId?: string;
 	documentType?: string;
+	dueDate?: string;
+	daysUntilRetention?: number;
 	period?: string;
 	periodEndDate?: string;
 };
@@ -101,6 +103,8 @@ type RemediationActionLike = {
 	entity_id?: string;
 	document_id?: string;
 	document_type?: string;
+	due_date?: string;
+	days_until_retention?: number;
 	period?: string;
 	period_end_date?: string;
 	fiscal_year_end_date?: string;
@@ -279,6 +283,8 @@ function normalizeRemediationAction(
 		entityId: action.entity_id,
 		documentId: action.document_id,
 		documentType: action.document_type,
+		dueDate: action.due_date,
+		daysUntilRetention: action.days_until_retention,
 		period: action.period,
 		periodEndDate:
 			action.period_end_date?.trim() || action.fiscal_year_end_date?.trim() || context.periodEndDate

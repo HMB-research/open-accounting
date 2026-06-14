@@ -44,6 +44,7 @@
 	let assignmentCompletedMessage = $state('');
 	let assignmentCompletionErrorId = $state('');
 	let assignmentCompletionError = $state('');
+	let assignmentRetentionDrafts = $state<Record<string, string>>({});
 	let loadedTenantKey = '';
 
 	$effect(() => {
@@ -231,6 +232,40 @@
 		return action.source === 'documents' && action.code === 'document_review_pending' && Boolean(action.documentId);
 	}
 
+	function canSetAssignmentDocumentRetention(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'documents' &&
+			['document_retention_missing', 'document_retention_due_soon', 'document_retention_expired'].includes(
+				action.code
+			) &&
+			Boolean(action.documentId)
+		);
+	}
+
+	function getDefaultAssignmentRetentionDate(action: WorkspaceAssignmentAction): string {
+		if (!action.dueDate?.match(/^\d{4}-\d{2}-\d{2}$/)) {
+			return '';
+		}
+
+		const dueYear = Number(action.dueDate.slice(0, 4));
+		if (!dueYear) {
+			return '';
+		}
+		return `${dueYear + 1}${action.dueDate.slice(4)}`;
+	}
+
+	function getAssignmentRetentionDate(action: WorkspaceAssignmentAction): string {
+		return assignmentRetentionDrafts[action.id] ?? getDefaultAssignmentRetentionDate(action);
+	}
+
+	function updateAssignmentRetentionDraft(action: WorkspaceAssignmentAction, event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		assignmentRetentionDrafts = {
+			...assignmentRetentionDrafts,
+			[action.id]: target.value
+		};
+	}
+
 	function canApproveAssignmentPayroll(action: WorkspaceAssignmentAction): boolean {
 		return action.source === 'payroll' && action.code === 'payroll_run_approve' && Boolean(action.entityId);
 	}
@@ -387,6 +422,38 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentDocumentApproveError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function setAssignmentDocumentRetention(action: WorkspaceAssignmentAction) {
+		if (!action.documentId) {
+			return;
+		}
+
+		const retentionUntil = getAssignmentRetentionDate(action).trim();
+		if (!retentionUntil.match(/^\d{4}-\d{2}-\d{2}$/)) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError = m.dashboard_reviewAssignmentDocumentRetentionDateRequired();
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.updateDocumentRetention(tenant.id, action.documentId, {
+				retention_until: retentionUntil
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentDocumentRetentionSet();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentDocumentRetentionSetError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -977,6 +1044,26 @@
 												: m.dashboard_reviewAssignmentsApproveDocument()}
 										</button>
 									{/if}
+									{#if canSetAssignmentDocumentRetention(action)}
+										<label class="review-assignment-inline-field">
+											<span>{m.dashboard_reviewAssignmentsRetentionDate()}</span>
+											<input
+												type="date"
+												value={getAssignmentRetentionDate(action)}
+												oninput={(event) => updateAssignmentRetentionDraft(action, event)}
+											/>
+										</label>
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => setAssignmentDocumentRetention(action)}
+											disabled={assignmentCompletingId === action.id || !getAssignmentRetentionDate(action)}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsSetRetention()}
+										</button>
+									{/if}
 									{#if canApproveAssignmentPayroll(action)}
 										<button
 											class="review-action review-action-button"
@@ -1320,6 +1407,26 @@
 		text-decoration: none;
 	}
 
+	.review-assignment-inline-field {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 0.35rem;
+		font-size: 0.78rem;
+		color: var(--color-text-muted);
+	}
+
+	.review-assignment-inline-field input {
+		width: 8.7rem;
+		min-height: 1.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		padding: 0.15rem 0.35rem;
+		color: var(--color-text);
+		background: var(--color-surface);
+		font: inherit;
+	}
+
 	.review-figure {
 		display: flex;
 		flex-direction: column;
@@ -1577,6 +1684,10 @@
 		.review-list-meta-assignment {
 			align-items: flex-start;
 			text-align: left;
+		}
+
+		.review-assignment-inline-field {
+			justify-content: flex-start;
 		}
 
 		.review-transaction-review {
