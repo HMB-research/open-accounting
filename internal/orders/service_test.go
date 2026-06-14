@@ -388,6 +388,33 @@ ORD-LEGACY-1,CUST-1,2026-03-15,2026-03-22,confirmed,EUR,1,March order,33333333-3
 		}
 	})
 
+	t.Run("resolves contact by VAT number", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `order_number,contact_vat_number,order_date,line_description,quantity,unit_price,vat_rate
+ORD-VAT-1,EE123456789,2026-03-15,Consulting,1,100,22
+`
+
+		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:        "contact-vat",
+			TenantID:  "tenant-1",
+			RegCode:   "12345678",
+			VATNumber: "EE123456789",
+			Name:      "VAT Customer",
+		}}, nil, &ImportOrdersRequest{CSVContent: csvContent})
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.RowsProcessed)
+		assert.Equal(t, 1, result.OrdersCreated)
+		assert.Zero(t, result.RowsSkipped)
+		assert.Empty(t, result.Errors)
+		require.Len(t, repo.Orders, 1)
+		for _, order := range repo.Orders {
+			assert.Equal(t, "contact-vat", order.ContactID)
+		}
+	})
+
 	t.Run("skips duplicate and invalid groups", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.Orders["existing"] = &Order{

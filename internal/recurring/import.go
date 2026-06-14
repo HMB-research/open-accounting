@@ -23,11 +23,12 @@ type recurringImportRow struct {
 }
 
 type recurringImportContactRef struct {
-	id      string
-	code    string
-	regCode string
-	email   string
-	name    string
+	id        string
+	code      string
+	regCode   string
+	vatNumber string
+	email     string
+	name      string
 }
 
 type recurringImportLine struct {
@@ -79,11 +80,12 @@ type recurringImportGroup struct {
 }
 
 type recurringImportContactLookup struct {
-	byID      map[string]contacts.Contact
-	byCode    map[string]contacts.Contact
-	byRegCode map[string]contacts.Contact
-	byEmail   map[string]contacts.Contact
-	byName    map[string]contacts.Contact
+	byID        map[string]contacts.Contact
+	byCode      map[string]contacts.Contact
+	byRegCode   map[string]contacts.Contact
+	byVATNumber map[string]contacts.Contact
+	byEmail     map[string]contacts.Contact
+	byName      map[string]contacts.Contact
 }
 
 var recurringImportHeaderAliases = map[string]string{
@@ -96,8 +98,8 @@ var recurringImportHeaderAliases = map[string]string{
 	"contact_code":             "contact_code",
 	"customer_code":            "contact_code",
 	"contact_reg_code":         "contact_reg_code",
-	"contact_vat_number":       "contact_reg_code",
-	"vat_number":               "contact_reg_code",
+	"contact_vat_number":       "contact_vat_number",
+	"vat_number":               "contact_vat_number",
 	"contact_email":            "contact_email",
 	"email":                    "contact_email",
 	"contact_name":             "contact_name",
@@ -316,7 +318,7 @@ func parseRecurringImportRows(content string) ([]recurringImportRow, error) {
 			required[canonical] = true
 		}
 		switch canonical {
-		case "contact_id", "contact_code", "contact_reg_code", "contact_email", "contact_name":
+		case "contact_id", "contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name":
 			hasContactColumn = true
 		}
 	}
@@ -377,13 +379,14 @@ func parseRecurringImportDataRow(row recurringImportRow, productLookup importref
 		contactIDValue = *contactID
 	}
 	contactRef := recurringImportContactRef{
-		id:      contactIDValue,
-		code:    strings.TrimSpace(row.values["contact_code"]),
-		regCode: strings.TrimSpace(row.values["contact_reg_code"]),
-		email:   strings.TrimSpace(row.values["contact_email"]),
-		name:    strings.TrimSpace(row.values["contact_name"]),
+		id:        contactIDValue,
+		code:      strings.TrimSpace(row.values["contact_code"]),
+		regCode:   strings.TrimSpace(row.values["contact_reg_code"]),
+		vatNumber: strings.TrimSpace(row.values["contact_vat_number"]),
+		email:     strings.TrimSpace(row.values["contact_email"]),
+		name:      strings.TrimSpace(row.values["contact_name"]),
 	}
-	if contactRef.id == "" && contactRef.code == "" && contactRef.regCode == "" && contactRef.email == "" && contactRef.name == "" {
+	if contactRef.id == "" && contactRef.code == "" && contactRef.regCode == "" && contactRef.vatNumber == "" && contactRef.email == "" && contactRef.name == "" {
 		return nil, fmt.Errorf("a contact identifier is required")
 	}
 
@@ -600,6 +603,9 @@ func mergeRecurringImportContactRef(target *recurringImportContactRef, next recu
 	if conflict := mergeRecurringImportOptionalString(&target.regCode, next.regCode, "contact_reg_code"); conflict != "" {
 		return conflict
 	}
+	if conflict := mergeRecurringImportOptionalString(&target.vatNumber, next.vatNumber, "contact_vat_number"); conflict != "" {
+		return conflict
+	}
 	if conflict := mergeRecurringImportOptionalString(&target.email, next.email, "contact_email"); conflict != "" {
 		return conflict
 	}
@@ -660,11 +666,12 @@ func buildImportedRecurringInvoice(tenantID, userID, contactID string, group *re
 
 func buildRecurringImportContactLookup(existingContacts []contacts.Contact) *recurringImportContactLookup {
 	lookup := &recurringImportContactLookup{
-		byID:      make(map[string]contacts.Contact),
-		byCode:    make(map[string]contacts.Contact),
-		byRegCode: make(map[string]contacts.Contact),
-		byEmail:   make(map[string]contacts.Contact),
-		byName:    make(map[string]contacts.Contact),
+		byID:        make(map[string]contacts.Contact),
+		byCode:      make(map[string]contacts.Contact),
+		byRegCode:   make(map[string]contacts.Contact),
+		byVATNumber: make(map[string]contacts.Contact),
+		byEmail:     make(map[string]contacts.Contact),
+		byName:      make(map[string]contacts.Contact),
 	}
 	for _, contact := range existingContacts {
 		if key := normalizedRecurringImportKey(contact.ID); key != "" {
@@ -675,6 +682,9 @@ func buildRecurringImportContactLookup(existingContacts []contacts.Contact) *rec
 		}
 		if key := normalizedRecurringImportKey(contact.RegCode); key != "" {
 			lookup.byRegCode[key] = contact
+		}
+		if key := normalizedRecurringImportKey(contact.VATNumber); key != "" {
+			lookup.byVATNumber[key] = contact
 		}
 		if key := normalizedRecurringImportKey(contact.Email); key != "" {
 			lookup.byEmail[key] = contact
@@ -704,6 +714,12 @@ func (l *recurringImportContactLookup) find(ref recurringImportContactRef) (*con
 			return &contact, nil
 		}
 		return nil, fmt.Errorf("contact_reg_code %q was not found", ref.regCode)
+	}
+	if key := normalizedRecurringImportKey(ref.vatNumber); key != "" {
+		if contact, ok := l.byVATNumber[key]; ok {
+			return &contact, nil
+		}
+		return nil, fmt.Errorf("contact_vat_number %q was not found", ref.vatNumber)
 	}
 	if key := normalizedRecurringImportKey(ref.email); key != "" {
 		if contact, ok := l.byEmail[key]; ok {

@@ -1513,6 +1513,51 @@ Monthly Retainer,CUST-1,MONTHLY,2026-03-01,2026-12-31,2026-04-01,21,true,2,true,
 	}
 }
 
+func TestService_ImportCSVResolvesContactByVATNumber(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
+	contact := contacts.Contact{
+		ID:        "contact-vat",
+		TenantID:  "tenant-1",
+		RegCode:   "12345678",
+		VATNumber: "EE123456789",
+		Name:      "VAT Customer",
+	}
+
+	csvContent := `name,contact_vat_number,frequency,start_date,line_description,quantity,unit_price,vat_rate
+VAT Retainer,EE123456789,MONTHLY,2026-03-01,Consulting,1,100,22
+`
+
+	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, nil, &ImportRecurringInvoicesRequest{
+		CSVContent: csvContent,
+		UserID:     "user-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RowsProcessed != 1 {
+		t.Errorf("RowsProcessed = %d, want 1", result.RowsProcessed)
+	}
+	if result.TemplatesCreated != 1 {
+		t.Errorf("TemplatesCreated = %d, want 1", result.TemplatesCreated)
+	}
+	if result.RowsSkipped != 0 {
+		t.Errorf("RowsSkipped = %d, want 0", result.RowsSkipped)
+	}
+	if len(result.Errors) != 0 {
+		t.Fatalf("Errors = %#v, want none", result.Errors)
+	}
+	if len(repo.recurring) != 1 {
+		t.Fatalf("repo.recurring length = %d, want 1", len(repo.recurring))
+	}
+	for _, template := range repo.recurring {
+		if template.ContactID != "contact-vat" {
+			t.Errorf("ContactID = %q, want contact-vat", template.ContactID)
+		}
+	}
+}
+
 func TestService_ImportCSVSkipsDuplicateAndInvalidGroups(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()

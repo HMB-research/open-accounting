@@ -22,11 +22,12 @@ type orderImportRow struct {
 }
 
 type orderImportContactRef struct {
-	id      string
-	code    string
-	regCode string
-	email   string
-	name    string
+	id        string
+	code      string
+	regCode   string
+	vatNumber string
+	email     string
+	name      string
 }
 
 type orderImportLine struct {
@@ -66,11 +67,12 @@ type orderImportGroup struct {
 }
 
 type orderImportContactLookup struct {
-	byID      map[string]contacts.Contact
-	byCode    map[string]contacts.Contact
-	byRegCode map[string]contacts.Contact
-	byEmail   map[string]contacts.Contact
-	byName    map[string]contacts.Contact
+	byID        map[string]contacts.Contact
+	byCode      map[string]contacts.Contact
+	byRegCode   map[string]contacts.Contact
+	byVATNumber map[string]contacts.Contact
+	byEmail     map[string]contacts.Contact
+	byName      map[string]contacts.Contact
 }
 
 var orderImportHeaderAliases = map[string]string{
@@ -85,8 +87,8 @@ var orderImportHeaderAliases = map[string]string{
 	"contact_code":       "contact_code",
 	"customer_code":      "contact_code",
 	"contact_reg_code":   "contact_reg_code",
-	"contact_vat_number": "contact_reg_code",
-	"vat_number":         "contact_reg_code",
+	"contact_vat_number": "contact_vat_number",
+	"vat_number":         "contact_vat_number",
 	"contact_email":      "contact_email",
 	"email":              "contact_email",
 	"contact_name":       "contact_name",
@@ -301,7 +303,7 @@ func parseOrderImportRows(content string) ([]orderImportRow, error) {
 			required[canonical] = true
 		}
 		switch canonical {
-		case "contact_id", "contact_code", "contact_reg_code", "contact_email", "contact_name":
+		case "contact_id", "contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name":
 			hasContactColumn = true
 		}
 	}
@@ -365,13 +367,14 @@ func parseOrderImportDataRow(row orderImportRow, productLookup importrefs.Produc
 		return nil, err
 	}
 	contactRef := orderImportContactRef{
-		id:      contactID,
-		code:    strings.TrimSpace(row.values["contact_code"]),
-		regCode: strings.TrimSpace(row.values["contact_reg_code"]),
-		email:   strings.TrimSpace(row.values["contact_email"]),
-		name:    strings.TrimSpace(row.values["contact_name"]),
+		id:        contactID,
+		code:      strings.TrimSpace(row.values["contact_code"]),
+		regCode:   strings.TrimSpace(row.values["contact_reg_code"]),
+		vatNumber: strings.TrimSpace(row.values["contact_vat_number"]),
+		email:     strings.TrimSpace(row.values["contact_email"]),
+		name:      strings.TrimSpace(row.values["contact_name"]),
 	}
-	if contactRef.id == "" && contactRef.code == "" && contactRef.regCode == "" && contactRef.email == "" && contactRef.name == "" {
+	if contactRef.id == "" && contactRef.code == "" && contactRef.regCode == "" && contactRef.vatNumber == "" && contactRef.email == "" && contactRef.name == "" {
 		return nil, fmt.Errorf("a contact identifier is required")
 	}
 
@@ -534,6 +537,9 @@ func mergeOrderImportContactRef(target *orderImportContactRef, next orderImportC
 	if conflict := mergeOrderImportOptionalString(&target.regCode, next.regCode, "contact_reg_code"); conflict != "" {
 		return conflict
 	}
+	if conflict := mergeOrderImportOptionalString(&target.vatNumber, next.vatNumber, "contact_vat_number"); conflict != "" {
+		return conflict
+	}
 	if conflict := mergeOrderImportOptionalString(&target.email, next.email, "contact_email"); conflict != "" {
 		return conflict
 	}
@@ -639,11 +645,12 @@ func deriveOrderImportStatus(explicitStatus OrderStatus) OrderStatus {
 
 func buildOrderImportContactLookup(existingContacts []contacts.Contact) *orderImportContactLookup {
 	lookup := &orderImportContactLookup{
-		byID:      make(map[string]contacts.Contact),
-		byCode:    make(map[string]contacts.Contact),
-		byRegCode: make(map[string]contacts.Contact),
-		byEmail:   make(map[string]contacts.Contact),
-		byName:    make(map[string]contacts.Contact),
+		byID:        make(map[string]contacts.Contact),
+		byCode:      make(map[string]contacts.Contact),
+		byRegCode:   make(map[string]contacts.Contact),
+		byVATNumber: make(map[string]contacts.Contact),
+		byEmail:     make(map[string]contacts.Contact),
+		byName:      make(map[string]contacts.Contact),
 	}
 	for _, contact := range existingContacts {
 		if key := normalizedOrderImportKey(contact.ID); key != "" {
@@ -654,6 +661,9 @@ func buildOrderImportContactLookup(existingContacts []contacts.Contact) *orderIm
 		}
 		if key := normalizedOrderImportKey(contact.RegCode); key != "" {
 			lookup.byRegCode[key] = contact
+		}
+		if key := normalizedOrderImportKey(contact.VATNumber); key != "" {
+			lookup.byVATNumber[key] = contact
 		}
 		if key := normalizedOrderImportKey(contact.Email); key != "" {
 			lookup.byEmail[key] = contact
@@ -683,6 +693,12 @@ func (l *orderImportContactLookup) find(ref orderImportContactRef) (*contacts.Co
 			return &contact, nil
 		}
 		return nil, fmt.Errorf("contact_reg_code %q was not found", ref.regCode)
+	}
+	if key := normalizedOrderImportKey(ref.vatNumber); key != "" {
+		if contact, ok := l.byVATNumber[key]; ok {
+			return &contact, nil
+		}
+		return nil, fmt.Errorf("contact_vat_number %q was not found", ref.vatNumber)
 	}
 	if key := normalizedOrderImportKey(ref.email); key != "" {
 		if contact, ok := l.byEmail[key]; ok {
