@@ -311,16 +311,20 @@ scripts/db-backup-systemd-schedule.sh \
   --output-dir ./deploy/systemd \
   --scripts-dir /opt/open-accounting/scripts \
   --env-file /etc/open-accounting/backup.env \
+  --offsite-provider s3 \
+  --systemd-unit-dir /etc/systemd/system \
   --dry-run
 
 go run ./cmd/oa ops backup schedule-systemd \
   --output-dir ./deploy/systemd \
   --scripts-dir /opt/open-accounting/scripts \
   --env-file /etc/open-accounting/backup.env \
+  --offsite-provider rclone \
+  --systemd-unit-dir /etc/systemd/system \
   --dry-run
 ```
 
-The generator writes units and timers for backup creation, offsite sync, backup health, and weekly restore drills. It also writes an example environment file showing the required variables; keep the real `DATABASE_URL`, `RESTORE_DATABASE_URL`, restore backup path, and offsite credentials in the host secret manager or a root-readable file outside the repository.
+The generator writes units and timers for backup creation, offsite sync, backup health, and weekly restore drills. It also writes a provider-specific example environment file for `s3` or `rclone`, plus an executable `open-accounting-backup-install.sh` helper that copies units into the target systemd unit directory, preserves an existing secret file, reloads systemd, and enables the four timers. Keep the real `DATABASE_URL`, `RESTORE_DATABASE_URL`, restore backup path, and offsite credentials in the host secret manager or a root-readable file outside the repository.
 
 ---
 

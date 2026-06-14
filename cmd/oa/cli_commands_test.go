@@ -754,6 +754,8 @@ func TestCLIOpsBackupCommands(t *testing.T) {
 		"--backup-dir", "/backups",
 		"--status-dir", "/var/lib/node_exporter/textfile_collector",
 		"--env-file", "/etc/open-accounting/backup.env",
+		"--systemd-unit-dir", "/usr/local/lib/systemd/system",
+		"--offsite-provider", "rclone",
 		"--retention-days", "14",
 		"--max-age-hours", "30",
 		"--backup-calendar", "*-*-* 01:00:00",
@@ -763,7 +765,7 @@ func TestCLIOpsBackupCommands(t *testing.T) {
 		"--dry-run",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "db-backup-systemd-schedule.sh --output-dir /tmp/openaccounting-systemd --scripts-dir /opt/open-accounting/scripts --backup-dir /backups --status-dir /var/lib/node_exporter/textfile_collector --env-file /etc/open-accounting/backup.env --retention-days 14 --max-age-hours 30 --backup-calendar *-*-* 01:00:00 --offsite-calendar *-*-* 01:20:00 --health-calendar *-*-* 01:30:00 --restore-calendar Sun *-*-* 03:00:00 --dry-run")
+	assert.Contains(t, stdout.String(), "db-backup-systemd-schedule.sh --output-dir /tmp/openaccounting-systemd --scripts-dir /opt/open-accounting/scripts --backup-dir /backups --status-dir /var/lib/node_exporter/textfile_collector --env-file /etc/open-accounting/backup.env --systemd-unit-dir /usr/local/lib/systemd/system --offsite-provider rclone --retention-days 14 --max-age-hours 30 --backup-calendar *-*-* 01:00:00 --offsite-calendar *-*-* 01:20:00 --health-calendar *-*-* 01:30:00 --restore-calendar Sun *-*-* 03:00:00 --dry-run")
 }
 
 func TestCLIOpsBackupBranches(t *testing.T) {
