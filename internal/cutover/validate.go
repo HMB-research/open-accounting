@@ -2384,6 +2384,7 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 	validateProductAccountTypeConsistency(report, files, accountTypeTargets)
 	validateFixedAssetAccountTypeConsistency(report, files, accountTypeTargets)
 	validateBankAccountAccountTypeConsistency(report, files, accountTypeTargets)
+	validateRecurringInvoiceAccountTypeConsistency(report, files, accountTypeTargets)
 	validateStockAdjustmentProductStockability(report, files)
 	validateCostAllocationJournalLineTotals(report, files)
 	validateCostAllocationJournalLinePercentages(report, files)
@@ -2567,6 +2568,23 @@ func validateBankAccountAccountTypeConsistency(report *BundleValidationReport, f
 				"gl_account_id", "gl_account_code",
 				map[string]bool{"ASSET": true},
 				"bank account GL account", "ASSET")
+		}
+	}
+}
+
+func validateRecurringInvoiceAccountTypeConsistency(report *BundleValidationReport, files []parsedFile, targets map[string]cutoverAccountTypeTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindRecurringInvoices {
+			continue
+		}
+		for _, row := range file.rows {
+			checkCutoverAccountType(report, file, row, targets,
+				"account_id", "",
+				map[string]bool{"REVENUE": true},
+				"recurring invoice line account", "REVENUE")
 		}
 	}
 }

@@ -2745,6 +2745,58 @@ func TestValidateBundleReportsRecurringInvoiceAccountReferenceIssues(t *testing.
 	assertValidationIssue(t, report, KindRecurringInvoices, "account_id", "account_id must be a valid UUID")
 }
 
+func TestValidateBundleAcceptsRecurringInvoiceAccountTypeReferences(t *testing.T) {
+	revenueAccountID := "11111111-1111-1111-1111-111111111111"
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "id,account_code,account_name,type\n" +
+				revenueAccountID + ",4000,Subscription revenue,REVENUE\n",
+		},
+		{
+			Kind:     KindRecurringInvoices,
+			FileName: "recurring.csv",
+			CSVContent: "name,frequency,start_date,contact_code,line_description,quantity,unit_price,vat_rate,account_id\n" +
+				"Monthly support,MONTHLY,2026-06-01,CUST-1,Support retainer,1,100,22," + revenueAccountID + "\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsRecurringInvoiceAccountTypeMismatches(t *testing.T) {
+	assetAccountID := "11111111-1111-1111-1111-111111111111"
+	expenseAccountID := "22222222-2222-2222-2222-222222222222"
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "id,account_code,account_name,type\n" +
+				assetAccountID + ",1000,Cash,ASSET\n" +
+				expenseAccountID + ",5500,Service costs,EXPENSE\n",
+		},
+		{
+			Kind:     KindRecurringInvoices,
+			FileName: "recurring.csv",
+			CSVContent: "name,frequency,start_date,contact_code,line_description,quantity,unit_price,vat_rate,account_id\n" +
+				"Monthly support,MONTHLY,2026-06-01,CUST-1,Support retainer,1,100,22," + assetAccountID + "\n" +
+				"Quarterly service,QUARTERLY,2026-06-01,CUST-1,Service retainer,1,250,22," + expenseAccountID + "\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindRecurringInvoices, "account_id", `recurring invoice line account "11111111-1111-1111-1111-111111111111" is ASSET; expected REVENUE account`)
+	assertValidationIssue(t, report, KindRecurringInvoices, "account_id", `recurring invoice line account "22222222-2222-2222-2222-222222222222" is EXPENSE; expected REVENUE account`)
+}
+
 func TestValidateBundleReportsBankTransactionCurrencyMismatch(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
