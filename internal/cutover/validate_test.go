@@ -707,7 +707,7 @@ func TestValidateBundleAcceptsSmartAccountsPayrollYearMonthTaxAliases(t *testing
 				Kind:     KindPayrollHistory,
 				FileName: "smartaccounts-payroll-history.csv",
 				CSVContent: "payroll_year,payroll_month,employee_no,payroll_status,paid_date,gross_amount,taxable_amount,income_tax_amount,social_tax_amount,employee_unemployment_amount,employer_unemployment_amount,pension_amount,net_amount,employer_cost\n" +
-					"2026,5,EMP-1,paid,2026-05-31,2500,2500,500,825,40,20,50,1910,3345\n",
+					"2026,5,EMP-1,paid,2026-05-31,2500,1716,343.20,825,40,20,50,1910,3345\n",
 			},
 			{
 				Kind:     KindTSDHistory,
@@ -2277,6 +2277,37 @@ func TestValidateBundleAcceptsTSDHistorySubmittedAtDefaults(t *testing.T) {
 			assert.Empty(t, report.Issues)
 		})
 	}
+}
+
+func TestValidateBundleReportsPayrollTSDHistoryMismatch(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindEmployees,
+			FileName:   "employees.csv",
+			CSVContent: "employee_number,first_name,last_name,start_date\nEMP-1,Mari,Maasikas,2026-01-01\n",
+		},
+		{
+			Kind:     KindPayrollHistory,
+			FileName: "payroll-history.csv",
+			CSVContent: "period_year,period_month,employee_number,gross_salary,taxable_income,income_tax,social_tax,unemployment_insurance_employee,unemployment_insurance_employer,funded_pension\n" +
+				"2026,5,EMP-1,2500,2400,480,825,40,20,48\n",
+		},
+		{
+			Kind:     KindTSDHistory,
+			FileName: "tsd-history.csv",
+			CSVContent: "period_year,period_month,employee_number,gross_payment,taxable_amount,income_tax,social_tax,unemployment_insurance_employee,unemployment_insurance_employer,funded_pension\n" +
+				"2026,5,EMP-1,2600,2400,480,825,40,20,48\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindTSDHistory, "gross_payment", "gross_payment must match payroll_history gross_salary")
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindPayrollHistory, report.Issues[0].TargetKind)
+	assert.Contains(t, report.Issues[0].Message, "employee EMP-1 in period 2026-05")
 }
 
 func TestValidateBundleReportsKMDHistoryRowValueIssues(t *testing.T) {

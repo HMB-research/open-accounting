@@ -83,6 +83,40 @@ func TestBuildMigrationExecutionPlanBlocksStepsWhenValidationFails(t *testing.T)
 	assert.NotEmpty(t, plan.RemediationActions)
 }
 
+func TestBuildMigrationExecutionPlanTSDHistoryDependsOnPayrollHistory(t *testing.T) {
+	plan, err := BuildMigrationExecutionPlan(&PlanMigrationExecutionRequest{
+		Files: []BundleFile{
+			{
+				Kind:       KindTSDHistory,
+				FileName:   "tsd-history.csv",
+				CSVContent: "period_year,period_month,employee_number,gross_payment\n2026,5,EMP-1,2500\n",
+			},
+			{
+				Kind:       KindPayrollHistory,
+				FileName:   "payroll-history.csv",
+				CSVContent: "period_year,period_month,employee_number,gross_salary\n2026,5,EMP-1,2500\n",
+			},
+			{
+				Kind:       KindEmployees,
+				FileName:   "employees.csv",
+				CSVContent: "employee_number,first_name,last_name,start_date\nEMP-1,Mari,Maasikas,2026-01-01\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	assert.True(t, plan.Summary.Ready)
+	require.Len(t, plan.Steps, 3)
+	assert.Equal(t, KindEmployees, plan.Steps[0].Kind)
+	assert.Equal(t, KindPayrollHistory, plan.Steps[1].Kind)
+	tsdStep := plan.Steps[2]
+	assert.Equal(t, KindTSDHistory, tsdStep.Kind)
+	assert.Equal(t, MigrationExecutionStepReady, tsdStep.Status)
+	assert.Equal(t, []FileKind{KindEmployees, KindPayrollHistory}, tsdStep.DependsOn)
+	assert.Contains(t, tsdStep.Message, "employees and payroll history")
+}
+
 func TestBuildMigrationExecutionPlanIncludesEInvoiceInvoiceTypeOverride(t *testing.T) {
 	plan, err := BuildMigrationExecutionPlan(&PlanMigrationExecutionRequest{
 		EInvoiceContactMode: EInvoiceContactModeBoth,

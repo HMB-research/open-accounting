@@ -2390,6 +2390,7 @@ func validateGroupedDocumentPreflight(report *BundleValidationReport, file parse
 
 func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile, eInvoiceContactMode EInvoiceContactMode) {
 	validateImportedInvoiceAmountPaidConsistency(report, files)
+	validatePayrollTSDHistoryConsistency(report, files)
 	accountTypeTargets := buildCutoverAccountTypeTargets(files)
 	validateExpenseAccountTypeConsistency(report, files, accountTypeTargets)
 	validateProductAccountTypeConsistency(report, files, accountTypeTargets)
@@ -3151,6 +3152,181 @@ func cutoverFixedAssetPurchaseCost(row parsedRow) (decimal.Decimal, bool) {
 		return decimal.Zero, false
 	}
 	return purchaseCost, true
+}
+
+type payrollTSDHistoryComparableRow struct {
+	fileName string
+	row      int
+	values   map[string]decimal.Decimal
+	raw      map[string]string
+}
+
+type payrollTSDHistoryAmountField struct {
+	payrollField string
+	tsdField     string
+}
+
+var payrollTSDHistoryAmountFields = []payrollTSDHistoryAmountField{
+	{payrollField: "gross_salary", tsdField: "gross_payment"},
+	{payrollField: "taxable_income", tsdField: "taxable_amount"},
+	{payrollField: "income_tax", tsdField: "income_tax"},
+	{payrollField: "social_tax", tsdField: "social_tax"},
+	{payrollField: "unemployment_insurance_employee", tsdField: "unemployment_insurance_employee"},
+	{payrollField: "unemployment_insurance_employer", tsdField: "unemployment_insurance_employer"},
+	{payrollField: "funded_pension", tsdField: "funded_pension"},
+}
+
+func validatePayrollTSDHistoryConsistency(report *BundleValidationReport, files []parsedFile) {
+	payrollRows := map[string]payrollTSDHistoryComparableRow{}
+	duplicatePayrollKeys := map[string]bool{}
+	for _, file := range files {
+		if file.kind != KindPayrollHistory {
+			continue
+		}
+		for _, row := range file.rows {
+			key, _, ok := payrollTSDHistoryCrossFileKey(row)
+			if !ok {
+				continue
+			}
+			values, raw := payrollTSDHistoryAmounts(row, true)
+			if len(values) == 0 {
+				continue
+			}
+			if _, exists := payrollRows[key]; exists {
+				duplicatePayrollKeys[key] = true
+				continue
+			}
+			payrollRows[key] = payrollTSDHistoryComparableRow{
+				fileName: file.fileName,
+				row:      row.number,
+				values:   values,
+				raw:      raw,
+			}
+		}
+	}
+	if len(payrollRows) == 0 {
+		return
+	}
+	duplicateTSDKeys := payrollTSDHistoryDuplicateKeys(files, KindTSDHistory)
+
+	for _, file := range files {
+		if file.kind != KindTSDHistory {
+			continue
+		}
+		for _, row := range file.rows {
+			key, display, ok := payrollTSDHistoryCrossFileKey(row)
+			if !ok {
+				continue
+			}
+			if duplicatePayrollKeys[key] || duplicateTSDKeys[key] {
+				continue
+			}
+			payrollRow, ok := payrollRows[key]
+			if !ok {
+				continue
+			}
+			tsdValues, tsdRaw := payrollTSDHistoryAmounts(row, false)
+			for _, field := range payrollTSDHistoryAmountFields {
+				payrollValue, payrollOK := payrollRow.values[field.payrollField]
+				tsdValue, tsdOK := tsdValues[field.tsdField]
+				if !payrollOK || !tsdOK || payrollValue.Equal(tsdValue) {
+					continue
+				}
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindTSDHistory,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      field.tsdField,
+					Value:      tsdRaw[field.tsdField],
+					TargetKind: KindPayrollHistory,
+					Message: fmt.Sprintf(
+						"%s must match payroll_history %s for %s; TSD has %s and payroll row %d in %s has %s",
+						field.tsdField,
+						field.payrollField,
+						display,
+						tsdRaw[field.tsdField],
+						payrollRow.row,
+						payrollRow.fileName,
+						payrollRow.raw[field.payrollField],
+					),
+				})
+			}
+		}
+	}
+}
+
+func payrollTSDHistoryDuplicateKeys(files []parsedFile, kind FileKind) map[string]bool {
+	seen := map[string]struct{}{}
+	duplicates := map[string]bool{}
+	for _, file := range files {
+		if file.kind != kind {
+			continue
+		}
+		for _, row := range file.rows {
+			key, _, ok := payrollTSDHistoryCrossFileKey(row)
+			if !ok {
+				continue
+			}
+			if _, exists := seen[key]; exists {
+				duplicates[key] = true
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+	}
+	return duplicates
+}
+
+func payrollTSDHistoryCrossFileKey(row parsedRow) (string, string, bool) {
+	periodKey, _, ok := duplicatePeriodKey(row.values, "period_year", "period_month")
+	if !ok {
+		return "", "", false
+	}
+	employeeKey, employeeDisplay, ok := duplicateEmployeeKey(row.values)
+	if !ok {
+		return "", "", false
+	}
+	periodDisplay := payrollTSDHistoryPeriodDisplay(row.values, periodKey)
+	return strings.Join([]string{periodKey, employeeKey}, "\x00"), fmt.Sprintf("employee %s in period %s", employeeDisplay, periodDisplay), true
+}
+
+func payrollTSDHistoryPeriodDisplay(values map[string]string, fallback string) string {
+	month, err := strconv.Atoi(strings.TrimSpace(values["period_month"]))
+	if err != nil {
+		return fallback
+	}
+	return fmt.Sprintf("%s-%02d", normalizedCutoverIntegerPart(values["period_year"]), month)
+}
+
+func payrollTSDHistoryAmounts(row parsedRow, payroll bool) (map[string]decimal.Decimal, map[string]string) {
+	values := map[string]decimal.Decimal{}
+	raw := map[string]string{}
+	for _, field := range payrollTSDHistoryAmountFields {
+		name := field.tsdField
+		if payroll {
+			name = field.payrollField
+		}
+		amount, display, ok := payrollTSDHistoryAmount(row, name)
+		if !ok {
+			continue
+		}
+		values[name] = amount
+		raw[name] = display
+	}
+	return values, raw
+}
+
+func payrollTSDHistoryAmount(row parsedRow, field string) (decimal.Decimal, string, bool) {
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return decimal.Zero, "", false
+	}
+	amount, issue := parseCutoverRequiredImportDecimal(value, field)
+	if issue != nil {
+		return decimal.Zero, "", false
+	}
+	return amount, value, true
 }
 
 func validateImportedInvoiceAmountPaidConsistency(report *BundleValidationReport, files []parsedFile) {
