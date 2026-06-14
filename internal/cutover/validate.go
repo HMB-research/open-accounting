@@ -1974,13 +1974,15 @@ type journalValidationGroup struct {
 }
 
 type cutoverInvoiceAllocationTarget struct {
-	key          string
-	display      string
-	total        decimal.Decimal
-	currency     string
-	invoiceType  string
-	targetKind   FileKind
-	invoiceCount int
+	key                 string
+	display             string
+	total               decimal.Decimal
+	importedAmountPaid  decimal.Decimal
+	amountPaidSpecified bool
+	currency            string
+	invoiceType         string
+	targetKind          FileKind
+	invoiceCount        int
 }
 
 func validateDuplicateIdentifierPreflight(report *BundleValidationReport, file parsedFile) {
@@ -2400,9 +2402,9 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 				continue
 			}
 
-			nextTotal := allocationTotals[target.key].Add(allocationAmount)
-			allocationTotals[target.key] = nextTotal
-			if nextTotal.GreaterThan(target.total) {
+			nextAllocationTotal := allocationTotals[target.key].Add(allocationAmount)
+			allocationTotals[target.key] = nextAllocationTotal
+			if nextAllocationTotal.GreaterThan(target.total) {
 				report.addIssue(ValidationIssue{
 					Severity:   SeverityError,
 					Kind:       KindPayments,
@@ -2414,10 +2416,33 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 					Message: fmt.Sprintf(
 						"payment allocations for invoice %q exceed imported invoice total: allocations=%s invoice_total=%s",
 						target.display,
-						nextTotal.String(),
+						nextAllocationTotal.String(),
 						target.total.String(),
 					),
 				})
+				continue
+			}
+			if target.amountPaidSpecified && !target.importedAmountPaid.GreaterThan(target.total) {
+				combinedPaid := target.importedAmountPaid.Add(nextAllocationTotal)
+				if combinedPaid.GreaterThan(target.total) {
+					report.addIssue(ValidationIssue{
+						Severity:   SeverityError,
+						Kind:       KindPayments,
+						FileName:   file.fileName,
+						Row:        row.number,
+						Field:      "allocation_amount",
+						Value:      allocationAmount.String(),
+						TargetKind: target.targetKind,
+						Message: fmt.Sprintf(
+							"imported invoice paid amount plus payment allocations for invoice %q exceed imported invoice total: amount_paid=%s allocations=%s combined_paid=%s invoice_total=%s",
+							target.display,
+							target.importedAmountPaid.String(),
+							nextAllocationTotal.String(),
+							combinedPaid.String(),
+							target.total.String(),
+						),
+					})
+				}
 			}
 		}
 	}
@@ -2539,9 +2564,9 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutover
 					if !ok {
 						continue
 					}
-					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, row.values["currency"], row.values["invoice_type"])
+					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"])
 					if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
-						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, row.values["currency"], row.values["invoice_type"])
+						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"])
 					}
 				}
 			}
@@ -2552,9 +2577,10 @@ func buildCutoverInvoiceAllocationTargets(files []parsedFile) map[string]cutover
 			if !ok {
 				continue
 			}
-			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, group.currency, group.invoiceType)
+			amountPaid, _, amountPaidSpecified := cutoverInvoiceGroupAmountPaid(group)
+			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType)
 			if id := strings.TrimSpace(group.id); id != "" {
-				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, group.currency, group.invoiceType)
+				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType)
 			}
 		}
 	}
@@ -2815,7 +2841,17 @@ func hasPaymentInvoiceTypeMismatch(
 	return true
 }
 
-func addCutoverInvoiceAllocationTarget(targets map[string]cutoverInvoiceAllocationTarget, targetKind FileKind, field, value string, total decimal.Decimal, currency, invoiceType string) {
+func addCutoverInvoiceAllocationTarget(
+	targets map[string]cutoverInvoiceAllocationTarget,
+	targetKind FileKind,
+	field string,
+	value string,
+	total decimal.Decimal,
+	importedAmountPaid decimal.Decimal,
+	amountPaidSpecified bool,
+	currency string,
+	invoiceType string,
+) {
 	display := strings.TrimSpace(value)
 	if display == "" {
 		return
@@ -2826,6 +2862,8 @@ func addCutoverInvoiceAllocationTarget(targets map[string]cutoverInvoiceAllocati
 		target.key = key
 		target.display = display
 		target.total = total
+		target.importedAmountPaid = importedAmountPaid
+		target.amountPaidSpecified = amountPaidSpecified
 		target.currency = strings.ToUpper(strings.TrimSpace(currency))
 		target.invoiceType = strings.ToUpper(strings.TrimSpace(invoiceType))
 		target.targetKind = targetKind
