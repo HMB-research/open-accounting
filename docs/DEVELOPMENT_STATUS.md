@@ -173,6 +173,7 @@ Product migration preflight also rejects same-bundle account references where sa
 Fixed-asset migration preflight also rejects same-bundle account references where asset accounts are not `ASSET`, depreciation expense accounts are not `EXPENSE`, or accumulated depreciation accounts are not `ASSET`.
 Bank-account migration preflight also rejects same-bundle GL account references where linked cash/ledger accounts are not `ASSET`.
 Recurring-invoice migration preflight also rejects same-bundle line account references where linked revenue accounts are not `REVENUE`.
+Commercial-document imports now resolve quote, order, and recurring-invoice `contact_vat_number`/`vat_number` columns against contact VAT numbers rather than registry codes.
 
 ## What The Project Can Honestly Claim Today
 

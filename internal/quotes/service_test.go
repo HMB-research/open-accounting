@@ -348,6 +348,33 @@ func TestService_ImportCSV(t *testing.T) {
 		assert.Equal(t, "prod-1", *quote.Lines[0].ProductID)
 	})
 
+	t.Run("resolves contact by VAT number", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `quote_number,contact_vat_number,quote_date,line_description,quantity,unit_price,vat_rate
+QT-VAT-1,EE123456789,2026-03-15,Consulting,1,100,22
+`
+
+		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:        "contact-vat",
+			TenantID:  "tenant-1",
+			RegCode:   "12345678",
+			VATNumber: "EE123456789",
+			Name:      "VAT Customer",
+		}}, nil, &ImportQuotesRequest{CSVContent: csvContent})
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.RowsProcessed)
+		assert.Equal(t, 1, result.QuotesCreated)
+		assert.Zero(t, result.RowsSkipped)
+		assert.Empty(t, result.Errors)
+		require.Len(t, repo.Quotes, 1)
+		for _, quote := range repo.Quotes {
+			assert.Equal(t, "contact-vat", quote.ContactID)
+		}
+	})
+
 	t.Run("skips duplicate and invalid groups", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.Quotes["existing"] = &Quote{
@@ -1070,11 +1097,12 @@ func TestMergeQuoteImportGroup(t *testing.T) {
 
 func TestQuoteImportContactLookupFind(t *testing.T) {
 	lookup := buildQuoteImportContactLookup([]contacts.Contact{{
-		ID:      "contact-id",
-		Code:    "CUST-1",
-		RegCode: "12345678",
-		Email:   "billing@example.com",
-		Name:    "Acme OU",
+		ID:        "contact-id",
+		Code:      "CUST-1",
+		RegCode:   "12345678",
+		VATNumber: "EE12345678",
+		Email:     "billing@example.com",
+		Name:      "Acme OU",
 	}})
 
 	tests := []struct {
@@ -1084,6 +1112,7 @@ func TestQuoteImportContactLookupFind(t *testing.T) {
 		{name: "id", ref: quoteImportContactRef{id: "contact-id"}},
 		{name: "code", ref: quoteImportContactRef{code: "cust-1"}},
 		{name: "registration code", ref: quoteImportContactRef{regCode: "12345678"}},
+		{name: "VAT number", ref: quoteImportContactRef{vatNumber: "ee12345678"}},
 		{name: "email", ref: quoteImportContactRef{email: "BILLING@example.com"}},
 		{name: "name", ref: quoteImportContactRef{name: "acme ou"}},
 	}
