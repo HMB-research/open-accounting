@@ -442,6 +442,56 @@ func TestExecuteMigrationHandlerResumesSavedRunID(t *testing.T) {
 	assert.Equal(t, cutover.KindContacts, executor.calls[0].Kind)
 }
 
+func TestExecuteMigrationHandlerExecutesSavedRunIDWithStoredBundle(t *testing.T) {
+	executor := &fakeMigrationStepExecutor{}
+	store := &fakeMigrationRunStore{
+		getRun: &cutover.MigrationExecutionRun{
+			ID: "ready-run",
+			Summary: cutover.MigrationExecutionRunSummary{
+				Status:    "needs_confirmation",
+				Confirmed: false,
+			},
+			ExecutionRequest: cutover.NewStoredMigrationExecutionRequest(&cutover.ExecuteMigrationRequest{
+				Files: []cutover.BundleFile{
+					{
+						Kind:       cutover.KindAccounts,
+						FileName:   "accounts.csv",
+						CSVContent: "code,name,account_type\n1000,Cash,ASSET\n",
+					},
+					{
+						Kind:       cutover.KindContacts,
+						FileName:   "contacts.csv",
+						CSVContent: "contact_code,name\nCUST-1,Customer One\n",
+					},
+				},
+				ProviderPreset: cutover.MigrationProviderPresetDirecto,
+			}),
+		},
+	}
+	h := &Handlers{migrationExecutor: executor, migrationRunStore: store}
+	req := executeMigrationRequest(cutover.ExecuteMigrationRequest{
+		Confirm:         true,
+		ResumeFromRunID: "ready-run",
+	})
+
+	w := httptest.NewRecorder()
+	h.ExecuteMigration(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var run cutover.MigrationExecutionRun
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&run))
+	assert.Equal(t, "succeeded", run.Summary.Status)
+	assert.True(t, run.Summary.Confirmed)
+	assert.Equal(t, 2, run.Summary.SucceededStepCount)
+	require.Len(t, executor.calls, 2)
+	assert.Equal(t, cutover.KindAccounts, executor.calls[0].Kind)
+	assert.Equal(t, cutover.KindContacts, executor.calls[1].Kind)
+	require.NotEmpty(t, store.saved)
+	require.NotNil(t, store.saved[0].ExecutionRequest)
+	require.Len(t, store.saved[0].ExecutionRequest.Files, 2)
+	assert.Equal(t, cutover.MigrationProviderPresetDirecto, store.saved[0].ExecutionRequest.ProviderPreset)
+}
+
 func TestExecuteMigrationHandlerRejectsNotReadyPlan(t *testing.T) {
 	executor := &fakeMigrationStepExecutor{}
 	h := &Handlers{migrationExecutor: executor}

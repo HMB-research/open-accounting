@@ -16,6 +16,7 @@ const { apiMock } = vi.hoisted(() => ({
 		approvePayroll: vi.fn(),
 		generateTSD: vi.fn(),
 		downloadTSDXml: vi.fn(),
+		executeMigration: vi.fn(),
 		generateKMD: vi.fn(),
 		downloadKMDXml: vi.fn(),
 		submitExpense: vi.fn(),
@@ -383,6 +384,7 @@ describe('AccountantReviewPanel', () => {
 		apiMock.approvePayroll.mockResolvedValue({ status: 'approved' });
 		apiMock.generateTSD.mockResolvedValue({ id: 'tsd-1' });
 		apiMock.downloadTSDXml.mockResolvedValue(undefined);
+		apiMock.executeMigration.mockResolvedValue({ id: 'run-executed' });
 		apiMock.generateKMD.mockResolvedValue({ id: 'kmd-1' });
 		apiMock.downloadKMDXml.mockResolvedValue(undefined);
 		apiMock.submitExpense.mockResolvedValue({
@@ -812,6 +814,17 @@ describe('AccountantReviewPanel', () => {
 				(link) => link.getAttribute('href') === '/migration?run_id=run-ready&tenant=tenant-1'
 			)
 		).toBe(true);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Execute migration' }));
+
+		await waitFor(() => {
+			expect(apiMock.executeMigration).toHaveBeenCalledWith('tenant-1', {
+				files: [],
+				confirm: true,
+				resume_from_run_id: 'run-ready'
+			});
+			expect(screen.getByText('Migration executed from workspace.')).toBeInTheDocument();
+		});
 	});
 
 	it('generates TSD from approved payroll assignment rows', async () => {

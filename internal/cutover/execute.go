@@ -28,6 +28,59 @@ type ExecuteMigrationRequest struct {
 	ResumeFromRunID          string                  `json:"resume_from_run_id,omitempty"`
 }
 
+// NewStoredMigrationExecutionRequest returns the replay-safe subset of an execution request.
+func NewStoredMigrationExecutionRequest(req *ExecuteMigrationRequest) *ExecuteMigrationRequest {
+	if req == nil {
+		return nil
+	}
+	return &ExecuteMigrationRequest{
+		Files:                    cloneMigrationBundleFiles(req.Files),
+		EInvoiceContactMode:      req.EInvoiceContactMode,
+		EInvoiceInvoiceType:      req.EInvoiceInvoiceType,
+		ProviderPreset:           req.ProviderPreset,
+		BankTransactionAccountID: req.BankTransactionAccountID,
+		BankTransactionFormat:    req.BankTransactionFormat,
+		OpeningBalanceEntryDate:  req.OpeningBalanceEntryDate,
+	}
+}
+
+// MergeSavedMigrationExecutionRequest fills a resume request from the saved run payload when fields are omitted.
+func MergeSavedMigrationExecutionRequest(req *ExecuteMigrationRequest, saved *ExecuteMigrationRequest) {
+	if req == nil || saved == nil {
+		return
+	}
+	if len(req.Files) == 0 && len(saved.Files) > 0 {
+		req.Files = cloneMigrationBundleFiles(saved.Files)
+	}
+	if req.EInvoiceContactMode == "" {
+		req.EInvoiceContactMode = saved.EInvoiceContactMode
+	}
+	if req.EInvoiceInvoiceType == "" {
+		req.EInvoiceInvoiceType = saved.EInvoiceInvoiceType
+	}
+	if req.ProviderPreset == "" {
+		req.ProviderPreset = saved.ProviderPreset
+	}
+	if req.BankTransactionAccountID == "" {
+		req.BankTransactionAccountID = saved.BankTransactionAccountID
+	}
+	if req.BankTransactionFormat == "" {
+		req.BankTransactionFormat = saved.BankTransactionFormat
+	}
+	if req.OpeningBalanceEntryDate == "" {
+		req.OpeningBalanceEntryDate = saved.OpeningBalanceEntryDate
+	}
+}
+
+func cloneMigrationBundleFiles(files []BundleFile) []BundleFile {
+	if len(files) == 0 {
+		return nil
+	}
+	cloned := make([]BundleFile, len(files))
+	copy(cloned, files)
+	return cloned
+}
+
 func (r ExecuteMigrationRequest) PlanRequest() *PlanMigrationExecutionRequest {
 	return &PlanMigrationExecutionRequest{
 		Files:                    r.Files,
@@ -50,6 +103,7 @@ type MigrationExecutionRun struct {
 	Plan               *MigrationExecutionPlan      `json:"plan,omitempty"`
 	Steps              []MigrationExecutionStepRun  `json:"steps,omitempty"`
 	RemediationActions []MigrationRemediationAction `json:"remediation_actions,omitempty"`
+	ExecutionRequest   *ExecuteMigrationRequest     `json:"-"`
 }
 
 type MigrationExecutionRunEvent struct {

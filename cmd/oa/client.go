@@ -723,6 +723,14 @@ func (c *apiClient) planMigrationExecution(ctx context.Context, tenantID string,
 	return &resp, nil
 }
 
+func (c *apiClient) executeMigration(ctx context.Context, tenantID string, req *cutover.ExecuteMigrationRequest) (*cutover.MigrationExecutionRun, error) {
+	var resp cutover.MigrationExecutionRun
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "migration", "execute"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) listMigrationExecutionRuns(ctx context.Context, tenantID, status string, limit int) ([]cutover.MigrationExecutionRun, error) {
 	values := url.Values{}
 	if trimmed := strings.TrimSpace(status); trimmed != "" {

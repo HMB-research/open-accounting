@@ -22,6 +22,18 @@ func TestMigrationExecutionRunRepositoryMappingRoundTripsPayload(t *testing.T) {
 			{StepNumber: 2, Kind: KindContacts, FileName: "contacts.csv", Status: MigrationExecutionStepReady},
 		},
 	}, true)
+	run.ExecutionRequest = NewStoredMigrationExecutionRequest(&ExecuteMigrationRequest{
+		Files: []BundleFile{{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "code,name,account_type\n1000,Cash,ASSET\n",
+		}},
+		ProviderPreset:          MigrationProviderPresetDirecto,
+		BankTransactionFormat:   "lhv",
+		OpeningBalanceEntryDate: "2026-01-01",
+		Confirm:                 true,
+		ResumeFromRunID:         "previous-run",
+	})
 	MarkMigrationExecutionStepRunning(run, 0, now)
 	CompleteMigrationExecutionStep(run, 0, MigrationExecutionResultSucceeded, "Import completed.", "", json.RawMessage(`{"created":1}`), now.Add(1200*time.Millisecond))
 	MarkMigrationExecutionStepRunning(run, 1, now.Add(2*time.Second))
@@ -54,6 +66,20 @@ func TestMigrationExecutionRunRepositoryMappingRoundTripsPayload(t *testing.T) {
 	assert.Equal(t, int64(1200), roundTripped.Steps[0].DurationMS)
 	assert.Equal(t, now, *roundTripped.CreatedAt)
 	assert.Equal(t, now, *roundTripped.UpdatedAt)
+	require.NotNil(t, roundTripped.ExecutionRequest)
+	require.Len(t, roundTripped.ExecutionRequest.Files, 1)
+	assert.Equal(t, "accounts.csv", roundTripped.ExecutionRequest.Files[0].FileName)
+	assert.Contains(t, roundTripped.ExecutionRequest.Files[0].CSVContent, "1000,Cash")
+	assert.Equal(t, MigrationProviderPresetDirecto, roundTripped.ExecutionRequest.ProviderPreset)
+	assert.Equal(t, "lhv", roundTripped.ExecutionRequest.BankTransactionFormat)
+	assert.Equal(t, "2026-01-01", roundTripped.ExecutionRequest.OpeningBalanceEntryDate)
+	assert.False(t, roundTripped.ExecutionRequest.Confirm)
+	assert.Empty(t, roundTripped.ExecutionRequest.ResumeFromRunID)
+
+	publicPayload, err := json.Marshal(roundTripped)
+	require.NoError(t, err)
+	assert.NotContains(t, string(publicPayload), "csv_content")
+	assert.NotContains(t, string(publicPayload), "execution_request")
 }
 
 func TestRecordToMigrationExecutionRunFallsBackToIndexedSummary(t *testing.T) {
