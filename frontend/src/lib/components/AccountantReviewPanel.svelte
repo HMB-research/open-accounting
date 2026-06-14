@@ -3,6 +3,7 @@
 	import {
 		api,
 		type BankTransaction,
+		type DocumentAttachment,
 		type FollowUpStatus,
 		type JournalEntry,
 		type OverdueInvoice,
@@ -45,7 +46,39 @@
 	let assignmentCompletionErrorId = $state('');
 	let assignmentCompletionError = $state('');
 	let assignmentRetentionDrafts = $state<Record<string, string>>({});
+	let assignmentUploadDrafts = $state<Record<string, File | undefined>>({});
 	let loadedTenantKey = '';
+
+	type AssignmentEvidenceUploadTarget = {
+		entityType: DocumentAttachment['entity_type'];
+		entityId: string;
+		documentType: DocumentAttachment['document_type'];
+		notes: string;
+		replacement: boolean;
+	};
+
+	const documentUploadEntityTypes: DocumentAttachment['entity_type'][] = [
+		'invoice',
+		'journal_entry',
+		'payment',
+		'bank_transaction',
+		'asset',
+		'expense',
+		'quote',
+		'order',
+		'leave_record',
+		'year_end_close'
+	];
+	const documentUploadTypes: DocumentAttachment['document_type'][] = [
+		'supporting_document',
+		'receipt',
+		'reconciliation_evidence',
+		'contract',
+		'asset_record',
+		'tax_support',
+		'close_pack',
+		'other'
+	];
 
 	$effect(() => {
 		const tenantKey = buildTenantKey(tenant);
@@ -240,6 +273,79 @@
 			) &&
 			Boolean(action.documentId)
 		);
+	}
+
+	function getAssignmentEvidenceUploadTarget(action: WorkspaceAssignmentAction): AssignmentEvidenceUploadTarget | null {
+		if (action.source === 'banking' && action.code === 'bank_evidence_required' && action.entityId) {
+			return {
+				entityType: 'bank_transaction',
+				entityId: action.entityId,
+				documentType: 'reconciliation_evidence',
+				notes: m.dashboard_reviewAssignmentEvidenceUploadNote(),
+				replacement: false
+			};
+		}
+
+		if (
+			action.source !== 'documents' ||
+			!['document_evidence_missing', 'document_review_rejected'].includes(action.code) ||
+			!action.entityId
+		) {
+			return null;
+		}
+
+		const entityType = getDocumentUploadEntityType(action.entityType);
+		const documentType = getDocumentUploadType(action.documentType);
+		if (!entityType || !documentType) {
+			return null;
+		}
+
+		const replacement = action.code === 'document_review_rejected';
+		return {
+			entityType,
+			entityId: action.entityId,
+			documentType,
+			notes: replacement
+				? m.dashboard_reviewAssignmentReplacementUploadNote()
+				: m.dashboard_reviewAssignmentEvidenceUploadNote(),
+			replacement
+		};
+	}
+
+	function getDocumentUploadEntityType(value: string | undefined): DocumentAttachment['entity_type'] | null {
+		return documentUploadEntityTypes.includes(value as DocumentAttachment['entity_type'])
+			? (value as DocumentAttachment['entity_type'])
+			: null;
+	}
+
+	function getDocumentUploadType(value: string | undefined): DocumentAttachment['document_type'] | null {
+		return documentUploadTypes.includes(value as DocumentAttachment['document_type'])
+			? (value as DocumentAttachment['document_type'])
+			: null;
+	}
+
+	function updateAssignmentUploadDraft(action: WorkspaceAssignmentAction, event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		assignmentUploadDrafts = {
+			...assignmentUploadDrafts,
+			[action.id]: target.files?.[0]
+		};
+	}
+
+	function canUploadAssignmentEvidence(action: WorkspaceAssignmentAction): boolean {
+		return getAssignmentEvidenceUploadTarget(action) !== null;
+	}
+
+	function getAssignmentUploadFieldLabel(action: WorkspaceAssignmentAction): string {
+		return getAssignmentEvidenceUploadTarget(action)?.replacement
+			? m.dashboard_reviewAssignmentsReplacementFile()
+			: m.dashboard_reviewAssignmentsEvidenceFile();
+	}
+
+	function getAssignmentUploadButtonLabel(action: WorkspaceAssignmentAction): string {
+		return getAssignmentEvidenceUploadTarget(action)?.replacement
+			? m.dashboard_reviewAssignmentsUploadReplacement()
+			: m.dashboard_reviewAssignmentsUploadEvidence();
 	}
 
 	function getDefaultAssignmentRetentionDate(action: WorkspaceAssignmentAction): string {
@@ -454,6 +560,40 @@
 			assignmentCompletionErrorId = action.id;
 			assignmentCompletionError =
 				err instanceof Error ? err.message : m.dashboard_reviewAssignmentDocumentRetentionSetError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function uploadAssignmentEvidence(action: WorkspaceAssignmentAction) {
+		const target = getAssignmentEvidenceUploadTarget(action);
+		if (!target) {
+			return;
+		}
+
+		const file = assignmentUploadDrafts[action.id];
+		if (!file) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError = m.dashboard_reviewAssignmentEvidenceFileRequired();
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.uploadDocument(tenant.id, target.entityType, target.entityId, file, {
+				document_type: target.documentType,
+				notes: target.notes
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentEvidenceUploaded();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentEvidenceUploadError();
 		} finally {
 			assignmentCompletingId = '';
 		}
@@ -1064,6 +1204,25 @@
 												: m.dashboard_reviewAssignmentsSetRetention()}
 										</button>
 									{/if}
+									{#if canUploadAssignmentEvidence(action)}
+										<label class="review-assignment-upload-field">
+											<span>{getAssignmentUploadFieldLabel(action)}</span>
+											<input
+												type="file"
+												onchange={(event) => updateAssignmentUploadDraft(action, event)}
+											/>
+										</label>
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => uploadAssignmentEvidence(action)}
+											disabled={assignmentCompletingId === action.id || !assignmentUploadDrafts[action.id]}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: getAssignmentUploadButtonLabel(action)}
+										</button>
+									{/if}
 									{#if canApproveAssignmentPayroll(action)}
 										<button
 											class="review-action review-action-button"
@@ -1427,6 +1586,23 @@
 		font: inherit;
 	}
 
+	.review-assignment-upload-field {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.25rem;
+		max-width: 12rem;
+		font-size: 0.78rem;
+		color: var(--color-text-muted);
+	}
+
+	.review-assignment-upload-field input {
+		width: 100%;
+		max-width: 12rem;
+		font-size: 0.75rem;
+		color: var(--color-text);
+	}
+
 	.review-figure {
 		display: flex;
 		flex-direction: column;
@@ -1688,6 +1864,11 @@
 
 		.review-assignment-inline-field {
 			justify-content: flex-start;
+		}
+
+		.review-assignment-upload-field {
+			align-items: flex-start;
+			max-width: 100%;
 		}
 
 		.review-transaction-review {

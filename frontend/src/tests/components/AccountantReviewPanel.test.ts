@@ -12,6 +12,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listDocumentReviewSummaries: vi.fn(),
 		reviewBankTransaction: vi.fn(),
 		reviewDocument: vi.fn(),
+		uploadDocument: vi.fn(),
 		updateDocumentRetention: vi.fn(),
 		updatePayrollPaymentDate: vi.fn(),
 		approvePayroll: vi.fn(),
@@ -382,6 +383,19 @@ describe('AccountantReviewPanel', () => {
 			uploaded_by: 'user-1',
 			created_at: '2026-02-01T00:00:00Z'
 		});
+		apiMock.uploadDocument.mockResolvedValue({
+			id: 'doc-uploaded',
+			tenant_id: 'tenant-1',
+			entity_type: 'bank_transaction',
+			entity_id: 'tx-evidence',
+			document_type: 'reconciliation_evidence',
+			file_name: 'evidence.pdf',
+			content_type: 'application/pdf',
+			file_size: 1200,
+			review_status: 'PENDING',
+			uploaded_by: 'user-1',
+			created_at: '2026-02-01T00:00:00Z'
+		});
 		apiMock.updatePayrollPaymentDate.mockResolvedValue({
 			id: 'payroll-1',
 			tenant_id: 'tenant-1',
@@ -730,6 +744,171 @@ describe('AccountantReviewPanel', () => {
 				retention_until: '2028-04-30'
 			});
 			expect(screen.getByText('Document retention set from workspace.')).toBeInTheDocument();
+		});
+	});
+
+	it('uploads evidence and replacements from assignment rows', async () => {
+		apiMock.getOverdueInvoices.mockResolvedValue({
+			total_overdue: '0',
+			invoice_count: 0,
+			contact_count: 0,
+			average_days_overdue: 0,
+			invoices: [],
+			generated_at: '2026-02-11T00:00:00Z'
+		});
+		apiMock.listBankAccounts.mockResolvedValue([
+			{
+				id: 'bank-1',
+				tenant_id: 'tenant-1',
+				name: 'Main bank',
+				account_number: 'EE111',
+				currency: 'EUR',
+				balance: new Decimal(0),
+				is_active: true,
+				created_at: '2026-01-01T00:00:00Z',
+				updated_at: '2026-01-01T00:00:00Z'
+			}
+		]);
+		apiMock.listBankTransactions.mockResolvedValue([
+			{
+				id: 'tx-evidence',
+				tenant_id: 'tenant-1',
+				bank_account_id: 'bank-1',
+				transaction_date: '2026-02-08',
+				description: 'Evidence required transfer',
+				amount: new Decimal('-550'),
+				currency: 'EUR',
+				status: 'UNMATCHED',
+				follow_up_status: 'EVIDENCE_REQUIRED',
+				remediation_actions: [
+					{
+						code: 'bank_evidence_required',
+						severity: 'ACTION',
+						scope: 'banking',
+						owner_role: 'accountant',
+						workspace_queue: 'banking_followup',
+						assignment_key: 'banking-followup:bank-evidence-required:bank-transaction:tx-evidence:UNMATCHED:EVIDENCE_REQUIRED',
+						priority: 'high',
+						due_in_days: 1,
+						message: 'Bank transaction tx-evidence requires approved reconciliation evidence.',
+						action: 'Upload and approve reconciliation evidence before completing the reconciliation.',
+						entity_type: 'bank_transaction',
+						entity_id: 'tx-evidence',
+						ui_path: '/banking?transaction_id=tx-evidence',
+						cli_command:
+							'oa documents upload --entity-type bank_transaction --entity-id tx-evidence --document-type reconciliation_evidence --file <file>'
+					}
+				],
+				created_at: '2026-02-08T00:00:00Z'
+			}
+		]);
+		apiMock.listDocumentReviewSummaries.mockResolvedValue([
+			{
+				entity_type: 'bank_transaction',
+				entity_id: 'tx-evidence',
+				total_count: 0,
+				pending_review_count: 0,
+				reviewed_count: 0,
+				approved_count: 0,
+				rejected_count: 0,
+				missing_evidence: true,
+				has_pending_review: false,
+				has_rejected: false
+			}
+		]);
+		apiMock.listPeriodCloseEvents.mockResolvedValue([]);
+		apiMock.listJournalEntries.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-02-11',
+			cutoff_date: '2026-03-13',
+			total_count: 1,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 1,
+			documents: [],
+			remediation_actions: [
+				{
+					code: 'document_review_rejected',
+					severity: 'ACTION',
+					scope: 'documents',
+					owner_role: 'accountant',
+					workspace_queue: 'document_review',
+					assignment_key: 'document-review:document-review-rejected:expense:expense-1:receipt:doc-rejected-1',
+					priority: 'high',
+					due_in_days: 0,
+					message: 'Document rejected-receipt.pdf was rejected and needs replacement or correction.',
+					action: 'Upload corrected evidence or approve the existing document after the rejection has been resolved.',
+					entity_type: 'expense',
+					entity_id: 'expense-1',
+					document_id: 'doc-rejected-1',
+					document_type: 'receipt',
+					file_name: 'rejected-receipt.pdf',
+					ui_path: '/documents?entity_type=expense&entity_id=expense-1&document_id=doc-rejected-1',
+					cli_command: 'oa documents upload --entity-type expense --entity-id expense-1 --document-type receipt --file <replacement-file>'
+				}
+			]
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.listMigrationExecutionRuns.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+
+		render(AccountantReviewPanel, {
+			tenant: createTenant()
+		});
+
+		await waitFor(() => {
+			expect(
+				screen.getByText('Bank transaction tx-evidence requires approved reconciliation evidence.')
+			).toBeInTheDocument();
+			expect(
+				screen.getByText('Document rejected-receipt.pdf was rejected and needs replacement or correction.')
+			).toBeInTheDocument();
+		});
+
+		const evidenceFile = new File(['evidence'], 'evidence.pdf', { type: 'application/pdf' });
+		await fireEvent.change(screen.getByLabelText('Evidence file'), {
+			target: { files: [evidenceFile] }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Upload evidence' }));
+
+		await waitFor(() => {
+			expect(apiMock.uploadDocument).toHaveBeenCalledWith('tenant-1', 'bank_transaction', 'tx-evidence', evidenceFile, {
+				document_type: 'reconciliation_evidence',
+				notes: 'Uploaded from accountant workspace assignment'
+			});
+			expect(screen.getByText('Evidence uploaded from workspace.')).toBeInTheDocument();
+		});
+
+		const replacementFile = new File(['replacement'], 'replacement.pdf', { type: 'application/pdf' });
+		await fireEvent.change(screen.getByLabelText('Replacement file'), {
+			target: { files: [replacementFile] }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Upload replacement' }));
+
+		await waitFor(() => {
+			expect(apiMock.uploadDocument).toHaveBeenCalledWith('tenant-1', 'expense', 'expense-1', replacementFile, {
+				document_type: 'receipt',
+				notes: 'Replacement uploaded from accountant workspace assignment'
+			});
 		});
 	});
 
