@@ -36,6 +36,7 @@ const (
 
 type migrationExecuteOptions struct {
 	Confirm                  bool
+	ProviderPreset           cutover.MigrationProviderPreset
 	BankTransactionAccountID string
 	BankTransactionFormat    string
 	EInvoiceInvoiceType      invoicing.InvoiceType
@@ -144,6 +145,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 
 	run, err := executeMigrationRun(ctx, client, cfg.TenantID, files, plan, migrationExecuteOptions{
 		Confirm:                  *confirm,
+		ProviderPreset:           cutover.MigrationProviderPreset(strings.TrimSpace(*providerPreset)),
 		BankTransactionAccountID: strings.TrimSpace(*bankTransactionAccountID),
 		BankTransactionFormat:    strings.TrimSpace(*bankTransactionFormat),
 		EInvoiceInvoiceType:      invoiceType,
@@ -241,6 +243,12 @@ func migrationStepFileKey(kind cutover.FileKind, fileName string) string {
 }
 
 func executeMigrationImportStep(ctx context.Context, client *apiClient, tenantID string, step cutover.MigrationExecutionStep, file cutover.BundleFile, opts migrationExecuteOptions) (json.RawMessage, error) {
+	canonicalFile, err := cutover.CanonicalizeBundleFileCSV(file, opts.ProviderPreset)
+	if err != nil {
+		return nil, err
+	}
+	file = canonicalFile
+
 	switch step.Kind {
 	case cutover.KindAccounts:
 		return migrationStepResponse(client.importAccounts(ctx, tenantID, &accounting.ImportAccountsRequest{CSVContent: file.CSVContent, FileName: file.FileName}))

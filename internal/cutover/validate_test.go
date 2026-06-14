@@ -1758,6 +1758,52 @@ func TestCheckInvoiceReverseChargeRateSkipsMissingVATRateColumn(t *testing.T) {
 	assert.Empty(t, report.Issues)
 }
 
+func TestCanonicalizeBundleFileCSVUsesProviderPresetAliases(t *testing.T) {
+	tests := []struct {
+		name       string
+		preset     MigrationProviderPreset
+		kind       FileKind
+		content    string
+		wantHeader string
+	}{
+		{
+			name:       "merit fixed asset name alias",
+			preset:     MigrationProviderPresetMerit,
+			kind:       KindFixedAssets,
+			content:    "põhivara_nr;põhivara;soetuskuupäev;soetusmaksumus\nFA-1;Laptop;2026-01-10;1200\n",
+			wantHeader: "asset_number,name,purchase_date,purchase_cost",
+		},
+		{
+			name:       "directo fixed asset number alias",
+			preset:     MigrationProviderPresetDirecto,
+			kind:       KindFixedAssets,
+			content:    "põhivara;nimetus;soetusaeg;soetushind\nFA-2;Printer;2026-02-10;800\n",
+			wantHeader: "asset_number,name,purchase_date,purchase_cost",
+		},
+		{
+			name:       "smartaccounts stock aliases",
+			preset:     MigrationProviderPresetSmartAccounts,
+			kind:       KindStockAdjustments,
+			content:    "item_no,warehouse_no,balance_qty,average_cost,batch_no,serial_no,best_before\nSKU-1,MAIN,1,10,LOT-1,SN-1,2027-01-01\n",
+			wantHeader: "product_code,warehouse_code,quantity,unit_cost,lot_number,serial_number,expiry_date",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file, err := CanonicalizeBundleFileCSV(BundleFile{
+				Kind:       tt.kind,
+				FileName:   "provider.csv",
+				CSVContent: tt.content,
+			}, tt.preset)
+
+			require.NoError(t, err)
+			header, _, _ := strings.Cut(file.CSVContent, "\n")
+			assert.Equal(t, tt.wantHeader, header)
+		})
+	}
+}
+
 func TestValidateBundleAcceptsInvoiceVATTreatmentAndDiscountEdges(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

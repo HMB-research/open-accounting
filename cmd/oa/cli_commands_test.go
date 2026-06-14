@@ -4504,6 +4504,58 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 	}
 }
 
+func TestExecuteMigrationImportStepCanonicalizesProviderPresetCSV(t *testing.T) {
+	var capturedCategoryCSV string
+	var capturedAssetCSV string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, http.MethodPost, r.Method)
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/product-categories/import":
+			var req inventory.ImportProductCategoriesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			capturedCategoryCSV = req.CSVContent
+			_ = json.NewEncoder(w).Encode(inventory.ImportProductCategoriesResult{FileName: req.FileName})
+		case "/api/v1/tenants/tenant-1/assets/import":
+			var req assets.ImportAssetsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			capturedAssetCSV = req.CSVContent
+			_ = json.NewEncoder(w).Encode(assets.ImportAssetsResult{FileName: req.FileName})
+		default:
+			t.Fatalf("unexpected import request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client := newAPIClient(server.URL, "oa_test_token")
+
+	_, err := executeMigrationImportStep(context.Background(), client, "tenant-1", cutover.MigrationExecutionStep{
+		Kind:     cutover.KindProductCategories,
+		FileName: "merit-categories.csv",
+		Status:   cutover.MigrationExecutionStepReady,
+	}, cutover.BundleFile{
+		Kind:       cutover.KindProductCategories,
+		FileName:   "merit-categories.csv",
+		CSVContent: "grupp;ülemgrupp\nWidgets;Root\n",
+	}, migrationExecuteOptions{ProviderPreset: cutover.MigrationProviderPresetMerit})
+	require.NoError(t, err)
+
+	_, err = executeMigrationImportStep(context.Background(), client, "tenant-1", cutover.MigrationExecutionStep{
+		Kind:     cutover.KindFixedAssets,
+		FileName: "directo-assets.csv",
+		Status:   cutover.MigrationExecutionStepReady,
+	}, cutover.BundleFile{
+		Kind:       cutover.KindFixedAssets,
+		FileName:   "directo-assets.csv",
+		CSVContent: "põhivara,nimetus,soetusaeg,soetushind\nFA-2,Printer,2026-02-10,800\n",
+	}, migrationExecuteOptions{ProviderPreset: cutover.MigrationProviderPresetDirecto})
+	require.NoError(t, err)
+
+	categoryHeader, _, _ := strings.Cut(capturedCategoryCSV, "\n")
+	assert.Equal(t, "name,parent_name", categoryHeader)
+	assetHeader, _, _ := strings.Cut(capturedAssetCSV, "\n")
+	assert.Equal(t, "asset_number,name,purchase_date,purchase_cost", assetHeader)
+}
+
 func TestCLIMigrationExecuteResumesRunFile(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
@@ -4948,6 +5000,10 @@ func TestMigrationExecutionRunHelperBranches(t *testing.T) {
 	_, err = executeMigrationImportStep(context.Background(), nil, "tenant-1", cutover.MigrationExecutionStep{Kind: cutover.FileKind("unsupported")}, cutover.BundleFile{}, migrationExecuteOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported")
+
+	_, err = executeMigrationImportStep(context.Background(), nil, "tenant-1", cutover.MigrationExecutionStep{Kind: cutover.KindAccounts}, cutover.BundleFile{Kind: cutover.KindAccounts}, migrationExecuteOptions{ProviderPreset: cutover.MigrationProviderPreset("unknown")})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported provider_preset")
 
 	_, err = executeMigrationImportStep(context.Background(), nil, "tenant-1", cutover.MigrationExecutionStep{Kind: cutover.KindBankAccounts}, cutover.BundleFile{CSVContent: `"`}, migrationExecuteOptions{})
 	require.Error(t, err)
