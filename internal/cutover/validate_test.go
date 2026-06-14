@@ -4134,6 +4134,57 @@ func TestValidateBundleReportsFixedAssetAccountReferenceIssues(t *testing.T) {
 	assert.Equal(t, "9999", report.Issues[0].Value)
 }
 
+func TestValidateBundleAcceptsFixedAssetAccountTypeReferences(t *testing.T) {
+	depreciationExpenseAccountID := "11111111-1111-1111-1111-111111111111"
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "id,account_code,account_name,type\n" +
+				"22222222-2222-2222-2222-222222222222,1200,Fixed assets,ASSET\n" +
+				depreciationExpenseAccountID + ",6200,Depreciation expense,EXPENSE\n" +
+				"33333333-3333-3333-3333-333333333333,1290,Accumulated depreciation,ASSET\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,asset_account_code,depreciation_expense_account_id,accumulated_depreciation_account_code\nFA-1,Laptop,2026-05-30,1200,1200," + depreciationExpenseAccountID + ",1290\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsFixedAssetAccountTypeMismatches(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindAccounts,
+			FileName: "accounts.csv",
+			CSVContent: "account_code,account_name,type\n" +
+				"1200,Fixed asset expense,EXPENSE\n" +
+				"6200,Depreciation holding,ASSET\n" +
+				"1290,Accumulated depreciation expense,EXPENSE\n",
+		},
+		{
+			Kind:       KindFixedAssets,
+			FileName:   "assets.csv",
+			CSVContent: "asset_number,name,purchase_date,purchase_cost,asset_account_code,depreciation_expense_account_code,accumulated_depreciation_account_code\nFA-1,Laptop,2026-05-30,1200,1200,6200,1290\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 3, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindFixedAssets, "asset_account_code", `asset account "1200" is EXPENSE; expected ASSET account`)
+	assertValidationIssue(t, report, KindFixedAssets, "depreciation_expense_account_code", `depreciation expense account "6200" is ASSET; expected EXPENSE account`)
+	assertValidationIssue(t, report, KindFixedAssets, "accumulated_depreciation_account_code", `accumulated depreciation account "1290" is EXPENSE; expected ASSET account`)
+}
+
 func TestValidateBundleAcceptsFixedAssetPurchaseDateFormats(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
