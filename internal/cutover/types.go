@@ -116,5 +116,6 @@ type MigrationRemediationAction struct {
 	Field          string   `json:"field,omitempty"`
 	TargetKind     FileKind `json:"target_kind,omitempty"`
 	IssueCount     int      `json:"issue_count"`
+	UIPath         string   `json:"ui_path,omitempty"`
 	CLICommand     string   `json:"cli_command,omitempty"`
 }

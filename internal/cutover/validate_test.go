@@ -155,6 +155,7 @@ func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	assert.Equal(t, "migration_cutover", report.RemediationActions[0].WorkspaceQueue)
 	assert.Equal(t, "migration:ready-to-import:-:-:-:-", report.RemediationActions[0].AssignmentKey)
 	assert.Equal(t, "low", report.RemediationActions[0].Priority)
+	assert.Equal(t, "/migration", report.RemediationActions[0].UIPath)
 
 	var stockValidation FileValidation
 	var eInvoiceValidation FileValidation

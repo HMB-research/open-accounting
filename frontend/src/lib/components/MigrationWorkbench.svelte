@@ -22,7 +22,7 @@
 		content: string;
 	};
 
-	let { tenantId }: { tenantId: string } = $props();
+	let { tenantId, runId = '' }: { tenantId: string; runId?: string } = $props();
 
 	const fileKinds: Array<{ kind: MigrationFileKind; label: string }> = [
 		{ kind: 'accounts', label: 'Accounts' },
@@ -77,12 +77,24 @@
 	let run = $state<MigrationExecutionRun | null>(null);
 	let savedRuns = $state<MigrationExecutionRun[]>([]);
 	let selectedRun = $state<MigrationExecutionRun | null>(null);
+	let loadedDeepLinkKey = '';
 
 	let canSubmitBundle = $derived(tenantId.trim().length > 0 && bundleFiles.length > 0 && !working);
 	let canExecute = $derived(canSubmitBundle && executionConfirmed);
 
 	onMount(() => {
-		void loadRunHistory();
+		void initializeWorkbench();
+	});
+
+	$effect(() => {
+		const trimmedRunId = runId.trim();
+		const trimmedTenantId = tenantId.trim();
+		const deepLinkKey = `${trimmedTenantId}:${trimmedRunId}`;
+		if (!trimmedTenantId || !trimmedRunId || deepLinkKey === loadedDeepLinkKey) {
+			return;
+		}
+		loadedDeepLinkKey = deepLinkKey;
+		void openSavedRunById(trimmedRunId);
 	});
 
 	function defaultFileName(kind: MigrationFileKind): string {
@@ -303,17 +315,34 @@
 	}
 
 	async function openSavedRun(savedRun: MigrationExecutionRun) {
-		const runId = savedRun.id;
-		if (!runId) return;
+		const savedRunId = savedRun.id;
+		if (!savedRunId) return;
 
+		await openSavedRunById(savedRunId);
+	}
+
+	async function initializeWorkbench() {
+		await loadRunHistory();
+		const trimmedRunId = runId.trim();
+		const trimmedTenantId = tenantId.trim();
+		const deepLinkKey = `${trimmedTenantId}:${trimmedRunId}`;
+		if (trimmedTenantId && trimmedRunId && deepLinkKey !== loadedDeepLinkKey) {
+			loadedDeepLinkKey = deepLinkKey;
+			await openSavedRunById(trimmedRunId);
+		}
+	}
+
+	async function openSavedRunById(savedRunId: string) {
+		if (!savedRunId.trim()) return;
 		working = true;
 		error = '';
 		success = '';
 		try {
-			selectedRun = await api.getMigrationExecutionRun(tenantId, runId);
+			selectedRun = await api.getMigrationExecutionRun(tenantId, savedRunId);
 			run = selectedRun;
 			plan = selectedRun.plan ?? plan;
 			validation = selectedRun.plan?.validation ?? validation;
+			loadedDeepLinkKey = `${tenantId.trim()}:${savedRunId}`;
 			success = 'Saved migration run loaded.';
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load saved migration run.';

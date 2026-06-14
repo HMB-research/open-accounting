@@ -235,6 +235,7 @@
   "dashboard_reviewAssignmentSourcePayroll": "Palgaarvestus",
   "dashboard_reviewAssignmentSourceTsd": "TSD",
   "dashboard_reviewAssignmentSourceKmd": "KMD",
+  "dashboard_reviewAssignmentSourceMigration": "Migratsioon",
   "dashboard_reviewOverdueTitle": "Tähtaja ületanud nõuded",
   "dashboard_reviewOpenReminders": "Ava meeldetuletused",
   "dashboard_reviewOutstandingBalance": "Tasumata saldo",

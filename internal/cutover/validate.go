@@ -1195,6 +1195,7 @@ func BuildMigrationRemediationActions(report *BundleValidationReport) []Migratio
 				Message:        "Migration bundle passed preflight validation.",
 				Action:         "Run the relevant import commands in the planned cutover order.",
 				IssueCount:     0,
+				UIPath:         "/migration",
 				CLICommand:     "oa migration plan --provider-preset generic --json",
 			}}
 		}
@@ -1241,6 +1242,7 @@ func BuildMigrationRemediationActions(report *BundleValidationReport) []Migratio
 				Field:          key.field,
 				TargetKind:     key.targetKind,
 				CLICommand:     migrationValidationCommand(issue.Kind),
+				UIPath:         "/migration",
 			}
 			actionsByKey[key] = remediation
 			keys = append(keys, key)

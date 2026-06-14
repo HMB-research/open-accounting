@@ -226,7 +226,24 @@ describe('MigrationWorkbench', () => {
 		expect(screen.getByText('Import running.')).toBeInTheDocument();
 		expect(screen.getAllByText('50%').length).toBeGreaterThan(0);
 		expect(screen.getAllByText('1.5s').length).toBeGreaterThan(0);
-		expect(screen.getByText('Active step: #2 RUNNING contacts contacts-next.csv')).toBeInTheDocument();
+		expect(
+			screen.getByText('Active step: #2 RUNNING contacts contacts-next.csv')
+		).toBeInTheDocument();
+	});
+
+	it('opens a deep-linked saved execution run', async () => {
+		const monitoringRun = runningExecutionRun();
+		apiMock.listMigrationExecutionRuns.mockResolvedValue([monitoringRun]);
+		apiMock.getMigrationExecutionRun.mockResolvedValue(monitoringRun);
+		render(MigrationWorkbench, { tenantId: 'tenant-1', runId: 'run-1' });
+
+		await waitFor(() =>
+			expect(apiMock.getMigrationExecutionRun).toHaveBeenCalledWith('tenant-1', 'run-1')
+		);
+		expect(await screen.findByText('Saved migration run loaded.')).toBeInTheDocument();
+		expect(
+			screen.getByText('Active step: #2 RUNNING contacts contacts-next.csv')
+		).toBeInTheDocument();
 	});
 
 	it('executes a confirmed cutover with a selected resume run id', async () => {

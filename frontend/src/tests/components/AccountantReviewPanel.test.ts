@@ -30,6 +30,7 @@ const { apiMock } = vi.hoisted(() => ({
 		listPayrollRuns: vi.fn(),
 		listTSD: vi.fn(),
 		listKMD: vi.fn(),
+		listMigrationExecutionRuns: vi.fn(),
 		getYearEndCloseStatus: vi.fn()
 	}
 }));
@@ -137,7 +138,8 @@ describe('AccountantReviewPanel', () => {
 						message: 'Bank transaction needs matching.',
 						action: 'Match the transaction or mark the needed follow-up.',
 						ui_path: '/banking',
-						cli_command: 'oa banking transactions review --id tx-1 --follow-up-status READY_TO_MATCH'
+						cli_command:
+							'oa banking transactions review --id tx-1 --follow-up-status READY_TO_MATCH'
 					}
 				],
 				created_at: '2026-02-08T00:00:00Z'
@@ -234,8 +236,7 @@ describe('AccountantReviewPanel', () => {
 					document_id: 'doc-1',
 					document_type: 'reconciliation_evidence',
 					file_name: 'bank-evidence.pdf',
-					ui_path:
-						'/documents?entity_type=bank_transaction&entity_id=tx-1&document_id=doc-1',
+					ui_path: '/documents?entity_type=bank_transaction&entity_id=tx-1&document_id=doc-1',
 					cli_command: 'oa documents review --id doc-1 --status approved'
 				}
 			]
@@ -262,7 +263,8 @@ describe('AccountantReviewPanel', () => {
 						scope: 'expenses',
 						owner_role: 'accountant',
 						workspace_queue: 'expense_claims',
-						assignment_key: 'expense-claims:expense-receipt-approval-required:expense:expense-1:EXP-001:SUBMITTED',
+						assignment_key:
+							'expense-claims:expense-receipt-approval-required:expense:expense-1:EXP-001:SUBMITTED',
 						priority: 'high',
 						due_in_days: 1,
 						message: 'Expense EXP-001 is submitted and receipt-backed.',
@@ -272,7 +274,8 @@ describe('AccountantReviewPanel', () => {
 						expense_number: 'EXP-001',
 						status: 'SUBMITTED',
 						ui_path: '/expenses?expense_id=expense-1',
-						cli_command: 'oa documents review-queue --entity-type expense --document-type receipt --status PENDING'
+						cli_command:
+							'oa documents review-queue --entity-type expense --document-type receipt --status PENDING'
 					}
 				],
 				created_at: '2026-02-09T00:00:00Z',
@@ -315,6 +318,7 @@ describe('AccountantReviewPanel', () => {
 		]);
 		apiMock.listTSD.mockResolvedValue([]);
 		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.listMigrationExecutionRuns.mockResolvedValue([]);
 		apiMock.getYearEndCloseStatus.mockResolvedValue({
 			period_end_date: '2025-12-31',
 			fiscal_year_label: '2025',
@@ -341,7 +345,8 @@ describe('AccountantReviewPanel', () => {
 					message: 'Fiscal year ending 2025-12-31 is not closed.',
 					action: 'Close the fiscal year with reviewer sign-off before posting carry-forward.',
 					ui_path: '/settings/company#period-history',
-					cli_command: 'oa close period --period-end 2025-12-31 --reviewer-sign-off --note "Fiscal-year close"'
+					cli_command:
+						'oa close period --period-end 2025-12-31 --reviewer-sign-off --note "Fiscal-year close"'
 				}
 			]
 		});
@@ -378,11 +383,25 @@ describe('AccountantReviewPanel', () => {
 		apiMock.generateTSD.mockResolvedValue({ id: 'tsd-1' });
 		apiMock.generateKMD.mockResolvedValue({ id: 'kmd-1' });
 		apiMock.downloadKMDXml.mockResolvedValue(undefined);
-		apiMock.submitExpense.mockResolvedValue({ id: 'expense-draft-1', status: 'SUBMITTED' });
-		apiMock.approveExpense.mockResolvedValue({ id: 'expense-submitted-1', status: 'APPROVED' });
-		apiMock.postExpense.mockResolvedValue({ id: 'expense-approved-1', status: 'POSTED' });
+		apiMock.submitExpense.mockResolvedValue({
+			id: 'expense-draft-1',
+			status: 'SUBMITTED'
+		});
+		apiMock.approveExpense.mockResolvedValue({
+			id: 'expense-submitted-1',
+			status: 'APPROVED'
+		});
+		apiMock.postExpense.mockResolvedValue({
+			id: 'expense-approved-1',
+			status: 'POSTED'
+		});
 		apiMock.closePeriod.mockResolvedValue({
-			tenant: createTenant({ settings: { ...createTenant().settings, period_lock_date: '2025-12-31' } }),
+			tenant: createTenant({
+				settings: {
+					...createTenant().settings,
+					period_lock_date: '2025-12-31'
+				}
+			}),
 			event: {
 				id: 'evt-year-close',
 				tenant_id: 'tenant-1',
@@ -453,7 +472,8 @@ describe('AccountantReviewPanel', () => {
 					message: 'Fiscal year ending 2025-12-31 is not closed.',
 					action: 'Close the fiscal year with reviewer sign-off before posting carry-forward.',
 					ui_path: '/settings/company#period-history',
-					cli_command: 'oa close period --period-end 2025-12-31 --reviewer-sign-off --note "Fiscal-year close"'
+					cli_command:
+						'oa close period --period-end 2025-12-31 --reviewer-sign-off --note "Fiscal-year close"'
 				},
 				{
 					code: 'ready_to_post_carry_forward',
@@ -474,7 +494,10 @@ describe('AccountantReviewPanel', () => {
 
 		render(AccountantReviewPanel, {
 			tenant: createTenant({
-				settings: { ...createTenant().settings, inventory_valuation_method: 'fifo' }
+				settings: {
+					...createTenant().settings,
+					inventory_valuation_method: 'fifo'
+				}
 			})
 		});
 
@@ -520,7 +543,11 @@ describe('AccountantReviewPanel', () => {
 		});
 
 		expect(screen.getByText('Accountant review')).toBeInTheDocument();
-		expect(screen.getByText('Review the items that still need an accountant decision before the next close or filing window.')).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'Review the items that still need an accountant decision before the next close or filing window.'
+			)
+		).toBeInTheDocument();
 		expect(screen.getByText('INV-001')).toBeInTheDocument();
 		expect(screen.getByText('Unknown transfer')).toBeInTheDocument();
 		expect(screen.getAllByText('Evidence pending review').length).toBeGreaterThan(0);
@@ -528,9 +555,15 @@ describe('AccountantReviewPanel', () => {
 		expect(screen.getByText('Assignment queue')).toBeInTheDocument();
 		expect(screen.getByText('Fiscal year ending 2025-12-31 is not closed.')).toBeInTheDocument();
 		expect(screen.getByText('Bank transaction needs matching.')).toBeInTheDocument();
-		expect(screen.getByText('Document bank-evidence.pdf is still pending review.')).toBeInTheDocument();
-		expect(screen.getByText('Expense EXP-001 is submitted and receipt-backed.')).toBeInTheDocument();
-		expect(screen.getByText('Payroll run 2026-02 is calculated and awaiting approval.')).toBeInTheDocument();
+		expect(
+			screen.getByText('Document bank-evidence.pdf is still pending review.')
+		).toBeInTheDocument();
+		expect(
+			screen.getByText('Expense EXP-001 is submitted and receipt-backed.')
+		).toBeInTheDocument();
+		expect(
+			screen.getByText('Payroll run 2026-02 is calculated and awaiting approval.')
+		).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Approve document' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Approve payroll' })).toBeInTheDocument();
 		expect(screen.getByText(/oa documents review-queue --entity-type expense/)).toBeInTheDocument();
@@ -539,22 +572,37 @@ describe('AccountantReviewPanel', () => {
 		expect(
 			screen
 				.getAllByRole('link', { name: 'Open action' })
-				.some((link) => link.getAttribute('href') === '/settings/company?tenant=tenant-1#period-history')
+				.some(
+					(link) => link.getAttribute('href') === '/settings/company?tenant=tenant-1#period-history'
+				)
 		).toBe(true);
 		expect(
 			screen
 				.getAllByRole('link', { name: 'Open action' })
-				.some((link) => link.getAttribute('href') === '/expenses?expense_id=expense-1&tenant=tenant-1')
+				.some(
+					(link) => link.getAttribute('href') === '/expenses?expense_id=expense-1&tenant=tenant-1'
+				)
 		).toBe(true);
 		expect(screen.getAllByText('Closed').length).toBeGreaterThan(0);
-		expect(screen.getByRole('link', { name: 'Open reminders' })).toHaveAttribute('href', '/invoices/reminders?tenant=tenant-1');
-		expect(apiMock.listBankTransactions).toHaveBeenCalledWith('tenant-1', 'bank-1', { status: 'UNMATCHED' });
-		expect(apiMock.listDocumentReviewSummaries).toHaveBeenCalledWith('tenant-1', 'bank_transaction', ['tx-1']);
+		expect(screen.getByRole('link', { name: 'Open reminders' })).toHaveAttribute(
+			'href',
+			'/invoices/reminders?tenant=tenant-1'
+		);
+		expect(apiMock.listBankTransactions).toHaveBeenCalledWith('tenant-1', 'bank-1', {
+			status: 'UNMATCHED'
+		});
+		expect(apiMock.listDocumentReviewSummaries).toHaveBeenCalledWith(
+			'tenant-1',
+			'bank_transaction',
+			['tx-1']
+		);
 		expect(apiMock.getDocumentRetentionReview).toHaveBeenCalledWith('tenant-1', {
 			horizon_days: 30,
 			include_missing: true
 		});
-		expect(apiMock.listExpenses).toHaveBeenCalledWith('tenant-1', { limit: 100 });
+		expect(apiMock.listExpenses).toHaveBeenCalledWith('tenant-1', {
+			limit: 100
+		});
 		expect(apiMock.listPayrollRuns).toHaveBeenCalledWith('tenant-1');
 		expect(apiMock.listTSD).toHaveBeenCalledWith('tenant-1');
 		expect(apiMock.listKMD).toHaveBeenCalledWith('tenant-1');
@@ -622,18 +670,109 @@ describe('AccountantReviewPanel', () => {
 		});
 
 		render(AccountantReviewPanel, {
-			tenant: createTenant({ settings: { ...createTenant().settings, period_lock_date: null } })
+			tenant: createTenant({
+				settings: { ...createTenant().settings, period_lock_date: null }
+			})
 		});
 
 		await waitFor(() => {
 			expect(screen.getByText('No overdue invoices need attention right now.')).toBeInTheDocument();
 		});
 
-		expect(screen.getByText('No unmatched bank transactions are waiting for review.')).toBeInTheDocument();
-		expect(screen.getByText('No assignment-ready remediation actions are waiting right now.')).toBeInTheDocument();
-		expect(screen.getByText('No close or reopen actions have been recorded yet.')).toBeInTheDocument();
+		expect(
+			screen.getByText('No unmatched bank transactions are waiting for review.')
+		).toBeInTheDocument();
+		expect(
+			screen.getByText('No assignment-ready remediation actions are waiting right now.')
+		).toBeInTheDocument();
+		expect(
+			screen.getByText('No close or reopen actions have been recorded yet.')
+		).toBeInTheDocument();
 		expect(screen.getByText('No recent journal entries to review yet.')).toBeInTheDocument();
 		expect(screen.getByText('No periods locked yet')).toBeInTheDocument();
+	});
+
+	it('surfaces migration cutover run assignments from the workspace', async () => {
+		apiMock.listBankTransactions.mockResolvedValue([]);
+		apiMock.listDocumentReviewSummaries.mockResolvedValue([]);
+		apiMock.getDocumentRetentionReview.mockResolvedValue({
+			as_of_date: '2026-02-11',
+			cutoff_date: '2026-03-13',
+			total_count: 0,
+			expired_count: 0,
+			due_soon_count: 0,
+			missing_retention_count: 0,
+			pending_review_count: 0,
+			rejected_count: 0,
+			documents: [],
+			remediation_actions: []
+		});
+		apiMock.listExpenses.mockResolvedValue([]);
+		apiMock.listPayrollRuns.mockResolvedValue([]);
+		apiMock.listTSD.mockResolvedValue([]);
+		apiMock.listKMD.mockResolvedValue([]);
+		apiMock.getYearEndCloseStatus.mockResolvedValue({
+			period_end_date: '2025-12-31',
+			fiscal_year_label: '2025',
+			fiscal_year_start_date: '2025-01-01',
+			fiscal_year_end_date: '2025-12-31',
+			carry_forward_date: '2026-01-01',
+			is_fiscal_year_end: true,
+			period_closed: true,
+			has_profit_and_loss_activity: false,
+			carry_forward_needed: false,
+			carry_forward_ready: false,
+			has_retained_earnings_account: true,
+			net_income: new Decimal(0),
+			remediation_actions: []
+		});
+		apiMock.listMigrationExecutionRuns.mockResolvedValue([
+			{
+				id: 'run-failed',
+				tenant_id: 'tenant-1',
+				summary: {
+					status: 'failed',
+					confirmed: true,
+					resumed: false,
+					plan_ready: true,
+					validation_ready: true,
+					step_count: 2,
+					running_step_count: 0,
+					succeeded_step_count: 1,
+					failed_step_count: 1,
+					skipped_step_count: 0,
+					planned_step_count: 0,
+					resumed_step_count: 0,
+					completed_step_count: 2,
+					remaining_step_count: 0,
+					progress_percent: 100,
+					needs_context_count: 0,
+					blocked_step_count: 0,
+					active_step_number: 2,
+					active_step_kind: 'contacts',
+					active_step_file_name: 'contacts.csv',
+					active_step_status: 'FAILED'
+				},
+				remediation_actions: []
+			}
+		]);
+
+		render(AccountantReviewPanel, { tenant: createTenant() });
+
+		await waitFor(() =>
+			expect(apiMock.listMigrationExecutionRuns).toHaveBeenCalledWith('tenant-1', { limit: 25 })
+		);
+		expect(
+			await screen.findByText('Migration run run-failed failed at step 2 FAILED contacts contacts.csv.')
+		).toBeInTheDocument();
+		expect(screen.getByText('Migration · migration_cutover · ACTION')).toBeInTheDocument();
+		expect(
+			screen.getByText('CLI: oa migration runs get --run-id run-failed --json')
+		).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: 'Open action' })).toHaveAttribute(
+			'href',
+			'/migration?run_id=run-failed&tenant=tenant-1'
+		);
 	});
 
 	it('generates TSD from approved payroll assignment rows', async () => {
@@ -654,7 +793,8 @@ describe('AccountantReviewPanel', () => {
 						scope: 'payroll',
 						owner_role: 'accountant',
 						workspace_queue: 'payroll_runs',
-						assignment_key: 'payroll-runs:payroll-generate-tsd:payroll-run:payroll-approved-1:2026-03',
+						assignment_key:
+							'payroll-runs:payroll-generate-tsd:payroll-run:payroll-approved-1:2026-03',
 						priority: 'high',
 						due_in_days: 1,
 						message: 'Payroll run 2026-03 is approved and ready for TSD generation.',
@@ -676,7 +816,9 @@ describe('AccountantReviewPanel', () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByText('Payroll run 2026-03 is approved and ready for TSD generation.')).toBeInTheDocument();
+			expect(
+				screen.getByText('Payroll run 2026-03 is approved and ready for TSD generation.')
+			).toBeInTheDocument();
 		});
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Generate TSD' }));
@@ -736,16 +878,19 @@ describe('AccountantReviewPanel', () => {
 						scope: 'payroll',
 						owner_role: 'accountant',
 						workspace_queue: 'payroll_runs',
-						assignment_key: 'payroll-runs:payroll-payment-date-missing:payroll-run:payroll-missing-date-1:2026-02',
+						assignment_key:
+							'payroll-runs:payroll-payment-date-missing:payroll-run:payroll-missing-date-1:2026-02',
 						priority: 'normal',
 						due_in_days: 3,
 						message: 'Payroll run 2026-02 has no payment date.',
-						action: 'Confirm the intended salary payment date before approving payroll or filing TSD.',
+						action:
+							'Confirm the intended salary payment date before approving payroll or filing TSD.',
 						entity_type: 'payroll_run',
 						entity_id: 'payroll-missing-date-1',
 						period: '2026-02',
 						ui_path: '/payroll?run_id=payroll-missing-date-1',
-						cli_command: 'oa payroll runs set-payment-date --id payroll-missing-date-1 --payment-date <YYYY-MM-DD>'
+						cli_command:
+							'oa payroll runs set-payment-date --id payroll-missing-date-1 --payment-date <YYYY-MM-DD>'
 					}
 				],
 				created_at: '2026-02-01T00:00:00Z',
@@ -764,9 +909,13 @@ describe('AccountantReviewPanel', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Set payment date' }));
 
 		await waitFor(() => {
-			expect(apiMock.updatePayrollPaymentDate).toHaveBeenCalledWith('tenant-1', 'payroll-missing-date-1', {
-				payment_date: '2026-02-28'
-			});
+			expect(apiMock.updatePayrollPaymentDate).toHaveBeenCalledWith(
+				'tenant-1',
+				'payroll-missing-date-1',
+				{
+					payment_date: '2026-02-28'
+				}
+			);
 			expect(screen.getByText('Payroll payment date set from workspace.')).toBeInTheDocument();
 		});
 	});
@@ -824,7 +973,8 @@ describe('AccountantReviewPanel', () => {
 						priority: 'normal',
 						due_in_days: 3,
 						message: 'KMD 2026-04 has no VAT rows or totals.',
-						action: 'Confirm the period has no VAT activity, or post missing VAT-bearing invoices and regenerate KMD before export.',
+						action:
+							'Confirm the period has no VAT activity, or post missing VAT-bearing invoices and regenerate KMD before export.',
 						entity_type: 'kmd_declaration',
 						entity_id: 'kmd-empty-1',
 						period: '2026-04',
@@ -858,11 +1008,13 @@ describe('AccountantReviewPanel', () => {
 						scope: 'tax',
 						owner_role: 'accountant',
 						workspace_queue: 'kmd_declarations',
-						assignment_key: 'kmd-declarations:kmd-payable-review:kmd-declaration:kmd-payable-1:2026-05',
+						assignment_key:
+							'kmd-declarations:kmd-payable-review:kmd-declaration:kmd-payable-1:2026-05',
 						priority: 'high',
 						due_in_days: 1,
 						message: 'KMD 2026-05 has VAT payable of 190.',
-						action: 'Review output/input VAT totals, generate KMD INF when needed, export XML, and submit the declaration in e-MTA.',
+						action:
+							'Review output/input VAT totals, generate KMD INF when needed, export XML, and submit the declaration in e-MTA.',
 						entity_type: 'kmd_declaration',
 						entity_id: 'kmd-payable-1',
 						period: '2026-05',
@@ -887,7 +1039,10 @@ describe('AccountantReviewPanel', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Regenerate KMD' }));
 
 		await waitFor(() => {
-			expect(apiMock.generateKMD).toHaveBeenCalledWith('tenant-1', { year: 2026, month: 4 });
+			expect(apiMock.generateKMD).toHaveBeenCalledWith('tenant-1', {
+				year: 2026,
+				month: 4
+			});
 			expect(screen.getByText('KMD regenerated from workspace.')).toBeInTheDocument();
 		});
 
@@ -956,7 +1111,8 @@ describe('AccountantReviewPanel', () => {
 						priority: 'high',
 						due_in_days: 1,
 						message: 'Expense EXP-DRAFT is still in draft.',
-						action: 'Review the merchant, accounts, amount, and evidence requirements, then submit it for approval.',
+						action:
+							'Review the merchant, accounts, amount, and evidence requirements, then submit it for approval.',
 						entity_type: 'expense',
 						entity_id: 'expense-draft-1',
 						expense_number: 'EXP-DRAFT',
@@ -995,7 +1151,8 @@ describe('AccountantReviewPanel', () => {
 						priority: 'high',
 						due_in_days: 1,
 						message: 'Expense EXP-SUBMITTED is awaiting approval.',
-						action: 'Approve the expense when policy evidence is complete, or reject it with a reason for correction.',
+						action:
+							'Approve the expense when policy evidence is complete, or reject it with a reason for correction.',
 						entity_type: 'expense',
 						entity_id: 'expense-submitted-1',
 						expense_number: 'EXP-SUBMITTED',
@@ -1034,7 +1191,8 @@ describe('AccountantReviewPanel', () => {
 						priority: 'high',
 						due_in_days: 1,
 						message: 'Expense EXP-APPROVED is approved but not posted.',
-						action: 'Post the approved expense to create the balanced ledger entry before closing the period.',
+						action:
+							'Post the approved expense to create the balanced ledger entry before closing the period.',
 						entity_type: 'expense',
 						entity_id: 'expense-approved-1',
 						expense_number: 'EXP-APPROVED',
@@ -1056,7 +1214,9 @@ describe('AccountantReviewPanel', () => {
 		await waitFor(() => {
 			expect(screen.getByText('Expense EXP-DRAFT is still in draft.')).toBeInTheDocument();
 			expect(screen.getByText('Expense EXP-SUBMITTED is awaiting approval.')).toBeInTheDocument();
-			expect(screen.getByText('Expense EXP-APPROVED is approved but not posted.')).toBeInTheDocument();
+			expect(
+				screen.getByText('Expense EXP-APPROVED is approved but not posted.')
+			).toBeInTheDocument();
 		});
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Submit expense' }));
@@ -1121,7 +1281,9 @@ describe('AccountantReviewPanel', () => {
 			expect(apiMock.sendPaymentReminder).toHaveBeenCalledWith('tenant-1', 'inv-1', undefined);
 		});
 		await waitFor(() => {
-			expect(screen.getByText('Reminder sent successfully for invoice INV-001')).toBeInTheDocument();
+			expect(
+				screen.getByText('Reminder sent successfully for invoice INV-001')
+			).toBeInTheDocument();
 		});
 		expect(apiMock.getOverdueInvoices).toHaveBeenCalledTimes(2);
 	});

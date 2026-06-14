@@ -13,6 +13,8 @@ import {
 	type JournalEntry,
 	type KMDDeclaration,
 	type KMDRemediationAction,
+	type MigrationExecutionRun,
+	type MigrationRemediationAction,
 	type OverdueInvoicesSummary,
 	type PayrollRun,
 	type PayrollRunRemediationAction,
@@ -60,7 +62,8 @@ export type WorkspaceAssignmentSource =
 	| 'expenses'
 	| 'payroll'
 	| 'tsd'
-	| 'kmd';
+	| 'kmd'
+	| 'migration';
 
 export type WorkspaceAssignmentAction = {
 	id: string;
@@ -119,17 +122,22 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 		payrollResult,
 		tsdResult,
 		kmdResult,
+		migrationRunsResult,
 		yearEndCloseResult
 	] = await Promise.allSettled([
 		api.getOverdueInvoices(tenant.id),
 		api.listBankAccounts(tenant.id, true),
 		api.listPeriodCloseEvents(tenant.id, 6),
 		api.listJournalEntries(tenant.id, 6),
-		api.getDocumentRetentionReview(tenant.id, { horizon_days: 30, include_missing: true }),
+		api.getDocumentRetentionReview(tenant.id, {
+			horizon_days: 30,
+			include_missing: true
+		}),
 		api.listExpenses(tenant.id, { limit: 100 }),
 		api.listPayrollRuns(tenant.id),
 		api.listTSD(tenant.id),
 		api.listKMD(tenant.id),
+		api.listMigrationExecutionRuns(tenant.id, { limit: 25 }),
 		api.getYearEndCloseStatus(tenant.id, lastFiscalYearEnd)
 	] as const);
 
@@ -147,7 +155,8 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 		expenses: expensesResult.status === 'fulfilled' ? expensesResult.value : [],
 		payrollRuns: payrollResult.status === 'fulfilled' ? payrollResult.value : [],
 		tsdDeclarations: tsdResult.status === 'fulfilled' ? tsdResult.value : [],
-		kmdDeclarations: kmdResult.status === 'fulfilled' ? kmdResult.value : []
+		kmdDeclarations: kmdResult.status === 'fulfilled' ? kmdResult.value : [],
+		migrationRuns: migrationRunsResult.status === 'fulfilled' ? migrationRunsResult.value : []
 	});
 
 	const errorCount = [overdueResult, accountsResult, periodCloseResult, journalResult].filter(
@@ -159,7 +168,8 @@ export async function loadTenantReviewSnapshot(tenant: Tenant): Promise<TenantRe
 		expensesResult,
 		payrollResult,
 		tsdResult,
-		kmdResult
+		kmdResult,
+		migrationRunsResult
 	].filter((result) => result.status === 'rejected').length;
 
 	return {
@@ -183,6 +193,7 @@ function buildWorkspaceAssignmentActions(input: {
 	payrollRuns: PayrollRun[];
 	tsdDeclarations: TSDDeclaration[];
 	kmdDeclarations: KMDDeclaration[];
+	migrationRuns: MigrationExecutionRun[];
 }): WorkspaceAssignmentAction[] {
 	const actions: WorkspaceAssignmentAction[] = [];
 
@@ -212,6 +223,10 @@ function buildWorkspaceAssignmentActions(input: {
 		...normalizeRemediationActions(
 			'kmd',
 			input.kmdDeclarations.flatMap((declaration) => declaration.remediation_actions ?? [])
+		),
+		...normalizeRemediationActions(
+			'migration',
+			buildMigrationRunRemediationActions(input.migrationRuns)
 		)
 	);
 
@@ -225,6 +240,7 @@ function normalizeRemediationActions(
 		| DocumentRemediationAction[]
 		| ExpenseRemediationAction[]
 		| KMDRemediationAction[]
+		| MigrationRemediationAction[]
 		| PayrollRunRemediationAction[]
 		| TSDRemediationAction[]
 		| YearEndCloseRemediationAction[],
@@ -257,7 +273,7 @@ function normalizeRemediationAction(
 		severity: action.severity,
 		message: action.message,
 		action: action.action,
-		uiPath: action.ui_path,
+		uiPath: action.ui_path || defaultAssignmentUIPath(source, action),
 		cliCommand: action.cli_command,
 		entityType: action.entity_type,
 		entityId: action.entity_id,
@@ -267,6 +283,129 @@ function normalizeRemediationAction(
 		periodEndDate:
 			action.period_end_date?.trim() || action.fiscal_year_end_date?.trim() || context.periodEndDate
 	};
+}
+
+function defaultAssignmentUIPath(
+	source: WorkspaceAssignmentSource,
+	action: RemediationActionLike
+): string | undefined {
+	if (source === 'migration' || action.workspace_queue === 'migration_cutover') {
+		return '/migration';
+	}
+	return undefined;
+}
+
+function buildMigrationRunRemediationActions(
+	runs: MigrationExecutionRun[]
+): MigrationRemediationAction[] {
+	return runs
+		.filter((run) => run.summary.status !== 'succeeded')
+		.flatMap((run) => {
+			const actions = run.remediation_actions ?? [];
+			const runStatusAction = buildMigrationRunStatusAction(run);
+			return runStatusAction ? [runStatusAction, ...actions] : actions;
+		});
+}
+
+function buildMigrationRunStatusAction(
+	run: MigrationExecutionRun
+): MigrationRemediationAction | null {
+	const runId = run.id?.trim();
+	if (!runId) {
+		return null;
+	}
+
+	const status = run.summary.status;
+	const activeStep = formatMigrationActiveStep(run);
+	const uiPath = `/migration?run_id=${encodeURIComponent(runId)}`;
+
+	if (status === 'failed') {
+		return {
+			code: 'migration_execution_failed',
+			severity: 'ACTION',
+			scope: 'migration',
+			owner_role: 'accountant',
+			workspace_queue: 'migration_cutover',
+			assignment_key: `migration:execution-failed:${runId}`,
+			priority: 'high',
+			due_in_days: 0,
+			message: `Migration run ${runId} failed${activeStep ? ` at ${activeStep}` : ''}.`,
+			action:
+				'Open the migration workbench, inspect the failed step, correct the bundle or execution context, and resume the run.',
+			issue_count: run.summary.failed_step_count || 1,
+			ui_path: uiPath,
+			cli_command: `oa migration runs get --run-id ${runId} --json`
+		};
+	}
+
+	if (status === 'running') {
+		return {
+			code: 'migration_execution_running',
+			severity: 'ACTION',
+			scope: 'migration',
+			owner_role: 'accountant',
+			workspace_queue: 'migration_cutover',
+			assignment_key: `migration:execution-running:${runId}`,
+			priority: 'normal',
+			due_in_days: 0,
+			message: `Migration run ${runId} is running${activeStep ? ` at ${activeStep}` : ''}.`,
+			action: 'Open the migration workbench to monitor progress and active-step telemetry.',
+			issue_count: run.summary.running_step_count || 1,
+			ui_path: uiPath,
+			cli_command: `oa migration runs get --run-id ${runId} --json`
+		};
+	}
+
+	if (status === 'needs_confirmation') {
+		return {
+			code: 'migration_execution_needs_confirmation',
+			severity: 'ACTION',
+			scope: 'migration',
+			owner_role: 'accountant',
+			workspace_queue: 'migration_cutover',
+			assignment_key: `migration:execution-needs-confirmation:${runId}`,
+			priority: 'normal',
+			due_in_days: 1,
+			message: `Migration run ${runId} is ready for accountant confirmation.`,
+			action:
+				'Open the migration workbench, review the saved plan, and execute the confirmed cutover when ready.',
+			issue_count: run.summary.planned_step_count || 1,
+			ui_path: uiPath,
+			cli_command: `oa migration execute --resume-run-id ${runId} --confirm --json`
+		};
+	}
+
+	if (status === 'blocked') {
+		return {
+			code: 'migration_execution_blocked',
+			severity: 'BLOCKER',
+			scope: 'migration',
+			owner_role: 'accountant',
+			workspace_queue: 'migration_cutover',
+			assignment_key: `migration:execution-blocked:${runId}`,
+			priority: 'high',
+			due_in_days: 1,
+			message: `Migration run ${runId} is blocked before execution.`,
+			action:
+				'Open the migration workbench, resolve preflight or missing-context blockers, and rebuild the execution plan.',
+			issue_count: run.summary.blocked_step_count || run.summary.needs_context_count || 1,
+			ui_path: uiPath,
+			cli_command: `oa migration runs get --run-id ${runId} --json`
+		};
+	}
+
+	return null;
+}
+
+function formatMigrationActiveStep(run: MigrationExecutionRun): string {
+	if (!run.summary.active_step_number) {
+		return '';
+	}
+	const parts = [`step ${run.summary.active_step_number}`];
+	if (run.summary.active_step_status) parts.push(run.summary.active_step_status);
+	if (run.summary.active_step_kind) parts.push(run.summary.active_step_kind);
+	if (run.summary.active_step_file_name) parts.push(run.summary.active_step_file_name);
+	return parts.join(' ');
 }
 
 function dedupeAssignments(actions: WorkspaceAssignmentAction[]): WorkspaceAssignmentAction[] {
@@ -282,7 +421,10 @@ function dedupeAssignments(actions: WorkspaceAssignmentAction[]): WorkspaceAssig
 	return deduped;
 }
 
-function compareAssignments(left: WorkspaceAssignmentAction, right: WorkspaceAssignmentAction): number {
+function compareAssignments(
+	left: WorkspaceAssignmentAction,
+	right: WorkspaceAssignmentAction
+): number {
 	const priorityDiff = priorityRank(left.priority) - priorityRank(right.priority);
 	if (priorityDiff !== 0) {
 		return priorityDiff;
@@ -340,11 +482,16 @@ function dueWindowForSeverity(severity: string): number {
 	}
 }
 
-async function loadUnmatchedTransactions(tenantId: string, accounts: BankAccount[]): Promise<BankExceptionGroup[]> {
+async function loadUnmatchedTransactions(
+	tenantId: string,
+	accounts: BankAccount[]
+): Promise<BankExceptionGroup[]> {
 	const groups = await Promise.all(
 		accounts.map(async (account) => {
 			try {
-				const transactions = await api.listBankTransactions(tenantId, account.id, { status: 'UNMATCHED' });
+				const transactions = await api.listBankTransactions(tenantId, account.id, {
+					status: 'UNMATCHED'
+				});
 				let documentSummaries: Record<string, DocumentReviewSummary> = {};
 				if (transactions.length > 0) {
 					documentSummaries = await loadDocumentSummaries(
@@ -365,7 +512,10 @@ async function loadUnmatchedTransactions(tenantId: string, accounts: BankAccount
 		.sort((left, right) => right.transactions.length - left.transactions.length);
 }
 
-async function loadJournalEvidence(tenantId: string, entries: JournalEntry[]): Promise<JournalEvidenceItem[]> {
+async function loadJournalEvidence(
+	tenantId: string,
+	entries: JournalEntry[]
+): Promise<JournalEvidenceItem[]> {
 	const draftEvidenceEntries = entries.filter(
 		(entry) => entry.requires_evidence && entry.status === 'DRAFT'
 	);
@@ -378,10 +528,14 @@ async function loadJournalEvidence(tenantId: string, entries: JournalEntry[]): P
 	return draftEvidenceEntries
 		.map((entry) => ({
 			entry,
-			documentSummary: documentSummaries[entry.id] ?? missingDocumentSummary('journal_entry', entry.id)
+			documentSummary:
+				documentSummaries[entry.id] ?? missingDocumentSummary('journal_entry', entry.id)
 		}))
 		.filter((item) => needsEvidenceFollowUp(item.documentSummary))
-		.sort((left, right) => new Date(right.entry.entry_date).getTime() - new Date(left.entry.entry_date).getTime());
+		.sort(
+			(left, right) =>
+				new Date(right.entry.entry_date).getTime() - new Date(left.entry.entry_date).getTime()
+		);
 }
 
 async function loadDocumentSummaries(
@@ -417,10 +571,15 @@ export function flattenUnmatchedTransactions(bankExceptions: BankExceptionGroup[
 				account: group.account,
 				transaction,
 				documentSummary:
-					group.documentSummaries[transaction.id] ?? missingDocumentSummary('bank_transaction', transaction.id)
+					group.documentSummaries[transaction.id] ??
+					missingDocumentSummary('bank_transaction', transaction.id)
 			}))
 		)
-		.sort((left, right) => new Date(right.transaction.transaction_date).getTime() - new Date(left.transaction.transaction_date).getTime());
+		.sort(
+			(left, right) =>
+				new Date(right.transaction.transaction_date).getTime() -
+				new Date(left.transaction.transaction_date).getTime()
+		);
 }
 
 function missingDocumentSummary(
@@ -475,7 +634,10 @@ export function monthEndOffset(value: Date, monthOffset: number): Date {
 	return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + monthOffset + 1, 0));
 }
 
-export function getSuggestedCloseDate(periodLockDate: string | null | undefined, today: Date = new Date()): string {
+export function getSuggestedCloseDate(
+	periodLockDate: string | null | undefined,
+	today: Date = new Date()
+): string {
 	const currentLock = parseDateValue(periodLockDate);
 	if (currentLock) {
 		return formatIsoDate(monthEndOffset(currentLock, 1));
@@ -484,7 +646,10 @@ export function getSuggestedCloseDate(periodLockDate: string | null | undefined,
 	return formatIsoDate(monthEndOffset(today, -1));
 }
 
-export function needsPeriodClose(periodLockDate: string | null | undefined, today: Date = new Date()): boolean {
+export function needsPeriodClose(
+	periodLockDate: string | null | undefined,
+	today: Date = new Date()
+): boolean {
 	const currentLock = parseDateValue(periodLockDate);
 	if (!currentLock) {
 		return true;
