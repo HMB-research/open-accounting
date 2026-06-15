@@ -110,13 +110,7 @@ func (s *Service) startPackageBackendRuntimeWithStats(plugin *Plugin, manifest *
 	output := newRuntimeProcessLogBuffer(packageRuntimeLogLimit)
 	cmd := exec.CommandContext(context.Background(), executablePath)
 	cmd.Dir = backendDir
-	cmd.Env = append(os.Environ(),
-		"OPEN_ACCOUNTING_PLUGIN_ID="+plugin.ID.String(),
-		"OPEN_ACCOUNTING_PLUGIN_NAME="+plugin.Name,
-		"OPEN_ACCOUNTING_RUNTIME_ADDR="+listenAddr,
-		"OPEN_ACCOUNTING_RUNTIME_BASE_URL="+baseURL.String(),
-		"OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH="+packageRuntimeHealthPath,
-	)
+	cmd.Env = packageRuntimeEnvironment(plugin, listenAddr, baseURL.String())
 	cmd.Stdout = output
 	cmd.Stderr = output
 
@@ -154,6 +148,48 @@ func (s *Service) startPackageBackendRuntimeWithStats(plugin *Plugin, manifest *
 	runtime.markReady()
 
 	return runtime, nil
+}
+
+var packageRuntimeAllowedHostEnvironment = map[string]struct{}{
+	"LANG":          {},
+	"LC_ALL":        {},
+	"PATH":          {},
+	"PATHEXT":       {},
+	"SSL_CERT_DIR":  {},
+	"SSL_CERT_FILE": {},
+	"SYSTEMROOT":    {},
+	"TEMP":          {},
+	"TMP":           {},
+	"TMPDIR":        {},
+	"TZ":            {},
+	"WINDIR":        {},
+}
+
+func packageRuntimeEnvironment(plugin *Plugin, listenAddr, baseURL string) []string {
+	env := make([]string, 0, len(packageRuntimeAllowedHostEnvironment)+5)
+	seen := make(map[string]struct{}, len(packageRuntimeAllowedHostEnvironment)+5)
+	for _, kv := range os.Environ() {
+		key, _, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		if _, allowed := packageRuntimeAllowedHostEnvironment[key]; !allowed {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		env = append(env, kv)
+	}
+
+	return append(env,
+		"OPEN_ACCOUNTING_PLUGIN_ID="+plugin.ID.String(),
+		"OPEN_ACCOUNTING_PLUGIN_NAME="+plugin.Name,
+		"OPEN_ACCOUNTING_RUNTIME_ADDR="+listenAddr,
+		"OPEN_ACCOUNTING_RUNTIME_BASE_URL="+baseURL,
+		"OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH="+packageRuntimeHealthPath,
+	)
 }
 
 func resolvePackageRuntimeExecutable(pluginRoot string, backend *BackendConfig) (string, string, error) {

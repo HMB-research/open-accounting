@@ -79,6 +79,7 @@
 > The follow-up plugin HTTP runtime stage was locally revalidated with focused plugin service/API route tests, generated OpenAPI docs, docs status tests, and the CLI coverage gate.
 > The follow-up plugin runtime workspace actions stage was locally revalidated with focused plugin service/API/frontend tests, generated OpenAPI docs, docs status tests, prepared Svelte checks, frontend build, and the CLI coverage gate.
 > The follow-up plugin package runtime automatic restart stage was locally revalidated with a focused forced-crash supervisor test.
+> The follow-up plugin package runtime environment isolation stage was locally revalidated with focused package runtime environment and supervisor regression tests.
 > The follow-up tax declaration evidence workspace stage was locally revalidated with focused review-panel, review-workspace, document-queue, frontend API, prepared Svelte, docs, lint, and CLI coverage gates.
 > The follow-up KMD VAT-history execution dependency stage was locally revalidated with focused cutover execution-plan tests.
 > The follow-up evidence-policy violation upload assignment stage was locally revalidated with focused accountant review-panel tests and the Svelte autofixer.
@@ -451,7 +452,7 @@ open-accounting/
 - [ ] Remaining payroll/document/evidence-policy edges and deeper accountant-workspace execution beyond the current assignment queue, direct bank follow-up, reminder actions, pending-document assignment approval, document-retention date setting, evidence/missing-document upload and replacement including evidence-policy violation upload, unapproved-evidence approval, payroll-run calculation/recalculation, payment-date setting and approval, payroll TSD assignment generation, payroll paid-run TSD follow-up generation, declared payroll archive XML export, TSD declaration XML export and acceptance marking, KMD assignment regeneration/export/acceptance marking, KMD INF/EU VAT OSS report generation, expense submit/approve/post assignment completion, fiscal-year close/carry-forward assignment completion, and migration saved-run handoff, especially remaining document evidence-policy follow-up
 - [ ] Automated document policy enforcement in remaining workflow blockers
 - [ ] Remaining auth hardening beyond the current API/CLI/settings controls for tenant member status, sessions, API tokens, audit visibility, failed-login audit, and credential-aware failed-login throttling
-- [ ] Broader plugin production hardening beyond the current loopback HTTP runtime, supervised package runtime startup/proxy/shutdown/status/manual restart/automatic crash restart, and safe operator-bundled frontend component registry, especially OS-level sandboxing and broader resource isolation
+- [ ] Broader plugin production hardening beyond the current loopback HTTP runtime, supervised package runtime startup/proxy/shutdown/status/manual restart/automatic crash restart, allowlisted package runtime process environment, and safe operator-bundled frontend component registry, especially OS-level sandboxing and broader resource isolation
 - [ ] Direct e-invoice operator send/receive, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---
