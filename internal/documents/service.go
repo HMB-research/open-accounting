@@ -15,6 +15,13 @@ import (
 
 var fileNameSanitizer = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
+const (
+	defaultReviewQueueLimit = 50
+	maxReviewQueueLimit     = 200
+	defaultPurgeLimit       = 100
+	maxPurgeLimit           = 1000
+)
+
 type Service struct {
 	repo  Repository
 	store Store
@@ -45,6 +52,15 @@ func (s *Service) UploadDocument(ctx context.Context, schemaName, tenantID strin
 		return nil, fmt.Errorf("uploaded by user is required")
 	}
 
+	var replacesDocument *Document
+	replacesDocumentID := strings.TrimSpace(req.ReplacesDocumentID)
+	if replacesDocumentID != "" {
+		replacesDocument, err = s.validateReplacementDocument(ctx, schemaName, tenantID, replacesDocumentID, entityType, entityID, documentType)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	fileName := sanitizeFileName(req.FileName)
 	if fileName == "" {
 		return nil, fmt.Errorf("file name is required")
@@ -64,20 +80,27 @@ func (s *Service) UploadDocument(ctx context.Context, schemaName, tenantID strin
 		return nil, fmt.Errorf("target record not found")
 	}
 
+	createdAt := time.Now().UTC()
+	retentionUntil, err := normalizeUploadRetention(req.RetentionUntil, req.RetentionYears, createdAt)
+	if err != nil {
+		return nil, err
+	}
+
 	doc := &Document{
-		ID:             uuid.New().String(),
-		TenantID:       tenantID,
-		EntityType:     entityType,
-		EntityID:       entityID,
-		DocumentType:   documentType,
-		FileName:       fileName,
-		ContentType:    normalizeContentType(req.ContentType, fileName),
-		FileSize:       req.FileSize,
-		Notes:          strings.TrimSpace(req.Notes),
-		RetentionUntil: req.RetentionUntil,
-		ReviewStatus:   ReviewStatusPending,
-		UploadedBy:     strings.TrimSpace(req.UploadedBy),
-		CreatedAt:      time.Now().UTC(),
+		ID:              uuid.New().String(),
+		TenantID:        tenantID,
+		EntityType:      entityType,
+		EntityID:        entityID,
+		DocumentType:    documentType,
+		FileName:        fileName,
+		ContentType:     normalizeContentType(req.ContentType, fileName),
+		FileSize:        req.FileSize,
+		Notes:           strings.TrimSpace(req.Notes),
+		RetentionUntil:  retentionUntil,
+		ReviewStatus:    ReviewStatusPending,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      strings.TrimSpace(req.UploadedBy),
+		CreatedAt:       createdAt,
 	}
 	doc.StorageKey = buildStorageKey(tenantID, doc.CreatedAt, doc.ID, fileName)
 
@@ -90,6 +113,39 @@ func (s *Service) UploadDocument(ctx context.Context, schemaName, tenantID strin
 		return nil, err
 	}
 
+	if replacesDocument != nil {
+		note := strings.TrimSpace(req.ReplacementNote)
+		if note == "" {
+			note = fmt.Sprintf("Replaced by %s", doc.ID)
+		}
+		replacementID := doc.ID
+		if err := s.repo.UpdateDocumentLifecycle(ctx, schemaName, tenantID, replacesDocument.ID, LifecycleStatusSuperseded, note, strings.TrimSpace(req.UploadedBy), createdAt, &replacementID); err != nil {
+			_ = s.store.Delete(ctx, doc.StorageKey)
+			_ = s.repo.DeleteDocument(ctx, schemaName, tenantID, doc.ID)
+			return nil, err
+		}
+	}
+
+	return doc, nil
+}
+
+func (s *Service) validateReplacementDocument(ctx context.Context, schemaName, tenantID, documentID, entityType, entityID, documentType string) (*Document, error) {
+	doc, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, strings.TrimSpace(documentID))
+	if err != nil {
+		return nil, err
+	}
+	if documentLifecycleStatus(doc) != LifecycleStatusActive {
+		return nil, fmt.Errorf("replacement source document must be active")
+	}
+	if doc.LegalHold {
+		return nil, fmt.Errorf("replacement source document is under legal hold")
+	}
+	if doc.EntityType != entityType || doc.EntityID != entityID {
+		return nil, fmt.Errorf("replacement document must target the same entity")
+	}
+	if doc.DocumentType != documentType {
+		return nil, fmt.Errorf("replacement document type must match the original document")
+	}
 	return doc, nil
 }
 
@@ -143,9 +199,12 @@ func (s *Service) ListReviewSummaries(ctx context.Context, schemaName, tenantID,
 				EntityID:           entityID,
 				MissingEvidence:    true,
 				HasPendingReview:   false,
+				HasRejected:        false,
 				TotalCount:         0,
 				PendingReviewCount: 0,
 				ReviewedCount:      0,
+				ApprovedCount:      0,
+				RejectedCount:      0,
 			}
 		}
 		result = append(result, summary)
@@ -154,20 +213,405 @@ func (s *Service) ListReviewSummaries(ctx context.Context, schemaName, tenantID,
 	return result, nil
 }
 
+func (s *Service) GetReviewQueue(ctx context.Context, schemaName, tenantID string, filter ReviewQueueFilter) (*ReviewQueue, error) {
+	entityType, err := normalizeOptionalEntityType(filter.EntityType)
+	if err != nil {
+		return nil, err
+	}
+	documentType, err := normalizeOptionalDocumentType(filter.DocumentType)
+	if err != nil {
+		return nil, err
+	}
+	reviewStatus, err := normalizeReviewQueueStatus(filter.ReviewStatus)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := normalizeReviewQueueLimit(filter.Limit)
+	if err != nil {
+		return nil, err
+	}
+
+	normalizedFilter := ReviewQueueFilter{
+		EntityType:   entityType,
+		DocumentType: documentType,
+		ReviewStatus: reviewStatus,
+		Limit:        limit,
+	}
+	docs, err := s.repo.ListReviewQueueDocuments(ctx, schemaName, tenantID, normalizedFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	queue := &ReviewQueue{
+		EntityType:   entityType,
+		DocumentType: documentType,
+		ReviewStatus: reviewQueueStatusLabel(reviewStatus),
+		Limit:        limit,
+		TotalCount:   len(docs),
+		Documents:    docs,
+	}
+	for _, doc := range docs {
+		switch doc.ReviewStatus {
+		case ReviewStatusReviewed:
+			queue.ReviewedCount++
+		case ReviewStatusApproved:
+			queue.ReviewedCount++
+			queue.ApprovedCount++
+		case ReviewStatusRejected:
+			queue.ReviewedCount++
+			queue.RejectedCount++
+		default:
+			queue.PendingReviewCount++
+		}
+	}
+
+	return queue, nil
+}
+
+func (s *Service) EvaluateEvidencePolicy(ctx context.Context, schemaName, tenantID string, req *EvidencePolicyRequest) ([]EvidencePolicyResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("evidence policy request is required")
+	}
+
+	normalizedType, err := normalizeEntityType(req.EntityType)
+	if err != nil {
+		return nil, err
+	}
+	normalizedIDs := normalizeEntityIDs(req.EntityIDs)
+	if len(normalizedIDs) == 0 {
+		return nil, fmt.Errorf("at least one entity ID is required")
+	}
+	rules, err := normalizeEvidencePolicyRules(req.Rules)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]EvidencePolicyResult, 0, len(normalizedIDs))
+	for _, entityID := range normalizedIDs {
+		docs, err := s.repo.ListDocuments(ctx, schemaName, tenantID, normalizedType, entityID)
+		if err != nil {
+			return nil, err
+		}
+		result := evaluateEvidencePolicyForDocuments(normalizedType, entityID, docs, rules)
+		result.RemediationActions = BuildEvidencePolicyRemediationActions(&result, activeEvidenceDocuments(docs)...)
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+func (s *Service) GetRetentionReview(ctx context.Context, schemaName, tenantID string, asOfDate time.Time, horizonDays int, includeMissing bool) (*RetentionReview, error) {
+	if horizonDays < 0 {
+		return nil, fmt.Errorf("horizon days must be zero or greater")
+	}
+	asOf := dateOnlyUTC(asOfDate)
+	cutoff := asOf.AddDate(0, 0, horizonDays)
+
+	docs, err := s.repo.ListRetentionReviewDocuments(ctx, schemaName, tenantID, cutoff, includeMissing)
+	if err != nil {
+		return nil, err
+	}
+
+	review := &RetentionReview{
+		AsOfDate:   asOf.Format("2006-01-02"),
+		CutoffDate: cutoff.Format("2006-01-02"),
+		TotalCount: len(docs),
+		Documents:  docs,
+	}
+	for _, doc := range docs {
+		if doc.RetentionUntil == nil {
+			review.MissingRetentionCount++
+			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderMissingRetention, "Retention date is missing", asOf))
+		} else if dateOnlyUTC(*doc.RetentionUntil).After(asOf) {
+			review.DueSoonCount++
+			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderDueSoon, fmt.Sprintf("Retention is due on %s", dateOnlyUTC(*doc.RetentionUntil).Format("2006-01-02")), asOf))
+		} else {
+			review.ExpiredCount++
+			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderExpired, fmt.Sprintf("Retention expired on %s", dateOnlyUTC(*doc.RetentionUntil).Format("2006-01-02")), asOf))
+		}
+		if doc.ReviewStatus == ReviewStatusPending {
+			review.PendingReviewCount++
+			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderPendingReview, "Document is still pending review", asOf))
+		}
+		if doc.ReviewStatus == ReviewStatusRejected {
+			review.RejectedCount++
+			review.ReminderActions = append(review.ReminderActions, retentionReminderAction(doc, RetentionReminderRejected, "Document was rejected and needs remediation", asOf))
+		}
+	}
+	review.RemediationActions = BuildRetentionReviewRemediationActions(review)
+
+	return review, nil
+}
+
+func (s *Service) PurgeExpiredDocuments(ctx context.Context, schemaName, tenantID string, req DocumentPurgeRequest) (*DocumentPurgeResult, error) {
+	asOf := dateOnlyUTC(req.AsOfDate)
+	if req.AsOfDate.IsZero() {
+		asOf = dateOnlyUTC(time.Now().UTC())
+	}
+	limit, err := normalizePurgeLimit(req.Limit)
+	if err != nil {
+		return nil, err
+	}
+
+	docs, err := s.repo.ListRetentionReviewDocuments(ctx, schemaName, tenantID, asOf, false)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &DocumentPurgeResult{
+		AsOfDate:       asOf.Format("2006-01-02"),
+		DryRun:         req.DryRun,
+		Limit:          limit,
+		CandidateCount: len(docs),
+		Candidates:     make([]DocumentPurgeCandidate, 0, len(docs)),
+	}
+	for _, doc := range docs {
+		candidate := documentPurgeCandidate(doc)
+		if candidate.Eligible {
+			if result.EligibleCount >= limit {
+				candidate.Eligible = false
+				candidate.SkipReason = "limit_reached"
+			} else {
+				result.EligibleCount++
+				if !req.DryRun {
+					if err := s.DeleteDocument(ctx, schemaName, tenantID, doc.ID); err != nil {
+						return result, fmt.Errorf("purge document %s: %w", doc.ID, err)
+					}
+					candidate.Purged = true
+					result.PurgedCount++
+				}
+			}
+		}
+		if !candidate.Eligible {
+			result.SkippedCount++
+		}
+		result.Candidates = append(result.Candidates, candidate)
+	}
+
+	return result, nil
+}
+
+func documentPurgeCandidate(doc Document) DocumentPurgeCandidate {
+	candidate := DocumentPurgeCandidate{
+		DocumentID:      doc.ID,
+		EntityType:      doc.EntityType,
+		EntityID:        doc.EntityID,
+		DocumentType:    doc.DocumentType,
+		FileName:        doc.FileName,
+		RetentionUntil:  doc.RetentionUntil,
+		LifecycleStatus: documentLifecycleStatus(&doc),
+		LegalHold:       doc.LegalHold,
+		Eligible:        true,
+	}
+	if doc.LegalHold {
+		candidate.Eligible = false
+		candidate.SkipReason = "legal_hold"
+		return candidate
+	}
+	if candidate.LifecycleStatus != LifecycleStatusDisposed {
+		candidate.Eligible = false
+		candidate.SkipReason = "not_disposed"
+	}
+	return candidate
+}
+
+func retentionReminderAction(doc Document, action, message string, asOf time.Time) RetentionReminderAction {
+	reminder := RetentionReminderAction{
+		DocumentID:   doc.ID,
+		EntityType:   doc.EntityType,
+		EntityID:     doc.EntityID,
+		DocumentType: doc.DocumentType,
+		FileName:     doc.FileName,
+		Action:       action,
+		Message:      message,
+	}
+	if doc.RetentionUntil != nil {
+		retentionDate := dateOnlyUTC(*doc.RetentionUntil)
+		daysUntilRetention := int(retentionDate.Sub(asOf).Hours() / 24)
+		reminder.RetentionUntil = &retentionDate
+		reminder.DaysUntilRetention = &daysUntilRetention
+	}
+	return reminder
+}
+
 func (s *Service) MarkDocumentReviewed(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string) (*Document, error) {
+	return s.ReviewDocument(ctx, schemaName, tenantID, documentID, reviewedBy, &ReviewDocumentRequest{
+		ReviewStatus: ReviewStatusReviewed,
+	})
+}
+
+func (s *Service) UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) (*Document, error) {
+	trimmedID := strings.TrimSpace(documentID)
+	if trimmedID == "" {
+		return nil, fmt.Errorf("document ID is required")
+	}
+
+	if _, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID); err != nil {
+		return nil, err
+	}
+
+	var normalizedRetention *time.Time
+	if retentionUntil != nil {
+		normalized := dateOnlyUTC(*retentionUntil)
+		normalizedRetention = &normalized
+	}
+
+	if err := s.repo.UpdateDocumentRetention(ctx, schemaName, tenantID, trimmedID, normalizedRetention); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID)
+}
+
+func (s *Service) UpdateDocumentLifecycle(ctx context.Context, schemaName, tenantID, documentID, actionedBy string, req *DocumentLifecycleRequest) (*Document, error) {
+	trimmedID := strings.TrimSpace(documentID)
+	if trimmedID == "" {
+		return nil, fmt.Errorf("document ID is required")
+	}
+	if strings.TrimSpace(actionedBy) == "" {
+		return nil, fmt.Errorf("lifecycle actioned by user is required")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("lifecycle request is required")
+	}
+
+	status, err := normalizeLifecycleStatus(req.LifecycleStatus)
+	if err != nil {
+		return nil, err
+	}
+	note := strings.TrimSpace(req.LifecycleNote)
+	if len(note) > 2000 {
+		return nil, fmt.Errorf("lifecycle note must be 2000 characters or less")
+	}
+	if status == LifecycleStatusArchived || status == LifecycleStatusDisposed {
+		if note == "" {
+			return nil, fmt.Errorf("lifecycle note is required when archiving or disposing a document")
+		}
+	}
+
+	doc, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID)
+	if err != nil {
+		return nil, err
+	}
+	if doc.LegalHold && (status == LifecycleStatusDisposed || status == LifecycleStatusSuperseded) {
+		return nil, fmt.Errorf("document is under legal hold and cannot be disposed or superseded")
+	}
+
+	var supersededBy *string
+	if status == LifecycleStatusSuperseded {
+		replacementID := strings.TrimSpace(req.SupersededByDocument)
+		if replacementID == "" {
+			return nil, fmt.Errorf("superseded_by_document_id is required when superseding a document")
+		}
+		if replacementID == trimmedID {
+			return nil, fmt.Errorf("document cannot supersede itself")
+		}
+		replacement, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, replacementID)
+		if err != nil {
+			return nil, fmt.Errorf("replacement document not found: %w", err)
+		}
+		if replacement.EntityType != doc.EntityType || replacement.EntityID != doc.EntityID || replacement.DocumentType != doc.DocumentType {
+			return nil, fmt.Errorf("replacement document must match entity and document type")
+		}
+		supersededBy = &replacementID
+	}
+	if status == LifecycleStatusActive && note == "" {
+		note = "Document lifecycle restored to active"
+	}
+
+	if err := s.repo.UpdateDocumentLifecycle(ctx, schemaName, tenantID, trimmedID, status, note, strings.TrimSpace(actionedBy), time.Now().UTC(), supersededBy); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID)
+}
+
+func (s *Service) UpdateDocumentLegalHold(ctx context.Context, schemaName, tenantID, documentID, actionedBy string, req *DocumentLegalHoldRequest) (*Document, error) {
+	trimmedID := strings.TrimSpace(documentID)
+	if trimmedID == "" {
+		return nil, fmt.Errorf("document ID is required")
+	}
+	if strings.TrimSpace(actionedBy) == "" {
+		return nil, fmt.Errorf("legal hold actioned by user is required")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("legal hold request is required")
+	}
+
+	note := strings.TrimSpace(req.Note)
+	if note == "" {
+		return nil, fmt.Errorf("legal hold note is required")
+	}
+	if len(note) > 2000 {
+		return nil, fmt.Errorf("legal hold note must be 2000 characters or less")
+	}
+
+	if _, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID); err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateDocumentLegalHold(ctx, schemaName, tenantID, trimmedID, req.LegalHold, note, strings.TrimSpace(actionedBy), time.Now().UTC()); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetDocumentByID(ctx, schemaName, tenantID, trimmedID)
+}
+
+func dateOnlyUTC(value time.Time) time.Time {
+	utc := value.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func normalizeUploadRetention(retentionUntil *time.Time, retentionYears int, createdAt time.Time) (*time.Time, error) {
+	if retentionYears < 0 {
+		return nil, fmt.Errorf("retention years must be zero or greater")
+	}
+	if retentionYears > MaxRetentionYears {
+		return nil, fmt.Errorf("retention years cannot exceed %d", MaxRetentionYears)
+	}
+	if retentionUntil != nil && retentionYears > 0 {
+		return nil, fmt.Errorf("retention_until and retention_years cannot be combined")
+	}
+	if retentionUntil != nil {
+		normalized := dateOnlyUTC(*retentionUntil)
+		return &normalized, nil
+	}
+	if retentionYears == 0 {
+		return nil, nil
+	}
+
+	normalized := dateOnlyUTC(createdAt.AddDate(retentionYears, 0, 0))
+	return &normalized, nil
+}
+
+func (s *Service) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string, req *ReviewDocumentRequest) (*Document, error) {
 	if strings.TrimSpace(reviewedBy) == "" {
 		return nil, fmt.Errorf("reviewed by user is required")
+	}
+
+	if req == nil {
+		return nil, fmt.Errorf("review request is required")
+	}
+	reviewStatus, err := normalizeReviewStatus(req.ReviewStatus)
+	if err != nil {
+		return nil, err
+	}
+	reviewNote := strings.TrimSpace(req.ReviewNote)
+	if len(reviewNote) > 2000 {
+		return nil, fmt.Errorf("review note must be 2000 characters or less")
+	}
+	if reviewStatus == ReviewStatusRejected && reviewNote == "" {
+		return nil, fmt.Errorf("review note is required when rejecting a document")
 	}
 
 	doc, err := s.repo.GetDocumentByID(ctx, schemaName, tenantID, strings.TrimSpace(documentID))
 	if err != nil {
 		return nil, err
 	}
-	if doc.ReviewStatus == ReviewStatusReviewed {
+	if doc.ReviewStatus == reviewStatus && strings.TrimSpace(doc.ReviewNote) == reviewNote {
 		return doc, nil
 	}
 
-	if err := s.repo.MarkDocumentReviewed(ctx, schemaName, tenantID, strings.TrimSpace(documentID), strings.TrimSpace(reviewedBy), time.Now().UTC()); err != nil {
+	if err := s.repo.ReviewDocument(ctx, schemaName, tenantID, strings.TrimSpace(documentID), reviewStatus, reviewNote, strings.TrimSpace(reviewedBy), time.Now().UTC()); err != nil {
 		return nil, err
 	}
 
@@ -193,6 +637,16 @@ func (s *Service) DeleteDocument(ctx context.Context, schemaName, tenantID, docu
 	if err != nil {
 		return err
 	}
+	if doc.LegalHold {
+		return fmt.Errorf("document is under legal hold and cannot be deleted")
+	}
+	hasDependents, err := s.repo.DocumentHasSupersededDependents(ctx, schemaName, tenantID, doc.ID)
+	if err != nil {
+		return err
+	}
+	if hasDependents {
+		return fmt.Errorf("document is linked as replacement evidence and cannot be deleted")
+	}
 
 	if err := s.store.Delete(ctx, doc.StorageKey); err != nil {
 		return err
@@ -213,9 +667,30 @@ func normalizeEntityType(value string) (string, error) {
 		return EntityTypeBankTxn, nil
 	case EntityTypeAsset:
 		return EntityTypeAsset, nil
+	case EntityTypeExpense:
+		return EntityTypeExpense, nil
+	case EntityTypeQuote:
+		return EntityTypeQuote, nil
+	case EntityTypeOrder:
+		return EntityTypeOrder, nil
+	case EntityTypeYearEndClose:
+		return EntityTypeYearEndClose, nil
+	case EntityTypeLeaveRecord:
+		return EntityTypeLeaveRecord, nil
+	case EntityTypeTSD:
+		return EntityTypeTSD, nil
+	case EntityTypeKMD:
+		return EntityTypeKMD, nil
 	default:
 		return "", fmt.Errorf("unsupported document entity type")
 	}
+}
+
+func normalizeOptionalEntityType(value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	return normalizeEntityType(value)
 }
 
 func normalizeDocumentType(value string) (string, error) {
@@ -232,11 +707,104 @@ func normalizeDocumentType(value string) (string, error) {
 		return DocumentTypeAssetRecord, nil
 	case DocumentTypeTaxSupport:
 		return DocumentTypeTaxSupport, nil
+	case DocumentTypeClosePack:
+		return DocumentTypeClosePack, nil
 	case DocumentTypeOther:
 		return DocumentTypeOther, nil
 	default:
 		return "", fmt.Errorf("unsupported document type")
 	}
+}
+
+func normalizeOptionalDocumentType(value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	return normalizeDocumentType(value)
+}
+
+func normalizeReviewStatus(value string) (string, error) {
+	switch strings.TrimSpace(strings.ToUpper(value)) {
+	case ReviewStatusReviewed:
+		return ReviewStatusReviewed, nil
+	case ReviewStatusApproved:
+		return ReviewStatusApproved, nil
+	case ReviewStatusRejected:
+		return ReviewStatusRejected, nil
+	default:
+		return "", fmt.Errorf("review_status must be REVIEWED, APPROVED, or REJECTED")
+	}
+}
+
+func normalizeLifecycleStatus(value string) (string, error) {
+	switch strings.TrimSpace(strings.ToUpper(value)) {
+	case LifecycleStatusActive:
+		return LifecycleStatusActive, nil
+	case LifecycleStatusSuperseded:
+		return LifecycleStatusSuperseded, nil
+	case LifecycleStatusArchived:
+		return LifecycleStatusArchived, nil
+	case LifecycleStatusDisposed:
+		return LifecycleStatusDisposed, nil
+	default:
+		return "", fmt.Errorf("lifecycle_status must be ACTIVE, SUPERSEDED, ARCHIVED, or DISPOSED")
+	}
+}
+
+func normalizeReviewQueueStatus(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ReviewStatusPending, nil
+	}
+	if strings.EqualFold(trimmed, "all") {
+		return "", nil
+	}
+
+	switch strings.ToUpper(trimmed) {
+	case ReviewStatusPending:
+		return ReviewStatusPending, nil
+	case ReviewStatusReviewed:
+		return ReviewStatusReviewed, nil
+	case ReviewStatusApproved:
+		return ReviewStatusApproved, nil
+	case ReviewStatusRejected:
+		return ReviewStatusRejected, nil
+	default:
+		return "", fmt.Errorf("review_status must be PENDING, REVIEWED, APPROVED, REJECTED, or ALL")
+	}
+}
+
+func normalizeReviewQueueLimit(value int) (int, error) {
+	if value < 0 {
+		return 0, fmt.Errorf("limit must be zero or greater")
+	}
+	if value == 0 {
+		return defaultReviewQueueLimit, nil
+	}
+	if value > maxReviewQueueLimit {
+		return maxReviewQueueLimit, nil
+	}
+	return value, nil
+}
+
+func normalizePurgeLimit(value int) (int, error) {
+	if value < 0 {
+		return 0, fmt.Errorf("limit must be zero or greater")
+	}
+	if value == 0 {
+		return defaultPurgeLimit, nil
+	}
+	if value > maxPurgeLimit {
+		return 0, fmt.Errorf("limit cannot exceed %d", maxPurgeLimit)
+	}
+	return value, nil
+}
+
+func reviewQueueStatusLabel(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "ALL"
+	}
+	return value
 }
 
 func normalizeContentType(contentType, fileName string) string {
@@ -279,4 +847,185 @@ func buildStorageKey(tenantID string, createdAt time.Time, documentID, fileName 
 		createdAt.Format("01"),
 		fmt.Sprintf("%s_%s%s", documentID, name, ext),
 	)
+}
+
+func normalizeEntityIDs(entityIDs []string) []string {
+	normalizedIDs := make([]string, 0, len(entityIDs))
+	seen := make(map[string]struct{}, len(entityIDs))
+	for _, entityID := range entityIDs {
+		trimmed := strings.TrimSpace(entityID)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalizedIDs = append(normalizedIDs, trimmed)
+	}
+	return normalizedIDs
+}
+
+func normalizeEvidencePolicyRules(rules []EvidencePolicyRule) ([]EvidencePolicyRule, error) {
+	if len(rules) == 0 {
+		return nil, fmt.Errorf("at least one evidence policy rule is required")
+	}
+
+	normalizedRules := make([]EvidencePolicyRule, 0, len(rules))
+	for idx, rule := range rules {
+		minCount := rule.MinCount
+		if minCount == 0 {
+			minCount = 1
+		}
+		if minCount < 0 {
+			return nil, fmt.Errorf("rule %d min_count must be one or greater", idx+1)
+		}
+
+		documentTypes := make([]string, 0, len(rule.DocumentTypes))
+		seenTypes := make(map[string]struct{}, len(rule.DocumentTypes))
+		for _, rawType := range rule.DocumentTypes {
+			if strings.TrimSpace(rawType) == "" {
+				continue
+			}
+			documentType, err := normalizeDocumentType(rawType)
+			if err != nil {
+				return nil, fmt.Errorf("rule %d: %w", idx+1, err)
+			}
+			if _, exists := seenTypes[documentType]; exists {
+				continue
+			}
+			seenTypes[documentType] = struct{}{}
+			documentTypes = append(documentTypes, documentType)
+		}
+
+		normalizedRules = append(normalizedRules, EvidencePolicyRule{
+			DocumentTypes:   documentTypes,
+			MinCount:        minCount,
+			RequireApproved: rule.RequireApproved,
+		})
+	}
+
+	return normalizedRules, nil
+}
+
+func evaluateEvidencePolicyForDocuments(entityType, entityID string, docs []Document, rules []EvidencePolicyRule) EvidencePolicyResult {
+	activeDocs := activeEvidenceDocuments(docs)
+	result := EvidencePolicyResult{
+		EntityType:                 entityType,
+		EntityID:                   entityID,
+		Compliant:                  true,
+		MissingEvidence:            len(activeDocs) == 0,
+		DocumentTypeCounts:         make(map[string]int),
+		ApprovedDocumentTypeCounts: make(map[string]int),
+		RuleResults:                make([]EvidencePolicyRuleResult, 0, len(rules)),
+		Violations:                 make([]EvidencePolicyRuleResult, 0),
+	}
+
+	for _, doc := range activeDocs {
+		result.TotalCount++
+		result.DocumentTypeCounts[doc.DocumentType]++
+		switch doc.ReviewStatus {
+		case ReviewStatusApproved:
+			result.ReviewedCount++
+			result.ApprovedCount++
+			result.ApprovedDocumentTypeCounts[doc.DocumentType]++
+		case ReviewStatusRejected:
+			result.ReviewedCount++
+			result.RejectedCount++
+		case ReviewStatusReviewed:
+			result.ReviewedCount++
+		default:
+			result.PendingReviewCount++
+		}
+	}
+
+	for idx, rule := range rules {
+		ruleResult := evaluateEvidencePolicyRule(idx+1, activeDocs, rule)
+		result.RuleResults = append(result.RuleResults, ruleResult)
+		if !ruleResult.Compliant {
+			result.Compliant = false
+			result.Violations = append(result.Violations, ruleResult)
+		}
+	}
+
+	return result
+}
+
+func activeEvidenceDocuments(docs []Document) []Document {
+	active := make([]Document, 0, len(docs))
+	for _, doc := range docs {
+		switch documentLifecycleStatus(&doc) {
+		case LifecycleStatusActive, LifecycleStatusArchived:
+			active = append(active, doc)
+		}
+	}
+	return active
+}
+
+func documentLifecycleStatus(doc *Document) string {
+	if doc == nil {
+		return LifecycleStatusActive
+	}
+	status := strings.TrimSpace(strings.ToUpper(doc.LifecycleStatus))
+	if status == "" {
+		return LifecycleStatusActive
+	}
+	return status
+}
+
+func evaluateEvidencePolicyRule(ruleIndex int, docs []Document, rule EvidencePolicyRule) EvidencePolicyRuleResult {
+	matchingCount := 0
+	approvedMatchingCount := 0
+	for _, doc := range docs {
+		if !evidencePolicyRuleMatchesDocumentType(rule, doc.DocumentType) {
+			continue
+		}
+		matchingCount++
+		if doc.ReviewStatus == ReviewStatusApproved {
+			approvedMatchingCount++
+		}
+	}
+
+	acceptedCount := matchingCount
+	if rule.RequireApproved {
+		acceptedCount = approvedMatchingCount
+	}
+	result := EvidencePolicyRuleResult{
+		RuleIndex:             ruleIndex,
+		DocumentTypes:         append([]string(nil), rule.DocumentTypes...),
+		RequiredCount:         rule.MinCount,
+		MatchingCount:         matchingCount,
+		ApprovedMatchingCount: approvedMatchingCount,
+		AcceptedCount:         acceptedCount,
+		RequireApproved:       rule.RequireApproved,
+		Compliant:             acceptedCount >= rule.MinCount,
+	}
+	if !result.Compliant {
+		result.Message = buildEvidencePolicyViolationMessage(rule, acceptedCount)
+	}
+	return result
+}
+
+func evidencePolicyRuleMatchesDocumentType(rule EvidencePolicyRule, documentType string) bool {
+	if len(rule.DocumentTypes) == 0 {
+		return true
+	}
+	for _, allowedType := range rule.DocumentTypes {
+		if allowedType == documentType {
+			return true
+		}
+	}
+	return false
+}
+
+func buildEvidencePolicyViolationMessage(rule EvidencePolicyRule, acceptedCount int) string {
+	scope := "any document type"
+	if len(rule.DocumentTypes) > 0 {
+		scope = strings.Join(rule.DocumentTypes, ", ")
+	}
+	qualifier := "documents"
+	if rule.RequireApproved {
+		qualifier = "approved documents"
+	}
+	return fmt.Sprintf("requires at least %d %s for %s; found %d", rule.MinCount, qualifier, scope, acceptedCount)
 }

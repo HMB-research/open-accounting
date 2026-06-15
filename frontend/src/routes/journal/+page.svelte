@@ -22,8 +22,8 @@
   type JournalFormLine = {
     accountId: string;
     description: string;
-    debit: string;
-    credit: string;
+    debit: string | number;
+    credit: string | number;
   };
 
   function todayISODate(): string {
@@ -82,14 +82,14 @@
     }
 
     try {
-      const [loadedAccounts, loadedEntries, loadedTenant] = await Promise.all([
+      const [loadedAccounts, loadedEntries] = await Promise.all([
         api.listAccounts(tenantId, true),
         api.listJournalEntries(tenantId, 50),
-        api.getTenant(tenantId),
       ]);
       accounts = loadedAccounts;
       entries = loadedEntries;
-      tenant = loadedTenant;
+      isLoading = false;
+      void loadTenantSettings();
     } catch (err) {
       error =
         err instanceof Error ? err.message : m.journal_failedToLoadAccounts();
@@ -97,6 +97,14 @@
       isLoading = false;
     }
   });
+
+  async function loadTenantSettings() {
+    try {
+      tenant = await api.getTenant(tenantId);
+    } catch {
+      tenant = null;
+    }
+  }
 
   function formatLockDate(value: string | null | undefined): string {
     if (!value) return m.settings_periodOpenStatus();
@@ -257,6 +265,15 @@
     return getTotalDebits().equals(getTotalCredits());
   }
 
+  function amountInputToString(value: string | number): string {
+    if (value === "") return "0";
+    return new Decimal(value).toString();
+  }
+
+  function dateInputToRFC3339(value: string): string {
+    return `${value}T00:00:00Z`;
+  }
+
   async function createEntry(e: Event) {
     e.preventDefault();
     formError = "";
@@ -276,14 +293,14 @@
 
     try {
       const request: CreateJournalEntryRequest = {
-        entry_date: entryDate,
+        entry_date: dateInputToRFC3339(entryDate),
         description,
         reference: reference || undefined,
         lines: validLines.map((l) => ({
           account_id: l.accountId,
           description: l.description || undefined,
-          debit_amount: l.debit || "0",
-          credit_amount: l.credit || "0",
+          debit_amount: amountInputToString(l.debit),
+          credit_amount: amountInputToString(l.credit),
         })),
       };
 
@@ -395,9 +412,17 @@
     }
   }
 
-  function formatAmount(amount: Decimal | undefined): string {
-    if (!amount || amount.isZero()) return "-";
-    return amount.toFixed(2);
+  function toDecimal(value: Decimal | number | string | undefined): Decimal {
+    if (value === undefined || value === null || value === "") {
+      return new Decimal(0);
+    }
+    return new Decimal(value);
+  }
+
+  function formatAmount(amount: Decimal | number | string | undefined): string {
+    const value = toDecimal(amount);
+    if (value.isZero()) return "-";
+    return value.toFixed(2);
   }
 
   function getAccountName(accountId: string): string {

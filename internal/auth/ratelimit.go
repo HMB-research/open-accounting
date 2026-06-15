@@ -3,6 +3,7 @@ package auth
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,31 @@ type visitor struct {
 	lastSeen time.Time
 }
 
+// LoginAttemptLimiter tracks repeated failed login attempts per credential and client IP.
+type LoginAttemptLimiter struct {
+	attempts    map[string]*loginAttempt
+	mu          sync.Mutex
+	maxFailures int
+	window      time.Duration
+	lockout     time.Duration
+	cleanup     time.Duration
+	now         func() time.Time
+}
+
+type loginAttempt struct {
+	failures     int
+	firstFailure time.Time
+	blockedUntil time.Time
+	lastSeen     time.Time
+}
+
+// LoginAttemptResult describes the current state of a login-attempt key.
+type LoginAttemptResult struct {
+	Limited    bool
+	RetryAfter time.Duration
+	Remaining  int
+}
+
 // NewRateLimiter creates a new rate limiter
 // rps: requests per second allowed
 // burst: maximum burst size
@@ -38,6 +64,154 @@ func NewRateLimiter(rps float64, burst int) *RateLimiter {
 	go rl.cleanupVisitors()
 
 	return rl
+}
+
+// NewLoginAttemptLimiter creates a limiter for repeated failed login attempts.
+func NewLoginAttemptLimiter(maxFailures int, window, lockout time.Duration) *LoginAttemptLimiter {
+	if maxFailures <= 0 {
+		maxFailures = 5
+	}
+	if window <= 0 {
+		window = 15 * time.Minute
+	}
+	if lockout <= 0 {
+		lockout = 15 * time.Minute
+	}
+	cleanup := window + lockout
+	if cleanup < time.Second {
+		cleanup = time.Second
+	}
+
+	limiter := &LoginAttemptLimiter{
+		attempts:    make(map[string]*loginAttempt),
+		maxFailures: maxFailures,
+		window:      window,
+		lockout:     lockout,
+		cleanup:     cleanup,
+		now:         time.Now,
+	}
+	go limiter.cleanupLoginAttempts()
+	return limiter
+}
+
+// DefaultLoginAttemptLimiter returns the production failed-login limiter.
+func DefaultLoginAttemptLimiter() *LoginAttemptLimiter {
+	return NewLoginAttemptLimiter(5, 15*time.Minute, 15*time.Minute)
+}
+
+// Check reports whether a credential/IP pair is currently blocked.
+func (l *LoginAttemptLimiter) Check(email, ip string) LoginAttemptResult {
+	if l == nil {
+		return LoginAttemptResult{}
+	}
+
+	key := loginAttemptKey(email, ip)
+	now := l.now()
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	attempt, ok := l.attempts[key]
+	if !ok {
+		return LoginAttemptResult{Remaining: l.maxFailures}
+	}
+	attempt.lastSeen = now
+	if !attempt.blockedUntil.IsZero() && attempt.blockedUntil.After(now) {
+		return LoginAttemptResult{
+			Limited:    true,
+			RetryAfter: attempt.blockedUntil.Sub(now),
+			Remaining:  0,
+		}
+	}
+	if now.Sub(attempt.firstFailure) > l.window {
+		delete(l.attempts, key)
+		return LoginAttemptResult{Remaining: l.maxFailures}
+	}
+	remaining := l.maxFailures - attempt.failures
+	if remaining < 0 {
+		remaining = 0
+	}
+	return LoginAttemptResult{Remaining: remaining}
+}
+
+// RecordFailure records one failed login attempt and reports whether the key is now blocked.
+func (l *LoginAttemptLimiter) RecordFailure(email, ip string) LoginAttemptResult {
+	if l == nil {
+		return LoginAttemptResult{}
+	}
+
+	key := loginAttemptKey(email, ip)
+	now := l.now()
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	attempt, ok := l.attempts[key]
+	if !ok || now.Sub(attempt.firstFailure) > l.window {
+		attempt = &loginAttempt{firstFailure: now}
+		l.attempts[key] = attempt
+	}
+	attempt.lastSeen = now
+	if !attempt.blockedUntil.IsZero() && attempt.blockedUntil.After(now) {
+		return LoginAttemptResult{
+			Limited:    true,
+			RetryAfter: attempt.blockedUntil.Sub(now),
+			Remaining:  0,
+		}
+	}
+
+	attempt.failures++
+	remaining := l.maxFailures - attempt.failures
+	if remaining < 0 {
+		remaining = 0
+	}
+	if attempt.failures > l.maxFailures {
+		attempt.blockedUntil = now.Add(l.lockout)
+		return LoginAttemptResult{
+			Limited:    true,
+			RetryAfter: l.lockout,
+			Remaining:  0,
+		}
+	}
+	return LoginAttemptResult{Remaining: remaining}
+}
+
+// Reset clears failed attempts for a credential/IP pair after a successful login.
+func (l *LoginAttemptLimiter) Reset(email, ip string) {
+	if l == nil {
+		return
+	}
+
+	l.mu.Lock()
+	delete(l.attempts, loginAttemptKey(email, ip))
+	l.mu.Unlock()
+}
+
+func (l *LoginAttemptLimiter) cleanupLoginAttempts() {
+	for {
+		time.Sleep(l.cleanup)
+		now := l.now()
+
+		l.mu.Lock()
+		for key, attempt := range l.attempts {
+			if now.Sub(attempt.lastSeen) > l.window+l.lockout {
+				delete(l.attempts, key)
+			}
+		}
+		l.mu.Unlock()
+	}
+}
+
+func loginAttemptKey(email, ip string) string {
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	if normalizedEmail == "" {
+		normalizedEmail = "<blank>"
+	}
+	normalizedIP := strings.TrimSpace(ip)
+	if normalizedIP == "" {
+		normalizedIP = "<unknown>"
+	}
+	return normalizedEmail + "|" + normalizedIP
 }
 
 // getVisitor returns the rate limiter for the given IP
@@ -69,6 +243,11 @@ func (rl *RateLimiter) cleanupVisitors() {
 		}
 		rl.mu.Unlock()
 	}
+}
+
+// ClientIP extracts the client IP from the request.
+func ClientIP(r *http.Request) string {
+	return getClientIP(r)
 }
 
 // getClientIP extracts the client IP from the request

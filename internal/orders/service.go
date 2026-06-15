@@ -12,15 +12,13 @@ import (
 
 // Service provides order operations
 type Service struct {
-	db   *pgxpool.Pool
 	repo Repository
 }
 
-// NewService creates a new orders service with a PostgreSQL repository
+// NewService creates a new orders service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
 	return &Service{
-		db:   db,
-		repo: NewPostgresRepository(db),
+		repo: NewRepository(db),
 	}
 }
 
@@ -276,4 +274,54 @@ func (s *Service) ConvertToInvoice(ctx context.Context, tenantID, schemaName, or
 		return fmt.Errorf("convert to invoice: %w", err)
 	}
 	return nil
+}
+
+// ListStockReservations retrieves current stock reservations for an order.
+func (s *Service) ListStockReservations(ctx context.Context, tenantID, schemaName, orderID string) ([]OrderStockReservation, error) {
+	reservations, err := s.repo.ListStockReservations(ctx, schemaName, tenantID, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("list order stock reservations: %w", err)
+	}
+	return reservations, nil
+}
+
+// GetStockReservation retrieves one order stock reservation.
+func (s *Service) GetStockReservation(ctx context.Context, tenantID, schemaName, orderID, productID, warehouseID string) (*OrderStockReservation, error) {
+	reservation, err := s.repo.GetStockReservation(ctx, schemaName, tenantID, orderID, productID, warehouseID)
+	if err != nil {
+		return nil, fmt.Errorf("get order stock reservation: %w", err)
+	}
+	return reservation, nil
+}
+
+// UpsertStockReservation increases or recreates an order stock reservation.
+func (s *Service) UpsertStockReservation(ctx context.Context, tenantID, schemaName string, reservation *OrderStockReservation) error {
+	if reservation.ID == "" {
+		reservation.ID = uuid.New().String()
+	}
+	if reservation.TenantID == "" {
+		reservation.TenantID = tenantID
+	}
+	if reservation.Quantity.LessThanOrEqual(decimal.Zero) {
+		return fmt.Errorf("reservation quantity must be positive")
+	}
+	if reservation.Status == "" {
+		reservation.Status = OrderStockReservationStatusReserved
+	}
+	if err := s.repo.UpsertStockReservation(ctx, schemaName, reservation); err != nil {
+		return fmt.Errorf("upsert order stock reservation: %w", err)
+	}
+	return nil
+}
+
+// ReleaseStockReservation decreases an order stock reservation.
+func (s *Service) ReleaseStockReservation(ctx context.Context, tenantID, schemaName, orderID, productID, warehouseID string, quantity decimal.Decimal, reason, releasedBy string) (*OrderStockReservation, error) {
+	if quantity.LessThanOrEqual(decimal.Zero) {
+		return nil, fmt.Errorf("reservation quantity must be positive")
+	}
+	reservation, err := s.repo.ReleaseStockReservation(ctx, schemaName, tenantID, orderID, productID, warehouseID, quantity, reason, releasedBy)
+	if err != nil {
+		return nil, fmt.Errorf("release order stock reservation: %w", err)
+	}
+	return reservation, nil
 }

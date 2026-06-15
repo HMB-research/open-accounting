@@ -18,11 +18,13 @@ The Estonian Tax and Customs Board (Maksu- ja Tolliamet, MTA) provides electroni
 - [x] TSD CSV export alternative
 - [x] Estonian personal code (isikukood) validation
 - [x] API endpoints for TSD management:
-  - `GET /api/v1/tenants/{tenantID}/tsd` - List declarations
+  - `GET /api/v1/tenants/{tenantID}/tsd` - List declarations with optional `year` and `month` filters
   - `GET /api/v1/tenants/{tenantID}/tsd/{year}/{month}` - Get specific declaration
   - `GET /api/v1/tenants/{tenantID}/tsd/{year}/{month}/xml` - Export XML
   - `GET /api/v1/tenants/{tenantID}/tsd/{year}/{month}/csv` - Export CSV
   - `POST /api/v1/tenants/{tenantID}/tsd/{year}/{month}/submit` - Mark as submitted
+  - `POST /api/v1/tenants/{tenantID}/tsd/{year}/{month}/accept` - Mark as accepted
+  - `POST /api/v1/tenants/{tenantID}/tsd/{year}/{month}/reject` - Mark as rejected
 
 ### Manual Workflow (Currently Supported)
 

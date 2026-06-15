@@ -1,108 +1,157 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import {
+  ensureAuthenticated,
+  navigateTo,
+  ensureDemoTenant,
+  waitForRouteReady,
+} from "./utils";
 
-test.describe('Email Settings View', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
-		await ensureAuthenticated(page, testInfo);
-		await ensureDemoTenant(page, testInfo);
-	});
+interface SMTPConfigResponse {
+  smtp_host: string;
+  smtp_port: number;
+  smtp_username: string;
+  smtp_from_email: string;
+  smtp_from_name: string;
+  smtp_use_tls: boolean;
+}
 
-	test('displays email settings page with correct structure', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/email', testInfo);
+function isSMTPConfigPath(path: string): boolean {
+  return /\/api\/v1\/tenants\/[^/]+\/settings\/smtp$/.test(path);
+}
 
-		// Wait for page to load
-		await page.waitForTimeout(2000);
+function waitForSMTPConfig(page: Page) {
+  return page.waitForResponse((response) => {
+    const path = new URL(response.url()).pathname;
+    return (
+      response.request().method() === "GET" &&
+      isSMTPConfigPath(path) &&
+      response.status() === 200
+    );
+  });
+}
 
-		// Check for page heading
-		const hasHeading = await page
-			.getByRole('heading', { name: /email|smtp|mail/i })
-			.isVisible()
-			.catch(() => false);
+function waitForSMTPUpdate(page: Page) {
+  return page.waitForResponse((response) => {
+    const path = new URL(response.url()).pathname;
+    return (
+      response.request().method() === "PUT" &&
+      isSMTPConfigPath(path) &&
+      response.status() === 200
+    );
+  });
+}
 
-		const hasEmailContent = await page
-			.getByText(/smtp|email|mail/i)
-			.first()
-			.isVisible()
-			.catch(() => false);
+async function openEmailSettings(page: Page, testInfo: TestInfo) {
+  const smtpLoaded = waitForSMTPConfig(page);
+  const templatesLoaded = page.waitForResponse((response) => {
+    const path = new URL(response.url()).pathname;
+    return (
+      response.request().method() === "GET" &&
+      path.endsWith("/email-templates") &&
+      response.status() === 200
+    );
+  });
+  const logLoaded = page.waitForResponse((response) => {
+    const path = new URL(response.url()).pathname;
+    return (
+      response.request().method() === "GET" &&
+      path.endsWith("/email-log") &&
+      response.status() === 200
+    );
+  });
 
-		expect(hasHeading || hasEmailContent).toBe(true);
-	});
+  await navigateTo(page, "/settings/email", testInfo, {
+    waitForNetworkIdle: false,
+  });
+  await Promise.all([smtpLoaded, templatesLoaded, logLoaded]);
+  await waitForRouteReady(page, "main h1, .tabs, #smtp_host");
+  await expect(
+    page.getByRole("heading", { name: /email|smtp|mail/i }).first(),
+  ).toBeVisible();
+  await expect(page.locator("#smtp_host")).toBeVisible();
+}
 
-	test('has SMTP configuration form', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/email', testInfo);
+test.describe("Email Settings View", () => {
+  test("displays, saves, and reloads SMTP settings", async ({
+    page,
+  }, testInfo) => {
+    await ensureAuthenticated(page, testInfo);
+    await ensureDemoTenant(page, testInfo);
+    await openEmailSettings(page, testInfo);
 
-		await page.waitForTimeout(2000);
+    const tabs = page.locator(".tabs");
+    await expect(tabs.getByRole("button", { name: /smtp/i })).toBeVisible();
+    await expect(tabs.getByRole("button", { name: /template/i })).toBeVisible();
+    await expect(tabs.getByRole("button", { name: /log/i })).toBeVisible();
 
-		// Should have SMTP host field
-		const hasHostInput = await page
-			.locator('input[name*="host" i], input[placeholder*="host" i], #smtp_host')
-			.isVisible()
-			.catch(() => false);
+    const form = page.locator("form").first();
+    await expect(form).toBeVisible();
+    await expect(page.locator("#smtp_host")).toBeVisible();
+    await expect(page.locator("#smtp_port")).toBeVisible();
+    await expect(page.locator("#smtp_username")).toBeVisible();
+    await expect(page.locator("#smtp_from_email")).toBeVisible();
 
-		const hasPortInput = await page
-			.locator('input[name*="port" i], input[type="number"]')
-			.isVisible()
-			.catch(() => false);
+    await expect(
+      form.getByRole("button", { name: /save|update|apply/i }).first(),
+    ).toBeVisible();
+    await expect(page.locator("#test_email")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /test|send test/i }),
+    ).toBeVisible();
 
-		// Should have at least host or port field
-		expect(hasHostInput || hasPortInput || true).toBe(true);
-	});
+    const suffix = `${Date.now()}-${testInfo.workerIndex}`;
+    const expectedConfig: SMTPConfigResponse = {
+      smtp_host: `smtp-${suffix}.example.test`,
+      smtp_port: 2525,
+      smtp_username: `robot-${suffix}`,
+      smtp_from_email: `billing-${suffix}@example.test`,
+      smtp_from_name: `Billing ${suffix}`,
+      smtp_use_tls: false,
+    };
 
-	test('has tabs for SMTP, Templates, and Log', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/email', testInfo);
+    await page.locator("#smtp_host").fill(expectedConfig.smtp_host);
+    await page.locator("#smtp_port").fill(String(expectedConfig.smtp_port));
+    await page.locator("#smtp_username").fill(expectedConfig.smtp_username);
+    await page.locator("#smtp_password").fill(`secret-${suffix}`);
+    await page.locator("#smtp_from_email").fill(expectedConfig.smtp_from_email);
+    await page.locator("#smtp_from_name").fill(expectedConfig.smtp_from_name);
+    await page
+      .locator('input[type="checkbox"]')
+      .setChecked(expectedConfig.smtp_use_tls);
 
-		await page.waitForTimeout(2000);
+    const updateResponsePromise = waitForSMTPUpdate(page);
+    await form
+      .getByRole("button", { name: /save|update|apply/i })
+      .first()
+      .click();
+    const updateResponse = await updateResponsePromise;
+    expect(await updateResponse.json()).toMatchObject({ status: "updated" });
+    await expect(page.locator(".alert-success")).toContainText(
+      /saved|salvestatud/i,
+    );
 
-		// Check for tab navigation
-		const hasSmtpTab = await page
-			.getByRole('tab', { name: /smtp/i })
-			.or(page.getByRole('button', { name: /smtp/i }))
-			.isVisible()
-			.catch(() => false);
+    const reloadResponsePromise = waitForSMTPConfig(page);
+    await page.reload();
+    const reloadResponse = await reloadResponsePromise;
+    const reloadedConfig = (await reloadResponse.json()) as SMTPConfigResponse;
+    expect(reloadedConfig).toMatchObject(expectedConfig);
+    await waitForRouteReady(page, "main h1, .tabs, #smtp_host");
 
-		const hasTemplatesTab = await page
-			.getByRole('tab', { name: /template/i })
-			.or(page.getByRole('button', { name: /template/i }))
-			.isVisible()
-			.catch(() => false);
-
-		const hasLogTab = await page
-			.getByRole('tab', { name: /log/i })
-			.or(page.getByRole('button', { name: /log/i }))
-			.isVisible()
-			.catch(() => false);
-
-		// Should have at least one tab
-		if (hasSmtpTab || hasTemplatesTab || hasLogTab) {
-			expect(hasSmtpTab || hasTemplatesTab || hasLogTab).toBe(true);
-		}
-	});
-
-	test('has save button', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/email', testInfo);
-
-		await page.waitForTimeout(2000);
-
-		// Should have save button
-		const saveButton = page.getByRole('button', { name: /save|update|apply/i });
-		const hasButton = await saveButton.first().isVisible().catch(() => false);
-
-		if (hasButton) {
-			expect(hasButton).toBe(true);
-		}
-	});
-
-	test('has test connection button', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/email', testInfo);
-
-		await page.waitForTimeout(2000);
-
-		// Should have test button
-		const testButton = page.getByRole('button', { name: /test|send test/i });
-		const hasButton = await testButton.isVisible().catch(() => false);
-
-		if (hasButton) {
-			expect(hasButton).toBe(true);
-		}
-	});
+    await expect(page.locator("#smtp_host")).toHaveValue(
+      expectedConfig.smtp_host,
+    );
+    await expect(page.locator("#smtp_port")).toHaveValue(
+      String(expectedConfig.smtp_port),
+    );
+    await expect(page.locator("#smtp_username")).toHaveValue(
+      expectedConfig.smtp_username,
+    );
+    await expect(page.locator("#smtp_from_email")).toHaveValue(
+      expectedConfig.smtp_from_email,
+    );
+    await expect(page.locator("#smtp_from_name")).toHaveValue(
+      expectedConfig.smtp_from_name,
+    );
+    await expect(page.locator('input[type="checkbox"]')).not.toBeChecked();
+  });
 });

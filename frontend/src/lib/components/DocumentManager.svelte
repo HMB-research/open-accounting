@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type DocumentAttachment } from '$lib/api';
+	import { api, type DocumentAttachment, type ReviewDocumentRequest } from '$lib/api';
 	import * as m from '$lib/paraglide/messages.js';
 
 	interface Props {
@@ -9,13 +9,15 @@
 		entityId: string;
 		title: string;
 		onClose?: () => void;
+		onchanged?: () => void | Promise<void>;
 	}
 
-	let { open, tenantId, entityType, entityId, title, onClose }: Props = $props();
+	let { open, tenantId, entityType, entityId, title, onClose, onchanged }: Props = $props();
 
 	let documents = $state<DocumentAttachment[]>([]);
 	let selectedFiles = $state<File[]>([]);
 	let selectedDocumentType = $state<DocumentAttachment['document_type']>('supporting_document');
+	let reviewNotes = $state<Record<string, string>>({});
 	let notes = $state('');
 	let retentionUntil = $state('');
 	let isLoading = $state(false);
@@ -35,6 +37,7 @@
 
 		try {
 			documents = await api.listDocuments(tenantId, entityType, entityId);
+			reviewNotes = Object.fromEntries(documents.map((doc) => [doc.id, doc.review_note || '']));
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.documents_loadError();
 		} finally {
@@ -67,6 +70,7 @@
 			}
 			resetUploadState();
 			await loadDocuments();
+			await notifyChanged();
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.documents_uploadError();
 		} finally {
@@ -90,6 +94,8 @@
 		try {
 			await api.deleteDocument(tenantId, doc.id);
 			documents = documents.filter((item) => item.id !== doc.id);
+			reviewNotes = Object.fromEntries(Object.entries(reviewNotes).filter(([id]) => id !== doc.id));
+			await notifyChanged();
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.documents_deleteError();
 		}
@@ -98,10 +104,50 @@
 	async function markReviewed(doc: DocumentAttachment) {
 		try {
 			const updated = await api.markDocumentReviewed(tenantId, doc.id);
-			documents = documents.map((item) => (item.id === updated.id ? updated : item));
+			applyUpdatedDocument(updated);
+			await notifyChanged();
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.documents_reviewError();
 		}
+	}
+
+	async function reviewDocument(doc: DocumentAttachment, reviewStatus: ReviewDocumentRequest['review_status']) {
+		const reviewNote = (reviewNotes[doc.id] || '').trim();
+		if (reviewStatus === 'REJECTED' && !reviewNote) {
+			error = m.documents_reviewNoteRequired();
+			return;
+		}
+
+		try {
+			const updated = await api.reviewDocument(tenantId, doc.id, {
+				review_status: reviewStatus,
+				review_note: reviewNote || undefined
+			});
+			applyUpdatedDocument(updated);
+			await notifyChanged();
+		} catch (err) {
+			error = err instanceof Error ? err.message : m.documents_reviewError();
+		}
+	}
+
+	function applyUpdatedDocument(updated: DocumentAttachment) {
+		documents = documents.map((item) => (item.id === updated.id ? updated : item));
+		reviewNotes = {
+			...reviewNotes,
+			[updated.id]: updated.review_note || reviewNotes[updated.id] || ''
+		};
+	}
+
+	function updateReviewNote(doc: DocumentAttachment, event: Event) {
+		reviewNotes = {
+			...reviewNotes,
+			[doc.id]: (event.currentTarget as HTMLTextAreaElement).value
+		};
+		error = '';
+	}
+
+	async function notifyChanged() {
+		await onchanged?.();
 	}
 
 	function closeModal() {
@@ -145,6 +191,8 @@
 				return 'asset_record';
 			case 'payment':
 				return 'receipt';
+			case 'year_end_close':
+				return 'close_pack';
 			default:
 				return 'supporting_document';
 		}
@@ -166,14 +214,28 @@
 				return m.documents_typeAsset();
 			case 'tax_support':
 				return m.documents_typeTax();
+			case 'close_pack':
+				return m.documents_typeClosePack();
 			default:
 				return m.documents_typeOther();
+		}
+	}
+
+	function getReviewStatusLabel(status: DocumentAttachment['review_status']): string {
+		switch (status) {
+			case 'REVIEWED':
+				return m.documents_reviewed();
+			case 'APPROVED':
+				return m.documents_approved();
+			case 'REJECTED':
+				return m.documents_rejected();
+			default:
+				return m.documents_pendingReview();
 		}
 	}
 </script>
 
 {#if open}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="modal-backdrop" onclick={closeModal} role="presentation">
 		<div
@@ -214,6 +276,9 @@
 							<option value="contract">{m.documents_typeContract()}</option>
 							<option value="asset_record">{m.documents_typeAsset()}</option>
 							<option value="tax_support">{m.documents_typeTax()}</option>
+							{#if entityType === 'year_end_close'}
+								<option value="close_pack">{m.documents_typeClosePack()}</option>
+							{/if}
 							<option value="other">{m.documents_typeOther()}</option>
 						</select>
 					</div>
@@ -232,7 +297,7 @@
 						type="file"
 						multiple
 						onchange={handleFileChange}
-						accept=".pdf,.png,.jpg,.jpeg,.csv,.txt"
+						accept=".pdf,.png,.jpg,.jpeg,.csv,.txt,.xls,.xlsx"
 					/>
 					<button class="btn btn-primary" type="button" onclick={uploadSelected} disabled={isUploading}>
 						{isUploading ? m.documents_uploading() : m.documents_uploadAction()}
@@ -240,7 +305,7 @@
 				</div>
 				{#if selectedFiles.length > 0}
 					<ul class="selected-files">
-						{#each selectedFiles as file}
+						{#each selectedFiles as file (file.name + file.size + file.lastModified)}
 							<li>{file.name} · {formatFileSize(file.size)}</li>
 						{/each}
 					</ul>
@@ -261,7 +326,7 @@
 					</div>
 				{:else}
 					<ul class="document-list">
-						{#each documents as doc}
+						{#each documents as doc (doc.id)}
 							<li class="document-item">
 								<div class="document-meta">
 									<strong>{doc.file_name}</strong>
@@ -271,8 +336,10 @@
 											class="document-badge"
 											class:document-badge-pending={doc.review_status === 'PENDING'}
 											class:document-badge-reviewed={doc.review_status === 'REVIEWED'}
+											class:document-badge-approved={doc.review_status === 'APPROVED'}
+											class:document-badge-rejected={doc.review_status === 'REJECTED'}
 										>
-											{doc.review_status === 'REVIEWED' ? m.documents_reviewed() : m.documents_pendingReview()}
+											{getReviewStatusLabel(doc.review_status)}
 										</span>
 									</div>
 									<div class="document-details">
@@ -283,27 +350,51 @@
 									{#if doc.notes}
 										<p class="document-notes">{doc.notes}</p>
 									{/if}
+									{#if doc.review_note}
+										<p class="document-review-note">{m.documents_reviewNoteLabel()}: {doc.review_note}</p>
+									{/if}
 									<div class="document-details">
 										{#if doc.retention_until}
 											<span>{m.documents_retentionUntilLabel({ date: formatDate(doc.retention_until) })}</span>
 										{/if}
-										{#if doc.review_status === 'REVIEWED' && doc.reviewed_at}
+										{#if doc.review_status !== 'PENDING' && doc.reviewed_at}
 											<span>{m.documents_reviewedAt({ date: formatDateTime(doc.reviewed_at) })}</span>
 										{/if}
 									</div>
 								</div>
-								<div class="document-actions">
-									{#if doc.review_status !== 'REVIEWED'}
-										<button type="button" class="btn btn-secondary" onclick={() => markReviewed(doc)}>
-											{m.documents_markReviewed()}
+								<div class="document-review-controls">
+									<label class="label" for={`review-note-${doc.id}`}>{m.documents_reviewNoteFor({ file: doc.file_name })}</label>
+									<textarea
+										class="input"
+										id={`review-note-${doc.id}`}
+										rows="2"
+										value={reviewNotes[doc.id] || ''}
+										placeholder={m.documents_reviewNotePlaceholder()}
+										oninput={(event) => updateReviewNote(doc, event)}
+									></textarea>
+									<div class="document-actions">
+										{#if doc.review_status !== 'APPROVED'}
+											<button type="button" class="btn btn-secondary btn-success-soft" onclick={() => reviewDocument(doc, 'APPROVED')}>
+												{m.documents_approve()}
+											</button>
+										{/if}
+										{#if doc.review_status !== 'REVIEWED'}
+											<button type="button" class="btn btn-secondary" onclick={() => markReviewed(doc)}>
+												{m.documents_markReviewed()}
+											</button>
+										{/if}
+										{#if doc.review_status !== 'REJECTED'}
+											<button type="button" class="btn btn-secondary btn-danger-soft" onclick={() => reviewDocument(doc, 'REJECTED')}>
+												{m.documents_reject()}
+											</button>
+										{/if}
+										<button type="button" class="btn btn-secondary" onclick={() => downloadAttachment(doc)}>
+											{m.documents_downloadAction()}
 										</button>
-									{/if}
-									<button type="button" class="btn btn-secondary" onclick={() => downloadAttachment(doc)}>
-										{m.documents_downloadAction()}
-									</button>
-									<button type="button" class="btn btn-secondary btn-danger-soft" onclick={() => deleteAttachment(doc)}>
-										{m.common_delete()}
-									</button>
+										<button type="button" class="btn btn-secondary btn-danger-soft" onclick={() => deleteAttachment(doc)}>
+											{m.common_delete()}
+										</button>
+									</div>
 								</div>
 							</li>
 						{/each}
@@ -475,6 +566,16 @@
 		color: #176b34;
 	}
 
+	.document-badge-approved {
+		background: rgba(22, 163, 74, 0.18);
+		color: #166534;
+	}
+
+	.document-badge-rejected {
+		background: rgba(239, 68, 68, 0.16);
+		color: #991b1b;
+	}
+
 	.document-details {
 		display: flex;
 		flex-wrap: wrap;
@@ -490,10 +591,28 @@
 		color: var(--color-text-muted);
 	}
 
+	.document-review-note {
+		margin: 0.5rem 0 0;
+		font-size: 0.9rem;
+		color: var(--color-text);
+	}
+
+	.document-review-controls {
+		display: grid;
+		gap: 0.55rem;
+		min-width: min(18rem, 100%);
+	}
+
 	.document-actions {
 		display: flex;
 		gap: 0.5rem;
 		flex-wrap: wrap;
+	}
+
+	.btn-success-soft {
+		color: #166534;
+		border-color: rgba(22, 101, 52, 0.18);
+		background: rgba(220, 252, 231, 0.92);
 	}
 
 	.btn-danger-soft {
@@ -509,7 +628,8 @@
 
 		.document-header,
 		.document-item,
-		.document-upload-controls {
+		.document-upload-controls,
+		.document-review-controls {
 			flex-direction: column;
 			align-items: stretch;
 		}

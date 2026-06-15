@@ -3,9 +3,11 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -43,11 +45,16 @@ type Manifest struct {
 
 // BackendConfig represents the backend section of the manifest
 type BackendConfig struct {
-	Package string        `yaml:"package" json:"package"`
-	Entry   string        `yaml:"entry" json:"entry"`
-	Hooks   []HookConfig  `yaml:"hooks,omitempty" json:"hooks,omitempty"`
-	Routes  []RouteConfig `yaml:"routes,omitempty" json:"routes,omitempty"`
+	Package    string        `yaml:"package" json:"package"`
+	Entry      string        `yaml:"entry" json:"entry"`
+	Runtime    string        `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	BaseURL    string        `yaml:"base_url,omitempty" json:"base_url,omitempty"`
+	Executable string        `yaml:"executable,omitempty" json:"executable,omitempty"`
+	Hooks      []HookConfig  `yaml:"hooks,omitempty" json:"hooks,omitempty"`
+	Routes     []RouteConfig `yaml:"routes,omitempty" json:"routes,omitempty"`
 }
+
+const BackendRuntimePackage = "package"
 
 // HookConfig represents an event hook subscription
 type HookConfig struct {
@@ -79,8 +86,14 @@ type NavigationItem struct {
 
 // SlotConfig represents a UI slot injection
 type SlotConfig struct {
-	Name      string `yaml:"name" json:"name"`
-	Component string `yaml:"component" json:"component"`
+	Name        string `yaml:"name" json:"name"`
+	Component   string `yaml:"component" json:"component"`
+	Label       string `yaml:"label,omitempty" json:"label,omitempty"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Path        string `yaml:"path,omitempty" json:"path,omitempty"`
+	Kind        string `yaml:"kind,omitempty" json:"kind,omitempty"`
+	Badge       string `yaml:"badge,omitempty" json:"badge,omitempty"`
+	Order       *int   `yaml:"order,omitempty" json:"order,omitempty"`
 }
 
 // DatabaseConfig represents the database section of the manifest
@@ -171,11 +184,8 @@ func (m *Manifest) Validate() error {
 
 	// Validate backend config
 	if m.Backend != nil {
-		if m.Backend.Package == "" {
-			return fmt.Errorf("backend.package is required when backend is specified")
-		}
-		if m.Backend.Entry == "" {
-			return fmt.Errorf("backend.entry is required when backend is specified")
+		if err := validateBackendConfig(m.Backend); err != nil {
+			return err
 		}
 
 		// Check for routes:register permission if routes are defined
@@ -194,6 +204,11 @@ func (m *Manifest) Validate() error {
 		if m.Frontend.Components == "" {
 			return fmt.Errorf("frontend.components is required when frontend is specified")
 		}
+		for i, slot := range m.Frontend.Slots {
+			if err := validateSlotConfig(slot); err != nil {
+				return fmt.Errorf("frontend.slots[%d]: %w", i, err)
+			}
+		}
 	}
 
 	// Validate database config
@@ -206,6 +221,146 @@ func (m *Manifest) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+func validateBackendConfig(backend *BackendConfig) error {
+	switch normalizedBackendRuntime(backend.Runtime) {
+	case "":
+		return validateLegacyBackendConfig(backend)
+	case BackendRuntimeHTTP:
+		return validateHTTPBackendRuntime(backend)
+	case BackendRuntimePackage:
+		return validatePackageBackendRuntime(backend)
+	default:
+		return fmt.Errorf("backend.runtime must be one of %q or %q", BackendRuntimeHTTP, BackendRuntimePackage)
+	}
+}
+
+func validateLegacyBackendConfig(backend *BackendConfig) error {
+	if strings.TrimSpace(backend.BaseURL) != "" {
+		return fmt.Errorf("backend.base_url requires backend.runtime: %s", BackendRuntimeHTTP)
+	}
+	if strings.TrimSpace(backend.Executable) != "" {
+		return fmt.Errorf("backend.executable requires backend.runtime: %s", BackendRuntimePackage)
+	}
+	if strings.TrimSpace(backend.Package) == "" {
+		return fmt.Errorf("backend.package is required when backend is specified")
+	}
+	if err := validateManifestRelativePath("backend.package", backend.Package, true); err != nil {
+		return err
+	}
+	if strings.TrimSpace(backend.Entry) == "" {
+		return fmt.Errorf("backend.entry is required when backend is specified")
+	}
+	return nil
+}
+
+func validateHTTPBackendRuntime(backend *BackendConfig) error {
+	if strings.TrimSpace(backend.Executable) != "" {
+		return fmt.Errorf("backend.executable is only valid with backend.runtime: %s", BackendRuntimePackage)
+	}
+	if strings.TrimSpace(backend.Package) != "" {
+		if err := validateManifestRelativePath("backend.package", backend.Package, true); err != nil {
+			return err
+		}
+	}
+	if _, err := parseLoopbackRuntimeBaseURL(backend.BaseURL); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validatePackageBackendRuntime(backend *BackendConfig) error {
+	if strings.TrimSpace(backend.BaseURL) != "" {
+		return fmt.Errorf("backend.base_url is only valid with backend.runtime: %s", BackendRuntimeHTTP)
+	}
+	if strings.TrimSpace(backend.Package) == "" {
+		return fmt.Errorf("backend.package is required for package runtime")
+	}
+	if err := validateManifestRelativePath("backend.package", backend.Package, true); err != nil {
+		return err
+	}
+	if strings.TrimSpace(backend.Executable) == "" {
+		return fmt.Errorf("backend.executable is required for package runtime")
+	}
+	if err := validateManifestRelativePath("backend.executable", backend.Executable, false); err != nil {
+		return err
+	}
+	return nil
+}
+
+func normalizedBackendRuntime(runtime string) string {
+	return strings.ToLower(strings.TrimSpace(runtime))
+}
+
+func validateManifestRelativePath(field string, value string, allowCurrent bool) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if strings.Contains(trimmed, "\x00") {
+		return fmt.Errorf("%s must not contain NUL bytes", field)
+	}
+	if strings.Contains(trimmed, "\\") {
+		return fmt.Errorf("%s must use slash-separated plugin-relative paths", field)
+	}
+	if strings.Contains(trimmed, "://") || strings.HasPrefix(trimmed, "//") {
+		return fmt.Errorf("%s must be a plugin-relative path", field)
+	}
+	if strings.ContainsAny(trimmed, " \t\r\n;&|`$<>*?[]{}") {
+		return fmt.Errorf("%s contains unsafe characters", field)
+	}
+	if filepath.IsAbs(trimmed) {
+		return fmt.Errorf("%s must be a plugin-relative path", field)
+	}
+
+	cleaned := filepath.Clean(trimmed)
+	if cleaned == "." && !allowCurrent {
+		return fmt.Errorf("%s must point to a file below the plugin package", field)
+	}
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return fmt.Errorf("%s must stay within the plugin package", field)
+	}
+	return nil
+}
+
+func validateSlotConfig(slot SlotConfig) error {
+	if strings.TrimSpace(slot.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	if strings.TrimSpace(slot.Component) == "" {
+		return fmt.Errorf("component is required")
+	}
+	if slot.Kind != "" {
+		switch slot.Kind {
+		case "card", "link", "action":
+		default:
+			return fmt.Errorf("kind must be one of card, link, or action")
+		}
+	}
+	if (slot.Kind == "link" || slot.Kind == "action") && strings.TrimSpace(slot.Path) == "" {
+		return fmt.Errorf("path is required for %s slots", slot.Kind)
+	}
+	if slot.Path != "" {
+		if err := validateFrontendSlotPath(slot.Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFrontendSlotPath(path string) error {
+	parsed, err := url.Parse(path)
+	if err != nil {
+		return fmt.Errorf("path must be a valid internal route")
+	}
+	if parsed.Scheme != "" || parsed.Host != "" {
+		return fmt.Errorf("path must be an internal route")
+	}
+	if !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(parsed.Path, "//") {
+		return fmt.Errorf("path must start with a single slash")
+	}
 	return nil
 }
 

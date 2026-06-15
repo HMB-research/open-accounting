@@ -408,6 +408,7 @@
 		{ value: 'YYYY-MM-DD', label: '2024-12-31' },
 		{ value: 'DD/MM/YYYY', label: '31/12/2024' }
 	];
+	const hexColorPattern = '^#[0-9A-Fa-f]{6}$';
 
 	function getMonthLabel(index: number): string {
 		switch (index) {
@@ -604,7 +605,7 @@
 								type="text"
 								bind:value={pdfPrimaryColor}
 								placeholder="#4f46e5"
-								pattern="^#[0-9A-Fa-f]{6}$"
+								pattern={hexColorPattern}
 							/>
 						</div>
 						<span class="help-text">{m.settings_usedInPdf()}</span>
@@ -661,7 +662,7 @@
 					<div class="form-group">
 						<label class="label" for="timezone">{m.settings_timezone()}</label>
 						<select class="input" id="timezone" bind:value={timezone}>
-							{#each timezones as tz}
+							{#each timezones as tz (tz)}
 								<option value={tz}>{tz}</option>
 							{/each}
 						</select>
@@ -669,7 +670,7 @@
 					<div class="form-group">
 						<label class="label" for="dateFormat">{m.settings_dateFormat()}</label>
 						<select class="input" id="dateFormat" bind:value={dateFormat}>
-							{#each dateFormats as fmt}
+							{#each dateFormats as fmt (fmt.value)}
 								<option value={fmt.value}>{fmt.label}</option>
 							{/each}
 						</select>
@@ -677,7 +678,7 @@
 					<div class="form-group">
 						<label class="label" for="fiscalYearStart">{m.settings_fiscalYearStart()}</label>
 						<select class="input" id="fiscalYearStart" bind:value={fiscalYearStart}>
-							{#each monthIndices as i}
+							{#each monthIndices as i (i)}
 								<option value={i + 1}>{getMonthLabel(i)}</option>
 							{/each}
 						</select>
@@ -734,7 +735,7 @@
 						<div class="form-grid">
 							<div class="form-group">
 								<label class="label" for="closePeriodEndDate">{m.settings_periodEndDate()}</label>
-								<input class="input" type="date" id="closePeriodEndDate" bind:value={closePeriodEndDate} required />
+								<input class="input" type="date" id="closePeriodEndDate" bind:value={closePeriodEndDate} />
 							</div>
 							<div class="form-group full-width">
 								<label class="label" for="closeNote">{m.settings_closeNote()}</label>
@@ -762,7 +763,7 @@
 						<div class="form-grid">
 							<div class="form-group">
 								<label class="label" for="reopenPeriodEndDate">{m.settings_periodEndDate()}</label>
-								<input class="input" type="date" id="reopenPeriodEndDate" bind:value={reopenPeriodEndDate} required />
+								<input class="input" type="date" id="reopenPeriodEndDate" bind:value={reopenPeriodEndDate} />
 							</div>
 							<div class="form-group full-width">
 								<label class="label" for="reopenNote">{m.settings_reopenNote()}</label>
@@ -772,7 +773,6 @@
 									bind:value={reopenNote}
 									rows="3"
 									placeholder={m.settings_reopenNotePlaceholder()}
-									required
 								></textarea>
 							</div>
 						</div>
@@ -805,7 +805,7 @@
 						</div>
 					{:else}
 						<ul class="history-list">
-							{#each periodCloseEvents as event}
+							{#each periodCloseEvents as event (event.id)}
 								<li class="history-item">
 									<div class="history-main">
 										<div class="history-heading">
@@ -834,6 +834,7 @@
 
 			<YearEndClosePanel
 				status={yearEndStatus}
+				tenantId={tenantId}
 				periodEndDate={yearEndPeriodEndDate}
 				currency={tenant?.settings?.default_currency || 'EUR'}
 				errorMessage={yearEndError}

@@ -1,42 +1,10 @@
 package banking
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-// TestEnsureSchema tests the EnsureSchema function that has 0% coverage
-func TestEnsureSchema(t *testing.T) {
-	tests := []struct {
-		name          string
-		service       *Service
-		schemaName    string
-		expectedError string
-	}{
-		{
-			name:          "service without database connection",
-			service:       &Service{db: nil},
-			schemaName:    "test_schema",
-			expectedError: "database connection not available",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.service.EnsureSchema(context.Background(), tt.schemaName)
-
-			if tt.expectedError != "" {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectedError)
-				return
-			}
-
-			assert.NoError(t, err)
-		})
-	}
-}
 
 // These functions test the business logic validation without database dependency
 

@@ -66,6 +66,7 @@ var payrollHistoryImportHeaderAliases = map[string]string{
 	"personal_code":                   "personal_code",
 	"isikukood":                       "personal_code",
 	"email":                           "email",
+	"name":                            "name",
 	"first_name":                      "first_name",
 	"last_name":                       "last_name",
 	"gross_salary":                    "gross_salary",
@@ -110,7 +111,7 @@ func (s *Service) ImportPayrollHistoryCSV(
 	schemaName, tenantID, userID string,
 	req *ImportPayrollHistoryRequest,
 ) (*ImportPayrollHistoryResult, error) {
-	if strings.TrimSpace(req.CSVContent) == "" {
+	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
 		return nil, fmt.Errorf("csv_content is required")
 	}
 
@@ -146,7 +147,7 @@ func (s *Service) ImportPayrollHistoryCSV(
 				Row:            row.rowNumber,
 				PeriodYear:     parseOptionalInt(row.values["period_year"]),
 				PeriodMonth:    parseOptionalInt(row.values["period_month"]),
-				EmployeeName:   employeeImportDisplayName(row.values["first_name"], row.values["last_name"]),
+				EmployeeName:   payrollHistoryImportEmployeeName(row.values),
 				EmployeeNumber: strings.TrimSpace(row.values["employee_number"]),
 				Message:        err.Error(),
 			})
@@ -242,70 +243,45 @@ func (s *Service) ImportPayrollHistoryCSV(
 			totalEmployerCost = totalEmployerCost.Add(record.payslip.TotalEmployerCost)
 		}
 
-		tx, err := s.repo.BeginTx(ctx)
-		if err != nil {
+		err := s.repo.WithTransaction(ctx, func(txRepo Repository) error {
+			approvedAt := payrollHistoryApprovedAt(group.status, group.paymentDate)
+			run := &PayrollRun{
+				ID:                s.uuid.New(),
+				TenantID:          tenantID,
+				PeriodYear:        group.periodYear,
+				PeriodMonth:       group.periodMonth,
+				Status:            group.status,
+				PaymentDate:       group.paymentDate,
+				TotalGross:        totalGross,
+				TotalNet:          totalNet,
+				TotalEmployerCost: totalEmployerCost,
+				Notes:             group.notes,
+				CreatedBy:         userID,
+				ApprovedBy:        payrollHistoryApprovedBy(group.status, userID),
+				ApprovedAt:        approvedAt,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
+			}
+
+			if err := txRepo.CreatePayrollRun(ctx, schemaName, run); err != nil {
+				return fmt.Errorf("create payroll run: %w", err)
+			}
+
 			for _, record := range group.records {
-				result.RowsSkipped++
-				result.Errors = append(result.Errors, ImportPayrollHistoryRowError{
-					Row:            record.rowNumber,
-					PeriodYear:     record.periodYear,
-					PeriodMonth:    record.periodMonth,
-					EmployeeName:   record.employeeName,
-					EmployeeNumber: record.employeeNumber,
-					Message:        fmt.Sprintf("begin transaction: %v", err),
-				})
+				payslip := record.payslip
+				payslip.ID = s.uuid.New()
+				payslip.TenantID = tenantID
+				payslip.PayrollRunID = run.ID
+				payslip.EmployeeID = record.employeeID
+
+				if err := txRepo.CreatePayslip(ctx, schemaName, &payslip); err != nil {
+					return fmt.Errorf("create payslip: %w", err)
+				}
 			}
-			continue
-		}
-
-		txRepo := s.repo.WithTx(tx)
-		approvedAt := payrollHistoryApprovedAt(group.status, group.paymentDate)
-		run := &PayrollRun{
-			ID:                s.uuid.New(),
-			TenantID:          tenantID,
-			PeriodYear:        group.periodYear,
-			PeriodMonth:       group.periodMonth,
-			Status:            group.status,
-			PaymentDate:       group.paymentDate,
-			TotalGross:        totalGross,
-			TotalNet:          totalNet,
-			TotalEmployerCost: totalEmployerCost,
-			Notes:             group.notes,
-			CreatedBy:         userID,
-			ApprovedBy:        payrollHistoryApprovedBy(group.status, userID),
-			ApprovedAt:        approvedAt,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
-		}
-
-		if err := txRepo.CreatePayrollRun(ctx, schemaName, run); err != nil {
-			_ = tx.Rollback(ctx)
-			appendPayrollHistoryGroupError(result, group, fmt.Sprintf("create payroll run: %v", err))
-			continue
-		}
-
-		groupFailed := false
-		for _, record := range group.records {
-			payslip := record.payslip
-			payslip.ID = s.uuid.New()
-			payslip.TenantID = tenantID
-			payslip.PayrollRunID = run.ID
-			payslip.EmployeeID = record.employeeID
-
-			if err := txRepo.CreatePayslip(ctx, schemaName, &payslip); err != nil {
-				_ = tx.Rollback(ctx)
-				appendPayrollHistoryGroupError(result, group, fmt.Sprintf("create payslip: %v", err))
-				groupFailed = true
-				break
-			}
-		}
-		if groupFailed {
-			continue
-		}
-
-		if err := tx.Commit(ctx); err != nil {
-			_ = tx.Rollback(ctx)
-			appendPayrollHistoryGroupError(result, group, fmt.Sprintf("commit transaction: %v", err))
+			return nil
+		})
+		if err != nil {
+			appendPayrollHistoryGroupError(result, group, err.Error())
 			continue
 		}
 
@@ -597,6 +573,21 @@ func findPayrollHistoryEmployee(values map[string]string, indexes *payrollHistor
 		candidates[match.ID] = match
 	}
 
+	if name := strings.TrimSpace(values["name"]); name != "" {
+		matches := indexes.names[normalizeEmployeeImportValue(name)]
+		if len(matches) == 0 {
+			return nil, "", fmt.Errorf("employee %q not found", name)
+		}
+		if len(matches) > 1 && len(candidates) == 0 {
+			return nil, "", fmt.Errorf("employee %q matches multiple employees; use employee_number or personal_code", name)
+		}
+		if len(matches) == 1 {
+			candidates[matches[0].ID] = matches[0]
+		} else if !payrollHistoryMatchesCandidate(candidates, matches) {
+			return nil, "", fmt.Errorf("employee identifiers do not match the same employee")
+		}
+	}
+
 	firstName := strings.TrimSpace(values["first_name"])
 	lastName := strings.TrimSpace(values["last_name"])
 	if firstName != "" || lastName != "" {
@@ -613,11 +604,13 @@ func findPayrollHistoryEmployee(values map[string]string, indexes *payrollHistor
 		}
 		if len(matches) == 1 {
 			candidates[matches[0].ID] = matches[0]
+		} else if !payrollHistoryMatchesCandidate(candidates, matches) {
+			return nil, "", fmt.Errorf("employee identifiers do not match the same employee")
 		}
 	}
 
 	if len(candidates) == 0 {
-		return nil, "", fmt.Errorf("employee_number, personal_code, email, or first_name/last_name is required")
+		return nil, "", fmt.Errorf("employee_number, personal_code, email, name, or first_name/last_name is required")
 	}
 	if len(candidates) > 1 {
 		return nil, "", fmt.Errorf("employee identifiers do not match the same employee")
@@ -628,6 +621,15 @@ func findPayrollHistoryEmployee(values map[string]string, indexes *payrollHistor
 	}
 
 	return nil, "", fmt.Errorf("employee not found")
+}
+
+func payrollHistoryMatchesCandidate(candidates map[string]*Employee, matches []*Employee) bool {
+	for _, match := range matches {
+		if _, ok := candidates[match.ID]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func validatePayrollHistoryGroupConsistency(group *payrollHistoryImportGroup, record *payrollHistoryImportRecord) string {
@@ -750,6 +752,13 @@ func payrollHistoryGroupKey(year, month int) string {
 
 func payrollHistoryNameKey(firstName, lastName string) string {
 	return normalizeEmployeeImportValue(employeeImportDisplayName(firstName, lastName))
+}
+
+func payrollHistoryImportEmployeeName(values map[string]string) string {
+	if name := strings.TrimSpace(values["name"]); name != "" {
+		return name
+	}
+	return employeeImportDisplayName(values["first_name"], values["last_name"])
 }
 
 func payrollHistoryDatesEqual(left, right *time.Time) bool {

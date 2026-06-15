@@ -1,96 +1,245 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+
+interface PaymentResponse {
+	id: string;
+	payment_number: string;
+	payment_type: 'RECEIVED' | 'MADE';
+	amount: number | string;
+	reference?: string;
+	payment_method?: string;
+	reversal_of_payment_id?: string;
+	reversed_by_payment_id?: string;
+	reversal_reason?: string;
+}
+
+interface PaymentReversalResponse {
+	original_payment: PaymentResponse;
+	reversal_payment: PaymentResponse;
+}
+
+async function waitForCashPaymentsLoaded(page: Page) {
+	await expect(async () => {
+		const isLoading = await page
+			.getByText(/^Loading\.\.\.$/i)
+			.first()
+			.isVisible()
+			.catch(() => false);
+		const hasTable = await page
+			.locator('table tbody tr')
+			.first()
+			.isVisible()
+			.catch(() => false);
+		const hasEmpty = await page
+			.locator('.empty-state')
+			.isVisible()
+			.catch(() => false);
+		expect(isLoading === false && (hasTable || hasEmpty)).toBeTruthy();
+	}).toPass({ timeout: 15000 });
+}
+
+async function openCashPayments(page: Page, testInfo: TestInfo) {
+	const paymentsLoaded = page.waitForResponse((response) => {
+		const url = new URL(response.url());
+		return (
+			response.request().method() === 'GET' &&
+			url.pathname.match(/\/api\/v1\/tenants\/[^/]+\/payments$/) !== null &&
+			url.searchParams.get('method') === 'CASH' &&
+			response.status() === 200
+		);
+	});
+	const contactsLoaded = page.waitForResponse(
+		(response) =>
+			response.url().includes('/contacts?active_only=true') &&
+			response.request().method() === 'GET' &&
+			response.status() === 200
+	);
+
+	await navigateTo(page, '/payments/cash', testInfo, { waitForNetworkIdle: false });
+	await Promise.all([paymentsLoaded, contactsLoaded]);
+	await waitForCashPaymentsLoaded(page);
+}
+
+function cashPaymentRow(page: Page, paymentNumber: string) {
+	return page.locator('table tbody tr').filter({ hasText: paymentNumber });
+}
+
+async function expectCashPaymentsShell(page: Page) {
+	await expect(page.getByRole('heading', { name: /cash/i })).toBeVisible();
+	await expect(page.locator('.summary-card.received')).toContainText(/total received/i);
+	await expect(page.locator('.summary-card.made')).toContainText(/total paid/i);
+	await expect(page.locator('.summary-card.balance')).toContainText(/cash balance/i);
+	await expect(page.getByRole('button', { name: /new cash payment/i })).toBeVisible();
+
+	const filterSelect = page.locator('.filters select').first();
+	await expect(filterSelect).toBeVisible();
+	await expect(filterSelect.locator('option')).toHaveCount(3);
+	await expect(page.locator('table, .empty-state').first()).toBeVisible();
+}
+
+async function selectTypeFilter(page: Page, type: '' | 'RECEIVED' | 'MADE') {
+	const responsePromise = page.waitForResponse((response) => {
+		const url = new URL(response.url());
+		return (
+			response.request().method() === 'GET' &&
+			url.pathname.match(/\/api\/v1\/tenants\/[^/]+\/payments$/) !== null &&
+			url.searchParams.get('method') === 'CASH' &&
+			(type ? url.searchParams.get('type') === type : !url.searchParams.has('type')) &&
+			response.status() === 200
+		);
+	});
+
+	await page.locator('.filters select').first().selectOption(type);
+	await responsePromise;
+	await waitForCashPaymentsLoaded(page);
+}
+
+async function recordCashPayment(
+	page: Page,
+	options: {
+		type: 'RECEIVED' | 'MADE';
+		amount: string;
+		reference: string;
+		notes: string;
+	}
+) {
+	await page.getByRole('button', { name: /new cash payment/i }).click();
+	const dialog = page.getByRole('dialog', { name: /record cash payment/i });
+	await expect(dialog).toBeVisible();
+
+	await dialog.locator('#type').selectOption(options.type);
+	await dialog.locator('#contact').selectOption({ index: 1 });
+	await dialog.locator('#date').fill('2026-06-09');
+	await dialog.locator('#amount').fill(options.amount);
+	await dialog.locator('#reference').fill(options.reference);
+	await dialog.locator('#notes').fill(options.notes);
+
+	const createResponsePromise = page.waitForResponse((response) => {
+		const path = new URL(response.url()).pathname;
+		return (
+			response.request().method() === 'POST' &&
+			/\/api\/v1\/tenants\/[^/]+\/payments$/.test(path)
+		);
+	});
+	await dialog.getByRole('button', { name: /^record cash payment$/i }).click();
+	const createResponse = await createResponsePromise;
+	expect(createResponse.status()).toBe(201);
+	await expect(dialog).toBeHidden();
+
+	return (await createResponse.json()) as PaymentResponse;
+}
 
 test.describe('Cash Payments View', () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
+		await openCashPayments(page, testInfo);
 	});
 
-	test('displays cash payments page with correct structure', async ({ page }, testInfo) => {
-		await navigateTo(page, '/payments/cash', testInfo);
+	test('renders, filters, and reverses auditable cash movements', async ({ page }) => {
+		await expectCashPaymentsShell(page);
 
-		// Wait for page to load - heading should be visible
-		await expect(page.getByRole('heading', { name: /cash/i })).toBeVisible();
+		const suffix = Date.now();
+		const cashInReference = `E2E-CASH-IN-${suffix}`;
+		const cashOutReference = `E2E-CASH-OUT-${suffix}`;
+		const reversalReference = `REV-${cashInReference}`;
+		const reversalReason = `Cash receipt correction ${suffix}`;
 
-		// Wait for page content to load
-		await page.waitForTimeout(2000);
+		const cashIn = await recordCashPayment(page, {
+			type: 'RECEIVED',
+			amount: '42.35',
+			reference: cashInReference,
+			notes: `Cash receipt workflow ${suffix}`
+		});
+		expect(cashIn.payment_type).toBe('RECEIVED');
+		expect(Number(cashIn.amount)).toBe(42.35);
+		expect(cashIn.payment_method).toBe('CASH');
+		expect(cashIn.reference).toBe(cashInReference);
 
-		// Check for summary cards (Total Received, Total Paid, Balance)
-		const summaryCards = page.locator('.summary-card, .summary-cards');
-		const hasSummary = await summaryCards.isVisible().catch(() => false);
+		const cashInRow = cashPaymentRow(page, cashIn.payment_number);
+		await expect(cashInRow).toBeVisible({ timeout: 10000 });
+		await expect(cashInRow).toContainText(cashInReference);
+		await expect(cashInRow).toContainText(/received/i);
+		await expect(cashInRow).toContainText(/42[,.]35/);
 
-		if (hasSummary) {
-			// Should show balance-related text
-			const hasBalanceInfo = await page
-				.getByText(/received|paid|balance/i)
-				.first()
-				.isVisible()
-				.catch(() => false);
-			expect(hasBalanceInfo).toBe(true);
-		}
+		const cashOut = await recordCashPayment(page, {
+			type: 'MADE',
+			amount: '15.10',
+			reference: cashOutReference,
+			notes: `Cash payout workflow ${suffix}`
+		});
+		expect(cashOut.payment_type).toBe('MADE');
+		expect(Number(cashOut.amount)).toBe(15.1);
+		expect(cashOut.payment_method).toBe('CASH');
+		expect(cashOut.reference).toBe(cashOutReference);
 
-		// Page loaded successfully
-		expect(true).toBe(true);
-	});
+		const cashOutRow = cashPaymentRow(page, cashOut.payment_number);
+		await expect(cashOutRow).toBeVisible({ timeout: 10000 });
+		await expect(cashOutRow).toContainText(cashOutReference);
+		await expect(cashOutRow).toContainText(/made/i);
+		await expect(cashOutRow).toContainText(/15[,.]10/);
 
-	test('has new payment button', async ({ page }, testInfo) => {
-		await navigateTo(page, '/payments/cash', testInfo);
+		await selectTypeFilter(page, 'RECEIVED');
+		await expect(cashPaymentRow(page, cashIn.payment_number)).toBeVisible({ timeout: 10000 });
+		await expect(cashPaymentRow(page, cashOut.payment_number)).toHaveCount(0);
 
-		// Verify New button exists
-		const newButton = page
-			.getByRole('button', { name: /new|create|add|record/i })
-			.or(page.getByRole('link', { name: /new|create|add/i }));
-		await expect(newButton).toBeVisible();
-	});
+		await selectTypeFilter(page, 'MADE');
+		await expect(cashPaymentRow(page, cashOut.payment_number)).toBeVisible({ timeout: 10000 });
+		await expect(cashPaymentRow(page, cashIn.payment_number)).toHaveCount(0);
 
-	test('has payment type filter', async ({ page }, testInfo) => {
-		await navigateTo(page, '/payments/cash', testInfo);
+		await selectTypeFilter(page, '');
+		await expect(cashPaymentRow(page, cashIn.payment_number)).toBeVisible({ timeout: 10000 });
+		await expect(cashPaymentRow(page, cashOut.payment_number)).toBeVisible({ timeout: 10000 });
 
-		await page.waitForTimeout(1000);
+		const originalRow = cashPaymentRow(page, cashIn.payment_number);
+		await expect(originalRow).toBeVisible({ timeout: 10000 });
+		await expect(originalRow).toContainText(cashInReference);
 
-		// Check for filter dropdown
-		const filterSelect = page.locator('select').first();
-		const hasFilter = await filterSelect.isVisible().catch(() => false);
+		await originalRow.getByRole('button', { name: /^reverse$/i }).click();
+		const reversalDialog = page.getByRole('dialog', { name: /reverse payment/i });
+		await expect(reversalDialog).toBeVisible();
+		await expect(reversalDialog.locator('#reversal-original')).toHaveValue(cashIn.payment_number);
+		await reversalDialog.locator('#reversal-date').fill('2026-06-09');
+		await reversalDialog.locator('#reversal-reason').fill(reversalReason);
+		await reversalDialog.locator('#reversal-reference').fill(reversalReference);
+		await reversalDialog.locator('#reversal-notes').fill('Offsetting cash payment created by demo E2E');
 
-		if (hasFilter) {
-			// Should have All/Received/Made options
-			const options = await filterSelect.locator('option').count();
-			expect(options).toBeGreaterThanOrEqual(2);
-		}
-	});
+		const reverseResponsePromise = page.waitForResponse((response) => {
+			const path = new URL(response.url()).pathname;
+			return (
+				response.request().method() === 'POST' &&
+				/\/api\/v1\/tenants\/[^/]+\/payments\/[^/]+\/reverse$/.test(path)
+			);
+		});
+		await reversalDialog.getByRole('button', { name: /^reverse$/i }).click();
+		const reverseResponse = await reverseResponsePromise;
+		expect(reverseResponse.status()).toBe(201);
+		const reversal = (await reverseResponse.json()) as PaymentReversalResponse;
+		expect(reversal.original_payment.id).toBe(cashIn.id);
+		expect(reversal.original_payment.reversed_by_payment_id).toBe(reversal.reversal_payment.id);
+		expect(reversal.original_payment.reversal_reason).toBe(reversalReason);
+		expect(reversal.reversal_payment.payment_type).toBe('MADE');
+		expect(reversal.reversal_payment.payment_method).toBe('CASH');
+		expect(reversal.reversal_payment.reversal_of_payment_id).toBe(cashIn.id);
+		expect(reversal.reversal_payment.reference).toBe(reversalReference);
+		expect(reversal.reversal_payment.reversal_reason).toBe(reversalReason);
 
-	test('displays table when payments exist', async ({ page }, testInfo) => {
-		await navigateTo(page, '/payments/cash', testInfo);
+		const refreshedOriginalRow = cashPaymentRow(page, reversal.original_payment.payment_number);
+		const reversalRow = cashPaymentRow(page, reversal.reversal_payment.payment_number);
+		await expect(refreshedOriginalRow).toBeVisible({ timeout: 10000 });
+		await expect(refreshedOriginalRow).toContainText(/reversed/i);
+		await expect(refreshedOriginalRow.getByRole('button', { name: /^reverse$/i })).toHaveCount(0);
+		await expect(reversalRow).toBeVisible({ timeout: 10000 });
+		await expect(reversalRow).toContainText(/reversal/i);
+		await expect(reversalRow).toContainText(reversalReference);
+		await expect(reversalRow).toContainText(/made/i);
+		await expect(reversalRow).toContainText(/42[,.]35/);
 
-		// Wait for page to load - either table, empty state, or loading text should appear
-		await expect(async () => {
-			const table = page.locator('table');
-			const emptyState = page.locator('.empty-state');
-			const loadingText = page.getByText(/loading|laadimine/i);
-			const errorAlert = page.locator('.alert-error');
-
-			const hasTable = await table.isVisible().catch(() => false);
-			const hasEmpty = await emptyState.isVisible().catch(() => false);
-			const hasLoading = await loadingText.isVisible().catch(() => false);
-			const hasError = await errorAlert.isVisible().catch(() => false);
-
-			// Page should show one of these states
-			expect(hasTable || hasEmpty || hasLoading || hasError).toBe(true);
-		}).toPass({ timeout: 10000 });
-
-		// If still loading, wait for it to finish
-		const loadingText = page.getByText(/loading|laadimine/i);
-		if (await loadingText.isVisible().catch(() => false)) {
-			await loadingText.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
-		}
-
-		// Now check final state
-		const table = page.locator('table');
-		const emptyState = page.locator('.empty-state');
-		const hasTable = await table.isVisible().catch(() => false);
-		const hasEmpty = await emptyState.isVisible().catch(() => false);
-
-		expect(hasTable || hasEmpty).toBe(true);
+		await selectTypeFilter(page, 'MADE');
+		await expect(cashPaymentRow(page, cashOut.payment_number)).toBeVisible({ timeout: 10000 });
+		await expect(cashPaymentRow(page, reversal.reversal_payment.payment_number)).toBeVisible({
+			timeout: 10000
+		});
+		await expect(cashPaymentRow(page, reversal.original_payment.payment_number)).toHaveCount(0);
 	});
 });

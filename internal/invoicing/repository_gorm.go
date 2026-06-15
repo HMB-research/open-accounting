@@ -1,5 +1,3 @@
-//go:build gorm
-
 package invoicing
 
 import (
@@ -36,6 +34,10 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, invoice 
 	}
 
 	return invoicesDB.Transaction(func(tx *gorm.DB) error {
+		invoicesTx, err := database.TenantTable(tx, schemaName, "invoices")
+		if err != nil {
+			return err
+		}
 		linesDB, err := database.TenantTable(tx, schemaName, "invoice_lines")
 		if err != nil {
 			return err
@@ -43,7 +45,7 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, invoice 
 
 		// Insert invoice
 		invModel := invoiceToModel(invoice)
-		if err := tx.Create(invModel).Error; err != nil {
+		if err := invoicesTx.Create(invModel).Error; err != nil {
 			return fmt.Errorf("insert invoice: %w", err)
 		}
 
@@ -190,24 +192,31 @@ func (r *GORMRepository) UpdatePayment(ctx context.Context, schemaName, tenantID
 
 // GenerateNumber generates a new invoice number
 func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string, invoiceType InvoiceType) (string, error) {
-	invoicesTable, err := database.QualifiedTable(schemaName, "invoices")
+	db, err := r.tenantTable(ctx, schemaName, "invoices")
 	if err != nil {
 		return "", err
 	}
 
 	prefix := "INV"
-	if invoiceType == InvoiceTypePurchase {
+	switch invoiceType {
+	case InvoiceTypePurchase:
 		prefix = "BILL"
-	} else if invoiceType == InvoiceTypeCreditNote {
+	case InvoiceTypeCreditNote:
 		prefix = "CN"
 	}
 
 	var seq int
-	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
-		SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number FROM '%s-([0-9]+)') AS INTEGER)), 0) + 1
-		FROM %s WHERE tenant_id = ? AND invoice_type = ?
-	`, prefix, invoicesTable), tenantID, invoiceType).Scan(&seq).Error
-	if err != nil {
+	if err := db.
+		Select(`
+			COALESCE(MAX(
+				CASE
+					WHEN invoice_number ~ ? THEN CAST(SUBSTRING(invoice_number FROM ?) AS INTEGER)
+					ELSE 0
+				END
+			), 0) + 1
+		`, prefix+"-[0-9]+$", prefix+"-([0-9]+)$").
+		Where("tenant_id = ? AND invoice_type = ?", tenantID, invoiceType).
+		Scan(&seq).Error; err != nil {
 		return "", fmt.Errorf("generate invoice number: %w", err)
 	}
 
@@ -310,6 +319,7 @@ func modelToInvoiceLine(m *models.InvoiceLine) *InvoiceLine {
 		UnitPrice:       m.UnitPrice.Decimal,
 		DiscountPercent: m.DiscountPercent.Decimal,
 		VATRate:         m.VATRate.Decimal,
+		VATTreatment:    normalizeVATTreatmentOrDefault(VATTreatment(m.VATTreatment)),
 		LineSubtotal:    m.LineSubtotal.Decimal,
 		LineVAT:         m.LineVAT.Decimal,
 		LineTotal:       m.LineTotal.Decimal,
@@ -330,6 +340,7 @@ func invoiceLineToModel(l *InvoiceLine) *models.InvoiceLine {
 		UnitPrice:       models.Decimal{Decimal: l.UnitPrice},
 		DiscountPercent: models.Decimal{Decimal: l.DiscountPercent},
 		VATRate:         models.Decimal{Decimal: l.VATRate},
+		VATTreatment:    string(normalizeVATTreatmentOrDefault(l.VATTreatment)),
 		LineSubtotal:    models.Decimal{Decimal: l.LineSubtotal},
 		LineVAT:         models.Decimal{Decimal: l.LineVAT},
 		LineTotal:       models.Decimal{Decimal: l.LineTotal},

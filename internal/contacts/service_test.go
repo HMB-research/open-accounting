@@ -25,6 +25,10 @@ func NewMockRepository() *MockRepository {
 	}
 }
 
+func stringPtr(value string) *string {
+	return &value
+}
+
 func (m *MockRepository) Create(ctx context.Context, schemaName string, contact *Contact) error {
 	if m.CreateFn != nil {
 		return m.CreateFn(ctx, schemaName, contact)
@@ -141,6 +145,17 @@ func TestService_Create(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "invalid contact type",
+		},
+		{
+			name:     "Invalid default account id",
+			tenantID: "tenant-1",
+			req: &CreateContactRequest{
+				Name:             "Bad Account",
+				ContactType:      ContactTypeCustomer,
+				DefaultAccountID: stringPtr("legacy-account"),
+			},
+			wantErr: true,
+			errMsg:  "default_account_id must be a valid UUID",
 		},
 	}
 
@@ -466,7 +481,7 @@ func TestService_Update_AllFields(t *testing.T) {
 	countryCode := "EE"
 	paymentTerms := 45
 	creditLimit := decimal.NewFromFloat(5000.00)
-	accountID := "acc-123"
+	accountID := "77777777-7777-7777-7777-777777777777"
 	notes := "Some notes"
 	isActive := false
 
@@ -518,6 +533,28 @@ func TestService_Update_AllFields(t *testing.T) {
 	}
 	if updated.IsActive != isActive {
 		t.Errorf("IsActive = %v, want %v", updated.IsActive, isActive)
+	}
+}
+
+func TestService_Update_InvalidDefaultAccountID(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+
+	created, _ := service.Create(ctx, "tenant-1", "public", &CreateContactRequest{
+		Name:        "Original",
+		ContactType: ContactTypeCustomer,
+	})
+
+	accountID := "legacy-account"
+	_, err := service.Update(ctx, "tenant-1", "public", created.ID, &UpdateContactRequest{
+		DefaultAccountID: &accountID,
+	})
+	if err == nil {
+		t.Fatal("expected invalid default_account_id error")
+	}
+	if !contains(err.Error(), "default_account_id must be a valid UUID") {
+		t.Fatalf("expected invalid default_account_id error, got %v", err)
 	}
 }
 

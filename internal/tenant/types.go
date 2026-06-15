@@ -44,6 +44,20 @@ type TenantSettings struct {
 	// Late payment interest settings
 	// Rate is expressed as daily rate (e.g., 0.0005 = 0.05% per day ≈ 18% annually)
 	LatePaymentInterestRate float64 `json:"late_payment_interest_rate,omitempty"`
+
+	// Cash-flow account-code mapping settings
+	CashFlowMapping *CashFlowMappingSettings `json:"cash_flow_mapping,omitempty"`
+
+	// Inventory costing policy settings
+	InventoryIssueCostingMethod string `json:"inventory_issue_costing_method,omitempty"`
+	InventoryValuationMethod    string `json:"inventory_valuation_method,omitempty"`
+}
+
+// CashFlowMappingSettings stores tenant-level cash-flow account-code mappings.
+type CashFlowMappingSettings struct {
+	OperatingAccountCodes []string `json:"operating_account_codes,omitempty"`
+	InvestingAccountCodes []string `json:"investing_account_codes,omitempty"`
+	FinancingAccountCodes []string `json:"financing_account_codes,omitempty"`
 }
 
 const (
@@ -56,22 +70,54 @@ const (
 
 // PeriodCloseEvent records a close or reopen action for a tenant.
 type PeriodCloseEvent struct {
-	ID             string    `json:"id"`
-	TenantID       string    `json:"tenant_id"`
-	Action         string    `json:"action"`
-	CloseKind      string    `json:"close_kind"`
-	PeriodEndDate  string    `json:"period_end_date"`
-	LockDateBefore *string   `json:"lock_date_before,omitempty"`
-	LockDateAfter  *string   `json:"lock_date_after,omitempty"`
-	Note           string    `json:"note,omitempty"`
-	PerformedBy    string    `json:"performed_by"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID              string    `json:"id"`
+	TenantID        string    `json:"tenant_id"`
+	Action          string    `json:"action"`
+	CloseKind       string    `json:"close_kind"`
+	PeriodEndDate   string    `json:"period_end_date"`
+	LockDateBefore  *string   `json:"lock_date_before,omitempty"`
+	LockDateAfter   *string   `json:"lock_date_after,omitempty"`
+	Note            string    `json:"note,omitempty"`
+	ReviewerSignOff bool      `json:"reviewer_sign_off,omitempty"`
+	PerformedBy     string    `json:"performed_by"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+const (
+	AuditActionUserRoleUpdated     = "user_role_updated"
+	AuditActionUserRemoved         = "user_removed"
+	AuditActionInvitationCreated   = "invitation_created"
+	AuditActionInvitationRevoked   = "invitation_revoked"
+	AuditActionTenantUpdated       = "tenant_updated"
+	AuditActionUserSessionRevoked  = "user_session_revoked"
+	AuditActionUserSessionsRevoked = "user_sessions_revoked"
+	AuditActionUserAPITokenRevoked = "user_api_token_revoked" // #nosec G101 -- audit action label, not a credential.
+	AuditActionUserStatusUpdated   = "user_status_updated"
+
+	AuditTargetUser       = "user"
+	AuditTargetInvitation = "invitation"
+	AuditTargetTenant     = "tenant"
+)
+
+// TenantAuditEvent records tenant administration and security-sensitive actions.
+type TenantAuditEvent struct {
+	ID          string            `json:"id"`
+	TenantID    string            `json:"tenant_id"`
+	ActorUserID string            `json:"actor_user_id,omitempty"`
+	Action      string            `json:"action"`
+	TargetType  string            `json:"target_type"`
+	TargetID    string            `json:"target_id"`
+	TargetEmail string            `json:"target_email,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
 }
 
 // ClosePeriodRequest closes a month-end or year-end period.
 type ClosePeriodRequest struct {
-	PeriodEndDate string `json:"period_end_date"`
-	Note          string `json:"note,omitempty"`
+	PeriodEndDate            string `json:"period_end_date"`
+	Note                     string `json:"note,omitempty"`
+	ReviewerSignOff          bool   `json:"reviewer_sign_off,omitempty"`
+	InventoryValuationMethod string `json:"inventory_valuation_method,omitempty"`
 }
 
 // ReopenPeriodRequest reopens a previously closed period.
@@ -83,13 +129,15 @@ type ReopenPeriodRequest struct {
 // DefaultSettings returns default tenant settings for Estonia
 func DefaultSettings() TenantSettings {
 	return TenantSettings{
-		DefaultCurrency: "EUR",
-		CountryCode:     "EE",
-		Timezone:        "Europe/Tallinn",
-		DateFormat:      "DD.MM.YYYY",
-		DecimalSep:      ",",
-		ThousandsSep:    " ",
-		FiscalYearStart: 1, // January
+		DefaultCurrency:             "EUR",
+		CountryCode:                 "EE",
+		Timezone:                    "Europe/Tallinn",
+		DateFormat:                  "DD.MM.YYYY",
+		DecimalSep:                  ",",
+		ThousandsSep:                " ",
+		FiscalYearStart:             1, // January
+		InventoryIssueCostingMethod: InventoryIssueCostingMethodLot,
+		InventoryValuationMethod:    InventoryValuationMethodStandardCost,
 	}
 }
 
@@ -122,6 +170,7 @@ type TenantUser struct {
 	UserID    string    `json:"user_id"`
 	Role      string    `json:"role"`
 	IsDefault bool      `json:"is_default"`
+	IsActive  bool      `json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

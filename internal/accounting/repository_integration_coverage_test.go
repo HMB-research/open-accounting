@@ -1,3 +1,5 @@
+//go:build integration
+
 package accounting
 
 import (
@@ -2112,14 +2114,15 @@ func TestGetJournalEntryByID_VerifiesAllFields(t *testing.T) {
 	sourceID := uuid.New().String()
 	amount := decimal.NewFromFloat(999.99)
 	entry := &JournalEntry{
-		TenantID:    tenant.ID,
-		EntryDate:   time.Now(),
-		Description: "Full field test entry",
-		Reference:   "REF-TEST-001",
-		SourceType:  "TEST",
-		SourceID:    &sourceID,
-		Status:      StatusDraft,
-		CreatedBy:   userID,
+		TenantID:         tenant.ID,
+		EntryDate:        time.Now(),
+		Description:      "Full field test entry",
+		Reference:        "REF-TEST-001",
+		SourceType:       "TEST",
+		SourceID:         &sourceID,
+		RequiresEvidence: true,
+		Status:           StatusDraft,
+		CreatedBy:        userID,
 		Lines: []JournalEntryLine{
 			{AccountID: cashID, Description: "Debit line desc", DebitAmount: amount, CreditAmount: decimal.Zero, Currency: "USD", ExchangeRate: decimal.NewFromFloat(0.92), BaseDebit: amount.Mul(decimal.NewFromFloat(0.92)), BaseCredit: decimal.Zero},
 			{AccountID: revenueID, Description: "Credit line desc", DebitAmount: decimal.Zero, CreditAmount: amount, Currency: "USD", ExchangeRate: decimal.NewFromFloat(0.92), BaseDebit: decimal.Zero, BaseCredit: amount.Mul(decimal.NewFromFloat(0.92))},
@@ -2146,6 +2149,9 @@ func TestGetJournalEntryByID_VerifiesAllFields(t *testing.T) {
 	}
 	if retrieved.SourceID == nil || *retrieved.SourceID != sourceID {
 		t.Errorf("expected source ID to be set")
+	}
+	if !retrieved.RequiresEvidence {
+		t.Errorf("expected requires evidence to be true")
 	}
 
 	// Verify line fields

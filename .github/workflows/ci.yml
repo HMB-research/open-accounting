@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: '1.26.x'
-  BUN_VERSION: '1.3.5'
+  GO_VERSION: "1.26.x"
+  BUN_VERSION: "1.3.5"
 
 # Cancel redundant runs when new commits arrive
 concurrency:
@@ -19,6 +19,7 @@ jobs:
   # Detect which parts of the codebase changed
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -89,6 +90,12 @@ jobs:
                 ci=true
                 ;;
             esac
+
+            case "$file" in
+              scripts/integration-package-weights.tsv|scripts/select-integration-packages.sh|scripts/verify-cli-coverage.sh|scripts/run-affected-tests.sh|scripts/parse-go-test-package-times.sh|scripts/parse-playwright-spec-times.mjs|scripts/test-loop.sh|scripts/test-demo-loop.sh)
+                ci=true
+                ;;
+            esac
           done <<EOF
           $changed_files
           EOF
@@ -102,23 +109,9 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v6
@@ -132,10 +125,8 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests
-        env:
-          DATABASE_URL: postgres://test:test@localhost:5432/test?sslmode=disable
-        run: go test -v -race -coverprofile=coverage.out ./...
+      - name: Run backend tests and verify CLI coverage
+        run: make test-backend-coverage
 
       - name: Upload coverage to Codecov
         env:
@@ -151,6 +142,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
@@ -170,8 +162,14 @@ jobs:
 
   integration-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+        total-shards: [4]
 
     services:
       postgres:
@@ -206,7 +204,9 @@ jobs:
       - name: Run integration tests
         env:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_test?sslmode=disable
-        run: go test -v -race -tags=integration -coverprofile=coverage-integration.out $(go list ./... | grep -v /testutil)
+          INTEGRATION_SHARD: ${{ matrix.shard }}
+          INTEGRATION_SHARDS: ${{ matrix.total-shards }}
+        run: make test-integration-coverage
 
       - name: Upload integration coverage to Codecov
         env:
@@ -218,17 +218,13 @@ jobs:
           fi
           curl -Os https://cli.codecov.io/latest/linux/codecov
           chmod +x codecov
-          ./codecov --verbose upload-process --disable-search -t "$CODECOV_TOKEN" -n "integration-${GITHUB_RUN_ID}" -F integration -f coverage-integration.out || echo "Codecov upload failed"
+          ./codecov --verbose upload-process --disable-search -t "$CODECOV_TOKEN" -n "integration-${GITHUB_RUN_ID}-${{ matrix.shard }}" -F integration -f coverage-integration.out || echo "Codecov upload failed"
 
   build:
     runs-on: ubuntu-latest
-    needs: [changes, test, lint, integration-test]
-    if: |
-      always() &&
-      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
-      (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
-      (needs.integration-test.result == 'success' || needs.integration-test.result == 'skipped') &&
-      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main')
+    timeout-minutes: 8
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v6
@@ -254,6 +250,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
 
@@ -271,29 +268,36 @@ jobs:
         working-directory: frontend
         run: bun install --frozen-lockfile
 
+      - name: Lint
+        working-directory: frontend
+        run: bun run lint
+
+      - name: Generate frontend localization
+        working-directory: frontend
+        run: bun run paraglide
+
       - name: Type check
         working-directory: frontend
-        run: bun run check
+        run: bun run check:prepared
 
       - name: Run unit tests
         working-directory: frontend
-        run: bun run test
+        run: bun run test:prepared
 
       - name: Build
         working-directory: frontend
-        run: bun run build
+        run: bun run build:prepared
 
   # E2E tests run against local database with seeded demo data
   e2e-smoke:
     runs-on: ubuntu-latest
-    needs: [changes, test, lint, integration-test, frontend]
+    timeout-minutes: 12
+    needs: changes
     if: |
-      always() &&
-      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
-      (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
-      (needs.integration-test.result == 'success' || needs.integration-test.result == 'skipped') &&
-      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
-      (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main')
+      needs.changes.outputs.frontend == 'true' ||
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.ci == 'true' ||
+      github.ref == 'refs/heads/main'
 
     services:
       postgres:
@@ -329,6 +333,14 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: bun install --frozen-lockfile
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
 
       - name: Install Playwright browsers
         working-directory: frontend
@@ -364,7 +376,7 @@ jobs:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable
           JWT_SECRET: test-secret-key-for-ci
           PORT: 8080
-          DEMO_MODE: 'true'
+          DEMO_MODE: "true"
           DEMO_RESET_SECRET: test-demo-secret
 
       - name: Seed demo data via API
@@ -390,6 +402,7 @@ jobs:
           BASE_URL: http://localhost:5173
           PUBLIC_API_URL: http://localhost:8080
           DEMO_RESET_SECRET: test-demo-secret
+          PLAYWRIGHT_GLOBAL_TIMEOUT_MS: 360000
 
       - name: Upload Playwright smoke report
         uses: actions/upload-artifact@v6
@@ -399,21 +412,35 @@ jobs:
           path: frontend/playwright-report-demo/
           retention-days: 7
 
+      - name: Upload Playwright smoke timing data
+        uses: actions/upload-artifact@v6
+        if: always()
+        continue-on-error: true
+        with:
+          name: playwright-smoke-results-${{ github.run_attempt }}
+          path: frontend/demo-test-results.json
+          if-no-files-found: warn
+          retention-days: 14
+
   # E2E tests run against local database with seeded demo data
-  # Sharded across 2 runners for parallel execution (~50% faster)
+  # Sharded across 4 runners for parallel execution.
+  # This local seeded suite is a required PR gate; only the remote hosted-demo
+  # suite below remains optional.
   e2e:
     runs-on: ubuntu-latest
-    needs: [changes, e2e-smoke]
-    continue-on-error: true  # Demo tests are informational
+    timeout-minutes: 20
+    needs: changes
     if: |
-      always() &&
-      (needs.e2e-smoke.result == 'success' || needs.e2e-smoke.result == 'skipped') &&
-      (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main')
+      needs.changes.outputs.frontend == 'true' ||
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.ci == 'true' ||
+      github.ref == 'refs/heads/main'
 
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
+        total-shards: [4]
 
     services:
       postgres:
@@ -449,6 +476,14 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: bun install --frozen-lockfile
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
 
       - name: Install Playwright browsers
         working-directory: frontend
@@ -485,7 +520,7 @@ jobs:
           DATABASE_URL: postgres://test:test@localhost:5432/openaccounting_demo?sslmode=disable
           JWT_SECRET: test-secret-key-for-ci
           PORT: 8080
-          DEMO_MODE: 'true'
+          DEMO_MODE: "true"
           DEMO_RESET_SECRET: test-demo-secret
 
       - name: Seed demo data via API
@@ -503,18 +538,15 @@ jobs:
           fi
           echo "Demo data seeded successfully"
 
-      - name: Build frontend
+      - name: Run Demo E2E tests (Shard ${{ matrix.shard }}/${{ matrix.total-shards }})
         working-directory: frontend
-        run: bun run build
-
-      - name: Run Demo E2E tests (Shard ${{ matrix.shard }}/2)
-        working-directory: frontend
-        run: bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --shard=${{ matrix.shard }}/2
+        run: bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium --shard=${{ matrix.shard }}/${{ matrix.total-shards }}
         env:
           CI: true
           BASE_URL: http://localhost:5173
           PUBLIC_API_URL: http://localhost:8080
           DEMO_RESET_SECRET: test-demo-secret
+          PLAYWRIGHT_GLOBAL_TIMEOUT_MS: 720000
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v6
@@ -524,12 +556,23 @@ jobs:
           path: frontend/playwright-report-demo/
           retention-days: 7
 
+      - name: Upload Playwright timing data
+        uses: actions/upload-artifact@v6
+        if: always()
+        continue-on-error: true
+        with:
+          name: playwright-results-shard-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: frontend/demo-test-results.json
+          if-no-files-found: warn
+          retention-days: 14
+
   # Remote demo E2E tests are optional and only run when explicitly configured.
   # This keeps main green when no hosted demo environment exists.
   e2e-demo:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     needs: [changes, frontend, e2e-smoke]
-    continue-on-error: true  # Demo tests are informational - don't block deployment
+    continue-on-error: true # Demo tests are informational - don't block deployment
     if: |
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
@@ -552,6 +595,14 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: bun install --frozen-lockfile
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
 
       - name: Install Playwright browsers
         working-directory: frontend
@@ -584,21 +635,33 @@ jobs:
         run: bunx playwright test --config=playwright.demo.config.ts --project=demo-chromium
         env:
           CI: true
-          TEST_DEMO: 'true'
+          TEST_DEMO: "true"
           BASE_URL: ${{ vars.DEMO_E2E_BASE_URL }}
           PUBLIC_API_URL: ${{ vars.DEMO_E2E_API_URL }}
           DEMO_RESET_SECRET: ${{ secrets.DEMO_RESET_SECRET }}
+          PLAYWRIGHT_GLOBAL_TIMEOUT_MS: 1800000
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-demo-report
-          path: frontend/playwright-report/
+          path: frontend/playwright-report-demo/
           retention-days: 7
+
+      - name: Upload Playwright timing data
+        uses: actions/upload-artifact@v6
+        if: always()
+        continue-on-error: true
+        with:
+          name: playwright-demo-results-${{ github.run_attempt }}
+          path: frontend/demo-test-results.json
+          if-no-files-found: warn
+          retention-days: 14
 
   docker:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     needs: [changes, test, lint, frontend, e2e-smoke]
     if: |
       always() &&

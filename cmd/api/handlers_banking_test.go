@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,23 +14,33 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/banking"
+	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 // mockBankingRepository implements banking.Repository for testing
 type mockBankingRepository struct {
-	accounts        map[string]*banking.BankAccount
-	transactions    map[string]*banking.BankTransaction
-	reconciliations map[string]*banking.BankReconciliation
-	imports         map[string][]banking.BankStatementImport
-	txCount         map[string]int // accountID -> transaction count
+	accounts          map[string]*banking.BankAccount
+	matchRules        map[string]*banking.BankMatchRule
+	transactions      map[string]*banking.BankTransaction
+	reconciliations   map[string]*banking.BankReconciliation
+	imports           map[string][]banking.BankStatementImport
+	paymentCandidates []banking.PaymentForMatching
+	txCount           map[string]int // accountID -> transaction count
 
 	createAccErr     error
 	getAccErr        error
 	listAccErr       error
 	updateAccErr     error
 	deleteAccErr     error
+	createRuleErr    error
+	getRuleErr       error
+	listRuleErr      error
+	updateRuleErr    error
+	deleteRuleErr    error
 	listTxErr        error
 	getTxErr         error
 	matchErr         error
@@ -47,6 +58,7 @@ type mockBankingRepository struct {
 func newMockBankingRepository() *mockBankingRepository {
 	return &mockBankingRepository{
 		accounts:        make(map[string]*banking.BankAccount),
+		matchRules:      make(map[string]*banking.BankMatchRule),
 		transactions:    make(map[string]*banking.BankTransaction),
 		reconciliations: make(map[string]*banking.BankReconciliation),
 		imports:         make(map[string][]banking.BankStatementImport),
@@ -131,6 +143,79 @@ func (m *mockBankingRepository) CalculateAccountBalance(ctx context.Context, sch
 	return balance, nil
 }
 
+func (m *mockBankingRepository) CreateBankMatchRule(ctx context.Context, schemaName string, rule *banking.BankMatchRule) error {
+	if m.createRuleErr != nil {
+		return m.createRuleErr
+	}
+	copyRule := *rule
+	m.matchRules[rule.ID] = &copyRule
+	return nil
+}
+
+func (m *mockBankingRepository) GetBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) (*banking.BankMatchRule, error) {
+	if m.getRuleErr != nil {
+		return nil, m.getRuleErr
+	}
+	rule, ok := m.matchRules[ruleID]
+	if !ok || rule.TenantID != tenantID {
+		return nil, banking.ErrBankMatchRuleNotFound
+	}
+	copyRule := *rule
+	return &copyRule, nil
+}
+
+func (m *mockBankingRepository) ListBankMatchRules(ctx context.Context, schemaName, tenantID string, filter *banking.BankMatchRuleFilter) ([]banking.BankMatchRule, error) {
+	if m.listRuleErr != nil {
+		return nil, m.listRuleErr
+	}
+	rules := []banking.BankMatchRule{}
+	for _, rule := range m.matchRules {
+		if rule.TenantID != tenantID {
+			continue
+		}
+		if filter != nil {
+			if filter.ActiveOnly && !rule.IsActive {
+				continue
+			}
+			if filter.BankAccountID != "" {
+				if rule.BankAccountID == nil {
+					if !filter.IncludeGlobal {
+						continue
+					}
+				} else if *rule.BankAccountID != filter.BankAccountID {
+					continue
+				}
+			}
+		}
+		rules = append(rules, *rule)
+	}
+	return rules, nil
+}
+
+func (m *mockBankingRepository) UpdateBankMatchRule(ctx context.Context, schemaName string, rule *banking.BankMatchRule) error {
+	if m.updateRuleErr != nil {
+		return m.updateRuleErr
+	}
+	if _, ok := m.matchRules[rule.ID]; !ok {
+		return banking.ErrBankMatchRuleNotFound
+	}
+	copyRule := *rule
+	m.matchRules[rule.ID] = &copyRule
+	return nil
+}
+
+func (m *mockBankingRepository) DeleteBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) error {
+	if m.deleteRuleErr != nil {
+		return m.deleteRuleErr
+	}
+	rule, ok := m.matchRules[ruleID]
+	if !ok || rule.TenantID != tenantID {
+		return banking.ErrBankMatchRuleNotFound
+	}
+	delete(m.matchRules, ruleID)
+	return nil
+}
+
 func (m *mockBankingRepository) ListTransactions(ctx context.Context, schemaName, tenantID string, filter *banking.TransactionFilter) ([]banking.BankTransaction, error) {
 	if m.listTxErr != nil {
 		return nil, m.listTxErr
@@ -147,6 +232,9 @@ func (m *mockBankingRepository) ListTransactions(ctx context.Context, schemaName
 			if filter.Status != "" && tx.Status != filter.Status {
 				continue
 			}
+			if filter.ReconciliationID != "" && (tx.ReconciliationID == nil || *tx.ReconciliationID != filter.ReconciliationID) {
+				continue
+			}
 		}
 		result = append(result, *tx)
 	}
@@ -161,6 +249,14 @@ func (m *mockBankingRepository) GetTransaction(ctx context.Context, schemaName, 
 		return tx, nil
 	}
 	return nil, banking.ErrTransactionNotFound
+}
+
+func (m *mockBankingRepository) ListPaymentMatchCandidates(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]banking.PaymentForMatching, error) {
+	candidates := append([]banking.PaymentForMatching(nil), m.paymentCandidates...)
+	if limit > 0 && len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates, nil
 }
 
 func (m *mockBankingRepository) MatchTransaction(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error {
@@ -216,6 +312,23 @@ func (m *mockBankingRepository) CreateTransaction(ctx context.Context, schemaNam
 	m.transactions[t.ID] = t
 	m.txCount[t.BankAccountID]++
 	return nil
+}
+
+func (m *mockBankingRepository) CreatePaymentFromTransaction(ctx context.Context, schemaName, tenantID, userID string, transaction *banking.BankTransaction) (string, error) {
+	if transaction == nil || transaction.TenantID != tenantID {
+		return "", banking.ErrTransactionNotFound
+	}
+	if transaction.Status != banking.StatusUnmatched {
+		return "", banking.ErrTransactionAlreadyMatched
+	}
+	paymentID := "payment-" + transaction.ID
+	transaction.MatchedPaymentID = &paymentID
+	transaction.Status = banking.StatusMatched
+	if stored, ok := m.transactions[transaction.ID]; ok {
+		stored.MatchedPaymentID = &paymentID
+		stored.Status = banking.StatusMatched
+	}
+	return paymentID, nil
 }
 
 func (m *mockBankingRepository) IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error) {
@@ -294,6 +407,27 @@ func (m *mockBankingRepository) CreateImportRecord(ctx context.Context, schemaNa
 	return nil
 }
 
+func (m *mockBankingRepository) IncrementLatestImportMatchedCount(ctx context.Context, schemaName, tenantID, bankAccountID string, matchedCount int) error {
+	if matchedCount <= 0 {
+		return nil
+	}
+	imports := m.imports[bankAccountID]
+	latestIndex := -1
+	for i := range imports {
+		if imports[i].TenantID != tenantID {
+			continue
+		}
+		if latestIndex == -1 || imports[i].CreatedAt.After(imports[latestIndex].CreatedAt) {
+			latestIndex = i
+		}
+	}
+	if latestIndex != -1 {
+		imports[latestIndex].TransactionsMatched += matchedCount
+		m.imports[bankAccountID] = imports
+	}
+	return nil
+}
+
 func (m *mockBankingRepository) GetImportHistory(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]banking.BankStatementImport, error) {
 	if m.importHistoryErr != nil {
 		return nil, m.importHistoryErr
@@ -303,7 +437,9 @@ func (m *mockBankingRepository) GetImportHistory(ctx context.Context, schemaName
 
 func setupBankingTestHandlers() (*Handlers, *mockBankingRepository, *mockTenantRepository) {
 	bankingRepo := newMockBankingRepository()
-	bankingSvc := banking.NewServiceWithRepository(bankingRepo)
+	bankingSvc := banking.NewServiceWithRepositoryAndAccounting(bankingRepo, fakeBankingAccountLister{accounts: []accounting.Account{
+		{ID: "11111111-1111-1111-1111-111111111111", Code: "1000", AccountType: accounting.AccountTypeAsset},
+	}})
 
 	tenantRepo := newMockTenantRepository()
 	tenantSvc := tenant.NewServiceWithRepository(tenantRepo)
@@ -313,6 +449,14 @@ func setupBankingTestHandlers() (*Handlers, *mockBankingRepository, *mockTenantR
 		tenantService:  tenantSvc,
 	}
 	return h, bankingRepo, tenantRepo
+}
+
+type fakeBankingAccountLister struct {
+	accounts []accounting.Account
+}
+
+func (f fakeBankingAccountLister) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	return f.accounts, nil
 }
 
 func TestListBankAccounts(t *testing.T) {
@@ -457,6 +601,94 @@ func TestCreateBankAccount(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestImportBankAccounts(t *testing.T) {
+	h, repo, tenantRepo := setupBankingTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+	repo.accounts["existing"] = &banking.BankAccount{
+		ID:            "existing",
+		TenantID:      "tenant-1",
+		Name:          "Existing bank",
+		AccountNumber: "EE000",
+		Currency:      "EUR",
+		IsActive:      true,
+	}
+
+	body := map[string]interface{}{
+		"file_name":       "bank-accounts.csv",
+		"skip_duplicates": true,
+		"rows": []map[string]string{
+			{
+				"name":            "Main bank",
+				"account_number":  "EE471000001020145685",
+				"bank_name":       "LHV",
+				"swift_code":      "LHVBEE22",
+				"currency":        "EUR",
+				"gl_account_code": "1000",
+				"is_default":      "true",
+			},
+			{
+				"name":           "Existing duplicate",
+				"account_number": "EE000",
+			},
+		},
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/bank-accounts/import", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportBankAccounts(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var result banking.ImportBankAccountsResult
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	assert.Equal(t, "bank-accounts.csv", result.FileName)
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Equal(t, 1, result.AccountsImported)
+	assert.Equal(t, 1, result.RowsSkipped)
+
+	var imported *banking.BankAccount
+	for _, account := range repo.accounts {
+		if account.AccountNumber == "EE471000001020145685" {
+			imported = account
+			break
+		}
+	}
+	require.NotNil(t, imported)
+	assert.Equal(t, "Main bank", imported.Name)
+	assert.Equal(t, "LHVBEE22", imported.SwiftCode)
+	require.NotNil(t, imported.GLAccountID)
+	assert.Equal(t, "11111111-1111-1111-1111-111111111111", *imported.GLAccountID)
+	assert.True(t, imported.IsDefault)
+}
+
+func TestImportBankAccountsRejectsEmptyRows(t *testing.T) {
+	h, _, tenantRepo := setupBankingTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/bank-accounts/import", strings.NewReader(`{"rows":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportBankAccounts(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "No bank accounts")
 }
 
 func TestGetBankAccount(t *testing.T) {
@@ -628,6 +860,103 @@ func TestDeleteBankAccount(t *testing.T) {
 	}
 }
 
+func TestBankMatchRuleHandlers(t *testing.T) {
+	h, repo, tenantRepo := setupBankingTestHandlers()
+	bankAccountID := "44444444-4444-4444-4444-444444444444"
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+	repo.accounts[bankAccountID] = &banking.BankAccount{
+		ID:       bankAccountID,
+		TenantID: "tenant-1",
+		Name:     "Main bank",
+		IsActive: true,
+	}
+
+	createBody, _ := json.Marshal(map[string]interface{}{
+		"bank_account_id":      bankAccountID,
+		"name":                 "Stripe receipts",
+		"priority":             10,
+		"match_field":          "DESCRIPTION",
+		"pattern":              "stripe",
+		"min_confidence":       0.85,
+		"max_date_diff_days":   3,
+		"require_exact_amount": true,
+	})
+	createReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/bank-match-rules", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq = withURLParams(createReq, map[string]string{"tenantID": "tenant-1"})
+	createReq = createReq.WithContext(contextWithClaims(createReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	createRR := httptest.NewRecorder()
+	h.CreateBankMatchRule(createRR, createReq)
+
+	require.Equal(t, http.StatusCreated, createRR.Code)
+	var created banking.BankMatchRule
+	require.NoError(t, json.Unmarshal(createRR.Body.Bytes(), &created))
+	require.NotEmpty(t, created.ID)
+	assert.Equal(t, "Stripe receipts", created.Name)
+	assert.Equal(t, banking.BankMatchFieldDescription, created.MatchField)
+	assert.True(t, created.RequireExactAmount)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/bank-match-rules?bank_account_id="+bankAccountID+"&active_only=true&include_global=true", nil)
+	listReq = withURLParams(listReq, map[string]string{"tenantID": "tenant-1"})
+	listReq = listReq.WithContext(contextWithClaims(listReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	listRR := httptest.NewRecorder()
+	h.ListBankMatchRules(listRR, listReq)
+
+	require.Equal(t, http.StatusOK, listRR.Code)
+	var listed []banking.BankMatchRule
+	require.NoError(t, json.Unmarshal(listRR.Body.Bytes(), &listed))
+	require.Len(t, listed, 1)
+	assert.Equal(t, created.ID, listed[0].ID)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/bank-match-rules/"+created.ID, nil)
+	getReq = withURLParams(getReq, map[string]string{"tenantID": "tenant-1", "ruleID": created.ID})
+	getReq = getReq.WithContext(contextWithClaims(getReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	getRR := httptest.NewRecorder()
+	h.GetBankMatchRule(getRR, getReq)
+
+	require.Equal(t, http.StatusOK, getRR.Code)
+	var got banking.BankMatchRule
+	require.NoError(t, json.Unmarshal(getRR.Body.Bytes(), &got))
+	assert.Equal(t, created.ID, got.ID)
+
+	updateBody, _ := json.Marshal(map[string]interface{}{
+		"name":               "Updated stripe",
+		"clear_bank_account": true,
+		"is_active":          false,
+	})
+	updateReq := httptest.NewRequest(http.MethodPut, "/tenants/tenant-1/bank-match-rules/"+created.ID, bytes.NewReader(updateBody))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq = withURLParams(updateReq, map[string]string{"tenantID": "tenant-1", "ruleID": created.ID})
+	updateReq = updateReq.WithContext(contextWithClaims(updateReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	updateRR := httptest.NewRecorder()
+	h.UpdateBankMatchRule(updateRR, updateReq)
+
+	require.Equal(t, http.StatusOK, updateRR.Code)
+	var updated banking.BankMatchRule
+	require.NoError(t, json.Unmarshal(updateRR.Body.Bytes(), &updated))
+	assert.Equal(t, "Updated stripe", updated.Name)
+	assert.Nil(t, updated.BankAccountID)
+	assert.False(t, updated.IsActive)
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/tenants/tenant-1/bank-match-rules/"+created.ID, nil)
+	deleteReq = withURLParams(deleteReq, map[string]string{"tenantID": "tenant-1", "ruleID": created.ID})
+	deleteReq = deleteReq.WithContext(contextWithClaims(deleteReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	deleteRR := httptest.NewRecorder()
+	h.DeleteBankMatchRule(deleteRR, deleteReq)
+
+	assert.Equal(t, http.StatusNoContent, deleteRR.Code)
+	assert.Empty(t, repo.matchRules)
+}
+
 func TestListBankTransactions(t *testing.T) {
 	h, repo, tenantRepo := setupBankingTestHandlers()
 
@@ -687,6 +1016,9 @@ func TestListBankTransactions(t *testing.T) {
 				err := json.Unmarshal(rr.Body.Bytes(), &result)
 				require.NoError(t, err)
 				assert.Len(t, result, tt.wantCount)
+				if tt.wantCount > 0 {
+					assert.NotEmpty(t, result[0].RemediationActions)
+				}
 			}
 		})
 	}
@@ -734,6 +1066,12 @@ func TestGetBankTransaction(t *testing.T) {
 			h.GetBankTransaction(rr, req)
 
 			assert.Equal(t, tt.wantStatus, rr.Code)
+			if tt.wantStatus == http.StatusOK {
+				var result banking.BankTransaction
+				err := json.Unmarshal(rr.Body.Bytes(), &result)
+				require.NoError(t, err)
+				assert.NotEmpty(t, result.RemediationActions)
+			}
 		})
 	}
 }
@@ -983,8 +1321,122 @@ func TestReviewBankTransaction(t *testing.T) {
 			require.NotNil(t, result.ReviewedBy)
 			assert.Equal(t, "user-1", *result.ReviewedBy)
 			require.NotNil(t, result.ReviewedAt)
+			assert.NotEmpty(t, result.RemediationActions)
 		})
 	}
+}
+
+func TestBankTransactionMatchingWorkflows(t *testing.T) {
+	h, repo, tenantRepo := setupBankingTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	transactionDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	repo.transactions["tx-suggest"] = &banking.BankTransaction{
+		ID:               "tx-suggest",
+		TenantID:         "tenant-1",
+		BankAccountID:    "bank-1",
+		TransactionDate:  transactionDate,
+		Amount:           decimal.RequireFromString("120.50"),
+		Currency:         "EUR",
+		Description:      "Invoice INV-100 payment PAY-100",
+		Reference:        "INV-100",
+		CounterpartyName: "Acme OÜ",
+		Status:           banking.StatusUnmatched,
+	}
+	repo.transactions["tx-payment"] = &banking.BankTransaction{
+		ID:              "tx-payment",
+		TenantID:        "tenant-1",
+		BankAccountID:   "bank-1",
+		TransactionDate: transactionDate,
+		Amount:          decimal.RequireFromString("-45.00"),
+		Currency:        "EUR",
+		Description:     "Supplier payout",
+		Status:          banking.StatusUnmatched,
+	}
+	repo.transactions["tx-auto"] = &banking.BankTransaction{
+		ID:              "tx-auto",
+		TenantID:        "tenant-1",
+		BankAccountID:   "bank-1",
+		TransactionDate: transactionDate,
+		Amount:          decimal.RequireFromString("42.00"),
+		Currency:        "EUR",
+		Description:     "Stripe settlement PAY-200",
+		Reference:       "PAY-200",
+		Status:          banking.StatusUnmatched,
+	}
+	repo.paymentCandidates = []banking.PaymentForMatching{
+		{
+			ID:            "pay-1",
+			PaymentNumber: "PAY-100",
+			PaymentDate:   transactionDate,
+			Amount:        decimal.RequireFromString("120.50"),
+			ContactName:   "Acme",
+			Reference:     "INV-100",
+		},
+		{
+			ID:            "pay-2",
+			PaymentNumber: "PAY-200",
+			PaymentDate:   transactionDate,
+			Amount:        decimal.RequireFromString("42.00"),
+			ContactName:   "Stripe",
+			Reference:     "PAY-200",
+		},
+	}
+	repo.imports["bank-1"] = []banking.BankStatementImport{
+		{
+			ID:                   "import-1",
+			TenantID:             "tenant-1",
+			BankAccountID:        "bank-1",
+			FileName:             "statement.csv",
+			TransactionsImported: 1,
+			CreatedAt:            transactionDate,
+		},
+	}
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+
+	suggestionsReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/bank-transactions/tx-suggest/suggestions", nil)
+	suggestionsReq = withURLParams(suggestionsReq, map[string]string{"tenantID": "tenant-1", "transactionID": "tx-suggest"})
+	suggestionsReq = suggestionsReq.WithContext(contextWithClaims(suggestionsReq.Context(), claims))
+	suggestionsRR := httptest.NewRecorder()
+	h.GetMatchSuggestions(suggestionsRR, suggestionsReq)
+
+	require.Equal(t, http.StatusOK, suggestionsRR.Code, suggestionsRR.Body.String())
+	var suggestions []banking.MatchSuggestion
+	require.NoError(t, json.Unmarshal(suggestionsRR.Body.Bytes(), &suggestions))
+	require.NotEmpty(t, suggestions)
+	assert.Equal(t, "pay-1", suggestions[0].PaymentID)
+	assert.GreaterOrEqual(t, suggestions[0].Confidence, 0.8)
+	assert.Contains(t, suggestions[0].MatchReason, "exact amount")
+
+	createPaymentReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/bank-transactions/tx-payment/create-payment", nil)
+	createPaymentReq = withURLParams(createPaymentReq, map[string]string{"tenantID": "tenant-1", "transactionID": "tx-payment"})
+	createPaymentReq = createPaymentReq.WithContext(contextWithClaims(createPaymentReq.Context(), claims))
+	createPaymentRR := httptest.NewRecorder()
+	h.CreatePaymentFromTransaction(createPaymentRR, createPaymentReq)
+
+	require.Equal(t, http.StatusOK, createPaymentRR.Code, createPaymentRR.Body.String())
+	var paymentResult map[string]string
+	require.NoError(t, json.Unmarshal(createPaymentRR.Body.Bytes(), &paymentResult))
+	assert.Equal(t, "payment-tx-payment", paymentResult["payment_id"])
+	assert.Equal(t, banking.StatusMatched, repo.transactions["tx-payment"].Status)
+
+	autoMatchReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/bank-accounts/bank-1/auto-match?min_confidence=0.7", nil)
+	autoMatchReq = withURLParams(autoMatchReq, map[string]string{"tenantID": "tenant-1", "accountID": "bank-1"})
+	autoMatchReq = autoMatchReq.WithContext(contextWithClaims(autoMatchReq.Context(), claims))
+	autoMatchRR := httptest.NewRecorder()
+	h.AutoMatchTransactions(autoMatchRR, autoMatchReq)
+
+	require.Equal(t, http.StatusOK, autoMatchRR.Code, autoMatchRR.Body.String())
+	var autoMatchResult map[string]int
+	require.NoError(t, json.Unmarshal(autoMatchRR.Body.Bytes(), &autoMatchResult))
+	assert.Equal(t, 2, autoMatchResult["matched"])
+	assert.Equal(t, banking.StatusMatched, repo.transactions["tx-suggest"].Status)
+	assert.Equal(t, banking.StatusMatched, repo.transactions["tx-auto"].Status)
+	assert.Equal(t, 2, repo.imports["bank-1"][0].TransactionsMatched)
 }
 
 func TestImportBankTransactions(t *testing.T) {
@@ -1003,13 +1455,54 @@ func TestImportBankTransactions(t *testing.T) {
 			wantErr:    "No transactions",
 		},
 		{
+			name: "raw generic CSV content",
+			body: map[string]interface{}{
+				"file_name":       "statement.csv",
+				"format":          "generic",
+				"csv_content":     "date,amount,description,external_id\n2026-03-15,100.00,Client payment,bank-ext-1\n",
+				"skip_duplicates": true,
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "raw LHV CSV content",
+			body: map[string]interface{}{
+				"file_name": "lhv.csv",
+				"format":    "lhv",
+				"csv_content": "Client account;Document number;Date;Beneficiary's/remitter's account;Beneficiary's/remitter's name;Debit/Credit (D/C);Amount;Reference number;Archival ID;Details;Currency;Personal identification code or registry code;Beneficiary's/remitter's bank's BIC;Payment initiator's name;Entry reference;Account service provider's reference\n" +
+					"EE457700771000676899;123;2026-03-15;EE867700771000681884;Test Client;C;12,50;100513845;202603150001;EUR payment;EUR;12345678;LHVBEE22;;ENTRY-1;LHV-UNIQUE-1\n",
+				"skip_duplicates": true,
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "raw camt053 XML content",
+			body: map[string]interface{}{
+				"file_name": "statement.xml",
+				"format":    "camt053",
+				"csv_content": `<Document>
+  <BkToCstmrStmt>
+    <Stmt>
+      <Acct><Id><IBAN>EE457700771000676899</IBAN></Id><Ccy>EUR</Ccy></Acct>
+      <Ntry>
+        <Amt Ccy="EUR">42.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-03-15</Dt></BookgDt>
+        <AcctSvcrRef>CAMT-API-1</AcctSvcrRef>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>`,
+				"skip_duplicates": true,
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
 			name:       "invalid JSON",
 			body:       nil,
 			wantStatus: http.StatusBadRequest,
 			wantErr:    "Invalid",
 		},
-		// Note: Valid import tests require database integration testing
-		// as ImportTransactions uses database transactions directly
 	}
 
 	for _, tt := range tests {
@@ -1022,9 +1515,10 @@ func TestImportBankTransactions(t *testing.T) {
 			}
 
 			repo.accounts["acc-1"] = &banking.BankAccount{
-				ID:       "acc-1",
-				TenantID: "tenant-1",
-				Currency: "EUR",
+				ID:            "acc-1",
+				TenantID:      "tenant-1",
+				AccountNumber: "EE457700771000676899",
+				Currency:      "EUR",
 			}
 
 			var body []byte
@@ -1253,6 +1747,76 @@ func TestCompleteReconciliation(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, rr.Code)
 		})
 	}
+}
+
+func TestCompleteReconciliationRequiresApprovedEvidenceForFlaggedTransactions(t *testing.T) {
+	h, repo, tenantRepo := setupBankingTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	reconciliationID := "rec-1"
+	repo.reconciliations[reconciliationID] = &banking.BankReconciliation{
+		ID:            reconciliationID,
+		TenantID:      "tenant-1",
+		BankAccountID: "acc-1",
+		Status:        banking.ReconciliationInProgress,
+	}
+	repo.transactions["txn-1"] = &banking.BankTransaction{
+		ID:               "txn-1",
+		TenantID:         "tenant-1",
+		BankAccountID:    "acc-1",
+		Status:           banking.StatusMatched,
+		FollowUpStatus:   banking.FollowUpEvidenceRequired,
+		ReconciliationID: &reconciliationID,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/reconciliations/rec-1/complete", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "reconciliationID": reconciliationID})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.CompleteReconciliation(rr, req)
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+	assert.Contains(t, rr.Body.String(), "approved reconciliation evidence is required")
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, "approved reconciliation evidence is required")
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeBankTxn, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, "txn-1", conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
+	assert.Equal(t, "oa documents upload --entity-type bank_transaction --entity-id txn-1 --document-type reconciliation_evidence --file <file>", conflict.RemediationActions[0].CLICommand)
+	assert.Equal(t, banking.ReconciliationInProgress, repo.reconciliations[reconciliationID].Status)
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeBankTxn,
+		EntityID:     "txn-1",
+		DocumentType: documents.DocumentTypeReconciliation,
+		FileName:     "statement-line.pdf",
+		ReviewStatus: documents.ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	rr = httptest.NewRecorder()
+	h.CompleteReconciliation(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, banking.ReconciliationCompleted, repo.reconciliations[reconciliationID].Status)
 }
 
 func TestGetImportHistory(t *testing.T) {

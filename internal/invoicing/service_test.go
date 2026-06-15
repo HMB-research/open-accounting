@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/require"
 )
 
 // MockRepository is a mock implementation of Repository for testing
@@ -183,6 +184,26 @@ func TestService_Create(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:     "Valid reverse-charge purchase invoice",
+			tenantID: "tenant-1",
+			req: &CreateInvoiceRequest{
+				InvoiceType: InvoiceTypePurchase,
+				ContactID:   "contact-2",
+				IssueDate:   time.Now(),
+				DueDate:     time.Now().AddDate(0, 0, 30),
+				Lines: []CreateInvoiceLineRequest{
+					{
+						Description:  "EU service",
+						Quantity:     decimal.NewFromInt(1),
+						UnitPrice:    decimal.NewFromFloat(100.00),
+						VATRate:      decimal.NewFromInt(22),
+						VATTreatment: VATTreatmentReverseCharge,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name:     "Missing contact",
 			tenantID: "tenant-1",
 			req: &CreateInvoiceRequest{
@@ -241,6 +262,17 @@ func TestService_Create(t *testing.T) {
 			}
 			if invoice.Status != StatusDraft {
 				t.Errorf("Status = %q, want %q", invoice.Status, StatusDraft)
+			}
+			if tt.name == "Valid reverse-charge purchase invoice" {
+				if !invoice.VATAmount.IsZero() {
+					t.Errorf("VATAmount = %s, want 0", invoice.VATAmount)
+				}
+				if !invoice.Total.Equal(decimal.NewFromFloat(100)) {
+					t.Errorf("Total = %s, want 100", invoice.Total)
+				}
+				if invoice.Lines[0].VATTreatment != VATTreatmentReverseCharge {
+					t.Errorf("VATTreatment = %s, want %s", invoice.Lines[0].VATTreatment, VATTreatmentReverseCharge)
+				}
 			}
 		})
 	}
@@ -509,6 +541,34 @@ func TestService_List_Error(t *testing.T) {
 	}
 }
 
+func TestService_ResolveInvoiceIDByNumber(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.invoices["inv-1"] = &Invoice{ID: "inv-1", TenantID: "tenant-1", InvoiceNumber: "INV-001"}
+	repo.invoices["inv-2"] = &Invoice{ID: "inv-2", TenantID: "tenant-1", InvoiceNumber: "INV-002"}
+	repo.invoices["other"] = &Invoice{ID: "other", TenantID: "tenant-2", InvoiceNumber: "INV-001"}
+	service := NewServiceWithRepository(repo, nil)
+
+	invoiceID, err := service.ResolveInvoiceIDByNumber(ctx, "tenant-1", "public", " inv-001 ")
+	require.NoError(t, err)
+	require.Equal(t, "inv-1", invoiceID)
+}
+
+func TestService_ResolveInvoiceIDByNumberReportsMissingAndDuplicateMatches(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil)
+
+	_, err := service.ResolveInvoiceIDByNumber(ctx, "tenant-1", "public", "MISSING")
+	require.ErrorIs(t, err, ErrInvoiceNotFound)
+
+	repo.invoices["dup-1"] = &Invoice{ID: "dup-1", TenantID: "tenant-1", InvoiceNumber: "DUP-001"}
+	repo.invoices["dup-2"] = &Invoice{ID: "dup-2", TenantID: "tenant-1", InvoiceNumber: "DUP-001"}
+	_, err = service.ResolveInvoiceIDByNumber(ctx, "tenant-1", "public", "DUP-001")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "matched multiple invoices")
+}
+
 func TestService_Send(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
@@ -621,6 +681,34 @@ func TestService_RecordPayment_FullPayment(t *testing.T) {
 	updated, _ := service.GetByID(ctx, "tenant-1", "public", created.ID)
 	if updated.Status != StatusPaid {
 		t.Errorf("Status = %q, want %q", updated.Status, StatusPaid)
+	}
+}
+
+func TestService_RecordPayment_ReversalRestoresUnpaidStatus(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo, nil)
+
+	created, _ := service.Create(ctx, "tenant-1", "public", &CreateInvoiceRequest{
+		InvoiceType: InvoiceTypeSales,
+		ContactID:   "contact-1",
+		IssueDate:   time.Now(),
+		DueDate:     time.Now().AddDate(0, 0, 14),
+		Lines:       []CreateInvoiceLineRequest{{Description: "Test", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(22)}},
+	})
+	service.Send(ctx, "tenant-1", "public", created.ID)
+
+	err := service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.NewFromFloat(122.00))
+	require.NoError(t, err)
+	err = service.RecordPayment(ctx, "tenant-1", "public", created.ID, decimal.NewFromFloat(-122.00))
+	require.NoError(t, err)
+
+	updated, _ := service.GetByID(ctx, "tenant-1", "public", created.ID)
+	if !updated.AmountPaid.IsZero() {
+		t.Errorf("AmountPaid = %s, want 0", updated.AmountPaid)
+	}
+	if updated.Status != StatusSent {
+		t.Errorf("Status = %q, want %q", updated.Status, StatusSent)
 	}
 }
 

@@ -48,9 +48,35 @@ func TestGenerateCashFlowStatement(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, "2024-01-01", result.StartDate)
 	assert.Equal(t, "2024-01-31", result.EndDate)
+	assert.Equal(t, CashFlowMethodDirect, result.Method)
 
 	// Operating activities should show net cash from sales and payments
 	assert.NotEmpty(t, result.OperatingActivities)
+}
+
+func TestGenerateCashFlowStatementRejectsInvertedPeriod(t *testing.T) {
+	svc := NewServiceWithRepository(NewMockRepository())
+
+	_, err := svc.GenerateCashFlowStatement(context.Background(), "tenant-1", "schema_tenant1", &CashFlowRequest{
+		StartDate: "2024-02-01",
+		EndDate:   "2024-01-31",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "end date must be on or after start date")
+}
+
+func TestGenerateCashFlowStatementRejectsInvalidMethod(t *testing.T) {
+	svc := NewServiceWithRepository(NewMockRepository())
+
+	_, err := svc.GenerateCashFlowStatement(context.Background(), "tenant-1", "schema_tenant1", &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+		Method:    "cash-basis",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cash flow method must be direct or indirect")
 }
 
 func TestCashFlowOperatingActivities(t *testing.T) {
@@ -85,6 +111,109 @@ func TestCashFlowOperatingActivities(t *testing.T) {
 		}
 	}
 	assert.True(t, cashFromCustomers.GreaterThan(decimal.Zero), "Should have positive cash from customers")
+}
+
+func TestCashFlowDirectMethodIncludesInventoryCashPurchase(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "inventory-purchase",
+			EntryDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Description: "Cash inventory purchase",
+			Lines: []JournalLine{
+				{AccountCode: "1300", AccountType: "ASSET", AccountName: "Inventory", Debit: decimal.NewFromInt(300), Credit: decimal.Zero},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.Zero, Credit: decimal.NewFromInt(300)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "-300", cashFlowAmount(result.OperatingActivities, CFOperPayments).String())
+	assert.Equal(t, "-300", result.TotalOperating.String())
+}
+
+func TestCashFlowIndirectMethodOperatingActivities(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "accrual-sale",
+			EntryDate:   time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC),
+			Description: "Accrued sale",
+			Lines: []JournalLine{
+				{AccountCode: "1200", AccountType: "ASSET", AccountName: "Accounts Receivable", Debit: decimal.NewFromInt(1000), Credit: decimal.Zero},
+				{AccountCode: "4000", AccountType: "REVENUE", AccountName: "Sales Revenue", Debit: decimal.Zero, Credit: decimal.NewFromInt(1000)},
+			},
+		},
+		{
+			ID:          "customer-receipt",
+			EntryDate:   time.Date(2024, 1, 11, 0, 0, 0, 0, time.UTC),
+			Description: "Customer receipt",
+			Lines: []JournalLine{
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.NewFromInt(700), Credit: decimal.Zero},
+				{AccountCode: "1200", AccountType: "ASSET", AccountName: "Accounts Receivable", Debit: decimal.Zero, Credit: decimal.NewFromInt(700)},
+			},
+		},
+		{
+			ID:          "supplier-bill",
+			EntryDate:   time.Date(2024, 1, 12, 0, 0, 0, 0, time.UTC),
+			Description: "Supplier bill",
+			Lines: []JournalLine{
+				{AccountCode: "5400", AccountType: "EXPENSE", AccountName: "Utilities Expense", Debit: decimal.NewFromInt(400), Credit: decimal.Zero},
+				{AccountCode: "2100", AccountType: "LIABILITY", AccountName: "Accounts Payable", Debit: decimal.Zero, Credit: decimal.NewFromInt(400)},
+			},
+		},
+		{
+			ID:          "supplier-payment",
+			EntryDate:   time.Date(2024, 1, 13, 0, 0, 0, 0, time.UTC),
+			Description: "Supplier payment",
+			Lines: []JournalLine{
+				{AccountCode: "2100", AccountType: "LIABILITY", AccountName: "Accounts Payable", Debit: decimal.NewFromInt(100), Credit: decimal.Zero},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.Zero, Credit: decimal.NewFromInt(100)},
+			},
+		},
+		{
+			ID:          "depreciation",
+			EntryDate:   time.Date(2024, 1, 14, 0, 0, 0, 0, time.UTC),
+			Description: "Monthly depreciation",
+			Lines: []JournalLine{
+				{AccountCode: "5600", AccountType: "EXPENSE", AccountName: "Depreciation Expense", Debit: decimal.NewFromInt(50), Credit: decimal.Zero},
+				{AccountCode: "1600", AccountType: "ASSET", AccountName: "Accumulated Depreciation", Debit: decimal.Zero, Credit: decimal.NewFromInt(50)},
+			},
+		},
+		{
+			ID:          "inventory-purchase",
+			EntryDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Description: "Inventory purchase",
+			Lines: []JournalLine{
+				{AccountCode: "1300", AccountType: "ASSET", AccountName: "Inventory", Debit: decimal.NewFromInt(200), Credit: decimal.Zero},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.Zero, Credit: decimal.NewFromInt(200)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+		Method:    CashFlowMethodIndirect,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, CashFlowMethodIndirect, result.Method)
+	assert.Equal(t, "550", cashFlowAmount(result.OperatingActivities, CFOperNetIncome).String())
+	assert.Equal(t, "50", cashFlowAmount(result.OperatingActivities, CFOperDepreciation).String())
+	assert.Equal(t, "-300", cashFlowAmount(result.OperatingActivities, CFOperReceivables).String())
+	assert.Equal(t, "-200", cashFlowAmount(result.OperatingActivities, CFOperInventory).String())
+	assert.Equal(t, "300", cashFlowAmount(result.OperatingActivities, CFOperPayables).String())
+	assert.Equal(t, "400", result.TotalOperating.String())
+	assert.Equal(t, "400", result.NetCashChange.String())
 }
 
 func TestCashFlowInvestingActivities(t *testing.T) {
@@ -134,7 +263,7 @@ func TestCashFlowFinancingActivities(t *testing.T) {
 			Description: "Bank loan received",
 			Lines: []JournalLine{
 				{AccountCode: "1000", AccountType: "ASSET", AccountName: "Cash", Debit: decimal.NewFromFloat(10000), Credit: decimal.Zero},
-				{AccountCode: "2000", AccountType: "LIABILITY", AccountName: "Bank Loan", Debit: decimal.Zero, Credit: decimal.NewFromFloat(10000)},
+				{AccountCode: "2400", AccountType: "LIABILITY", AccountName: "Short-term Loan", Debit: decimal.Zero, Credit: decimal.NewFromFloat(10000)},
 			},
 		},
 	}
@@ -153,6 +282,361 @@ func TestCashFlowFinancingActivities(t *testing.T) {
 		}
 	}
 	assert.True(t, loanCash.GreaterThan(decimal.Zero), "Loan received should show positive cash flow")
+}
+
+func TestCashFlowDefaultChartOperatingClassifications(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "receipt",
+			EntryDate:   time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC),
+			Description: "Customer receipt",
+			Lines: []JournalLine{
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.NewFromInt(1000), Credit: decimal.Zero},
+				{AccountCode: "1200", AccountType: "ASSET", AccountName: "Accounts Receivable", Debit: decimal.Zero, Credit: decimal.NewFromInt(1000)},
+			},
+		},
+		{
+			ID:          "supplier-payment",
+			EntryDate:   time.Date(2024, 1, 11, 0, 0, 0, 0, time.UTC),
+			Description: "Supplier payment",
+			Lines: []JournalLine{
+				{AccountCode: "2100", AccountType: "LIABILITY", AccountName: "Accounts Payable", Debit: decimal.NewFromInt(400), Credit: decimal.Zero},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.Zero, Credit: decimal.NewFromInt(400)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "1000", cashFlowAmount(result.OperatingActivities, CFOperReceipts).String())
+	assert.Equal(t, "-400", cashFlowAmount(result.OperatingActivities, CFOperPayments).String())
+	assert.Equal(t, "600", result.TotalOperating.String())
+	assert.True(t, result.TotalFinancing.IsZero(), "accounts payable should not be classified as financing")
+}
+
+func TestCashFlowOperatingSubcategories(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "salary",
+			EntryDate:   time.Date(2024, 1, 12, 0, 0, 0, 0, time.UTC),
+			Description: "Salary payment",
+			Lines: []JournalLine{
+				{AccountCode: "5200", AccountType: "EXPENSE", AccountName: "Salary Expenses", Debit: decimal.NewFromInt(700), Credit: decimal.Zero},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.Zero, Credit: decimal.NewFromInt(700)},
+			},
+		},
+		{
+			ID:          "tax",
+			EntryDate:   time.Date(2024, 1, 13, 0, 0, 0, 0, time.UTC),
+			Description: "VAT payment",
+			Lines: []JournalLine{
+				{AccountCode: "2200", AccountType: "LIABILITY", AccountName: "VAT Payable", Debit: decimal.NewFromInt(200), Credit: decimal.Zero},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.Zero, Credit: decimal.NewFromInt(200)},
+			},
+		},
+		{
+			ID:          "interest",
+			EntryDate:   time.Date(2024, 1, 14, 0, 0, 0, 0, time.UTC),
+			Description: "Interest payment",
+			Lines: []JournalLine{
+				{AccountCode: "5700", AccountType: "EXPENSE", AccountName: "Interest Expense", Debit: decimal.NewFromInt(50), Credit: decimal.Zero},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.Zero, Credit: decimal.NewFromInt(50)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "-700", cashFlowAmount(result.OperatingActivities, CFOperWages).String())
+	assert.Equal(t, "-200", cashFlowAmount(result.OperatingActivities, CFOperTaxes).String())
+	assert.Equal(t, "-50", cashFlowAmount(result.OperatingActivities, CFOperInterestPd).String())
+	assert.Equal(t, "-950", result.TotalOperating.String())
+}
+
+func TestCashFlowFinancingSubcategories(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "loan",
+			EntryDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Description: "Loan received",
+			Lines: []JournalLine{
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.NewFromInt(1000), Credit: decimal.Zero},
+				{AccountCode: "2400", AccountType: "LIABILITY", AccountName: "Short-term Loans", Debit: decimal.Zero, Credit: decimal.NewFromInt(1000)},
+			},
+		},
+		{
+			ID:          "share-capital",
+			EntryDate:   time.Date(2024, 1, 16, 0, 0, 0, 0, time.UTC),
+			Description: "Share capital contribution",
+			Lines: []JournalLine{
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.NewFromInt(500), Credit: decimal.Zero},
+				{AccountCode: "3100", AccountType: "EQUITY", AccountName: "Share Capital", Debit: decimal.Zero, Credit: decimal.NewFromInt(500)},
+			},
+		},
+		{
+			ID:          "dividends",
+			EntryDate:   time.Date(2024, 1, 17, 0, 0, 0, 0, time.UTC),
+			Description: "Dividends paid",
+			Lines: []JournalLine{
+				{AccountCode: "3200", AccountType: "EQUITY", AccountName: "Retained Earnings", Debit: decimal.NewFromInt(200), Credit: decimal.Zero},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Debit: decimal.Zero, Credit: decimal.NewFromInt(200)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "1000", cashFlowAmount(result.FinancingActivities, CFFinLoansRcvd).String())
+	assert.Equal(t, "500", cashFlowAmount(result.FinancingActivities, CFFinShares).String())
+	assert.Equal(t, "-200", cashFlowAmount(result.FinancingActivities, CFFinDividendsPd).String())
+	assert.Equal(t, "1300", result.TotalFinancing.String())
+	assert.Empty(t, result.OperatingActivities[:len(result.OperatingActivities)-1], "financing entries should not appear as operating lines")
+}
+
+func TestCashFlowCustomChartNameClassifications(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "customer-receipt",
+			EntryDate:   time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC),
+			Description: "Customer receipt on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.NewFromInt(1000), Credit: decimal.Zero},
+				{AccountCode: "AR-CUST", AccountType: "ASSET", AccountName: "Trade receivables", Debit: decimal.Zero, Credit: decimal.NewFromInt(1000)},
+			},
+		},
+		{
+			ID:          "asset-purchase",
+			EntryDate:   time.Date(2024, 1, 11, 0, 0, 0, 0, time.UTC),
+			Description: "Equipment purchase on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "EQUIP", AccountType: "ASSET", AccountName: "Production equipment", Debit: decimal.NewFromInt(300), Credit: decimal.Zero},
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.Zero, Credit: decimal.NewFromInt(300)},
+			},
+		},
+		{
+			ID:          "loan-received",
+			EntryDate:   time.Date(2024, 1, 12, 0, 0, 0, 0, time.UTC),
+			Description: "Owner loan on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.NewFromInt(500), Credit: decimal.Zero},
+				{AccountCode: "OWNER-LOAN", AccountType: "LIABILITY", AccountName: "Owner loan liability", Debit: decimal.Zero, Credit: decimal.NewFromInt(500)},
+			},
+		},
+		{
+			ID:          "share-capital",
+			EntryDate:   time.Date(2024, 1, 13, 0, 0, 0, 0, time.UTC),
+			Description: "Share capital on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.NewFromInt(200), Credit: decimal.Zero},
+				{AccountCode: "EQUITY-SHARE", AccountType: "EQUITY", AccountName: "Osakapital", Debit: decimal.Zero, Credit: decimal.NewFromInt(200)},
+			},
+		},
+		{
+			ID:          "vat-payment",
+			EntryDate:   time.Date(2024, 1, 14, 0, 0, 0, 0, time.UTC),
+			Description: "VAT payment on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "VAT-PAY", AccountType: "LIABILITY", AccountName: "VAT payable", Debit: decimal.NewFromInt(100), Credit: decimal.Zero},
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.Zero, Credit: decimal.NewFromInt(100)},
+			},
+		},
+		{
+			ID:          "dividends-paid",
+			EntryDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Description: "Dividends on custom chart",
+			Lines: []JournalLine{
+				{AccountCode: "DIV-PAY", AccountType: "EQUITY", AccountName: "Dividends payable", Debit: decimal.NewFromInt(80), Credit: decimal.Zero},
+				{AccountCode: "BANK-MAIN", AccountType: "ASSET", AccountName: "Main bank account", Debit: decimal.Zero, Credit: decimal.NewFromInt(80)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{StartDate: "2024-01-01", EndDate: "2024-01-31"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "1000", cashFlowAmount(result.OperatingActivities, CFOperReceipts).String())
+	assert.Equal(t, "-100", cashFlowAmount(result.OperatingActivities, CFOperTaxes).String())
+	assert.Equal(t, "-300", cashFlowAmount(result.InvestingActivities, CFInvFixedAssets).String())
+	assert.Equal(t, "500", cashFlowAmount(result.FinancingActivities, CFFinLoansRcvd).String())
+	assert.Equal(t, "200", cashFlowAmount(result.FinancingActivities, CFFinShares).String())
+	assert.Equal(t, "-80", cashFlowAmount(result.FinancingActivities, CFFinDividendsPd).String())
+	assert.Equal(t, "900", result.TotalOperating.String())
+	assert.Equal(t, "-300", result.TotalInvesting.String())
+	assert.Equal(t, "620", result.TotalFinancing.String())
+}
+
+func TestCashFlowMappingOverrides(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "custom-operating",
+			EntryDate:   time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC),
+			Description: "Prepayment treated as operating",
+			Lines: []JournalLine{
+				{AccountCode: "PREPAY", AccountType: "ASSET", AccountName: "Prepayment clearing", Debit: decimal.NewFromInt(200), Credit: decimal.Zero},
+				{AccountCode: "BANK", AccountType: "ASSET", AccountName: "Bank account", Debit: decimal.Zero, Credit: decimal.NewFromInt(200)},
+			},
+		},
+		{
+			ID:          "custom-investing",
+			EntryDate:   time.Date(2024, 1, 11, 0, 0, 0, 0, time.UTC),
+			Description: "Capitalized platform work",
+			Lines: []JournalLine{
+				{AccountCode: "CAPEX-1", AccountType: "ASSET", AccountName: "Long-term platform", Debit: decimal.NewFromInt(300), Credit: decimal.Zero},
+				{AccountCode: "BANK", AccountType: "ASSET", AccountName: "Bank account", Debit: decimal.Zero, Credit: decimal.NewFromInt(300)},
+			},
+		},
+		{
+			ID:          "custom-financing",
+			EntryDate:   time.Date(2024, 1, 12, 0, 0, 0, 0, time.UTC),
+			Description: "Founder funding",
+			Lines: []JournalLine{
+				{AccountCode: "BANK", AccountType: "ASSET", AccountName: "Bank account", Debit: decimal.NewFromInt(1000), Credit: decimal.Zero},
+				{AccountCode: "FOUNDERS", AccountType: "LIABILITY", AccountName: "Founder funding", Debit: decimal.Zero, Credit: decimal.NewFromInt(1000)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+		MappingOverrides: CashFlowMappingOverrides{
+			OperatingAccountCodes: []string{"prepay"},
+			InvestingAccountCodes: []string{"capex-1"},
+			FinancingAccountCodes: []string{"founders"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.MappingOverrides)
+	assert.Equal(t, []string{"PREPAY"}, result.MappingOverrides.OperatingAccountCodes)
+	assert.Equal(t, []string{"CAPEX-1"}, result.MappingOverrides.InvestingAccountCodes)
+	assert.Equal(t, []string{"FOUNDERS"}, result.MappingOverrides.FinancingAccountCodes)
+	assert.Equal(t, "-200", cashFlowAmount(result.OperatingActivities, CFOperPayments).String())
+	assert.Equal(t, "-300", cashFlowAmount(result.InvestingActivities, CFInvFixedAssets).String())
+	assert.Equal(t, "1000", cashFlowAmount(result.FinancingActivities, CFFinLoansRcvd).String())
+	assert.Equal(t, "500", result.NetCashChange.String())
+}
+
+func TestCashFlowPersistentMapping(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.CashFlowMapping = CashFlowMappingOverrides{
+		InvestingAccountCodes: []string{"capex-1"},
+	}
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "custom-capex",
+			EntryDate:   time.Date(2024, 1, 18, 0, 0, 0, 0, time.UTC),
+			Description: "Capitalized platform work",
+			Lines: []JournalLine{
+				{AccountCode: "CAPEX-1", AccountType: "ASSET", AccountName: "Platform work", Debit: decimal.NewFromInt(300)},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Credit: decimal.NewFromInt(300)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.MappingOverrides)
+	assert.Equal(t, []string{"CAPEX-1"}, result.MappingOverrides.InvestingAccountCodes)
+	assert.Equal(t, "-300", cashFlowAmount(result.InvestingActivities, CFInvFixedAssets).String())
+	assert.Equal(t, decimal.Zero.String(), result.TotalOperating.String())
+}
+
+func TestCashFlowRequestMappingOverridesPersistentMapping(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	mockRepo.CashFlowMapping = CashFlowMappingOverrides{
+		InvestingAccountCodes: []string{"PREPAY"},
+	}
+	mockRepo.JournalEntries = []JournalEntryWithLines{
+		{
+			ID:          "prepayment",
+			EntryDate:   time.Date(2024, 1, 18, 0, 0, 0, 0, time.UTC),
+			Description: "Operating prepayment",
+			Lines: []JournalLine{
+				{AccountCode: "PREPAY", AccountType: "ASSET", AccountName: "Prepaid expenses", Debit: decimal.NewFromInt(200)},
+				{AccountCode: "1100", AccountType: "ASSET", AccountName: "Cash and Bank", Credit: decimal.NewFromInt(200)},
+			},
+		},
+	}
+
+	result, err := svc.GenerateCashFlowStatement(ctx, "tenant-1", "schema_tenant1", &CashFlowRequest{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+		MappingOverrides: CashFlowMappingOverrides{
+			OperatingAccountCodes: []string{"prepay"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.MappingOverrides)
+	assert.Equal(t, []string{"PREPAY"}, result.MappingOverrides.OperatingAccountCodes)
+	assert.Empty(t, result.MappingOverrides.InvestingAccountCodes)
+	assert.Equal(t, "-200", cashFlowAmount(result.OperatingActivities, CFOperPayments).String())
+	assert.Equal(t, decimal.Zero.String(), result.TotalInvesting.String())
+}
+
+func TestCashFlowMappingSettings(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := NewMockRepository()
+	svc := NewServiceWithRepository(mockRepo)
+
+	updated, err := svc.UpdateCashFlowMapping(ctx, "tenant-1", CashFlowMappingOverrides{
+		OperatingAccountCodes: []string{" prepay ", "PREPAY"},
+		InvestingAccountCodes: []string{"capex-2", "CAPEX-1"},
+		FinancingAccountCodes: []string{"founders"},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"PREPAY"}, updated.OperatingAccountCodes)
+	assert.Equal(t, []string{"CAPEX-1", "CAPEX-2"}, updated.InvestingAccountCodes)
+	assert.Equal(t, []string{"FOUNDERS"}, updated.FinancingAccountCodes)
+
+	got, err := svc.GetCashFlowMapping(ctx, "tenant-1")
+	require.NoError(t, err)
+	assert.Equal(t, updated, got)
+}
+
+func TestCashFlowMappingRejectsConflictingAccountCodes(t *testing.T) {
+	_, err := NormalizeCashFlowMappingOverrides(CashFlowMappingOverrides{
+		OperatingAccountCodes: []string{"PREPAY"},
+		InvestingAccountCodes: []string{"prepay"},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "PREPAY")
 }
 
 func TestCashFlowOpeningClosingBalance(t *testing.T) {
@@ -183,6 +667,15 @@ func TestCashFlowOpeningClosingBalance(t *testing.T) {
 	assert.Equal(t, decimal.NewFromFloat(5000).String(), result.OpeningCash.String())
 	// Closing = Opening + Net Change
 	assert.Equal(t, result.OpeningCash.Add(result.NetCashChange).String(), result.ClosingCash.String())
+}
+
+func cashFlowAmount(items []CashFlowItem, code string) decimal.Decimal {
+	for _, item := range items {
+		if item.Code == code {
+			return item.Amount
+		}
+	}
+	return decimal.Zero
 }
 
 func TestGetBalanceConfirmationSummary(t *testing.T) {
@@ -484,5 +977,218 @@ func TestGetBalanceConfirmation(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, result.TotalBalance.IsZero())
 		assert.Empty(t, result.Invoices)
+	})
+}
+
+func TestGetContactStatement(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("returns statement with opening activity and closing balance", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		mockRepo.Contact = ContactInfo{
+			ID:    "contact-1",
+			Name:  "Customer A",
+			Code:  "CUST-001",
+			Email: "customer@example.com",
+		}
+		mockRepo.ContactStatementOpening = decimal.NewFromInt(100)
+		mockRepo.ContactStatementEntries = []ContactStatementEntry{
+			{
+				Date:            "2026-01-10",
+				DocumentType:    "INVOICE",
+				DocumentID:      "inv-1",
+				DocumentNumber:  "INV-001",
+				DueDate:         "2026-01-24",
+				Currency:        "EUR",
+				DocumentAmount:  decimal.NewFromInt(250),
+				StatementAmount: decimal.NewFromInt(250),
+			},
+			{
+				Date:            "2026-01-20",
+				DocumentType:    "PAYMENT",
+				DocumentID:      "pay-1",
+				DocumentNumber:  "PMT-001",
+				Currency:        "EUR",
+				DocumentAmount:  decimal.NewFromInt(40),
+				StatementAmount: decimal.NewFromInt(-40),
+			},
+		}
+
+		result, err := svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			ContactID: "contact-1",
+			Type:      "RECEIVABLE",
+			StartDate: "2026-01-01",
+			EndDate:   "2026-01-31",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "contact-1", result.ContactID)
+		assert.Equal(t, BalanceTypeReceivable, result.Type)
+		assert.True(t, result.OpeningBalance.Equal(decimal.NewFromInt(100)))
+		assert.True(t, result.TotalInvoiced.Equal(decimal.NewFromInt(250)))
+		assert.True(t, result.TotalPaid.Equal(decimal.NewFromInt(40)))
+		assert.True(t, result.ClosingBalance.Equal(decimal.NewFromInt(310)))
+		require.Len(t, result.Entries, 2)
+		assert.True(t, result.Entries[0].IncreaseAmount.Equal(decimal.NewFromInt(250)))
+		assert.True(t, result.Entries[0].Balance.Equal(decimal.NewFromInt(350)))
+		assert.True(t, result.Entries[1].DecreaseAmount.Equal(decimal.NewFromInt(40)))
+		assert.True(t, result.Entries[1].Balance.Equal(decimal.NewFromInt(310)))
+	})
+
+	t.Run("returns payable statement", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.Contact = ContactInfo{ID: "supplier-1", Name: "Supplier X"}
+		mockRepo.ContactStatementEntries = []ContactStatementEntry{{
+			Date:            "2026-01-10",
+			DocumentType:    "INVOICE",
+			DocumentID:      "pinv-1",
+			DocumentNumber:  "PINV-001",
+			Currency:        "EUR",
+			DocumentAmount:  decimal.NewFromInt(500),
+			StatementAmount: decimal.NewFromInt(500),
+		}}
+
+		result, err := svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			ContactID: "supplier-1",
+			Type:      "PAYABLE",
+			StartDate: "2026-01-01",
+			EndDate:   "2026-01-31",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, BalanceTypePayable, result.Type)
+		assert.True(t, result.ClosingBalance.Equal(decimal.NewFromInt(500)))
+	})
+
+	t.Run("validates required inputs", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		result, err := svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			Type:      "RECEIVABLE",
+			StartDate: "2026-01-01",
+			EndDate:   "2026-01-31",
+		})
+		assert.Nil(t, result)
+		assert.ErrorContains(t, err, "contact_id is required")
+
+		result, err = svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			ContactID: "contact-1",
+			Type:      "OTHER",
+			StartDate: "2026-01-01",
+			EndDate:   "2026-01-31",
+		})
+		assert.Nil(t, result)
+		assert.ErrorContains(t, err, "type must be RECEIVABLE or PAYABLE")
+
+		result, err = svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			ContactID: "contact-1",
+			Type:      "RECEIVABLE",
+			StartDate: "2026-02-01",
+			EndDate:   "2026-01-31",
+		})
+		assert.Nil(t, result)
+		assert.ErrorContains(t, err, "end_date must be on or after start_date")
+	})
+
+	t.Run("surfaces repository errors", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.Contact = ContactInfo{ID: "contact-1", Name: "Customer A"}
+		mockRepo.GetContactStatementEntriesErr = assert.AnError
+
+		result, err := svc.GetContactStatement(ctx, "tenant-1", "schema_tenant1", &ContactStatementRequest{
+			ContactID: "contact-1",
+			Type:      "RECEIVABLE",
+			StartDate: "2026-01-01",
+			EndDate:   "2026-01-31",
+		})
+
+		assert.Nil(t, result)
+		assert.ErrorContains(t, err, "get contact statement entries")
+	})
+}
+
+func TestGetSalesMarginReport(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("returns totals and line margins", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.SalesMarginLines = []SalesMarginLine{
+			{
+				InvoiceID:     "inv-1",
+				InvoiceNumber: "INV-001",
+				InvoiceDate:   "2026-03-01",
+				ContactID:     "contact-1",
+				ContactName:   "Acme",
+				Description:   "Consulting",
+				Quantity:      decimal.NewFromInt(2),
+				Revenue:       decimal.NewFromInt(1000),
+				UnitCost:      decimal.NewFromInt(150),
+				Cost:          decimal.NewFromInt(300),
+			},
+			{
+				InvoiceID:     "inv-2",
+				InvoiceNumber: "INV-002",
+				InvoiceDate:   "2026-03-10",
+				ContactID:     "contact-2",
+				ContactName:   "Beta",
+				Description:   "Support",
+				Quantity:      decimal.NewFromInt(1),
+				Revenue:       decimal.NewFromInt(200),
+				UnitCost:      decimal.NewFromInt(80),
+				Cost:          decimal.NewFromInt(80),
+			},
+		}
+
+		report, err := svc.GetSalesMarginReport(ctx, "tenant-1", "schema_tenant1", &SalesMarginRequest{
+			StartDate: "2026-03-01",
+			EndDate:   "2026-03-31",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "tenant-1", report.TenantID)
+		assert.True(t, report.TotalRevenue.Equal(decimal.NewFromInt(1200)))
+		assert.True(t, report.TotalCost.Equal(decimal.NewFromInt(380)))
+		assert.True(t, report.TotalMargin.Equal(decimal.NewFromInt(820)))
+		assert.Equal(t, "68.33", report.MarginPercent.String())
+		require.Len(t, report.Lines, 2)
+		assert.True(t, report.Lines[0].Margin.Equal(decimal.NewFromInt(700)))
+		assert.Equal(t, "70", report.Lines[0].MarginPercent.String())
+		require.Len(t, report.ByContact, 2)
+		assert.Equal(t, "contact-1", report.ByContact[0].ContactID)
+		assert.True(t, report.ByContact[0].Margin.Equal(decimal.NewFromInt(700)))
+		assert.Equal(t, "70", report.ByContact[0].MarginPercent.String())
+	})
+
+	t.Run("validates date range", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+
+		report, err := svc.GetSalesMarginReport(ctx, "tenant-1", "schema_tenant1", &SalesMarginRequest{
+			StartDate: "2026-04-01",
+			EndDate:   "2026-03-31",
+		})
+
+		assert.Nil(t, report)
+		assert.ErrorContains(t, err, "end_date must be on or after start_date")
+	})
+
+	t.Run("surfaces repository errors", func(t *testing.T) {
+		mockRepo := NewMockRepository()
+		svc := NewServiceWithRepository(mockRepo)
+		mockRepo.GetSalesMarginLinesErr = assert.AnError
+
+		report, err := svc.GetSalesMarginReport(ctx, "tenant-1", "schema_tenant1", &SalesMarginRequest{
+			StartDate: "2026-03-01",
+			EndDate:   "2026-03-31",
+		})
+
+		assert.Nil(t, report)
+		assert.ErrorContains(t, err, "get sales margin lines")
 	})
 }

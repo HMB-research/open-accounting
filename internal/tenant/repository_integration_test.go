@@ -1,3 +1,5 @@
+//go:build integration
+
 package tenant
 
 import (
@@ -10,9 +12,9 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestPostgresRepository_CreateAndGetTenant(t *testing.T) {
+func TestGORMRepository_CreateAndGetTenant(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a user first (owner)
@@ -59,11 +61,32 @@ func TestPostgresRepository_CreateAndGetTenant(t *testing.T) {
 	if retrieved.Slug != tenant.Slug {
 		t.Errorf("expected slug %s, got %s", tenant.Slug, retrieved.Slug)
 	}
+
+	expectedColumns := map[string]string{
+		"vat_rate":         "numeric",
+		"is_vat_inclusive": "boolean",
+	}
+	for columnName, expectedType := range expectedColumns {
+		var dataType string
+		err = pool.QueryRow(ctx, `
+			SELECT data_type
+			FROM information_schema.columns
+			WHERE table_schema = $1
+			  AND table_name = 'journal_entry_lines'
+			  AND column_name = $2
+		`, schemaName, columnName).Scan(&dataType)
+		if err != nil {
+			t.Fatalf("expected tenant journal_entry_lines.%s column to exist: %v", columnName, err)
+		}
+		if dataType != expectedType {
+			t.Errorf("expected %s to use %s data type, got %s", columnName, expectedType, dataType)
+		}
+	}
 }
 
-func TestPostgresRepository_GetTenantBySlug(t *testing.T) {
+func TestGORMRepository_GetTenantBySlug(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a user first
@@ -109,9 +132,9 @@ func TestPostgresRepository_GetTenantBySlug(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_UpdateTenant(t *testing.T) {
+func TestGORMRepository_UpdateTenant(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create a user first
@@ -167,9 +190,9 @@ func TestPostgresRepository_UpdateTenant(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_PeriodCloseEvents(t *testing.T) {
+func TestGORMRepository_PeriodCloseEvents(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	ownerID := uuid.New().String()
@@ -252,9 +275,9 @@ func TestPostgresRepository_PeriodCloseEvents(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_UserTenantOperations(t *testing.T) {
+func TestGORMRepository_UserTenantOperations(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner user
@@ -360,9 +383,9 @@ func TestPostgresRepository_UserTenantOperations(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CreateAndGetUser(t *testing.T) {
+func TestGORMRepository_CreateAndGetUser(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	user := &User{
@@ -398,9 +421,99 @@ func TestPostgresRepository_CreateAndGetUser(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CompleteOnboarding(t *testing.T) {
+func TestGORMRepository_TenantAuditEvents(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	ownerID := uuid.New().String()
+	ownerEmail := "owner-" + uuid.New().String()[:8] + "@example.com"
+	_, err := pool.Exec(ctx, `
+		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
+		VALUES ($1, $2, 'hash', 'Owner', NOW(), NOW())
+	`, ownerID, ownerEmail)
+	if err != nil {
+		t.Fatalf("failed to create owner: %v", err)
+	}
+
+	settings := DefaultSettings()
+	settingsJSON, _ := json.Marshal(settings)
+	tenantID := uuid.New().String()
+	tenantRecord := &Tenant{
+		ID:         tenantID,
+		Name:       "Audit Tenant",
+		Slug:       "audit-" + tenantID[:8],
+		SchemaName: "audit_" + tenantID[:8],
+		Settings:   settings,
+		IsActive:   true,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	if err := repo.CreateTenant(ctx, tenantRecord, settingsJSON, ownerID); err != nil {
+		t.Fatalf("CreateTenant failed: %v", err)
+	}
+
+	oldEvent := &TenantAuditEvent{
+		ID:          uuid.New().String(),
+		TenantID:    tenantID,
+		ActorUserID: ownerID,
+		Action:      AuditActionInvitationCreated,
+		TargetType:  AuditTargetInvitation,
+		TargetID:    "inv-1",
+		TargetEmail: "invitee@example.com",
+		Metadata:    map[string]string{"role": RoleViewer},
+		CreatedAt:   time.Now().Add(-1 * time.Hour),
+	}
+	newEvent := &TenantAuditEvent{
+		ID:          uuid.New().String(),
+		TenantID:    tenantID,
+		ActorUserID: ownerID,
+		Action:      AuditActionInvitationRevoked,
+		TargetType:  AuditTargetInvitation,
+		TargetID:    "inv-1",
+		Metadata:    map[string]string{},
+		CreatedAt:   time.Now(),
+	}
+
+	if err := repo.CreateTenantAuditEvent(ctx, oldEvent); err != nil {
+		t.Fatalf("CreateTenantAuditEvent failed: %v", err)
+	}
+	if err := repo.CreateTenantAuditEvent(ctx, newEvent); err != nil {
+		t.Fatalf("CreateTenantAuditEvent failed: %v", err)
+	}
+
+	events, err := repo.ListTenantAuditEvents(ctx, tenantID, 1)
+	if err != nil {
+		t.Fatalf("ListTenantAuditEvents failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Action != AuditActionInvitationRevoked {
+		t.Fatalf("expected latest event first, got %s", events[0].Action)
+	}
+	if events[0].ActorUserID != ownerID {
+		t.Fatalf("expected actor %s, got %s", ownerID, events[0].ActorUserID)
+	}
+
+	events, err = repo.ListTenantAuditEvents(ctx, tenantID, 10)
+	if err != nil {
+		t.Fatalf("ListTenantAuditEvents failed: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[1].TargetEmail != "invitee@example.com" {
+		t.Fatalf("expected target email to round trip, got %q", events[1].TargetEmail)
+	}
+	if events[1].Metadata["role"] != RoleViewer {
+		t.Fatalf("expected metadata to round trip, got %#v", events[1].Metadata)
+	}
+}
+
+func TestGORMRepository_CompleteOnboarding(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner
@@ -451,9 +564,9 @@ func TestPostgresRepository_CompleteOnboarding(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_InvitationFlow(t *testing.T) {
+func TestGORMRepository_InvitationFlow(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner
@@ -530,9 +643,9 @@ func TestPostgresRepository_InvitationFlow(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CheckUserIsMember(t *testing.T) {
+func TestGORMRepository_CheckUserIsMember(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner
@@ -585,9 +698,9 @@ func TestPostgresRepository_CheckUserIsMember(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_DeleteTenant(t *testing.T) {
+func TestGORMRepository_DeleteTenant(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner
@@ -648,9 +761,9 @@ func TestPostgresRepository_DeleteTenant(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_RemoveUserFromTenant(t *testing.T) {
+func TestGORMRepository_RemoveUserFromTenant(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner
@@ -714,9 +827,9 @@ func TestPostgresRepository_RemoveUserFromTenant(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_AcceptInvitation(t *testing.T) {
+func TestGORMRepository_AcceptInvitation(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner
@@ -804,9 +917,9 @@ func TestPostgresRepository_AcceptInvitation(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_AcceptInvitation_ExistingUser(t *testing.T) {
+func TestGORMRepository_AcceptInvitation_ExistingUser(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner
@@ -885,9 +998,9 @@ func TestPostgresRepository_AcceptInvitation_ExistingUser(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetTenant_NotFound(t *testing.T) {
+func TestGORMRepository_GetTenant_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	_, err := repo.GetTenant(ctx, uuid.New().String())
@@ -896,9 +1009,9 @@ func TestPostgresRepository_GetTenant_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetTenantBySlug_NotFound(t *testing.T) {
+func TestGORMRepository_GetTenantBySlug_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	_, err := repo.GetTenantBySlug(ctx, "non-existent-slug-"+uuid.New().String()[:8])
@@ -907,9 +1020,9 @@ func TestPostgresRepository_GetTenantBySlug_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetUserByEmail_NotFound(t *testing.T) {
+func TestGORMRepository_GetUserByEmail_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	_, err := repo.GetUserByEmail(ctx, "nonexistent-"+uuid.New().String()[:8]+"@example.com")
@@ -918,9 +1031,9 @@ func TestPostgresRepository_GetUserByEmail_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetUserByID_NotFound(t *testing.T) {
+func TestGORMRepository_GetUserByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	_, err := repo.GetUserByID(ctx, uuid.New().String())
@@ -929,9 +1042,9 @@ func TestPostgresRepository_GetUserByID_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetInvitationByToken_NotFound(t *testing.T) {
+func TestGORMRepository_GetInvitationByToken_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	_, err := repo.GetInvitationByToken(ctx, uuid.New().String())
@@ -940,9 +1053,9 @@ func TestPostgresRepository_GetInvitationByToken_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CreateUser_DuplicateEmail(t *testing.T) {
+func TestGORMRepository_CreateUser_DuplicateEmail(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	email := "duplicate-" + uuid.New().String()[:8] + "@example.com"
@@ -983,9 +1096,9 @@ func TestPostgresRepository_CreateUser_DuplicateEmail(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CreateUser_WithIsActive(t *testing.T) {
+func TestGORMRepository_CreateUser_WithIsActive(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	user := &User{
@@ -1013,9 +1126,9 @@ func TestPostgresRepository_CreateUser_WithIsActive(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_RemoveUserFromTenant_NotFound(t *testing.T) {
+func TestGORMRepository_RemoveUserFromTenant_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Try to remove a user that doesn't exist in the tenant
@@ -1025,9 +1138,9 @@ func TestPostgresRepository_RemoveUserFromTenant_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_RevokeInvitation_NotFound(t *testing.T) {
+func TestGORMRepository_RevokeInvitation_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Try to revoke a non-existent invitation
@@ -1041,9 +1154,9 @@ func TestPostgresRepository_RevokeInvitation_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ListTenantUsers_Empty(t *testing.T) {
+func TestGORMRepository_ListTenantUsers_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner
@@ -1093,9 +1206,9 @@ func TestPostgresRepository_ListTenantUsers_Empty(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ListInvitations_Empty(t *testing.T) {
+func TestGORMRepository_ListInvitations_Empty(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// List invitations for non-existent tenant - should return empty slice
@@ -1108,9 +1221,9 @@ func TestPostgresRepository_ListInvitations_Empty(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetUserRole_NotInTenant(t *testing.T) {
+func TestGORMRepository_GetUserRole_NotInTenant(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Get role for user not in tenant
@@ -1120,9 +1233,35 @@ func TestPostgresRepository_GetUserRole_NotInTenant(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CheckUserIsMember_False(t *testing.T) {
+func TestGORMRepository_GetUserRole_InactiveMembership(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+	testTenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "tenant-role-inactive@example.com")
+	testutil.AddUserToTenant(t, pool, testTenant.ID, userID, RoleViewer)
+
+	if err := repo.SetTenantUserActive(ctx, testTenant.ID, userID, false); err != nil {
+		t.Fatalf("SetTenantUserActive failed: %v", err)
+	}
+
+	_, err := repo.GetUserRole(ctx, testTenant.ID, userID)
+	if err != ErrUserNotInTenant {
+		t.Fatalf("expected ErrUserNotInTenant for inactive membership, got %v", err)
+	}
+
+	membership, err := repo.GetTenantUser(ctx, testTenant.ID, userID)
+	if err != nil {
+		t.Fatalf("GetTenantUser failed: %v", err)
+	}
+	if membership.IsActive {
+		t.Fatal("expected inactive membership to remain readable through GetTenantUser")
+	}
+}
+
+func TestGORMRepository_CheckUserIsMember_False(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Check membership for non-existent relationship
@@ -1135,9 +1274,9 @@ func TestPostgresRepository_CheckUserIsMember_False(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_UpdateTenantUserRole(t *testing.T) {
+func TestGORMRepository_UpdateTenantUserRole(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner
@@ -1204,9 +1343,9 @@ func TestPostgresRepository_UpdateTenantUserRole(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_RemoveTenantUser(t *testing.T) {
+func TestGORMRepository_RemoveTenantUser(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Create owner

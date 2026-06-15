@@ -45,6 +45,7 @@
 			result = await api.calculateTaxPreview(
 				tenantId,
 				grossSalary,
+				applyBasicExemption,
 				applyBasicExemption ? basicExemptionAmount : '0',
 				fundedPensionRate
 			);
@@ -148,7 +149,7 @@
 			<div class="form-group">
 				<label class="label" for="pensionRate">{m.calc_funded_pension_rate()}</label>
 				<select class="input" id="pensionRate" bind:value={fundedPensionRate}>
-					{#each TAX_RATES.fundedPensionOptions as opt}
+					{#each TAX_RATES.fundedPensionOptions as opt (opt.value)}
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>

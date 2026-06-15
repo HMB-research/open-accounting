@@ -26,18 +26,23 @@ func (s *Service) ClosePeriod(ctx context.Context, tenantID, performedBy string,
 	lockDateAfterValue := closeDate.Format(periodCloseDateLayout)
 	nextSettings := current.Settings
 	nextSettings.PeriodLockDate = &lockDateAfterValue
+	closeKind := closeKindForDate(closeDate, nextSettings.FiscalYearStart)
+	if closeKind == PeriodCloseKindYearEnd && !req.ReviewerSignOff {
+		return nil, nil, fmt.Errorf("reviewer sign-off is required when closing a fiscal year")
+	}
 
 	event := &PeriodCloseEvent{
-		ID:             uuid.New().String(),
-		TenantID:       tenantID,
-		Action:         PeriodCloseActionClose,
-		CloseKind:      closeKindForDate(closeDate, nextSettings.FiscalYearStart),
-		PeriodEndDate:  closeDate.Format(periodCloseDateLayout),
-		LockDateBefore: formatOptionalDate(lockDateBefore),
-		LockDateAfter:  &lockDateAfterValue,
-		Note:           strings.TrimSpace(req.Note),
-		PerformedBy:    performedBy,
-		CreatedAt:      time.Now().UTC(),
+		ID:              uuid.New().String(),
+		TenantID:        tenantID,
+		Action:          PeriodCloseActionClose,
+		CloseKind:       closeKind,
+		PeriodEndDate:   closeDate.Format(periodCloseDateLayout),
+		LockDateBefore:  formatOptionalDate(lockDateBefore),
+		LockDateAfter:   &lockDateAfterValue,
+		Note:            strings.TrimSpace(req.Note),
+		ReviewerSignOff: req.ReviewerSignOff,
+		PerformedBy:     performedBy,
+		CreatedAt:       time.Now().UTC(),
 	}
 
 	updatedTenant, err := s.persistPeriodCloseState(ctx, current, nextSettings, event)

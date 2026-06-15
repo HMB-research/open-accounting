@@ -15,7 +15,7 @@
 	async function submitWaitlist(e: Event) {
 		e.preventDefault();
 		waitlistError = '';
-		
+
 		if (!email || !email.includes('@')) {
 			waitlistError = 'Please enter a valid email';
 			return;
@@ -23,7 +23,7 @@
 
 		// For now, just show success - backend integration can come later
 		waitlistSubmitted = true;
-		
+
 		// Store in localStorage for now
 		if (browser) {
 			const waitlist = JSON.parse(localStorage.getItem('tallion_waitlist') || '[]');
@@ -68,7 +68,7 @@
 			<div class="hero-badge">{m.landing_heroBadge()}</div>
 			<h1>{m.landing_heroTitle()}</h1>
 			<p class="hero-subtitle">{m.landing_heroSubtitle()}</p>
-			
+
 			<div class="hero-features">
 				<div class="hero-feature">
 					<span class="check">✓</span>
@@ -92,8 +92,8 @@
 					</div>
 				{:else}
 					<form onsubmit={submitWaitlist}>
-						<input 
-							type="email" 
+						<input
+							type="email"
 							bind:value={email}
 							placeholder={m.landing_emailPlaceholder()}
 							class="waitlist-input"
@@ -109,7 +109,7 @@
 				{/if}
 			</div>
 		</div>
-		
+
 		<div class="hero-visual">
 			<div class="dashboard-preview">
 				<div class="preview-header">
@@ -150,7 +150,7 @@
 			<h2>{m.landing_featuresTitle()}</h2>
 			<p>{m.landing_featuresSubtitle()}</p>
 		</div>
-		
+
 		<div class="features-grid">
 			<div class="feature-card">
 				<div class="feature-icon">📄</div>
@@ -226,7 +226,7 @@
 			<h2>{m.landing_pricingTitle()}</h2>
 			<p>{m.landing_pricingSubtitle()}</p>
 		</div>
-		
+
 		<div class="pricing-grid">
 			<div class="pricing-card">
 				<div class="pricing-header">
@@ -296,8 +296,8 @@
 				</div>
 			{:else}
 				<form onsubmit={submitWaitlist}>
-					<input 
-						type="email" 
+					<input
+						type="email"
 						bind:value={email}
 						placeholder={m.landing_emailPlaceholder()}
 						class="waitlist-input"

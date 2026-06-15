@@ -5,28 +5,30 @@
 CREATE OR REPLACE FUNCTION add_reminder_rules_to_schema(schema_name TEXT)
 RETURNS void AS $$
 BEGIN
-    -- Ensure email_templates has 'name' column (may be missing if created by create_email_tables_only)
-    EXECUTE format('
-        ALTER TABLE %I.email_templates ADD COLUMN IF NOT EXISTS name VARCHAR(100)
-    ', schema_name);
+    IF to_regclass(format('%I.email_templates', schema_name)) IS NOT NULL THEN
+        -- Ensure email_templates has 'name' column (may be missing if created by create_email_tables_only)
+        EXECUTE format('
+            ALTER TABLE %I.email_templates ADD COLUMN IF NOT EXISTS name VARCHAR(100)
+        ', schema_name);
 
-    -- Update email_templates check constraint to include new template types
-    EXECUTE format('
-        ALTER TABLE %I.email_templates DROP CONSTRAINT IF EXISTS email_templates_template_type_check
-    ', schema_name);
-    EXECUTE format('
-        ALTER TABLE %I.email_templates ADD CONSTRAINT email_templates_template_type_check 
-        CHECK (template_type IN (
-            ''INVOICE_SEND'',
-            ''INVOICE_REMINDER'',
-            ''PAYMENT_RECEIPT'',
-            ''OVERDUE_REMINDER'',
-            ''WELCOME'',
-            ''CUSTOM'',
-            ''PAYMENT_DUE_SOON'',
-            ''PAYMENT_DUE_TODAY''
-        ))
-    ', schema_name);
+        -- Update email_templates check constraint to include new template types
+        EXECUTE format('
+            ALTER TABLE %I.email_templates DROP CONSTRAINT IF EXISTS email_templates_template_type_check
+        ', schema_name);
+        EXECUTE format('
+            ALTER TABLE %I.email_templates ADD CONSTRAINT email_templates_template_type_check
+            CHECK (template_type IN (
+                ''INVOICE_SEND'',
+                ''INVOICE_REMINDER'',
+                ''PAYMENT_RECEIPT'',
+                ''OVERDUE_REMINDER'',
+                ''WELCOME'',
+                ''CUSTOM'',
+                ''PAYMENT_DUE_SOON'',
+                ''PAYMENT_DUE_TODAY''
+            ))
+        ', schema_name);
+    END IF;
 
     -- Reminder rules table - defines when to send reminders
     EXECUTE format('
@@ -103,24 +105,26 @@ BEGIN
         ON CONFLICT (tenant_id, trigger_type, days_offset) DO NOTHING
     ', schema_name, schema_name, schema_name, schema_name, schema_name, schema_name);
 
-    -- Add new email template types
-    EXECUTE format('
-        INSERT INTO %I.email_templates (tenant_id, template_type, name, subject, body_html, body_text)
-        VALUES
-            ((SELECT id FROM tenants WHERE schema_name = %L LIMIT 1),
-             ''PAYMENT_DUE_SOON'',
-             ''Payment Due Soon'',
-             ''Reminder: Invoice {{invoice_number}} due in {{days_until_due}} days'',
-             ''<p>Dear {{contact_name}},</p><p>This is a friendly reminder that invoice {{invoice_number}} for {{total_amount}} is due on {{due_date}} ({{days_until_due}} days from now).</p><p>Please arrange payment before the due date to avoid any late fees.</p><p>Best regards,<br>{{company_name}}</p>'',
-             ''Dear {{contact_name}},\n\nThis is a friendly reminder that invoice {{invoice_number}} for {{total_amount}} is due on {{due_date}} ({{days_until_due}} days from now).\n\nPlease arrange payment before the due date to avoid any late fees.\n\nBest regards,\n{{company_name}}''),
-            ((SELECT id FROM tenants WHERE schema_name = %L LIMIT 1),
-             ''PAYMENT_DUE_TODAY'',
-             ''Payment Due Today'',
-             ''Invoice {{invoice_number}} is due today'',
-             ''<p>Dear {{contact_name}},</p><p>This is a reminder that invoice {{invoice_number}} for {{total_amount}} is due today ({{due_date}}).</p><p>Please arrange payment as soon as possible.</p><p>Best regards,<br>{{company_name}}</p>'',
-             ''Dear {{contact_name}},\n\nThis is a reminder that invoice {{invoice_number}} for {{total_amount}} is due today ({{due_date}}).\n\nPlease arrange payment as soon as possible.\n\nBest regards,\n{{company_name}}'')
-        ON CONFLICT (tenant_id, template_type) DO NOTHING
-    ', schema_name, schema_name, schema_name);
+    -- Add new email template types only when the schema has email template support.
+    IF to_regclass(format('%I.email_templates', schema_name)) IS NOT NULL THEN
+        EXECUTE format('
+            INSERT INTO %I.email_templates (tenant_id, template_type, name, subject, body_html, body_text)
+            VALUES
+                ((SELECT id FROM tenants WHERE schema_name = %L LIMIT 1),
+                 ''PAYMENT_DUE_SOON'',
+                 ''Payment Due Soon'',
+                 ''Reminder: Invoice {{invoice_number}} due in {{days_until_due}} days'',
+                 ''<p>Dear {{contact_name}},</p><p>This is a friendly reminder that invoice {{invoice_number}} for {{total_amount}} is due on {{due_date}} ({{days_until_due}} days from now).</p><p>Please arrange payment before the due date to avoid any late fees.</p><p>Best regards,<br>{{company_name}}</p>'',
+                 ''Dear {{contact_name}},\n\nThis is a friendly reminder that invoice {{invoice_number}} for {{total_amount}} is due on {{due_date}} ({{days_until_due}} days from now).\n\nPlease arrange payment before the due date to avoid any late fees.\n\nBest regards,\n{{company_name}}''),
+                ((SELECT id FROM tenants WHERE schema_name = %L LIMIT 1),
+                 ''PAYMENT_DUE_TODAY'',
+                 ''Payment Due Today'',
+                 ''Invoice {{invoice_number}} is due today'',
+                 ''<p>Dear {{contact_name}},</p><p>This is a reminder that invoice {{invoice_number}} for {{total_amount}} is due today ({{due_date}}).</p><p>Please arrange payment as soon as possible.</p><p>Best regards,<br>{{company_name}}</p>'',
+                 ''Dear {{contact_name}},\n\nThis is a reminder that invoice {{invoice_number}} for {{total_amount}} is due today ({{due_date}}).\n\nPlease arrange payment as soon as possible.\n\nBest regards,\n{{company_name}}'')
+            ON CONFLICT (tenant_id, template_type) DO NOTHING
+        ', schema_name, schema_name, schema_name);
+    END IF;
 END;
 $$ LANGUAGE plpgsql;
 

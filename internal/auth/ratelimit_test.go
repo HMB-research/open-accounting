@@ -228,6 +228,55 @@ func TestDefaultRateLimiter(t *testing.T) {
 	}
 }
 
+func TestLoginAttemptLimiterRecordsCredentialAwareFailures(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	limiter := &LoginAttemptLimiter{
+		attempts:    make(map[string]*loginAttempt),
+		maxFailures: 2,
+		window:      time.Minute,
+		lockout:     5 * time.Minute,
+		now:         func() time.Time { return now },
+	}
+
+	result := limiter.RecordFailure("User@Example.com", "192.0.2.10")
+	if result.Limited {
+		t.Fatal("first failed attempt should not be limited")
+	}
+	if result.Remaining != 1 {
+		t.Fatalf("first attempt remaining = %d, want 1", result.Remaining)
+	}
+
+	result = limiter.RecordFailure("user@example.com", "192.0.2.10")
+	if result.Limited {
+		t.Fatal("second failed attempt should not be limited")
+	}
+	if result.Remaining != 0 {
+		t.Fatalf("second attempt remaining = %d, want 0", result.Remaining)
+	}
+
+	result = limiter.RecordFailure(" USER@example.com ", "192.0.2.10")
+	if !result.Limited {
+		t.Fatal("third failed attempt should be limited")
+	}
+	if result.RetryAfter != 5*time.Minute {
+		t.Fatalf("retry after = %s, want 5m", result.RetryAfter)
+	}
+
+	result = limiter.Check("user@example.com", "198.51.100.2")
+	if result.Limited {
+		t.Fatal("same credential from a different IP should have an independent budget")
+	}
+
+	limiter.Reset("user@example.com", "192.0.2.10")
+	result = limiter.Check("user@example.com", "192.0.2.10")
+	if result.Limited {
+		t.Fatal("reset credential/IP pair should not be limited")
+	}
+	if result.Remaining != 2 {
+		t.Fatalf("remaining after reset = %d, want 2", result.Remaining)
+	}
+}
+
 func TestRateLimiter_TokensNegativeHandled(t *testing.T) {
 	// Test that negative token count is handled correctly
 	// This can happen when requests come in faster than tokens refill

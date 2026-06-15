@@ -12,6 +12,8 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/importrefs"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 )
 
 type invoiceImportRow struct {
@@ -20,10 +22,11 @@ type invoiceImportRow struct {
 }
 
 type invoiceImportContactRef struct {
-	code    string
-	regCode string
-	email   string
-	name    string
+	code      string
+	regCode   string
+	vatNumber string
+	email     string
+	name      string
 }
 
 type invoiceImportLine struct {
@@ -33,9 +36,12 @@ type invoiceImportLine struct {
 	unitPrice       decimal.Decimal
 	discountPercent decimal.Decimal
 	vatRate         decimal.Decimal
+	vatTreatment    VATTreatment
+	productID       *string
 }
 
 type invoiceImportHeader struct {
+	id                  string
 	invoiceNumber       string
 	invoiceType         InvoiceType
 	contactRef          invoiceImportContactRef
@@ -65,13 +71,16 @@ type invoiceImportGroup struct {
 }
 
 type invoiceImportContactLookup struct {
-	byCode    map[string]contacts.Contact
-	byRegCode map[string]contacts.Contact
-	byEmail   map[string]contacts.Contact
-	byName    map[string]contacts.Contact
+	byCode      map[string]contacts.Contact
+	byRegCode   map[string]contacts.Contact
+	byVATNumber map[string]contacts.Contact
+	byEmail     map[string]contacts.Contact
+	byName      map[string]contacts.Contact
 }
 
 var invoiceImportHeaderAliases = map[string]string{
+	"id":                 "id",
+	"invoice_id":         "id",
 	"invoice_number":     "invoice_number",
 	"number":             "invoice_number",
 	"invoice_no":         "invoice_number",
@@ -82,7 +91,8 @@ var invoiceImportHeaderAliases = map[string]string{
 	"customer_code":      "contact_code",
 	"supplier_code":      "contact_code",
 	"contact_reg_code":   "contact_reg_code",
-	"contact_vat_number": "contact_reg_code",
+	"contact_vat_number": "contact_vat_number",
+	"vat_number":         "contact_vat_number",
 	"contact_email":      "contact_email",
 	"email":              "contact_email",
 	"contact_name":       "contact_name",
@@ -109,6 +119,13 @@ var invoiceImportHeaderAliases = map[string]string{
 	"discount":           "discount_percent",
 	"vat_rate":           "vat_rate",
 	"vat":                "vat_rate",
+	"vat_treatment":      "vat_treatment",
+	"vat_type":           "vat_treatment",
+	"reverse_charge":     "reverse_charge",
+	"product_id":         "product_id",
+	"product_code":       "product_code",
+	"sku":                "product_code",
+	"item_code":          "product_code",
 }
 
 var invoiceImportTypeAliases = map[string]InvoiceType{
@@ -154,6 +171,7 @@ func (s *Service) ImportCSV(
 	ctx context.Context,
 	tenantID, schemaName string,
 	existingContacts []contacts.Contact,
+	existingProducts []inventory.Product,
 	req *ImportInvoicesRequest,
 	validateDate func(time.Time) error,
 ) (*ImportInvoicesResult, error) {
@@ -175,8 +193,12 @@ func (s *Service) ImportCSV(
 	}
 
 	existingKeys := make(map[string]struct{}, len(existingInvoices))
+	existingIDs := make(map[string]struct{}, len(existingInvoices))
 	for _, invoice := range existingInvoices {
 		existingKeys[normalizedInvoiceImportGroupKey(invoice.InvoiceNumber, invoice.InvoiceType)] = struct{}{}
+		if key := normalizedInvoiceImportKey(invoice.ID); key != "" {
+			existingIDs[key] = struct{}{}
+		}
 	}
 
 	result := &ImportInvoicesResult{
@@ -185,13 +207,14 @@ func (s *Service) ImportCSV(
 	}
 
 	contactLookup := buildInvoiceImportContactLookup(existingContacts)
+	productLookup := importrefs.NewProductLookup(existingProducts)
 	groupOrder := make([]string, 0)
 	groups := make(map[string]*invoiceImportGroup)
 
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		parsed, err := parseInvoiceImportDataRow(row)
+		parsed, err := parseInvoiceImportDataRow(row, productLookup)
 		if err != nil {
 			result.RowsSkipped++
 			result.Errors = append(result.Errors, ImportInvoicesRowError{
@@ -243,6 +266,17 @@ func (s *Service) ImportCSV(
 			})
 			continue
 		}
+		if idKey := normalizedInvoiceImportKey(group.header.id); idKey != "" {
+			if _, exists := existingIDs[idKey]; exists {
+				result.RowsSkipped += group.rowCount
+				result.Errors = append(result.Errors, ImportInvoicesRowError{
+					Row:           group.firstRow,
+					InvoiceNumber: group.header.invoiceNumber,
+					Message:       fmt.Sprintf("id %q already exists", group.header.id),
+				})
+				continue
+			}
+		}
 
 		contact, err := contactLookup.find(group.header.contactRef)
 		if err != nil {
@@ -289,6 +323,9 @@ func (s *Service) ImportCSV(
 		}
 
 		existingKeys[key] = struct{}{}
+		if idKey := normalizedInvoiceImportKey(invoice.ID); idKey != "" {
+			existingIDs[idKey] = struct{}{}
+		}
 		result.InvoicesCreated++
 		result.LinesImported += len(invoice.Lines)
 	}
@@ -339,7 +376,7 @@ func parseInvoiceImportRows(content string) ([]invoiceImportRow, error) {
 			required[canonical] = true
 		}
 		switch canonical {
-		case "contact_code", "contact_reg_code", "contact_email", "contact_name":
+		case "contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name":
 			hasContactColumn = true
 		}
 	}
@@ -395,10 +432,19 @@ func parseInvoiceImportRows(content string) ([]invoiceImportRow, error) {
 	return rows, nil
 }
 
-func parseInvoiceImportDataRow(row invoiceImportRow) (*invoiceImportParsedRow, error) {
+func parseInvoiceImportDataRow(row invoiceImportRow, productLookup importrefs.ProductLookup) (*invoiceImportParsedRow, error) {
 	invoiceNumber := strings.TrimSpace(row.values["invoice_number"])
 	if invoiceNumber == "" {
 		return nil, fmt.Errorf("invoice_number is required")
+	}
+
+	id := strings.TrimSpace(row.values["id"])
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, fmt.Errorf("invalid id")
+		}
+		id = parsedID.String()
 	}
 
 	invoiceType, err := parseInvoiceImportType(row.values["invoice_type"])
@@ -407,12 +453,13 @@ func parseInvoiceImportDataRow(row invoiceImportRow) (*invoiceImportParsedRow, e
 	}
 
 	contactRef := invoiceImportContactRef{
-		code:    strings.TrimSpace(row.values["contact_code"]),
-		regCode: strings.TrimSpace(row.values["contact_reg_code"]),
-		email:   strings.TrimSpace(row.values["contact_email"]),
-		name:    strings.TrimSpace(row.values["contact_name"]),
+		code:      strings.TrimSpace(row.values["contact_code"]),
+		regCode:   strings.TrimSpace(row.values["contact_reg_code"]),
+		vatNumber: strings.TrimSpace(row.values["contact_vat_number"]),
+		email:     strings.TrimSpace(row.values["contact_email"]),
+		name:      strings.TrimSpace(row.values["contact_name"]),
 	}
-	if contactRef.code == "" && contactRef.regCode == "" && contactRef.email == "" && contactRef.name == "" {
+	if contactRef.code == "" && contactRef.regCode == "" && contactRef.vatNumber == "" && contactRef.email == "" && contactRef.name == "" {
 		return nil, fmt.Errorf("a contact identifier is required")
 	}
 
@@ -501,9 +548,22 @@ func parseInvoiceImportDataRow(row invoiceImportRow) (*invoiceImportParsedRow, e
 	if vatRate.IsNegative() {
 		return nil, fmt.Errorf("vat_rate cannot be negative")
 	}
+	vatTreatment, err := parseInvoiceImportVATTreatment(row.values["vat_treatment"], row.values["reverse_charge"])
+	if err != nil {
+		return nil, err
+	}
+	if vatTreatment == VATTreatmentReverseCharge && vatRate.LessThanOrEqual(decimal.Zero) {
+		return nil, fmt.Errorf("reverse charge VAT rate must be positive")
+	}
+
+	productID, err := productLookup.ResolveID(row.values["product_id"], row.values["product_code"])
+	if err != nil {
+		return nil, err
+	}
 
 	return &invoiceImportParsedRow{
 		header: invoiceImportHeader{
+			id:                  id,
 			invoiceNumber:       invoiceNumber,
 			invoiceType:         invoiceType,
 			contactRef:          contactRef,
@@ -524,11 +584,16 @@ func parseInvoiceImportDataRow(row invoiceImportRow) (*invoiceImportParsedRow, e
 			unitPrice:       unitPrice,
 			discountPercent: discountPercent,
 			vatRate:         vatRate,
+			vatTreatment:    vatTreatment,
+			productID:       productID,
 		},
 	}, nil
 }
 
 func mergeInvoiceImportGroup(group *invoiceImportGroup, next invoiceImportHeader, rowNumber int) string {
+	if conflict := mergeInvoiceImportOptionalString(&group.header.id, next.id, "id"); conflict != "" {
+		return conflict
+	}
 	if group.header.invoiceType != next.invoiceType {
 		return "invoice_type must be consistent for each invoice_number"
 	}
@@ -579,6 +644,9 @@ func mergeInvoiceImportContactRef(target *invoiceImportContactRef, next invoiceI
 	if conflict := mergeInvoiceImportOptionalString(&target.regCode, next.regCode, "contact_reg_code"); conflict != "" {
 		return conflict
 	}
+	if conflict := mergeInvoiceImportOptionalString(&target.vatNumber, next.vatNumber, "contact_vat_number"); conflict != "" {
+		return conflict
+	}
 	if conflict := mergeInvoiceImportOptionalString(&target.email, next.email, "contact_email"); conflict != "" {
 		return conflict
 	}
@@ -607,8 +675,13 @@ func buildImportedInvoice(
 	group *invoiceImportGroup,
 	now time.Time,
 ) (*Invoice, error) {
+	invoiceID := group.header.id
+	if invoiceID == "" {
+		invoiceID = uuid.New().String()
+	}
+
 	invoice := &Invoice{
-		ID:            uuid.New().String(),
+		ID:            invoiceID,
 		TenantID:      tenantID,
 		InvoiceNumber: group.header.invoiceNumber,
 		InvoiceType:   group.header.invoiceType,
@@ -636,6 +709,8 @@ func buildImportedInvoice(
 			UnitPrice:       line.unitPrice,
 			DiscountPercent: line.discountPercent,
 			VATRate:         line.vatRate,
+			VATTreatment:    line.vatTreatment,
+			ProductID:       line.productID,
 		}
 		invoiceLine.Calculate()
 		invoice.Lines = append(invoice.Lines, invoiceLine)
@@ -720,10 +795,11 @@ func deriveInvoiceImportStatus(
 
 func buildInvoiceImportContactLookup(existingContacts []contacts.Contact) *invoiceImportContactLookup {
 	lookup := &invoiceImportContactLookup{
-		byCode:    make(map[string]contacts.Contact),
-		byRegCode: make(map[string]contacts.Contact),
-		byEmail:   make(map[string]contacts.Contact),
-		byName:    make(map[string]contacts.Contact),
+		byCode:      make(map[string]contacts.Contact),
+		byRegCode:   make(map[string]contacts.Contact),
+		byVATNumber: make(map[string]contacts.Contact),
+		byEmail:     make(map[string]contacts.Contact),
+		byName:      make(map[string]contacts.Contact),
 	}
 
 	for _, contact := range existingContacts {
@@ -732,6 +808,9 @@ func buildInvoiceImportContactLookup(existingContacts []contacts.Contact) *invoi
 		}
 		if key := normalizedInvoiceImportKey(contact.RegCode); key != "" {
 			lookup.byRegCode[key] = contact
+		}
+		if key := normalizedInvoiceImportKey(contact.VATNumber); key != "" {
+			lookup.byVATNumber[key] = contact
 		}
 		if key := normalizedInvoiceImportKey(contact.Email); key != "" {
 			lookup.byEmail[key] = contact
@@ -756,6 +835,12 @@ func (l *invoiceImportContactLookup) find(ref invoiceImportContactRef) (*contact
 			return &contact, nil
 		}
 		return nil, fmt.Errorf("contact_reg_code %q was not found", ref.regCode)
+	}
+	if key := normalizedInvoiceImportKey(ref.vatNumber); key != "" {
+		if contact, ok := l.byVATNumber[key]; ok {
+			return &contact, nil
+		}
+		return nil, fmt.Errorf("contact_vat_number %q was not found", ref.vatNumber)
 	}
 	if key := normalizedInvoiceImportKey(ref.email); key != "" {
 		if contact, ok := l.byEmail[key]; ok {
@@ -805,6 +890,43 @@ func parseInvoiceImportStatus(raw string) (InvoiceStatus, error) {
 		return candidate, nil
 	default:
 		return "", fmt.Errorf("invalid status %q", raw)
+	}
+}
+
+func parseInvoiceImportVATTreatment(rawTreatment, rawReverseCharge string) (VATTreatment, error) {
+	if strings.TrimSpace(rawReverseCharge) != "" {
+		reverseCharge, err := parseInvoiceImportBool(rawReverseCharge)
+		if err != nil {
+			return "", fmt.Errorf("invalid reverse_charge")
+		}
+		if reverseCharge {
+			return VATTreatmentReverseCharge, nil
+		}
+	}
+
+	normalized := normalizedInvoiceImportKey(rawTreatment)
+	switch normalized {
+	case "", "standard", "normal":
+		return VATTreatmentStandard, nil
+	case "reverse_charge", "reversecharge", "reverse charge", "rc":
+		return VATTreatmentReverseCharge, nil
+	default:
+		treatment, err := NormalizeVATTreatment(rawTreatment)
+		if err != nil {
+			return "", fmt.Errorf("invalid vat_treatment %q", rawTreatment)
+		}
+		return treatment, nil
+	}
+}
+
+func parseInvoiceImportBool(value string) (bool, error) {
+	switch normalizedInvoiceImportKey(value) {
+	case "true", "1", "yes", "y":
+		return true, nil
+	case "false", "0", "no", "n":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid boolean")
 	}
 }
 

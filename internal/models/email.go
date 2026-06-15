@@ -8,9 +8,12 @@ import (
 type TemplateType string
 
 const (
-	TemplateInvoiceSend     TemplateType = "INVOICE_SEND"
-	TemplatePaymentReceipt  TemplateType = "PAYMENT_RECEIPT"
-	TemplateOverdueReminder TemplateType = "OVERDUE_REMINDER"
+	TemplateInvoiceSend               TemplateType = "INVOICE_SEND"
+	TemplateQuoteSend                 TemplateType = "QUOTE_SEND"
+	TemplateOrderConfirm              TemplateType = "ORDER_CONFIRM"
+	TemplatePaymentReceipt            TemplateType = "PAYMENT_RECEIPT"
+	TemplateOverdueReminder           TemplateType = "OVERDUE_REMINDER"
+	TemplateDocumentRetentionReminder TemplateType = "DOCUMENT_RETENTION_REMINDER"
 )
 
 // EmailStatus represents the status of an email

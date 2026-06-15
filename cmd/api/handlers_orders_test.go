@@ -13,26 +13,35 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/inventory"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
+	"github.com/HMB-research/open-accounting/internal/pdf"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 // mockOrdersRepository implements orders.Repository for testing
 type mockOrdersRepository struct {
-	orders      map[string]*orders.Order
-	orderNumber int
-	createErr   error
-	getErr      error
-	listErr     error
-	updateErr   error
-	statusErr   error
-	deleteErr   error
+	orders            map[string]*orders.Order
+	stockReservations map[string]*orders.OrderStockReservation
+	orderNumber       int
+	createErr         error
+	getErr            error
+	listErr           error
+	updateErr         error
+	statusErr         error
+	deleteErr         error
 }
 
 func newMockOrdersRepository() *mockOrdersRepository {
 	return &mockOrdersRepository{
-		orders:      make(map[string]*orders.Order),
-		orderNumber: 1,
+		orders:            make(map[string]*orders.Order),
+		stockReservations: make(map[string]*orders.OrderStockReservation),
+		orderNumber:       1,
 	}
 }
 
@@ -120,6 +129,63 @@ func (m *mockOrdersRepository) SetConvertedToInvoice(ctx context.Context, schema
 	return orders.ErrOrderNotFound
 }
 
+func (m *mockOrdersRepository) ListStockReservations(ctx context.Context, schemaName, tenantID, orderID string) ([]orders.OrderStockReservation, error) {
+	var result []orders.OrderStockReservation
+	for _, reservation := range m.stockReservations {
+		if reservation.TenantID == tenantID && reservation.OrderID == orderID {
+			result = append(result, *reservation)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockOrdersRepository) GetStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string) (*orders.OrderStockReservation, error) {
+	key := orderStockReservationKey(orderID, productID, warehouseID)
+	reservation, ok := m.stockReservations[key]
+	if !ok || reservation.TenantID != tenantID {
+		return nil, orders.ErrOrderStockReservationNotFound
+	}
+	return reservation, nil
+}
+
+func (m *mockOrdersRepository) UpsertStockReservation(ctx context.Context, schemaName string, reservation *orders.OrderStockReservation) error {
+	key := orderStockReservationKey(reservation.OrderID, reservation.ProductID, reservation.WarehouseID)
+	existing, ok := m.stockReservations[key]
+	if !ok {
+		copy := *reservation
+		copy.Status = orders.OrderStockReservationStatusReserved
+		m.stockReservations[key] = &copy
+		return nil
+	}
+	existing.Quantity = existing.Quantity.Add(reservation.Quantity)
+	existing.Status = orders.OrderStockReservationStatusReserved
+	existing.Reason = reservation.Reason
+	return nil
+}
+
+func (m *mockOrdersRepository) ReleaseStockReservation(ctx context.Context, schemaName, tenantID, orderID, productID, warehouseID string, quantity decimal.Decimal, reason, releasedBy string) (*orders.OrderStockReservation, error) {
+	reservation, err := m.GetStockReservation(ctx, schemaName, tenantID, orderID, productID, warehouseID)
+	if err != nil {
+		return nil, err
+	}
+	if reservation.Quantity.LessThan(quantity) {
+		return nil, orders.ErrOrderStockReservationNotFound
+	}
+	reservation.Quantity = reservation.Quantity.Sub(quantity)
+	reservation.Reason = reason
+	if reservation.Quantity.IsZero() {
+		reservation.Status = orders.OrderStockReservationStatusReleased
+		reservation.ReleasedBy = releasedBy
+	} else {
+		reservation.Status = orders.OrderStockReservationStatusReserved
+	}
+	return reservation, nil
+}
+
+func orderStockReservationKey(orderID, productID, warehouseID string) string {
+	return orderID + "|" + productID + "|" + warehouseID
+}
+
 func setupOrdersTestHandlers() (*Handlers, *mockOrdersRepository, *mockTenantRepository) {
 	ordersRepo := newMockOrdersRepository()
 	ordersSvc := orders.NewServiceWithRepository(ordersRepo)
@@ -132,6 +198,15 @@ func setupOrdersTestHandlers() (*Handlers, *mockOrdersRepository, *mockTenantRep
 		tenantService: tenantSvc,
 	}
 	return h, ordersRepo, tenantRepo
+}
+
+func setupOrdersImportTestHandlers() (*Handlers, *mockOrdersRepository, *mockTenantRepository, *mockContactsRepository, *mockQuotesRepository) {
+	h, ordersRepo, tenantRepo := setupOrdersTestHandlers()
+	contactsRepo := newMockContactsRepository()
+	h.contactsService = contacts.NewServiceWithRepository(contactsRepo)
+	quotesRepo := newMockQuotesRepository()
+	h.quotesService = quotes.NewServiceWithRepository(quotesRepo)
+	return h, ordersRepo, tenantRepo, contactsRepo, quotesRepo
 }
 
 func TestListOrders(t *testing.T) {
@@ -308,6 +383,61 @@ func TestCreateOrder(t *testing.T) {
 	}
 }
 
+func TestImportOrders(t *testing.T) {
+	h, repo, tenantRepo, contactsRepo, quotesRepo := setupOrdersImportTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	contact := contactsRepo.addTestContact("contact-1", "tenant-1", "Acme", contacts.ContactTypeCustomer, true)
+	contact.Code = "CUST-1"
+	quotesRepo.quotes["quote-1"] = &quotes.Quote{
+		ID:          "quote-1",
+		TenantID:    "tenant-1",
+		QuoteNumber: "QT-100",
+		ContactID:   "contact-1",
+		Status:      quotes.QuoteStatusAccepted,
+	}
+
+	csvContent := `order_number,contact_code,order_date,expected_delivery,status,quote_number,line_description,quantity,unit_price,vat_rate
+ORD-100,CUST-1,2026-03-15,2026-03-22,confirmed,QT-100,Consulting,2,100,22
+`
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/import", map[string]interface{}{
+		"file_name":   "orders.csv",
+		"csv_content": csvContent,
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+
+	w := httptest.NewRecorder()
+	h.ImportOrders(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var result orders.ImportOrdersResult
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, "orders.csv", result.FileName)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.OrdersCreated)
+	assert.Equal(t, 1, result.LinesImported)
+	assert.Zero(t, result.RowsSkipped)
+
+	require.Len(t, repo.orders, 1)
+	for _, order := range repo.orders {
+		assert.Equal(t, "ORD-100", order.OrderNumber)
+		assert.Equal(t, "contact-1", order.ContactID)
+		assert.Equal(t, orders.OrderStatusConfirmed, order.Status)
+		require.NotNil(t, order.QuoteID)
+		assert.Equal(t, "quote-1", *order.QuoteID)
+		assert.Equal(t, "user-1", order.CreatedBy)
+	}
+
+	missingReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/import", map[string]interface{}{
+		"file_name": "orders.csv",
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	missingReq = withURLParams(missingReq, map[string]string{"tenantID": "tenant-1"})
+	missingResp := httptest.NewRecorder()
+	h.ImportOrders(missingResp, missingReq)
+
+	assert.Equal(t, http.StatusBadRequest, missingResp.Code)
+	assert.Contains(t, missingResp.Body.String(), "csv_content is required")
+}
+
 func TestGetOrder(t *testing.T) {
 	h, repo, tenantRepo := setupOrdersTestHandlers()
 
@@ -361,6 +491,441 @@ func TestGetOrder(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetOrderPDF(t *testing.T) {
+	h, repo, tenantRepo := setupOrdersTestHandlers()
+	h.pdfService = pdf.NewService()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+
+	repo.orders["order-1"] = &orders.Order{
+		ID:          "order-1",
+		TenantID:    "tenant-1",
+		OrderNumber: "ORD-001",
+		ContactID:   "contact-1",
+		Contact:     &contacts.Contact{Name: "Acme OU", Email: "billing@example.com"},
+		OrderDate:   time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		Status:      orders.OrderStatusPending,
+		Currency:    "EUR",
+		Subtotal:    decimal.NewFromInt(100),
+		VATAmount:   decimal.NewFromInt(22),
+		Total:       decimal.NewFromInt(122),
+		Lines: []orders.OrderLine{
+			{ID: "line-1", Description: "Consulting", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromInt(100), VATRate: decimal.NewFromInt(22), LineTotal: decimal.NewFromInt(122)},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/pdf", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.GetOrderPDF(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), `order-ORD-001.pdf`)
+	assert.True(t, bytes.HasPrefix(rr.Body.Bytes(), []byte("%PDF")))
+}
+
+func TestEmailOrderConfirmsPending(t *testing.T) {
+	h, repo, tenantRepo := setupOrdersTestHandlers()
+	h.pdfService = pdf.NewService()
+	emailRepo := &emailHandlerRepository{
+		settings:  make(map[string][]byte),
+		templates: make(map[string]email.EmailTemplate),
+		logs:      []email.EmailLog{},
+	}
+	emailRepo.settings["tenant-1"] = []byte(`{
+		"smtp_host":"smtp.example.com",
+		"smtp_port":587,
+		"smtp_username":"user@example.com",
+		"smtp_password":"secret",
+		"smtp_from_email":"billing@example.com",
+		"smtp_from_name":"Billing",
+		"smtp_use_tls":true
+	}`)
+	mailer := &emailHandlerMailer{}
+	h.emailService = email.NewServiceWithRepository(emailRepo, mailer)
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+
+	expectedDelivery := time.Date(2026, 3, 22, 0, 0, 0, 0, time.UTC)
+	repo.orders["order-1"] = &orders.Order{
+		ID:               "order-1",
+		TenantID:         "tenant-1",
+		OrderNumber:      "ORD-001",
+		ContactID:        "contact-1",
+		Contact:          &contacts.Contact{Name: "Acme OU", Email: "billing@example.com"},
+		OrderDate:        time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		ExpectedDelivery: &expectedDelivery,
+		Status:           orders.OrderStatusPending,
+		Currency:         "EUR",
+		Subtotal:         decimal.NewFromInt(100),
+		VATAmount:        decimal.NewFromInt(22),
+		Total:            decimal.NewFromInt(122),
+		Lines: []orders.OrderLine{
+			{ID: "line-1", Description: "Consulting", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromInt(100), VATRate: decimal.NewFromInt(22), LineTotal: decimal.NewFromInt(122)},
+		},
+	}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/email", email.SendOrderRequest{
+		RecipientEmail: "billing@example.com",
+		RecipientName:  "Acme",
+		Subject:        "Order ORD-001",
+		Message:        "Confirmed.",
+		AttachPDF:      true,
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+
+	rr := httptest.NewRecorder()
+	h.EmailOrder(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var result email.EmailSentResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	assert.True(t, result.Success)
+	assert.Equal(t, 1, mailer.sentCount)
+	assert.Equal(t, orders.OrderStatusConfirmed, repo.orders["order-1"].Status)
+	require.NotEmpty(t, emailRepo.logs)
+	assert.Equal(t, string(email.TemplateOrderConfirm), emailRepo.logs[0].EmailType)
+	assert.Equal(t, "order-1", emailRepo.logs[0].RelatedID)
+	assert.Equal(t, email.StatusSent, emailRepo.logs[0].Status)
+}
+
+func TestEmailOrderRequiresApprovedEvidence(t *testing.T) {
+	h, repo, tenantRepo := setupOrdersTestHandlers()
+	store, err := documents.NewLocalStore(t.TempDir())
+	require.NoError(t, err)
+	documentRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(documentRepo, store)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+	repo.orders["order-1"] = &orders.Order{
+		ID:          "order-1",
+		TenantID:    "tenant-1",
+		OrderNumber: "ORD-001",
+		Status:      orders.OrderStatusPending,
+		Lines:       []orders.OrderLine{},
+	}
+
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/email", map[string]any{
+		"recipient_email":           "customer@example.com",
+		"require_approved_evidence": true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+
+	rr := httptest.NewRecorder()
+	h.EmailOrder(rr, req)
+
+	assertOrderEvidenceConflict(t, rr, "order-1")
+	assert.Equal(t, orders.OrderStatusPending, repo.orders["order-1"].Status)
+}
+
+func TestCheckOrderStock(t *testing.T) {
+	h, repo, tenantRepo := setupOrdersTestHandlers()
+	inventoryRepo := newMockInventoryRepository()
+	h.inventoryService = inventory.NewServiceWithRepository(inventoryRepo)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	productID := "prod-1"
+	shortProductID := "prod-2"
+	serviceID := "service-1"
+	missingProductID := "missing-product"
+	repo.orders["order-1"] = &orders.Order{
+		ID:          "order-1",
+		TenantID:    "tenant-1",
+		OrderNumber: "ORD-001",
+		ContactID:   "contact-1",
+		Status:      orders.OrderStatusConfirmed,
+		Lines: []orders.OrderLine{
+			{ID: "line-1", LineNumber: 1, Description: "Tracked goods", Quantity: decimal.NewFromInt(5), ProductID: &productID},
+			{ID: "line-2", LineNumber: 2, Description: "Duplicate tracked goods", Quantity: decimal.NewFromInt(4), ProductID: &productID},
+			{ID: "line-3", LineNumber: 3, Description: "Short goods", Quantity: decimal.NewFromInt(4), ProductID: &shortProductID},
+			{ID: "line-4", LineNumber: 4, Description: "Service", Quantity: decimal.NewFromInt(2), ProductID: &serviceID},
+			{ID: "line-5", LineNumber: 5, Description: "Missing product", Quantity: decimal.NewFromInt(2), ProductID: &missingProductID},
+			{ID: "line-6", LineNumber: 6, Description: "Free text", Quantity: decimal.NewFromInt(1)},
+		},
+	}
+	inventoryRepo.warehouses["wh-1"] = &inventory.Warehouse{ID: "wh-1", TenantID: "tenant-1", Code: "MAIN", Name: "Main", IsActive: true}
+	inventoryRepo.warehouses["wh-2"] = &inventory.Warehouse{ID: "wh-2", TenantID: "tenant-1", Code: "SEC", Name: "Secondary", IsActive: true}
+	inventoryRepo.products["prod-1"] = &inventory.Product{
+		ID:             "prod-1",
+		TenantID:       "tenant-1",
+		Code:           "PROD-001",
+		Name:           "Widget",
+		ProductType:    inventory.ProductTypeGoods,
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	inventoryRepo.products["prod-2"] = &inventory.Product{
+		ID:             "prod-2",
+		TenantID:       "tenant-1",
+		Code:           "PROD-002",
+		Name:           "Short widget",
+		ProductType:    inventory.ProductTypeGoods,
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	inventoryRepo.products["service-1"] = &inventory.Product{
+		ID:             "service-1",
+		TenantID:       "tenant-1",
+		Code:           "SERV-001",
+		Name:           "Service",
+		ProductType:    inventory.ProductTypeService,
+		TrackInventory: false,
+		IsActive:       true,
+	}
+	inventoryRepo.stockLevels["prod-1-wh-1"] = &inventory.StockLevel{ID: "sl-1", TenantID: "tenant-1", ProductID: "prod-1", WarehouseID: "wh-1", AvailableQty: decimal.NewFromInt(3)}
+	inventoryRepo.stockLevels["prod-1-wh-2"] = &inventory.StockLevel{ID: "sl-2", TenantID: "tenant-1", ProductID: "prod-1", WarehouseID: "wh-2", AvailableQty: decimal.NewFromInt(5)}
+	inventoryRepo.stockLevels["prod-2-wh-1"] = &inventory.StockLevel{ID: "sl-3", TenantID: "tenant-1", ProductID: "prod-2", WarehouseID: "wh-1", AvailableQty: decimal.NewFromInt(1)}
+
+	req := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/stock-check", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.CheckOrderStock(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var result orders.OrderStockCheck
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+	assert.Equal(t, "order-1", result.OrderID)
+	assert.Equal(t, "ORD-001", result.OrderNumber)
+	assert.False(t, result.Ready)
+	require.Len(t, result.Lines, 6)
+	assert.Equal(t, orders.OrderStockLineStatusAvailable, result.Lines[0].Status)
+	assert.True(t, result.Lines[0].AvailableQty.Equal(decimal.NewFromInt(8)))
+	assert.True(t, result.Lines[0].ShortageQty.IsZero())
+	assert.Equal(t, orders.OrderStockLineStatusShortage, result.Lines[1].Status)
+	assert.True(t, result.Lines[1].AvailableQty.Equal(decimal.NewFromInt(3)))
+	assert.True(t, result.Lines[1].ShortageQty.Equal(decimal.NewFromInt(1)))
+	assert.Equal(t, orders.OrderStockLineStatusShortage, result.Lines[2].Status)
+	assert.True(t, result.Lines[2].AvailableQty.Equal(decimal.NewFromInt(1)))
+	assert.True(t, result.Lines[2].ShortageQty.Equal(decimal.NewFromInt(3)))
+	assert.Equal(t, orders.OrderStockLineStatusNotTracked, result.Lines[3].Status)
+	assert.Equal(t, orders.OrderStockLineStatusProductNotFound, result.Lines[4].Status)
+	assert.True(t, result.Lines[4].ShortageQty.Equal(decimal.NewFromInt(2)))
+	assert.Equal(t, orders.OrderStockLineStatusNotTracked, result.Lines[5].Status)
+
+	warehouseReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/stock-check?warehouse_id=wh-1", nil)
+	warehouseReq = withURLParams(warehouseReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	warehouseReq = warehouseReq.WithContext(contextWithClaims(warehouseReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	warehouseResp := httptest.NewRecorder()
+	h.CheckOrderStock(warehouseResp, warehouseReq)
+
+	require.Equal(t, http.StatusOK, warehouseResp.Code)
+	var warehouseResult orders.OrderStockCheck
+	require.NoError(t, json.Unmarshal(warehouseResp.Body.Bytes(), &warehouseResult))
+	assert.Equal(t, "wh-1", warehouseResult.WarehouseID)
+	require.Len(t, warehouseResult.Lines, 6)
+	assert.Equal(t, orders.OrderStockLineStatusShortage, warehouseResult.Lines[0].Status)
+	assert.True(t, warehouseResult.Lines[0].AvailableQty.Equal(decimal.NewFromInt(3)))
+	assert.True(t, warehouseResult.Lines[0].ShortageQty.Equal(decimal.NewFromInt(2)))
+	assert.Equal(t, orders.OrderStockLineStatusShortage, warehouseResult.Lines[1].Status)
+	assert.True(t, warehouseResult.Lines[1].AvailableQty.IsZero())
+	assert.True(t, warehouseResult.Lines[1].ShortageQty.Equal(decimal.NewFromInt(4)))
+
+	badWarehouseReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/stock-check?warehouse_id=missing", nil)
+	badWarehouseReq = withURLParams(badWarehouseReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	badWarehouseReq = badWarehouseReq.WithContext(contextWithClaims(badWarehouseReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	badWarehouseResp := httptest.NewRecorder()
+	h.CheckOrderStock(badWarehouseResp, badWarehouseReq)
+
+	assert.Equal(t, http.StatusBadRequest, badWarehouseResp.Code)
+	assert.Contains(t, badWarehouseResp.Body.String(), "Warehouse not found")
+}
+
+func TestReserveAndReleaseOrderStock(t *testing.T) {
+	h, repo, tenantRepo := setupOrdersTestHandlers()
+	inventoryRepo := newMockInventoryRepository()
+	h.inventoryService = inventory.NewServiceWithRepository(inventoryRepo)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	productID := "11111111-1111-4111-8111-111111111111"
+	warehouseID := "22222222-2222-4222-8222-222222222222"
+	stockLevelKey := productID + "-" + warehouseID
+	repo.orders["order-1"] = &orders.Order{
+		ID:          "order-1",
+		TenantID:    "tenant-1",
+		OrderNumber: "ORD-001",
+		ContactID:   "contact-1",
+		Status:      orders.OrderStatusConfirmed,
+		Lines: []orders.OrderLine{
+			{ID: "line-1", LineNumber: 1, Description: "Tracked goods", Quantity: decimal.NewFromInt(3), ProductID: &productID},
+			{ID: "line-2", LineNumber: 2, Description: "More tracked goods", Quantity: decimal.NewFromInt(2), ProductID: &productID},
+		},
+	}
+	inventoryRepo.warehouses[warehouseID] = &inventory.Warehouse{ID: warehouseID, TenantID: "tenant-1", Code: "MAIN", Name: "Main", IsActive: true}
+	inventoryRepo.products[productID] = &inventory.Product{
+		ID:             productID,
+		TenantID:       "tenant-1",
+		Code:           "PROD-001",
+		Name:           "Widget",
+		ProductType:    inventory.ProductTypeGoods,
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	inventoryRepo.stockLevels[stockLevelKey] = &inventory.StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    productID,
+		WarehouseID:  warehouseID,
+		Quantity:     decimal.NewFromInt(10),
+		ReservedQty:  decimal.NewFromInt(1),
+		AvailableQty: decimal.NewFromInt(9),
+	}
+
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+	reserveBody, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: warehouseID, Reason: "Pick list"})
+	reserveReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/reserve-stock", bytes.NewReader(reserveBody))
+	reserveReq.Header.Set("Content-Type", "application/json")
+	reserveReq = withURLParams(reserveReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	reserveReq = reserveReq.WithContext(contextWithClaims(reserveReq.Context(), claims))
+
+	reserveResp := httptest.NewRecorder()
+	h.ReserveOrderStock(reserveResp, reserveReq)
+
+	require.Equal(t, http.StatusOK, reserveResp.Code)
+	var reserveResult orders.OrderStockReservationResult
+	require.NoError(t, json.Unmarshal(reserveResp.Body.Bytes(), &reserveResult))
+	assert.Equal(t, orders.OrderStockReservationActionReserve, reserveResult.Action)
+	assert.Equal(t, warehouseID, reserveResult.WarehouseID)
+	require.Len(t, reserveResult.Lines, 1)
+	assert.True(t, reserveResult.Lines[0].Quantity.Equal(decimal.NewFromInt(5)))
+	assert.True(t, reserveResult.Lines[0].ReservedQty.Equal(decimal.NewFromInt(6)))
+	assert.True(t, reserveResult.Lines[0].AvailableQty.Equal(decimal.NewFromInt(4)))
+	assert.Equal(t, orders.OrderStockReservationStatusReserved, reserveResult.Lines[0].Status)
+	ledgerReservation := repo.stockReservations[orderStockReservationKey("order-1", productID, warehouseID)]
+	require.NotNil(t, ledgerReservation)
+	assert.True(t, ledgerReservation.Quantity.Equal(decimal.NewFromInt(5)))
+	assert.Equal(t, orders.OrderStockReservationStatusReserved, ledgerReservation.Status)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/stock-reservations", nil)
+	listReq = withURLParams(listReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	listReq = listReq.WithContext(contextWithClaims(listReq.Context(), claims))
+
+	listResp := httptest.NewRecorder()
+	h.ListOrderStockReservations(listResp, listReq)
+
+	require.Equal(t, http.StatusOK, listResp.Code)
+	var listed []orders.OrderStockReservation
+	require.NoError(t, json.Unmarshal(listResp.Body.Bytes(), &listed))
+	require.Len(t, listed, 1)
+	assert.True(t, listed[0].Quantity.Equal(decimal.NewFromInt(5)))
+
+	pickReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/orders/order-1/pick-list?warehouse_id="+warehouseID, nil)
+	pickReq = withURLParams(pickReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	pickReq = pickReq.WithContext(contextWithClaims(pickReq.Context(), claims))
+
+	pickResp := httptest.NewRecorder()
+	h.GetOrderPickList(pickResp, pickReq)
+
+	require.Equal(t, http.StatusOK, pickResp.Code)
+	var pickList orders.OrderPickList
+	require.NoError(t, json.Unmarshal(pickResp.Body.Bytes(), &pickList))
+	assert.True(t, pickList.Ready)
+	require.Len(t, pickList.Lines, 2)
+	assert.Equal(t, orders.OrderPickListLineStatusReady, pickList.Lines[0].Status)
+	assert.True(t, pickList.Lines[0].PickQty.Equal(decimal.NewFromInt(3)))
+	assert.True(t, pickList.Lines[0].ReservedQty.Equal(decimal.NewFromInt(5)))
+	assert.Equal(t, orders.OrderPickListLineStatusReady, pickList.Lines[1].Status)
+	assert.True(t, pickList.Lines[1].PickQty.Equal(decimal.NewFromInt(2)))
+	assert.True(t, pickList.Lines[1].ReservedQty.Equal(decimal.NewFromInt(2)))
+
+	releaseBody, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: warehouseID, Reason: "Order canceled"})
+	releaseReq := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/release-stock", bytes.NewReader(releaseBody))
+	releaseReq.Header.Set("Content-Type", "application/json")
+	releaseReq = withURLParams(releaseReq, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	releaseReq = releaseReq.WithContext(contextWithClaims(releaseReq.Context(), claims))
+
+	releaseResp := httptest.NewRecorder()
+	h.ReleaseOrderStock(releaseResp, releaseReq)
+
+	require.Equal(t, http.StatusOK, releaseResp.Code)
+	var releaseResult orders.OrderStockReservationResult
+	require.NoError(t, json.Unmarshal(releaseResp.Body.Bytes(), &releaseResult))
+	assert.Equal(t, orders.OrderStockReservationActionRelease, releaseResult.Action)
+	require.Len(t, releaseResult.Lines, 1)
+	assert.True(t, releaseResult.Lines[0].Quantity.Equal(decimal.NewFromInt(5)))
+	assert.True(t, releaseResult.Lines[0].ReservedQty.Equal(decimal.NewFromInt(1)))
+	assert.True(t, releaseResult.Lines[0].AvailableQty.Equal(decimal.NewFromInt(9)))
+	assert.Equal(t, orders.OrderStockReservationStatusReleased, releaseResult.Lines[0].Status)
+	assert.True(t, ledgerReservation.Quantity.IsZero())
+	assert.Equal(t, orders.OrderStockReservationStatusReleased, ledgerReservation.Status)
+}
+
+func TestReserveOrderStockRejectsShortage(t *testing.T) {
+	h, repo, tenantRepo := setupOrdersTestHandlers()
+	inventoryRepo := newMockInventoryRepository()
+	h.inventoryService = inventory.NewServiceWithRepository(inventoryRepo)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	productID := "33333333-3333-4333-8333-333333333333"
+	warehouseID := "44444444-4444-4444-8444-444444444444"
+	stockLevelKey := productID + "-" + warehouseID
+	repo.orders["order-1"] = &orders.Order{
+		ID:          "order-1",
+		TenantID:    "tenant-1",
+		OrderNumber: "ORD-001",
+		ContactID:   "contact-1",
+		Status:      orders.OrderStatusConfirmed,
+		Lines: []orders.OrderLine{
+			{ID: "line-1", LineNumber: 1, Description: "Tracked goods", Quantity: decimal.NewFromInt(5), ProductID: &productID},
+		},
+	}
+	inventoryRepo.warehouses[warehouseID] = &inventory.Warehouse{ID: warehouseID, TenantID: "tenant-1", Code: "MAIN", Name: "Main", IsActive: true}
+	inventoryRepo.products[productID] = &inventory.Product{
+		ID:             productID,
+		TenantID:       "tenant-1",
+		Code:           "PROD-001",
+		Name:           "Widget",
+		ProductType:    inventory.ProductTypeGoods,
+		TrackInventory: true,
+		IsActive:       true,
+	}
+	inventoryRepo.stockLevels[stockLevelKey] = &inventory.StockLevel{
+		ID:           "sl-1",
+		TenantID:     "tenant-1",
+		ProductID:    productID,
+		WarehouseID:  warehouseID,
+		Quantity:     decimal.NewFromInt(4),
+		ReservedQty:  decimal.Zero,
+		AvailableQty: decimal.NewFromInt(4),
+	}
+
+	body, _ := json.Marshal(orders.OrderStockReservationRequest{WarehouseID: warehouseID})
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/reserve-stock", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	resp := httptest.NewRecorder()
+	h.ReserveOrderStock(resp, req)
+
+	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Contains(t, resp.Body.String(), "Order stock is not ready for reservation")
+	level := inventoryRepo.stockLevels[stockLevelKey]
+	assert.True(t, level.ReservedQty.IsZero())
+	assert.True(t, level.AvailableQty.Equal(decimal.NewFromInt(4)))
+	assert.Empty(t, repo.stockReservations)
 }
 
 func TestUpdateOrder(t *testing.T) {
@@ -551,4 +1116,237 @@ func TestOrderStatusTransitions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConvertOrderToInvoice(t *testing.T) {
+	h, ordersRepo, tenantRepo := setupOrdersTestHandlers()
+	invoiceRepo := newMockInvoicingRepository()
+	h.invoicingService = invoicing.NewServiceWithRepository(invoiceRepo, nil)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	orderDate := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	ordersRepo.orders["order-1"] = &orders.Order{
+		ID:           "order-1",
+		TenantID:     "tenant-1",
+		OrderNumber:  "ORD-001",
+		ContactID:    "contact-1",
+		OrderDate:    orderDate,
+		Status:       orders.OrderStatusDelivered,
+		Currency:     "EUR",
+		ExchangeRate: decimal.NewFromInt(1),
+		Notes:        "Order notes",
+		Lines: []orders.OrderLine{
+			{
+				ID:              "line-1",
+				TenantID:        "tenant-1",
+				OrderID:         "order-1",
+				LineNumber:      1,
+				Description:     "Implementation",
+				Quantity:        decimal.NewFromInt(3),
+				Unit:            "hour",
+				UnitPrice:       decimal.NewFromInt(120),
+				DiscountPercent: decimal.NewFromInt(5),
+				VATRate:         decimal.NewFromInt(22),
+			},
+		},
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/orders/order-1/convert-to-invoice",
+		bytes.NewBufferString(`{"issue_date":"2026-03-10T00:00:00Z","due_date":"2026-03-24T00:00:00Z","notes":"Invoice notes"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ConvertOrderToInvoice(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	var result orders.OrderInvoiceConversionResult
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	require.NotNil(t, result.Order)
+	require.NotNil(t, result.Invoice)
+	assert.Equal(t, orders.OrderStatusDelivered, result.Order.Status)
+	require.NotNil(t, result.Order.ConvertedToInvoiceID)
+	assert.Equal(t, result.Invoice.ID, *result.Order.ConvertedToInvoiceID)
+	assert.Equal(t, result.Invoice.ID, *ordersRepo.orders["order-1"].ConvertedToInvoiceID)
+
+	assert.Equal(t, invoicing.InvoiceTypeSales, result.Invoice.InvoiceType)
+	assert.Equal(t, invoicing.StatusDraft, result.Invoice.Status)
+	assert.Equal(t, "contact-1", result.Invoice.ContactID)
+	assert.Equal(t, "ORD-001", result.Invoice.Reference)
+	assert.Equal(t, "Invoice notes", result.Invoice.Notes)
+	assert.Equal(t, "2026-03-10", result.Invoice.IssueDate.Format("2006-01-02"))
+	assert.Equal(t, "2026-03-24", result.Invoice.DueDate.Format("2006-01-02"))
+	require.Len(t, result.Invoice.Lines, 1)
+	assert.Equal(t, "Implementation", result.Invoice.Lines[0].Description)
+	assert.True(t, result.Invoice.Lines[0].Quantity.Equal(decimal.NewFromInt(3)))
+	assert.True(t, result.Invoice.Lines[0].UnitPrice.Equal(decimal.NewFromInt(120)))
+	assert.True(t, result.Invoice.Lines[0].DiscountPercent.Equal(decimal.NewFromInt(5)))
+	assert.True(t, result.Invoice.Lines[0].VATRate.Equal(decimal.NewFromInt(22)))
+}
+
+func TestConvertOrderToInvoiceRejectsInvalidState(t *testing.T) {
+	tests := []struct {
+		name       string
+		order      *orders.Order
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name: "requires delivered order",
+			order: &orders.Order{
+				ID:           "order-1",
+				TenantID:     "tenant-1",
+				OrderNumber:  "ORD-001",
+				ContactID:    "contact-1",
+				OrderDate:    time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+				Status:       orders.OrderStatusShipped,
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+				Lines: []orders.OrderLine{{
+					ID:          "line-1",
+					Description: "Implementation",
+					Quantity:    decimal.NewFromInt(1),
+					UnitPrice:   decimal.NewFromInt(100),
+					VATRate:     decimal.NewFromInt(22),
+				}},
+			},
+			wantStatus: http.StatusConflict,
+			wantBody:   "order must be delivered before conversion",
+		},
+		{
+			name: "rejects already converted order",
+			order: func() *orders.Order {
+				invoiceID := "invoice-1"
+				return &orders.Order{
+					ID:                   "order-1",
+					TenantID:             "tenant-1",
+					OrderNumber:          "ORD-001",
+					ContactID:            "contact-1",
+					OrderDate:            time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+					Status:               orders.OrderStatusDelivered,
+					Currency:             "EUR",
+					ExchangeRate:         decimal.NewFromInt(1),
+					ConvertedToInvoiceID: &invoiceID,
+					Lines: []orders.OrderLine{{
+						ID:          "line-1",
+						Description: "Implementation",
+						Quantity:    decimal.NewFromInt(1),
+						UnitPrice:   decimal.NewFromInt(100),
+						VATRate:     decimal.NewFromInt(22),
+					}},
+				}
+			}(),
+			wantStatus: http.StatusConflict,
+			wantBody:   "order has already been converted to an invoice",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, ordersRepo, tenantRepo := setupOrdersTestHandlers()
+			h.invoicingService = invoicing.NewServiceWithRepository(newMockInvoicingRepository(), nil)
+
+			tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+				ID:         "tenant-1",
+				SchemaName: "tenant_test",
+			}
+			ordersRepo.orders["order-1"] = tt.order
+
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/tenants/tenant-1/orders/order-1/convert-to-invoice",
+				bytes.NewBufferString(`{"issue_date":"2026-03-10T00:00:00Z","due_date":"2026-03-24T00:00:00Z"}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+			req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+			rr := httptest.NewRecorder()
+			h.ConvertOrderToInvoice(rr, req)
+
+			assert.Equal(t, tt.wantStatus, rr.Code)
+			assert.Contains(t, rr.Body.String(), tt.wantBody)
+		})
+	}
+}
+
+func TestConfirmOrderRequiresApprovedEvidence(t *testing.T) {
+	h, repo, tenantRepo := setupOrdersTestHandlers()
+	store, err := documents.NewLocalStore(t.TempDir())
+	require.NoError(t, err)
+	documentRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(documentRepo, store)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+	repo.orders["order-1"] = &orders.Order{
+		ID:       "order-1",
+		TenantID: "tenant-1",
+		Status:   orders.OrderStatusPending,
+		Lines:    []orders.OrderLine{},
+	}
+
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/confirm", map[string]any{
+		"require_approved_evidence": true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+
+	rr := httptest.NewRecorder()
+	h.ConfirmOrder(rr, req)
+
+	assertOrderEvidenceConflict(t, rr, "order-1")
+
+	documentRepo.docs["doc-order"] = &documents.Document{
+		ID:           "doc-order",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeOrder,
+		EntityID:     "order-1",
+		DocumentType: documents.DocumentTypeContract,
+		FileName:     "signed-order.pdf",
+		ReviewStatus: documents.ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/confirm", map[string]any{
+		"require_approved_evidence": true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+	rr = httptest.NewRecorder()
+	h.ConfirmOrder(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func assertOrderEvidenceConflict(t *testing.T, rr *httptest.ResponseRecorder, orderID string) {
+	t.Helper()
+
+	assert.Equal(t, http.StatusConflict, rr.Code, "response body: %s", rr.Body.String())
+
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, "approved order evidence is required")
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeOrder, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, orderID, conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
+	assert.Equal(t, "oa documents upload --entity-type order --entity-id "+orderID+" --document-type contract --file <file>", conflict.RemediationActions[0].CLICommand)
 }

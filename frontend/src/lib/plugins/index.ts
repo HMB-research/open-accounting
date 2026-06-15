@@ -2,9 +2,19 @@
 export { pluginManager } from './manager';
 export type {
 	PluginNavigationItem,
+	PluginSlotKind,
 	PluginSlotRegistration,
 	PluginManagerState
 } from './manager';
+export {
+	clearPluginFrontendComponents,
+	getPluginFrontendComponentCandidateIds,
+	normalizePluginComponentReference,
+	registerPluginFrontendComponent,
+	resolvePluginFrontendComponent,
+	unregisterPluginFrontendComponent
+} from './componentRegistry';
+export type { PluginFrontendComponent, PluginFrontendComponentProps } from './componentRegistry';
 
 // Re-export Slot component
 export { default as Slot } from './Slot.svelte';
@@ -19,6 +29,9 @@ export { default as Slot } from './Slot.svelte';
  *   slots:
  *     - name: dashboard.widgets
  *       component: MyWidget.svelte
+ *       label: Review open exceptions
+ *       path: /plugins/my-plugin/exceptions
+ *       kind: card
  * ```
  */
 export const SLOT_NAMES = {

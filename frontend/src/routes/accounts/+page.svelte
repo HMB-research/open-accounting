@@ -3,16 +3,20 @@
   import { page } from "$app/stores";
   import { api, type Account, type ImportAccountsResult } from "$lib/api";
   import Decimal from "decimal.js";
+  import { SvelteMap } from "svelte/reactivity";
   import * as m from "$lib/paraglide/messages.js";
 
   let accounts = $state<Account[]>([]);
-  let accountBalances = $state<
-    Map<string, { debit: Decimal; credit: Decimal; balance: Decimal }>
-  >(new Map());
+  let accountBalances = new SvelteMap<
+    string,
+    { debit: Decimal; credit: Decimal; balance: Decimal }
+  >();
   let isLoading = $state(true);
   let error = $state("");
-  let showCreateAccount = $state(false);
+  let showAccountModal = $state(false);
   let showImportAccounts = $state(false);
+  let selectedAccountForEdit = $state<Account | null>(null);
+  let deletingAccountId = $state("");
   let importError = $state("");
   let importFileName = $state("");
   let importCSVContent = $state("");
@@ -23,6 +27,7 @@
   let newName = $state("");
   let newType = $state<Account["account_type"]>("ASSET");
   let newDescription = $state("");
+  let isEditMode = $derived(Boolean(selectedAccountForEdit));
 
   $effect(() => {
     const tenantId = $page.url.searchParams.get("tenant");
@@ -42,12 +47,9 @@
       ]);
 
       accounts = accountsData;
+      accountBalances.clear();
 
       if (trialBalance) {
-        const balanceMap = new Map<
-          string,
-          { debit: Decimal; credit: Decimal; balance: Decimal }
-        >();
         for (const item of trialBalance.accounts) {
           const debit =
             item.debit_balance instanceof Decimal
@@ -61,9 +63,8 @@
             item.net_balance instanceof Decimal
               ? item.net_balance
               : new Decimal(item.net_balance || 0);
-          balanceMap.set(item.account_id, { debit, credit, balance });
+          accountBalances.set(item.account_id, { debit, credit, balance });
         }
-        accountBalances = balanceMap;
       }
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to load accounts";
@@ -97,28 +98,92 @@
     }).format(balance.toNumber());
   }
 
-  async function createAccount(event: Event) {
+  function resetAccountForm() {
+    newCode = "";
+    newName = "";
+    newType = "ASSET";
+    newDescription = "";
+  }
+
+  function populateAccountForm(account: Account) {
+    newCode = account.code;
+    newName = account.name;
+    newType = account.account_type;
+    newDescription = account.description || "";
+  }
+
+  function openCreateAccount() {
+    selectedAccountForEdit = null;
+    resetAccountForm();
+    showAccountModal = true;
+    error = "";
+  }
+
+  function openEditAccount(account: Account) {
+    selectedAccountForEdit = account;
+    populateAccountForm(account);
+    showAccountModal = true;
+    error = "";
+  }
+
+  function closeAccountModal() {
+    showAccountModal = false;
+    selectedAccountForEdit = null;
+    resetAccountForm();
+  }
+
+  async function saveAccount(event: Event) {
     event.preventDefault();
     const tenantId = $page.url.searchParams.get("tenant");
     if (!tenantId) return;
 
     try {
-      const account = await api.createAccount(tenantId, {
+      const payload = {
         code: newCode,
         name: newName,
         account_type: newType,
         description: newDescription || undefined,
-      });
-      accounts = [...accounts, account].sort((a, b) =>
-        a.code.localeCompare(b.code),
-      );
-      showCreateAccount = false;
-      newCode = "";
-      newName = "";
-      newType = "ASSET";
-      newDescription = "";
+      };
+      const account = selectedAccountForEdit
+        ? await api.updateAccount(tenantId, selectedAccountForEdit.id, payload)
+        : await api.createAccount(tenantId, payload);
+      const exists = accounts.some((existing) => existing.id === account.id);
+      accounts = (
+        exists
+          ? accounts.map((existing) =>
+              existing.id === account.id ? account : existing,
+            )
+          : [...accounts, account]
+      ).sort((a, b) => a.code.localeCompare(b.code));
+      closeAccountModal();
     } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to create account";
+      error = err instanceof Error ? err.message : "Failed to save account";
+    }
+  }
+
+  async function deleteAccount(account: Account) {
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (!tenantId || deletingAccountId || account.is_system) return;
+    if (
+      !window.confirm(
+        m.accounts_confirmDelete({ code: account.code, name: account.name }),
+      )
+    ) {
+      return;
+    }
+
+    deletingAccountId = account.id;
+    error = "";
+    try {
+      const deletedAccount = await api.deleteAccount(tenantId, account.id);
+      accounts = accounts.map((existing) =>
+        existing.id === deletedAccount.id ? deletedAccount : existing,
+      );
+    } catch (err) {
+      error =
+        err instanceof Error ? err.message : "Failed to deactivate account";
+    } finally {
+      deletingAccountId = "";
     }
   }
 
@@ -258,10 +323,7 @@
       <button class="btn btn-secondary" onclick={openImportModal}>
         {m.accounts_importAccounts()}
       </button>
-      <button
-        class="btn btn-primary"
-        onclick={() => (showCreateAccount = true)}
-      >
+      <button class="btn btn-primary" onclick={openCreateAccount}>
         + {m.accounts_newAccount()}
       </button>
     </div>
@@ -279,7 +341,7 @@
     </div>
   {:else}
     {@const groups = groupByType(accounts)}
-    {#each typeOrder as type}
+    {#each typeOrder as type (type)}
       {@const typeAccounts = groups[type]}
       {#if typeAccounts.length > 0}
         <section class="account-section card">
@@ -293,10 +355,11 @@
                   <th class="hide-mobile">{m.common_description()}</th>
                   <th class="balance-col">{m.common_balance()}</th>
                   <th>{m.common_status()}</th>
+                  <th>{m.common_actions()}</th>
                 </tr>
               </thead>
               <tbody>
-                {#each typeAccounts as account}
+                {#each typeAccounts as account (account.id)}
                   <tr class:inactive={!account.is_active}>
                     <td class="code" data-label="Code">{account.code}</td>
                     <td data-label="Name">{account.name}</td>
@@ -320,6 +383,32 @@
                         >
                       {/if}
                     </td>
+                    <td
+                      class="actions actions-cell"
+                      data-label={m.common_actions()}
+                    >
+                      {#if !account.is_system && account.is_active}
+                        <button
+                          type="button"
+                          class="btn btn-small btn-secondary"
+                          onclick={() => openEditAccount(account)}
+                        >
+                          {m.common_edit()}
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-small btn-danger"
+                          disabled={deletingAccountId === account.id}
+                          onclick={() => deleteAccount(account)}
+                        >
+                          {deletingAccountId === account.id
+                            ? m.accounts_deleting()
+                            : m.common_delete()}
+                        </button>
+                      {:else}
+                        <span class="muted">-</span>
+                      {/if}
+                    </td>
                   </tr>
                 {/each}
               </tbody>
@@ -332,7 +421,6 @@
 </div>
 
 {#if showImportAccounts}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="modal-backdrop" onclick={closeImportModal} role="presentation">
     <div
@@ -430,7 +518,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each importResult.errors as rowError}
+                  {#each importResult.errors as rowError (`${rowError.row}:${rowError.message}`)}
                     <tr>
                       <td data-label={m.accounts_importRow()}>{rowError.row}</td
                       >
@@ -459,14 +547,9 @@
   </div>
 {/if}
 
-{#if showCreateAccount}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+{#if showAccountModal}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    class="modal-backdrop"
-    onclick={() => (showCreateAccount = false)}
-    role="presentation"
-  >
+  <div class="modal-backdrop" onclick={closeAccountModal} role="presentation">
     <div
       class="modal card"
       onclick={(e) => e.stopPropagation()}
@@ -475,8 +558,10 @@
       aria-labelledby="create-account-title"
       tabindex="-1"
     >
-      <h2 id="create-account-title">{m.accounts_newAccount()}</h2>
-      <form onsubmit={createAccount}>
+      <h2 id="create-account-title">
+        {isEditMode ? m.accounts_editAccount() : m.accounts_newAccount()}
+      </h2>
+      <form onsubmit={saveAccount}>
         <div class="form-group">
           <label class="label" for="code">{m.accounts_accountCode()}</label>
           <input
@@ -528,13 +613,13 @@
           <button
             type="button"
             class="btn btn-secondary"
-            onclick={() => (showCreateAccount = false)}
+            onclick={closeAccountModal}
           >
             {m.common_cancel()}
           </button>
-          <button type="submit" class="btn btn-primary"
-            >{m.common_create()}</button
-          >
+          <button type="submit" class="btn btn-primary">
+            {isEditMode ? m.common_save() : m.common_create()}
+          </button>
         </div>
       </form>
     </div>
@@ -583,6 +668,31 @@
 
   .inactive {
     opacity: 0.6;
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.35rem;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .btn-small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-danger {
+    background: #dc2626;
+    color: white;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: #b91c1c;
+  }
+
+  .muted {
+    color: var(--color-text-muted);
   }
 
   .badge-system {

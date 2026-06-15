@@ -93,8 +93,8 @@ type PayrollRun struct {
 	TotalNet          Decimal       `gorm:"column:total_net;type:numeric(28,8);not null;default:0" json:"total_net"`
 	TotalEmployerCost Decimal       `gorm:"column:total_employer_cost;type:numeric(28,8);not null;default:0" json:"total_employer_cost"`
 	Notes             string        `gorm:"type:text" json:"notes,omitempty"`
-	CreatedBy         string        `gorm:"column:created_by;type:uuid" json:"created_by,omitempty"`
-	ApprovedBy        string        `gorm:"column:approved_by;type:uuid" json:"approved_by,omitempty"`
+	CreatedBy         *string       `gorm:"column:created_by;type:uuid" json:"created_by,omitempty"`
+	ApprovedBy        *string       `gorm:"column:approved_by;type:uuid" json:"approved_by,omitempty"`
 	ApprovedAt        *time.Time    `gorm:"column:approved_at" json:"approved_at,omitempty"`
 	CreatedAt         time.Time     `gorm:"not null;default:now()" json:"created_at"`
 	UpdatedAt         time.Time     `gorm:"not null;default:now()" json:"updated_at"`
@@ -139,4 +139,61 @@ type Payslip struct {
 // TableName returns the table name for GORM
 func (Payslip) TableName() string {
 	return "payslips"
+}
+
+// TSDDeclaration represents an Estonian TSD tax declaration.
+type TSDDeclaration struct {
+	ID           string  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	TenantID     string  `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	PeriodYear   int     `gorm:"column:period_year;not null" json:"period_year"`
+	PeriodMonth  int     `gorm:"column:period_month;not null" json:"period_month"`
+	PayrollRunID *string `gorm:"column:payroll_run_id;type:uuid" json:"payroll_run_id,omitempty"`
+
+	TotalPayments       Decimal `gorm:"column:total_payments;type:numeric(28,8);not null;default:0" json:"total_payments"`
+	TotalIncomeTax      Decimal `gorm:"column:total_income_tax;type:numeric(28,8);not null;default:0" json:"total_income_tax"`
+	TotalSocialTax      Decimal `gorm:"column:total_social_tax;type:numeric(28,8);not null;default:0" json:"total_social_tax"`
+	TotalUnemploymentER Decimal `gorm:"column:total_unemployment_employer;type:numeric(28,8);not null;default:0" json:"total_unemployment_employer"`
+	TotalUnemploymentEE Decimal `gorm:"column:total_unemployment_employee;type:numeric(28,8);not null;default:0" json:"total_unemployment_employee"`
+	TotalFundedPension  Decimal `gorm:"column:total_funded_pension;type:numeric(28,8);not null;default:0" json:"total_funded_pension"`
+
+	Status        string     `gorm:"size:20;not null;default:'DRAFT'" json:"status"`
+	SubmittedAt   *time.Time `gorm:"column:submitted_at" json:"submitted_at,omitempty"`
+	EMTAReference string     `gorm:"column:emta_reference;size:100" json:"emta_reference,omitempty"`
+	CreatedAt     time.Time  `gorm:"not null;default:now()" json:"created_at"`
+	UpdatedAt     time.Time  `gorm:"not null;default:now()" json:"updated_at"`
+}
+
+// TableName returns the table name for GORM.
+func (TSDDeclaration) TableName() string {
+	return "tsd_declarations"
+}
+
+// TSDRow represents a row in TSD Annex 1.
+type TSDRow struct {
+	ID            string `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	TenantID      string `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	DeclarationID string `gorm:"column:declaration_id;type:uuid;not null;index" json:"declaration_id"`
+	EmployeeID    string `gorm:"column:employee_id;type:uuid;not null;index" json:"employee_id"`
+
+	PersonalCode string `gorm:"column:personal_code;size:20;not null" json:"personal_code"`
+	FirstName    string `gorm:"column:first_name;size:100;not null" json:"first_name"`
+	LastName     string `gorm:"column:last_name;size:100;not null" json:"last_name"`
+
+	PaymentType    string  `gorm:"column:payment_type;size:10;default:'10'" json:"payment_type"`
+	GrossPayment   Decimal `gorm:"column:gross_payment;type:numeric(28,8);not null" json:"gross_payment"`
+	BasicExemption Decimal `gorm:"column:basic_exemption;type:numeric(28,8);not null;default:0" json:"basic_exemption"`
+	TaxableAmount  Decimal `gorm:"column:taxable_amount;type:numeric(28,8);not null" json:"taxable_amount"`
+
+	IncomeTax      Decimal `gorm:"column:income_tax;type:numeric(28,8);not null;default:0" json:"income_tax"`
+	SocialTax      Decimal `gorm:"column:social_tax;type:numeric(28,8);not null;default:0" json:"social_tax"`
+	UnemploymentER Decimal `gorm:"column:unemployment_insurance_employer;type:numeric(28,8);not null;default:0" json:"unemployment_insurance_employer"`
+	UnemploymentEE Decimal `gorm:"column:unemployment_insurance_employee;type:numeric(28,8);not null;default:0" json:"unemployment_insurance_employee"`
+	FundedPension  Decimal `gorm:"column:funded_pension;type:numeric(28,8);not null;default:0" json:"funded_pension"`
+
+	CreatedAt time.Time `gorm:"not null;default:now()" json:"created_at"`
+}
+
+// TableName returns the table name for GORM.
+func (TSDRow) TableName() string {
+	return "tsd_rows"
 }

@@ -20,6 +20,12 @@
 		unmatchedAmount: Decimal;
 		missingEvidenceCount: number;
 		pendingEvidenceCount: number;
+		journalEvidenceCount: number;
+		journalMissingEvidenceCount: number;
+		journalPendingEvidenceCount: number;
+		journalRejectedEvidenceCount: number;
+		assignmentCount: number;
+		highPriorityAssignmentCount: number;
 		needsClose: boolean;
 		suggestedCloseDate: string;
 		lastCloseEvent: PeriodCloseEvent | null;
@@ -127,6 +133,16 @@
 		return m.dashboard_reviewPortfolioLockedThrough({ date: formatDate(lockDate) });
 	}
 
+	function buildTenantHref(
+		path: string,
+		tenantId: string,
+		params: Record<string, string> = {},
+		hash = ''
+	): string {
+		const search = new URLSearchParams({ tenant: tenantId, ...params }).toString();
+		return `${path}?${search}${hash ? `#${hash}` : ''}`;
+	}
+
 	const portfolioItems = $derived.by(() => {
 		const items: PortfolioItem[] = [];
 
@@ -150,6 +166,24 @@
 			const pendingEvidenceCount = unmatchedTransactions.filter(
 				(item) => item.documentSummary.has_pending_review
 			).length;
+			const journalEvidenceCount = snapshot.journalEvidence.length;
+			const journalMissingEvidenceCount = snapshot.journalEvidence.filter(
+				(item) =>
+					item.documentSummary.missing_evidence ||
+					(!item.documentSummary.has_pending_review &&
+						!item.documentSummary.has_rejected &&
+						item.documentSummary.approved_count === 0)
+			).length;
+			const journalPendingEvidenceCount = snapshot.journalEvidence.filter(
+				(item) => item.documentSummary.has_pending_review
+			).length;
+			const journalRejectedEvidenceCount = snapshot.journalEvidence.filter(
+				(item) => item.documentSummary.has_rejected
+			).length;
+			const assignmentCount = snapshot.assignmentActions.length;
+			const highPriorityAssignmentCount = snapshot.assignmentActions.filter(
+				(action) => action.priority.toLowerCase() === 'high'
+			).length;
 			const periodLockDate = snapshot.tenant.settings?.period_lock_date ?? null;
 			const closeIsDue = needsPeriodClose(periodLockDate);
 			const openTasks =
@@ -157,6 +191,8 @@
 				unmatchedCount +
 				missingEvidenceCount +
 				pendingEvidenceCount +
+				journalEvidenceCount +
+				assignmentCount +
 				(closeIsDue ? 1 : 0) +
 				(snapshot.tenant.onboarding_completed ? 0 : 1);
 			const urgency =
@@ -165,6 +201,11 @@
 				Math.min(5, unmatchedCount) +
 				Math.min(5, missingEvidenceCount) +
 				Math.min(3, pendingEvidenceCount) +
+				Math.min(5, journalEvidenceCount) +
+				Math.min(3, journalPendingEvidenceCount) +
+				Math.min(2, journalRejectedEvidenceCount) +
+				Math.min(8, assignmentCount) +
+				Math.min(5, highPriorityAssignmentCount) +
 				(closeIsDue ? 3 : 0) +
 				(snapshot.tenant.onboarding_completed ? 0 : 2);
 
@@ -177,6 +218,12 @@
 				unmatchedAmount,
 				missingEvidenceCount,
 				pendingEvidenceCount,
+				journalEvidenceCount,
+				journalMissingEvidenceCount,
+				journalPendingEvidenceCount,
+				journalRejectedEvidenceCount,
+				assignmentCount,
+				highPriorityAssignmentCount,
 				needsClose: closeIsDue,
 				suggestedCloseDate: getSuggestedCloseDate(periodLockDate),
 				lastCloseEvent: snapshot.periodCloseEvents[0] ?? null,
@@ -210,6 +257,12 @@
 	);
 	const totalPendingEvidence = $derived(
 		attentionTenants.reduce((sum, item) => sum + item.pendingEvidenceCount, 0)
+	);
+	const totalJournalEvidence = $derived(
+		attentionTenants.reduce((sum, item) => sum + item.journalEvidenceCount, 0)
+	);
+	const totalAssignments = $derived(
+		attentionTenants.reduce((sum, item) => sum + item.assignmentCount, 0)
 	);
 	const tenantsNeedingClose = $derived(
 		attentionTenants.filter((item) => item.needsClose).length
@@ -268,6 +321,14 @@
 							<span>{m.dashboard_reviewPortfolioEvidencePending()}</span>
 						</div>
 						<div>
+							<strong>{totalJournalEvidence}</strong>
+							<span>{m.dashboard_reviewPortfolioJournalEvidence()}</span>
+						</div>
+						<div>
+							<strong>{totalAssignments}</strong>
+							<span>{m.dashboard_reviewPortfolioAssignments()}</span>
+						</div>
+						<div>
 							<strong>{tenantsNeedingClose}</strong>
 							<span>{m.dashboard_reviewPortfolioCloseDueCount()}</span>
 						</div>
@@ -281,7 +342,7 @@
 
 					{#if priorityItems.length > 0}
 						<ul class="portfolio-list">
-							{#each priorityItems as item}
+							{#each priorityItems as item (item.membership.tenant.id)}
 								<li class:current={item.isCurrent}>
 									<div class="portfolio-list-copy">
 										<div class="portfolio-tenant-head">
@@ -307,6 +368,12 @@
 											{#if item.pendingEvidenceCount > 0}
 												<span class="portfolio-pill">{item.pendingEvidenceCount} {m.dashboard_reviewPortfolioEvidencePendingTag()}</span>
 											{/if}
+											{#if item.journalEvidenceCount > 0}
+												<span class="portfolio-pill portfolio-pill-alert">{item.journalEvidenceCount} {m.dashboard_reviewPortfolioJournalEvidenceTag()}</span>
+											{/if}
+											{#if item.assignmentCount > 0}
+												<span class="portfolio-pill portfolio-pill-alert">{item.assignmentCount} {m.dashboard_reviewPortfolioAssignmentTag()}</span>
+											{/if}
 											{#if item.needsClose}
 												<span class="portfolio-pill portfolio-pill-alert">{m.dashboard_reviewPortfolioCloseTag()}</span>
 											{/if}
@@ -324,6 +391,13 @@
 												})}
 											</p>
 										{/if}
+										{#if item.journalEvidenceCount > 0}
+											<p class="portfolio-evidence-note">
+												{m.dashboard_reviewPortfolioJournalEvidenceStatus({
+													count: item.journalEvidenceCount.toString()
+												})}
+											</p>
+										{/if}
 
 										{#if item.lastCloseEvent}
 											<div class="portfolio-list-meta">
@@ -331,6 +405,79 @@
 												<span>{formatDate(item.lastCloseEvent.created_at)}</span>
 											</div>
 										{/if}
+
+										<nav class="portfolio-action-row" aria-label={m.dashboard_reviewPortfolioActions()}>
+											{#if item.overdueCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/invoices/reminders', item.membership.tenant.id)}
+												>
+													{m.dashboard_reviewPortfolioActionReminders()}
+												</a>
+											{/if}
+											{#if item.unmatchedCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/banking', item.membership.tenant.id)}
+												>
+													{m.dashboard_reviewPortfolioActionBanking()}
+												</a>
+											{/if}
+											{#if item.pendingEvidenceCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/documents', item.membership.tenant.id, {
+														entity_type: 'bank_transaction',
+														review_status: 'PENDING'
+													})}
+												>
+													{m.dashboard_reviewPortfolioActionEvidence()}
+												</a>
+											{/if}
+											{#if item.journalEvidenceCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/journal', item.membership.tenant.id)}
+												>
+													{m.dashboard_reviewPortfolioActionJournal()}
+												</a>
+											{/if}
+											{#if item.journalPendingEvidenceCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/documents', item.membership.tenant.id, {
+														entity_type: 'journal_entry',
+														review_status: 'PENDING'
+													})}
+												>
+													{m.dashboard_reviewPortfolioActionJournalEvidence()}
+												</a>
+											{/if}
+											{#if item.assignmentCount > 0}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/dashboard', item.membership.tenant.id, {}, 'assignment-queue')}
+												>
+													{m.dashboard_reviewPortfolioActionAssignments()}
+												</a>
+											{/if}
+											{#if item.needsClose}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/settings/company', item.membership.tenant.id, {}, 'period-history')}
+												>
+													{m.dashboard_reviewPortfolioActionClose()}
+												</a>
+											{/if}
+											{#if !item.snapshot.tenant.onboarding_completed}
+												<a
+													class="portfolio-action-link"
+													href={buildTenantHref('/dashboard', item.membership.tenant.id)}
+												>
+													{m.dashboard_reviewPortfolioActionSetup()}
+												</a>
+											{/if}
+										</nav>
 									</div>
 
 									<div class="portfolio-list-side">
@@ -563,6 +710,31 @@
 		flex-wrap: wrap;
 		gap: 0.75rem;
 		font-size: 0.82rem;
+	}
+
+	.portfolio-action-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.45rem;
+	}
+
+	.portfolio-action-link {
+		display: inline-flex;
+		align-items: center;
+		min-height: 2.25rem;
+		padding: 0.45rem 0.72rem;
+		border-radius: 0.55rem;
+		border: 1px solid rgba(121, 85, 58, 0.16);
+		background: rgba(255, 252, 247, 0.72);
+		color: rgba(68, 48, 34, 0.94);
+		font-size: 0.82rem;
+		font-weight: 700;
+		text-decoration: none;
+	}
+
+	.portfolio-action-link:hover {
+		border-color: rgba(121, 85, 58, 0.28);
+		background: rgba(255, 247, 236, 0.92);
 	}
 
 	.portfolio-list-side {

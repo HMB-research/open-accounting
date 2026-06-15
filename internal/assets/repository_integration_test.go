@@ -1,7 +1,10 @@
+//go:build integration
+
 package assets
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,7 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func createTestCategory(t *testing.T, repo *PostgresRepository, pool *pgxpool.Pool, schemaName, tenantID string) *AssetCategory {
+func createTestCategory(t *testing.T, repo *GORMRepository, pool *pgxpool.Pool, schemaName, tenantID string) *AssetCategory {
 	t.Helper()
 	// Get real account IDs from the default chart of accounts
 	accounts := testutil.GetTestAccounts(t, pool, schemaName)
@@ -39,7 +42,7 @@ func TestRepository_CreateAndGetCategory(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Get real account IDs from the default chart of accounts
@@ -82,7 +85,7 @@ func TestRepository_GetCategoryByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Use a valid UUID that doesn't exist in the database
@@ -97,7 +100,7 @@ func TestRepository_ListCategories(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Get real account IDs from the default chart of accounts
@@ -137,7 +140,7 @@ func TestRepository_UpdateCategory(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -168,7 +171,7 @@ func TestRepository_UpdateCategory_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Get real account IDs from the default chart of accounts
@@ -198,7 +201,7 @@ func TestRepository_DeleteCategory(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -217,7 +220,7 @@ func TestRepository_DeleteCategory_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Use a valid UUID that doesn't exist in the database
@@ -232,7 +235,7 @@ func TestRepository_CreateAndGetAsset(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -289,7 +292,7 @@ func TestRepository_GetByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	// Use a valid UUID that doesn't exist in the database
@@ -304,7 +307,7 @@ func TestRepository_ListAssets(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -351,7 +354,7 @@ func TestRepository_ListAssets_WithFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -427,7 +430,7 @@ func TestRepository_UpdateAsset(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -483,7 +486,7 @@ func TestRepository_UpdateStatus(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -528,11 +531,109 @@ func TestRepository_UpdateStatus(t *testing.T) {
 	}
 }
 
+func TestRepository_UpdateDisposalPersistsDetails(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
+	disposalDate := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	disposalMethod := DisposalSold
+	disposalJournalEntryID := uuid.New().String()
+	createdBy := uuid.New().String()
+	if _, err := pool.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s.journal_entries (
+			id, tenant_id, entry_number, entry_date, description, reference, source_type, status, created_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, 'POSTED', $8)
+	`, tenant.SchemaName),
+		disposalJournalEntryID,
+		tenant.ID,
+		"JE-DISPOSE",
+		disposalDate,
+		"Asset disposal",
+		"AST-DISPOSE",
+		SourceTypeAssetDisposal,
+		createdBy,
+	); err != nil {
+		t.Fatalf("insert disposal journal entry failed: %v", err)
+	}
+
+	asset := &FixedAsset{
+		ID:                            uuid.New().String(),
+		TenantID:                      tenant.ID,
+		AssetNumber:                   "AST-DISPOSE",
+		Name:                          "Disposal Test Asset",
+		CategoryID:                    &cat.ID,
+		Status:                        AssetStatusActive,
+		PurchaseDate:                  time.Now(),
+		PurchaseCost:                  decimal.NewFromFloat(5000.00),
+		DepreciationMethod:            DepreciationStraightLine,
+		UsefulLifeMonths:              60,
+		ResidualValue:                 decimal.Zero,
+		AccumulatedDepreciation:       decimal.Zero,
+		BookValue:                     decimal.NewFromFloat(5000.00),
+		DisposalDate:                  &disposalDate,
+		DisposalMethod:                &disposalMethod,
+		DisposalProceeds:              decimal.NewFromFloat(1250.00),
+		DisposalNotes:                 "Board-approved asset sale",
+		DisposalJournalEntryID:        &disposalJournalEntryID,
+		AssetAccountID:                cat.AssetAccountID,
+		DepreciationExpenseAccountID:  cat.DepreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: cat.AccumulatedDepreciationAcctID,
+		CreatedAt:                     time.Now(),
+		CreatedBy:                     uuid.New().String(),
+		UpdatedAt:                     time.Now(),
+	}
+	if err := repo.Create(ctx, tenant.SchemaName, asset); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	created, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, asset.ID)
+	if err != nil {
+		t.Fatalf("GetByID after create failed: %v", err)
+	}
+	if created.DisposalDate == nil || !created.DisposalDate.Equal(disposalDate) {
+		t.Errorf("expected create to persist disposal date %s, got %v", disposalDate, created.DisposalDate)
+	}
+	if created.DisposalJournalEntryID == nil || *created.DisposalJournalEntryID != disposalJournalEntryID {
+		t.Errorf("expected create to persist disposal journal %s, got %v", disposalJournalEntryID, created.DisposalJournalEntryID)
+	}
+
+	if err := repo.UpdateDisposal(ctx, tenant.SchemaName, asset, AssetStatusSold); err != nil {
+		t.Fatalf("UpdateDisposal failed: %v", err)
+	}
+
+	retrieved, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, asset.ID)
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+
+	if retrieved.Status != AssetStatusSold {
+		t.Errorf("expected status %s, got %s", AssetStatusSold, retrieved.Status)
+	}
+	if retrieved.DisposalDate == nil || !retrieved.DisposalDate.Equal(disposalDate) {
+		t.Errorf("expected disposal date %s, got %v", disposalDate, retrieved.DisposalDate)
+	}
+	if retrieved.DisposalMethod == nil || *retrieved.DisposalMethod != DisposalSold {
+		t.Errorf("expected disposal method %s, got %v", DisposalSold, retrieved.DisposalMethod)
+	}
+	if !retrieved.DisposalProceeds.Equal(decimal.NewFromFloat(1250.00)) {
+		t.Errorf("expected disposal proceeds 1250.00, got %s", retrieved.DisposalProceeds)
+	}
+	if retrieved.DisposalNotes != "Board-approved asset sale" {
+		t.Errorf("expected disposal notes to persist, got %q", retrieved.DisposalNotes)
+	}
+	if retrieved.DisposalJournalEntryID == nil || *retrieved.DisposalJournalEntryID != disposalJournalEntryID {
+		t.Errorf("expected disposal journal %s, got %v", disposalJournalEntryID, retrieved.DisposalJournalEntryID)
+	}
+}
+
 func TestRepository_DeleteAsset(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -576,7 +677,7 @@ func TestRepository_GenerateNumber(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -630,7 +731,7 @@ func TestRepository_DepreciationEntry(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -696,7 +797,7 @@ func TestRepository_UpdateAssetDepreciation(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)
@@ -754,7 +855,7 @@ func TestRepository_ListAssets_WithCategoryFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewRepository(pool)
 	ctx := context.Background()
 
 	cat1 := createTestCategory(t, repo, pool, tenant.SchemaName, tenant.ID)

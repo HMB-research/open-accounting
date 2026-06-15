@@ -12,6 +12,7 @@ import {
 	calculateDateRange,
 	formatDateET,
 	formatDate,
+	dateInputToApiTimestamp,
 	type DatePreset
 } from '$lib/utils/dates';
 
@@ -24,7 +25,7 @@ describe('Date Utilities', () => {
 
 		it('returns correct date', () => {
 			const result = getTodayISO();
-			const expected = new Date().toISOString().slice(0, 10);
+			const expected = toISODate(new Date());
 			expect(result).toBe(expected);
 		});
 	});
@@ -33,6 +34,11 @@ describe('Date Utilities', () => {
 		it('converts Date to YYYY-MM-DD string', () => {
 			const date = new Date('2024-06-15T12:00:00Z');
 			expect(toISODate(date)).toBe('2024-06-15');
+		});
+
+		it('preserves local calendar dates created for date inputs', () => {
+			const date = new Date(2026, 5, 1);
+			expect(toISODate(date)).toBe('2026-06-01');
 		});
 
 		it('handles beginning of year', () => {
@@ -46,6 +52,22 @@ describe('Date Utilities', () => {
 		});
 	});
 
+	describe('dateInputToApiTimestamp', () => {
+		it('converts date input values to RFC3339-compatible timestamps', () => {
+			expect(dateInputToApiTimestamp('2026-06-08')).toBe('2026-06-08T00:00:00Z');
+		});
+
+		it('trims browser date input values before converting', () => {
+			expect(dateInputToApiTimestamp(' 2026-06-08 ')).toBe('2026-06-08T00:00:00Z');
+		});
+
+		it('passes existing timestamps through unchanged', () => {
+			expect(dateInputToApiTimestamp('2026-06-08T12:30:00Z')).toBe(
+				'2026-06-08T12:30:00Z'
+			);
+		});
+	});
+
 	describe('getStartOfMonth', () => {
 		it('returns a valid ISO date for current month start', () => {
 			const result = getStartOfMonth();
@@ -56,6 +78,10 @@ describe('Date Utilities', () => {
 		it('returns a valid ISO date when given explicit date', () => {
 			const result = getStartOfMonth(new Date());
 			expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+		});
+
+		it('returns the local first day of the given month', () => {
+			expect(getStartOfMonth(new Date(2026, 5, 10))).toBe('2026-06-01');
 		});
 	});
 
@@ -71,6 +97,10 @@ describe('Date Utilities', () => {
 		it('returns a valid ISO date', () => {
 			const result = getEndOfMonth(new Date());
 			expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+		});
+
+		it('returns the local last day of the given month', () => {
+			expect(getEndOfMonth(new Date(2026, 5, 10))).toBe('2026-06-30');
 		});
 	});
 

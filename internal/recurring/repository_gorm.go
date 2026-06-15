@@ -1,9 +1,8 @@
-//go:build gorm
-
 package recurring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -24,65 +23,6 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
-}
-
-// EnsureSchema creates the recurring invoice tables if they don't exist
-// Note: Uses raw SQL as GORM AutoMigrate is not suitable for dynamic schema names
-func (r *GORMRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	quotedSchema, err := database.QuoteIdentifier(schemaName)
-	if err != nil {
-		return err
-	}
-
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.recurring_invoices (
-			id UUID PRIMARY KEY,
-			tenant_id UUID NOT NULL,
-			name VARCHAR(100) NOT NULL,
-			contact_id UUID NOT NULL,
-			invoice_type VARCHAR(20) NOT NULL DEFAULT 'SALES',
-			currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
-			frequency VARCHAR(20) NOT NULL,
-			start_date DATE NOT NULL,
-			end_date DATE,
-			next_generation_date DATE NOT NULL,
-			payment_terms_days INTEGER NOT NULL DEFAULT 14,
-			reference TEXT,
-			notes TEXT,
-			is_active BOOLEAN NOT NULL DEFAULT true,
-			last_generated_at TIMESTAMPTZ,
-			generated_count INTEGER NOT NULL DEFAULT 0,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			created_by UUID NOT NULL,
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			send_email_on_generation BOOLEAN DEFAULT false,
-			email_template_type VARCHAR(50) DEFAULT 'INVOICE_SEND',
-			recipient_email_override TEXT,
-			attach_pdf_to_email BOOLEAN DEFAULT true,
-			email_subject_override TEXT,
-			email_message TEXT
-		);
-
-		CREATE TABLE IF NOT EXISTS %s.recurring_invoice_lines (
-			id UUID PRIMARY KEY,
-			recurring_invoice_id UUID NOT NULL REFERENCES %s.recurring_invoices(id) ON DELETE CASCADE,
-			line_number INTEGER NOT NULL,
-			description TEXT NOT NULL,
-			quantity NUMERIC(18,6) NOT NULL DEFAULT 1,
-			unit VARCHAR(20),
-			unit_price NUMERIC(28,8) NOT NULL,
-			discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
-			vat_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
-			account_id UUID,
-			product_id UUID
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_recurring_invoices_tenant ON %s.recurring_invoices(tenant_id);
-		CREATE INDEX IF NOT EXISTS idx_recurring_invoices_next_gen ON %s.recurring_invoices(next_generation_date) WHERE is_active = true;
-		CREATE INDEX IF NOT EXISTS idx_recurring_invoice_lines_recurring ON %s.recurring_invoice_lines(recurring_invoice_id);
-	`, quotedSchema, quotedSchema, quotedSchema, quotedSchema, quotedSchema, quotedSchema)
-
-	return r.db.WithContext(ctx).Exec(query).Error
 }
 
 // Create inserts a new recurring invoice
@@ -124,24 +64,22 @@ func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, id s
 		return nil, err
 	}
 
-	// Use raw query to join with contacts for contact_name
 	var result struct {
 		models.RecurringInvoice
 		ContactName string
 	}
 
-	err = r.db.WithContext(ctx).Raw(fmt.Sprintf(`
-		SELECT r.*, COALESCE(c.name, '') as contact_name
-		FROM %s r
-		LEFT JOIN %s c ON r.contact_id = c.id
-		WHERE r.id = ? AND r.tenant_id = ?
-	`, recurringTable, contactsTable), id, tenantID).Scan(&result).Error
-
+	err = r.db.WithContext(ctx).
+		Table(recurringTable+" AS r").
+		Select("r.*, COALESCE(c.name, '') AS contact_name").
+		Joins("LEFT JOIN "+contactsTable+" AS c ON r.contact_id = c.id").
+		Where("r.id = ? AND r.tenant_id = ?", id, tenantID).
+		Take(&result).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrRecurringInvoiceNotFound
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get recurring invoice: %w", err)
-	}
-	if result.ID == "" {
-		return nil, ErrRecurringInvoiceNotFound
 	}
 
 	ri := modelToRecurringInvoice(&result.RecurringInvoice)
@@ -182,24 +120,21 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 		return nil, err
 	}
 
-	// Use raw query to join with contacts for contact_name
-	query := fmt.Sprintf(`
-		SELECT r.*, COALESCE(c.name, '') as contact_name
-		FROM %s r
-		LEFT JOIN %s c ON r.contact_id = c.id
-		WHERE r.tenant_id = ?
-	`, recurringTable, contactsTable)
+	query := r.db.WithContext(ctx).
+		Table(recurringTable+" AS r").
+		Select("r.*, COALESCE(c.name, '') AS contact_name").
+		Joins("LEFT JOIN "+contactsTable+" AS c ON r.contact_id = c.id").
+		Where("r.tenant_id = ?", tenantID)
 	if activeOnly {
-		query += " AND r.is_active = true"
+		query = query.Where("r.is_active = ?", true)
 	}
-	query += " ORDER BY r.next_generation_date, r.name"
 
 	var results []struct {
 		models.RecurringInvoice
 		ContactName string
 	}
 
-	if err := r.db.WithContext(ctx).Raw(query, tenantID).Scan(&results).Error; err != nil {
+	if err := query.Order("r.next_generation_date, r.name").Find(&results).Error; err != nil {
 		return nil, fmt.Errorf("list recurring invoices: %w", err)
 	}
 

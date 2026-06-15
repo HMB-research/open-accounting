@@ -2,11 +2,15 @@ package quotes
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 )
 
 // Repository defines the contract for quote data access
@@ -25,312 +29,385 @@ type Repository interface {
 // ErrQuoteNotFound is returned when a quote is not found
 var ErrQuoteNotFound = fmt.Errorf("quote not found")
 
-// PostgresRepository implements Repository using PostgreSQL
-type PostgresRepository struct {
-	db *pgxpool.Pool
+// GORMRepository implements Repository with the shared ORM layer.
+type GORMRepository struct {
+	db *gorm.DB
 }
 
-// NewPostgresRepository creates a new PostgreSQL repository
-func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
-	return &PostgresRepository{db: db}
+func NewRepository(db *pgxpool.Pool) *GORMRepository {
+	if db == nil {
+		return &GORMRepository{}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create quotes GORM repository: %w", err))
+	}
+	return NewGORMRepository(gormDB)
+}
+
+func NewGORMRepository(db *gorm.DB) *GORMRepository {
+	return &GORMRepository{db: db}
+}
+
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
 // Create inserts a new quote with its lines
-func (r *PostgresRepository) Create(ctx context.Context, schemaName string, quote *Quote) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	_, err = tx.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s.quotes (
-			id, tenant_id, quote_number, contact_id, quote_date, valid_until,
-			status, currency, exchange_rate, subtotal, vat_amount, total,
-			notes, created_at, created_by, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-	`, schemaName),
-		quote.ID, quote.TenantID, quote.QuoteNumber, quote.ContactID,
-		quote.QuoteDate, quote.ValidUntil, quote.Status, quote.Currency,
-		quote.ExchangeRate, quote.Subtotal, quote.VATAmount, quote.Total,
-		quote.Notes, quote.CreatedAt, quote.CreatedBy, quote.UpdatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("insert quote: %w", err)
-	}
-
-	for i := range quote.Lines {
-		line := &quote.Lines[i]
-		line.QuoteID = quote.ID
-
-		_, err = tx.Exec(ctx, fmt.Sprintf(`
-			INSERT INTO %s.quote_lines (
-				id, tenant_id, quote_id, line_number, description, quantity, unit,
-				unit_price, discount_percent, vat_rate, line_subtotal, line_vat, line_total,
-				product_id
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		`, schemaName),
-			line.ID, line.TenantID, line.QuoteID, line.LineNumber, line.Description,
-			line.Quantity, line.Unit, line.UnitPrice, line.DiscountPercent, line.VATRate,
-			line.LineSubtotal, line.LineVAT, line.LineTotal, line.ProductID,
-		)
+func (r *GORMRepository) Create(ctx context.Context, schemaName string, quote *Quote) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		quotesTable, err := database.TenantTable(tx, schemaName, "quotes")
 		if err != nil {
+			return fmt.Errorf("qualify quotes table: %w", err)
+		}
+		if err := quotesTable.Create(quoteToModel(quote)).Error; err != nil {
+			return fmt.Errorf("insert quote: %w", err)
+		}
+
+		if len(quote.Lines) == 0 {
+			return nil
+		}
+
+		linesTable, err := database.TenantTable(tx, schemaName, "quote_lines")
+		if err != nil {
+			return fmt.Errorf("qualify quote lines table: %w", err)
+		}
+		lineModels := make([]models.QuoteLine, len(quote.Lines))
+		for i := range quote.Lines {
+			quote.Lines[i].QuoteID = quote.ID
+			lineModels[i] = *quoteLineToModel(&quote.Lines[i])
+		}
+		if err := linesTable.Create(&lineModels).Error; err != nil {
 			return fmt.Errorf("insert quote line: %w", err)
 		}
-	}
-
-	return tx.Commit(ctx)
+		return nil
+	})
 }
 
 // GetByID retrieves a quote by ID with its lines
-func (r *PostgresRepository) GetByID(ctx context.Context, schemaName, tenantID, quoteID string) (*Quote, error) {
-	var q Quote
-	var validUntil *time.Time
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, quote_number, contact_id, quote_date, valid_until,
-		       status, currency, exchange_rate, subtotal, vat_amount, total,
-		       COALESCE(notes, ''), converted_to_order_id, converted_to_invoice_id,
-		       created_at, created_by, updated_at
-		FROM %s.quotes
-		WHERE id = $1 AND tenant_id = $2
-	`, schemaName), quoteID, tenantID).Scan(
-		&q.ID, &q.TenantID, &q.QuoteNumber, &q.ContactID, &q.QuoteDate, &validUntil,
-		&q.Status, &q.Currency, &q.ExchangeRate, &q.Subtotal, &q.VATAmount, &q.Total,
-		&q.Notes, &q.ConvertedToOrderID, &q.ConvertedToInvoiceID,
-		&q.CreatedAt, &q.CreatedBy, &q.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
+func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, quoteID string) (*Quote, error) {
+	db, err := r.tenantTable(ctx, schemaName, "quotes")
+	if err != nil {
+		return nil, fmt.Errorf("qualify quotes table: %w", err)
+	}
+
+	var quoteModel models.Quote
+	err = db.Where("id = ? AND tenant_id = ?", quoteID, tenantID).First(&quoteModel).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrQuoteNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get quote: %w", err)
 	}
-	q.ValidUntil = validUntil
 
-	rows, err := r.db.Query(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, quote_id, line_number, COALESCE(description, ''), quantity, COALESCE(unit, ''),
-		       unit_price, discount_percent, vat_rate, line_subtotal, line_vat, line_total,
-		       product_id
-		FROM %s.quote_lines
-		WHERE quote_id = $1 AND tenant_id = $2
-		ORDER BY line_number
-	`, schemaName), quoteID, tenantID)
+	quote := quoteFromModel(&quoteModel)
+	lines, err := r.listQuoteLines(ctx, schemaName, tenantID, quoteID)
 	if err != nil {
-		return nil, fmt.Errorf("get quote lines: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var line QuoteLine
-		if err := rows.Scan(
-			&line.ID, &line.TenantID, &line.QuoteID, &line.LineNumber, &line.Description,
-			&line.Quantity, &line.Unit, &line.UnitPrice, &line.DiscountPercent, &line.VATRate,
-			&line.LineSubtotal, &line.LineVAT, &line.LineTotal, &line.ProductID,
-		); err != nil {
-			return nil, fmt.Errorf("scan quote line: %w", err)
-		}
-		q.Lines = append(q.Lines, line)
-	}
-
-	return &q, nil
+	quote.Lines = lines
+	return quote, nil
 }
 
 // List retrieves quotes with optional filtering
-func (r *PostgresRepository) List(ctx context.Context, schemaName, tenantID string, filter *QuoteFilter) ([]Quote, error) {
-	query := fmt.Sprintf(`
-		SELECT id, tenant_id, quote_number, contact_id, quote_date, valid_until,
-		       status, currency, exchange_rate, subtotal, vat_amount, total,
-		       COALESCE(notes, ''), converted_to_order_id, converted_to_invoice_id,
-		       created_at, created_by, updated_at
-		FROM %s.quotes
-		WHERE tenant_id = $1
-	`, schemaName)
+func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, filter *QuoteFilter) ([]Quote, error) {
+	db, err := r.tenantTable(ctx, schemaName, "quotes")
+	if err != nil {
+		return nil, fmt.Errorf("qualify quotes table: %w", err)
+	}
 
-	args := []interface{}{tenantID}
-	argNum := 2
-
+	query := db.Where("tenant_id = ?", tenantID)
 	if filter != nil {
 		if filter.Status != "" {
-			query += fmt.Sprintf(" AND status = $%d", argNum)
-			args = append(args, filter.Status)
-			argNum++
+			query = query.Where("status = ?", string(filter.Status))
 		}
 		if filter.ContactID != "" {
-			query += fmt.Sprintf(" AND contact_id = $%d", argNum)
-			args = append(args, filter.ContactID)
-			argNum++
+			query = query.Where("contact_id = ?", filter.ContactID)
 		}
 		if filter.FromDate != nil {
-			query += fmt.Sprintf(" AND quote_date >= $%d", argNum)
-			args = append(args, filter.FromDate)
-			argNum++
+			query = query.Where("quote_date >= ?", filter.FromDate)
 		}
 		if filter.ToDate != nil {
-			query += fmt.Sprintf(" AND quote_date <= $%d", argNum)
-			args = append(args, filter.ToDate)
-			argNum++
+			query = query.Where("quote_date <= ?", filter.ToDate)
 		}
-		if filter.Search != "" {
-			query += fmt.Sprintf(" AND (quote_number ILIKE $%d)", argNum)
-			args = append(args, "%"+filter.Search+"%")
+		if strings.TrimSpace(filter.Search) != "" {
+			query = query.Where("quote_number ILIKE ?", "%"+strings.TrimSpace(filter.Search)+"%")
 		}
 	}
 
-	query += " ORDER BY quote_date DESC, quote_number DESC"
-
-	rows, err := r.db.Query(ctx, query, args...)
-	if err != nil {
+	var quoteModels []models.Quote
+	if err := query.
+		Order("quote_date DESC").
+		Order("quote_number DESC").
+		Find(&quoteModels).Error; err != nil {
 		return nil, fmt.Errorf("list quotes: %w", err)
 	}
-	defer rows.Close()
 
-	var quotes []Quote
-	for rows.Next() {
-		var q Quote
-		var validUntil *time.Time
-		if err := rows.Scan(
-			&q.ID, &q.TenantID, &q.QuoteNumber, &q.ContactID, &q.QuoteDate, &validUntil,
-			&q.Status, &q.Currency, &q.ExchangeRate, &q.Subtotal, &q.VATAmount, &q.Total,
-			&q.Notes, &q.ConvertedToOrderID, &q.ConvertedToInvoiceID,
-			&q.CreatedAt, &q.CreatedBy, &q.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan quote: %w", err)
-		}
-		q.ValidUntil = validUntil
-		quotes = append(quotes, q)
+	quotes := make([]Quote, len(quoteModels))
+	for i := range quoteModels {
+		quotes[i] = *quoteFromModel(&quoteModels[i])
 	}
-
 	return quotes, nil
 }
 
 // Update updates a quote and its lines
-func (r *PostgresRepository) Update(ctx context.Context, schemaName string, quote *Quote) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	result, err := tx.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.quotes
-		SET contact_id = $1, quote_date = $2, valid_until = $3, currency = $4,
-		    exchange_rate = $5, subtotal = $6, vat_amount = $7, total = $8,
-		    notes = $9, updated_at = $10
-		WHERE id = $11 AND tenant_id = $12 AND status = 'DRAFT'
-	`, schemaName),
-		quote.ContactID, quote.QuoteDate, quote.ValidUntil, quote.Currency,
-		quote.ExchangeRate, quote.Subtotal, quote.VATAmount, quote.Total,
-		quote.Notes, time.Now(), quote.ID, quote.TenantID,
-	)
-	if err != nil {
-		return fmt.Errorf("update quote: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		return ErrQuoteNotFound
-	}
-
-	// Delete existing lines and insert new ones
-	_, err = tx.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.quote_lines WHERE quote_id = $1`, schemaName), quote.ID)
-	if err != nil {
-		return fmt.Errorf("delete quote lines: %w", err)
-	}
-
-	for i := range quote.Lines {
-		line := &quote.Lines[i]
-		line.QuoteID = quote.ID
-
-		_, err = tx.Exec(ctx, fmt.Sprintf(`
-			INSERT INTO %s.quote_lines (
-				id, tenant_id, quote_id, line_number, description, quantity, unit,
-				unit_price, discount_percent, vat_rate, line_subtotal, line_vat, line_total,
-				product_id
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		`, schemaName),
-			line.ID, line.TenantID, line.QuoteID, line.LineNumber, line.Description,
-			line.Quantity, line.Unit, line.UnitPrice, line.DiscountPercent, line.VATRate,
-			line.LineSubtotal, line.LineVAT, line.LineTotal, line.ProductID,
-		)
+func (r *GORMRepository) Update(ctx context.Context, schemaName string, quote *Quote) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		quotesTable, err := database.TenantTable(tx, schemaName, "quotes")
 		if err != nil {
+			return fmt.Errorf("qualify quotes table: %w", err)
+		}
+		result := quotesTable.Where("id = ? AND tenant_id = ? AND status = ?", quote.ID, quote.TenantID, string(QuoteStatusDraft)).
+			Updates(map[string]interface{}{
+				"contact_id":    quote.ContactID,
+				"quote_date":    quote.QuoteDate,
+				"valid_until":   quote.ValidUntil,
+				"currency":      quote.Currency,
+				"exchange_rate": quote.ExchangeRate.String(),
+				"subtotal":      quote.Subtotal.String(),
+				"vat_amount":    quote.VATAmount.String(),
+				"total":         quote.Total.String(),
+				"notes":         quote.Notes,
+				"updated_at":    time.Now(),
+			})
+		if result.Error != nil {
+			return fmt.Errorf("update quote: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrQuoteNotFound
+		}
+
+		linesTable, err := database.TenantTable(tx, schemaName, "quote_lines")
+		if err != nil {
+			return fmt.Errorf("qualify quote lines table: %w", err)
+		}
+		if err := linesTable.Where("quote_id = ?", quote.ID).Delete(&models.QuoteLine{}).Error; err != nil {
+			return fmt.Errorf("delete quote lines: %w", err)
+		}
+		if len(quote.Lines) == 0 {
+			return nil
+		}
+
+		lineModels := make([]models.QuoteLine, len(quote.Lines))
+		for i := range quote.Lines {
+			quote.Lines[i].QuoteID = quote.ID
+			lineModels[i] = *quoteLineToModel(&quote.Lines[i])
+		}
+		if err := linesTable.Create(&lineModels).Error; err != nil {
 			return fmt.Errorf("insert quote line: %w", err)
 		}
-	}
-
-	return tx.Commit(ctx)
+		return nil
+	})
 }
 
 // UpdateStatus updates the status of a quote
-func (r *PostgresRepository) UpdateStatus(ctx context.Context, schemaName, tenantID, quoteID string, status QuoteStatus) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.quotes
-		SET status = $1, updated_at = $2
-		WHERE id = $3 AND tenant_id = $4
-	`, schemaName), status, time.Now(), quoteID, tenantID)
+func (r *GORMRepository) UpdateStatus(ctx context.Context, schemaName, tenantID, quoteID string, status QuoteStatus) error {
+	db, err := r.tenantTable(ctx, schemaName, "quotes")
 	if err != nil {
-		return fmt.Errorf("update status: %w", err)
+		return fmt.Errorf("qualify quotes table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ?", quoteID, tenantID).
+		Updates(map[string]interface{}{
+			"status":     string(status),
+			"updated_at": time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrQuoteNotFound
 	}
 	return nil
 }
 
 // Delete removes a quote (only drafts)
-func (r *PostgresRepository) Delete(ctx context.Context, schemaName, tenantID, quoteID string) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		DELETE FROM %s.quotes
-		WHERE id = $1 AND tenant_id = $2 AND status = 'DRAFT'
-	`, schemaName), quoteID, tenantID)
+func (r *GORMRepository) Delete(ctx context.Context, schemaName, tenantID, quoteID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "quotes")
 	if err != nil {
-		return fmt.Errorf("delete quote: %w", err)
+		return fmt.Errorf("qualify quotes table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ? AND status = ?", quoteID, tenantID, string(QuoteStatusDraft)).
+		Delete(&models.Quote{})
+	if result.Error != nil {
+		return fmt.Errorf("delete quote: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrQuoteNotFound
 	}
 	return nil
 }
 
 // GenerateNumber generates a new quote number
-func (r *PostgresRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string) (string, error) {
-	var seq int
-	err := r.db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COALESCE(MAX(CAST(SUBSTRING(quote_number FROM 'Q-([0-9]+)') AS INTEGER)), 0) + 1
-		FROM %s.quotes WHERE tenant_id = $1
-	`, schemaName), tenantID).Scan(&seq)
+func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantID string) (string, error) {
+	db, err := r.tenantTable(ctx, schemaName, "quotes")
 	if err != nil {
-		return "", fmt.Errorf("generate quote number: %w", err)
+		return "", fmt.Errorf("qualify quotes table: %w", err)
 	}
 
+	var seq int
+	if err := db.
+		Select(`
+			COALESCE(MAX(
+				CASE
+					WHEN quote_number ~ ? THEN CAST(SUBSTRING(quote_number FROM ?) AS INTEGER)
+					ELSE 0
+				END
+			), 0) + 1
+		`, "Q-[0-9]+$", "Q-([0-9]+)$").
+		Where("tenant_id = ?", tenantID).
+		Scan(&seq).Error; err != nil {
+		return "", fmt.Errorf("generate quote number: %w", err)
+	}
 	return fmt.Sprintf("Q-%05d", seq), nil
 }
 
 // SetConvertedToOrder marks a quote as converted to an order
-func (r *PostgresRepository) SetConvertedToOrder(ctx context.Context, schemaName, tenantID, quoteID, orderID string) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.quotes
-		SET status = $1, converted_to_order_id = $2, updated_at = $3
-		WHERE id = $4 AND tenant_id = $5
-	`, schemaName), QuoteStatusConverted, orderID, time.Now(), quoteID, tenantID)
+func (r *GORMRepository) SetConvertedToOrder(ctx context.Context, schemaName, tenantID, quoteID, orderID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "quotes")
 	if err != nil {
-		return fmt.Errorf("set converted to order: %w", err)
+		return fmt.Errorf("qualify quotes table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ?", quoteID, tenantID).
+		Updates(map[string]interface{}{
+			"status":                string(QuoteStatusConverted),
+			"converted_to_order_id": orderID,
+			"updated_at":            time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("set converted to order: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrQuoteNotFound
 	}
 	return nil
 }
 
 // SetConvertedToInvoice marks a quote as converted to an invoice
-func (r *PostgresRepository) SetConvertedToInvoice(ctx context.Context, schemaName, tenantID, quoteID, invoiceID string) error {
-	result, err := r.db.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s.quotes
-		SET status = $1, converted_to_invoice_id = $2, updated_at = $3
-		WHERE id = $4 AND tenant_id = $5
-	`, schemaName), QuoteStatusConverted, invoiceID, time.Now(), quoteID, tenantID)
+func (r *GORMRepository) SetConvertedToInvoice(ctx context.Context, schemaName, tenantID, quoteID, invoiceID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "quotes")
 	if err != nil {
-		return fmt.Errorf("set converted to invoice: %w", err)
+		return fmt.Errorf("qualify quotes table: %w", err)
 	}
-	if result.RowsAffected() == 0 {
+
+	result := db.Where("id = ? AND tenant_id = ?", quoteID, tenantID).
+		Updates(map[string]interface{}{
+			"status":                  string(QuoteStatusConverted),
+			"converted_to_invoice_id": invoiceID,
+			"updated_at":              time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("set converted to invoice: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
 		return ErrQuoteNotFound
 	}
 	return nil
+}
+
+func (r *GORMRepository) listQuoteLines(ctx context.Context, schemaName, tenantID, quoteID string) ([]QuoteLine, error) {
+	db, err := r.tenantTable(ctx, schemaName, "quote_lines")
+	if err != nil {
+		return nil, fmt.Errorf("qualify quote lines table: %w", err)
+	}
+
+	var lineModels []models.QuoteLine
+	if err := db.
+		Where("quote_id = ? AND tenant_id = ?", quoteID, tenantID).
+		Order("line_number ASC").
+		Find(&lineModels).Error; err != nil {
+		return nil, fmt.Errorf("get quote lines: %w", err)
+	}
+
+	lines := make([]QuoteLine, len(lineModels))
+	for i := range lineModels {
+		lines[i] = *quoteLineFromModel(&lineModels[i])
+	}
+	return lines, nil
+}
+
+func quoteToModel(quote *Quote) *models.Quote {
+	return &models.Quote{
+		ID:                   quote.ID,
+		TenantID:             quote.TenantID,
+		QuoteNumber:          quote.QuoteNumber,
+		ContactID:            quote.ContactID,
+		QuoteDate:            quote.QuoteDate,
+		ValidUntil:           quote.ValidUntil,
+		Status:               string(quote.Status),
+		Currency:             quote.Currency,
+		ExchangeRate:         models.Decimal{Decimal: quote.ExchangeRate},
+		Subtotal:             models.Decimal{Decimal: quote.Subtotal},
+		VATAmount:            models.Decimal{Decimal: quote.VATAmount},
+		Total:                models.Decimal{Decimal: quote.Total},
+		Notes:                quote.Notes,
+		ConvertedToOrderID:   quote.ConvertedToOrderID,
+		ConvertedToInvoiceID: quote.ConvertedToInvoiceID,
+		CreatedAt:            quote.CreatedAt,
+		CreatedBy:            quote.CreatedBy,
+		UpdatedAt:            quote.UpdatedAt,
+	}
+}
+
+func quoteFromModel(quote *models.Quote) *Quote {
+	return &Quote{
+		ID:                   quote.ID,
+		TenantID:             quote.TenantID,
+		QuoteNumber:          quote.QuoteNumber,
+		ContactID:            quote.ContactID,
+		QuoteDate:            quote.QuoteDate,
+		ValidUntil:           quote.ValidUntil,
+		Status:               QuoteStatus(quote.Status),
+		Currency:             quote.Currency,
+		ExchangeRate:         quote.ExchangeRate.Decimal,
+		Subtotal:             quote.Subtotal.Decimal,
+		VATAmount:            quote.VATAmount.Decimal,
+		Total:                quote.Total.Decimal,
+		Notes:                quote.Notes,
+		ConvertedToOrderID:   quote.ConvertedToOrderID,
+		ConvertedToInvoiceID: quote.ConvertedToInvoiceID,
+		CreatedAt:            quote.CreatedAt,
+		CreatedBy:            quote.CreatedBy,
+		UpdatedAt:            quote.UpdatedAt,
+	}
+}
+
+func quoteLineToModel(line *QuoteLine) *models.QuoteLine {
+	return &models.QuoteLine{
+		ID:              line.ID,
+		TenantID:        line.TenantID,
+		QuoteID:         line.QuoteID,
+		LineNumber:      line.LineNumber,
+		Description:     line.Description,
+		Quantity:        models.Decimal{Decimal: line.Quantity},
+		Unit:            line.Unit,
+		UnitPrice:       models.Decimal{Decimal: line.UnitPrice},
+		DiscountPercent: models.Decimal{Decimal: line.DiscountPercent},
+		VATRate:         models.Decimal{Decimal: line.VATRate},
+		LineSubtotal:    models.Decimal{Decimal: line.LineSubtotal},
+		LineVAT:         models.Decimal{Decimal: line.LineVAT},
+		LineTotal:       models.Decimal{Decimal: line.LineTotal},
+		ProductID:       line.ProductID,
+	}
+}
+
+func quoteLineFromModel(line *models.QuoteLine) *QuoteLine {
+	return &QuoteLine{
+		ID:              line.ID,
+		TenantID:        line.TenantID,
+		QuoteID:         line.QuoteID,
+		LineNumber:      line.LineNumber,
+		Description:     line.Description,
+		Quantity:        line.Quantity.Decimal,
+		Unit:            line.Unit,
+		UnitPrice:       line.UnitPrice.Decimal,
+		DiscountPercent: line.DiscountPercent.Decimal,
+		VATRate:         line.VATRate.Decimal,
+		LineSubtotal:    line.LineSubtotal.Decimal,
+		LineVAT:         line.LineVAT.Decimal,
+		LineTotal:       line.LineTotal.Decimal,
+		ProductID:       line.ProductID,
+	}
 }

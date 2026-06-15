@@ -14,23 +14,28 @@ const (
 
 // Payment represents a payment received or made (GORM model)
 type Payment struct {
-	ID             string      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	TenantID       string      `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	PaymentNumber  string      `gorm:"column:payment_number;size:50;not null" json:"payment_number"`
-	PaymentType    PaymentType `gorm:"column:payment_type;size:20;not null" json:"payment_type"`
-	ContactID      *string     `gorm:"column:contact_id;type:uuid;index" json:"contact_id,omitempty"`
-	PaymentDate    time.Time   `gorm:"column:payment_date;type:date;not null" json:"payment_date"`
-	Amount         Decimal     `gorm:"type:numeric(28,8);not null;default:0" json:"amount"`
-	Currency       string      `gorm:"size:3;not null;default:'EUR'" json:"currency"`
-	ExchangeRate   Decimal     `gorm:"column:exchange_rate;type:numeric(18,10);not null;default:1" json:"exchange_rate"`
-	BaseAmount     Decimal     `gorm:"column:base_amount;type:numeric(28,8);not null;default:0" json:"base_amount"`
-	PaymentMethod  string      `gorm:"column:payment_method;size:50" json:"payment_method,omitempty"`
-	BankAccount    string      `gorm:"column:bank_account;size:100" json:"bank_account,omitempty"`
-	Reference      string      `gorm:"size:255" json:"reference,omitempty"`
-	Notes          string      `gorm:"type:text" json:"notes,omitempty"`
-	JournalEntryID *string     `gorm:"column:journal_entry_id;type:uuid" json:"journal_entry_id,omitempty"`
-	CreatedAt      time.Time   `gorm:"not null;default:now()" json:"created_at"`
-	CreatedBy      string      `gorm:"type:uuid;not null" json:"created_by"`
+	ID                  string      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	TenantID            string      `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	PaymentNumber       string      `gorm:"column:payment_number;size:50;not null" json:"payment_number"`
+	PaymentType         PaymentType `gorm:"column:payment_type;size:20;not null" json:"payment_type"`
+	ContactID           *string     `gorm:"column:contact_id;type:uuid;index" json:"contact_id,omitempty"`
+	PaymentDate         time.Time   `gorm:"column:payment_date;type:date;not null" json:"payment_date"`
+	Amount              Decimal     `gorm:"type:numeric(28,8);not null;default:0" json:"amount"`
+	Currency            string      `gorm:"size:3;not null;default:'EUR'" json:"currency"`
+	ExchangeRate        Decimal     `gorm:"column:exchange_rate;type:numeric(18,10);not null;default:1" json:"exchange_rate"`
+	BaseAmount          Decimal     `gorm:"column:base_amount;type:numeric(28,8);not null;default:0" json:"base_amount"`
+	PaymentMethod       string      `gorm:"column:payment_method;size:50" json:"payment_method,omitempty"`
+	BankAccount         string      `gorm:"column:bank_account;size:100" json:"bank_account,omitempty"`
+	Reference           string      `gorm:"size:255" json:"reference,omitempty"`
+	Notes               string      `gorm:"type:text" json:"notes,omitempty"`
+	JournalEntryID      *string     `gorm:"column:journal_entry_id;type:uuid" json:"journal_entry_id,omitempty"`
+	ReversalOfPaymentID *string     `gorm:"column:reversal_of_payment_id;type:uuid;index" json:"reversal_of_payment_id,omitempty"`
+	ReversedByPaymentID *string     `gorm:"column:reversed_by_payment_id;type:uuid;index" json:"reversed_by_payment_id,omitempty"`
+	ReversedAt          *time.Time  `gorm:"column:reversed_at" json:"reversed_at,omitempty"`
+	ReversedBy          *string     `gorm:"column:reversed_by;type:uuid" json:"reversed_by,omitempty"`
+	ReversalReason      string      `gorm:"column:reversal_reason;type:text" json:"reversal_reason,omitempty"`
+	CreatedAt           time.Time   `gorm:"not null;default:now()" json:"created_at"`
+	CreatedBy           string      `gorm:"type:uuid;not null" json:"created_by"`
 
 	// Relations
 	Allocations []PaymentAllocation `gorm:"foreignKey:PaymentID" json:"allocations,omitempty"`

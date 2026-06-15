@@ -14,7 +14,9 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -413,6 +415,46 @@ func TestCreateInvoice(t *testing.T) {
 			},
 		},
 		{
+			name:     "create reverse-charge purchase invoice",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"invoice_type": "PURCHASE",
+				"contact_id":   "supplier-1",
+				"issue_date":   "2026-01-15T00:00:00Z",
+				"due_date":     "2026-02-15T00:00:00Z",
+				"currency":     "EUR",
+				"lines": []map[string]interface{}{
+					{
+						"description":   "EU service",
+						"quantity":      "1",
+						"unit_price":    "100.00",
+						"vat_rate":      "22",
+						"vat_treatment": "REVERSE_CHARGE",
+					},
+				},
+			},
+			setupMock: func(tr *mockTenantRepository, ir *mockInvoicingRepository) {
+				tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+			},
+			wantStatus: http.StatusCreated,
+			checkResponse: func(t *testing.T, resp map[string]interface{}) {
+				assert.Equal(t, "PURCHASE", resp["invoice_type"])
+				assert.Equal(t, float64(0), resp["vat_amount"])
+				assert.Equal(t, float64(100), resp["total"])
+				lines, ok := resp["lines"].([]interface{})
+				require.True(t, ok)
+				require.Len(t, lines, 1)
+				line, ok := lines[0].(map[string]interface{})
+				require.True(t, ok)
+				assert.Equal(t, "REVERSE_CHARGE", line["vat_treatment"])
+			},
+		},
+		{
 			name:     "missing contact_id",
 			tenantID: "tenant-1",
 			claims: &auth.Claims{
@@ -634,6 +676,113 @@ func TestImportInvoices(t *testing.T) {
 	}
 }
 
+func TestImportEInvoice(t *testing.T) {
+	h, tenantRepo, invoiceRepo, contactsRepo := setupInvoiceImportTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	contact := contactsRepo.addTestContact("supplier-1", "tenant-1", "Supplier OÜ", contacts.ContactTypeSupplier, true)
+	contact.RegCode = "12345678"
+	contact.VATNumber = "EE12345678"
+
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/import-einvoice", map[string]interface{}{
+		"file_name":   "supplier.xml",
+		"xml_content": handlerEInvoiceXML(),
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.ImportEInvoice(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var resp invoicing.ImportInvoicesResult
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "supplier.xml", resp.FileName)
+	assert.Equal(t, 1, resp.RowsProcessed)
+	assert.Equal(t, 1, resp.InvoicesCreated)
+	assert.Equal(t, 1, resp.LinesImported)
+	assert.Zero(t, resp.RowsSkipped)
+
+	require.Len(t, invoiceRepo.invoices, 1)
+	for _, invoice := range invoiceRepo.invoices {
+		assert.Equal(t, "BILL-2026-001", invoice.InvoiceNumber)
+		assert.Equal(t, invoicing.InvoiceTypePurchase, invoice.InvoiceType)
+		assert.Equal(t, "supplier-1", invoice.ContactID)
+	}
+}
+
+func TestImportEInvoiceRejectsMissingXML(t *testing.T) {
+	h, tenantRepo, _, _ := setupInvoiceImportTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/import-einvoice", map[string]interface{}{
+		"file_name": "supplier.xml",
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+
+	h.ImportEInvoice(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Contains(t, resp["error"], "xml_content is required")
+}
+
+func handlerEInvoiceXML() string {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<E_Invoice>
+  <Header>
+    <Date>2026-03-15</Date>
+    <FileId>file-1</FileId>
+    <Version>1.2</Version>
+  </Header>
+  <Invoice invoiceId="BILL-2026-001" regNumber="87654321" sellerRegnumber="12345678">
+    <InvoiceParties>
+      <SellerParty>
+        <Name>Supplier OÜ</Name>
+        <RegNumber>12345678</RegNumber>
+        <VATRegNumber>EE12345678</VATRegNumber>
+      </SellerParty>
+      <BuyerParty>
+        <Name>Buyer OÜ</Name>
+        <RegNumber>87654321</RegNumber>
+      </BuyerParty>
+    </InvoiceParties>
+    <InvoiceInformation>
+      <Type type="DEB"></Type>
+      <DocumentName>Invoice</DocumentName>
+      <InvoiceNumber>BILL-2026-001</InvoiceNumber>
+      <InvoiceContentText>Office supplies</InvoiceContentText>
+      <PaymentReferenceNumber>RF18539007547034</PaymentReferenceNumber>
+      <InvoiceDate>2026-03-15</InvoiceDate>
+      <DueDate>2026-03-29</DueDate>
+    </InvoiceInformation>
+    <InvoiceSumGroup>
+      <Currency>EUR</Currency>
+    </InvoiceSumGroup>
+    <InvoiceItem>
+      <InvoiceItemGroup>
+        <ItemEntry>
+          <Description>Office chairs</Description>
+          <ItemDetailInfo>
+            <ItemUnit>pcs</ItemUnit>
+            <ItemAmount>2</ItemAmount>
+            <ItemPrice>100.00</ItemPrice>
+          </ItemDetailInfo>
+          <VAT><VATRate>22</VATRate></VAT>
+        </ItemEntry>
+      </InvoiceItemGroup>
+    </InvoiceItem>
+    <PaymentInfo>
+      <Currency>EUR</Currency>
+      <PayDueDate>2026-03-29</PayDueDate>
+      <PaymentId>RF18539007547034</PaymentId>
+    </PaymentInfo>
+  </Invoice>
+</E_Invoice>`
+}
+
 // =============================================================================
 // GetInvoice Handler Tests
 // =============================================================================
@@ -733,6 +882,53 @@ func TestGetInvoice(t *testing.T) {
 	}
 }
 
+func TestGetInvoicePDF(t *testing.T) {
+	h, tenantRepo, invoiceRepo := setupInvoiceTestHandlers()
+	h.pdfService = pdf.NewService()
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	tenantRecord.Settings.RegCode = "12345678"
+
+	invoice := invoiceRepo.addTestInvoice("inv-pdf", "tenant-1", "contact-1", invoicing.InvoiceTypeSales, invoicing.StatusSent)
+	invoice.InvoiceNumber = "INV-PDF-001"
+	invoice.Contact = &contacts.Contact{
+		ID:          "contact-1",
+		Name:        "Acme OU",
+		Email:       "billing@example.com",
+		CountryCode: "EE",
+	}
+	invoice.IssueDate = time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	invoice.DueDate = time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)
+	invoice.Subtotal = decimal.NewFromInt(100)
+	invoice.VATAmount = decimal.NewFromInt(22)
+	invoice.Total = decimal.NewFromInt(122)
+	invoice.Lines = []invoicing.InvoiceLine{{
+		ID:           "line-1",
+		TenantID:     "tenant-1",
+		InvoiceID:    "inv-pdf",
+		LineNumber:   1,
+		Description:  "Consulting",
+		Quantity:     decimal.NewFromInt(1),
+		Unit:         "hour",
+		UnitPrice:    decimal.NewFromInt(100),
+		VATRate:      decimal.NewFromInt(22),
+		VATTreatment: invoicing.VATTreatmentStandard,
+		LineSubtotal: decimal.NewFromInt(100),
+		LineVAT:      decimal.NewFromInt(22),
+		LineTotal:    decimal.NewFromInt(122),
+	}}
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/invoices/inv-pdf/pdf", nil, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invoiceID": "inv-pdf"})
+	rr := httptest.NewRecorder()
+
+	h.GetInvoicePDF(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), `invoice-INV-PDF-001.pdf`)
+	requirePDF(t, rr.Body.Bytes())
+}
+
 // =============================================================================
 // SendInvoice Handler Tests
 // =============================================================================
@@ -819,6 +1015,84 @@ func TestSendInvoice(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSendPurchaseInvoiceRequiresApprovedEvidence(t *testing.T) {
+	h, tenantRepo, invoiceRepo := setupInvoiceTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	invoiceRepo.addTestInvoice("bill-1", "tenant-1", "supplier-1", invoicing.InvoiceTypePurchase, invoicing.StatusDraft)
+
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/bill-1/send", nil, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invoiceID": "bill-1"})
+	w := httptest.NewRecorder()
+
+	h.SendInvoice(w, req)
+
+	assertPurchaseInvoiceEvidenceConflict(t, w, "bill-1")
+	assert.Equal(t, invoicing.StatusDraft, invoiceRepo.invoices["bill-1"].Status)
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeInvoice,
+		EntityID:     "bill-1",
+		DocumentType: documents.DocumentTypeReceipt,
+		ReviewStatus: documents.ReviewStatusApproved,
+	}
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/bill-1/send", nil, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invoiceID": "bill-1"})
+	w = httptest.NewRecorder()
+
+	h.SendInvoice(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	assert.Equal(t, invoicing.StatusSent, invoiceRepo.invoices["bill-1"].Status)
+}
+
+func TestEmailPurchaseInvoiceRequiresApprovedEvidence(t *testing.T) {
+	h, tenantRepo, invoiceRepo := setupInvoiceTestHandlers()
+	h.documentsService = documents.NewService(newMockDocumentRepository(), nil)
+
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	invoiceRepo.addTestInvoice("bill-1", "tenant-1", "supplier-1", invoicing.InvoiceTypePurchase, invoicing.StatusDraft)
+
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/bill-1/email", map[string]any{
+		"recipient_email": "supplier@example.com",
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invoiceID": "bill-1"})
+	w := httptest.NewRecorder()
+
+	h.EmailInvoice(w, req)
+
+	assertPurchaseInvoiceEvidenceConflict(t, w, "bill-1")
+	assert.Equal(t, invoicing.StatusDraft, invoiceRepo.invoices["bill-1"].Status)
+}
+
+func assertPurchaseInvoiceEvidenceConflict(t *testing.T, w *httptest.ResponseRecorder, invoiceID string) {
+	t.Helper()
+
+	assert.Equal(t, http.StatusConflict, w.Code, "response body: %s", w.Body.String())
+
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, "approved purchase-invoice evidence is required")
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeInvoice, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, invoiceID, conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
+	assert.Equal(t, "oa documents upload --entity-type invoice --entity-id "+invoiceID+" --document-type receipt --file <file>", conflict.RemediationActions[0].CLICommand)
 }
 
 // =============================================================================

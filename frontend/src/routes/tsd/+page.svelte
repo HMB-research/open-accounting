@@ -12,6 +12,7 @@
 	let selectedDeclaration = $state<TSDDeclaration | null>(null);
 	let emtaReference = $state('');
 	let filterYear = $state(new Date().getFullYear());
+	let isSubmitting = $state(false);
 
 	function getMonthName(month: number): string {
 		switch (month) {
@@ -79,11 +80,32 @@
 		showSubmitModal = true;
 	}
 
+	function closeSubmitModal() {
+		showSubmitModal = false;
+		selectedDeclaration = null;
+		emtaReference = '';
+		isSubmitting = false;
+	}
+
+	function closeOnBackdropClick(event: MouseEvent, close: () => void) {
+		if (event.target === event.currentTarget) {
+			close();
+		}
+	}
+
+	function closeOnEscape(event: KeyboardEvent, close: () => void) {
+		if (event.key === 'Escape') {
+			close();
+		}
+	}
+
 	async function markAsSubmitted(e: Event) {
 		e.preventDefault();
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (!tenantId || !selectedDeclaration) return;
 
+		isSubmitting = true;
+		error = '';
 		try {
 			await api.markTSDSubmitted(
 				tenantId,
@@ -93,9 +115,11 @@
 			);
 			// Reload declarations to get updated status
 			await loadDeclarations(tenantId);
-			showSubmitModal = false;
+			closeSubmitModal();
 		} catch (err) {
 			error = err instanceof Error ? err.message : m.tsd_failedToMarkSubmitted();
+		} finally {
+			isSubmitting = false;
 		}
 	}
 
@@ -161,7 +185,7 @@
 		<div class="filter-row">
 			<label class="label" for="yearFilter">{m.tsd_year()}</label>
 			<select class="input" id="yearFilter" bind:value={filterYear} onchange={handleYearChange}>
-				{#each Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i) as year}
+				{#each Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i) as year (year)}
 					<option value={year}>{year}</option>
 				{/each}
 			</select>
@@ -199,7 +223,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each declarations as declaration}
+					{#each declarations as declaration (declaration.id)}
 						{@const totalTaxes = new Decimal(declaration.total_income_tax)
 							.add(new Decimal(declaration.total_social_tax))
 							.add(new Decimal(declaration.total_unemployment_employer))
@@ -296,12 +320,15 @@
 </div>
 
 {#if showSubmitModal && selectedDeclaration}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showSubmitModal = false)} role="presentation">
+	<div
+		class="modal-backdrop"
+		onclick={(event) => closeOnBackdropClick(event, closeSubmitModal)}
+		onkeydown={(event) => closeOnEscape(event, closeSubmitModal)}
+		role="presentation"
+		tabindex="-1"
+	>
 		<div
 			class="modal card"
-			onclick={(e) => e.stopPropagation()}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="submit-title"
@@ -333,11 +360,14 @@
 					<button
 						type="button"
 						class="btn btn-secondary"
-						onclick={() => (showSubmitModal = false)}
+						onclick={closeSubmitModal}
+						disabled={isSubmitting}
 					>
 						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">{m.tsd_markSubmitted()}</button>
+					<button type="submit" class="btn btn-primary" disabled={isSubmitting}>
+						{m.tsd_markSubmitted()}
+					</button>
 				</div>
 			</form>
 		</div>

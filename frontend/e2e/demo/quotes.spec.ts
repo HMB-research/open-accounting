@@ -1,104 +1,294 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { ensureAuthenticated, navigateTo } from "./utils";
 
-test.describe('Quotes View', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
-		await ensureAuthenticated(page, testInfo);
-		await ensureDemoTenant(page, testInfo);
-	});
+interface QuoteResponse {
+  id: string;
+  quote_number: string;
+  status: string;
+}
 
-	test('displays quotes page with correct structure', async ({ page }, testInfo) => {
-		await navigateTo(page, '/quotes', testInfo);
+interface QuoteInvoiceConversionResponse {
+  quote: QuoteResponse;
+  invoice: {
+    id: string;
+    invoice_number: string;
+    reference?: string;
+    status: string;
+  };
+}
 
-		// Wait for page to load - heading should be visible
-		await expect(page.getByRole('heading', { name: /quotes/i })).toBeVisible();
+function responsePath(responseUrl: string) {
+  return new URL(responseUrl).pathname;
+}
 
-		// Wait for page content to load
-		await page.waitForTimeout(2000);
+async function waitForQuotesAndContacts(page: Page) {
+  const quotesResponsePromise = page.waitForResponse((response) => {
+    return (
+      response.request().method() === "GET" &&
+      /\/api\/v1\/tenants\/[^/]+\/quotes$/.test(responsePath(response.url()))
+    );
+  });
+  const contactsResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      /\/api\/v1\/tenants\/[^/]+\/contacts$/.test(url.pathname) &&
+      url.searchParams.get("active_only") === "true"
+    );
+  });
 
-		// Check for page content (table, empty state, or content area)
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
+  const [quotesResponse, contactsResponse] = await Promise.all([
+    quotesResponsePromise,
+    contactsResponsePromise,
+  ]);
+  expect(quotesResponse.ok()).toBeTruthy();
+  expect(contactsResponse.ok()).toBeTruthy();
+}
 
-		// If table has data, verify it's displaying correctly
-		if (hasTable) {
-			const rows = table.locator('tbody tr');
-			const count = await rows.count();
-			if (count > 0) {
-				// Should have quote number pattern visible
-				const hasQuoteNumber = await page.getByText(/QT-\d{4}-\d{3}/i).isVisible().catch(() => false);
-				if (hasQuoteNumber) {
-					expect(hasQuoteNumber).toBe(true);
-				}
-			}
-		}
+async function waitForQuotesLoaded(page: Page) {
+  await expect(async () => {
+    const isLoading = await page
+      .getByText(/^Loading\.\.\.$/i)
+      .first()
+      .isVisible()
+      .catch(() => false);
+    const hasTable = await page
+      .locator("table tbody tr")
+      .first()
+      .isVisible()
+      .catch(() => false);
+    const hasEmpty = await page
+      .locator(".empty-state")
+      .isVisible()
+      .catch(() => false);
+    expect(isLoading === false && (hasTable || hasEmpty)).toBeTruthy();
+  }).toPass({ timeout: 15000 });
+}
 
-		// Page loaded successfully if we got here
-		expect(true).toBe(true);
-	});
+async function openQuotes(page: Page, testInfo: TestInfo) {
+  const loadedPromise = waitForQuotesAndContacts(page);
+  await navigateTo(page, "/quotes", testInfo, { waitForNetworkIdle: false });
+  await loadedPromise;
+  await waitForQuotesLoaded(page);
+}
 
-	test('displays quote statuses in table when data exists', async ({ page }, testInfo) => {
-		await navigateTo(page, '/quotes', testInfo);
-		await expect(page.getByRole('heading', { name: /quotes/i })).toBeVisible();
+function quoteRow(page: Page, quoteNumber: string) {
+  return page.locator("table tbody tr").filter({ hasText: quoteNumber });
+}
 
-		// Wait for data to load
-		await page.waitForTimeout(2000);
+function statusFilter(page: Page) {
+  return page.locator(".filters select").first();
+}
 
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
+async function selectStatusFilter(page: Page, status: string) {
+  const loadedPromise = waitForQuotesAndContacts(page);
+  await statusFilter(page).selectOption(status);
+  await loadedPromise;
+  await waitForQuotesLoaded(page);
+}
 
-		if (hasTable) {
-			const rows = table.locator('tbody tr');
-			const count = await rows.count();
+async function createQuote(page: Page, label: string): Promise<QuoteResponse> {
+  const unique = Date.now().toString(36);
+  await page
+    .getByRole("button", { name: /new quote|uus pakkumine|\+/i })
+    .click();
 
-			// Only check statuses if we have data
-			if (count > 0) {
-				// Status badges should be visible in table rows (case insensitive)
-				const statusTexts = ['draft', 'sent', 'converted', 'accepted', 'rejected', 'expired'];
-				let foundStatus = false;
-				for (const status of statusTexts) {
-					const hasStatus = await table.getByText(new RegExp(status, 'i')).first().isVisible().catch(() => false);
-					if (hasStatus) {
-						foundStatus = true;
-						break;
-					}
-				}
-				expect(foundStatus).toBe(true);
-			}
-		}
-	});
+  const modal = page.getByRole("dialog", { name: /new quote|uus pakkumine/i });
+  await expect(modal).toBeVisible({ timeout: 5000 });
+  await modal.locator("#contact").selectOption({ index: 1 });
+  await modal
+    .locator(".line-description")
+    .fill(`${label} service ${unique}`);
+  await modal.locator(".line-qty").fill("2");
+  await modal.locator(".line-price").fill("125");
+  await modal.locator(".line-vat").fill("22");
+  await modal.locator("#notes").fill(`${label} E2E ${unique}`);
 
-	test('can filter quotes by status', async ({ page }, testInfo) => {
-		await navigateTo(page, '/quotes', testInfo);
+  const createResponsePromise = page.waitForResponse((response) => {
+    return (
+      response.request().method() === "POST" &&
+      /\/api\/v1\/tenants\/[^/]+\/quotes$/.test(responsePath(response.url()))
+    );
+  });
+  await modal
+    .getByRole("button", { name: /create quote|loo pakkumine/i })
+    .click();
+  const createResponse = await createResponsePromise;
+  expect(createResponse.status()).toBe(201);
+  const quote = (await createResponse.json()) as QuoteResponse;
 
-		// Find and use the status filter
-		const statusFilter = page.locator('select').first();
+  const row = quoteRow(page, quote.quote_number);
+  await expect(row).toBeVisible({ timeout: 10000 });
+  await expect(row).toContainText(/draft|mustand/i);
 
-		if (await statusFilter.isVisible().catch(() => false)) {
-			// Get initial row count
-			await page.waitForTimeout(1000);
-			const initialRows = await page.locator('table tbody tr').count().catch(() => 0);
+  return quote;
+}
 
-			// Select a filter option
-			await statusFilter.selectOption({ index: 1 });
+async function waitForQuoteActionReload(page: Page, action: () => Promise<void>) {
+  const loadedPromise = waitForQuotesAndContacts(page);
+  await action();
+  await loadedPromise;
+}
 
-			// Wait for filter to apply
-			await page.waitForTimeout(1000);
+test.describe("Quotes View", () => {
+  test("covers quote table, filters, deletion, and invoice conversion", async ({
+    page,
+  }, testInfo) => {
+    await ensureAuthenticated(page, testInfo);
+    await openQuotes(page, testInfo);
 
-			// Filter should work (even if count is 0 or same)
-			const filteredRows = await page.locator('table tbody tr').count().catch(() => 0);
-			// Just verify the filter doesn't cause errors
-			expect(filteredRows).toBeGreaterThanOrEqual(0);
-		}
-	});
+    await expect(
+      page.getByRole("heading", { name: /quotes|pakkumised/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /new quote|uus pakkumine|\+/i }),
+    ).toBeVisible();
+    await expect(page.locator("table tbody tr").first()).toBeVisible();
+    await expect(page.locator("table")).toContainText(
+      /draft|sent|accepted|converted|mustand|saadetud|kinnitatud|teisendatud/i,
+    );
 
-	test('has New Quote button', async ({ page }, testInfo) => {
-		await navigateTo(page, '/quotes', testInfo);
+    const filteredQuote = await createQuote(page, "Quote filter");
 
-		// Verify New button exists
-		const newButton = page.getByRole('button', { name: /new|create|add/i }).or(
-			page.getByRole('link', { name: /new|create|add/i })
-		);
-		await expect(newButton).toBeVisible();
-	});
+    await selectStatusFilter(page, "DRAFT");
+    await expect(quoteRow(page, filteredQuote.quote_number)).toBeVisible({
+      timeout: 10000,
+    });
+
+    await selectStatusFilter(page, "SENT");
+    await expect(quoteRow(page, filteredQuote.quote_number)).toHaveCount(0);
+
+    await selectStatusFilter(page, "");
+    const filteredQuoteRow = quoteRow(page, filteredQuote.quote_number);
+    await expect(filteredQuoteRow).toBeVisible({ timeout: 10000 });
+    page.once("dialog", (dialog) => dialog.accept());
+    const deleteResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "DELETE" &&
+        response.url().includes(`/quotes/${filteredQuote.id}`)
+      );
+    });
+    await filteredQuoteRow
+      .getByRole("button", { name: /delete|kustuta/i })
+      .click();
+    const deleteResponse = await deleteResponsePromise;
+    expect(deleteResponse.ok()).toBeTruthy();
+    await expect(filteredQuoteRow).toHaveCount(0);
+
+    const conversionQuote = await createQuote(page, "Quote conversion");
+    const conversionRow = quoteRow(page, conversionQuote.quote_number);
+
+    const quoteDownloadPromise = page.waitForEvent("download");
+    await conversionRow.getByRole("button", { name: /^PDF$/i }).click();
+    const quoteDownload = await quoteDownloadPromise;
+    expect(quoteDownload.suggestedFilename()).toContain(
+      conversionQuote.quote_number,
+    );
+
+    let quoteEmailPayload: Record<string, unknown> | undefined;
+    await page.route(
+      (url) =>
+        url.pathname.includes(`/quotes/${conversionQuote.id}/email`),
+      async (route) => {
+        quoteEmailPayload = route.request().postDataJSON() as Record<
+          string,
+          unknown
+        >;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: true,
+            log_id: "quote-email-e2e",
+            message: "Email sent successfully",
+          }),
+        });
+      },
+    );
+
+    await conversionRow.getByRole("button", { name: /email|e-post/i }).click();
+    const quoteEmailModal = page.getByRole("dialog", {
+      name: /email quote|saada pakkumine/i,
+    });
+    await expect(quoteEmailModal).toBeVisible();
+    await quoteEmailModal.locator("#quote-email-recipient").fill("quote-e2e@example.com");
+    await quoteEmailModal.locator("#quote-email-name").fill("Quote E2E");
+    const emailReloadPromise = waitForQuotesAndContacts(page);
+    await quoteEmailModal
+      .getByRole("button", { name: /email|e-post/i })
+      .click();
+    await emailReloadPromise;
+    expect(quoteEmailPayload).toMatchObject({
+      recipient_email: "quote-e2e@example.com",
+      recipient_name: "Quote E2E",
+      attach_pdf: true,
+      require_approved_evidence: false,
+    });
+    await expect(page.getByText(/quote email sent|pakkumise e-kiri saadetud/i)).toBeVisible();
+
+    const sendResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "POST" &&
+        response.url().includes(`/quotes/${conversionQuote.id}/send`)
+      );
+    });
+    await waitForQuoteActionReload(page, () =>
+      conversionRow.getByRole("button", { name: /send|saada/i }).click(),
+    );
+    const sendResponse = await sendResponsePromise;
+    expect(sendResponse.ok()).toBeTruthy();
+    await expect(conversionRow).toContainText(/sent|saadetud/i, {
+      timeout: 10000,
+    });
+
+    const acceptResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "POST" &&
+        response.url().includes(`/quotes/${conversionQuote.id}/accept`)
+      );
+    });
+    await waitForQuoteActionReload(page, () =>
+      conversionRow.getByRole("button", { name: /accept|kinnita/i }).click(),
+    );
+    const acceptResponse = await acceptResponsePromise;
+    expect(acceptResponse.ok()).toBeTruthy();
+    await expect(conversionRow).toContainText(/accepted|kinnitatud/i, {
+      timeout: 10000,
+    });
+    await expect(
+      conversionRow.getByRole("button", {
+        name: /convert to invoice|teisenda arveks/i,
+      }),
+    ).toBeVisible();
+
+    const conversionResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "POST" &&
+        response
+          .url()
+          .includes(`/quotes/${conversionQuote.id}/convert-to-invoice`)
+      );
+    });
+    await waitForQuoteActionReload(page, () =>
+      conversionRow
+        .getByRole("button", {
+          name: /convert to invoice|teisenda arveks/i,
+        })
+        .click(),
+    );
+    const conversionResponse = await conversionResponsePromise;
+    expect(conversionResponse.status()).toBe(201);
+    const result =
+      (await conversionResponse.json()) as QuoteInvoiceConversionResponse;
+    expect(result.quote.status).toBe("CONVERTED");
+    expect(result.quote.quote_number).toBe(conversionQuote.quote_number);
+    expect(result.invoice.id).toBeTruthy();
+    expect(result.invoice.invoice_number).toBeTruthy();
+    expect(result.invoice.reference).toBe(conversionQuote.quote_number);
+    expect(result.invoice.status).toBe("DRAFT");
+
+    await expect(conversionRow).toContainText(/converted|teisendatud/i, {
+      timeout: 10000,
+    });
+  });
 });

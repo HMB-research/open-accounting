@@ -1,3 +1,5 @@
+//go:build integration
+
 package accounting
 
 import (
@@ -5,10 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
+	"github.com/HMB-research/open-accounting/internal/models"
+	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
-
-	"github.com/HMB-research/open-accounting/internal/testutil"
 )
 
 func TestCostCenterRepository_CRUDAndReportData(t *testing.T) {
@@ -70,14 +73,43 @@ func TestCostCenterRepository_CRUDAndReportData(t *testing.T) {
 	start := time.Now().AddDate(0, -1, 0).Truncate(24 * time.Hour)
 	inRangeDate := start.AddDate(0, 0, 5)
 	outOfRangeDate := start.AddDate(0, -2, 0)
-	if _, err := pool.Exec(ctx, `
-		INSERT INTO `+tenant.SchemaName+`.cost_allocations (
-			id, tenant_id, cost_center_id, journal_entry_line_id, amount, allocation_date, notes
-		) VALUES ($1, $2, $3, $4, $5, $6, $7), ($8, $2, $3, $9, $10, $11, $12)
-	`,
-		uuid.New().String(), tenant.ID, cc.ID, uuid.New().String(), decimal.NewFromInt(250), inRangeDate, "in range",
-		uuid.New().String(), uuid.New().String(), decimal.NewFromInt(999), outOfRangeDate, "out of range",
-	); err != nil {
+
+	percentage := decimal.NewFromInt(50)
+	createdAllocation := &CostAllocation{
+		TenantID:             tenant.ID,
+		CostCenterID:         cc.ID,
+		JournalEntryLineID:   uuid.New().String(),
+		Amount:               decimal.NewFromInt(250),
+		AllocationPercentage: &percentage,
+		AllocationDate:       inRangeDate,
+		Notes:                "in range",
+	}
+	if err := repo.CreateAllocation(ctx, tenant.SchemaName, createdAllocation); err != nil {
+		t.Fatalf("CreateAllocation failed: %v", err)
+	}
+	if createdAllocation.ID == "" {
+		t.Fatal("expected cost allocation ID to be populated")
+	}
+
+	gormDB, err := database.NewGormDBFromPool(ctx, pool)
+	if err != nil {
+		t.Fatalf("failed to create gorm db: %v", err)
+	}
+	allocationsTable, err := database.TenantTable(gormDB, tenant.SchemaName, "cost_allocations")
+	if err != nil {
+		t.Fatalf("failed to qualify cost allocations table: %v", err)
+	}
+	if err := allocationsTable.Create([]models.CostAllocation{
+		{
+			ID:                 uuid.New().String(),
+			TenantID:           tenant.ID,
+			CostCenterID:       cc.ID,
+			JournalEntryLineID: uuid.New().String(),
+			Amount:             models.NewDecimal(decimal.NewFromInt(999)),
+			AllocationDate:     outOfRangeDate,
+			Notes:              "out of range",
+		},
+	}).Error; err != nil {
 		t.Fatalf("failed to seed cost allocations: %v", err)
 	}
 
@@ -89,11 +121,33 @@ func TestCostCenterRepository_CRUDAndReportData(t *testing.T) {
 		t.Fatalf("expected in-range expenses of 250, got %s", expenses)
 	}
 
+	allocations, err := repo.ListAllocations(ctx, tenant.SchemaName, tenant.ID, CostAllocationFilters{
+		CostCenterID: cc.ID,
+		StartDate:    &start,
+		EndDate:      &inRangeDate,
+	})
+	if err != nil {
+		t.Fatalf("ListAllocations failed: %v", err)
+	}
+	if len(allocations) != 1 {
+		t.Fatalf("expected 1 in-range allocation, got %d", len(allocations))
+	}
+	if allocations[0].CostCenterCode != "ADMIN" || allocations[0].CostCenterName != "Administration and HR" {
+		t.Fatalf("expected joined cost center fields, got %+v", allocations[0])
+	}
+	if !allocations[0].Amount.Equal(decimal.NewFromInt(250)) {
+		t.Fatalf("expected allocation amount 250, got %s", allocations[0].Amount)
+	}
+
 	if err := repo.Delete(ctx, tenant.SchemaName, tenant.ID, cc.ID); err == nil {
 		t.Fatal("expected delete to fail while allocations exist")
 	}
 
-	if _, err := pool.Exec(ctx, `DELETE FROM `+tenant.SchemaName+`.cost_allocations WHERE cost_center_id = $1`, cc.ID); err != nil {
+	allocationsTableName, err := database.QualifiedTable(tenant.SchemaName, "cost_allocations")
+	if err != nil {
+		t.Fatalf("failed to qualify cost allocations table: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "DELETE FROM "+allocationsTableName+" WHERE tenant_id = $1 AND cost_center_id = $2", tenant.ID, cc.ID); err != nil {
 		t.Fatalf("failed to remove test allocations: %v", err)
 	}
 

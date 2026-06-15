@@ -1,3 +1,5 @@
+//go:build integration
+
 package accounting
 
 import (
@@ -8,6 +10,8 @@ import (
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPostgresRepository_VoidJournalEntry(t *testing.T) {
@@ -224,6 +228,111 @@ func TestPostgresRepository_CreateJournalEntry(t *testing.T) {
 	}
 }
 
+func TestPostgresRepository_JournalEntryTemplates(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "journal-template-"+uuid.New().String()[:8]+"@example.com")
+	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	var cashAccountID, expenseAccountID string
+	err := pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '1000' LIMIT 1
+	`).Scan(&cashAccountID)
+	if err != nil {
+		t.Fatalf("failed to get cash account: %v", err)
+	}
+	err = pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '5000' LIMIT 1
+	`).Scan(&expenseAccountID)
+	if err != nil {
+		t.Fatalf("failed to get expense account: %v", err)
+	}
+
+	startDate := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
+	template := &JournalEntryTemplate{
+		ID:                 uuid.New().String(),
+		TenantID:           tenant.ID,
+		Name:               "Monthly office supplies",
+		Description:        "Monthly office supplies accrual",
+		Reference:          "SUPPLIES",
+		IsActive:           true,
+		Frequency:          JournalEntryTemplateFrequencyMonthly,
+		StartDate:          &startDate,
+		NextGenerationDate: &startDate,
+		CreatedAt:          time.Now(),
+		CreatedBy:          userID,
+		UpdatedAt:          time.Now(),
+		Lines: []JournalEntryTemplateLine{
+			{
+				ID:           uuid.New().String(),
+				LineNumber:   1,
+				AccountID:    expenseAccountID,
+				Description:  "Office supplies",
+				DebitAmount:  decimal.RequireFromString("75.00"),
+				CreditAmount: decimal.Zero,
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+			},
+			{
+				ID:           uuid.New().String(),
+				LineNumber:   2,
+				AccountID:    cashAccountID,
+				Description:  "Cash",
+				DebitAmount:  decimal.Zero,
+				CreditAmount: decimal.RequireFromString("75.00"),
+				Currency:     "EUR",
+				ExchangeRate: decimal.NewFromInt(1),
+			},
+		},
+	}
+
+	if err := repo.CreateJournalEntryTemplate(ctx, tenant.SchemaName, template); err != nil {
+		t.Fatalf("CreateJournalEntryTemplate failed: %v", err)
+	}
+
+	templates, err := repo.ListJournalEntryTemplates(ctx, tenant.SchemaName, tenant.ID, true)
+	if err != nil {
+		t.Fatalf("ListJournalEntryTemplates failed: %v", err)
+	}
+	if len(templates) != 1 || templates[0].LineCount != 2 {
+		t.Fatalf("expected one template with two lines, got %#v", templates)
+	}
+
+	reloaded, err := repo.GetJournalEntryTemplateByID(ctx, tenant.SchemaName, tenant.ID, template.ID)
+	if err != nil {
+		t.Fatalf("GetJournalEntryTemplateByID failed: %v", err)
+	}
+	if reloaded.Name != template.Name || len(reloaded.Lines) != 2 {
+		t.Fatalf("unexpected reloaded template: %#v", reloaded)
+	}
+	if reloaded.Frequency != JournalEntryTemplateFrequencyMonthly || reloaded.NextGenerationDate == nil {
+		t.Fatalf("expected monthly recurring template, got %#v", reloaded)
+	}
+
+	dueIDs, err := repo.GetDueJournalEntryTemplateIDs(ctx, tenant.SchemaName, tenant.ID, time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("GetDueJournalEntryTemplateIDs failed: %v", err)
+	}
+	if len(dueIDs) != 1 || dueIDs[0] != template.ID {
+		t.Fatalf("expected due template %s, got %#v", template.ID, dueIDs)
+	}
+
+	nextDate := time.Date(2026, 5, 30, 0, 0, 0, 0, time.UTC)
+	generatedAt := time.Now()
+	if err := repo.UpdateJournalEntryTemplateAfterGeneration(ctx, tenant.SchemaName, tenant.ID, template.ID, nextDate, generatedAt); err != nil {
+		t.Fatalf("UpdateJournalEntryTemplateAfterGeneration failed: %v", err)
+	}
+	advanced, err := repo.GetJournalEntryTemplateByID(ctx, tenant.SchemaName, tenant.ID, template.ID)
+	if err != nil {
+		t.Fatalf("GetJournalEntryTemplateByID after update failed: %v", err)
+	}
+	if advanced.NextGenerationDate == nil || !advanced.NextGenerationDate.Equal(nextDate) || advanced.GeneratedCount != 1 {
+		t.Fatalf("expected advanced template, got %#v", advanced)
+	}
+}
+
 func TestPostgresRepository_GetAccountByID(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
@@ -330,6 +439,39 @@ func TestPostgresRepository_CreateAccount(t *testing.T) {
 	if retrieved.Name != account.Name {
 		t.Errorf("expected name '%s', got '%s'", account.Name, retrieved.Name)
 	}
+}
+
+func TestPostgresRepository_UpdateAccount(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	account := &Account{
+		ID:          uuid.New().String(),
+		TenantID:    tenant.ID,
+		Code:        "9910",
+		Name:        "Account Before Update",
+		AccountType: AccountTypeExpense,
+		IsActive:    true,
+		IsSystem:    false,
+		Description: "Before",
+		CreatedAt:   time.Now(),
+	}
+	require.NoError(t, repo.CreateAccount(ctx, tenant.SchemaName, account))
+
+	account.Code = "9920"
+	account.Name = "Account After Update"
+	account.Description = ""
+	account.IsActive = false
+	require.NoError(t, repo.UpdateAccount(ctx, tenant.SchemaName, account))
+
+	retrieved, err := repo.GetAccountByID(ctx, tenant.SchemaName, tenant.ID, account.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "9920", retrieved.Code)
+	assert.Equal(t, "Account After Update", retrieved.Name)
+	assert.Empty(t, retrieved.Description)
+	assert.False(t, retrieved.IsActive)
 }
 
 func TestPostgresRepository_GetAccountBalance(t *testing.T) {
@@ -532,6 +674,72 @@ func TestPostgresRepository_GetPeriodBalances(t *testing.T) {
 	}
 	if !hasExpense {
 		t.Error("expected expense account in period balances")
+	}
+}
+
+func TestPostgresRepository_GetPeriodBalancesExcludesYearEndCarryForwardSources(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "periodbalances-yearend@example.com")
+	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	var revenueAccountID string
+	err := pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '4000' LIMIT 1
+	`).Scan(&revenueAccountID)
+	if err != nil {
+		t.Fatalf("failed to get revenue account: %v", err)
+	}
+
+	entryDate := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	normalAmount := decimal.NewFromInt(125)
+	excludedAmount := decimal.NewFromInt(500)
+	insertRevenueEntry := func(entryNumber, sourceType string, debitAmount, creditAmount decimal.Decimal) {
+		t.Helper()
+
+		entryID := uuid.New().String()
+		_, err := pool.Exec(ctx, `
+			INSERT INTO `+tenant.SchemaName+`.journal_entries
+			(id, tenant_id, entry_number, entry_date, description, source_type, status, created_by, created_at)
+			VALUES ($1, $2, $3, $4, 'Period Balance Source Filter Test', $5, 'POSTED', $6, NOW())
+		`, entryID, tenant.ID, entryNumber, entryDate, sourceType, userID)
+		if err != nil {
+			t.Fatalf("failed to create journal entry %s: %v", entryNumber, err)
+		}
+
+		_, err = pool.Exec(ctx, `
+			INSERT INTO `+tenant.SchemaName+`.journal_entry_lines
+			(id, tenant_id, journal_entry_id, account_id, debit_amount, credit_amount, currency, exchange_rate, base_debit, base_credit)
+			VALUES ($1, $2, $3, $4, $5, $6, 'EUR', 1, $5, $6)
+		`, uuid.New().String(), tenant.ID, entryID, revenueAccountID, debitAmount, creditAmount)
+		if err != nil {
+			t.Fatalf("failed to create journal entry line %s: %v", entryNumber, err)
+		}
+	}
+
+	insertRevenueEntry("JE-PERIOD-SOURCE-001", "", decimal.Zero, normalAmount)
+	insertRevenueEntry("JE-PERIOD-SOURCE-002", SourceTypeYearEndCarryForward, decimal.Zero, excludedAmount)
+	insertRevenueEntry("JE-PERIOD-SOURCE-003", SourceTypeYearEndCarryForwardReversal, excludedAmount, decimal.Zero)
+
+	balances, err := repo.GetPeriodBalances(ctx, tenant.SchemaName, tenant.ID, entryDate, entryDate)
+	if err != nil {
+		t.Fatalf("GetPeriodBalances failed: %v", err)
+	}
+
+	var revenueBalance *AccountBalance
+	for i := range balances {
+		if balances[i].AccountID == revenueAccountID {
+			revenueBalance = &balances[i]
+			break
+		}
+	}
+	if revenueBalance == nil {
+		t.Fatal("expected revenue account in period balances")
+	}
+	if !revenueBalance.NetBalance.Equal(normalAmount) {
+		t.Fatalf("expected only normal revenue %s, got %s", normalAmount, revenueBalance.NetBalance)
 	}
 }
 

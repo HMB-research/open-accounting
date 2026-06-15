@@ -212,7 +212,6 @@ func TestHookRegistry_RegisterPluginHook_EmitEvent(t *testing.T) {
 	event := Event{Type: EventInvoiceCreated, TenantID: uuid.New(), Time: time.Now()}
 	err := registry.Emit(context.Background(), event)
 
-	// The plugin hook handler just logs and returns nil
 	if err != nil {
 		t.Errorf("Emit() error = %v, want nil", err)
 	}

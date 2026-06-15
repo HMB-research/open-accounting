@@ -27,6 +27,7 @@ services:
     image: ${DOCKER_REGISTRY:-}openaccounting/api:${VERSION:-latest}
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - APP_ENV=production
       - JWT_SECRET=${JWT_SECRET}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
     depends_on:
@@ -74,20 +75,23 @@ services:
     restart: unless-stopped
 
   backup:
-    image: postgres:16-alpine
-    entrypoint: /bin/sh
+    image: postgres:16
+    entrypoint: /bin/bash
     command: |
       -c 'while true; do
+        /scripts/db-backup.sh --backup-dir /backups;
         sleep 86400;
-        pg_dump -h db -U ${DB_USER} ${DB_NAME} > /backups/backup_$$(date +%Y%m%d_%H%M%S).sql;
-        find /backups -name "backup_*.sql" -mtime +7 -delete;
       done'
     environment:
+      - DATABASE_URL=postgres://${DB_USER}@db:5432/${DB_NAME}?sslmode=disable
       - PGPASSWORD=${DB_PASSWORD}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
     volumes:
       - ./backups:/backups
+      - ../../scripts:/scripts:ro
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

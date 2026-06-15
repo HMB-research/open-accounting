@@ -1,3 +1,5 @@
+//go:build integration
+
 package apitoken
 
 import (
@@ -5,18 +7,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/HMB-research/open-accounting/internal/testutil"
 )
 
-func TestPostgresRepositoryTokenLifecycle(t *testing.T) {
+func TestRepositoryTokenLifecycle(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "apitoken-lifecycle@example.com")
 	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "owner")
 
-	repo := NewPostgresRepository(pool)
+	repo := newAPITokenGORMRepository(t, pool)
 	ctx := context.Background()
 	rawToken := "oa_lifecycle_raw_token"
 	token := &APIToken{
@@ -71,13 +75,52 @@ func TestPostgresRepositoryTokenLifecycle(t *testing.T) {
 	}
 }
 
-func TestPostgresRepositoryRevokeMissingToken(t *testing.T) {
+func TestRepositoryValidationRejectsInactiveTenantUser(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "apitoken-inactive-membership@example.com")
+	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
+
+	repo := newAPITokenGORMRepository(t, pool)
+	ctx := context.Background()
+	rawToken := "oa_inactive_membership_raw_token"
+	token := &APIToken{
+		ID:          uuid.New().String(),
+		TenantID:    tenant.ID,
+		UserID:      userID,
+		Name:        "Suspension Token",
+		TokenPrefix: rawToken[:14],
+		CreatedAt:   time.Now().UTC(),
+	}
+	tokenHash := hashToken(rawToken)
+
+	if err := repo.CreateToken(ctx, token, tokenHash); err != nil {
+		t.Fatalf("CreateToken failed: %v", err)
+	}
+	if _, err := repo.GetValidationRecord(ctx, tokenHash, time.Now().Add(time.Minute)); err != nil {
+		t.Fatalf("GetValidationRecord before suspension failed: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx, `
+		UPDATE tenant_users
+		SET is_active = false
+		WHERE tenant_id = $1 AND user_id = $2
+	`, tenant.ID, userID); err != nil {
+		t.Fatalf("failed to suspend tenant user: %v", err)
+	}
+
+	if _, err := repo.GetValidationRecord(ctx, tokenHash, time.Now().Add(time.Minute)); err != ErrTokenNotFound {
+		t.Fatalf("expected ErrTokenNotFound for inactive tenant user, got %v", err)
+	}
+}
+
+func TestRepositoryRevokeMissingToken(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 	userID := testutil.CreateTestUser(t, pool, "apitoken-missing@example.com")
 	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "owner")
 
-	repo := NewPostgresRepository(pool)
+	repo := newAPITokenGORMRepository(t, pool)
 	err := repo.RevokeToken(context.Background(), userID, tenant.ID, uuid.New().String(), time.Now().UTC())
 	if err != ErrTokenNotFound {
 		t.Fatalf("expected ErrTokenNotFound, got %v", err)
@@ -86,7 +129,20 @@ func TestPostgresRepositoryRevokeMissingToken(t *testing.T) {
 
 func TestNewServiceUsesRepository(t *testing.T) {
 	svc := NewService(nil)
-	if svc == nil || svc.repo == nil {
-		t.Fatal("expected api token service with repository")
+	if svc == nil {
+		t.Fatal("expected api token service")
 	}
+	if svc.repo != nil {
+		t.Fatal("expected nil repository without a database pool")
+	}
+}
+
+func newAPITokenGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
+	t.Helper()
+
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("create gorm repository: %v", err)
+	}
+	return NewGORMRepository(gormDB)
 }

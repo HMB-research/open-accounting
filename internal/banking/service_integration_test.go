@@ -1,8 +1,9 @@
+//go:build integration
+
 package banking
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -61,22 +62,20 @@ func setupBankingServiceTest(t *testing.T) (*Service, *testutil.TestTenant, stri
 	return service, tenant, accounts[0].ID
 }
 
-func TestService_ImportCSV(t *testing.T) {
+func TestService_ImportTransactionsRows(t *testing.T) {
 	service, tenant, bankAccountID := setupBankingServiceTest(t)
 	ctx := context.Background()
 
-	// Create a simple CSV content
-	csvContent := `Date,Amount,Description
-2025-01-15,1000.00,Customer Payment
-2025-01-16,-500.00,Supplier Payment
-2025-01-17,250.50,Interest Income`
-
-	reader := strings.NewReader(csvContent)
-	mapping := DefaultGenericMapping()
-
-	result, err := service.ImportCSV(ctx, tenant.SchemaName, tenant.ID, bankAccountID, reader, "test_import.csv", mapping, false)
+	result, err := service.ImportTransactions(ctx, tenant.SchemaName, tenant.ID, bankAccountID, &ImportCSVRequest{
+		FileName: "test_import.csv",
+		Transactions: []CSVTransactionRow{
+			{Date: "2025-01-15", Amount: "1000.00", Description: "Customer Payment"},
+			{Date: "2025-01-16", Amount: "-500.00", Description: "Supplier Payment"},
+			{Date: "2025-01-17", Amount: "250.50", Description: "Interest Income"},
+		},
+	})
 	if err != nil {
-		t.Fatalf("ImportCSV failed: %v", err)
+		t.Fatalf("ImportTransactions failed: %v", err)
 	}
 
 	if result.TransactionsImported != 3 {
@@ -99,36 +98,34 @@ func TestService_ImportCSV(t *testing.T) {
 	}
 }
 
-func TestService_ImportCSV_WithDuplicateSkip(t *testing.T) {
-	t.Skip("duplicate detection requires external_id matching, not date/amount")
+func TestService_ImportTransactionsWithDuplicateSkip(t *testing.T) {
 	service, tenant, bankAccountID := setupBankingServiceTest(t)
 	ctx := context.Background()
 
-	// First import
-	csvContent1 := `Date,Amount,Description
-2025-01-15,1000.00,Customer Payment`
-
-	reader1 := strings.NewReader(csvContent1)
-	mapping := DefaultGenericMapping()
-
-	result1, err := service.ImportCSV(ctx, tenant.SchemaName, tenant.ID, bankAccountID, reader1, "import1.csv", mapping, true)
+	result1, err := service.ImportTransactions(ctx, tenant.SchemaName, tenant.ID, bankAccountID, &ImportCSVRequest{
+		FileName: "import1.csv",
+		Transactions: []CSVTransactionRow{
+			{Date: "2025-01-15", Amount: "1000.00", Description: "Customer Payment"},
+		},
+		SkipDuplicates: true,
+	})
 	if err != nil {
-		t.Fatalf("First ImportCSV failed: %v", err)
+		t.Fatalf("First ImportTransactions failed: %v", err)
 	}
 
 	if result1.TransactionsImported != 1 {
 		t.Errorf("expected 1 transaction imported, got %d", result1.TransactionsImported)
 	}
 
-	// Second import with same transaction (should skip as duplicate)
-	csvContent2 := `Date,Amount,Description
-2025-01-15,1000.00,Customer Payment`
-
-	reader2 := strings.NewReader(csvContent2)
-
-	result2, err := service.ImportCSV(ctx, tenant.SchemaName, tenant.ID, bankAccountID, reader2, "import2.csv", mapping, true)
+	result2, err := service.ImportTransactions(ctx, tenant.SchemaName, tenant.ID, bankAccountID, &ImportCSVRequest{
+		FileName: "import2.csv",
+		Transactions: []CSVTransactionRow{
+			{Date: "2025-01-15", Amount: "1000.00", Description: "Customer Payment"},
+		},
+		SkipDuplicates: true,
+	})
 	if err != nil {
-		t.Fatalf("Second ImportCSV failed: %v", err)
+		t.Fatalf("Second ImportTransactions failed: %v", err)
 	}
 
 	if result2.DuplicatesSkipped != 1 {
@@ -139,22 +136,44 @@ func TestService_ImportCSV_WithDuplicateSkip(t *testing.T) {
 	}
 }
 
-func TestService_ImportCSV_InvalidData(t *testing.T) {
+func TestService_ImportTransactionsWithDuplicateSkipSameFile(t *testing.T) {
 	service, tenant, bankAccountID := setupBankingServiceTest(t)
 	ctx := context.Background()
 
-	// CSV with invalid date and amount
-	csvContent := `Date,Amount,Description
-invalid-date,1000.00,Valid Amount Invalid Date
-2025-01-15,not-a-number,Invalid Amount
-2025-01-16,100.00,Valid Row`
-
-	reader := strings.NewReader(csvContent)
-	mapping := DefaultGenericMapping()
-
-	result, err := service.ImportCSV(ctx, tenant.SchemaName, tenant.ID, bankAccountID, reader, "invalid.csv", mapping, false)
+	result, err := service.ImportTransactions(ctx, tenant.SchemaName, tenant.ID, bankAccountID, &ImportCSVRequest{
+		FileName: "same_file.csv",
+		Transactions: []CSVTransactionRow{
+			{Date: "2025-01-15", Amount: "1000.00", Description: "Customer Payment"},
+			{Date: "2025-01-15", Amount: "1000.00", Description: "Customer Payment"},
+		},
+		SkipDuplicates: true,
+	})
 	if err != nil {
-		t.Fatalf("ImportCSV failed: %v", err)
+		t.Fatalf("ImportTransactions failed: %v", err)
+	}
+
+	if result.TransactionsImported != 1 {
+		t.Errorf("expected 1 transaction imported, got %d", result.TransactionsImported)
+	}
+	if result.DuplicatesSkipped != 1 {
+		t.Errorf("expected 1 duplicate skipped, got %d", result.DuplicatesSkipped)
+	}
+}
+
+func TestService_ImportTransactionsInvalidData(t *testing.T) {
+	service, tenant, bankAccountID := setupBankingServiceTest(t)
+	ctx := context.Background()
+
+	result, err := service.ImportTransactions(ctx, tenant.SchemaName, tenant.ID, bankAccountID, &ImportCSVRequest{
+		FileName: "invalid.csv",
+		Transactions: []CSVTransactionRow{
+			{Date: "invalid-date", Amount: "1000.00", Description: "Valid Amount Invalid Date"},
+			{Date: "2025-01-15", Amount: "not-a-number", Description: "Invalid Amount"},
+			{Date: "2025-01-16", Amount: "100.00", Description: "Valid Row"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportTransactions failed: %v", err)
 	}
 
 	if result.TransactionsImported != 1 {
@@ -310,15 +329,9 @@ func TestService_GetMatchSuggestions(t *testing.T) {
 	service := NewService(pool)
 	ctx := context.Background()
 
-	// Setup schema
-	_, err := pool.Exec(ctx, "SELECT add_reconciliation_tables_to_schema($1)", tenant.SchemaName)
-	if err != nil {
-		t.Fatalf("Failed to add reconciliation tables: %v", err)
-	}
-
 	// Create GL account
 	glAccountID := uuid.New().String()
-	_, err = pool.Exec(ctx, `
+	_, err := pool.Exec(ctx, `
 		INSERT INTO `+tenant.SchemaName+`.accounts
 		(id, tenant_id, code, name, account_type, is_active, created_at)
 		VALUES ($1, $2, '1120', 'Bank Match GL', 'ASSET', true, NOW())
@@ -453,6 +466,40 @@ func TestService_AutoMatchTransactions(t *testing.T) {
 	// The actual matching depends on having suitable payments
 }
 
+func TestCreateTenantSchemaIncludesBankingReconciliationTables(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	ctx := context.Background()
+
+	for _, tableName := range []string{"bank_reconciliations", "bank_statement_imports", "bank_match_rules"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", tenant.SchemaName+"."+tableName).Scan(&exists); err != nil {
+			t.Fatalf("failed to inspect %s: %v", tableName, err)
+		}
+		if !exists {
+			t.Fatalf("expected %s.%s to exist after tenant bootstrap", tenant.SchemaName, tableName)
+		}
+	}
+
+	for _, columnName := range []string{"reconciliation_id", "import_id", "follow_up_status", "review_note", "reviewed_by", "reviewed_at"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM information_schema.columns
+				WHERE table_schema = $1
+				  AND table_name = 'bank_transactions'
+				  AND column_name = $2
+			)
+		`, tenant.SchemaName, columnName).Scan(&exists); err != nil {
+			t.Fatalf("failed to inspect bank_transactions.%s: %v", columnName, err)
+		}
+		if !exists {
+			t.Fatalf("expected %s.bank_transactions.%s to exist after tenant bootstrap", tenant.SchemaName, columnName)
+		}
+	}
+}
+
 func TestService_CreatePaymentFromTransaction(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
@@ -525,22 +572,46 @@ func TestService_CreatePaymentFromTransaction(t *testing.T) {
 	if tx.MatchedPaymentID == nil || *tx.MatchedPaymentID != paymentID {
 		t.Error("expected transaction to be matched to created payment")
 	}
+
+	var paymentNumber, paymentType, paymentAmountText, currency, reference, notes string
+	err = pool.QueryRow(ctx, `
+		SELECT payment_number, payment_type, amount::text, currency, reference, notes
+		FROM `+tenant.SchemaName+`.payments
+		WHERE id = $1 AND tenant_id = $2
+	`, paymentID, tenant.ID).Scan(&paymentNumber, &paymentType, &paymentAmountText, &currency, &reference, &notes)
+	if err != nil {
+		t.Fatalf("Failed to query created payment: %v", err)
+	}
+	paymentAmount, err := decimal.NewFromString(paymentAmountText)
+	if err != nil {
+		t.Fatalf("Failed to parse created payment amount %q: %v", paymentAmountText, err)
+	}
+	if paymentNumber != "PMT-00001" {
+		t.Errorf("expected generated payment number PMT-00001, got %s", paymentNumber)
+	}
+	if paymentType != "RECEIVED" {
+		t.Errorf("expected payment type RECEIVED, got %s", paymentType)
+	}
+	if !paymentAmount.Equal(amount) {
+		t.Errorf("expected payment amount %s, got %s", amount, paymentAmount)
+	}
+	if currency != "EUR" {
+		t.Errorf("expected currency EUR, got %s", currency)
+	}
+	if reference != "REF002" {
+		t.Errorf("expected reference REF002, got %s", reference)
+	}
+	if notes != "Created from bank transaction: Payment from customer" {
+		t.Errorf("expected bank transaction note, got %s", notes)
+	}
 }
 
-func TestService_SwedbankEEMapping(t *testing.T) {
-	// Test the Swedbank Estonia mapping format
-	mapping := SwedbankEEMapping()
-
-	if mapping.DateFormat != "02.01.2006" {
-		t.Errorf("expected date format '02.01.2006', got '%s'", mapping.DateFormat)
+func TestService_ParseDateFormats(t *testing.T) {
+	parsed, err := ParseDateFormats("15.03.2026")
+	if err != nil {
+		t.Fatalf("ParseDateFormats failed: %v", err)
 	}
-	if mapping.DecimalSeparator != "," {
-		t.Errorf("expected decimal separator ',', got '%s'", mapping.DecimalSeparator)
-	}
-	if mapping.ThousandsSeparator != " " {
-		t.Errorf("expected thousands separator ' ', got '%s'", mapping.ThousandsSeparator)
-	}
-	if !mapping.HasHeader {
-		t.Error("expected HasHeader to be true")
+	if got := parsed.Format("2006-01-02"); got != "2026-03-15" {
+		t.Errorf("expected 2026-03-15, got %s", got)
 	}
 }

@@ -98,7 +98,7 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 		testName = testName[:30]
 	}
 
-	slug := fmt.Sprintf("test_%s_%d", testName, time.Now().UnixNano()%100000)
+	slug := fmt.Sprintf("test_%s_%s", testName, strings.ReplaceAll(tenantID[:8], "-", ""))
 	schemaName := fmt.Sprintf("tenant_%s", strings.ReplaceAll(slug, "-", "_"))
 	name := fmt.Sprintf("Test Tenant %s", testName)
 
@@ -150,6 +150,12 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 		t.Fatalf("failed to add fixed assets tables: %v", err)
 	}
 
+	// Add fixed-asset disposal journal links (from migration 046)
+	_, err = conn.Exec(ctx, "SELECT add_fixed_asset_disposal_journal_links($1)", schemaName)
+	if err != nil {
+		t.Fatalf("failed to add fixed asset disposal journal links: %v", err)
+	}
+
 	// Add inventory tables (from migration 016)
 	_, err = conn.Exec(ctx, "SELECT create_inventory_tables($1)", schemaName)
 	if err != nil {
@@ -160,13 +166,6 @@ func CreateTestTenant(t *testing.T, pool *pgxpool.Pool) *TestTenant {
 	_, err = conn.Exec(ctx, "SELECT add_leave_management_tables($1)", schemaName)
 	if err != nil {
 		t.Fatalf("failed to add leave management tables: %v", err)
-	}
-
-	// Add VAT columns to journal_entry_lines (from migration 020)
-	_, err = conn.Exec(ctx, "SELECT add_vat_columns_to_journal_lines($1)", schemaName)
-	if err != nil {
-		// This migration may not exist in all environments, log but don't fail
-		t.Logf("warning: VAT columns not added (migration may not exist): %v", err)
 	}
 
 	// Create default chart of accounts

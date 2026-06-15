@@ -22,7 +22,7 @@ Open Accounting supports a plugin marketplace that allows extending functionalit
 2. **Git-Based Distribution**: Plugins are cloned from repositories, no package registry
 3. **Two-Level Enablement**: Installed instance-wide by admins, enabled per-tenant by users
 4. **Permission-Based Security**: Plugins declare required permissions, users approve them
-5. **Full-Stack Support**: Plugins can include backend, frontend, and database components
+5. **Full-Stack Manifest Support**: Plugins can declare backend, frontend, and database components. Backend hooks and routes can run through loopback HTTP runtimes or supervised package runtimes. Frontend slots support safe declarative cards, links, actions, and operator-bundled registered components.
 
 ### Plugin Lifecycle
 
@@ -34,7 +34,7 @@ Not Installed → Installed → Enabled ↔ Disabled → Uninstalled
 
 - **Not Installed**: Plugin exists in registry but not on this instance
 - **Installed**: Plugin code downloaded, awaiting enablement
-- **Enabled**: Plugin active, hooks registered, routes available
+- **Enabled**: Plugin active for supported capabilities. Declarative frontend slots and navigation are available. Backend hooks and routes are available for `runtime: http` and supervised `runtime: package` executables.
 - **Disabled**: Plugin present but inactive
 - **Failed**: Plugin encountered an error during loading
 
@@ -109,8 +109,8 @@ permissions:
 
 # Backend configuration (optional)
 backend:
-  package: ./backend           # Go package path
-  entry: NewService            # Service constructor function
+  runtime: http                # http = externally managed loopback runtime
+  base_url: http://127.0.0.1:9123
 
   hooks:                       # Event subscriptions
     - event: invoice.created
@@ -139,8 +139,17 @@ frontend:
   slots:                       # UI injection points
     - name: dashboard.widgets
       component: ExpenseWidget.svelte
+      label: Expense exceptions
+      description: Review expenses that need receipts or approval
+      path: /plugins/expense-tracker/exceptions
+      kind: card               # card, link, or action
+      badge: 4 open
+      order: 100
     - name: invoice.sidebar
       component: ExpenseLink.svelte
+      label: Related expenses
+      path: /plugins/expense-tracker/invoices
+      kind: link
 
 # Database configuration (optional)
 database:
@@ -159,6 +168,53 @@ settings:
       default: 100
       description: Expenses above this amount require approval
 ```
+
+### Backend Runtime Modes
+
+`backend.runtime` selects how backend hooks and routes are executed:
+
+| Runtime | Status | Required fields | Description |
+|---------|--------|-----------------|-------------|
+| omitted | Legacy manifest metadata | `package`, `entry` | Preserves old manifests. Hook and route declarations without an executable runtime are rejected during enablement. |
+| `http` | Supported | `base_url` | Open Accounting proxies hooks and tenant plugin routes to an operator-managed HTTP process on loopback. `base_url` must use `http` and a loopback host such as `127.0.0.1`, `::1`, or `localhost`. |
+| `package` | Supported, conservative supervisor | `package`, `executable` | Starts a plugin-local executable directly, waits for its loopback health endpoint, and proxies hooks and tenant plugin routes to declared handler paths. |
+
+HTTP runtime manifests may keep legacy `package` and `entry` fields for compatibility, but the HTTP runtime uses `base_url` and handler paths. `backend.executable` is not valid with `runtime: http`.
+
+Supervised package runtime manifests use plugin-relative paths only:
+
+```yaml
+backend:
+  runtime: package
+  package: ./backend            # Plugin-relative package directory
+  executable: bin/expense-plugin # Slash-separated path inside package
+
+  routes:
+    - method: POST
+      path: /expenses/import
+      handler: /routes/import
+```
+
+Package runtime path rules are intentionally narrow:
+
+- `package` and `executable` must be relative to the plugin repository, not absolute paths or URLs.
+- Paths must stay inside the plugin package; `..` traversal is rejected.
+- Paths must use `/` separators and must not contain whitespace or shell metacharacters.
+- `base_url` is only valid for `runtime: http`.
+
+Package runtime process contract:
+
+- Open Accounting executes the resolved file directly with no shell and sets the working directory to `backend.package`.
+- The executable must read `OPEN_ACCOUNTING_RUNTIME_ADDR` and listen on that loopback `host:port`.
+- The executable must return a 2xx response from `OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH` before hooks or routes are considered available.
+- `OPEN_ACCOUNTING_RUNTIME_BASE_URL`, `OPEN_ACCOUNTING_PLUGIN_ID`, and `OPEN_ACCOUNTING_PLUGIN_NAME` are also provided for diagnostics.
+- Package runtimes start with an allowlisted host environment only (`PATH`, locale/timezone, temp directory, OS path, and TLS certificate variables) plus the `OPEN_ACCOUNTING_*` runtime contract variables. API process secrets such as database DSNs, JWT keys, SMTP passwords, and cloud credentials are not inherited.
+- Operators can inspect lifecycle, health, crash/backoff, restart count, and last output through `GET /api/v1/admin/plugins/:id/runtime` or `oa admin plugins runtime status --id <plugin-id>`.
+- Operators can restart supervised package runtimes through `POST /api/v1/admin/plugins/:id/runtime/restart` or `oa admin plugins runtime restart --id <plugin-id>`.
+- If a package runtime exits unexpectedly after a healthy startup, Open Accounting keeps the crash/backoff status visible, waits for the restart backoff, then starts a replacement runtime and re-registers hooks.
+- On unload or disable, Open Accounting unregisters hooks, sends an interrupt to the process, and kills it if it does not stop within the shutdown timeout.
+
+Current limitation: package runtimes are supervised for startup, proxying, shutdown, manual restart, automatic crash restart, crash/backoff reporting, and allowlisted process environments, but operating-system sandbox/resource isolation is not built in yet.
 
 ## Permission System
 
@@ -218,7 +274,9 @@ settings:
 
 ## Event Hooks
 
-Plugins can subscribe to system events to react to changes:
+Backend event hooks execute through `runtime: http` when the manifest declares a loopback `base_url`, or through `runtime: package` after the supervised executable exposes its health endpoint. The plugin must have `hooks:register` permission. The application sends each hook invocation to the declared handler path on the runtime process.
+
+Tenant outbound webhooks are the supported runtime notification path today. Use `webhooks create`, `webhooks test`, and `webhooks deliveries` in the CLI, or the `/tenants/{tenantId}/webhooks` API, to subscribe external systems to these events with signed HTTP delivery.
 
 ### Available Events
 
@@ -241,6 +299,13 @@ Plugins can subscribe to system events to react to changes:
 - `journal_entry.created` - Entry created
 - `journal_entry.posted` - Entry posted
 - `journal_entry.voided` - Entry voided
+
+#### Expense Events
+- `expense.created` - Expense claim created
+- `expense.submitted` - Expense submitted for approval
+- `expense.approved` - Expense approved
+- `expense.rejected` - Expense rejected
+- `expense.posted` - Expense posted to the ledger
 
 #### Recurring Events
 - `recurring.created` - Recurring invoice setup
@@ -265,6 +330,9 @@ Plugins can subscribe to system events to react to changes:
 - `email.sent` - Email sent successfully
 - `email.failed` - Email delivery failed
 
+#### Webhook Events
+- `webhook.test` - Manual webhook endpoint test delivery
+
 ### Event Payload Structure
 
 ```go
@@ -277,6 +345,8 @@ type Event struct {
 ```
 
 ## UI Extension Points
+
+Frontend slot declarations render safe manifest-defined cards, links, and actions in host slot locations. The runtime uses `label`, `description`, `path`, `kind`, `badge`, and `order` from the manifest; `path` must be an internal application route. Plugin Svelte components are still not dynamically loaded, so `component` remains the stable component identifier and fallback label for future component-runtime work.
 
 ### Available Slots
 
@@ -302,6 +372,24 @@ type Event struct {
 <!-- In your page component -->
 <Slot name="dashboard.widgets" props={{ tenantId }} />
 ```
+
+### Declarative Slot Entries
+
+```yaml
+frontend:
+  components: ./frontend/components
+  slots:
+    - name: dashboard.widgets
+      component: ExpenseWidget.svelte
+      label: Expense exceptions
+      description: Review expenses that need receipts or approval
+      path: /plugins/expense-tracker/exceptions
+      kind: card
+      badge: 4 open
+      order: 100
+```
+
+Supported `kind` values are `card`, `link`, and `action`. Links and actions require an internal `path`; external URLs and protocol-relative URLs are rejected by manifest validation.
 
 ### Navigation Positioning
 
@@ -339,33 +427,39 @@ my-plugin/
 
 ```go
 // backend/service.go
-package myplugin
+package main
 
 import (
-    "context"
-    "github.com/jackc/pgx/v5/pgxpool"
+    "encoding/json"
+    "net/http"
 )
 
-type Service struct {
-    pool *pgxpool.Pool
+func main() {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/hooks/invoice", onInvoiceCreated)
+    mux.HandleFunc("/routes/expenses", listExpenses)
+    _ = http.ListenAndServe("127.0.0.1:9123", mux)
 }
 
-// NewService is the entry point called by the plugin system
-func NewService(pool *pgxpool.Pool) *Service {
-    return &Service{pool: pool}
+func onInvoiceCreated(w http.ResponseWriter, r *http.Request) {
+    var payload struct {
+        PluginID string          `json:"plugin_id"`
+        Handler  string          `json:"handler"`
+        Event    json.RawMessage `json:"event"`
+    }
+    _ = json.NewDecoder(r.Body).Decode(&payload)
+    w.WriteHeader(http.StatusAccepted)
 }
 
-// OnInvoiceCreated handles the invoice.created event
-func (s *Service) OnInvoiceCreated(ctx context.Context, event plugin.Event) error {
-    // Process event
-    return nil
-}
-
-// ListExpenses handles GET /expenses
-func (s *Service) ListExpenses(w http.ResponseWriter, r *http.Request) {
-    // Handle request
+func listExpenses(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    _, _ = w.Write([]byte(`{"expenses":[]}`))
 }
 ```
+
+For `runtime: http`, run this process outside Open Accounting and point `backend.base_url` at its loopback address. Open Accounting forwards route requests with tenant and plugin headers and forwards hook payloads to the configured handler paths. Tenant runtime routes are invoked through `/api/v1/tenants/{tenantId}/plugins/{pluginId}/runtime/...` or the CLI `oa plugins runtime invoke --id <plugin-id> --method GET|POST|PUT|PATCH|DELETE --path <route>`. The CLI accepts a raw query string with `--query` and a JSON request body with either `--body-json` or `--body-file`. Successful runtime route responses are returned as the plugin produced them: Open Accounting preserves the runtime status code, forwards non-hop-by-hop response headers, and streams the raw response body instead of wrapping it in a host JSON envelope.
+
+For `runtime: package`, build a self-contained executable inside the plugin repository and declare the containing package directory plus the executable path. Open Accounting launches the executable directly with an allowlisted process environment, waits for `OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH`, forwards requests over loopback, reports lifecycle/crash/backoff state, supports manual runtime restart, and automatically restarts after unexpected exits. OS-level sandboxing remains outside the current supervisor.
 
 ### Frontend Development
 
@@ -469,7 +563,11 @@ GET    /api/v1/admin/plugins/:id           # Get plugin details
 DELETE /api/v1/admin/plugins/:id           # Uninstall plugin
 POST   /api/v1/admin/plugins/:id/enable    # Enable with permissions
 POST   /api/v1/admin/plugins/:id/disable   # Disable plugin
+GET    /api/v1/admin/plugins/:id/runtime   # Inspect backend runtime status
+POST   /api/v1/admin/plugins/:id/runtime/restart # Restart package runtime
 ```
+
+Admin plugin and registry endpoints require a tenant-scoped token whose current tenant membership is `owner` or `admin`; membership is rechecked when the request runs.
 
 ### Tenant Endpoints
 
@@ -479,6 +577,11 @@ POST   /api/v1/tenants/:id/plugins/:pid/enable        # Enable for tenant
 POST   /api/v1/tenants/:id/plugins/:pid/disable       # Disable for tenant
 GET    /api/v1/tenants/:id/plugins/:pid/settings      # Get settings
 PUT    /api/v1/tenants/:id/plugins/:pid/settings      # Update settings
+GET    /api/v1/tenants/:id/plugins/:pid/runtime/*     # Invoke declared runtime route
+POST   /api/v1/tenants/:id/plugins/:pid/runtime/*     # Invoke declared runtime route
+PUT    /api/v1/tenants/:id/plugins/:pid/runtime/*     # Invoke declared runtime route
+PATCH  /api/v1/tenants/:id/plugins/:pid/runtime/*     # Invoke declared runtime route
+DELETE /api/v1/tenants/:id/plugins/:pid/runtime/*     # Invoke declared runtime route
 ```
 
 ### Request/Response Examples
@@ -524,7 +627,7 @@ Response:
 3. **Permission Review**: Admins must approve each permission
 4. **Risk Warnings**: High-risk permissions highlighted in UI
 5. **Tenant Isolation**: Plugin data scoped to tenant schemas
-6. **No Code Execution**: Plugins run in same process (future: sandboxing)
+6. **Runtime Boundaries**: HTTP runtimes must be loopback-only. Package runtimes must declare safe plugin-relative package and executable paths, expose the assigned loopback health endpoint before use, run with an allowlisted process environment instead of inheriting API process secrets, report crash/backoff status, restart automatically after unexpected exits, and are stopped on unload. OS-level sandboxing remains outside the built-in supervisor.
 
 ## Troubleshooting
 
@@ -546,5 +649,6 @@ Response:
 
 ### Events Not Firing
 - Confirm hooks:register permission granted
+- For backend hooks, confirm `backend.runtime: http` and a loopback `backend.base_url` are configured
 - Check event type spelling in manifest
-- Review handler implementation
+- Review handler implementation and runtime process logs

@@ -13,6 +13,7 @@ describe("API Client - Core Functionality", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -132,6 +133,8 @@ describe("API Client - Core Functionality", () => {
     });
 
     it("should throw generic error if no error message", async () => {
+      vi.useFakeTimers();
+
       // Mock 4 responses (initial + 3 retries) for 5xx error with retry logic
       const errorResponse = {
         ok: false,
@@ -144,10 +147,14 @@ describe("API Client - Core Functionality", () => {
         .mockResolvedValueOnce(errorResponse)
         .mockResolvedValueOnce(errorResponse);
 
-      await expect(api.register("bad@email", "pass", "Name")).rejects.toThrow(
-        "Request failed",
-      );
-    }, 30000); // Increase timeout to account for retry delays
+      const request = api.register("bad@email", "pass", "Name");
+      const assertion = expect(request).rejects.toThrow("Request failed");
+
+      await vi.runAllTimersAsync();
+
+      await assertion;
+      expect(mockFetch).toHaveBeenCalledTimes(4);
+    });
   });
 
   describe("Decimal Parsing", () => {
@@ -171,6 +178,30 @@ describe("API Client - Core Functionality", () => {
       expect(result.amount).toBeInstanceOf(Decimal);
       expect(result.amount.toString()).toBe("1234.56");
       expect(result.lines[0].total).toBeInstanceOf(Decimal);
+    });
+
+    it("keeps numeric identifier and code fields as strings", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: "acc-1",
+            tenant_id: "tenant-123",
+            code: "1000",
+            name: "Cash",
+            account_type: "ASSET",
+            is_active: true,
+            is_system: true,
+          },
+        ],
+      });
+
+      api.setTokens("token", "refresh");
+      const result = await api.listAccounts("tenant-123");
+
+      expect(result[0].code).toBe("1000");
+      expect(result[0].code).not.toBeInstanceOf(Decimal);
     });
   });
 
@@ -311,6 +342,291 @@ describe("API Client - Core Functionality", () => {
       expect(result).toHaveLength(1);
     });
 
+    it("should list tenant audit events", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: "audit-1",
+            action: "user_role_updated",
+            target_type: "user",
+            target_id: "user-2",
+            metadata: { new_role: "accountant" },
+          },
+        ],
+      });
+
+      const result = await api.listTenantAuditEvents("tenant-123", 25);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/audit-events?limit=25",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result[0].action).toBe("user_role_updated");
+    });
+
+    it("should list tenant users", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            tenant_id: "tenant-123",
+            user_id: "user-1",
+            role: "owner",
+            is_default: true,
+            created_at: "2026-03-12T10:00:00Z",
+          },
+        ],
+      });
+
+      const result = await api.listTenantUsers("tenant-123");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/users"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result[0].role).toBe("owner");
+    });
+
+    it("should update and remove tenant users", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "updated" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "removed" }),
+        });
+
+      await api.updateTenantUserRole("tenant-123", "user-2", "accountant");
+      await api.removeTenantUser("tenant-123", "user-2");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/api/v1/tenants/tenant-123/users/user-2/role"),
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ role: "accountant" }),
+        }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/api/v1/tenants/tenant-123/users/user-2"),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+
+    it("should manage tenant user security controls", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "updated", is_active: false }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: "session-1",
+              user_id: "user-2",
+              created_at: "2026-03-12T10:00:00Z",
+              expires_at: "2026-03-13T10:00:00Z",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "revoked" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "revoked" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: "token-1",
+              tenant_id: "tenant-123",
+              user_id: "user-2",
+              name: "Automation",
+              token_prefix: "oa_live",
+              created_at: "2026-03-12T10:00:00Z",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "revoked" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: "event-1",
+              action: "api_token_revoked",
+              target_user_id: "user-2",
+              metadata: { token_id: "token-1" },
+              created_at: "2026-03-12T10:00:00Z",
+            },
+          ],
+        });
+
+      await api.updateTenantUserStatus("tenant-123", "user-2", false);
+      const sessions = await api.listTenantUserAuthSessions(
+        "tenant-123",
+        "user-2",
+        true,
+      );
+      await api.revokeTenantUserAuthSession(
+        "tenant-123",
+        "user-2",
+        "session-1",
+      );
+      await api.revokeTenantUserAuthSessions("tenant-123", "user-2");
+      const tokens = await api.listTenantUserAPITokens("tenant-123", "user-2");
+      await api.revokeTenantUserAPIToken("tenant-123", "user-2", "token-1");
+      const events = await api.listTenantUserSecurityAuditEvents(
+        "tenant-123",
+        "user-2",
+        25,
+      );
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/status",
+        ),
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ is_active: false }),
+        }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/sessions?include_inactive=true",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/sessions/session-1",
+        ),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        4,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/sessions",
+        ),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        5,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/api-tokens",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        6,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/api-tokens/token-1",
+        ),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        7,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/users/user-2/security-events?limit=25",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(sessions[0].id).toBe("session-1");
+      expect(tokens[0].token_prefix).toBe("oa_live");
+      expect(events[0].action).toBe("api_token_revoked");
+    });
+
+    it("should manage tenant invitations", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: "inv-1",
+              tenant_id: "tenant-123",
+              email: "new@example.com",
+              role: "viewer",
+              invited_by: "user-1",
+              expires_at: "2026-03-19T10:00:00Z",
+              created_at: "2026-03-12T10:00:00Z",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: async () => ({
+            id: "inv-2",
+            tenant_id: "tenant-123",
+            email: "accountant@example.com",
+            role: "accountant",
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "revoked" }),
+        });
+
+      const invitations = await api.listInvitations("tenant-123");
+      const invitation = await api.createInvitation("tenant-123", {
+        email: "accountant@example.com",
+        role: "accountant",
+      });
+      await api.revokeInvitation("tenant-123", "inv-1");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/api/v1/tenants/tenant-123/invitations"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/api/v1/tenants/tenant-123/invitations"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            email: "accountant@example.com",
+            role: "accountant",
+          }),
+        }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining("/api/v1/tenants/tenant-123/invitations/inv-1"),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+      expect(invitations[0].email).toBe("new@example.com");
+      expect(invitation.role).toBe("accountant");
+    });
+
     it("should close a period", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -419,6 +735,33 @@ describe("API Client - Core Functionality", () => {
       expect(result.journal_entry.entry_number).toBe("JE-00100");
     });
 
+    it("should reverse a year-end carry-forward", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          reversal_journal_entry: { id: "je-2", entry_number: "JE-00101" },
+          status: { period_end_date: "2025-12-31" },
+        }),
+      });
+
+      const result = await api.reverseYearEndCarryForward("tenant-123", {
+        period_end_date: "2025-12-31",
+        reason: "Late supplier accrual",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/year-end-carry-forward/reverse",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("Late supplier accrual"),
+        }),
+      );
+      expect(result.reversal_journal_entry.entry_number).toBe("JE-00101");
+    });
+
     it("should list recent journal entries", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -491,6 +834,802 @@ describe("API Client - Core Functionality", () => {
       expect(result[0].entity_id).toBe("tx-1");
     });
 
+    it("should get a tenant-wide document review queue", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          review_status: "PENDING",
+          limit: 25,
+          total_count: 1,
+          pending_review_count: 1,
+          reviewed_count: 0,
+          approved_count: 0,
+          rejected_count: 0,
+          documents: [{ id: "doc-1", file_name: "close-pack.pdf" }],
+        }),
+      });
+
+      const result = await api.getDocumentReviewQueue("tenant-123", {
+        entity_type: "year_end_close",
+        document_type: "close_pack",
+        review_status: "PENDING",
+        limit: 25,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/review-queue?entity_type=year_end_close&document_type=close_pack&review_status=PENDING&limit=25",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result.documents[0].file_name).toBe("close-pack.pdf");
+    });
+
+    it("should get a tenant-wide document retention review", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          as_of_date: "2027-03-01",
+          cutoff_date: "2027-04-15",
+          total_count: 1,
+          expired_count: 0,
+          due_soon_count: 1,
+          missing_retention_count: 0,
+          pending_review_count: 0,
+          rejected_count: 0,
+          documents: [{ id: "doc-1", file_name: "receipt.pdf" }],
+        }),
+      });
+
+      const result = await api.getDocumentRetentionReview("tenant-123", {
+        as_of: "2027-03-01",
+        horizon_days: 45,
+        include_missing: true,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/retention?as_of=2027-03-01&horizon_days=45&include_missing=true",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result.due_soon_count).toBe(1);
+    });
+
+    it("should evaluate document evidence policy", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            entity_type: "tsd_declaration",
+            entity_id: "tsd-1",
+            compliant: false,
+            missing_evidence: true,
+            remediation_actions: [
+              {
+                code: "document_evidence_missing",
+                entity_type: "tsd_declaration",
+                entity_id: "tsd-1",
+                document_type: "tax_support",
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await api.evaluateDocumentEvidencePolicy("tenant-123", {
+        entity_type: "tsd_declaration",
+        entity_ids: ["tsd-1"],
+        rules: [
+          {
+            document_types: ["tax_support", "supporting_document"],
+            min_count: 1,
+            require_approved: true,
+          },
+        ],
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/evidence-policy",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            entity_type: "tsd_declaration",
+            entity_ids: ["tsd-1"],
+            rules: [
+              {
+                document_types: ["tax_support", "supporting_document"],
+                min_count: 1,
+                require_approved: true,
+              },
+            ],
+          }),
+        }),
+      );
+      expect(result[0].remediation_actions?.[0].document_type).toBe(
+        "tax_support",
+      );
+    });
+
+    it("should list migration provider preset metadata", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            preset: "merit",
+            label: "Merit",
+            description: "Adds Merit aliases.",
+            file_kind_count: 2,
+            preset_alias_count: 3,
+            file_kinds: [
+              {
+                kind: "accounts",
+                required_column_groups: [["code"], ["name"], ["account_type"]],
+                preset_alias_count: 3,
+                sample_aliases: [
+                  { source_header: "konto", canonical_header: "code" },
+                ],
+              },
+            ],
+          },
+          {
+            preset: "directo",
+            label: "Directo",
+            description: "Adds Directo aliases.",
+            file_kind_count: 2,
+            preset_alias_count: 4,
+            file_kinds: [
+              {
+                kind: "invoices",
+                required_column_groups: [["invoice_number"], ["issue_date"]],
+                preset_alias_count: 4,
+                sample_aliases: [
+                  { source_header: "arve", canonical_header: "invoice_number" },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await api.listMigrationProviderPresets("tenant-123");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/provider-presets",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result[0].preset).toBe("merit");
+      expect(result[1].preset).toBe("directo");
+      expect(result[0].file_kinds?.[0].sample_aliases?.[0]).toEqual({
+        source_header: "konto",
+        canonical_header: "code",
+      });
+    });
+
+    it("should validate a migration bundle with assignment-ready remediation actions", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          summary: {
+            files_validated: 1,
+            rows_validated: 1,
+            error_count: 1,
+            warning_count: 0,
+            ready: false,
+          },
+          files: [{ kind: "invoices", file_name: "invoices.csv", rows: 1 }],
+          issues: [
+            {
+              severity: "ERROR",
+              kind: "invoices",
+              file_name: "invoices.csv",
+              row: 2,
+              field: "contact_code",
+              target_kind: "contacts",
+              message: "contact_code reference was not found",
+            },
+          ],
+          remediation_actions: [
+            {
+              code: "missing_reference",
+              severity: "BLOCKER",
+              scope: "migration",
+              owner_role: "accountant",
+              workspace_queue: "migration_cutover",
+              assignment_key:
+                "migration:missing-reference:invoices:invoices-csv:contact-code:contacts",
+              priority: "high",
+              due_in_days: 1,
+              message: "invoices.csv has unresolved references to contacts.",
+              action:
+                "Add the referenced target file or correct the source row reference before import.",
+              kind: "invoices",
+              file_name: "invoices.csv",
+              field: "contact_code",
+              target_kind: "contacts",
+              issue_count: 1,
+              ui_path: "/migration",
+              cli_command:
+                "oa migration validate --invoices <file> --provider-preset generic --json",
+            },
+          ],
+        }),
+      });
+
+      const result = await api.validateMigrationBundle("tenant-123", {
+        provider_preset: "merit",
+        e_invoice_contact_mode: "both",
+        files: [
+          {
+            kind: "invoices",
+            file_name: "invoices.csv",
+            csv_content: "invoice_number,contact_code\nINV-1,CUST-404\n",
+          },
+        ],
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/validate",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            provider_preset: "merit",
+            e_invoice_contact_mode: "both",
+            files: [
+              {
+                kind: "invoices",
+                file_name: "invoices.csv",
+                csv_content: "invoice_number,contact_code\nINV-1,CUST-404\n",
+              },
+            ],
+          }),
+        }),
+      );
+      expect(result.remediation_actions?.[0].workspace_queue).toBe(
+        "migration_cutover",
+      );
+      expect(result.remediation_actions?.[0].priority).toBe("high");
+      expect(result.remediation_actions?.[0].ui_path).toBe("/migration");
+    });
+
+    it("should plan migration execution with context-aware import steps", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          summary: {
+            validation_ready: true,
+            ready: false,
+            step_count: 2,
+            ready_step_count: 1,
+            needs_context_count: 1,
+            blocked_step_count: 0,
+          },
+          validation: {
+            summary: {
+              files_validated: 2,
+              rows_validated: 2,
+              error_count: 0,
+              warning_count: 0,
+              ready: true,
+            },
+            files: [
+              { kind: "accounts", file_name: "accounts.csv", rows: 1 },
+              { kind: "bank_transactions", file_name: "bank.csv", rows: 1 },
+            ],
+          },
+          steps: [
+            {
+              step_number: 1,
+              kind: "accounts",
+              file_name: "accounts.csv",
+              status: "READY",
+              message: "Import this validated migration file.",
+              action:
+                "Import this validated cutover file through the listed API or CLI command.",
+              api_method: "POST",
+              api_path: "/api/v1/tenants/{tenantID}/accounts/import",
+              cli_command: "oa accounts import --file <accounts.csv>",
+            },
+            {
+              step_number: 2,
+              kind: "bank_transactions",
+              file_name: "bank.csv",
+              status: "NEEDS_CONTEXT",
+              message:
+                "Import bank transactions after selecting the target bank account.",
+              action:
+                "Provide the missing execution context, then run the listed import command.",
+              api_method: "POST",
+              api_path:
+                "/api/v1/tenants/{tenantID}/bank-accounts/<bank-account-id>/import",
+              cli_command:
+                "oa banking transactions import --account-id <bank-account-id> --file <bank.csv>",
+              depends_on: ["bank_accounts"],
+              context_fields: ["bank_transaction_account_id"],
+            },
+          ],
+          remediation_actions: [
+            {
+              code: "ready_to_import",
+              severity: "ACTION",
+              scope: "migration",
+              owner_role: "accountant",
+              workspace_queue: "migration_cutover",
+              assignment_key: "migration:ready-to-import:-:-:-:-",
+              priority: "low",
+              message: "Migration bundle passed preflight validation.",
+              action:
+                "Run the relevant import commands in the planned cutover order.",
+              issue_count: 0,
+              cli_command: "oa migration plan --provider-preset generic --json",
+            },
+          ],
+        }),
+      });
+
+      const result = await api.planMigrationExecution("tenant-123", {
+        provider_preset: "generic",
+        bank_transaction_account_id: "bank-1",
+        files: [
+          {
+            kind: "accounts",
+            file_name: "accounts.csv",
+            csv_content: "code,name,account_type\n1000,Cash,ASSET\n",
+          },
+          {
+            kind: "bank_transactions",
+            file_name: "bank.csv",
+            csv_content: "date,amount\n2026-05-31,100\n",
+          },
+        ],
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-plan",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            provider_preset: "generic",
+            bank_transaction_account_id: "bank-1",
+            files: [
+              {
+                kind: "accounts",
+                file_name: "accounts.csv",
+                csv_content: "code,name,account_type\n1000,Cash,ASSET\n",
+              },
+              {
+                kind: "bank_transactions",
+                file_name: "bank.csv",
+                csv_content: "date,amount\n2026-05-31,100\n",
+              },
+            ],
+          }),
+        }),
+      );
+      expect(result.summary.needs_context_count).toBe(1);
+      expect(result.steps?.[1].context_fields).toEqual([
+        "bank_transaction_account_id",
+      ]);
+    });
+
+    it("should execute and load saved migration execution runs", async () => {
+      const savedRun = {
+        id: "run-1",
+        tenant_id: "tenant-123",
+        created_by: "user-1",
+        updated_at: "2026-06-14T12:00:00Z",
+        summary: {
+          status: "succeeded",
+          confirmed: true,
+          resumed: true,
+          plan_ready: true,
+          validation_ready: true,
+          step_count: 1,
+          running_step_count: 0,
+          succeeded_step_count: 1,
+          failed_step_count: 0,
+          skipped_step_count: 0,
+          planned_step_count: 0,
+          resumed_step_count: 1,
+          completed_step_count: 1,
+          remaining_step_count: 0,
+          progress_percent: 100,
+          duration_ms: 1500,
+          needs_context_count: 0,
+          blocked_step_count: 0,
+        },
+        steps: [
+          {
+            step_number: 1,
+            kind: "accounts",
+            file_name: "accounts.csv",
+            status: "SUCCEEDED",
+            message: "Import completed.",
+            started_at: "2026-06-14T12:00:00Z",
+            completed_at: "2026-06-14T12:00:01.500Z",
+            duration_ms: 1500,
+            cli_command: "oa accounts import --file <accounts.csv>",
+          },
+        ],
+      };
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => savedRun,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => [savedRun],
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => savedRun,
+        });
+
+      const executed = await api.executeMigration("tenant-123", {
+        provider_preset: "generic",
+        confirm: true,
+        resume_from_run_id: "previous-run",
+        files: [
+          {
+            kind: "accounts",
+            file_name: "accounts.csv",
+            csv_content: "code,name,account_type\n1000,Cash,ASSET\n",
+          },
+        ],
+      });
+      const runs = await api.listMigrationExecutionRuns("tenant-123", {
+        status: "succeeded",
+        limit: 10,
+      });
+      const loaded = await api.getMigrationExecutionRun("tenant-123", "run-1");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/api/v1/tenants/tenant-123/migration/execute"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            provider_preset: "generic",
+            confirm: true,
+            resume_from_run_id: "previous-run",
+            files: [
+              {
+                kind: "accounts",
+                file_name: "accounts.csv",
+                csv_content: "code,name,account_type\n1000,Cash,ASSET\n",
+              },
+            ],
+          }),
+        }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-runs?status=succeeded&limit=10",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-runs/run-1",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(executed.summary.resumed_step_count).toBe(1);
+      expect(executed.summary.duration_ms).toBe(1500);
+      expect(executed.steps?.[0].duration_ms).toBe(1500);
+      expect(runs[0].id).toBe("run-1");
+      expect(loaded.steps?.[0].status).toBe("SUCCEEDED");
+    });
+
+    it("should watch saved migration execution run event streams", async () => {
+      const runningRun = {
+        id: "run-1",
+        tenant_id: "tenant-123",
+        summary: {
+          status: "running",
+          confirmed: true,
+          resumed: false,
+          plan_ready: true,
+          validation_ready: true,
+          step_count: 2,
+          running_step_count: 1,
+          succeeded_step_count: 1,
+          failed_step_count: 0,
+          skipped_step_count: 0,
+          planned_step_count: 0,
+          resumed_step_count: 0,
+          completed_step_count: 1,
+          remaining_step_count: 1,
+          progress_percent: 50,
+          needs_context_count: 0,
+          blocked_step_count: 0,
+          active_step_number: 2,
+          active_step_kind: "contacts",
+          active_step_file_name: "contacts.csv",
+          active_step_status: "RUNNING",
+        },
+      };
+      const completedRun = {
+        ...runningRun,
+        summary: {
+          ...runningRun.summary,
+          status: "succeeded",
+          running_step_count: 0,
+          succeeded_step_count: 2,
+          completed_step_count: 2,
+          remaining_step_count: 0,
+          progress_percent: 100,
+        },
+      };
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `event: snapshot\nid: 1\ndata: ${JSON.stringify({
+                type: "snapshot",
+                sequence: 1,
+                run: runningRun,
+              })}\n\n`,
+            ),
+          );
+          controller.enqueue(
+            encoder.encode(
+              `event: complete\nid: 2\ndata: ${JSON.stringify({
+                type: "complete",
+                sequence: 2,
+                run: completedRun,
+              })}\n\n`,
+            ),
+          );
+          controller.close();
+        },
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: stream,
+      });
+      api.setTokens("valid-token", "refresh-token");
+      const events: Array<{
+        type: string;
+        sequence: number;
+        run?: typeof runningRun;
+      }> = [];
+
+      await api.watchMigrationExecutionRun("tenant-123", "run-1", {
+        intervalMs: 250,
+        maxEvents: 2,
+        onEvent: (event) => {
+          events.push(event as (typeof events)[number]);
+        },
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-runs/run-1/events?interval_ms=250&max_events=2",
+        ),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Accept: "text/event-stream",
+            Authorization: "Bearer valid-token",
+          }),
+        }),
+      );
+      expect(events).toHaveLength(2);
+      expect(events[0].type).toBe("snapshot");
+      expect(events[0].run?.summary.active_step_file_name).toBe("contacts.csv");
+      expect(events[1].type).toBe("complete");
+      expect(events[1].run?.summary.progress_percent).toBe(100);
+    });
+
+    it("should list expense claims with remediation actions", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: "expense-1",
+            expense_number: "EXP-001",
+            amount: "35.00",
+            status: "SUBMITTED",
+            remediation_actions: [
+              {
+                code: "expense_receipt_approval_required",
+                severity: "ACTION",
+                scope: "expenses",
+                owner_role: "accountant",
+                workspace_queue: "expense_claims",
+                assignment_key:
+                  "expense-claims:expense-receipt-approval-required:expense:expense-1:EXP-001:SUBMITTED",
+                priority: "high",
+                due_in_days: 1,
+                message: "Expense EXP-001 is submitted and receipt-backed.",
+                action:
+                  "Confirm a linked receipt exists and is approved before approving the expense.",
+                entity_type: "expense",
+                entity_id: "expense-1",
+                ui_path: "/expenses?expense_id=expense-1",
+                cli_command:
+                  "oa documents review-queue --entity-type expense --document-type receipt --status PENDING",
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await api.listExpenses("tenant-123", {
+        status: "SUBMITTED",
+        limit: 25,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/expenses?status=SUBMITTED&limit=25",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result[0].amount.toString()).toBe("35");
+      expect(result[0].remediation_actions?.[0].workspace_queue).toBe(
+        "expense_claims",
+      );
+    });
+
+    it("should update payroll payment date", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "payroll-1",
+          tenant_id: "tenant-123",
+          period_year: 2026,
+          period_month: 2,
+          status: "CALCULATED",
+          payment_date: "2026-02-28T00:00:00Z",
+          total_gross: "4200",
+          total_net: "3260",
+          total_employer_cost: "5628",
+          created_at: "2026-02-01T00:00:00Z",
+          updated_at: "2026-02-11T00:00:00Z",
+          remediation_actions: [],
+        }),
+      });
+
+      const result = await api.updatePayrollPaymentDate(
+        "tenant-123",
+        "payroll-1",
+        {
+          payment_date: "2026-02-28",
+        },
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/payroll-runs/payroll-1/payment-date",
+        ),
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ payment_date: "2026-02-28" }),
+        }),
+      );
+      expect(result.payment_date).toBe("2026-02-28T00:00:00Z");
+      expect(result.remediation_actions).toEqual([]);
+    });
+
+    it("should run expense lifecycle actions", async () => {
+      const expenseResponse = {
+        id: "expense-1",
+        tenant_id: "tenant-123",
+        expense_number: "EXP-001",
+        expense_date: "2026-05-30",
+        merchant: "Taxi Co",
+        expense_account_id: "expense-account",
+        payment_account_id: "cash-account",
+        amount: "35.00",
+        currency: "EUR",
+        exchange_rate: "1",
+        base_amount: "35.00",
+        requires_receipt: false,
+        status: "SUBMITTED",
+        created_at: "2026-05-30T00:00:00Z",
+        created_by: "user-1",
+        updated_at: "2026-05-30T00:00:00Z",
+      };
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ ...expenseResponse, status: "SUBMITTED" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ ...expenseResponse, status: "APPROVED" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ ...expenseResponse, status: "POSTED" }),
+        });
+
+      const submitted = await api.submitExpense("tenant-123", "expense-1");
+      const approved = await api.approveExpense("tenant-123", "expense-1");
+      const posted = await api.postExpense("tenant-123", "expense-1");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/expenses/expense-1/submit",
+        ),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/expenses/expense-1/approve",
+        ),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/expenses/expense-1/post",
+        ),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(submitted.status).toBe("SUBMITTED");
+      expect(approved.status).toBe("APPROVED");
+      expect(posted.status).toBe("POSTED");
+    });
+
+    it("should update document retention metadata", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "doc-1",
+          retention_until: "2028-03-31T00:00:00Z",
+        }),
+      });
+
+      const result = await api.updateDocumentRetention("tenant-123", "doc-1", {
+        retention_until: "2028-03-31",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/doc-1/retention",
+        ),
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ retention_until: "2028-03-31" }),
+        }),
+      );
+      expect(result.retention_until).toBe("2028-03-31T00:00:00Z");
+    });
+
     it("should upload documents with multipart form data", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -545,6 +1684,37 @@ describe("API Client - Core Functionality", () => {
       expect(result.review_status).toBe("REVIEWED");
     });
 
+    it("should review a document with an explicit approval decision", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "doc-1",
+          review_status: "APPROVED",
+          review_note: "Evidence accepted",
+        }),
+      });
+
+      const result = await api.reviewDocument("tenant-123", "doc-1", {
+        review_status: "APPROVED",
+        review_note: "Evidence accepted",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/doc-1/review",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            review_status: "APPROVED",
+            review_note: "Evidence accepted",
+          }),
+        }),
+      );
+      expect(result.review_status).toBe("APPROVED");
+    });
+
     it("should delete a document", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -597,6 +1767,44 @@ describe("API Client - Core Functionality", () => {
       expect(createObjectURL).toHaveBeenCalledWith(blob);
       expect(click).toHaveBeenCalledTimes(1);
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:doc-1");
+    });
+
+    it("should download a year-end close audit archive", async () => {
+      api.setTokens("valid-token", "refresh-token");
+
+      const blob = new Blob(["zip"]);
+      const createObjectURL = vi
+        .spyOn(URL, "createObjectURL")
+        .mockReturnValue("blob:year-end-audit");
+      const revokeObjectURL = vi
+        .spyOn(URL, "revokeObjectURL")
+        .mockImplementation(() => {});
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => {});
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => blob,
+      });
+
+      await api.downloadYearEndCloseAuditArchive("tenant-123", "2025-12-31");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/year-end-close-audit-archive?period_end_date=2025-12-31",
+        ),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Authorization: "Bearer valid-token",
+          }),
+        }),
+      );
+      expect(createObjectURL).toHaveBeenCalledWith(blob);
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:year-end-audit");
     });
   });
 
@@ -1238,6 +2446,43 @@ describe("API Client - Core Functionality", () => {
       expect(result.status).toBe("allocated");
     });
 
+    it("should reverse payment", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          original_payment: {
+            id: "pay-1",
+            payment_number: "PMT-001",
+            reversed_by_payment_id: "pay-reversal",
+          },
+          reversal_payment: {
+            id: "pay-reversal",
+            payment_number: "OUT-001",
+            reversal_of_payment_id: "pay-1",
+          },
+        }),
+      });
+
+      const result = await api.reversePayment("tenant-123", "pay-1", {
+        payment_date: "2026-06-09T00:00:00.000Z",
+        reason: "Duplicate bank import",
+        reference: "REV-PMT-001",
+      });
+
+      expect(result.original_payment.reversed_by_payment_id).toBe(
+        "pay-reversal",
+      );
+      expect(result.reversal_payment.reversal_of_payment_id).toBe("pay-1");
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/payments/pay-1/reverse"),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("Duplicate bank import"),
+        }),
+      );
+    });
+
     it("should get unallocated payments", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -1605,6 +2850,64 @@ describe("API Client - Core Functionality", () => {
       expect(result.success).toBe(true);
     });
 
+    it("should email quote", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, log_id: "log-1", message: "Sent" }),
+      });
+
+      const result = await api.emailQuote("tenant-123", "quote-1", {
+        recipient_email: "customer@example.com",
+        recipient_name: "Customer",
+        attach_pdf: true,
+        require_approved_evidence: true,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/quotes/quote-1/email"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            recipient_email: "customer@example.com",
+            recipient_name: "Customer",
+            attach_pdf: true,
+            require_approved_evidence: true,
+          }),
+        }),
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it("should email order", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, log_id: "log-1", message: "Sent" }),
+      });
+
+      const result = await api.emailOrder("tenant-123", "order-1", {
+        recipient_email: "customer@example.com",
+        recipient_name: "Customer",
+        attach_pdf: true,
+        require_approved_evidence: true,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/orders/order-1/email"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            recipient_email: "customer@example.com",
+            recipient_name: "Customer",
+            attach_pdf: true,
+            require_approved_evidence: true,
+          }),
+        }),
+      );
+      expect(result.success).toBe(true);
+    });
+
     it("should email payment receipt", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -1728,14 +3031,7 @@ describe("API Client - Core Functionality", () => {
       const result = await api.importBankTransactions("tenant-123", "bank-1", {
         csv_content: "date,desc,amount\n2024-01-01,Test,100",
         file_name: "statement.csv",
-        mapping: {
-          date_column: 0,
-          description_column: 1,
-          amount_column: 2,
-          date_format: "YYYY-MM-DD",
-          decimal_separator: ".",
-          skip_header: true,
-        },
+        format: "generic",
       });
 
       expect(result.import_id).toBe("imp-1");
@@ -1941,6 +3237,88 @@ describe("API Client - Core Functionality", () => {
       expect(result).toHaveLength(1);
     });
 
+    it("should generate KMD INF and EU VAT OSS reports", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            tenant_id: "tenant-123",
+            year: 2026,
+            month: 3,
+            remediation_actions: [{ code: "kmd_inf_review_required" }],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            tenant_id: "tenant-123",
+            year: 2026,
+            quarter: 1,
+            remediation_actions: [{ code: "eu_vat_oss_review_required" }],
+          }),
+        });
+
+      const inf = await api.generateKMDINF("tenant-123", {
+        year: 2026,
+        month: 3,
+        threshold: "1000",
+      });
+      const oss = await api.generateEUVATOSS("tenant-123", {
+        year: 2026,
+        quarter: 1,
+        include_b2b: true,
+      });
+
+      expect(inf.remediation_actions?.[0].code).toBe("kmd_inf_review_required");
+      expect(oss.remediation_actions?.[0].code).toBe(
+        "eu_vat_oss_review_required",
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/tax/kmd/2026/3/inf?threshold=1000"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(
+          "/tax/eu-vat/oss?year=2026&quarter=1&include_b2b=true",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+    });
+
+    it("should mark KMD submitted and accepted", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "submitted" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "accepted" }),
+        });
+
+      const submitted = await api.markKMDSubmitted("tenant-123", 2024, 1);
+      const accepted = await api.markKMDAccepted("tenant-123", 2024, 1);
+
+      expect(submitted.status).toBe("submitted");
+      expect(accepted.status).toBe("accepted");
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/tax/kmd/2024/1/submit"),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/tax/kmd/2024/1/accept"),
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
     it("should get cash flow statement", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -2038,6 +3416,95 @@ describe("API Client - Core Functionality", () => {
         expect.any(Object),
       );
       expect(result.total_balance.toString()).toBe("250");
+    });
+
+    it("should download balance confirmation summary export", async () => {
+      api.setTokens("valid-token", "refresh-token");
+
+      const blob = new Blob(["Contact,Balance\nAcme,100"], {
+        type: "text/csv",
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => blob,
+      });
+
+      const createObjectURL = vi
+        .spyOn(URL, "createObjectURL")
+        .mockReturnValue("blob:balance-summary");
+      const revokeObjectURL = vi
+        .spyOn(URL, "revokeObjectURL")
+        .mockImplementation(() => {});
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => {});
+
+      await api.downloadBalanceConfirmationSummary(
+        "tenant-123",
+        "RECEIVABLE",
+        "2024-01-31",
+        "csv",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/reports/balance-confirmations?type=RECEIVABLE&as_of_date=2024-01-31&format=csv",
+        ),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Authorization: "Bearer valid-token",
+          }),
+        }),
+      );
+      expect(createObjectURL).toHaveBeenCalledWith(blob);
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:balance-summary");
+    });
+
+    it("should download balance confirmation detail export", async () => {
+      api.setTokens("valid-token", "refresh-token");
+
+      const blob = new Blob(["pdf"], { type: "application/pdf" });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => blob,
+      });
+
+      const createObjectURL = vi
+        .spyOn(URL, "createObjectURL")
+        .mockReturnValue("blob:balance-detail");
+      const revokeObjectURL = vi
+        .spyOn(URL, "revokeObjectURL")
+        .mockImplementation(() => {});
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => {});
+
+      await api.downloadBalanceConfirmation(
+        "tenant-123",
+        "contact-1",
+        "PAYABLE",
+        "2024-01-31",
+        "pdf",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/reports/balance-confirmations/contact-1?type=PAYABLE&as_of_date=2024-01-31&format=pdf",
+        ),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Authorization: "Bearer valid-token",
+          }),
+        }),
+      );
+      expect(createObjectURL).toHaveBeenCalledWith(blob);
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:balance-detail");
     });
 
     it("should get overdue invoices summary", async () => {
@@ -2320,7 +3787,8 @@ describe("API Client - Core Functionality", () => {
 
       const result = await api.importLeaveBalances("tenant-123", {
         file_name: "leave-balances.csv",
-        csv_content: "year,employee_number,absence_type_code\n2025,EMP-100,ANNUAL_LEAVE\n",
+        csv_content:
+          "year,employee_number,absence_type_code\n2025,EMP-100,ANNUAL_LEAVE\n",
       });
 
       expect(mockFetch).toHaveBeenCalledWith(
@@ -2406,10 +3874,25 @@ describe("API Client - Core Functionality", () => {
       const result = await api.calculateTaxPreview(
         "tenant-123",
         "5000",
+        true,
         "654",
         "2",
       );
 
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/payroll/tax-preview",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            gross_salary: "5000",
+            apply_basic_exemption: true,
+            basic_exemption_amount: "654",
+            funded_pension_rate: "2",
+          }),
+        }),
+      );
       expect(result).toBeDefined();
     });
 
@@ -2452,6 +3935,24 @@ describe("API Client - Core Functionality", () => {
       );
 
       expect(result.status).toBe("submitted");
+    });
+
+    it("should mark TSD accepted", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ status: "accepted" }),
+      });
+
+      const result = await api.markTSDAccepted("tenant-123", 2024, 1);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/tsd/2024/1/accept"),
+        expect.objectContaining({
+          method: "POST",
+        }),
+      );
+      expect(result.status).toBe("accepted");
     });
   });
 
@@ -2562,6 +4063,65 @@ describe("API Client - Core Functionality", () => {
         expect.any(Object),
       );
       expect(result.period_end).toBe("2024-01-31");
+    });
+
+    it("should list cost allocations with filters", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: "alloc-1",
+            amount: "125.00",
+            cost_center_id: "cc-1",
+            journal_entry_line_id: "line-1",
+          },
+        ],
+      });
+
+      const result = await api.listCostAllocations("tenant-123", {
+        cost_center_id: "cc-1",
+        start_date: "2024-01-01",
+        end_date: "2024-01-31",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/cost-centers/allocations?cost_center_id=cc-1&start_date=2024-01-01&end_date=2024-01-31",
+        ),
+        expect.any(Object),
+      );
+      expect(result[0].id).toBe("alloc-1");
+    });
+
+    it("should create cost allocation", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          id: "alloc-new",
+          amount: "125.00",
+          cost_center_id: "cc-1",
+          journal_entry_line_id: "line-1",
+        }),
+      });
+
+      const result = await api.createCostAllocation("tenant-123", {
+        cost_center_id: "cc-1",
+        journal_entry_line_id: "line-1",
+        amount: "125.00",
+        allocation_percentage: "50",
+        allocation_date: "2024-01-31T00:00:00Z",
+        notes: "Shared office cost",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/cost-centers/allocations",
+        ),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(result.id).toBe("alloc-new");
     });
   });
 
@@ -2776,6 +4336,9 @@ describe("API Client - Core Functionality", () => {
   describe("Plugin Endpoints", () => {
     beforeEach(() => {
       api.setTokens("valid-token", "refresh-token");
+      if (typeof window !== "undefined") {
+        window.history.pushState({}, "", "/");
+      }
     });
 
     it("should list plugin registries", async () => {
@@ -2871,6 +4434,29 @@ describe("API Client - Core Functionality", () => {
       expect(result).toBeDefined();
     });
 
+    it("should send tenant context for admin plugin permissions from tenant pages", async () => {
+      window.history.pushState({}, "", "/settings/plugins?tenant=tenant-123");
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          "read:invoices": { name: "Read Invoices", risk: "low" },
+        }),
+      });
+
+      await api.getPluginPermissions();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/admin/plugins/permissions"),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: "Bearer valid-token",
+            "X-Tenant-ID": "tenant-123",
+          }),
+        }),
+      );
+    });
+
     it("should install plugin", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -2880,6 +4466,15 @@ describe("API Client - Core Functionality", () => {
 
       const result = await api.installPlugin("https://github.com/test/plugin");
 
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/admin/plugins/install"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            repository_url: "https://github.com/test/plugin",
+          }),
+        }),
+      );
       expect(result.id).toBe("plugin-new");
     });
 
@@ -2916,6 +4511,12 @@ describe("API Client - Core Functionality", () => {
 
       const result = await api.enablePlugin("plugin-1", ["read:invoices"]);
 
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/admin/plugins/plugin-1/enable"),
+        expect.objectContaining({
+          body: JSON.stringify({ granted_permissions: ["read:invoices"] }),
+        }),
+      );
       expect(result.state).toBe("enabled");
     });
 
@@ -3051,6 +4652,62 @@ describe("API Client - Core Functionality", () => {
       expect(mockClick).toHaveBeenCalled();
     });
 
+    it("should download quote PDF", async () => {
+      const mockBlob = new Blob(["quote pdf content"], {
+        type: "application/pdf",
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => mockBlob,
+      });
+
+      const mockClick = vi.fn();
+      vi.spyOn(document, "createElement").mockReturnValue({
+        href: "",
+        download: "",
+        click: mockClick,
+      } as unknown as HTMLAnchorElement);
+      vi.spyOn(document.body, "appendChild").mockImplementation(vi.fn());
+      vi.spyOn(document.body, "removeChild").mockImplementation(vi.fn());
+
+      await api.downloadQuotePDF("tenant-123", "quote-1", "QUO-001");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/quotes/quote-1/pdf"),
+        expect.any(Object),
+      );
+      expect(mockClick).toHaveBeenCalled();
+    });
+
+    it("should download order PDF", async () => {
+      const mockBlob = new Blob(["order pdf content"], {
+        type: "application/pdf",
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => mockBlob,
+      });
+
+      const mockClick = vi.fn();
+      vi.spyOn(document, "createElement").mockReturnValue({
+        href: "",
+        download: "",
+        click: mockClick,
+      } as unknown as HTMLAnchorElement);
+      vi.spyOn(document.body, "appendChild").mockImplementation(vi.fn());
+      vi.spyOn(document.body, "removeChild").mockImplementation(vi.fn());
+
+      await api.downloadOrderPDF("tenant-123", "order-1", "ORD-001");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/orders/order-1/pdf"),
+        expect.any(Object),
+      );
+      expect(mockClick).toHaveBeenCalled();
+    });
+
     it("should throw error on failed PDF download", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
@@ -3172,6 +4829,210 @@ describe("API Client - Core Functionality", () => {
       await expect(api.downloadTSDCsv("tenant-123", 2024, 1)).rejects.toThrow(
         "Failed to download TSD CSV",
       );
+    });
+  });
+
+  describe("Inventory Stock Operations", () => {
+    beforeEach(() => {
+      api.setTokens("access-token-123", "refresh-token-456");
+    });
+
+    it("should reserve stock", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "level-1",
+          product_id: "product-1",
+          warehouse_id: "warehouse-1",
+          quantity: "5",
+          reserved_qty: "2",
+          available_qty: "3",
+        }),
+      });
+
+      const result = await api.reserveStock("tenant-123", {
+        product_id: "product-1",
+        warehouse_id: "warehouse-1",
+        quantity: "2",
+        reason: "Sales allocation",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/inventory/reserve"),
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            Authorization: "Bearer access-token-123",
+            "Content-Type": "application/json",
+          }),
+          body: JSON.stringify({
+            product_id: "product-1",
+            warehouse_id: "warehouse-1",
+            quantity: "2",
+            reason: "Sales allocation",
+          }),
+        }),
+      );
+      expect(result.reserved_qty).toBeInstanceOf(Decimal);
+      expect(result.reserved_qty.toString()).toBe("2");
+    });
+
+    it("should release reserved stock", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "level-1",
+          product_id: "product-1",
+          warehouse_id: "warehouse-1",
+          quantity: "5",
+          reserved_qty: "1",
+          available_qty: "4",
+        }),
+      });
+
+      const result = await api.releaseStock("tenant-123", {
+        product_id: "product-1",
+        warehouse_id: "warehouse-1",
+        quantity: "1",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/inventory/release"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            product_id: "product-1",
+            warehouse_id: "warehouse-1",
+            quantity: "1",
+          }),
+        }),
+      );
+      expect(result.available_qty).toBeInstanceOf(Decimal);
+      expect(result.available_qty.toString()).toBe("4");
+    });
+
+    it("should get inventory valuation with filters", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tenant_id: "tenant-123",
+          warehouse_id: "warehouse-1",
+          valuation_method: "WEIGHTED_AVERAGE",
+          lines: [
+            {
+              product_id: "product-1",
+              product_code: "PRD-1",
+              product_name: "Widget",
+              warehouse_id: "warehouse-1",
+              warehouse_name: "Main Warehouse",
+              quantity: "5",
+              reserved_qty: "2",
+              available_qty: "3",
+              unit_cost: "10.50",
+              inventory_value: "52.50",
+            },
+          ],
+          total_quantity: "5",
+          total_reserved: "2",
+          total_available: "3",
+          total_value: "52.50",
+          generated_at: "2026-06-12T00:00:00Z",
+        }),
+      });
+
+      const result = await api.getInventoryValuation("tenant-123", {
+        warehouse_id: "warehouse-1",
+        method: "weighted-average",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/inventory/valuation?warehouse_id=warehouse-1&method=weighted-average",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result.total_value).toBeInstanceOf(Decimal);
+      expect(result.total_value.toString()).toBe("52.5");
+      expect(result.lines[0].available_qty).toBeInstanceOf(Decimal);
+      expect(result.lines[0].available_qty.toString()).toBe("3");
+    });
+
+    it("should get inventory subledger reconciliation with filters", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tenant_id: "tenant-123",
+          warehouse_id: "warehouse-1",
+          valuation_method: "WEIGHTED_AVERAGE",
+          as_of_date: "2026-06-13T00:00:00Z",
+          lines: [
+            {
+              product_id: "product-1",
+              product_code: "PRD-1",
+              product_name: "Widget",
+              warehouse_id: "warehouse-1",
+              warehouse_name: "Main Warehouse",
+              inventory_account_id: "account-1",
+              account_code: "1210",
+              account_name: "Inventory",
+              account_type: "asset",
+              quantity: "5",
+              inventory_value: "52.50",
+              status: "MAPPED",
+            },
+          ],
+          account_lines: [
+            {
+              account_id: "account-1",
+              account_code: "1210",
+              account_name: "Inventory",
+              account_type: "asset",
+              product_line_count: 1,
+              subledger_value: "52.50",
+              general_ledger_balance: "50.00",
+              difference: "2.50",
+              balanced: false,
+            },
+          ],
+          total_subledger_value: "52.50",
+          total_general_ledger_balance: "50.00",
+          total_difference: "2.50",
+          missing_account_line_count: 0,
+          unknown_account_line_count: 0,
+          invalid_account_type_line_count: 0,
+          difference_account_count: 1,
+          blocking_exception_line_count: 0,
+          blocking_exception_account_count: 1,
+          ready: false,
+          generated_at: "2026-06-13T00:00:00Z",
+        }),
+      });
+
+      const result = await api.getInventorySubledgerReconciliation(
+        "tenant-123",
+        {
+          warehouse_id: "warehouse-1",
+          method: "weighted-average",
+          as_of_date: "2026-06-13",
+        },
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/inventory/subledger-reconciliation?warehouse_id=warehouse-1&method=weighted-average&as_of_date=2026-06-13",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result.total_subledger_value).toBeInstanceOf(Decimal);
+      expect(result.total_subledger_value.toString()).toBe("52.5");
+      expect(result.account_lines[0].difference).toBeInstanceOf(Decimal);
+      expect(result.account_lines[0].difference.toString()).toBe("2.5");
+      expect(result.lines[0].inventory_value).toBeInstanceOf(Decimal);
+      expect(result.lines[0].inventory_value.toString()).toBe("52.5");
     });
   });
 

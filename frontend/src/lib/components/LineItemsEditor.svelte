@@ -43,6 +43,10 @@
 	// Computed total for all lines
 	let total = $derived(calculateLinesTotal(lines));
 
+	function updateLine(index: number, field: keyof LineItem, value: string) {
+		lines = lines.map((line, i) => (i === index ? { ...line, [field]: value } : line));
+	}
+
 	function addLine() {
 		lines = [...lines, createEmptyLine(vatRates[0] || '22')];
 	}
@@ -77,13 +81,15 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each lines as line, i}
+				{#each lines as line, i (line)}
 					<tr>
 						<td class="col-description">
 							<input
 								class="input"
 								type="text"
-								bind:value={line.description}
+								value={line.description}
+								oninput={(event) =>
+									updateLine(i, 'description', event.currentTarget.value)}
 								required
 								placeholder={descriptionPlaceholder || m.invoices_productOrService()}
 							/>
@@ -94,7 +100,8 @@
 								type="number"
 								step="0.01"
 								min="0.01"
-								bind:value={line.quantity}
+								value={line.quantity}
+								oninput={(event) => updateLine(i, 'quantity', event.currentTarget.value)}
 								required
 							/>
 						</td>
@@ -104,13 +111,18 @@
 								type="number"
 								step="0.01"
 								min="0"
-								bind:value={line.unit_price}
+								value={line.unit_price}
+								oninput={(event) => updateLine(i, 'unit_price', event.currentTarget.value)}
 								required
 							/>
 						</td>
 						<td class="col-vat">
-							<select class="input input-small" bind:value={line.vat_rate}>
-								{#each vatRates as rate}
+							<select
+								class="input input-small"
+								value={line.vat_rate}
+								onchange={(event) => updateLine(i, 'vat_rate', event.currentTarget.value)}
+							>
+								{#each vatRates as rate (rate)}
 									<option value={rate}>{rate}%</option>
 								{/each}
 							</select>
@@ -123,7 +135,9 @@
 									step="0.1"
 									min="0"
 									max="100"
-									bind:value={line.discount_percent}
+									value={line.discount_percent}
+									oninput={(event) =>
+										updateLine(i, 'discount_percent', event.currentTarget.value)}
 								/>
 							</td>
 						{/if}

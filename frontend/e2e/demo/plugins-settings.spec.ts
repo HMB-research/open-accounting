@@ -1,116 +1,187 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { ensureAuthenticated, navigateTo, ensureDemoTenant, waitForRouteReady } from './utils';
+
+interface TenantPluginPayload {
+	plugin_id: string;
+	is_enabled: boolean;
+	plugin?: {
+		name: string;
+		display_name: string;
+	};
+}
+
+interface PluginPayload {
+	id: string;
+	name: string;
+	display_name: string;
+	repository_url: string;
+	state: string;
+	manifest?: {
+		permissions?: string[];
+	};
+}
+
+const demoPluginName = 'Demo Bank Import';
+const demoPluginSlug = 'demo-bank-import';
+const demoInstallPluginName = 'Demo Admin Install';
+const demoInstallPluginSlug = 'demo-admin-install';
+const demoInstallRepositoryUrl = 'https://github.com/HMB-research/open-accounting-demo-admin-plugin';
+
+function responsePath(responseUrl: string) {
+	return new URL(responseUrl).pathname;
+}
+
+async function openPluginsPage(page: Page, testInfo: TestInfo): Promise<TenantPluginPayload[]> {
+	const tenantPluginsLoaded = page.waitForResponse((response) => {
+		const url = new URL(response.url());
+		return (
+			response.request().method() === 'GET' &&
+			url.pathname.match(/\/api\/v1\/tenants\/[^/]+\/plugins$/) !== null &&
+			response.status() === 200
+		);
+	});
+	const permissionsLoaded = page.waitForResponse(
+		(response) =>
+			response.request().method() === 'GET' &&
+			new URL(response.url()).pathname === '/api/v1/admin/plugins/permissions' &&
+			response.status() === 200
+	);
+
+	await navigateTo(page, '/settings/plugins', testInfo, { waitForNetworkIdle: false });
+	const [tenantPluginsResponse] = await Promise.all([tenantPluginsLoaded, permissionsLoaded]);
+	await waitForRouteReady(page, 'main h1, main .plugins-list, main .empty-state, main .alert-error');
+	return (await tenantPluginsResponse.json()) as TenantPluginPayload[];
+}
+
+async function openAdminPluginsPage(page: Page, testInfo: TestInfo): Promise<PluginPayload[]> {
+	const pluginsLoaded = page.waitForResponse(
+		(response) =>
+			response.request().method() === 'GET' &&
+			new URL(response.url()).pathname === '/api/v1/admin/plugins' &&
+			response.status() === 200
+	);
+	const registriesLoaded = page.waitForResponse(
+		(response) =>
+			response.request().method() === 'GET' &&
+			new URL(response.url()).pathname === '/api/v1/admin/plugin-registries' &&
+			response.status() === 200
+	);
+	const permissionsLoaded = page.waitForResponse(
+		(response) =>
+			response.request().method() === 'GET' &&
+			new URL(response.url()).pathname === '/api/v1/admin/plugins/permissions' &&
+			response.status() === 200
+	);
+
+	await navigateTo(page, '/admin/plugins', testInfo, { waitForNetworkIdle: false });
+	const [pluginsResponse] = await Promise.all([pluginsLoaded, registriesLoaded, permissionsLoaded]);
+	await waitForRouteReady(page, 'main h1, main .plugins-grid, main .plugin-card, main .empty-state, main .alert-error');
+	return (await pluginsResponse.json()) as PluginPayload[];
+}
 
 test.describe('Plugins Settings View', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
+	test('toggles a tenant plugin and loads the admin plugins route', async ({ page }, testInfo) => {
 		await ensureAuthenticated(page, testInfo);
 		await ensureDemoTenant(page, testInfo);
-	});
 
-	test('displays plugins page with correct structure', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/plugins', testInfo);
+		const tenantPlugins = await openPluginsPage(page, testInfo);
 
-		// Wait for page to load
-		await page.waitForTimeout(2000);
+		await expect(page.getByRole('heading', { name: /plugin|extension|integration/i }).first()).toBeVisible();
+		await expect(page.locator('.plugins-list, .empty-state, .alert-error').first()).toBeVisible();
 
-		// Check for page heading
-		const hasHeading = await page
-			.getByRole('heading', { name: /plugin|extension|integration/i })
-			.isVisible()
-			.catch(() => false);
+		const demoPlugin = tenantPlugins.find((plugin) => plugin.plugin?.name === demoPluginSlug);
+		expect(demoPlugin, `${demoPluginSlug} should be seeded for demo plugin workflow coverage`).toBeTruthy();
+		expect(demoPlugin?.is_enabled).toBe(false);
 
-		const hasPluginContent = await page
-			.getByText(/plugin|extension|integration/i)
-			.first()
-			.isVisible()
-			.catch(() => false);
+		const pluginCard = page.locator('.plugin-card').filter({ hasText: demoPluginName }).first();
+		await expect(pluginCard).toBeVisible();
+		await expect(pluginCard.locator('.plugin-info')).toContainText(demoPluginName);
+		await expect(pluginCard.locator('.badge')).toContainText(/disabled|keelatud/i);
+		await expect(pluginCard.locator('.permission-badge')).toContainText('banking:read');
 
-		expect(hasHeading || hasPluginContent).toBe(true);
-	});
+		const enableResponsePromise = page.waitForResponse((response) => {
+			return (
+				response.request().method() === 'POST' &&
+				new RegExp(`/api/v1/tenants/[^/]+/plugins/${demoPlugin!.plugin_id}/enable$`).test(
+					responsePath(response.url())
+				)
+			);
+		});
+		await pluginCard.getByRole('button', { name: /enable|aktiveeri|luba/i }).click();
+		const enableResponse = await enableResponsePromise;
+		expect(enableResponse.ok()).toBeTruthy();
+		const enabledPlugin = (await enableResponse.json()) as TenantPluginPayload;
+		expect(enabledPlugin.plugin_id).toBe(demoPlugin?.plugin_id);
+		expect(enabledPlugin.is_enabled).toBe(true);
+		await expect(pluginCard.locator('.badge')).toContainText(/enabled|lubatud/i);
 
-	test('displays plugin list or empty state', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/plugins', testInfo);
+		const disableResponsePromise = page.waitForResponse((response) => {
+			return (
+				response.request().method() === 'POST' &&
+				new RegExp(`/api/v1/tenants/[^/]+/plugins/${demoPlugin!.plugin_id}/disable$`).test(
+					responsePath(response.url())
+				)
+			);
+		});
+		page.once('dialog', async (dialog) => {
+			expect(dialog.type()).toBe('confirm');
+			await dialog.accept();
+		});
+		await pluginCard.getByRole('button', { name: /disable|keela/i }).click();
+		const disableResponse = await disableResponsePromise;
+		expect(disableResponse.ok()).toBeTruthy();
+		const disabledPlugin = (await disableResponse.json()) as { status: string };
+		expect(disabledPlugin.status).toBe('disabled');
+		await expect(pluginCard.locator('.badge')).toContainText(/disabled|keelatud/i);
 
-		await page.waitForTimeout(2000);
+		const adminPlugins = await openAdminPluginsPage(page, testInfo);
+		expect(
+			adminPlugins.find((plugin) => plugin.repository_url === demoInstallRepositoryUrl),
+			`${demoInstallPluginSlug} should be cleaned by demo reset before install workflow`
+		).toBeFalsy();
 
-		// Should show plugin cards or list
-		const hasPluginCards = await page
-			.locator('.card, [class*="plugin"]')
-			.first()
-			.isVisible()
-			.catch(() => false);
+		await expect(page.getByRole('heading', { name: /plugin|admin/i }).first()).toBeVisible();
+		await expect(page.locator('main .plugins-grid, main .plugin-card, main .empty-state').first()).toBeVisible();
+		await expect(page.locator('main .plugin-card').filter({ hasText: demoPluginName })).toBeVisible();
+		await expect(page.getByRole('button', { name: /search plugins|install from url/i }).first()).toBeVisible();
 
-		const hasEmptyState = await page.locator('.empty-state, [class*="empty"]').isVisible().catch(() => false);
+		await page.getByRole('button', { name: /install from url/i }).click();
+		const installModal = page.locator('.modal').filter({ hasText: /install plugin/i }).first();
+		await expect(installModal).toBeVisible();
+		await installModal.locator('#installUrl').fill(demoInstallRepositoryUrl);
 
-		const hasTable = await page.locator('table').isVisible().catch(() => false);
+		const installResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				new URL(response.url()).pathname === '/api/v1/admin/plugins/install'
+		);
+		await installModal.getByRole('button', { name: /install plugin/i }).click();
+		const installResponse = await installResponsePromise;
+		expect(installResponse.status()).toBe(201);
+		const installedPlugin = (await installResponse.json()) as PluginPayload;
+		expect(installedPlugin.name).toBe(demoInstallPluginSlug);
+		expect(installedPlugin.display_name).toBe(demoInstallPluginName);
+		expect(installedPlugin.repository_url).toBe(demoInstallRepositoryUrl);
+		expect(installedPlugin.state).toBe('installed');
 
-		// Should have some content
-		expect(hasPluginCards || hasEmptyState || hasTable || true).toBe(true);
-	});
+		const installedCard = page.locator('main .plugin-card').filter({ hasText: demoInstallPluginName });
+		await expect(installedCard).toBeVisible();
+		await expect(installedCard.locator('.badge')).toContainText(/installed|paigaldatud/i);
+		await expect(installedCard.locator('.permission-badge')).not.toBeVisible();
+		await expect(page.locator('.alert-success')).toContainText(demoInstallPluginName);
 
-	test('shows plugin enable/disable controls', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/plugins', testInfo);
-
-		await page.waitForTimeout(2000);
-
-		// Check for enable/disable buttons or toggles
-		const hasEnableButton = await page
-			.getByRole('button', { name: /enable|disable|activate/i })
-			.first()
-			.isVisible()
-			.catch(() => false);
-
-		const hasToggle = await page
-			.locator('input[type="checkbox"], [role="switch"]')
-			.first()
-			.isVisible()
-			.catch(() => false);
-
-		// If plugins exist, should have controls
-		if (hasEnableButton || hasToggle) {
-			expect(hasEnableButton || hasToggle).toBe(true);
-		}
-	});
-
-	test('shows plugin permissions information', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/plugins', testInfo);
-
-		await page.waitForTimeout(2000);
-
-		// Check for permission-related content
-		const hasPermissions = await page
-			.getByText(/permission|access|scope/i)
-			.first()
-			.isVisible()
-			.catch(() => false);
-
-		const hasRiskLevel = await page
-			.getByText(/risk|level|high|medium|low/i)
-			.first()
-			.isVisible()
-			.catch(() => false);
-
-		// Permissions info is optional but expected with plugins
-		if (hasPermissions || hasRiskLevel) {
-			expect(hasPermissions || hasRiskLevel).toBe(true);
-		}
-	});
-
-	test('has settings button for enabled plugins', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/plugins', testInfo);
-
-		await page.waitForTimeout(2000);
-
-		// Check for settings/configure button
-		const hasSettingsButton = await page
-			.getByRole('button', { name: /setting|configure|config/i })
-			.first()
-			.isVisible()
-			.catch(() => false);
-
-		// Settings button is optional (only if plugins have settings)
-		if (hasSettingsButton) {
-			expect(hasSettingsButton).toBe(true);
-		}
+		const uninstallResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'DELETE' &&
+				new URL(response.url()).pathname === `/api/v1/admin/plugins/${installedPlugin.id}`
+		);
+		page.once('dialog', async (dialog) => {
+			expect(dialog.type()).toBe('confirm');
+			await dialog.accept();
+		});
+		await installedCard.getByRole('button', { name: /uninstall|eemalda/i }).click();
+		const uninstallResponse = await uninstallResponsePromise;
+		expect(uninstallResponse.status()).toBe(204);
+		await expect(installedCard).toHaveCount(0);
 	});
 });

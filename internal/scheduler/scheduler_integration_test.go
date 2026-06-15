@@ -1,20 +1,28 @@
+//go:build integration
+
 package scheduler
 
 import (
 	"context"
 	"testing"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/testutil"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestPostgresRepository_ListActiveTenants(t *testing.T) {
+func TestGORMRepository_ListActiveTenants(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test tenants
 	tenant1 := testutil.CreateTestTenant(t, pool)
 	tenant2 := testutil.CreateTestTenant(t, pool)
+	_, err := pool.Exec(ctx, `UPDATE tenants SET settings = '{"period_lock_date":"2026-05-31","email":"ops@example.com"}' WHERE id = $1`, tenant1.ID)
+	if err != nil {
+		t.Fatalf("failed to set tenant period lock: %v", err)
+	}
 
 	// List active tenants
 	tenants, err := repo.ListActiveTenants(ctx)
@@ -30,6 +38,15 @@ func TestPostgresRepository_ListActiveTenants(t *testing.T) {
 			if tenant.SchemaName != tenant1.SchemaName {
 				t.Errorf("expected schema %s, got %s", tenant1.SchemaName, tenant.SchemaName)
 			}
+			if tenant.CompanyName != tenant1.Name {
+				t.Errorf("expected company name %s, got %s", tenant1.Name, tenant.CompanyName)
+			}
+			if tenant.PeriodLockDate != "2026-05-31" {
+				t.Errorf("expected period lock 2026-05-31, got %s", tenant.PeriodLockDate)
+			}
+			if tenant.Email != "ops@example.com" {
+				t.Errorf("expected tenant email ops@example.com, got %s", tenant.Email)
+			}
 		}
 		if tenant.ID == tenant2.ID {
 			found2 = true
@@ -44,9 +61,9 @@ func TestPostgresRepository_ListActiveTenants(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ListActiveTenants_ExcludesInactive(t *testing.T) {
+func TestGORMRepository_ListActiveTenants_ExcludesInactive(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create an active tenant
@@ -74,7 +91,7 @@ func TestPostgresRepository_ListActiveTenants_ExcludesInactive(t *testing.T) {
 
 func TestScheduler_WithRealRepository(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	repo := NewPostgresRepository(pool)
+	repo := newTestGORMRepository(t, pool)
 	config := DefaultConfig()
 
 	// Create scheduler with real repository
@@ -104,4 +121,14 @@ func TestScheduler_WithRealRepository(t *testing.T) {
 	if scheduler.IsRunning() {
 		t.Error("scheduler should not be running after Stop")
 	}
+}
+
+func newTestGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
+	t.Helper()
+
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("create gorm repository: %v", err)
+	}
+	return NewGORMRepository(gormDB)
 }

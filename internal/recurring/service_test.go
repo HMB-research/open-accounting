@@ -3,6 +3,7 @@ package recurring
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/email"
+	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -22,7 +24,6 @@ import (
 type MockRepository struct {
 	recurring                   map[string]*RecurringInvoice
 	lines                       map[string][]RecurringInvoiceLine
-	ensureSchemaErr             error
 	createErr                   error
 	createLineErr               error
 	getByIDErr                  error
@@ -42,10 +43,6 @@ func NewMockRepository() *MockRepository {
 		recurring: make(map[string]*RecurringInvoice),
 		lines:     make(map[string][]RecurringInvoiceLine),
 	}
-}
-
-func (m *MockRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	return m.ensureSchemaErr
 }
 
 func (m *MockRepository) Create(ctx context.Context, schemaName string, ri *RecurringInvoice) error {
@@ -382,44 +379,9 @@ func TestNewServiceWithDependencies(t *testing.T) {
 	}
 }
 
-func TestService_EnsureSchema(t *testing.T) {
-	tests := []struct {
-		name      string
-		repoErr   error
-		expectErr bool
-	}{
-		{
-			name:      "success",
-			repoErr:   nil,
-			expectErr: false,
-		},
-		{
-			name:      "repository error",
-			repoErr:   fmt.Errorf("db error"),
-			expectErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repo := NewMockRepository()
-			repo.ensureSchemaErr = tt.repoErr
-			service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
-
-			err := service.EnsureSchema(context.Background(), "test_schema")
-			if tt.expectErr && err == nil {
-				t.Error("expected error but got nil")
-			}
-			if !tt.expectErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
-}
-
-func TestService_EnsureSchema_NilRepo(t *testing.T) {
+func TestService_RequireRepository_NilRepo(t *testing.T) {
 	service := &Service{}
-	err := service.EnsureSchema(context.Background(), "test")
+	err := service.requireRepository()
 	if err == nil {
 		t.Error("expected error for nil repo")
 	}
@@ -1414,30 +1376,6 @@ func TestService_Create(t *testing.T) {
 			},
 			expectErr: false,
 		},
-		{
-			name: "ensure schema error",
-			setupRepo: func() *MockRepository {
-				repo := NewMockRepository()
-				repo.ensureSchemaErr = fmt.Errorf("schema error")
-				return repo
-			},
-			request: &CreateRecurringInvoiceRequest{
-				Name:      "Monthly Subscription",
-				ContactID: "contact-1",
-				Frequency: FrequencyMonthly,
-				StartDate: time.Now(),
-				Lines: []CreateRecurringInvoiceLineRequest{
-					{
-						Description: "Service Fee",
-						Quantity:    decimal.NewFromInt(1),
-						UnitPrice:   decimal.NewFromFloat(100.00),
-						VATRate:     decimal.NewFromFloat(20.00),
-					},
-				},
-			},
-			expectErr:   true,
-			errContains: "schema",
-		},
 	}
 
 	for _, tt := range tests {
@@ -1469,6 +1407,263 @@ func TestService_Create(t *testing.T) {
 				t.Errorf("Name = %q, want %q", result.Name, tt.request.Name)
 			}
 		})
+	}
+}
+
+func TestService_ImportCSV(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
+	contact := contacts.Contact{
+		ID:       "contact-1",
+		TenantID: "tenant-1",
+		Code:     "CUST-1",
+		Name:     "Acme",
+	}
+
+	csvContent := `name,contact_code,frequency,start_date,end_date,next_generation_date,payment_terms_days,is_active,generated_count,send_email_on_generation,recipient_email,attach_pdf,line_description,quantity,unit,unit_price,discount_percent,vat_rate,account_id,product_code
+Monthly Retainer,CUST-1,MONTHLY,2026-03-01,2026-12-31,2026-04-01,21,true,2,true,billing@example.com,true,Consulting,2,hour,100,10,22,44444444-4444-4444-8444-444444444444,SERV-001
+Monthly Retainer,CUST-1,MONTHLY,2026-03-01,2026-12-31,2026-04-01,21,true,2,true,billing@example.com,true,Support,1,hour,50,0,22,,
+`
+
+	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, []inventory.Product{{
+		ID:       "prod-1",
+		TenantID: "tenant-1",
+		Code:     "SERV-001",
+	}}, &ImportRecurringInvoicesRequest{
+		CSVContent: csvContent,
+		FileName:   "recurring.csv",
+		UserID:     "user-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RowsProcessed != 2 {
+		t.Errorf("RowsProcessed = %d, want 2", result.RowsProcessed)
+	}
+	if result.TemplatesCreated != 1 {
+		t.Errorf("TemplatesCreated = %d, want 1", result.TemplatesCreated)
+	}
+	if result.LinesImported != 2 {
+		t.Errorf("LinesImported = %d, want 2", result.LinesImported)
+	}
+	if result.RowsSkipped != 0 {
+		t.Errorf("RowsSkipped = %d, want 0", result.RowsSkipped)
+	}
+	if len(result.Errors) != 0 {
+		t.Fatalf("Errors = %#v, want none", result.Errors)
+	}
+	if len(repo.recurring) != 1 {
+		t.Fatalf("repo.recurring length = %d, want 1", len(repo.recurring))
+	}
+
+	var template *RecurringInvoice
+	for _, recurringInvoice := range repo.recurring {
+		template = recurringInvoice
+	}
+	if template == nil {
+		t.Fatal("expected imported recurring invoice")
+	}
+	if template.Name != "Monthly Retainer" {
+		t.Errorf("Name = %q, want Monthly Retainer", template.Name)
+	}
+	if template.ContactID != "contact-1" {
+		t.Errorf("ContactID = %q, want contact-1", template.ContactID)
+	}
+	if template.Frequency != FrequencyMonthly {
+		t.Errorf("Frequency = %q, want MONTHLY", template.Frequency)
+	}
+	if template.PaymentTermsDays != 21 {
+		t.Errorf("PaymentTermsDays = %d, want 21", template.PaymentTermsDays)
+	}
+	if !template.SendEmailOnGeneration {
+		t.Error("SendEmailOnGeneration should be true")
+	}
+	if template.RecipientEmailOverride != "billing@example.com" {
+		t.Errorf("RecipientEmailOverride = %q, want billing@example.com", template.RecipientEmailOverride)
+	}
+	if template.CreatedBy != "user-1" {
+		t.Errorf("CreatedBy = %q, want user-1", template.CreatedBy)
+	}
+
+	lines := repo.lines[template.ID]
+	if len(lines) != 2 {
+		t.Fatalf("lines length = %d, want 2", len(lines))
+	}
+	if lines[0].LineNumber != 1 || lines[0].Description != "Consulting" {
+		t.Errorf("first line = %#v", lines[0])
+	}
+	if !lines[0].Quantity.Equal(decimal.NewFromInt(2)) {
+		t.Errorf("first quantity = %s, want 2", lines[0].Quantity)
+	}
+	if !lines[0].UnitPrice.Equal(decimal.NewFromInt(100)) {
+		t.Errorf("first unit price = %s, want 100", lines[0].UnitPrice)
+	}
+	if !lines[0].DiscountPercent.Equal(decimal.NewFromInt(10)) {
+		t.Errorf("first discount = %s, want 10", lines[0].DiscountPercent)
+	}
+	if lines[0].AccountID == nil || *lines[0].AccountID != "44444444-4444-4444-8444-444444444444" {
+		t.Errorf("first AccountID = %#v, want valid UUID", lines[0].AccountID)
+	}
+	if lines[0].ProductID == nil || *lines[0].ProductID != "prod-1" {
+		t.Errorf("first ProductID = %#v, want prod-1", lines[0].ProductID)
+	}
+	if lines[1].LineNumber != 2 || lines[1].Description != "Support" {
+		t.Errorf("second line = %#v", lines[1])
+	}
+}
+
+func TestService_ImportCSVResolvesContactByVATNumber(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
+	contact := contacts.Contact{
+		ID:        "contact-vat",
+		TenantID:  "tenant-1",
+		RegCode:   "12345678",
+		VATNumber: "EE123456789",
+		Name:      "VAT Customer",
+	}
+
+	csvContent := `name,contact_vat_number,frequency,start_date,line_description,quantity,unit_price,vat_rate
+VAT Retainer,EE123456789,MONTHLY,2026-03-01,Consulting,1,100,22
+`
+
+	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, nil, &ImportRecurringInvoicesRequest{
+		CSVContent: csvContent,
+		UserID:     "user-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RowsProcessed != 1 {
+		t.Errorf("RowsProcessed = %d, want 1", result.RowsProcessed)
+	}
+	if result.TemplatesCreated != 1 {
+		t.Errorf("TemplatesCreated = %d, want 1", result.TemplatesCreated)
+	}
+	if result.RowsSkipped != 0 {
+		t.Errorf("RowsSkipped = %d, want 0", result.RowsSkipped)
+	}
+	if len(result.Errors) != 0 {
+		t.Fatalf("Errors = %#v, want none", result.Errors)
+	}
+	if len(repo.recurring) != 1 {
+		t.Fatalf("repo.recurring length = %d, want 1", len(repo.recurring))
+	}
+	for _, template := range repo.recurring {
+		if template.ContactID != "contact-vat" {
+			t.Errorf("ContactID = %q, want contact-vat", template.ContactID)
+		}
+	}
+}
+
+func TestService_ImportCSVSkipsDuplicateAndInvalidGroups(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	repo.recurring["tenant-1:existing"] = &RecurringInvoice{
+		ID:       "existing",
+		TenantID: "tenant-1",
+		Name:     "Existing Template",
+	}
+	service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
+	contact := contacts.Contact{
+		ID:       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		TenantID: "tenant-1",
+		Name:     "Acme",
+	}
+
+	csvContent := `name,contact_id,frequency,start_date,line_description,quantity,unit_price,vat_rate
+Existing Template,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,MONTHLY,2026-03-01,Duplicate,1,10,22
+Missing Contact,cccccccc-cccc-4ccc-8ccc-cccccccccccc,MONTHLY,2026-03-01,Unknown,1,10,22
+Bad Quantity,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,MONTHLY,2026-03-01,Bad,0,10,22
+`
+
+	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, nil, &ImportRecurringInvoicesRequest{
+		CSVContent: csvContent,
+		FileName:   "recurring.csv",
+		UserID:     "user-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RowsProcessed != 3 {
+		t.Errorf("RowsProcessed = %d, want 3", result.RowsProcessed)
+	}
+	if result.TemplatesCreated != 0 {
+		t.Errorf("TemplatesCreated = %d, want 0", result.TemplatesCreated)
+	}
+	if result.LinesImported != 0 {
+		t.Errorf("LinesImported = %d, want 0", result.LinesImported)
+	}
+	if result.RowsSkipped != 3 {
+		t.Errorf("RowsSkipped = %d, want 3", result.RowsSkipped)
+	}
+	if len(result.Errors) != 3 {
+		t.Fatalf("Errors length = %d, want 3: %#v", len(result.Errors), result.Errors)
+	}
+	messages := make([]string, 0, len(result.Errors))
+	for _, rowErr := range result.Errors {
+		messages = append(messages, rowErr.Message)
+	}
+	joinedMessages := strings.Join(messages, "\n")
+	for _, expected := range []string{
+		"already exists",
+		"contact_id",
+		"quantity must be greater than zero",
+	} {
+		if !strings.Contains(joinedMessages, expected) {
+			t.Errorf("messages %q should contain %q", joinedMessages, expected)
+		}
+	}
+	if len(repo.recurring) != 1 {
+		t.Errorf("repo.recurring length = %d, want only existing template", len(repo.recurring))
+	}
+}
+
+func TestService_ImportCSVSkipsInvalidUUIDReferences(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
+	contact := contacts.Contact{
+		ID:       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		TenantID: "tenant-1",
+		Name:     "Acme",
+	}
+
+	csvContent := `name,contact_id,frequency,start_date,line_description,quantity,unit_price,vat_rate,account_id,product_id
+Bad Contact,legacy-contact,MONTHLY,2026-03-01,Bad contact,1,10,22,,
+Bad Account,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,MONTHLY,2026-03-01,Bad account,1,10,22,legacy-account,
+Bad Product,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,MONTHLY,2026-03-01,Bad product,1,10,22,,legacy-product
+`
+
+	result, err := service.ImportCSV(ctx, "tenant-1", "test_schema", []contacts.Contact{contact}, nil, &ImportRecurringInvoicesRequest{
+		CSVContent: csvContent,
+		UserID:     "user-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RowsProcessed != 3 {
+		t.Errorf("RowsProcessed = %d, want 3", result.RowsProcessed)
+	}
+	if result.TemplatesCreated != 0 {
+		t.Errorf("TemplatesCreated = %d, want 0", result.TemplatesCreated)
+	}
+	if result.RowsSkipped != 3 {
+		t.Errorf("RowsSkipped = %d, want 3", result.RowsSkipped)
+	}
+	if len(result.Errors) != 3 {
+		t.Fatalf("Errors length = %d, want 3: %#v", len(result.Errors), result.Errors)
+	}
+	if !strings.Contains(result.Errors[0].Message, "contact_id must be a valid UUID") {
+		t.Errorf("first error = %q, want contact_id UUID message", result.Errors[0].Message)
+	}
+	if !strings.Contains(result.Errors[1].Message, "account_id must be a valid UUID") {
+		t.Errorf("second error = %q, want account_id UUID message", result.Errors[1].Message)
+	}
+	if !strings.Contains(result.Errors[2].Message, "product_id must be a valid UUID") {
+		t.Errorf("third error = %q, want product_id UUID message", result.Errors[2].Message)
 	}
 }
 
@@ -1549,18 +1744,6 @@ func TestService_GetByID(t *testing.T) {
 			expectErr:   true,
 			errContains: "get recurring invoice lines",
 		},
-		{
-			name: "ensure schema error",
-			setupRepo: func() *MockRepository {
-				repo := NewMockRepository()
-				repo.ensureSchemaErr = fmt.Errorf("schema error")
-				return repo
-			},
-			tenantID:    "tenant-1",
-			id:          "ri-1",
-			expectErr:   true,
-			errContains: "schema",
-		},
 	}
 
 	for _, tt := range tests {
@@ -1640,16 +1823,6 @@ func TestService_List(t *testing.T) {
 			setupRepo: func() *MockRepository {
 				repo := NewMockRepository()
 				repo.listErr = fmt.Errorf("db error")
-				return repo
-			},
-			activeOnly: false,
-			expectErr:  true,
-		},
-		{
-			name: "ensure schema error",
-			setupRepo: func() *MockRepository {
-				repo := NewMockRepository()
-				repo.ensureSchemaErr = fmt.Errorf("schema error")
 				return repo
 			},
 			activeOnly: false,
@@ -1979,15 +2152,6 @@ func TestService_Delete(t *testing.T) {
 			expectErr:   true,
 			errContains: "delete recurring invoice",
 		},
-		{
-			name: "ensure schema error",
-			setupRepo: func() *MockRepository {
-				repo := NewMockRepository()
-				repo.ensureSchemaErr = fmt.Errorf("schema error")
-				return repo
-			},
-			expectErr: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -2258,16 +2422,6 @@ func TestService_GenerateDueInvoices(t *testing.T) {
 		}
 	})
 
-	t.Run("ensure schema error", func(t *testing.T) {
-		repo := NewMockRepository()
-		repo.ensureSchemaErr = fmt.Errorf("schema error")
-		service := NewServiceWithDependencies(repo, nil, nil, nil, nil, nil)
-
-		_, err := service.GenerateDueInvoices(ctx, "tenant-1", "test_schema", "user-1")
-		if err == nil {
-			t.Error("expected error")
-		}
-	})
 }
 
 func TestService_GenerateInvoice(t *testing.T) {

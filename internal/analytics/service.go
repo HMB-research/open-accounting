@@ -10,15 +10,13 @@ import (
 
 // Service provides analytics and reporting functionality
 type Service struct {
-	pool *pgxpool.Pool
 	repo Repository
 }
 
-// NewService creates a new analytics service
+// NewService creates a new analytics service with an ORM-backed repository.
 func NewService(pool *pgxpool.Pool) *Service {
 	return &Service{
-		pool: pool,
-		repo: NewPostgresRepository(pool),
+		repo: NewRepository(pool),
 	}
 }
 

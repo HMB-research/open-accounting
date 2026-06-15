@@ -27,6 +27,8 @@ export const DEMO_CREDENTIALS = [
 	{ email: 'demo4@example.com', password: 'demo12345', tenantSlug: 'demo4', tenantName: 'Demo Company 4', tenantId: 'b0000000-0000-0000-0004-000000000001' }
 ] as const;
 
+export type DemoCredentials = (typeof DEMO_CREDENTIALS)[number];
+
 /**
  * Get demo credentials for the current worker
  * @param testInfo - Playwright TestInfo object containing parallelIndex
@@ -37,45 +39,61 @@ export function getDemoCredentials(testInfo: TestInfo) {
 }
 
 /**
- * Login as the demo user assigned to this worker
+ * Login with explicit demo credentials.
  */
-export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void> {
-	const creds = getDemoCredentials(testInfo);
+export async function loginWithDemoCredentials(
+	page: Page,
+	creds: DemoCredentials,
+	options: { rememberMe?: boolean; logPrefix?: string } = {}
+): Promise<void> {
 	const startTime = Date.now();
+	const logPrefix = options.logPrefix ?? 'Login';
 
-	// Navigate to login page
 	await page.goto(`${DEMO_URL}/login`);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('domcontentloaded');
+	await page.waitForLoadState('networkidle').catch(() => {
+		// Vite and background requests can keep the page busy.
+	});
 
-	// Wait for form elements to be ready
-	await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 10000 });
+	for (let attempt = 1; attempt <= 2; attempt += 1) {
+		await fillLoginForm(page, creds, options);
 
-	// Fill credentials
-	const emailInput = page.locator('input[type="email"], input[name="email"]').first();
-	const passwordInput = page.locator('input[type="password"]').first();
-	await emailInput.fill(creds.email);
-	await passwordInput.fill(creds.password);
+		try {
+			const outcome = await waitForLoginOutcome(page);
+			if (outcome === 'dashboard') {
+				break;
+			}
 
-	// Click sign in and wait for navigation
-	// Support both English "Sign In" and Estonian "Logi sisse"
-	const signInButton = page.getByRole('button', { name: /sign in|login|logi sisse/i });
-	await signInButton.click();
+			const loginError = await readVisibleLoginError(page);
+			if (loginError) {
+				throw new Error(`Login failed for ${creds.email}: ${loginError}`);
+			}
 
-	// Wait for navigation with better error handling
-	try {
-		await page.waitForURL(/dashboard/, { timeout: 30000 });
-	} catch (error) {
-		// Check if we're still on login page with an error
-		const errorAlert = page.locator('.alert-error, [role="alert"]');
-		const hasError = await errorAlert.isVisible().catch(() => false);
-		if (hasError) {
-			const errorText = await errorAlert.textContent().catch(() => 'Unknown error');
-			throw new Error(`Login failed for ${creds.email}: ${errorText}`);
+			if (attempt < 2) {
+				console.log(`${logPrefix} stayed on login after submit for ${creds.email}; retrying`);
+				await page.goto(`${DEMO_URL}/login`);
+				await page.waitForLoadState('networkidle').catch(() => {});
+				continue;
+			}
+
+			const currentUrl = page.url();
+			const formState = await getLoginFormState(page);
+			throw new Error(
+				`Login navigation timeout for ${creds.email}. Current URL: ${currentUrl}. Form state: ${formState}`
+			);
+		} catch (error) {
+			const loginError = await readVisibleLoginError(page);
+			if (loginError) {
+				throw new Error(`Login failed for ${creds.email}: ${loginError}`);
+			}
+			if (attempt < 2 && page.url().includes('/login')) {
+				console.log(`${logPrefix} could not confirm dashboard for ${creds.email}; retrying`);
+				await page.goto(`${DEMO_URL}/login`);
+				await page.waitForLoadState('networkidle').catch(() => {});
+				continue;
+			}
+			throw error;
 		}
-
-		// Check current URL for debugging
-		const currentUrl = page.url();
-		throw new Error(`Login navigation timeout for ${creds.email}. Current URL: ${currentUrl}`);
 	}
 
 	// Use domcontentloaded instead of networkidle (more reliable for SPA)
@@ -84,7 +102,83 @@ export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void>
 	await page.waitForSelector('h1, .dashboard-header, [data-testid="dashboard"]', { timeout: 10000 }).catch(() => {
 		// Dashboard loaded even if selector not found
 	});
-	console.log(`Login completed in ${Date.now() - startTime}ms for ${creds.email}`);
+	console.log(`${logPrefix} completed in ${Date.now() - startTime}ms for ${creds.email}`);
+}
+
+async function fillLoginForm(
+	page: Page,
+	creds: DemoCredentials,
+	options: { rememberMe?: boolean; logPrefix?: string }
+): Promise<void> {
+	const logPrefix = options.logPrefix ?? 'Login';
+	const emailInput = page.locator('input[type="email"], input[name="email"]').first();
+	const passwordInput = page.locator('input[type="password"]').first();
+	await emailInput.waitFor({ state: 'visible', timeout: 10000 });
+	await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
+	await emailInput.fill(creds.email);
+	await passwordInput.fill(creds.password);
+	await expect(emailInput).toHaveValue(creds.email);
+	await expect(passwordInput).toHaveValue(creds.password);
+
+	if (options.rememberMe) {
+		const rememberMeCheckbox = page.locator('input[type="checkbox"]').first();
+		if (await rememberMeCheckbox.isVisible().catch(() => false)) {
+			await rememberMeCheckbox.check();
+			console.log(`${logPrefix} checked "Remember Me" for ${creds.email}`);
+		}
+	}
+
+	const signInButton = page.locator('form button[type="submit"]').first();
+	await expect(signInButton).toBeEnabled({ timeout: 10000 });
+	await signInButton.click();
+}
+
+async function waitForLoginOutcome(page: Page): Promise<'dashboard' | 'login'> {
+	const dashboardPromise = page
+		.waitForURL(/dashboard/, { timeout: 30000 })
+		.then((): 'dashboard' => 'dashboard');
+	const loginReloadPromise = page
+		.waitForURL((url) => url.href.endsWith('/login?'), { timeout: 5000 })
+		.then((): 'login' => 'login')
+		.catch(() => undefined);
+	const firstOutcome = await Promise.race([dashboardPromise, loginReloadPromise]);
+
+	if (firstOutcome) {
+		return firstOutcome;
+	}
+
+	return dashboardPromise;
+}
+
+async function readVisibleLoginError(page: Page): Promise<string | null> {
+	const errorAlert = page.locator('.alert-error, [role="alert"]').first();
+	if (!(await errorAlert.isVisible().catch(() => false))) {
+		return null;
+	}
+
+	return (await errorAlert.textContent().catch(() => 'Unknown error'))?.trim() || 'Unknown error';
+}
+
+async function getLoginFormState(page: Page): Promise<string> {
+	return page
+		.evaluate(() => {
+			const email = document.querySelector<HTMLInputElement>('input[type="email"], input[name="email"]');
+			const password = document.querySelector<HTMLInputElement>('input[type="password"]');
+			const submit = document.querySelector<HTMLButtonElement>('form button[type="submit"]');
+			return JSON.stringify({
+				email: email?.value ?? '',
+				passwordLength: password?.value.length ?? 0,
+				submitDisabled: submit?.disabled ?? null
+			});
+		})
+		.catch(() => 'unavailable');
+}
+
+/**
+ * Login as the demo user assigned to this worker
+ */
+export async function loginAsDemo(page: Page, testInfo: TestInfo): Promise<void> {
+	await loginWithDemoCredentials(page, getDemoCredentials(testInfo));
 }
 
 /**
@@ -101,6 +195,13 @@ async function loadAuthState(page: Page, workerIndex: number): Promise<boolean> 
 		}
 
 		const authData = JSON.parse(fs.readFileSync(authFile, 'utf-8'));
+		const hasStoredAccessToken = authData.origins?.some((origin: { localStorage?: { name: string }[] }) =>
+			origin.localStorage?.some((item) => item.name === 'access_token')
+		);
+		if (!hasStoredAccessToken) {
+			console.log(`[Worker ${workerIndex}] Auth file has no access token: ${authFile}`);
+			return false;
+		}
 
 		// Add cookies to the browser context
 		if (authData.cookies && authData.cookies.length > 0) {
@@ -131,20 +232,31 @@ async function loadAuthState(page: Page, workerIndex: number): Promise<boolean> 
 	}
 }
 
+interface EnsureAuthenticatedOptions {
+	verifyDashboard?: boolean;
+}
+
 /**
  * Ensure authentication - try to load saved auth state, fall back to login.
  * This is the preferred way to authenticate in tests for better performance.
  */
-export async function ensureAuthenticated(page: Page, testInfo: TestInfo): Promise<void> {
+export async function ensureAuthenticated(
+	page: Page,
+	testInfo: TestInfo,
+	options: EnsureAuthenticatedOptions = {}
+): Promise<void> {
 	const workerIndex = testInfo.parallelIndex % DEMO_CREDENTIALS.length;
-	const creds = getDemoCredentials(testInfo);
 	const startTime = Date.now();
 
 	// Try to load saved auth state
 	const authLoaded = await loadAuthState(page, workerIndex);
 
 	if (authLoaded) {
-		// Navigate to dashboard to verify auth works
+		if (!options.verifyDashboard) {
+			console.log(`[Worker ${workerIndex}] Session loaded in ${Date.now() - startTime}ms`);
+			return;
+		}
+
 		await page.goto(`${DEMO_URL}/dashboard`);
 		await page.waitForLoadState('domcontentloaded');
 
@@ -161,8 +273,18 @@ export async function ensureAuthenticated(page: Page, testInfo: TestInfo): Promi
 	await loginAsDemo(page, testInfo);
 }
 
-export async function navigateTo(page: Page, path: string, testInfo?: TestInfo): Promise<void> {
+interface NavigateToOptions {
+	waitForNetworkIdle?: boolean;
+}
+
+export async function navigateTo(
+	page: Page,
+	path: string,
+	testInfo?: TestInfo,
+	options: NavigateToOptions = {}
+): Promise<void> {
 	let url = `${DEMO_URL}${path}`;
+	const waitForNetworkIdle = options.waitForNetworkIdle ?? true;
 	// Append tenant ID if testInfo is provided and path doesn't already have query params
 	if (testInfo) {
 		const creds = getDemoCredentials(testInfo);
@@ -189,10 +311,12 @@ export async function navigateTo(page: Page, path: string, testInfo?: TestInfo):
 		// Main content selector might not exist on all pages
 	});
 
-	// Wait for network to settle (API calls to complete)
-	await page.waitForLoadState('networkidle').catch(() => {
-		// Network might not settle in timeout, continue anyway
-	});
+	if (waitForNetworkIdle) {
+		// Wait for network to settle (API calls to complete)
+		await page.waitForLoadState('networkidle').catch(() => {
+			// Network might not settle in timeout, continue anyway
+		});
+	}
 }
 
 /**
@@ -203,46 +327,20 @@ export async function ensureDemoTenant(page: Page, testInfo: TestInfo): Promise<
 	const selector = page.locator('select').first();
 
 	if (await selector.isVisible()) {
+		const currentValue = await selector.inputValue().catch(() => '');
 		const options = await selector.locator('option').all();
 		for (const option of options) {
 			const text = await option.textContent();
 			if (text && text.toLowerCase().includes(creds.tenantSlug)) {
 				const value = await option.getAttribute('value');
 				if (value) {
+					if (currentValue === value) return;
 					await selector.selectOption(value);
+					await expect(selector).toHaveValue(value);
+					await page.waitForLoadState('domcontentloaded');
 					break;
 				}
 			}
-		}
-		await page.waitForLoadState('networkidle');
-	}
-}
-
-// Keep backward-compatible exports for gradual migration
-// NOTE: Using demo2 for tests, demo1 is reserved for end users
-export const DEMO_EMAIL = 'demo2@example.com';
-export const DEMO_PASSWORD = 'demo12345';
-
-/**
- * @deprecated Use ensureDemoTenant instead
- */
-export async function ensureAcmeTenant(page: Page): Promise<void> {
-	const selector = page.locator('select').first();
-	if (await selector.isVisible()) {
-		const currentValue = await selector.inputValue();
-		if (!currentValue.includes('demo')) {
-			const options = await selector.locator('option').all();
-			for (const option of options) {
-				const text = await option.textContent();
-				if (text && /demo/i.test(text)) {
-					const value = await option.getAttribute('value');
-					if (value) {
-						await selector.selectOption(value);
-						break;
-					}
-				}
-			}
-			await page.waitForLoadState('networkidle');
 		}
 	}
 }
@@ -305,50 +403,6 @@ export async function waitForTableData(
 }
 
 /**
- * Wait for a modal to be fully visible and ready for interaction.
- * @param page - Playwright page object
- * @param timeout - Maximum wait time in ms (default: 10000)
- */
-export async function waitForModalReady(page: Page, timeout = 10000): Promise<void> {
-	// Wait for modal container
-	const modal = page.locator('[role="dialog"], .modal, [data-testid="modal"]');
-	await modal.waitFor({ state: 'visible', timeout });
-
-	// Wait for any loading indicators inside the modal to disappear
-	const loadingIndicator = modal.locator('.loading, .spinner, [data-loading="true"]');
-	if (await loadingIndicator.isVisible().catch(() => false)) {
-		await loadingIndicator.waitFor({ state: 'hidden', timeout });
-	}
-
-	// Small delay for animations to complete
-	await page.waitForTimeout(100);
-}
-
-/**
- * Wait for a form submission to complete.
- * Waits for network activity to settle and checks for success/error indicators.
- * @param page - Playwright page object
- * @param timeout - Maximum wait time in ms (default: 10000)
- */
-export async function waitForFormSubmission(page: Page, timeout = 10000): Promise<void> {
-	// Wait for network to settle after form submission
-	await page.waitForLoadState('networkidle', { timeout });
-
-	// Check if there's a success toast/message
-	const successIndicator = page.locator('.toast-success, .alert-success, [data-testid="success-message"]');
-	const errorIndicator = page.locator('.toast-error, .alert-error, [data-testid="error-message"]');
-
-	// Wait a bit for any toast to appear
-	await page.waitForTimeout(200);
-
-	// If error indicator is visible, throw an error
-	if (await errorIndicator.isVisible().catch(() => false)) {
-		const errorText = await errorIndicator.textContent().catch(() => 'Unknown error');
-		throw new Error(`Form submission failed: ${errorText}`);
-	}
-}
-
-/**
  * Wait for page to be fully loaded and interactive.
  * More reliable than waitForLoadState('networkidle') alone.
  * @param page - Playwright page object
@@ -358,10 +412,83 @@ export async function waitForPageReady(page: Page, timeout = 10000): Promise<voi
 	await page.waitForLoadState('domcontentloaded', { timeout });
 
 	// Wait for any loading overlays to disappear
-	const loadingOverlay = page.locator('.loading-overlay, [data-loading="true"], .skeleton');
-	if (await loadingOverlay.first().isVisible().catch(() => false)) {
-		await loadingOverlay.first().waitFor({ state: 'hidden', timeout });
-	}
+	await waitForLoadingIndicatorsToClear(page, timeout);
+}
+
+/**
+ * Wait for a route-owned selector after the DOM is ready.
+ * Use this instead of fixed sleeps after navigateTo.
+ */
+export async function waitForRouteReady(
+	page: Page,
+	readySelector: string,
+	timeout = 10000
+): Promise<void> {
+	await page.waitForLoadState('domcontentloaded', { timeout });
+	await expect(async () => {
+		const visibleCount = await page.locator(readySelector).evaluateAll((elements) => {
+			return elements.filter((element) => {
+				const style = window.getComputedStyle(element);
+				const rect = element.getBoundingClientRect();
+				return (
+					style.display !== 'none' &&
+					style.visibility !== 'hidden' &&
+					rect.width > 0 &&
+					rect.height > 0
+				);
+			}).length;
+		});
+
+		expect(visibleCount).toBeGreaterThan(0);
+	}).toPass({ timeout });
+}
+
+interface WaitForLoadingOptions {
+	includePlainText?: boolean;
+}
+
+async function waitForLoadingIndicatorsToClear(
+	page: Page,
+	timeout: number,
+	options: WaitForLoadingOptions = {}
+): Promise<void> {
+	const loadingIndicators = page.locator(
+		'.loading, .loading-spinner, .loading-overlay, .spinner, .animate-spin, [data-loading="true"], .skeleton'
+	);
+	const loadingText = options.includePlainText
+		? page.getByText(/^Loading\.\.\.$|^Laadimine\.\.\.$/i)
+		: null;
+
+	await expect(async () => {
+		const visibleCssCount = await loadingIndicators.evaluateAll((elements) => {
+			return elements.filter((element) => {
+				const style = window.getComputedStyle(element);
+				const rect = element.getBoundingClientRect();
+				return (
+					style.display !== 'none' &&
+					style.visibility !== 'hidden' &&
+					rect.width > 0 &&
+					rect.height > 0
+				);
+			}).length;
+		});
+		const visibleTextCount = loadingText
+			? await loadingText.evaluateAll((elements) => {
+					return elements.filter((element) => {
+						const style = window.getComputedStyle(element);
+						const rect = element.getBoundingClientRect();
+						return (
+							style.display !== 'none' &&
+							style.visibility !== 'hidden' &&
+							rect.width > 0 &&
+							rect.height > 0
+						);
+					}).length;
+				})
+			: 0;
+
+		expect(visibleCssCount + visibleTextCount).toBe(0);
+	}).toPass({ timeout });
 }
 
 /**
@@ -379,13 +506,11 @@ export async function waitForDataOrEmpty(
 	const emptyIndicators = page.locator(
 		'.empty-state, [data-testid="empty"], text=/no data|no records|empty|no results/i'
 	);
-	const loadingIndicators = page.locator(
-		'.loading, .spinner, [data-loading="true"], .skeleton'
-	);
-
 	// Wait for loading to complete first
 	try {
-		await loadingIndicators.first().waitFor({ state: 'hidden', timeout: 5000 });
+		await waitForLoadingIndicatorsToClear(page, Math.min(timeout, 10000), {
+			includePlainText: true
+		});
 	} catch {
 		// Loading might have already completed
 	}

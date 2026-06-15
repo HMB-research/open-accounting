@@ -1,67 +1,121 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import {
+  test,
+  expect,
+  type Page,
+  type Response,
+  type TestInfo,
+} from "@playwright/test";
+import {
+  ensureAuthenticated,
+  navigateTo,
+  ensureDemoTenant,
+  waitForRouteReady,
+} from "./utils";
 
-test.describe('Demo Cash Flow Statement - Page Structure Verification', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
-		await ensureAuthenticated(page, testInfo);
-		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/reports/cash-flow', testInfo);
-		await page.waitForTimeout(2000);
-	});
+interface CashFlowStatementResponse {
+  start_date: string;
+  end_date: string;
+}
 
-	test('displays cash flow statement page heading', async ({ page }) => {
-		// Use .first() to avoid strict mode violation when multiple headings match
-		await expect(page.getByRole('heading', { name: /cash flow|rahavoog/i }).first()).toBeVisible();
-	});
+function isCashFlowStatementResponse(response: Response): boolean {
+  return (
+    response.request().method() === "GET" &&
+    response.status() === 200 &&
+    /\/api\/v1\/tenants\/[^/]+\/reports\/cash-flow$/.test(
+      new URL(response.url()).pathname,
+    )
+  );
+}
 
-	test('shows date range controls', async ({ page }) => {
-		const hasDateInputs = await page.locator('input[type="date"]').first().isVisible().catch(() => false);
-		expect(hasDateInputs).toBeTruthy();
-	});
+async function openCashFlowReport(
+  page: Page,
+  testInfo: TestInfo,
+): Promise<Response> {
+  const reportResponsePromise = page.waitForResponse(
+    isCashFlowStatementResponse,
+  );
+  await navigateTo(page, "/reports/cash-flow", testInfo, {
+    waitForNetworkIdle: false,
+  });
+  const reportResponse = await reportResponsePromise;
+  await waitForRouteReady(
+    page,
+    ".controls-section, .report-container, .alert-error, .empty-state",
+  );
+  await expect(
+    page.getByRole("heading", { name: /cash flow|rahavoog/i }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /generate|genereeri/i }),
+  ).toBeEnabled({
+    timeout: 15000,
+  });
+  return reportResponse;
+}
 
-	test('has start and end date inputs', async ({ page }) => {
-		const startDate = page.locator('input#startDate');
-		const endDate = page.locator('input#endDate');
+test.describe("Demo Cash Flow Statement", () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await ensureAuthenticated(page, testInfo);
+    await ensureDemoTenant(page, testInfo);
+  });
 
-		await expect(startDate).toBeVisible();
-		await expect(endDate).toBeVisible();
-	});
+  test("renders report controls, statement sections, and regenerates a changed period", async ({
+    page,
+  }, testInfo) => {
+    await openCashFlowReport(page, testInfo);
+    const startDate = page.locator("input#startDate");
+    const endDate = page.locator("input#endDate");
+    const generateButton = page.getByRole("button", {
+      name: /generate|genereeri/i,
+    });
+    const report = page.locator(".report-container");
 
-	test('has generate report button', async ({ page }) => {
-		const generateButton = page.getByRole('button', { name: /generate|genereeri/i });
-		await expect(generateButton).toBeVisible();
-		await expect(generateButton).toBeEnabled();
-	});
+    await expect(startDate).toBeVisible();
+    await expect(endDate).toBeVisible();
+    await expect(generateButton).toBeVisible();
+    await expect(generateButton).toBeEnabled();
+    await expect(
+      page.getByRole("link", { name: /back|tagasi/i }),
+    ).toBeVisible();
 
-	test('has back button to reports page', async ({ page }) => {
-		const backButton = page.getByRole('link', { name: /back|tagasi/i });
-		await expect(backButton).toBeVisible();
-	});
+    await expect(report).toBeVisible({ timeout: 10000 });
+    await expect(
+      report.getByRole("heading", { name: /cash flow|rahavoog/i }),
+    ).toBeVisible();
+    await expect(
+      report.getByRole("heading", { name: /operating|äritegevus/i }),
+    ).toBeVisible();
+    await expect(
+      report.getByRole("heading", { name: /investing|investeerimis/i }),
+    ).toBeVisible();
+    await expect(
+      report.getByRole("heading", { name: /financing|finantseerimis/i }),
+    ).toBeVisible();
+    await expect(report).toContainText(
+      /net change|opening cash|closing cash|raha muutus|raha perioodi/i,
+    );
 
-	test('can generate cash flow report', async ({ page }) => {
-		const generateButton = page.getByRole('button', { name: /generate|genereeri/i });
-		await generateButton.click();
+    await page.locator("input#startDate").fill("2026-01-01");
+    await page.locator("input#endDate").fill("2026-12-31");
 
-		// Wait for either report content, loading indicator to finish, or error
-		await expect(async () => {
-			const loadingText = page.getByText(/loading|generating|laadimine|genereerin/i);
-			const hasLoading = await loadingText.isVisible().catch(() => false);
+    const regeneratedReportPromise = page.waitForResponse((response) => {
+      if (!isCashFlowStatementResponse(response)) return false;
+      const url = new URL(response.url());
+      return (
+        url.searchParams.get("start_date") === "2026-01-01" &&
+        url.searchParams.get("end_date") === "2026-12-31"
+      );
+    });
+    await generateButton.click();
+    const regeneratedReport = await regeneratedReportPromise;
+    const body = (await regeneratedReport.json()) as CashFlowStatementResponse;
 
-			// If still loading, that's fine - keep waiting
-			if (hasLoading) {
-				expect(true).toBe(true);
-				return;
-			}
-
-			// Check for various success/error states
-			const hasOperating = await page.getByRole('heading', { name: /operating|äritegevus/i }).isVisible().catch(() => false);
-			const hasError = await page.locator('.alert-error, .error').isVisible().catch(() => false);
-			const hasReportContainer = await page.locator('.report-container, .report, .cash-flow-report').isVisible().catch(() => false);
-			const hasNoData = await page.getByText(/no data|no transactions|andmeid pole/i).isVisible().catch(() => false);
-			const hasSummary = await page.getByText(/total|net|cash flow|kokku|rahavoog/i).isVisible().catch(() => false);
-
-			// One of these should be true after loading completes
-			expect(hasOperating || hasError || hasReportContainer || hasNoData || hasSummary).toBeTruthy();
-		}).toPass({ timeout: 15000 });
-	});
+    expect(body.start_date).toBe("2026-01-01");
+    expect(body.end_date).toBe("2026-12-31");
+    await expect(page.locator(".report-container")).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.locator(".period")).toContainText("2026-01-01");
+    await expect(page.locator(".period")).toContainText("2026-12-31");
+  });
 });

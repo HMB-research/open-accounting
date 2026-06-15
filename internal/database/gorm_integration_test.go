@@ -4,10 +4,10 @@ package database
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -15,11 +15,7 @@ import (
 
 func getTestDatabaseURL(t *testing.T) string {
 	t.Helper()
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("DATABASE_URL not set, skipping integration test")
-	}
-	return dbURL
+	return testutil.SetupTestDB(t).Config().ConnString()
 }
 
 func TestGormDB_New(t *testing.T) {
@@ -105,84 +101,6 @@ func TestGormDB_Transaction_Rollback(t *testing.T) {
 		return assert.AnError // Return error to trigger rollback
 	})
 	assert.Error(t, err)
-}
-
-// Test SchemaScope function
-func TestSchemaScope(t *testing.T) {
-	dbURL := getTestDatabaseURL(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	gormDB, err := NewGormDB(ctx, dbURL)
-	require.NoError(t, err)
-	defer gormDB.Close()
-
-	t.Run("with tenant schema", func(t *testing.T) {
-		scope := SchemaScope("test_tenant_schema")
-		assert.NotNil(t, scope)
-
-		// Apply scope to DB
-		db := scope(gormDB.DB)
-		assert.NotNil(t, db)
-	})
-
-	t.Run("with public schema", func(t *testing.T) {
-		scope := SchemaScope("public")
-		assert.NotNil(t, scope)
-
-		// Should return DB unchanged
-		db := scope(gormDB.DB)
-		assert.NotNil(t, db)
-	})
-
-	t.Run("with empty schema", func(t *testing.T) {
-		scope := SchemaScope("")
-		assert.NotNil(t, scope)
-
-		// Should return DB unchanged
-		db := scope(gormDB.DB)
-		assert.NotNil(t, db)
-	})
-
-	t.Run("with invalid schema", func(t *testing.T) {
-		scope := SchemaScope("tenant-demo")
-		db := scope(gormDB.DB)
-		assert.Error(t, db.Error)
-	})
-}
-
-// Test TenantDB function
-func TestTenantDB(t *testing.T) {
-	dbURL := getTestDatabaseURL(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	gormDB, err := NewGormDB(ctx, dbURL)
-	require.NoError(t, err)
-	defer gormDB.Close()
-
-	t.Run("with tenant schema", func(t *testing.T) {
-		db := TenantDB(gormDB.DB, "test_tenant_schema")
-		assert.NotNil(t, db)
-	})
-
-	t.Run("with public schema", func(t *testing.T) {
-		db := TenantDB(gormDB.DB, "public")
-		assert.NotNil(t, db)
-		// Should return same DB
-		assert.Equal(t, gormDB.DB, db)
-	})
-
-	t.Run("with empty schema", func(t *testing.T) {
-		db := TenantDB(gormDB.DB, "")
-		assert.NotNil(t, db)
-		// Should return same DB
-		assert.Equal(t, gormDB.DB, db)
-	})
-
-	t.Run("with nil db", func(t *testing.T) {
-		assert.Nil(t, TenantDB(nil, "public"))
-	})
 }
 
 func TestTenantTable(t *testing.T) {

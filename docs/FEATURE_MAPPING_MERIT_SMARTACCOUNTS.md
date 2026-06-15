@@ -2,7 +2,7 @@
 
 This document maps features from [Merit Aktiva](https://www.merit.ee/en/) and [SmartAccounts](https://www.smartaccounts.eu/en/) to Open Accounting, identifying implementation status, gaps, and blockers.
 
-This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline as of 2026-04-24, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
+This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline, including the last full local baseline and current branch revalidation dates, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). For the concise current cap/gap summary before full product parity, use [CURRENT_PRODUCT_LIMITS.md](./CURRENT_PRODUCT_LIMITS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
 
 ## Executive Summary
 
@@ -29,7 +29,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Multi-level account hierarchy | ✅ | ✅ | ✅ | Implemented |
 | Account types (Asset/Liability/Equity/Revenue/Expense) | ✅ | ✅ | ✅ | Implemented |
 | Custom account codes | ✅ | ✅ | ✅ | Implemented |
-| Account grouping | ✅ | ✅ | ⚠️ | Partial |
+| Account grouping | ✅ | ✅ | ✅ | Implemented with parent-child chart hierarchy, CSV parent-code import, and API/CLI grouped view |
 | System accounts (locked) | ✅ | ✅ | ✅ | Implemented |
 | Account deactivation | ✅ | ✅ | ✅ | Implemented |
 
@@ -41,9 +41,9 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Auto-generated entries | ✅ | ✅ | ✅ | Implemented |
 | Entry numbering | ✅ | ✅ | ✅ | Implemented |
 | Entry reversal/void | ✅ | ✅ | ✅ | Implemented |
-| Recurring entries | ✅ | ✅ | ❌ | **Gap** |
-| Entry templates | ✅ | ✅ | ❌ | **Gap** |
-| Multi-currency entries | ✅ | ✅ | ⚠️ | Partial |
+| Recurring entries | ✅ | ✅ | ✅ | Implemented through recurring journal templates with API/CLI single and due-batch generation plus background scheduled due generation across active tenants |
+| Entry templates | ✅ | ✅ | ✅ | Implemented through reusable balanced journal entry templates with API/CLI apply workflow |
+| Multi-currency entries | ✅ | ✅ | ✅ | Implemented for manual and template journal entries with line currency, positive exchange rate validation, base-currency balancing, API/CLI support, and historical journal import |
 
 ### 1.3 Multi-Tenancy
 
@@ -52,7 +52,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Multiple companies | ✅ | ✅ | ✅ | Implemented |
 | Company switching | ✅ | ✅ | ✅ | Implemented |
 | Shared chart of accounts | ❌ | ❌ | ❌ | N/A |
-| Consolidated reporting | ✅ | ✅ | ❌ | **Gap** |
+| Consolidated reporting | ✅ | ✅ | ✅ | Implemented as multi-tenant consolidated trial balance, balance sheet, and income statement report with API/CLI coverage and tenant-access checks |
 
 ---
 
@@ -67,22 +67,22 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Multiple VAT rates | ✅ | ✅ | ✅ | Implemented |
 | PDF generation | ✅ | ✅ | ✅ | Implemented |
 | Email sending | ✅ | ✅ | ✅ | Implemented |
-| Invoice templates | ✅ | ✅ | ⚠️ | Partial |
+| Invoice templates | ✅ | ✅ | ✅ | Implemented through recurring invoice templates with API/CLI create, import, create-from-invoice, update, pause/resume, manual generation, and due-batch generation |
 | Credit notes | ✅ | ✅ | ✅ | Implemented |
 | Invoice reminders | ✅ | ✅ | ✅ | Implemented |
 | Recurring invoices | ✅ | ✅ | ✅ | Implemented |
-| E-invoice (Estonian e-arve) | ✅ | ✅ | ❌ | **Blocker** |
-| Offers/Quotes | ✅ | ✅ | ⚠️ | Partial |
+| E-invoice (Estonian e-arve) | ✅ | ✅ | ⚠️ | Manual Estonian e-invoice XML import is implemented through API/CLI; direct operator-network sending/receiving remains blocked |
+| Offers/Quotes | ✅ | ✅ | ✅ | Implemented with quote lifecycle, import, PDF/email delivery, and quote-to-invoice conversion through API/CLI plus UI delivery flows |
 
 ### 2.2 Purchase Invoices
 
 | Feature | Merit | SmartAccounts | Open Accounting | Status |
 |---------|-------|---------------|-----------------|--------|
-| Purchase invoice entry | ✅ | ✅ | ⚠️ | Partial |
+| Purchase invoice entry | ✅ | ✅ | ✅ | Implemented through `PURCHASE` invoices/supplier bills with API/CLI creation, filtering, PDF/download, voiding, attachments, payment allocation, and CSV import |
 | Expense categorization | ✅ | ✅ | ✅ | Implemented |
 | Supplier management | ✅ | ✅ | ✅ | Implemented |
 | OCR scanning | ✅ | ✅ | ❌ | **Blocker** |
-| E-invoice import | ✅ | ✅ | ❌ | **Blocker** |
+| E-invoice import | ✅ | ✅ | ✅ | Manual Estonian e-invoice XML import is implemented through API/CLI; operator-network receiving remains blocked |
 
 ---
 
@@ -95,7 +95,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Manual transaction import | ✅ | ✅ | ✅ | Implemented |
 | CSV import | ✅ | ✅ | ✅ | Implemented |
 | Transaction matching | ✅ | ✅ | ✅ | Implemented |
-| Auto-matching rules | ✅ | ✅ | ⚠️ | Partial |
+| Auto-matching rules | ✅ | ✅ | ✅ | Implemented - persisted bank-account or tenant-wide rules tune match field, priority, confidence, date window, exact amount, active state, API, and CLI coverage |
 | Bank feed (Swedbank Gateway) | ❌ | ✅ | ❌ | **Blocker** |
 | Multi-bank support | ✅ | ✅ | ✅ | Implemented |
 
@@ -107,7 +107,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Partial payments | ✅ | ✅ | ✅ | Implemented |
 | Payment reminders | ✅ | ✅ | ✅ | Implemented |
 | Direct bank payments | ✅ | ✅ | ❌ | **Blocker** |
-| SEPA payments | ✅ | ✅ | ❌ | **Gap** |
+| SEPA payments | ✅ | ✅ | ✅ | Implemented as pain.001 XML export for manual bank upload; direct bank submission remains a separate blocker |
 
 ---
 
@@ -121,7 +121,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Contract management | ✅ | ✅ | ✅ | Implemented |
 | Tax exemptions | ✅ | ✅ | ✅ | Implemented |
 | Pension fund enrollment | ✅ | ✅ | ✅ | Implemented |
-| Multiple employments | ✅ | ✅ | ⚠️ | Partial |
+| Multiple employments | ✅ | ✅ | ✅ | Implemented through date-bounded salary components for secondary employments, with API/CLI management and payroll gross salary inclusion |
 
 ### 4.2 Salary Calculation
 
@@ -132,9 +132,9 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Income tax calculation | ✅ | ✅ | ✅ | Implemented |
 | Unemployment insurance | ✅ | ✅ | ✅ | Implemented |
 | Pension contributions | ✅ | ✅ | ✅ | Implemented |
-| Payslip generation | ✅ | ✅ | ⚠️ | Partial |
-| Historical payroll and leave-balance import | ✅ | ✅ | ⚠️ | API/UI/CLI import exists; broader cutover still partial |
-| Bulk payroll processing | ✅ | ✅ | ❌ | **Gap** |
+| Payslip generation | ✅ | ✅ | ✅ | Implemented with calculated payslip records plus generated PDF download through API/CLI |
+| Historical payroll, TSD, and leave-balance import | ✅ | ✅ | ⚠️ | Payroll and leave API/UI/CLI import exists; TSD history API/CLI import exists; broader cutover still partial |
+| Bulk payroll processing | ✅ | ✅ | ✅ | Implemented via payroll run process API/CLI |
 
 ### 4.3 Tax Declarations
 
@@ -142,7 +142,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | TSD form generation | ✅ | ✅ | ✅ | Implemented |
 | e-MTA submission | ✅ | ✅ | ❌ | **Blocker** |
-| INF form | ✅ | ✅ | ❌ | **Gap** |
+| INF form | ✅ | ✅ | ✅ | Implemented as KMD INF A/B report; e-MTA submission remains blocked |
 
 ---
 
@@ -155,8 +155,9 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Trial Balance | ✅ | ✅ | ✅ | Implemented |
 | Balance Sheet | ✅ | ✅ | ✅ | Implemented |
 | Income Statement | ✅ | ✅ | ✅ | Implemented |
-| Cash Flow Statement | ✅ | ✅ | ⚠️ | Partial |
-| Aging reports | ✅ | ✅ | ⚠️ | Partial |
+| Cash Flow Statement | ✅ | ✅ | ✅ | Implemented through direct and indirect cash-flow statements with API/CLI JSON/CSV/XLSX/PDF export, annual-report inclusion, and tenant/request-level account mapping |
+| Aging reports | ✅ | ✅ | ✅ | Implemented for receivables and payables with API/CLI JSON/CSV/XLSX/PDF export |
+| Sales margin reports | ✅ | ✅ | ✅ | Implemented through API/CLI CSV/XLSX/PDF exports |
 | Custom date ranges | ✅ | ✅ | ✅ | Implemented |
 
 ### 5.2 Management Reports
@@ -166,8 +167,8 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Dashboard analytics | ✅ | ✅ | ✅ | Implemented |
 | Revenue by period | ✅ | ✅ | ✅ | Implemented |
 | Expense breakdown | ✅ | ✅ | ✅ | Implemented |
-| Customer profitability | ✅ | ✅ | ❌ | **Gap** |
-| Budget vs actual | ✅ | ✅ | ❌ | **Gap** |
+| Customer profitability | ✅ | ✅ | ✅ | Implemented through first-class customer profitability API/CLI JSON/CSV/XLSX/PDF reporting with product-cost-backed customer revenue, estimated cost, profit, profit percent, and supporting invoice-line detail |
+| Budget vs actual | ✅ | ✅ | ✅ | Implemented through cost-center budget-vs-actual API/CLI CSV/XLSX/PDF reports |
 
 ---
 
@@ -179,16 +180,16 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | VAT calculation | ✅ | ✅ | ✅ | Implemented |
 | Multi-rate VAT | ✅ | ✅ | ✅ | Implemented |
-| VAT declaration (KMD) | ✅ | ✅ | ⚠️ | Partial |
+| VAT declaration (KMD) | ✅ | ✅ | ✅ | Implemented with generation, listing, e-MTA XML export, KMD INF A/B reporting, historical import, API/CLI coverage, and tests; direct e-MTA submission remains a separate blocker |
 | e-MTA VAT submission | ✅ | ✅ | ❌ | **Blocker** |
-| EU VAT (MOSS) | ✅ | ✅ | ❌ | **Gap** |
-| Reverse charge VAT | ✅ | ✅ | ⚠️ | Partial |
+| EU VAT (MOSS) | ✅ | ✅ | ✅ | Implemented as quarterly EU VAT OSS report grouped by destination member state and VAT rate, with API/CLI coverage for manual filing support |
+| Reverse charge VAT | ✅ | ✅ | ✅ | Implemented - invoice lines support reverse-charge treatment through API, CLI, CSV import, persistence, and KMD self-assessed output/input VAT aggregation |
 
 ### 6.2 Annual Reporting
 
 | Feature | Merit | SmartAccounts | Open Accounting | Status |
 |---------|-------|---------------|-----------------|--------|
-| Annual report generation | ✅ | ✅ | ❌ | **Gap** |
+| Annual report generation | ✅ | ✅ | ✅ | Implemented as annual report pack; e-äriregister submission remains blocked |
 | e-äriregister submission | ✅ | ✅ | ❌ | **Blocker** |
 
 ---
@@ -200,7 +201,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Feature | Merit | SmartAccounts | Open Accounting | Status |
 |---------|-------|---------------|-----------------|--------|
 | REST API | ✅ | ✅ | ✅ | Implemented |
-| Webhook notifications | ⚠️ | ❌ | ⚠️ | Partial |
+| Webhook notifications | ⚠️ | ❌ | ✅ | Implemented as tenant outbound webhook endpoints with event subscriptions, signed POST delivery, test delivery, delivery history, and CLI/API coverage |
 | WooCommerce | ❌ | ✅ | ❌ | **Gap** |
 | Shopify | ❌ | ❌ | ❌ | **Gap** |
 | Scoro | ❌ | ✅ | ❌ | **Gap** |
@@ -211,8 +212,8 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Feature | Merit | SmartAccounts | Open Accounting | Status |
 |---------|-------|---------------|-----------------|--------|
 | CSV export | ✅ | ✅ | ✅ | Implemented |
-| Excel export | ✅ | ✅ | ⚠️ | Partial |
-| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV imports cover setup data, invoices, opening balances, employees, finalized payroll history, and leave balances; full incumbent-system migration is still incomplete |
+| Excel export | ✅ | ✅ | ✅ | Implemented for core financial statements, cash flow, aging, balance confirmations, contact statements, sales margin, budget-vs-actual, and cost-center budget reports |
+| Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV and XML imports cover setup data, invoices, Estonian e-invoices, payments, expenses, opening balances, employees, finalized payroll history, leave balances, historical TSD/KMD declarations, quotes, orders, recurring invoice templates, bank accounts, bank transactions including standard ISO 20022 camt.053 statements, cost centers, cost allocations, product categories, warehouses, products, stock adjustments with lot metadata, fixed assets, and historical journal entries; a migration bundle validator checks required columns, XML payloads, e-invoice supplier/customer party contact references by validation mode, opening-balance debit/credit totals, grouped historical-journal date/line/amount/base-currency balances, provider preset header aliases for generic, Merit, SmartAccounts, and Directo CSVs, and same-bundle references before import, but deeper incumbent-system templates and full cutover remain incomplete |
 
 ---
 
@@ -224,8 +225,8 @@ This is a competitive-gap document, not the authoritative current-state status p
 |---------|-------|---------------|-----------------|--------|
 | Responsive web design | ⚠️ | ✅ | ✅ | Implemented |
 | Native mobile app | ❌ | ✅ (Android) | ❌ | **Gap** |
-| Receipt capture | ❌ | ✅ | ❌ | **Gap** |
-| Expense tracking | ❌ | ✅ | ❌ | **Gap** |
+| Receipt capture | ❌ | ✅ | ✅ | Implemented through receipt documents linked to expenses; native mobile capture and OCR remain separate gaps |
+| Expense tracking | ❌ | ✅ | ✅ | Implemented through draft/submitted/approved/rejected/posted expense claims with receipt enforcement, CSV import, and ledger posting |
 
 ---
 
@@ -234,9 +235,9 @@ This is a competitive-gap document, not the authoritative current-state status p
 These features cannot be implemented without external dependencies or significant infrastructure:
 
 ### 1. **E-Invoice (e-arve) Integration**
-- **Requirement**: Connect to Omniva e-invoice center
+- **Requirement**: Direct operator-network send/receive through Omniva or another e-invoice operator
 - **Blocker**: Requires partnership agreement with Omniva and certificate authentication
-- **Workaround**: Manual PDF invoice sending (implemented)
+- **Workaround**: Manual Estonian e-invoice XML import and manual PDF invoice sending are implemented
 
 ### 2. **Bank Feed Integration (Swedbank Gateway, SEB, LHV)**
 - **Requirement**: Direct bank API access

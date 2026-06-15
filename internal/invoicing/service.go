@@ -3,8 +3,10 @@ package invoicing
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -14,16 +16,21 @@ import (
 
 // Service provides invoicing operations
 type Service struct {
-	db         *pgxpool.Pool
 	repo       Repository
 	accounting *accounting.Service
 }
 
-// NewService creates a new invoicing service with a PostgreSQL repository
+// NewService creates a new invoicing service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool, accountingService *accounting.Service) *Service {
+	if db == nil {
+		return &Service{accounting: accountingService}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create invoicing GORM repository: %w", err))
+	}
 	return &Service{
-		db:         db,
-		repo:       NewPostgresRepository(db),
+		repo:       NewGORMRepository(gormDB),
 		accounting: accountingService,
 	}
 }
@@ -71,6 +78,10 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 
 	// Convert request lines to invoice lines
 	for i, reqLine := range req.Lines {
+		vatTreatment, err := NormalizeVATTreatment(string(reqLine.VATTreatment))
+		if err != nil {
+			return nil, err
+		}
 		line := InvoiceLine{
 			ID:              uuid.New().String(),
 			TenantID:        tenantID,
@@ -81,6 +92,7 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 			UnitPrice:       reqLine.UnitPrice,
 			DiscountPercent: reqLine.DiscountPercent,
 			VATRate:         reqLine.VATRate,
+			VATTreatment:    vatTreatment,
 			AccountID:       reqLine.AccountID,
 			ProductID:       reqLine.ProductID,
 		}
@@ -129,6 +141,34 @@ func (s *Service) List(ctx context.Context, tenantID, schemaName string, filter 
 	return invoices, nil
 }
 
+// ResolveInvoiceIDByNumber returns the unique invoice ID for an invoice number.
+func (s *Service) ResolveInvoiceIDByNumber(ctx context.Context, tenantID, schemaName, invoiceNumber string) (string, error) {
+	trimmed := strings.TrimSpace(invoiceNumber)
+	if trimmed == "" {
+		return "", fmt.Errorf("invoice_number is required")
+	}
+
+	invoices, err := s.repo.List(ctx, schemaName, tenantID, &InvoiceFilter{Search: trimmed})
+	if err != nil {
+		return "", fmt.Errorf("list invoices: %w", err)
+	}
+
+	var matchedID string
+	for _, invoice := range invoices {
+		if !strings.EqualFold(strings.TrimSpace(invoice.InvoiceNumber), trimmed) {
+			continue
+		}
+		if matchedID != "" {
+			return "", fmt.Errorf("invoice_number %q matched multiple invoices", trimmed)
+		}
+		matchedID = invoice.ID
+	}
+	if matchedID == "" {
+		return "", ErrInvoiceNotFound
+	}
+	return matchedID, nil
+}
+
 // Send marks an invoice as sent and updates status
 func (s *Service) Send(ctx context.Context, tenantID, schemaName, invoiceID string) error {
 	// Verify invoice exists and is in draft status
@@ -166,7 +206,8 @@ func (s *Service) RecordPayment(ctx context.Context, tenantID, schemaName, invoi
 	} else if newAmountPaid.GreaterThan(decimal.Zero) {
 		newStatus = StatusPartiallyPaid
 	} else {
-		newStatus = invoice.Status
+		newAmountPaid = decimal.Zero
+		newStatus = unpaidInvoiceStatus(invoice)
 	}
 
 	if err := s.repo.UpdatePayment(ctx, schemaName, tenantID, invoiceID, newAmountPaid, newStatus); err != nil {
@@ -174,6 +215,16 @@ func (s *Service) RecordPayment(ctx context.Context, tenantID, schemaName, invoi
 	}
 
 	return nil
+}
+
+func unpaidInvoiceStatus(invoice *Invoice) InvoiceStatus {
+	if invoice.Status == StatusDraft || invoice.Status == StatusVoided {
+		return invoice.Status
+	}
+	if time.Now().After(invoice.DueDate) {
+		return StatusOverdue
+	}
+	return StatusSent
 }
 
 // Void voids an invoice

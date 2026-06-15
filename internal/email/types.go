@@ -9,9 +9,12 @@ import (
 type TemplateType string
 
 const (
-	TemplateInvoiceSend     TemplateType = "INVOICE_SEND"
-	TemplatePaymentReceipt  TemplateType = "PAYMENT_RECEIPT"
-	TemplateOverdueReminder TemplateType = "OVERDUE_REMINDER"
+	TemplateInvoiceSend               TemplateType = "INVOICE_SEND"
+	TemplateQuoteSend                 TemplateType = "QUOTE_SEND"
+	TemplateOrderConfirm              TemplateType = "ORDER_CONFIRM"
+	TemplatePaymentReceipt            TemplateType = "PAYMENT_RECEIPT"
+	TemplateOverdueReminder           TemplateType = "OVERDUE_REMINDER"
+	TemplateDocumentRetentionReminder TemplateType = "DOCUMENT_RETENTION_REMINDER"
 )
 
 // EmailStatus represents the status of an email
@@ -99,12 +102,49 @@ func (r *SendInvoiceRequest) Validate() error {
 	return nil
 }
 
+// SendQuoteRequest represents a request to send a quote via email.
+type SendQuoteRequest struct {
+	RecipientEmail          string `json:"recipient_email"`
+	RecipientName           string `json:"recipient_name,omitempty"`
+	Subject                 string `json:"subject,omitempty"`
+	Message                 string `json:"message,omitempty"`
+	AttachPDF               bool   `json:"attach_pdf"`
+	RequireApprovedEvidence bool   `json:"require_approved_evidence,omitempty"`
+}
+
+// Validate validates the send quote request.
+func (r *SendQuoteRequest) Validate() error {
+	if r.RecipientEmail == "" {
+		return errors.New("recipient email is required")
+	}
+	return nil
+}
+
+// SendOrderRequest represents a request to send an order confirmation via email.
+type SendOrderRequest struct {
+	RecipientEmail          string `json:"recipient_email"`
+	RecipientName           string `json:"recipient_name,omitempty"`
+	Subject                 string `json:"subject,omitempty"`
+	Message                 string `json:"message,omitempty"`
+	AttachPDF               bool   `json:"attach_pdf"`
+	RequireApprovedEvidence bool   `json:"require_approved_evidence,omitempty"`
+}
+
+// Validate validates the send order request.
+func (r *SendOrderRequest) Validate() error {
+	if r.RecipientEmail == "" {
+		return errors.New("recipient email is required")
+	}
+	return nil
+}
+
 // SendPaymentReceiptRequest represents a request to send a payment receipt
 type SendPaymentReceiptRequest struct {
-	RecipientEmail string `json:"recipient_email"`
-	RecipientName  string `json:"recipient_name,omitempty"`
-	Subject        string `json:"subject,omitempty"`
-	Message        string `json:"message,omitempty"`
+	RecipientEmail          string `json:"recipient_email"`
+	RecipientName           string `json:"recipient_name,omitempty"`
+	Subject                 string `json:"subject,omitempty"`
+	Message                 string `json:"message,omitempty"`
+	RequireApprovedEvidence bool   `json:"require_approved_evidence,omitempty"`
 }
 
 // Validate validates the send payment receipt request
@@ -199,6 +239,50 @@ func DefaultTemplates() map[TemplateType]EmailTemplate {
 </html>`,
 			IsActive: true,
 		},
+		TemplateQuoteSend: {
+			TemplateType: TemplateQuoteSend,
+			Subject:      "Quote {{.QuoteNumber}} from {{.CompanyName}}",
+			BodyHTML: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+<h2>Quote {{.QuoteNumber}}</h2>
+<p>Dear {{.ContactName}},</p>
+<p>Please find attached quote {{.QuoteNumber}} for {{.TotalAmount}} {{.Currency}}.</p>
+<p><strong>Quote Date:</strong> {{.QuoteDate}}</p>
+{{if .ValidUntil}}<p><strong>Valid Until:</strong> {{.ValidUntil}}</p>{{end}}
+{{if .Message}}
+<p>{{.Message}}</p>
+{{end}}
+<p>Best regards,<br>{{.CompanyName}}</p>
+</div>
+</body>
+</html>`,
+			IsActive: true,
+		},
+		TemplateOrderConfirm: {
+			TemplateType: TemplateOrderConfirm,
+			Subject:      "Order {{.OrderNumber}} confirmation from {{.CompanyName}}",
+			BodyHTML: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+<h2>Order {{.OrderNumber}}</h2>
+<p>Dear {{.ContactName}},</p>
+<p>Please find attached order confirmation {{.OrderNumber}} for {{.TotalAmount}} {{.Currency}}.</p>
+<p><strong>Order Date:</strong> {{.OrderDate}}</p>
+{{if .ExpectedDelivery}}<p><strong>Expected Delivery:</strong> {{.ExpectedDelivery}}</p>{{end}}
+{{if .Message}}
+<p>{{.Message}}</p>
+{{end}}
+<p>Best regards,<br>{{.CompanyName}}</p>
+</div>
+</body>
+</html>`,
+			IsActive: true,
+		},
 		TemplateOverdueReminder: {
 			TemplateType: TemplateOverdueReminder,
 			Subject:      "Overdue Invoice Reminder - {{.InvoiceNumber}}",
@@ -225,7 +309,50 @@ func DefaultTemplates() map[TemplateType]EmailTemplate {
 </html>`,
 			IsActive: true,
 		},
+		TemplateDocumentRetentionReminder: {
+			TemplateType: TemplateDocumentRetentionReminder,
+			Subject:      "Document retention follow-up for {{.CompanyName}}",
+			BodyHTML: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+<div style="max-width: 700px; margin: 0 auto; padding: 20px;">
+<h2>Document retention follow-up</h2>
+<p>{{.CompanyName}} has {{.RetentionActionCount}} document retention follow-up actions as of {{.RetentionAsOfDate}}.</p>
+<p><strong>Cutoff date:</strong> {{.RetentionCutoffDate}}</p>
+<ul>
+{{range .RetentionActions}}
+<li><strong>{{.Action}}</strong>: {{.FileName}} ({{.DocumentType}}, {{.EntityType}} {{.EntityID}}) - {{.Message}}{{if .RetentionUntil}} Retention: {{.RetentionUntil}}{{end}}{{if .DaysUntilRetention}} Days: {{.DaysUntilRetention}}{{end}}</li>
+{{end}}
+</ul>
+<p>Review the document retention queue in Open Accounting and update retention dates, approvals, or remediation notes before the next scheduled run.</p>
+</div>
+</body>
+</html>`,
+			BodyText: `Document retention follow-up for {{.CompanyName}}
+
+As of {{.RetentionAsOfDate}}, cutoff {{.RetentionCutoffDate}}, there are {{.RetentionActionCount}} document retention follow-up actions.
+
+{{range .RetentionActions}}- {{.Action}}: {{.FileName}} ({{.DocumentType}}, {{.EntityType}} {{.EntityID}}) - {{.Message}}{{if .RetentionUntil}} Retention: {{.RetentionUntil}}{{end}}{{if .DaysUntilRetention}} Days: {{.DaysUntilRetention}}{{end}}
+{{end}}
+Review the document retention queue in Open Accounting and update retention dates, approvals, or remediation notes before the next scheduled run.
+`,
+			IsActive: true,
+		},
 	}
+}
+
+// RetentionReminderTemplateAction holds one document retention follow-up row for templates.
+type RetentionReminderTemplateAction struct {
+	Action             string
+	DocumentID         string
+	DocumentType       string
+	FileName           string
+	EntityType         string
+	EntityID           string
+	Message            string
+	DaysUntilRetention string
+	RetentionUntil     string
 }
 
 // TemplateData holds data for rendering email templates
@@ -244,6 +371,16 @@ type TemplateData struct {
 	DaysOverdue   int
 	DaysUntilDue  int // For pre-due reminders
 
+	// Quote fields
+	QuoteNumber string
+	QuoteDate   string
+	ValidUntil  string
+
+	// Order fields
+	OrderNumber      string
+	OrderDate        string
+	ExpectedDelivery string
+
 	// Interest fields (for overdue reminders)
 	InterestRate      string // Daily rate as percentage (e.g., "0.05%")
 	InterestAmount    string // Total interest accrued
@@ -253,4 +390,16 @@ type TemplateData struct {
 	Amount      string
 	PaymentDate string
 	Reference   string
+
+	// Document retention reminder fields
+	RetentionAsOfDate              string
+	RetentionCutoffDate            string
+	RetentionActionCount           int
+	RetentionTotalCount            int
+	RetentionExpiredCount          int
+	RetentionDueSoonCount          int
+	RetentionMissingRetentionCount int
+	RetentionPendingReviewCount    int
+	RetentionRejectedCount         int
+	RetentionActions               []RetentionReminderTemplateAction
 }

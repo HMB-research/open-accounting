@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,8 +14,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/cutover"
+	"github.com/HMB-research/open-accounting/internal/documents"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type errReadCloser struct{}
+
+func (errReadCloser) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+func (errReadCloser) Close() error {
+	return nil
+}
 
 func TestNewAPIClientNormalizesBaseURL(t *testing.T) {
 	t.Parallel()
@@ -83,6 +105,541 @@ func TestAPIClientRequestReturnsDecodedAPIError(t *testing.T) {
 	_, err := client.getCurrentUser(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bad request payload")
+}
+
+func TestAPIClientWatchMigrationExecutionRunBranches(t *testing.T) {
+	t.Parallel()
+
+	run := cutover.MigrationExecutionRun{
+		ID: "run-1",
+		Summary: cutover.MigrationExecutionRunSummary{
+			Status:          "running",
+			ProgressPercent: 25,
+		},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/tenants/tenant-1/migration/execution-runs/run-1/events", r.URL.Path)
+		assert.Empty(t, r.URL.Query().Get("interval_ms"))
+		assert.Empty(t, r.URL.Query().Get("max_events"))
+		assert.Equal(t, "text/event-stream", r.Header.Get("Accept"))
+		assert.Empty(t, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: snapshot\n"))
+		_, _ = w.Write([]byte("data: " + mustJSON(t, cutover.MigrationExecutionRunEvent{Type: "snapshot", Sequence: 1, Run: &run}) + "\n"))
+	}))
+	defer server.Close()
+
+	client := newAPIClient(server.URL, "")
+	events := []cutover.MigrationExecutionRunEvent{}
+	require.NoError(t, client.watchMigrationExecutionRun(context.Background(), "tenant-1", "run-1", 0, 0, func(event cutover.MigrationExecutionRunEvent) error {
+		events = append(events, event)
+		return nil
+	}))
+	require.Len(t, events, 1)
+	assert.Equal(t, "snapshot", events[0].Type)
+	assert.Equal(t, 25, events[0].Run.Summary.ProgressPercent)
+
+	badEventServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/tenants/tenant-1/migration/execution-runs/run-1/events", r.URL.Path)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\n\n"))
+	}))
+	defer badEventServer.Close()
+
+	badEventClient := newAPIClient(badEventServer.URL, "")
+	require.ErrorContains(t, badEventClient.watchMigrationExecutionRun(context.Background(), "tenant-1", "run-1", 0, 0, nil), "decode migration run stream event")
+
+	badURLClient := &apiClient{baseURL: "http://[::1", httpClient: http.DefaultClient}
+	require.ErrorContains(t, badURLClient.watchMigrationExecutionRun(context.Background(), "tenant-1", "run-1", 0, 0, nil), "create request")
+
+	requestErrorClient := &apiClient{
+		baseURL: "https://api.example.test",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("network down")
+		})},
+	}
+	require.ErrorContains(t, requestErrorClient.watchMigrationExecutionRun(context.Background(), "tenant-1", "run-1", 0, 0, nil), "network down")
+
+	readErrorClient := &apiClient{
+		baseURL: "https://api.example.test",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       errReadCloser{},
+				Header:     make(http.Header),
+			}, nil
+		})},
+	}
+	require.ErrorContains(t, readErrorClient.watchMigrationExecutionRun(context.Background(), "tenant-1", "run-1", 0, 0, nil), "read migration run stream")
+}
+
+func TestDispatchMigrationExecutionRunEventBranches(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, dispatchMigrationExecutionRunEvent(nil, nil))
+	require.NoError(t, dispatchMigrationExecutionRunEvent([]string{`{"type":"snapshot","sequence":1}`}, nil))
+	require.ErrorContains(t, dispatchMigrationExecutionRunEvent([]string{"{"}, nil), "decode migration run stream event")
+	require.ErrorContains(t, dispatchMigrationExecutionRunEvent([]string{`{"type":"snapshot","sequence":1}`}, func(cutover.MigrationExecutionRunEvent) error {
+		return errors.New("callback failed")
+	}), "callback failed")
+}
+
+func TestAPIClientRequestRawAndDemoBranches(t *testing.T) {
+	t.Parallel()
+
+	requestCounts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/raw-success":
+			requestCounts["raw-success"]++
+			assert.Equal(t, http.MethodPost, r.Method)
+			assert.Equal(t, "*/*", r.Header.Get("Accept"))
+			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+			assert.Equal(t, "Bearer raw-token", r.Header.Get("Authorization"))
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "value", req["key"])
+			_, _ = w.Write([]byte("raw-ok"))
+		case "/raw-error":
+			requestCounts["raw-error"]++
+			w.WriteHeader(http.StatusTeapot)
+			_, _ = w.Write([]byte(`{"message":"missing error field"}`))
+		case "/bad-json":
+			requestCounts["bad-json"]++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{"))
+		case "/api/demo/status":
+			requestCounts["demo-status"]++
+			assert.Equal(t, http.MethodGet, r.Method)
+			assert.Equal(t, "3", r.URL.Query().Get("user"))
+			assert.Equal(t, "application/json", r.Header.Get("Accept"))
+			assert.Equal(t, "demo-secret", r.Header.Get("X-Demo-Secret"))
+			_, _ = w.Write([]byte(`{"status":"ready"}`))
+		case "/api/demo/reset":
+			requestCounts["demo-reset"]++
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "demo offline"})
+		default:
+			t.Fatalf("unexpected client helper request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	client := newAPIClient(server.URL, "token-123")
+
+	raw, err := client.requestRaw(context.Background(), http.MethodPost, "/raw-success", map[string]string{"key": "value"}, " raw-token ")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("raw-ok"), raw)
+
+	_, err = client.requestRaw(context.Background(), http.MethodGet, "/raw-error", nil, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "418 I'm a teapot")
+
+	var decoded map[string]string
+	err = client.request(context.Background(), http.MethodGet, "/bad-json", nil, "", &decoded)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "decode response")
+
+	demoPayload, err := client.demoStatus(context.Background(), 3, " demo-secret ")
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"status":"ready"}`, string(demoPayload))
+
+	_, err = client.demoReset(context.Background(), 0, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "demo offline")
+
+	assert.Equal(t, map[string]int{
+		"raw-success": 1,
+		"raw-error":   1,
+		"bad-json":    1,
+		"demo-status": 1,
+		"demo-reset":  1,
+	}, requestCounts)
+}
+
+func TestAPIClientTransportErrorBranches(t *testing.T) {
+	t.Parallel()
+
+	transportErr := errors.New("transport unavailable")
+	client := &apiClient{
+		baseURL:  "https://api.example.com",
+		apiToken: "token-123",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, transportErr
+		})},
+	}
+
+	err := client.request(context.Background(), http.MethodGet, "/api/v1/me", nil, "token-123", &map[string]string{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "transport unavailable")
+
+	_, err = client.requestRaw(context.Background(), http.MethodGet, "/health", nil, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "transport unavailable")
+
+	_, err = client.demoStatus(context.Background(), 1, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "transport unavailable")
+}
+
+func TestAPIClientRequestConstructionAndReadErrors(t *testing.T) {
+	t.Parallel()
+
+	client := &apiClient{baseURL: "http://[::1", httpClient: http.DefaultClient}
+	err := client.request(context.Background(), http.MethodGet, "/api/v1/me", nil, "", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create request")
+
+	_, err = client.requestRaw(context.Background(), http.MethodGet, "/health", nil, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create request")
+
+	_, err = client.demoStatus(context.Background(), 1, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create request")
+
+	client = newAPIClient("https://api.example.com", "token-123")
+	err = client.request(context.Background(), http.MethodPost, "/api/v1/bad", map[string]any{"bad": make(chan int)}, "", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "encode request body")
+
+	_, err = client.requestRaw(context.Background(), http.MethodPost, "/api/v1/bad", map[string]any{"bad": make(chan int)}, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "encode request body")
+
+	client = &apiClient{
+		baseURL: "https://api.example.com",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       errReadCloser{},
+				Header:     make(http.Header),
+			}, nil
+		})},
+	}
+
+	_, err = client.requestRaw(context.Background(), http.MethodGet, "/health", nil, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read response")
+
+	_, err = client.demoStatus(context.Background(), 1, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read demo response")
+
+	client = &apiClient{
+		baseURL: "https://api.example.com",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusConflict,
+				Status:     "409 Conflict",
+				Body:       io.NopCloser(bytes.NewBufferString("not-json")),
+				Header:     make(http.Header),
+			}, nil
+		})},
+	}
+
+	err = client.request(context.Background(), http.MethodGet, "/api/v1/conflict", nil, "", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "409 Conflict")
+}
+
+func TestAPIClientReportExportsBuildQueryParameters(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer token-123", r.Header.Get("Authorization"))
+		assert.Equal(t, "*/*", r.Header.Get("Accept"))
+
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/reports/balance-sheet":
+			assert.Equal(t, "2026-03-31", r.URL.Query().Get("as_of"))
+			switch r.URL.Query().Get("format") {
+			case "csv":
+				_, _ = w.Write([]byte("balance,csv"))
+			case "xlsx":
+				_, _ = w.Write([]byte("balance-xlsx"))
+			default:
+				t.Fatalf("unexpected balance sheet format: %s", r.URL.RawQuery)
+			}
+		case "/api/v1/tenants/tenant-1/reports/income-statement":
+			assert.Equal(t, "2026-01-01", r.URL.Query().Get("start"))
+			assert.Equal(t, "2026-03-31", r.URL.Query().Get("end"))
+			switch r.URL.Query().Get("format") {
+			case "csv":
+				_, _ = w.Write([]byte("income,csv"))
+			case "xlsx":
+				_, _ = w.Write([]byte("income-xlsx"))
+			default:
+				t.Fatalf("unexpected income statement format: %s", r.URL.RawQuery)
+			}
+		default:
+			t.Fatalf("unexpected export request: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := newAPIClient(server.URL, "token-123")
+	balanceCSV, err := client.exportBalanceSheetCSV(context.Background(), "tenant-1", " 2026-03-31 ")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("balance,csv"), balanceCSV)
+
+	balanceXLSX, err := client.exportBalanceSheetXLSX(context.Background(), "tenant-1", "2026-03-31")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("balance-xlsx"), balanceXLSX)
+
+	incomeCSV, err := client.exportIncomeStatementCSV(context.Background(), "tenant-1", " 2026-01-01 ", " 2026-03-31 ")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("income,csv"), incomeCSV)
+
+	incomeXLSX, err := client.exportIncomeStatementXLSX(context.Background(), "tenant-1", "2026-01-01", "2026-03-31")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("income-xlsx"), incomeXLSX)
+}
+
+func TestAPIClientAuthSessionRequestsUseFallbackToken(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 8, 9, 30, 0, 0, time.UTC)
+	requestCounts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer fallback-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/security-events":
+			requestCounts["security-events"]++
+			assert.Equal(t, "25", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode([]auth.SecurityAuditEvent{{
+				ID:        "event-1",
+				Action:    auth.SecurityAuditActionLogin,
+				CreatedAt: now,
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/sessions":
+			requestCounts["sessions"]++
+			assert.Equal(t, "true", r.URL.Query().Get("include_inactive"))
+			_ = json.NewEncoder(w).Encode([]refreshSession{{
+				ID:        "session-1",
+				UserID:    "user-1",
+				CreatedAt: now,
+				ExpiresAt: now.Add(24 * time.Hour),
+			}})
+		case r.Method == http.MethodDelete && r.URL.EscapedPath() == "/api/v1/auth/sessions/session%2F1":
+			requestCounts["revoke-session"]++
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/auth/sessions":
+			requestCounts["revoke-all"]++
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/auth/password":
+			requestCounts["change-password"]++
+			var req map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "old-secret", req["current_password"])
+			assert.Equal(t, "new-secret", req["new_password"])
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected auth client request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	client := newAPIClient(server.URL, "fallback-token")
+	events, err := client.listSecurityAuditEvents(context.Background(), 25, "")
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, auth.SecurityAuditActionLogin, events[0].Action)
+
+	sessions, err := client.listAuthSessions(context.Background(), true, "")
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	assert.Equal(t, "session-1", sessions[0].ID)
+
+	require.NoError(t, client.revokeAuthSession(context.Background(), "session/1", ""))
+	require.NoError(t, client.revokeAllAuthSessions(context.Background(), ""))
+	require.NoError(t, client.changePassword(context.Background(), "old-secret", "new-secret", ""))
+
+	assert.Equal(t, map[string]int{
+		"security-events": 1,
+		"sessions":        1,
+		"revoke-session":  1,
+		"revoke-all":      1,
+		"change-password": 1,
+	}, requestCounts)
+}
+
+func TestAPIClientDocumentUploadDownloadBranches(t *testing.T) {
+	t.Parallel()
+
+	retentionUntil := time.Date(2028, 6, 30, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 6, 8, 10, 0, 0, 0, time.UTC)
+	requestCounts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer document-token", r.Header.Get("Authorization"))
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
+			requestCounts["upload"]++
+			assert.Equal(t, "application/json", r.Header.Get("Accept"))
+			assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
+			require.NoError(t, r.ParseMultipartForm(1024))
+			assert.Equal(t, "invoice", r.FormValue("entity_type"))
+			assert.Equal(t, "inv-1", r.FormValue("entity_id"))
+			assert.Equal(t, "receipt", r.FormValue("document_type"))
+			assert.Equal(t, "Uploaded from CLI", r.FormValue("notes"))
+			assert.Equal(t, "2028-06-30", r.FormValue("retention_until"))
+			assert.Equal(t, "7", r.FormValue("retention_years"))
+			file, header, err := r.FormFile("file")
+			require.NoError(t, err)
+			defer func() {
+				_ = file.Close()
+			}()
+			assert.Equal(t, "invoice.pdf", header.Filename)
+			content, err := io.ReadAll(file)
+			require.NoError(t, err)
+			assert.Equal(t, []byte("pdf-bytes"), content)
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(documents.Document{
+				ID:             "doc-1",
+				TenantID:       "tenant-1",
+				EntityType:     documents.EntityTypeInvoice,
+				EntityID:       "inv-1",
+				DocumentType:   documents.DocumentTypeReceipt,
+				FileName:       "invoice.pdf",
+				ContentType:    "application/pdf",
+				FileSize:       int64(len(content)),
+				Notes:          "Uploaded from CLI",
+				RetentionUntil: &retentionUntil,
+				ReviewStatus:   documents.ReviewStatusPending,
+				CreatedAt:      now,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-error/documents":
+			requestCounts["upload-error"]++
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "document upload unavailable"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-decode/documents":
+			requestCounts["upload-decode"]++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-1/download":
+			requestCounts["download"]++
+			w.Header().Set("Content-Type", "application/pdf")
+			w.Header().Set("Content-Disposition", `attachment; filename="invoice.pdf"`)
+			_, _ = w.Write([]byte("downloaded-pdf"))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-error/download":
+			requestCounts["download-error"]++
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "document not found"})
+		default:
+			t.Fatalf("unexpected document client request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	client := newAPIClient(server.URL, " document-token ")
+	uploaded, err := client.uploadDocument(context.Background(), "tenant-1", &documents.UploadDocumentRequest{
+		EntityType:     " invoice ",
+		EntityID:       " inv-1 ",
+		DocumentType:   " receipt ",
+		FileName:       " invoice.pdf ",
+		Notes:          " Uploaded from CLI ",
+		RetentionUntil: &retentionUntil,
+		RetentionYears: 7,
+	}, []byte("pdf-bytes"))
+	require.NoError(t, err)
+	assert.Equal(t, "doc-1", uploaded.ID)
+	assert.Equal(t, "invoice.pdf", uploaded.FileName)
+
+	_, err = client.uploadDocument(context.Background(), "tenant-error", &documents.UploadDocumentRequest{
+		EntityType: "invoice",
+		EntityID:   "inv-1",
+		FileName:   "invoice.pdf",
+	}, []byte("pdf-bytes"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "document upload unavailable")
+
+	_, err = client.uploadDocument(context.Background(), "tenant-decode", &documents.UploadDocumentRequest{
+		EntityType: "invoice",
+		EntityID:   "inv-1",
+		FileName:   "invoice.pdf",
+	}, []byte("pdf-bytes"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "decode response")
+
+	downloaded, err := client.downloadDocument(context.Background(), "tenant-1", "doc-1")
+	require.NoError(t, err)
+	assert.Equal(t, "invoice.pdf", downloaded.FileName)
+	assert.Equal(t, "application/pdf", downloaded.ContentType)
+	assert.Equal(t, []byte("downloaded-pdf"), downloaded.Content)
+
+	_, err = client.downloadDocument(context.Background(), "tenant-1", "doc-error")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "document not found")
+
+	assert.Equal(t, map[string]int{
+		"upload":         1,
+		"upload-error":   1,
+		"upload-decode":  1,
+		"download":       1,
+		"download-error": 1,
+	}, requestCounts)
+}
+
+func TestAPIClientDocumentTransportErrorBranches(t *testing.T) {
+	t.Parallel()
+
+	client := &apiClient{
+		baseURL:  "https://api.example.com",
+		apiToken: "token-123",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("document transport unavailable")
+		})},
+	}
+
+	_, err := client.uploadDocument(context.Background(), "tenant-1", &documents.UploadDocumentRequest{
+		EntityType: "invoice",
+		EntityID:   "inv-1",
+		FileName:   "invoice.pdf",
+	}, []byte("pdf"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "document transport unavailable")
+
+	_, err = client.downloadDocument(context.Background(), "tenant-1", "doc-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "document transport unavailable")
+}
+
+func TestAPIClientDocumentRequestConstructionAndReadErrors(t *testing.T) {
+	t.Parallel()
+
+	client := &apiClient{baseURL: "http://[::1", httpClient: http.DefaultClient}
+	_, err := client.uploadDocument(context.Background(), "tenant-1", &documents.UploadDocumentRequest{
+		EntityType: "invoice",
+		EntityID:   "inv-1",
+		FileName:   "invoice.pdf",
+	}, []byte("pdf"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create request")
+
+	_, err = client.downloadDocument(context.Background(), "tenant-1", "doc-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create request")
+
+	client = &apiClient{
+		baseURL: "https://api.example.com",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       errReadCloser{},
+				Header:     make(http.Header),
+			}, nil
+		})},
+	}
+
+	_, err = client.downloadDocument(context.Background(), "tenant-1", "doc-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read download response")
 }
 
 func TestParseDaysToExpiry(t *testing.T) {

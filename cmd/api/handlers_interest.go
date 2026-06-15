@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 
 	"github.com/HMB-research/open-accounting/internal/invoicing"
-	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 // GetInvoiceInterest calculates and returns current interest for an invoice
@@ -130,22 +130,11 @@ func (h *Handlers) UpdateInterestSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Get current tenant
-	currentTenant, err := h.tenantService.GetTenant(ctx, tenantID)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "Tenant not found")
-		return
-	}
-
-	// Update settings
-	currentTenant.Settings.LatePaymentInterestRate = req.Rate
-
-	updateReq := &tenant.UpdateTenantRequest{
-		Name:     &currentTenant.Name,
-		Settings: &currentTenant.Settings,
-	}
-
-	if _, err := h.tenantService.UpdateTenant(ctx, tenantID, updateReq); err != nil {
+	if _, err := h.tenantService.UpdateLatePaymentInterestRate(ctx, tenantID, req.Rate); err != nil {
+		if strings.Contains(err.Error(), "tenant not found") {
+			respondError(w, http.StatusBadRequest, "Tenant not found")
+			return
+		}
 		log.Error().Err(err).Msg("Failed to update interest settings")
 		respondError(w, http.StatusInternalServerError, "Failed to update settings")
 		return

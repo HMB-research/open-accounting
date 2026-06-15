@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/database"
 )
 
 const (
@@ -26,9 +27,14 @@ type Service struct {
 
 // NewService creates a new API token service.
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{
-		repo: NewPostgresRepository(db),
+	if db == nil {
+		return &Service{}
 	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create API token GORM repository: %w", err))
+	}
+	return &Service{repo: NewGORMRepository(gormDB)}
 }
 
 // NewServiceWithRepository creates a new API token service with a custom repository.

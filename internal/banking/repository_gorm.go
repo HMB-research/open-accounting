@@ -1,5 +1,3 @@
-//go:build gorm
-
 package banking
 
 import (
@@ -10,8 +8,11 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/models"
+	"github.com/HMB-research/open-accounting/internal/payments"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // GORMRepository implements Repository using GORM
@@ -181,6 +182,114 @@ func (r *GORMRepository) CalculateAccountBalance(ctx context.Context, schemaName
 	return result.Balance.Decimal, nil
 }
 
+// CreateBankMatchRule inserts a bank auto-match rule.
+func (r *GORMRepository) CreateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error {
+	db, err := r.tenantTable(ctx, schemaName, "bank_match_rules")
+	if err != nil {
+		return err
+	}
+
+	if err := db.Create(rule).Error; err != nil {
+		return fmt.Errorf("insert bank match rule: %w", err)
+	}
+	return nil
+}
+
+// GetBankMatchRule retrieves a bank auto-match rule by ID.
+func (r *GORMRepository) GetBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) (*BankMatchRule, error) {
+	db, err := r.tenantTable(ctx, schemaName, "bank_match_rules")
+	if err != nil {
+		return nil, err
+	}
+
+	var rule BankMatchRule
+	err = db.Where("id = ? AND tenant_id = ?", ruleID, tenantID).Take(&rule).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrBankMatchRuleNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get bank match rule: %w", err)
+	}
+	return &rule, nil
+}
+
+// ListBankMatchRules lists bank auto-match rules for a tenant.
+func (r *GORMRepository) ListBankMatchRules(ctx context.Context, schemaName, tenantID string, filter *BankMatchRuleFilter) ([]BankMatchRule, error) {
+	db, err := r.tenantTable(ctx, schemaName, "bank_match_rules")
+	if err != nil {
+		return nil, err
+	}
+
+	query := db.Where("tenant_id = ?", tenantID)
+	if filter != nil {
+		if filter.ActiveOnly {
+			query = query.Where("is_active = ?", true)
+		}
+		if filter.BankAccountID != "" {
+			if filter.IncludeGlobal {
+				query = query.Where("(bank_account_id = ? OR bank_account_id IS NULL)", filter.BankAccountID)
+			} else {
+				query = query.Where("bank_account_id = ?", filter.BankAccountID)
+			}
+		}
+	}
+
+	var rules []BankMatchRule
+	if err := query.Order("priority ASC, name ASC, created_at ASC").Find(&rules).Error; err != nil {
+		return nil, fmt.Errorf("list bank match rules: %w", err)
+	}
+	if rules == nil {
+		rules = []BankMatchRule{}
+	}
+	return rules, nil
+}
+
+// UpdateBankMatchRule updates a bank auto-match rule.
+func (r *GORMRepository) UpdateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error {
+	db, err := r.tenantTable(ctx, schemaName, "bank_match_rules")
+	if err != nil {
+		return err
+	}
+
+	result := db.Where("id = ? AND tenant_id = ?", rule.ID, rule.TenantID).
+		Updates(map[string]interface{}{
+			"bank_account_id":      rule.BankAccountID,
+			"name":                 rule.Name,
+			"priority":             rule.Priority,
+			"match_field":          rule.MatchField,
+			"pattern":              rule.Pattern,
+			"min_confidence":       rule.MinConfidence,
+			"max_date_diff_days":   rule.MaxDateDiffDays,
+			"require_exact_amount": rule.RequireExactAmount,
+			"is_active":            rule.IsActive,
+			"updated_at":           rule.UpdatedAt,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update bank match rule: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrBankMatchRuleNotFound
+	}
+	return nil
+}
+
+// DeleteBankMatchRule deletes a bank auto-match rule.
+func (r *GORMRepository) DeleteBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "bank_match_rules")
+	if err != nil {
+		return err
+	}
+
+	result := db.Where("id = ? AND tenant_id = ?", ruleID, tenantID).Delete(&BankMatchRule{})
+	if result.Error != nil {
+		return fmt.Errorf("delete bank match rule: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrBankMatchRuleNotFound
+	}
+	return nil
+}
+
 // ListTransactions lists bank transactions with filters
 func (r *GORMRepository) ListTransactions(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error) {
 	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
@@ -243,6 +352,78 @@ func (r *GORMRepository) GetTransaction(ctx context.Context, schemaName, tenantI
 	}
 
 	return modelToBankTransaction(&transactionModel), nil
+}
+
+// ListPaymentMatchCandidates returns unallocated payments that can be matched to a bank transaction.
+func (r *GORMRepository) ListPaymentMatchCandidates(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]PaymentForMatching, error) {
+	paymentsTable, err := database.QualifiedTable(schemaName, "payments")
+	if err != nil {
+		return nil, err
+	}
+	allocationsTable, err := database.QualifiedTable(schemaName, "payment_allocations")
+	if err != nil {
+		return nil, err
+	}
+	transactionsTable, err := database.QualifiedTable(schemaName, "bank_transactions")
+	if err != nil {
+		return nil, err
+	}
+	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
+	if err != nil {
+		return nil, err
+	}
+
+	type paymentMatchCandidateRow struct {
+		ID            string
+		PaymentNumber string
+		PaymentDate   time.Time
+		Amount        models.Decimal
+		ContactName   string
+		Reference     string
+	}
+
+	allocatedAmount := r.db.WithContext(ctx).
+		Table(allocationsTable + " AS pa").
+		Select("SUM(pa.amount)").
+		Where("pa.payment_id = p.id")
+	matchedTransaction := r.db.WithContext(ctx).
+		Table(transactionsTable + " AS bt").
+		Select("1").
+		Where("bt.tenant_id = p.tenant_id AND bt.matched_payment_id = p.id")
+
+	query := r.db.WithContext(ctx).
+		Table(paymentsTable+" AS p").
+		Select("p.id, p.payment_number, p.payment_date, p.amount, COALESCE(c.name, '') AS contact_name, COALESCE(p.reference, '') AS reference").
+		Joins("LEFT JOIN "+contactsTable+" AS c ON c.id = p.contact_id AND c.tenant_id = p.tenant_id").
+		Where("p.tenant_id = ? AND p.payment_type = ?", tenantID, paymentType).
+		Where("p.amount > COALESCE((?), 0)", allocatedAmount).
+		Where("NOT EXISTS (?)", matchedTransaction).
+		Order(clause.OrderBy{Expression: clause.Expr{
+			SQL:                "ABS(p.amount - ?)",
+			Vars:               []interface{}{models.Decimal{Decimal: amount.Abs()}},
+			WithoutParentheses: true,
+		}})
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	var rows []paymentMatchCandidateRow
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list payment match candidates: %w", err)
+	}
+
+	candidates := make([]PaymentForMatching, len(rows))
+	for i, row := range rows {
+		candidates[i] = PaymentForMatching{
+			ID:            row.ID,
+			PaymentNumber: row.PaymentNumber,
+			PaymentDate:   row.PaymentDate,
+			Amount:        row.Amount.Decimal,
+			ContactName:   row.ContactName,
+			Reference:     row.Reference,
+		}
+	}
+	return candidates, nil
 }
 
 // MatchTransaction matches a bank transaction to a payment
@@ -333,6 +514,83 @@ func (r *GORMRepository) CreateTransaction(ctx context.Context, schemaName strin
 	return nil
 }
 
+// CreatePaymentFromTransaction creates a payment and atomically matches the bank transaction to it.
+func (r *GORMRepository) CreatePaymentFromTransaction(ctx context.Context, schemaName, tenantID, userID string, transaction *BankTransaction) (string, error) {
+	if transaction == nil || transaction.TenantID != tenantID {
+		return "", ErrTransactionNotFound
+	}
+	if transaction.Status != StatusUnmatched {
+		return "", ErrTransactionAlreadyMatched
+	}
+
+	paymentType := paymentTypeForTransactionAmount(transaction.Amount)
+	paymentID := uuid.New().String()
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		paymentsDB, err := database.TenantTable(tx, schemaName, "payments")
+		if err != nil {
+			return err
+		}
+		transactionsDB, err := database.TenantTable(tx, schemaName, "bank_transactions")
+		if err != nil {
+			return err
+		}
+
+		prefix := payments.PaymentNumberPrefix(paymentType)
+		var paymentNumbers []string
+		if err := paymentsDB.
+			Where("tenant_id = ? AND payment_type = ?", tenantID, paymentType).
+			Where("payment_number LIKE ?", prefix+"-%").
+			Pluck("payment_number", &paymentNumbers).Error; err != nil {
+			return fmt.Errorf("generate payment number: %w", err)
+		}
+		sequence := payments.NextPaymentNumberSequence(paymentNumbers, paymentType)
+
+		currency := transaction.Currency
+		if currency == "" {
+			currency = "EUR"
+		}
+		amount := transaction.Amount.Abs()
+		now := time.Now()
+		payment := models.Payment{
+			ID:            paymentID,
+			TenantID:      tenantID,
+			PaymentNumber: payments.FormatPaymentNumber(paymentType, sequence),
+			PaymentType:   models.PaymentType(paymentType),
+			PaymentDate:   transaction.TransactionDate,
+			Amount:        models.Decimal{Decimal: amount},
+			Currency:      currency,
+			ExchangeRate:  models.Decimal{Decimal: decimal.NewFromInt(1)},
+			BaseAmount:    models.Decimal{Decimal: amount},
+			Reference:     transaction.Reference,
+			Notes:         fmt.Sprintf("Created from bank transaction: %s", transaction.Description),
+			CreatedAt:     now,
+			CreatedBy:     userID,
+		}
+		if err := paymentsDB.Model(&models.Payment{}).Create(&payment).Error; err != nil {
+			return fmt.Errorf("create payment: %w", err)
+		}
+
+		result := transactionsDB.Model(&models.BankTransaction{}).
+			Where("id = ? AND tenant_id = ? AND status = ?", transaction.ID, tenantID, StatusUnmatched).
+			Updates(map[string]interface{}{
+				"matched_payment_id": paymentID,
+				"status":             StatusMatched,
+				"follow_up_status":   FollowUpNone,
+			})
+		if result.Error != nil {
+			return fmt.Errorf("link transaction: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrTransactionAlreadyMatched
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return paymentID, nil
+}
+
 // IsTransactionDuplicate checks if a transaction is a duplicate
 func (r *GORMRepository) IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error) {
 	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
@@ -353,15 +611,25 @@ func (r *GORMRepository) IsTransactionDuplicate(ctx context.Context, schemaName,
 		}
 	}
 
-	// Check by date and amount
-	var count int64
-	err = db.Where("tenant_id = ? AND bank_account_id = ? AND transaction_date = ? AND amount = ?",
-		tenantID, bankAccountID, date, amount.String()).
-		Count(&count).Error
+	db, err = r.tenantTable(ctx, schemaName, "bank_transactions")
 	if err != nil {
+		return false, err
+	}
+
+	// Check by date and amount. Compare decimal values after loading matching
+	// date rows so numeric scale differences do not affect duplicate detection.
+	var candidates []models.BankTransaction
+	if err := db.Where("tenant_id = ? AND bank_account_id = ?", tenantID, bankAccountID).
+		Find(&candidates).Error; err != nil {
 		return false, fmt.Errorf("check duplicate: %w", err)
 	}
-	return count > 0, nil
+	for _, candidate := range candidates {
+		if candidate.TransactionDate.Format("2006-01-02") == date.Format("2006-01-02") &&
+			candidate.Amount.Equal(amount) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // CreateReconciliation inserts a new reconciliation
@@ -492,6 +760,40 @@ func (r *GORMRepository) CreateImportRecord(ctx context.Context, schemaName stri
 		return fmt.Errorf("create import record: %w", err)
 	}
 	return nil
+}
+
+// IncrementLatestImportMatchedCount increments the latest import's matched transaction count.
+func (r *GORMRepository) IncrementLatestImportMatchedCount(ctx context.Context, schemaName, tenantID, bankAccountID string, matchedCount int) error {
+	if matchedCount <= 0 {
+		return nil
+	}
+
+	db, err := r.tenantTable(ctx, schemaName, "bank_statement_imports")
+	if err != nil {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		var latestImport models.BankStatementImport
+		err := tx.
+			Where("tenant_id = ? AND bank_account_id = ?", tenantID, bankAccountID).
+			Order("created_at DESC").
+			First(&latestImport).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("find latest import record: %w", err)
+		}
+
+		err = tx.Model(&models.BankStatementImport{}).
+			Where("id = ? AND tenant_id = ?", latestImport.ID, tenantID).
+			UpdateColumn("transactions_matched", gorm.Expr("transactions_matched + ?", matchedCount)).Error
+		if err != nil {
+			return fmt.Errorf("increment matched import count: %w", err)
+		}
+		return nil
+	})
 }
 
 // GetImportHistory retrieves import history for a bank account
@@ -666,3 +968,5 @@ func bankStatementImportToModel(i *BankStatementImport) *models.BankStatementImp
 		CreatedAt:            i.CreatedAt,
 	}
 }
+
+var _ Repository = (*GORMRepository)(nil)

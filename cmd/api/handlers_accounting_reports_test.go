@@ -1,10 +1,14 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -12,6 +16,8 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/reports"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -46,6 +52,32 @@ func TestAccountingHandlers_ListCreateAndGet(t *testing.T) {
 	require.Len(t, accounts, 1)
 	assert.Equal(t, "acc-1", accounts[0].ID)
 
+	parentID := "acc-1"
+	accountingRepo.accounts["acc-3"] = &accounting.Account{
+		ID:          "acc-3",
+		TenantID:    "tenant-1",
+		Code:        "1100",
+		Name:        "Bank",
+		AccountType: accounting.AccountTypeAsset,
+		ParentID:    &parentID,
+		IsActive:    true,
+	}
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/accounts/hierarchy?active_only=true", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetAccountHierarchy(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var hierarchy []accounting.AccountHierarchyRow
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &hierarchy))
+	require.Len(t, hierarchy, 2)
+	assert.Equal(t, "1000", hierarchy[0].Code)
+	assert.True(t, hierarchy[0].HasChildren)
+	assert.Equal(t, "1100", hierarchy[1].Code)
+	assert.Equal(t, "1000", hierarchy[1].ParentCode)
+	assert.Equal(t, 1, hierarchy[1].Depth)
+	assert.Equal(t, "1000/1100", hierarchy[1].Path)
+
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/accounts", map[string]interface{}{
 		"code":         "2000",
 		"name":         "Receivables",
@@ -69,6 +101,18 @@ func TestAccountingHandlers_ListCreateAndGet(t *testing.T) {
 	h.CreateAccount(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/accounts", map[string]interface{}{
+		"code":         "2100",
+		"name":         "Invalid Parent",
+		"account_type": accounting.AccountTypeAsset,
+		"parent_id":    "legacy-parent",
+	}, &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateAccount(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "parent_id must be a valid UUID")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/accounts/acc-1", nil), map[string]string{
 		"tenantID":  "tenant-1",
 		"accountID": "acc-1",
@@ -84,6 +128,42 @@ func TestAccountingHandlers_ListCreateAndGet(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.GetAccount(rr, req)
 	assert.Equal(t, http.StatusNotFound, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/accounts/acc-3", map[string]interface{}{
+		"code":         "1120",
+		"name":         "Operating Bank",
+		"account_type": accounting.AccountTypeAsset,
+		"description":  "Updated by API",
+	}, &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "accountID": "acc-3"})
+	rr = httptest.NewRecorder()
+	h.UpdateAccount(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "1120", accountingRepo.accounts["acc-3"].Code)
+	assert.Equal(t, "Operating Bank", accountingRepo.accounts["acc-3"].Name)
+
+	req = makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/accounts/acc-3", nil, &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "accountID": "acc-3"})
+	rr = httptest.NewRecorder()
+	h.DeleteAccount(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.False(t, accountingRepo.accounts["acc-3"].IsActive)
+
+	accountingRepo.accounts["system"] = &accounting.Account{
+		ID:          "system",
+		TenantID:    "tenant-1",
+		Code:        "1000",
+		Name:        "System Cash",
+		AccountType: accounting.AccountTypeAsset,
+		IsActive:    true,
+		IsSystem:    true,
+	}
+	req = makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/accounts/system", nil, &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "accountID": "system"})
+	rr = httptest.NewRecorder()
+	h.DeleteAccount(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.True(t, accountingRepo.accounts["system"].IsActive)
 }
 
 func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
@@ -122,12 +202,41 @@ func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
 
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries", map[string]interface{}{
 		"entry_date":  "2026-02-10T00:00:00Z",
+		"description": "Bad FX journal",
+		"lines": []map[string]interface{}{
+			{"account_id": "cash", "debit_amount": "100.00", "currency": "USD", "exchange_rate": "-0.92"},
+			{"account_id": "sales", "credit_amount": "100.00", "currency": "USD", "exchange_rate": "-0.92"},
+		},
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateJournalEntry(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "exchange_rate must be positive")
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries", map[string]interface{}{
+		"entry_date":  "2026-02-10T00:00:00Z",
+		"description": "Bad source journal",
+		"source_id":   "legacy-source",
+		"lines": []map[string]interface{}{
+			{"account_id": "cash", "debit_amount": "100.00"},
+			{"account_id": "sales", "credit_amount": "100.00"},
+		},
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateJournalEntry(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "source_id must be a valid UUID")
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries", map[string]interface{}{
+		"entry_date":  "2026-02-10T00:00:00Z",
 		"description": "Sales journal",
 		"reference":   "REF-1",
 		"source_type": "MANUAL",
 		"lines": []map[string]interface{}{
-			{"account_id": "cash", "debit_amount": "100.00"},
-			{"account_id": "sales", "credit_amount": "100.00"},
+			{"account_id": "cash", "debit_amount": "100.00", "currency": "usd", "exchange_rate": "0.92"},
+			{"account_id": "sales", "credit_amount": "100.00", "currency": "usd", "exchange_rate": "0.92"},
 		},
 	}, claims)
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
@@ -139,6 +248,11 @@ func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
 	assert.Equal(t, accounting.StatusDraft, created.Status)
 	require.NotEmpty(t, created.ID)
+	require.Len(t, created.Lines, 2)
+	assert.Equal(t, "USD", created.Lines[0].Currency)
+	assert.True(t, created.Lines[0].ExchangeRate.Equal(decimal.RequireFromString("0.92")))
+	assert.True(t, created.Lines[0].BaseDebit.Equal(decimal.RequireFromString("92.00")))
+	assert.True(t, created.Lines[1].BaseCredit.Equal(decimal.RequireFromString("92.00")))
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/journal-entries/"+created.ID, nil), map[string]string{
 		"tenantID": "tenant-1",
@@ -167,6 +281,161 @@ func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.VoidJournalEntry(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestJournalEntryTemplateHandlers_CreateListGetAndApply(t *testing.T) {
+	h, tenantRepo, _ := setupAccountingTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entry-templates", map[string]interface{}{
+		"name":        "Monthly rent accrual",
+		"description": "Monthly rent accrual",
+		"reference":   "RENT",
+		"frequency":   "MONTHLY",
+		"start_date":  "2026-04-30T00:00:00Z",
+		"lines": []map[string]interface{}{
+			{"account_id": "rent-expense", "description": "Rent expense", "debit_amount": "500.00"},
+			{"account_id": "accruals", "description": "Accrued rent", "credit_amount": "500.00"},
+		},
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr := httptest.NewRecorder()
+	h.CreateJournalEntryTemplate(rr, req)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	var created accounting.JournalEntryTemplate
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
+	assert.Equal(t, "Monthly rent accrual", created.Name)
+	assert.Equal(t, 2, created.LineCount)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/journal-entry-templates?active_only=true", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ListJournalEntryTemplates(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var templates []accounting.JournalEntryTemplate
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &templates))
+	require.Len(t, templates, 1)
+	assert.Equal(t, created.ID, templates[0].ID)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/journal-entry-templates/"+created.ID, nil), map[string]string{
+		"tenantID":   "tenant-1",
+		"templateID": created.ID,
+	})
+	rr = httptest.NewRecorder()
+	h.GetJournalEntryTemplate(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entry-templates/"+created.ID+"/apply", map[string]interface{}{
+		"entry_date":  "2026-04-30T00:00:00Z",
+		"description": "April rent accrual",
+		"reference":   "RENT-APR",
+		"post":        true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "templateID": created.ID})
+	rr = httptest.NewRecorder()
+	h.ApplyJournalEntryTemplate(rr, req)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	var entry accounting.JournalEntry
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &entry))
+	assert.Equal(t, accounting.StatusPosted, entry.Status)
+	assert.Equal(t, accounting.SourceTypeJournalTemplate, entry.SourceType)
+	assert.Equal(t, "April rent accrual", entry.Description)
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entry-templates/"+created.ID+"/generate", map[string]interface{}{
+		"post": true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "templateID": created.ID})
+	rr = httptest.NewRecorder()
+	h.GenerateJournalEntryTemplate(rr, req)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	var generation accounting.JournalEntryTemplateGenerationResult
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &generation))
+	assert.Equal(t, "generated", generation.Status)
+	require.NotNil(t, generation.NextGenerationDate)
+	assert.Equal(t, "2026-05-30", generation.NextGenerationDate.Format("2006-01-02"))
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entry-templates/generate-due", map[string]interface{}{
+		"as_of_date": "2026-05-30T00:00:00Z",
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GenerateDueJournalEntryTemplates(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var generations []accounting.JournalEntryTemplateGenerationResult
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &generations))
+	require.Len(t, generations, 1)
+	assert.Equal(t, "generated", generations[0].Status)
+}
+
+func TestPostJournalEntryRequiresApprovedEvidence(t *testing.T) {
+	h, tenantRepo, accountingRepo := setupAccountingTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+
+	entry := &accounting.JournalEntry{
+		ID:               "je-evidence",
+		TenantID:         "tenant-1",
+		EntryNumber:      "JE-00009",
+		EntryDate:        time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC),
+		Description:      "Manual adjustment",
+		Status:           accounting.StatusDraft,
+		RequiresEvidence: true,
+		CreatedBy:        "user-1",
+		Lines: []accounting.JournalEntryLine{
+			{AccountID: "cash", DebitAmount: decimal.NewFromInt(100), BaseDebit: decimal.NewFromInt(100), Currency: "EUR", ExchangeRate: decimal.NewFromInt(1)},
+			{AccountID: "sales", CreditAmount: decimal.NewFromInt(100), BaseCredit: decimal.NewFromInt(100), Currency: "EUR", ExchangeRate: decimal.NewFromInt(1)},
+		},
+	}
+	accountingRepo.journalEntries[entry.ID] = entry
+
+	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/"+entry.ID+"/post", nil, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": entry.ID})
+	rr := httptest.NewRecorder()
+
+	h.PostJournalEntry(rr, req)
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+	assert.Contains(t, rr.Body.String(), "approved journal-entry evidence is required")
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, "approved journal-entry evidence is required")
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeJournalEntry, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, entry.ID, conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
+	assert.Equal(t, "oa documents upload --entity-type journal_entry --entity-id je-evidence --document-type supporting_document --file <file>", conflict.RemediationActions[0].CLICommand)
+	assert.Equal(t, accounting.StatusDraft, accountingRepo.journalEntries[entry.ID].Status)
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeJournalEntry,
+		EntityID:     entry.ID,
+		DocumentType: documents.DocumentTypeSupportingDocument,
+		FileName:     "adjustment-support.pdf",
+		ReviewStatus: documents.ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	rr = httptest.NewRecorder()
+	h.PostJournalEntry(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(t, accounting.StatusPosted, accountingRepo.journalEntries[entry.ID].Status)
 }
 
 func TestReportHandlers(t *testing.T) {
@@ -215,6 +484,30 @@ func TestReportHandlers(t *testing.T) {
 	h.GetTrialBalance(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/trial-balance?as_of_date=2026-02-28&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetTrialBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Body.String(), "account_code,account_name,account_type")
+	assert.Contains(t, rr.Body.String(), "1000,Cash,ASSET")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/trial-balance?as_of_date=2026-02-28&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetTrialBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "trial-balance-2026-02-28.xlsx")
+	requireXLSXContains(t, rr.Body.Bytes(), "account_code", "Cash", "1000")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/trial-balance?as_of_date=2026-02-28&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetTrialBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "trial-balance-2026-02-28.pdf")
+	requirePDF(t, rr.Body.Bytes())
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/trial-balance?as_of_date=bad-date", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetTrialBalance(rr, req)
@@ -227,6 +520,47 @@ func TestReportHandlers(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.GetAccountBalance(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/account-balance/cash?as_of_date=2026-02-28&format=csv", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"accountID": "cash",
+	})
+	rr = httptest.NewRecorder()
+	h.GetAccountBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Body.String(), "account_id,as_of_date,balance")
+	assert.Contains(t, rr.Body.String(), "cash,2026-02-28,275")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/account-balance/cash?as_of_date=2026-02-28&format=xlsx", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"accountID": "cash",
+	})
+	rr = httptest.NewRecorder()
+	h.GetAccountBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "account-balance-cash-2026-02-28.xlsx")
+	requireXLSXContains(t, rr.Body.Bytes(), "account_id", "cash", "275")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/account-balance/cash?as_of_date=2026-02-28&format=pdf", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"accountID": "cash",
+	})
+	rr = httptest.NewRecorder()
+	h.GetAccountBalance(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "account-balance-cash-2026-02-28.pdf")
+	requirePDF(t, rr.Body.Bytes())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/account-balance/cash?as_of_date=2026-02-28&format=xml", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"accountID": "cash",
+	})
+	rr = httptest.NewRecorder()
+	h.GetAccountBalance(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/account-balance/cash?as_of_date=bad-date", nil), map[string]string{
 		"tenantID":  "tenant-1",
@@ -241,6 +575,26 @@ func TestReportHandlers(t *testing.T) {
 	h.GetBalanceSheet(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-sheet?as_of=2026-02-28&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceSheet(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "section,account_code,account_name")
+	assert.Contains(t, rr.Body.String(), "total_assets")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-sheet?as_of=2026-02-28&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceSheet(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "total_assets")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-sheet?as_of=2026-02-28&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceSheet(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-sheet?as_of=not-a-date", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetBalanceSheet(rr, req)
@@ -251,6 +605,26 @@ func TestReportHandlers(t *testing.T) {
 	h.GetIncomeStatement(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement?start=2026-01-01&end=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetIncomeStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "section,account_code,account_name")
+	assert.Contains(t, rr.Body.String(), "net_income")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement?start=2026-01-01&end=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetIncomeStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "net_income")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement?start=2026-01-01&end=2026-01-31&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetIncomeStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/income-statement", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetIncomeStatement(rr, req)
@@ -260,4 +634,112 @@ func TestReportHandlers(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.GetIncomeStatement(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestGetConsolidatedReport(t *testing.T) {
+	h, tenantRepo, accountingRepo := setupAccountingTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Alpha", "alpha")
+	tenantRepo.addTestTenant("tenant-2", "Beta", "beta")
+	tenantRepo.tenantUsers["tenant-1"] = []tenant.TenantUser{{TenantID: "tenant-1", UserID: "user-1", Role: tenant.RoleOwner}}
+	tenantRepo.tenantUsers["tenant-2"] = []tenant.TenantUser{{TenantID: "tenant-2", UserID: "user-1", Role: tenant.RoleViewer}}
+
+	accountingRepo.trialBalances = []accounting.AccountBalance{
+		{
+			AccountID:     "cash",
+			AccountCode:   "1000",
+			AccountName:   "Cash",
+			AccountType:   accounting.AccountTypeAsset,
+			DebitBalance:  decimal.NewFromInt(100),
+			CreditBalance: decimal.Zero,
+			NetBalance:    decimal.NewFromInt(100),
+		},
+		{
+			AccountID:     "sales",
+			AccountCode:   "4000",
+			AccountName:   "Sales",
+			AccountType:   accounting.AccountTypeRevenue,
+			DebitBalance:  decimal.Zero,
+			CreditBalance: decimal.NewFromInt(80),
+			NetBalance:    decimal.NewFromInt(-80),
+		},
+		{
+			AccountID:     "expenses",
+			AccountCode:   "5000",
+			AccountName:   "Expenses",
+			AccountType:   accounting.AccountTypeExpense,
+			DebitBalance:  decimal.NewFromInt(20),
+			CreditBalance: decimal.Zero,
+			NetBalance:    decimal.NewFromInt(20),
+		},
+	}
+	accountingRepo.periodBalances = accountingRepo.trialBalances
+
+	req := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/reports/consolidated?tenant_ids=tenant-1,tenant-2&as_of=2026-12-31&start=2026-01-01&end=2026-12-31", nil, &auth.Claims{
+		UserID: "user-1",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr := httptest.NewRecorder()
+	h.GetConsolidatedReport(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var report reports.ConsolidatedFinancialReport
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&report))
+	assert.Equal(t, "tenant-1", report.TenantID)
+	assert.Equal(t, 2, report.TenantCount)
+	require.NotNil(t, report.BalanceSheet)
+	assert.True(t, report.BalanceSheet.TotalAssets.Equal(decimal.NewFromInt(200)))
+	require.NotNil(t, report.IncomeStatement)
+	assert.True(t, report.IncomeStatement.TotalRevenue.Equal(decimal.NewFromInt(160)))
+	assert.True(t, report.IncomeStatement.TotalExpenses.Equal(decimal.NewFromInt(40)))
+	assert.True(t, report.IncomeStatement.NetIncome.Equal(decimal.NewFromInt(120)))
+
+	req = makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/reports/consolidated?tenant_ids=tenant-1,tenant-2", nil, &auth.Claims{
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		TokenKind: auth.TokenKindAPIToken,
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetConsolidatedReport(rr, req)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/reports/consolidated?as_of=bad-date", nil, &auth.Claims{
+		UserID: "user-1",
+	})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetConsolidatedReport(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func requireXLSXContains(t *testing.T, content []byte, expected ...string) {
+	t.Helper()
+
+	reader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	require.NoError(t, err)
+
+	var sheetContent string
+	for _, file := range reader.File {
+		if file.Name != "xl/worksheets/sheet1.xml" {
+			continue
+		}
+		rc, err := file.Open()
+		require.NoError(t, err)
+		data, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		sheetContent = string(data)
+		break
+	}
+	require.NotEmpty(t, sheetContent, "sheet1.xml missing from xlsx")
+	for _, value := range expected {
+		assert.Contains(t, sheetContent, value)
+	}
+}
+
+func requirePDF(t *testing.T, content []byte) {
+	t.Helper()
+
+	require.GreaterOrEqual(t, len(content), 4)
+	assert.Equal(t, "%PDF", string(content[:4]))
 }
