@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
 func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
@@ -231,4 +232,109 @@ func TestSetupRouterDisablesRateLimitInDemoMode(t *testing.T) {
 
 	assert.NotEqual(t, http.StatusNotFound, rr.Code)
 	assert.Equal(t, "http://localhost:5173", rr.Header().Get("Access-Control-Allow-Origin"))
+}
+
+func TestAdminRoutesRequireTenantOwnerOrAdmin(t *testing.T) {
+	cfg := &Config{AllowedOrigins: []string{"http://localhost:5173"}}
+	tokenService := auth.NewTokenService("secret", time.Minute, time.Hour)
+	handlers, _ := setupPluginTestHandlers(t)
+	tenantRepo := newMockTenantRepository()
+	tenantRepo.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+	now := time.Now()
+	tenantRepo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "owner-1", Role: tenant.RoleOwner, IsActive: true, CreatedAt: now},
+		{TenantID: "tenant-1", UserID: "admin-1", Role: tenant.RoleAdmin, IsActive: true, CreatedAt: now},
+		{TenantID: "tenant-1", UserID: "accountant-1", Role: tenant.RoleAccountant, IsActive: true, CreatedAt: now},
+		{TenantID: "tenant-1", UserID: "viewer-1", Role: tenant.RoleViewer, IsActive: true, CreatedAt: now},
+		{TenantID: "tenant-1", UserID: "inactive-owner", Role: tenant.RoleOwner, IsActive: false, CreatedAt: now},
+	}
+	handlers.tenantService = newTestTenantService(tenantRepo)
+
+	t.Setenv("DEMO_MODE", "true")
+	t.Setenv("CORS_DEBUG", "")
+	router := setupRouter(cfg, handlers, tokenService)
+
+	tests := []struct {
+		name        string
+		userID      string
+		tenantID    string
+		claimRole   string
+		bearerToken bool
+		wantStatus  int
+		wantError   string
+	}{
+		{
+			name:       "missing bearer token",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:        "authenticated user without tenant context",
+			userID:      "admin-1",
+			claimRole:   tenant.RoleAdmin,
+			bearerToken: true,
+			wantStatus:  http.StatusForbidden,
+			wantError:   "Tenant admin context required",
+		},
+		{
+			name:        "stale admin claim with current viewer membership is rejected",
+			userID:      "viewer-1",
+			tenantID:    "tenant-1",
+			claimRole:   tenant.RoleAdmin,
+			bearerToken: true,
+			wantStatus:  http.StatusForbidden,
+			wantError:   "Insufficient permissions",
+		},
+		{
+			name:        "accountant membership is rejected",
+			userID:      "accountant-1",
+			tenantID:    "tenant-1",
+			claimRole:   tenant.RoleAccountant,
+			bearerToken: true,
+			wantStatus:  http.StatusForbidden,
+			wantError:   "Insufficient permissions",
+		},
+		{
+			name:        "inactive owner membership is rejected",
+			userID:      "inactive-owner",
+			tenantID:    "tenant-1",
+			claimRole:   tenant.RoleOwner,
+			bearerToken: true,
+			wantStatus:  http.StatusForbidden,
+			wantError:   "Access denied",
+		},
+		{
+			name:        "current owner membership is accepted",
+			userID:      "owner-1",
+			tenantID:    "tenant-1",
+			claimRole:   tenant.RoleViewer,
+			bearerToken: true,
+			wantStatus:  http.StatusOK,
+		},
+		{
+			name:        "current admin membership is accepted",
+			userID:      "admin-1",
+			tenantID:    "tenant-1",
+			claimRole:   tenant.RoleViewer,
+			bearerToken: true,
+			wantStatus:  http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/plugins", nil)
+			if tt.bearerToken {
+				token, err := tokenService.GenerateAccessToken(tt.userID, tt.userID+"@example.com", tt.tenantID, tt.claimRole)
+				require.NoError(t, err)
+				req.Header.Set("Authorization", "Bearer "+token)
+			}
+
+			rr := httptest.NewRecorder()
+			router.ServeHTTP(rr, req)
+			assert.Equal(t, tt.wantStatus, rr.Code, "response body: %s", rr.Body.String())
+			if tt.wantError != "" {
+				assert.Contains(t, rr.Body.String(), tt.wantError)
+			}
+		})
+	}
 }

@@ -513,6 +513,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 			// Admin routes (instance-level plugin management)
 			r.Route("/admin", func(r chi.Router) {
+				r.Use(h.RequireInstanceAdmin)
+
 				// Plugin Registries
 				r.Get("/plugin-registries", h.ListPluginRegistries)
 				r.Post("/plugin-registries", h.AddPluginRegistry)

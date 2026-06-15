@@ -1986,8 +1986,8 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkAccountReference(report, indexes, file, row, "inventory_account_id", "inventory_account_code")
 			checkSupplierReference(report, indexes, file, row)
 		case KindStockAdjustments:
-			checkProductReference(report, indexes, file, row)
-			checkWarehouseReference(report, indexes, file, row)
+			checkStockAdjustmentProductReference(report, indexes, file, row)
+			checkStockAdjustmentWarehouseReference(report, indexes, file, row)
 		case KindFixedAssets:
 			checkOptionalUUID(report, file, row, "category_id")
 			checkAccountReference(report, indexes, file, row, "asset_account_id", "asset_account_code")
@@ -7964,10 +7964,48 @@ func checkProductReference(report *BundleValidationReport, indexes bundleIndexes
 		[]string{"product_code"})
 }
 
-func checkWarehouseReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+func checkStockAdjustmentProductReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	productID := strings.TrimSpace(row.values["product_id"])
+	if productID != "" {
+		if !checkOptionalUUID(report, file, row, "product_id") {
+			return
+		}
+		if indexes.files[KindProducts] {
+			report.addIssue(ValidationIssue{
+				Severity:   SeverityError,
+				Kind:       file.kind,
+				FileName:   file.fileName,
+				Row:        row.number,
+				Field:      "product_id",
+				Value:      productID,
+				TargetKind: KindProducts,
+				Message:    "product_id cannot reference products imported in the same bundle because product import IDs are generated; use product_code for same-bundle stock adjustments",
+			})
+		}
+		return
+	}
+	checkTargetReference(report, indexes.files[KindProducts], indexes.productCodes, file, row, KindProducts,
+		[]string{"product_code"})
+}
+
+func checkStockAdjustmentWarehouseReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
 	warehouseID := strings.TrimSpace(row.values["warehouse_id"])
 	if warehouseID != "" {
-		checkOptionalUUID(report, file, row, "warehouse_id")
+		if !checkOptionalUUID(report, file, row, "warehouse_id") {
+			return
+		}
+		if indexes.files[KindWarehouses] {
+			report.addIssue(ValidationIssue{
+				Severity:   SeverityError,
+				Kind:       file.kind,
+				FileName:   file.fileName,
+				Row:        row.number,
+				Field:      "warehouse_id",
+				Value:      warehouseID,
+				TargetKind: KindWarehouses,
+				Message:    "warehouse_id cannot reference warehouses imported in the same bundle because warehouse import IDs are generated; use warehouse_code for same-bundle stock adjustments",
+			})
+		}
 		return
 	}
 	checkTargetReference(report, indexes.files[KindWarehouses], indexes.warehouseCodes, file, row, KindWarehouses,
