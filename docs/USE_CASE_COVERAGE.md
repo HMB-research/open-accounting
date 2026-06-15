@@ -40,6 +40,7 @@ Status values:
 - The follow-up migration dashboard live stream stage was locally revalidated with focused frontend API/workbench tests and prepared Svelte checks.
 - The follow-up migration provider preset catalog stage was locally revalidated with focused cutover/API/CLI/frontend API/workbench tests and prepared Svelte checks.
 - The follow-up migration saved-bundle workspace execution stage was locally revalidated with focused cutover/repository/API/CLI/review-panel tests and prepared Svelte checks.
+- The follow-up migration saved-run state assignment stage was locally revalidated with focused review-workspace, review-panel, and workbench tests for running, blocked, failed, and confirmation-ready accountant workspace rows plus the confirmation-ready saved-run filter.
 - The follow-up SmartAccounts commercial contact alias stage was locally revalidated with focused cutover validator tests.
 - The follow-up SmartAccounts payroll/TSD year-month alias stage was locally revalidated with focused cutover validator tests.
 - The follow-up payroll/TSD history consistency stage was locally revalidated with focused cutover validator and execution-plan tests.
