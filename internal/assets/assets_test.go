@@ -3,6 +3,7 @@ package assets
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -933,6 +934,116 @@ func TestService_ImportAssetsCSVReportsAmbiguousSupplierName(t *testing.T) {
 	assert.Contains(t, result.Errors[0].Message, `supplier_name "Supplier One" matched multiple contacts`)
 }
 
+func TestService_ImportAssetsCSVResolvesInvoiceNumberAliases(t *testing.T) {
+	invoiceID := "11111111-1111-4111-8111-111111111111"
+	tests := []struct {
+		name   string
+		header string
+	}{
+		{name: "invoice_number", header: "invoice_number"},
+		{name: "invoice_no", header: "invoice_no"},
+		{name: "smartaccounts_purchase_invoice_no", header: "purchase_invoice_no"},
+		{name: "smartaccounts_document_no", header: "document_no"},
+		{name: "merit_arve_nr", header: "arve_nr"},
+		{name: "merit_ostuarve_nr", header: "ostuarve_nr"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := newTestService()
+			ts.svc.invoicing = &fakeAssetInvoiceResolver{invoiceIDsByNumber: map[string]string{"BILL-1": invoiceID}}
+
+			result, err := ts.svc.ImportAssetsCSV(context.Background(), "tenant-1", "test_schema", &ImportAssetsRequest{
+				CSVContent: "asset_number,name,purchase_date,purchase_cost," + tt.header + "\n" +
+					"LEG-001,Laptop,2025-01-10,1200.00,BILL-1\n",
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, 1, result.RowsProcessed)
+			assert.Equal(t, 1, result.AssetsCreated)
+			assert.Zero(t, result.RowsSkipped)
+			assert.Empty(t, result.Errors)
+			require.Len(t, ts.repo.Assets, 1)
+			for _, asset := range ts.repo.Assets {
+				require.NotNil(t, asset.InvoiceID)
+				assert.Equal(t, invoiceID, *asset.InvoiceID)
+			}
+		})
+	}
+}
+
+func TestService_ImportAssetsCSVInvoiceIDWinsOverInvoiceNumber(t *testing.T) {
+	ts := newTestService()
+	explicitInvoiceID := "11111111-1111-4111-8111-111111111111"
+	resolvedInvoiceID := "22222222-2222-4222-8222-222222222222"
+	resolver := &fakeAssetInvoiceResolver{invoiceIDsByNumber: map[string]string{"BILL-1": resolvedInvoiceID}}
+	ts.svc.invoicing = resolver
+
+	result, err := ts.svc.ImportAssetsCSV(context.Background(), "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,invoice_id,invoice_number\n" +
+			"LEG-001,Laptop,2025-01-10,1200.00," + explicitInvoiceID + ",BILL-1\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.AssetsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+	assert.Empty(t, resolver.calls)
+	require.Len(t, ts.repo.Assets, 1)
+	for _, asset := range ts.repo.Assets {
+		require.NotNil(t, asset.InvoiceID)
+		assert.Equal(t, explicitInvoiceID, *asset.InvoiceID)
+	}
+}
+
+func TestService_ImportAssetsCSVReportsInvoiceNumberResolutionErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		resolver   assetInvoiceResolver
+		wantErrMsg string
+	}{
+		{
+			name:       "missing",
+			resolver:   &fakeAssetInvoiceResolver{},
+			wantErrMsg: `resolve invoice_number "BILL-404": invoice not found`,
+		},
+		{
+			name: "ambiguous",
+			resolver: &fakeAssetInvoiceResolver{errorsByNumber: map[string]error{
+				"BILL-404": fmt.Errorf(`invoice_number "BILL-404" matched multiple invoices`),
+			}},
+			wantErrMsg: `resolve invoice_number "BILL-404": invoice_number "BILL-404" matched multiple invoices`,
+		},
+		{
+			name:       "no resolver",
+			resolver:   nil,
+			wantErrMsg: `invoice_number "BILL-404" cannot be resolved without invoicing service`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := newTestService()
+			ts.svc.invoicing = tt.resolver
+
+			result, err := ts.svc.ImportAssetsCSV(context.Background(), "tenant-1", "test_schema", &ImportAssetsRequest{
+				CSVContent: "asset_number,name,purchase_date,purchase_cost,invoice_number\n" +
+					"LEG-001,Laptop,2025-01-10,1200.00,BILL-404\n",
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, 1, result.RowsProcessed)
+			assert.Zero(t, result.AssetsCreated)
+			assert.Equal(t, 1, result.RowsSkipped)
+			require.Len(t, result.Errors, 1)
+			assert.Equal(t, 2, result.Errors[0].Row)
+			assert.Contains(t, result.Errors[0].Message, tt.wantErrMsg)
+			assert.Empty(t, ts.repo.Assets)
+		})
+	}
+}
+
 func TestService_ImportAssetsCSVReportsInvalidUUIDFields(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
@@ -1721,11 +1832,29 @@ type fakeAssetContactLister struct {
 	err      error
 }
 
+type fakeAssetInvoiceResolver struct {
+	invoiceIDsByNumber map[string]string
+	errorsByNumber     map[string]error
+	calls              []string
+}
+
 func (f fakeAssetContactLister) List(_ context.Context, _, _ string, _ *contacts.ContactFilter) ([]contacts.Contact, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.contacts, nil
+}
+
+func (f *fakeAssetInvoiceResolver) ResolveInvoiceIDByNumber(_ context.Context, _, _ string, invoiceNumber string) (string, error) {
+	trimmed := strings.TrimSpace(invoiceNumber)
+	f.calls = append(f.calls, trimmed)
+	if err, ok := f.errorsByNumber[trimmed]; ok {
+		return "", err
+	}
+	if invoiceID, ok := f.invoiceIDsByNumber[trimmed]; ok {
+		return invoiceID, nil
+	}
+	return "", fmt.Errorf("invoice not found")
 }
 
 func TestNewService(t *testing.T) {

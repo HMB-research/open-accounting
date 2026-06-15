@@ -456,7 +456,7 @@ func listExpenses(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-For `runtime: http`, run this process outside Open Accounting and point `backend.base_url` at its loopback address. Open Accounting forwards route requests with tenant and plugin headers and forwards hook payloads to the configured handler paths.
+For `runtime: http`, run this process outside Open Accounting and point `backend.base_url` at its loopback address. Open Accounting forwards route requests with tenant and plugin headers and forwards hook payloads to the configured handler paths. Tenant runtime routes are invoked through `/api/v1/tenants/{tenantId}/plugins/{pluginId}/runtime/...` or the CLI `oa plugins runtime invoke --id <plugin-id> --method GET|POST|PUT|PATCH|DELETE --path <route>`. The CLI accepts a raw query string with `--query` and a JSON request body with either `--body-json` or `--body-file`. Successful runtime route responses are returned as the plugin produced them: Open Accounting preserves the runtime status code, forwards non-hop-by-hop response headers, and streams the raw response body instead of wrapping it in a host JSON envelope.
 
 For `runtime: package`, build a self-contained executable inside the plugin repository and declare the containing package directory plus the executable path. Open Accounting launches the executable directly, waits for `OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH`, forwards requests over loopback, reports lifecycle/crash/backoff state, supports manual runtime restart, and automatically restarts after unexpected exits. OS-level sandboxing remains outside the current supervisor.
 
@@ -566,6 +566,8 @@ GET    /api/v1/admin/plugins/:id/runtime   # Inspect backend runtime status
 POST   /api/v1/admin/plugins/:id/runtime/restart # Restart package runtime
 ```
 
+Admin plugin and registry endpoints require a tenant-scoped token whose current tenant membership is `owner` or `admin`; membership is rechecked when the request runs.
+
 ### Tenant Endpoints
 
 ```
@@ -574,6 +576,11 @@ POST   /api/v1/tenants/:id/plugins/:pid/enable        # Enable for tenant
 POST   /api/v1/tenants/:id/plugins/:pid/disable       # Disable for tenant
 GET    /api/v1/tenants/:id/plugins/:pid/settings      # Get settings
 PUT    /api/v1/tenants/:id/plugins/:pid/settings      # Update settings
+GET    /api/v1/tenants/:id/plugins/:pid/runtime/*     # Invoke declared runtime route
+POST   /api/v1/tenants/:id/plugins/:pid/runtime/*     # Invoke declared runtime route
+PUT    /api/v1/tenants/:id/plugins/:pid/runtime/*     # Invoke declared runtime route
+PATCH  /api/v1/tenants/:id/plugins/:pid/runtime/*     # Invoke declared runtime route
+DELETE /api/v1/tenants/:id/plugins/:pid/runtime/*     # Invoke declared runtime route
 ```
 
 ### Request/Response Examples

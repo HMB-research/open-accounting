@@ -160,6 +160,9 @@ func (h *Handlers) RequireInstanceAdmin(next http.Handler) http.Handler {
 		}
 
 		tenantID := strings.TrimSpace(claims.TenantID)
+		if tenantID == "" {
+			tenantID = strings.TrimSpace(r.Header.Get("X-Tenant-ID"))
+		}
 		if tenantID == "" || h.tenantService == nil {
 			respondError(w, http.StatusForbidden, "Tenant admin context required")
 			return
@@ -175,9 +178,47 @@ func (h *Handlers) RequireInstanceAdmin(next http.Handler) http.Handler {
 			return
 		}
 
+		claims.TenantID = tenantID
 		claims.Role = role
 		next.ServeHTTP(w, r)
 	})
+}
+
+// RequireTenantPermission restricts tenant routes using the caller's current tenant membership.
+func (h *Handlers) RequireTenantPermission(check func(tenant.RolePermissions) bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := auth.GetClaims(r.Context())
+			if !ok {
+				respondError(w, http.StatusUnauthorized, "Authentication required")
+				return
+			}
+
+			tenantID := strings.TrimSpace(claims.TenantID)
+			if tenantID == "" {
+				tenantID = strings.TrimSpace(chi.URLParam(r, "tenantID"))
+			}
+			if tenantID == "" || h.tenantService == nil {
+				respondError(w, http.StatusForbidden, "Tenant context required")
+				return
+			}
+
+			role, err := h.tenantService.GetUserRole(r.Context(), tenantID, claims.UserID)
+			if err != nil {
+				respondError(w, http.StatusForbidden, "Access denied")
+				return
+			}
+
+			claims.TenantID = tenantID
+			claims.Role = role
+			if check == nil || !check(tenant.GetRolePermissions(role)) {
+				respondError(w, http.StatusForbidden, "Insufficient permissions")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // TenantContext middleware ensures user has access to the tenant

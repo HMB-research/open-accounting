@@ -255,13 +255,14 @@ func TestAdminRoutesRequireTenantOwnerOrAdmin(t *testing.T) {
 	router := setupRouter(cfg, handlers, tokenService)
 
 	tests := []struct {
-		name        string
-		userID      string
-		tenantID    string
-		claimRole   string
-		bearerToken bool
-		wantStatus  int
-		wantError   string
+		name         string
+		userID       string
+		tenantID     string
+		claimRole    string
+		headerTenant string
+		bearerToken  bool
+		wantStatus   int
+		wantError    string
 	}{
 		{
 			name:       "missing bearer token",
@@ -274,6 +275,23 @@ func TestAdminRoutesRequireTenantOwnerOrAdmin(t *testing.T) {
 			bearerToken: true,
 			wantStatus:  http.StatusForbidden,
 			wantError:   "Tenant admin context required",
+		},
+		{
+			name:         "explicit tenant header accepts current admin membership",
+			userID:       "admin-1",
+			claimRole:    tenant.RoleViewer,
+			headerTenant: "tenant-1",
+			bearerToken:  true,
+			wantStatus:   http.StatusOK,
+		},
+		{
+			name:         "explicit tenant header rejects current viewer membership",
+			userID:       "viewer-1",
+			claimRole:    tenant.RoleAdmin,
+			headerTenant: "tenant-1",
+			bearerToken:  true,
+			wantStatus:   http.StatusForbidden,
+			wantError:    "Insufficient permissions",
 		},
 		{
 			name:        "stale admin claim with current viewer membership is rejected",
@@ -328,6 +346,9 @@ func TestAdminRoutesRequireTenantOwnerOrAdmin(t *testing.T) {
 				require.NoError(t, err)
 				req.Header.Set("Authorization", "Bearer "+token)
 			}
+			if tt.headerTenant != "" {
+				req.Header.Set("X-Tenant-ID", tt.headerTenant)
+			}
 
 			rr := httptest.NewRecorder()
 			router.ServeHTTP(rr, req)
@@ -335,6 +356,122 @@ func TestAdminRoutesRequireTenantOwnerOrAdmin(t *testing.T) {
 			if tt.wantError != "" {
 				assert.Contains(t, rr.Body.String(), tt.wantError)
 			}
+		})
+	}
+}
+
+func TestRequireTenantPermissionUsesCurrentTenantMembership(t *testing.T) {
+	tenantRepo := newMockTenantRepository()
+	tenantRepo.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+	now := time.Now()
+	tenantRepo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "accountant-1", Role: tenant.RoleAccountant, IsActive: true, CreatedAt: now},
+		{TenantID: "tenant-1", UserID: "viewer-1", Role: tenant.RoleViewer, IsActive: true, CreatedAt: now},
+		{TenantID: "tenant-1", UserID: "inactive-admin", Role: tenant.RoleAdmin, IsActive: false, CreatedAt: now},
+	}
+	handlers := &Handlers{tenantService: newTestTenantService(tenantRepo)}
+	requireAccountingWrite := handlers.RequireTenantPermission(func(perms tenant.RolePermissions) bool {
+		return perms.CanCreateEntries
+	})
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.GetClaims(r.Context())
+		require.True(t, ok)
+		assert.Equal(t, tenant.RoleAccountant, claims.Role)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	handler := requireAccountingWrite(next)
+
+	tests := []struct {
+		name       string
+		tenantID   string
+		claims     *auth.Claims
+		wantStatus int
+		wantError  string
+	}{
+		{
+			name:       "missing auth claims",
+			tenantID:   "tenant-1",
+			wantStatus: http.StatusUnauthorized,
+			wantError:  "Authentication required",
+		},
+		{
+			name:       "stale admin claim cannot bypass current viewer role",
+			tenantID:   "tenant-1",
+			claims:     createTestClaims("viewer-1", "viewer@example.com", "tenant-1", tenant.RoleAdmin),
+			wantStatus: http.StatusForbidden,
+			wantError:  "Insufficient permissions",
+		},
+		{
+			name:       "inactive admin membership is rejected",
+			tenantID:   "tenant-1",
+			claims:     createTestClaims("inactive-admin", "inactive@example.com", "tenant-1", tenant.RoleAdmin),
+			wantStatus: http.StatusForbidden,
+			wantError:  "Access denied",
+		},
+		{
+			name:       "current accountant membership is accepted despite stale viewer claim",
+			tenantID:   "tenant-1",
+			claims:     createTestClaims("accountant-1", "accountant@example.com", "tenant-1", tenant.RoleViewer),
+			wantStatus: http.StatusNoContent,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tt.tenantID+"/protected", nil, tt.claims)
+			req = withURLParams(req, map[string]string{"tenantID": tt.tenantID})
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			assert.Equal(t, tt.wantStatus, rr.Code, "response body: %s", rr.Body.String())
+			if tt.wantError != "" {
+				assert.Contains(t, rr.Body.String(), tt.wantError)
+			}
+		})
+	}
+}
+
+func TestSensitiveTenantRoutesRejectViewerMembership(t *testing.T) {
+	cfg := &Config{AllowedOrigins: []string{"http://localhost:5173"}}
+	tokenService := auth.NewTokenService("secret", time.Minute, time.Hour)
+	tenantRepo := newMockTenantRepository()
+	tenantRepo.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+	tenantRepo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "viewer-1", Role: tenant.RoleViewer, IsActive: true, CreatedAt: time.Now()},
+	}
+	handlers := &Handlers{tenantService: newTestTenantService(tenantRepo)}
+
+	t.Setenv("DEMO_MODE", "true")
+	t.Setenv("CORS_DEBUG", "")
+	router := setupRouter(cfg, handlers, tokenService)
+	token, err := tokenService.GenerateAccessToken("viewer-1", "viewer@example.com", "tenant-1", tenant.RoleAdmin)
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{name: "smtp settings", method: http.MethodPut, path: "/api/v1/tenants/tenant-1/settings/smtp"},
+		{name: "webhook creation", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/webhooks"},
+		{name: "tenant plugin enablement", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/plugins/11111111-1111-1111-1111-111111111111/enable"},
+		{name: "migration execution", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/migration/execute"},
+		{name: "payroll history import", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/payroll-runs/import-history"},
+		{name: "leave balance import", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/leave-balances/import"},
+		{name: "TSD history import", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/tsd/import-history"},
+		{name: "KMD history import", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/tax/kmd/import-history"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			rr := httptest.NewRecorder()
+
+			router.ServeHTTP(rr, req)
+
+			assert.Equal(t, http.StatusForbidden, rr.Code, "response body: %s", rr.Body.String())
+			assert.Contains(t, rr.Body.String(), "Insufficient permissions")
 		})
 	}
 }

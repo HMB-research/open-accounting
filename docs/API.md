@@ -2854,10 +2854,14 @@ Accept: application/xml
 
 {
   "message_id": "MSG-20260331",
+  "payment_info_id": "PMT-INF-20260331",
+  "creation_date_time": "2026-03-31T12:00:00Z",
   "debtor_name": "Example OU",
   "debtor_iban": "EE382200221020145685",
   "debtor_bic": "HABAEE2X",
   "execution_date": "2026-04-01",
+  "batch_booking": false,
+  "charge_bearer": "SLEV",
   "lines": [
     {
       "end_to_end_id": "INV-1001",
@@ -2870,7 +2874,7 @@ Accept: application/xml
 }
 ```
 
-Returns ISO 20022 `pain.001.001.03` SEPA credit-transfer XML for manual bank upload. The exporter validates debtor and creditor IBAN checksums, optional BIC format, positive EUR amounts, and `YYYY-MM-DD` execution dates. It does not submit payments directly to a bank.
+Returns ISO 20022 `pain.001.001.03` SEPA credit-transfer XML for manual bank upload. The exporter validates debtor and creditor IBAN checksums, optional BIC format, positive EUR amounts, and `YYYY-MM-DD` execution dates. Optional `payment_info_id` overrides the payment-info block ID; when omitted it defaults from the message ID. Optional `creation_date_time` must be RFC3339 and is normalized to UTC. `batch_booking` defaults to `true` when omitted. `charge_bearer` defaults to `SLEV`, and `SLEV` is the only accepted value for SEPA credit transfers. It does not submit payments directly to a bank.
 
 ### Get Payment
 
@@ -3402,7 +3406,8 @@ Authorization: Bearer <token>
 ```
 
 Tenant plugin enable and settings update requests accept arbitrary plugin-specific JSON settings.
-Tenant plugin list responses include each plugin manifest. Frontend slot entries may declare safe `card`, `link`, or `action` runtime metadata with `label`, `description`, internal `path`, `badge`, and `order` fields. Backend hook and route declarations can run through an out-of-process HTTP runtime when the manifest declares `backend.runtime: http` and a loopback `backend.base_url`; tenant routes are exposed under `/api/v1/tenants/{tenantID}/plugins/{pluginID}/runtime/...` after tenant enablement.
+Tenant plugin list responses include each plugin manifest. Frontend slot entries may declare safe `card`, `link`, or `action` runtime metadata with `label`, `description`, internal `path`, `badge`, and `order` fields. Backend hook and route declarations can run through an out-of-process HTTP runtime when the manifest declares `backend.runtime: http` and a loopback `backend.base_url`, or through a supervised package runtime when the manifest declares `backend.runtime: package`; tenant routes are exposed under `/api/v1/tenants/{tenantID}/plugins/{pluginID}/runtime/...` after tenant enablement.
+Tenant runtime routes support `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`. The API preserves the raw query string, forwards the request body to the manifest-declared handler path, strips authorization and hop-by-hop request headers before proxying, and returns the plugin runtime status code, response headers, and raw response body without wrapping successful responses in an Open Accounting envelope. Runtime route calls require normal tenant access for the current user and the plugin must be enabled for that tenant.
 
 ---
 

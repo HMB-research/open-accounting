@@ -8,6 +8,7 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -24,20 +25,30 @@ type contactLister interface {
 	List(ctx context.Context, tenantID, schemaName string, filter *contacts.ContactFilter) ([]contacts.Contact, error)
 }
 
+type assetInvoiceResolver interface {
+	ResolveInvoiceIDByNumber(ctx context.Context, tenantID, schemaName, invoiceNumber string) (string, error)
+}
+
 // Service provides fixed asset operations
 type Service struct {
-	repo     Repository
-	ledger   accountingPoster
-	contacts contactLister
+	repo      Repository
+	ledger    accountingPoster
+	contacts  contactLister
+	invoicing assetInvoiceResolver
 }
 
 // NewService creates a new assets service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
-	return &Service{
+	ledger := accounting.NewService(db)
+	service := &Service{
 		repo:     NewRepository(db),
-		ledger:   accounting.NewService(db),
+		ledger:   ledger,
 		contacts: contacts.NewService(db),
 	}
+	if db != nil {
+		service.invoicing = invoicing.NewService(db, ledger)
+	}
+	return service
 }
 
 // NewServiceWithRepository creates a new assets service with a custom repository

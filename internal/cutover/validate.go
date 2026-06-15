@@ -7957,7 +7957,21 @@ func checkProductCategoryReference(report *BundleValidationReport, indexes bundl
 func checkProductReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
 	productID := strings.TrimSpace(row.values["product_id"])
 	if productID != "" {
-		checkOptionalUUID(report, file, row, "product_id")
+		if !checkOptionalUUID(report, file, row, "product_id") {
+			return
+		}
+		if indexes.files[KindProducts] {
+			report.addIssue(ValidationIssue{
+				Severity:   SeverityError,
+				Kind:       file.kind,
+				FileName:   file.fileName,
+				Row:        row.number,
+				Field:      "product_id",
+				Value:      productID,
+				TargetKind: KindProducts,
+				Message:    "product_id cannot reference products imported in the same bundle because product import IDs are generated; use product_code for same-bundle document rows",
+			})
+		}
 		return
 	}
 	checkTargetReference(report, indexes.files[KindProducts], indexes.productCodes, file, row, KindProducts,
