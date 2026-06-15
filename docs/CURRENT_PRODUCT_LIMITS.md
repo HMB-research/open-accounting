@@ -14,12 +14,11 @@ payments, manual bank import and reconciliation, payroll, leave records, KMD/TSD
 export-oriented compliance, document evidence workflows, accountant review
 queues, a Go operator CLI, and a Svelte dashboard.
 
-The current PR baseline is PR #62 on `feat/payroll-history-import` at commit
-`2fc8e5e`, green in CI run `27526491911`. That run revalidated backend tests
-with CLI coverage enforcement, lint, build, frontend lint/check/test/build,
-smoke E2E, all four local seeded demo E2E shards, and all four integration
-shards. `cmd/oa` remains held at 100.0% statement coverage by the CLI coverage
-gate.
+PR #62 on `feat/payroll-history-import` was revalidated by the pull-request CI
+gate on 2026-06-15 before merge. The checked rollup covered backend tests with
+CLI coverage enforcement, lint, build, frontend lint/check/test/build, smoke
+E2E, all four local seeded demo E2E shards, and all four integration shards.
+`cmd/oa` remains held at 100.0% statement coverage by the CLI coverage gate.
 
 That evidence is not a production-readiness claim. It proves the checked use
 cases and regression gates for the current branch.
