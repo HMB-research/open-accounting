@@ -64,6 +64,7 @@ type migrationExecutionSpec struct {
 
 var migrationExecutionOrder = map[FileKind]int{
 	KindAccounts:          10,
+	KindOpeningBalances:   15,
 	KindContacts:          20,
 	KindEmployees:         30,
 	KindCostCenters:       40,
@@ -85,7 +86,6 @@ var migrationExecutionOrder = map[FileKind]int{
 	KindFixedAssets:       200,
 	KindStockAdjustments:  210,
 	KindBankTransactions:  220,
-	KindOpeningBalances:   230,
 	KindJournalEntries:    240,
 	KindCostAllocations:   250,
 }

@@ -346,7 +346,7 @@ go run ./cmd/oa migration plan \
 go run ./cmd/oa migration plan --accounts ./accounts.csv --opening-balances ./opening-balances.csv --opening-balance-entry-date 2026-01-01 --json
 ```
 
-`migration plan` validates the same bundle and returns an ordered execution plan for the individual import commands. Human output lists each step's status, file kind, file name, dependencies, missing context fields, API route, and CLI command. Steps are marked `READY`, `NEEDS_CONTEXT`, or `BLOCKED`; bank-transaction imports require `--bank-transaction-account-id`, opening-balance imports require `--opening-balance-entry-date`, TSD-history imports depend on employees and payroll history, and `--e-invoice-invoice-type` is included in e-invoice import commands when supplied. JSON output exposes the same `summary`, `validation`, `steps`, and `remediation_actions` fields for cutover runbooks and accountant workspace automation.
+`migration plan` validates the same bundle and returns an ordered execution plan for the individual import commands. Human output lists each step's status, file kind, file name, dependencies, missing context fields, API route, and CLI command. Steps are marked `READY`, `NEEDS_CONTEXT`, or `BLOCKED`; bank-transaction imports require `--bank-transaction-account-id`, opening-balance imports require `--opening-balance-entry-date` and run immediately after chart-of-account import as the cutover baseline, TSD-history imports depend on employees and payroll history, and `--e-invoice-invoice-type` is included in e-invoice import commands when supplied. JSON output exposes the same `summary`, `validation`, `steps`, and `remediation_actions` fields for cutover runbooks and accountant workspace automation.
 
 ```bash
 go run ./cmd/oa migration execute \
