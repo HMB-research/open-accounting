@@ -64,6 +64,40 @@ func TestBuildMigrationExecutionPlanOrdersReadyStepsAndMarksMissingContext(t *te
 	assert.Equal(t, []FileKind{KindBankAccounts}, bankStep.DependsOn)
 }
 
+func TestBuildMigrationExecutionPlanRejectsInvalidOpeningBalanceEntryDate(t *testing.T) {
+	plan, err := BuildMigrationExecutionPlan(&PlanMigrationExecutionRequest{
+		Files: []BundleFile{
+			{
+				Kind:       KindAccounts,
+				FileName:   "accounts.csv",
+				CSVContent: "code,name,account_type\n1000,Cash,ASSET\n3000,Equity,EQUITY\n",
+			},
+			{
+				Kind:       KindOpeningBalances,
+				FileName:   "opening.csv",
+				CSVContent: "account_code,debit,credit\n1000,100,0\n3000,0,100\n",
+			},
+		},
+		OpeningBalanceEntryDate: "01-01-2026",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	assert.True(t, plan.Summary.ValidationReady)
+	assert.False(t, plan.Summary.Ready)
+	assert.Equal(t, 2, plan.Summary.StepCount)
+	assert.Equal(t, 1, plan.Summary.ReadyStepCount)
+	assert.Equal(t, 1, plan.Summary.NeedsContextCount)
+	require.Len(t, plan.Steps, 2)
+
+	openingStep := plan.Steps[1]
+	assert.Equal(t, KindOpeningBalances, openingStep.Kind)
+	assert.Equal(t, MigrationExecutionStepNeedsContext, openingStep.Status)
+	assert.Equal(t, []string{"opening_balance_entry_date"}, openingStep.ContextFields)
+	assert.Contains(t, openingStep.CLICommand, "--entry-date <YYYY-MM-DD>")
+	assert.NotContains(t, openingStep.CLICommand, "01-01-2026")
+}
+
 func TestBuildMigrationExecutionPlanBlocksStepsWhenValidationFails(t *testing.T) {
 	plan, err := BuildMigrationExecutionPlan(&PlanMigrationExecutionRequest{
 		Files: []BundleFile{{

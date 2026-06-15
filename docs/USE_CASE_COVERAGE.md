@@ -47,6 +47,7 @@ Status values:
 - The follow-up payroll/TSD history consistency stage was locally revalidated with focused cutover validator and execution-plan tests.
 - The follow-up Merit/Directo commercial contact alias stage was locally revalidated with focused cutover validator tests.
 - The follow-up provider opening-balance amount alias stage was locally revalidated with focused accounting importer and cutover validator tests.
+- The follow-up opening-balance entry-date execution-plan stage was locally revalidated with focused cutover/accounting tests.
 - The follow-up provider historical-journal import alias stage was locally revalidated with focused accounting importer tests.
 - The follow-up provider cost-center and cost-allocation import alias stage was locally revalidated with focused accounting importer tests.
 - The follow-up provider execution CSV canonicalization stage was locally revalidated with focused cutover helper and CLI execution tests.
@@ -191,6 +192,9 @@ account and amount headers such as `konto_kood`, `deebetsumma`,
 `kreeditsumma`, `algsaldo_deebet`, and `algsaldo_kreedit`, plus SmartAccounts
 `gl_account_no`, `opening_debit`, and `opening_credit`, before balance
 validation and import execution run.
+Opening-balance execution planning now treats malformed
+`opening_balance_entry_date` values as `NEEDS_CONTEXT` instead of marking the
+step ready for an importer call that would reject the date.
 Provider historical-journal presets and the historical-journal importer now
 canonicalize common Merit, SmartAccounts, and Directo entry, date, preserved
 line ID, account, debit, credit, currency, and exchange-rate aliases before

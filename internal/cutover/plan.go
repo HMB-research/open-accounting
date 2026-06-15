@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 type MigrationExecutionStepStatus string
@@ -325,7 +326,7 @@ func migrationExecutionStepSpec(kind FileKind, fileName string, req *PlanMigrati
 	case KindOpeningBalances:
 		entryDate := strings.TrimSpace(req.OpeningBalanceEntryDate)
 		contextFields := []string(nil)
-		if entryDate == "" {
+		if entryDate == "" || !validDateOnly(entryDate) {
 			entryDate = "<YYYY-MM-DD>"
 			contextFields = []string{"opening_balance_entry_date"}
 		}
@@ -350,6 +351,11 @@ func migrationExecutionStepSpec(kind FileKind, fileName string, req *PlanMigrati
 			message:       "Map this file to a supported migration import kind before execution.",
 		}
 	}
+}
+
+func validDateOnly(value string) bool {
+	_, err := time.Parse("2006-01-02", value)
+	return err == nil
 }
 
 func basicMigrationExecutionSpec(pathSuffix, command string) migrationExecutionSpec {
