@@ -1,3 +1,5 @@
+//go:build integration
+
 package main
 
 import (
@@ -14,7 +16,9 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/pdf"
 	tenantpkg "github.com/HMB-research/open-accounting/internal/tenant"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 )
@@ -33,10 +37,10 @@ func setupPayrollIntegrationHandlers(t *testing.T) (*Handlers, *testutil.TestTen
 	}
 
 	h := &Handlers{
-		pool:           pool,
 		tenantService:  tenantpkg.NewService(pool),
 		payrollService: payroll.NewService(pool),
 		absenceService: payroll.NewAbsenceServiceWithPool(pool),
+		pdfService:     pdf.NewService(),
 	}
 
 	claims := createTestClaims(userID, fmt.Sprintf("payroll-handler-%d@example.com", time.Now().UnixNano()), tenant.ID, tenantpkg.RoleOwner)
@@ -44,7 +48,7 @@ func setupPayrollIntegrationHandlers(t *testing.T) (*Handlers, *testutil.TestTen
 }
 
 func TestPayrollHandlersIntegration(t *testing.T) {
-	h, tenant, claims, _ := setupPayrollIntegrationHandlers(t)
+	h, tenant, claims, pool := setupPayrollIntegrationHandlers(t)
 
 	employeeReq := payroll.CreateEmployeeRequest{
 		EmployeeNumber:       "EMP-H-001",
@@ -97,6 +101,32 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 		"effective_from": time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
 	}, claims), map[string]string{"tenantID": tenant.ID, "employeeID": employee.ID}))
 
+	secondaryComponent := invokeJSON[payroll.SalaryComponent](t, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		h.AddSalaryComponent(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/employees/"+employee.ID+"/salary-components", payroll.CreateSalaryComponentRequest{
+		ComponentType: payroll.SalaryComponentSecondaryEmployment,
+		Name:          "Evening contract",
+		Amount:        decimal.NewFromInt(500),
+		EffectiveFrom: time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
+	}, claims), map[string]string{"tenantID": tenant.ID, "employeeID": employee.ID}))
+	if secondaryComponent.ID == "" || secondaryComponent.ComponentType != payroll.SalaryComponentSecondaryEmployment {
+		t.Fatalf("expected secondary salary component, got %#v", secondaryComponent)
+	}
+
+	salaryComponents := invokeJSON[[]payroll.SalaryComponent](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.ListSalaryComponents(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/employees/"+employee.ID+"/salary-components?active_on=2025-02-01", nil, claims), map[string]string{"tenantID": tenant.ID, "employeeID": employee.ID}))
+	if len(salaryComponents) != 2 {
+		t.Fatalf("expected base and secondary salary components, got %d", len(salaryComponents))
+	}
+	currentSalary, err := payroll.NewService(pool).GetCurrentSalary(context.Background(), tenant.SchemaName, tenant.ID, employee.ID)
+	if err != nil {
+		t.Fatalf("get current salary: %v", err)
+	}
+	if !currentSalary.Equal(decimal.NewFromInt(3500)) {
+		t.Fatalf("expected current salary 3500 with secondary component, got %s", currentSalary)
+	}
+
 	runReq := payroll.CreatePayrollRunRequest{
 		PeriodYear:  2025,
 		PeriodMonth: 2,
@@ -119,6 +149,25 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 		t.Fatalf("expected payroll run %s, got %s", run.ID, gotRun.ID)
 	}
 
+	processRun := invokeJSON[payroll.PayrollRun](t, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		h.CreatePayrollRun(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/payroll-runs", payroll.CreatePayrollRunRequest{
+		PeriodYear:  2025,
+		PeriodMonth: 3,
+	}, claims), map[string]string{"tenantID": tenant.ID}))
+
+	processed := invokeJSON[payroll.PayrollRunProcessResult](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.ProcessPayrollRun(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/payroll-runs/"+processRun.ID+"/process", payroll.ProcessPayrollRunRequest{
+		Approve: true,
+	}, claims), map[string]string{"tenantID": tenant.ID, "runID": processRun.ID}))
+	if processed.PayslipCount != 1 || !processed.Approved {
+		t.Fatalf("expected processed approved run with 1 payslip, got count=%d approved=%v", processed.PayslipCount, processed.Approved)
+	}
+	if processed.PayrollRun == nil || processed.PayrollRun.Status != payroll.PayrollApproved {
+		t.Fatalf("expected approved processed payroll run, got %#v", processed.PayrollRun)
+	}
+
 	calculated := invokeJSON[payroll.PayrollRun](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
 		h.CalculatePayroll(w, r)
 	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/payroll-runs/"+run.ID+"/calculate", nil, claims), map[string]string{"tenantID": tenant.ID, "runID": run.ID}))
@@ -133,6 +182,14 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 		t.Fatalf("expected 1 payslip, got %d", len(payslips))
 	}
 
+	payslipPDF := invokeRaw(t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.GetPayslipPDF(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/payroll-runs/"+run.ID+"/payslips/"+payslips[0].ID+"/pdf", nil, claims), map[string]string{"tenantID": tenant.ID, "runID": run.ID, "payslipID": payslips[0].ID}))
+	requirePDF(t, payslipPDF.Body.Bytes())
+	if got := payslipPDF.Header().Get("Content-Type"); got != "application/pdf" {
+		t.Fatalf("expected application/pdf, got %q", got)
+	}
+
 	invokeJSON[map[string]string](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
 		h.ApprovePayroll(w, r)
 	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/payroll-runs/"+run.ID+"/approve", nil, claims), map[string]string{"tenantID": tenant.ID, "runID": run.ID}))
@@ -143,6 +200,13 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 	if tsd.ID == "" {
 		t.Fatal("expected generated TSD declaration")
 	}
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-tsd-approved-" + tsd.ID,
+		TenantID:     tenant.ID,
+		EntityType:   documents.EntityTypeTSD,
+		EntityID:     tsd.ID,
+		DocumentType: documents.DocumentTypeTaxSupport,
+	})
 
 	gotTSD := invokeJSON[payroll.TSDDeclaration](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
 		h.GetTSD(w, r)
@@ -157,6 +221,21 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 	if len(tsdList) != 1 {
 		t.Fatalf("expected 1 TSD declaration, got %d", len(tsdList))
 	}
+	tsdFiltered := invokeJSON[[]payroll.TSDDeclaration](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.ListTSD(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/tsd?year=2025&month=2", nil, claims), map[string]string{"tenantID": tenant.ID}))
+	if len(tsdFiltered) != 1 || tsdFiltered[0].PeriodYear != 2025 || tsdFiltered[0].PeriodMonth != 2 {
+		t.Fatalf("expected filtered 2025-02 TSD declaration, got %#v", tsdFiltered)
+	}
+	tsdFuture := invokeJSON[[]payroll.TSDDeclaration](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.ListTSD(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/tsd?year=2026", nil, claims), map[string]string{"tenantID": tenant.ID}))
+	if len(tsdFuture) != 0 {
+		t.Fatalf("expected no future-year TSD declarations, got %d", len(tsdFuture))
+	}
+	invokeRaw(t, http.StatusBadRequest, func(w http.ResponseWriter, r *http.Request) {
+		h.ListTSD(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/"+tenant.ID+"/tsd?month=13", nil, claims), map[string]string{"tenantID": tenant.ID}))
 
 	xmlResp := invokeRaw(t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
 		h.ExportTSDXML(w, r)
@@ -177,6 +256,20 @@ func TestPayrollHandlersIntegration(t *testing.T) {
 	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/tsd/2025/2/submit", map[string]string{
 		"emta_reference": "EMTA-REF-001",
 	}, claims), map[string]string{"tenantID": tenant.ID, "year": "2025", "month": "2"}))
+
+	accepted := invokeJSON[map[string]string](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.MarkTSDAccepted(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/tsd/2025/2/accept", nil, claims), map[string]string{"tenantID": tenant.ID, "year": "2025", "month": "2"}))
+	if accepted["status"] != "accepted" {
+		t.Fatalf("expected accepted status response, got %q", accepted["status"])
+	}
+
+	rejected := invokeJSON[map[string]string](t, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		h.MarkTSDRejected(w, r)
+	}, withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tenant.ID+"/tsd/2025/2/reject", nil, claims), map[string]string{"tenantID": tenant.ID, "year": "2025", "month": "2"}))
+	if rejected["status"] != "rejected" {
+		t.Fatalf("expected rejected status response, got %q", rejected["status"])
+	}
 }
 
 func TestLeaveHandlersIntegration(t *testing.T) {

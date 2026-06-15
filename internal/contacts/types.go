@@ -46,6 +46,7 @@ type Contact struct {
 
 // CreateContactRequest is the request to create a contact
 type CreateContactRequest struct {
+	ID               string          `json:"-"`
 	Code             string          `json:"code,omitempty"`
 	Name             string          `json:"name"`
 	ContactType      ContactType     `json:"contact_type"`

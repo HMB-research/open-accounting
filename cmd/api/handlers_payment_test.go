@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
@@ -27,6 +29,7 @@ type mockPaymentsRepository struct {
 	listErr       error
 	allocErr      error
 	unallocErr    error
+	reversalErr   error
 }
 
 func newMockPaymentsRepository() *mockPaymentsRepository {
@@ -42,6 +45,26 @@ func (m *mockPaymentsRepository) Create(ctx context.Context, schemaName string, 
 		return m.createErr
 	}
 	m.payments[payment.ID] = payment
+	return nil
+}
+
+func (m *mockPaymentsRepository) CreateReversal(ctx context.Context, schemaName string, originalPaymentID string, reversal *payments.Payment, allocations []payments.PaymentAllocation, reversedAt time.Time, reversedBy string, reason string) error {
+	if m.reversalErr != nil {
+		return m.reversalErr
+	}
+	original, ok := m.payments[originalPaymentID]
+	if !ok || original.TenantID != reversal.TenantID {
+		return payments.ErrPaymentNotFound
+	}
+	if original.ReversedByPaymentID != nil {
+		return payments.ErrPaymentAlreadyReversed
+	}
+	m.payments[reversal.ID] = reversal
+	m.allocations[reversal.ID] = append([]payments.PaymentAllocation(nil), allocations...)
+	original.ReversedByPaymentID = &reversal.ID
+	original.ReversedAt = &reversedAt
+	original.ReversedBy = &reversedBy
+	original.ReversalReason = reason
 	return nil
 }
 
@@ -119,11 +142,23 @@ func (m *mockPaymentsRepository) GetUnallocatedPayments(ctx context.Context, sch
 
 // mockInvoiceServiceForPayments implements payments.InvoiceService
 type mockInvoiceServiceForPayments struct {
-	recordPaymentErr error
+	recordPaymentErr   error
+	recordPaymentCalls []struct {
+		invoiceID string
+		amount    decimal.Decimal
+	}
 }
 
 func (m *mockInvoiceServiceForPayments) RecordPayment(ctx context.Context, tenantID, schemaName, invoiceID string, amount decimal.Decimal) error {
+	m.recordPaymentCalls = append(m.recordPaymentCalls, struct {
+		invoiceID string
+		amount    decimal.Decimal
+	}{invoiceID, amount})
 	return m.recordPaymentErr
+}
+
+func (m *mockInvoiceServiceForPayments) ResolveInvoiceIDByNumber(ctx context.Context, tenantID, schemaName, invoiceNumber string) (string, error) {
+	return "", invoicing.ErrInvoiceNotFound
 }
 
 func setupPaymentTestHandlers() (*Handlers, *mockPaymentsRepository, *mockTenantRepository) {
@@ -139,6 +174,65 @@ func setupPaymentTestHandlers() (*Handlers, *mockPaymentsRepository, *mockTenant
 		tenantService:   tenantSvc,
 	}
 	return h, paymentsRepo, tenantRepo
+}
+
+func TestPaymentReceiptEvidenceRequirement(t *testing.T) {
+	h, repo, tenantRepo := setupPaymentTestHandlers()
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+		Name:       "Test Tenant",
+	}
+	repo.payments["pay-1"] = &payments.Payment{
+		ID:          "pay-1",
+		TenantID:    "tenant-1",
+		PaymentType: payments.PaymentTypeReceived,
+		PaymentDate: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		Amount:      decimal.NewFromInt(100),
+		Currency:    "EUR",
+	}
+
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	err := h.requireApprovedPaymentReceiptEvidence(context.Background(), "tenant_test", "tenant-1", "pay-1", true)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errApprovedPaymentReceiptEvidenceRequired)
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypePayment,
+		EntityID:     "pay-1",
+		DocumentType: documents.DocumentTypeReceipt,
+		ReviewStatus: documents.ReviewStatusApproved,
+	}
+	err = h.requireApprovedPaymentReceiptEvidence(context.Background(), "tenant_test", "tenant-1", "pay-1", true)
+	require.NoError(t, err)
+
+	req := withURLParams(httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/payments/pay-1/email-receipt", bytes.NewBufferString(`{
+		"recipient_email":"billing@example.com",
+		"require_approved_evidence":true
+	}`)), map[string]string{"tenantID": "tenant-1", "paymentID": "pay-1"})
+	docRepo.docs = map[string]*documents.Document{}
+	rr := httptest.NewRecorder()
+	h.EmailPaymentReceipt(rr, req)
+	assert.Equal(t, http.StatusConflict, rr.Code)
+	assert.Contains(t, rr.Body.String(), "approved payment receipt evidence is required")
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, "approved payment receipt evidence is required")
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypePayment, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, "pay-1", conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
+	assert.Equal(t, "oa documents upload --entity-type payment --entity-id pay-1 --document-type receipt --file <file>", conflict.RemediationActions[0].CLICommand)
 }
 
 func TestListPayments(t *testing.T) {
@@ -347,6 +441,245 @@ func TestCreatePayment(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReversePayment(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        map[string]interface{}
+		setupRepo   func(*mockPaymentsRepository)
+		setupTenant func(*mockTenantRepository)
+		wantStatus  int
+		wantErr     string
+	}{
+		{
+			name: "valid reversal",
+			body: map[string]interface{}{
+				"payment_date": "2026-03-20T00:00:00Z",
+				"reason":       "Duplicate bank import",
+			},
+			setupRepo: func(repo *mockPaymentsRepository) {
+				repo.payments["payment-1"] = &payments.Payment{
+					ID:            "payment-1",
+					TenantID:      "tenant-1",
+					PaymentNumber: "PMT-00001",
+					PaymentType:   payments.PaymentTypeReceived,
+					PaymentDate:   time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+					Amount:        decimal.RequireFromString("100.00"),
+					Currency:      "EUR",
+					ExchangeRate:  decimal.NewFromInt(1),
+					BaseAmount:    decimal.RequireFromString("100.00"),
+				}
+				repo.allocations["payment-1"] = []payments.PaymentAllocation{{
+					ID:        "alloc-1",
+					TenantID:  "tenant-1",
+					PaymentID: "payment-1",
+					InvoiceID: "invoice-1",
+					Amount:    decimal.RequireFromString("40.00"),
+				}}
+			},
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name: "missing reason rejected",
+			body: map[string]interface{}{
+				"payment_date": "2026-03-20T00:00:00Z",
+			},
+			setupRepo: func(repo *mockPaymentsRepository) {
+				repo.payments["payment-1"] = &payments.Payment{
+					ID:           "payment-1",
+					TenantID:     "tenant-1",
+					PaymentType:  payments.PaymentTypeReceived,
+					Amount:       decimal.NewFromInt(10),
+					Currency:     "EUR",
+					ExchangeRate: decimal.NewFromInt(1),
+					BaseAmount:   decimal.NewFromInt(10),
+				}
+			},
+			wantStatus: http.StatusBadRequest,
+			wantErr:    "reversal reason is required",
+		},
+		{
+			name: "already reversed rejected",
+			body: map[string]interface{}{
+				"payment_date": "2026-03-20T00:00:00Z",
+				"reason":       "Duplicate",
+			},
+			setupRepo: func(repo *mockPaymentsRepository) {
+				reversedByPaymentID := "payment-2"
+				repo.payments["payment-1"] = &payments.Payment{
+					ID:                  "payment-1",
+					TenantID:            "tenant-1",
+					PaymentType:         payments.PaymentTypeReceived,
+					Amount:              decimal.NewFromInt(10),
+					Currency:            "EUR",
+					ExchangeRate:        decimal.NewFromInt(1),
+					BaseAmount:          decimal.NewFromInt(10),
+					ReversedByPaymentID: &reversedByPaymentID,
+				}
+			},
+			wantStatus: http.StatusConflict,
+			wantErr:    "already reversed",
+		},
+		{
+			name: "period lock rejected",
+			body: map[string]interface{}{
+				"payment_date": "2026-01-15T00:00:00Z",
+				"reason":       "Duplicate",
+			},
+			setupRepo: func(repo *mockPaymentsRepository) {
+				repo.payments["payment-1"] = &payments.Payment{
+					ID:           "payment-1",
+					TenantID:     "tenant-1",
+					PaymentType:  payments.PaymentTypeReceived,
+					Amount:       decimal.NewFromInt(10),
+					Currency:     "EUR",
+					ExchangeRate: decimal.NewFromInt(1),
+					BaseAmount:   decimal.NewFromInt(10),
+				}
+			},
+			setupTenant: func(repo *mockTenantRepository) {
+				lockDate := "2026-01-31"
+				repo.tenants["tenant-1"].Settings.PeriodLockDate = &lockDate
+			},
+			wantStatus: http.StatusConflict,
+			wantErr:    "period locked through 2026-01-31",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo, tenantRepo := setupPaymentTestHandlers()
+			tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+				ID:         "tenant-1",
+				SchemaName: "tenant_test",
+			}
+			if tt.setupTenant != nil {
+				tt.setupTenant(tenantRepo)
+			}
+			if tt.setupRepo != nil {
+				tt.setupRepo(repo)
+			}
+
+			body, _ := json.Marshal(tt.body)
+			req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/payments/payment-1/reverse", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "paymentID": "payment-1"})
+			req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+			rr := httptest.NewRecorder()
+			h.ReversePayment(rr, req)
+
+			assert.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
+			if tt.wantErr != "" {
+				assert.Contains(t, rr.Body.String(), tt.wantErr)
+				return
+			}
+
+			var result payments.PaymentReversalResult
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+			require.NotNil(t, result.OriginalPayment)
+			require.NotNil(t, result.ReversalPayment)
+			assert.Equal(t, payments.PaymentTypeMade, result.ReversalPayment.PaymentType)
+			assert.Equal(t, result.ReversalPayment.ID, *result.OriginalPayment.ReversedByPaymentID)
+			assert.Equal(t, "payment-1", *result.ReversalPayment.ReversalOfPaymentID)
+			assert.Equal(t, "Duplicate bank import", result.ReversalPayment.ReversalReason)
+			require.Len(t, result.ReversalPayment.Allocations, 1)
+			assert.Equal(t, "invoice-1", result.ReversalPayment.Allocations[0].InvoiceID)
+		})
+	}
+}
+
+func TestImportPayments(t *testing.T) {
+	h, repo, tenantRepo := setupPaymentTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	body := map[string]interface{}{
+		"file_name":   "payments.csv",
+		"csv_content": "payment_number,payment_type,payment_date,amount,invoice_id,allocation_amount\nPAY-001,RECEIVED,2026-03-15,100.00,88888888-8888-4888-8888-888888888888,60.00\n",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/payments/import", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportPayments(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var result payments.ImportPaymentsResult
+	err := json.Unmarshal(rr.Body.Bytes(), &result)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.PaymentsCreated)
+	assert.Equal(t, 0, result.RowsSkipped)
+
+	require.Len(t, repo.payments, 1)
+	for _, payment := range repo.payments {
+		assert.Equal(t, "PAY-001", payment.PaymentNumber)
+		assert.Equal(t, "user-1", payment.CreatedBy)
+		assert.True(t, payment.Amount.Equal(decimal.RequireFromString("100.00")))
+		require.Len(t, repo.allocations[payment.ID], 1)
+		assert.Equal(t, "88888888-8888-4888-8888-888888888888", repo.allocations[payment.ID][0].InvoiceID)
+	}
+}
+
+func TestExportSEPAPayments(t *testing.T) {
+	h, _, tenantRepo := setupPaymentTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/payments/sepa-export", payments.SEPAExportRequest{
+		MessageID:        "MSG-20260331",
+		PaymentInfoID:    "PMTINF-20260331",
+		CreationDateTime: "2026-03-31T09:30:00Z",
+		DebtorName:       "Example OU",
+		DebtorIBAN:       "EE382200221020145685",
+		DebtorBIC:        "HABAEE2X",
+		ExecutionDate:    "2026-04-01",
+		Lines: []payments.SEPACreditTransferLine{{
+			EndToEndID:   "INV-1001",
+			CreditorName: "Supplier AS",
+			CreditorIBAN: "EE471000001020145685",
+			Amount:       decimal.RequireFromString("125.50"),
+			Remittance:   "Invoice INV-1001",
+		}},
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr := httptest.NewRecorder()
+	h.ExportSEPAPayments(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/xml", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "sepa-payments-2026-04-01.xml")
+	assert.Contains(t, rr.Body.String(), `<MsgId>MSG-20260331</MsgId>`)
+	assert.Contains(t, rr.Body.String(), `<InstdAmt Ccy="EUR">125.50</InstdAmt>`)
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/payments/sepa-export", payments.SEPAExportRequest{
+		DebtorName:    "Example OU",
+		DebtorIBAN:    "EE001",
+		ExecutionDate: "2026-04-01",
+		Lines: []payments.SEPACreditTransferLine{{
+			CreditorName: "Supplier AS",
+			CreditorIBAN: "EE471000001020145685",
+			Amount:       decimal.RequireFromString("125.50"),
+		}},
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ExportSEPAPayments(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "debtor_iban")
 }
 
 func TestGetPayment(t *testing.T) {

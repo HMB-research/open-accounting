@@ -124,17 +124,16 @@ test.describe('Demo User - Dashboard Integration', () => {
 	});
 
 	test('should display activity feed', async ({ page }) => {
-		// Activity feed component
-		const activitySection = page.locator('.activity-feed, [class*="activity"]').first();
+		const activitySection = page.getByTestId('activity-feed');
+		await expect(activitySection).toBeVisible({ timeout: 15000 });
 
-		// Activity might be loading or empty - check if element exists
-		const hasActivity = await activitySection.isVisible().catch(() => false);
+		const activityItems = activitySection.getByTestId('activity-item');
+		const itemCount = await activityItems.count();
 
-		if (hasActivity) {
-			await expect(activitySection).toBeVisible();
+		if (itemCount > 0) {
+			await expect(activityItems.first()).toBeVisible();
 		} else {
-			// Activity section might not exist if no recent activity
-			expect(true).toBeTruthy();
+			await expect(activitySection).toContainText(/no recent activity/i);
 		}
 	});
 
@@ -158,21 +157,15 @@ test.describe('Demo User - Dashboard Integration', () => {
 	});
 
 	test('should handle period selector for analytics', async ({ page }) => {
-		// Period selector component
-		const periodSelector = page.locator('.period-selector, select').filter({ hasText: /month|quarter|year/i }).first();
+		const periodSelector = page.getByTestId('period-selector');
+		await expect(periodSelector).toBeVisible({ timeout: 15000 });
 
-		const hasPeriodSelector = await periodSelector.isVisible().catch(() => false);
+		const periodSelect = periodSelector.getByTestId('period-select');
+		await expect(periodSelect).toBeVisible();
+		expect(await periodSelect.locator('option').count()).toBeGreaterThanOrEqual(5);
 
-		if (hasPeriodSelector) {
-			await expect(periodSelector).toBeVisible();
-			// Selector should have options
-			const options = periodSelector.locator('option');
-			const optionCount = await options.count();
-			expect(optionCount).toBeGreaterThan(0);
-		} else {
-			// Period selector might be hidden or use different UI
-			expect(true).toBeTruthy();
-		}
+		await periodSelect.selectOption('THIS_YEAR');
+		await expect(periodSelect).toHaveValue('THIS_YEAR');
 	});
 
 	test('should display cash flow chart', async ({ page }) => {

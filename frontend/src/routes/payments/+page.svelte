@@ -7,7 +7,8 @@
 	import DateRangeFilter from '$lib/components/DateRangeFilter.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
-	import { formatCurrency, formatDate } from '$lib/utils/formatting';
+	import { dateInputToApiTimestamp } from '$lib/utils/dates';
+	import { formatCurrency, formatDate, formStringValue } from '$lib/utils/formatting';
 	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 
 	let payments = $state<Payment[]>([]);
@@ -18,8 +19,10 @@
 	let success = $state('');
 	let actionLoading = $state(false);
 	let showCreatePayment = $state(false);
+	let showReversePayment = $state(false);
 	let showDocumentManager = $state(false);
 	let selectedPaymentForDocuments = $state<Payment | null>(null);
+	let selectedPaymentForReversal = $state<Payment | null>(null);
 	let filterType = $state<PaymentType | ''>('');
 	let filterFromDate = $state('');
 	let filterToDate = $state('');
@@ -32,7 +35,14 @@
 	let newMethod = $state('BANK_TRANSFER');
 	let newReference = $state('');
 	let newNotes = $state('');
-	let selectedInvoices = $state<{ invoice_id: string; amount: string }[]>([]);
+	let allocationCounter = 0;
+	let selectedInvoices = $state<{ key: string; invoice_id: string; amount: string | number }[]>([]);
+
+	// Payment reversal form
+	let reversalDate = $state(new Date().toISOString().split('T')[0]);
+	let reversalReason = $state('');
+	let reversalReference = $state('');
+	let reversalNotes = $state('');
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -76,12 +86,17 @@
 			const payment = await api.createPayment(tenantId, {
 				payment_type: newType,
 				contact_id: newContactId || undefined,
-				payment_date: newPaymentDate,
-				amount: newAmount,
+				payment_date: dateInputToApiTimestamp(newPaymentDate),
+				amount: formStringValue(newAmount),
 				payment_method: newMethod,
 				reference: newReference || undefined,
 				notes: newNotes || undefined,
-				allocations: selectedInvoices.filter((i) => i.invoice_id && parseFloat(i.amount) > 0)
+				allocations: selectedInvoices
+					.filter((i) => i.invoice_id && Number(i.amount) > 0)
+					.map((i) => ({
+						invoice_id: i.invoice_id,
+						amount: formStringValue(i.amount)
+					}))
 			});
 			payments = [payment, ...payments];
 			showCreatePayment = false;
@@ -106,8 +121,48 @@
 		selectedInvoices = [];
 	}
 
+	async function submitPaymentReversal(e: Event) {
+		e.preventDefault();
+		const tenantId = requireTenantId($page, (err) => (error = err));
+		if (!tenantId || !selectedPaymentForReversal) return;
+
+		actionLoading = true;
+		error = '';
+		try {
+			const result = await api.reversePayment(tenantId, selectedPaymentForReversal.id, {
+				payment_date: dateInputToApiTimestamp(reversalDate),
+				reason: formStringValue(reversalReason),
+				reference: reversalReference ? formStringValue(reversalReference) : undefined,
+				notes: reversalNotes ? formStringValue(reversalNotes) : undefined
+			});
+
+			const originalID = result.original_payment.id;
+			const reversalID = result.reversal_payment.id;
+			payments = [
+				result.reversal_payment,
+				...payments.map((payment) =>
+					payment.id === originalID ? result.original_payment : payment
+				).filter((payment) => payment.id !== reversalID)
+			];
+			closeReversePayment();
+			success = m.payments_reverseSuccess({
+				original: result.original_payment.payment_number,
+				reversal: result.reversal_payment.payment_number
+			});
+			setTimeout(() => (success = ''), 3000);
+		} catch (err) {
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
+		}
+	}
+
 	function addInvoiceAllocation() {
-		selectedInvoices = [...selectedInvoices, { invoice_id: '', amount: '0' }];
+		allocationCounter += 1;
+		selectedInvoices = [
+			...selectedInvoices,
+			{ key: `allocation-${allocationCounter}`, invoice_id: '', amount: '0' }
+		];
 	}
 
 	function removeInvoiceAllocation(index: number) {
@@ -160,6 +215,56 @@
 		showDocumentManager = false;
 		selectedPaymentForDocuments = null;
 	}
+
+	function openReversePayment(payment: Payment) {
+		selectedPaymentForReversal = payment;
+		reversalDate = new Date().toISOString().split('T')[0];
+		reversalReason = '';
+		reversalReference = `REVERSAL-${payment.payment_number}`;
+		reversalNotes = '';
+		showReversePayment = true;
+	}
+
+	function closeReversePayment() {
+		showReversePayment = false;
+		selectedPaymentForReversal = null;
+		reversalDate = new Date().toISOString().split('T')[0];
+		reversalReason = '';
+		reversalReference = '';
+		reversalNotes = '';
+	}
+
+	function isReversalPayment(payment: Payment): boolean {
+		return !!payment.reversal_of_payment_id;
+	}
+
+	function isReversedPayment(payment: Payment): boolean {
+		return !!payment.reversed_by_payment_id;
+	}
+
+	function canReversePayment(payment: Payment): boolean {
+		return !isReversalPayment(payment) && !isReversedPayment(payment);
+	}
+
+	function closeCreatePayment() {
+		showCreatePayment = false;
+	}
+
+	function handleCreatePaymentBackdropKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			closeCreatePayment();
+		}
+	}
+
+	function handleReversePaymentBackdropKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			closeReversePayment();
+		}
+	}
+
+	function handleModalKeydown() {
+		// Let keyboard events bubble to the backdrop so Escape still closes the modal.
+	}
 </script>
 
 <svelte:head>
@@ -206,9 +311,20 @@
 			<p>{m.payments_noPayments()} {m.payments_createFirst()}</p>
 		</div>
 	{:else}
-		<div class="card">
+		<div class="card data-table-card">
 			<div class="table-container">
-				<table class="table table-mobile-cards">
+				<table class="table table-mobile-cards readable-table payments-table">
+					<colgroup>
+						<col class="col-number" />
+						<col class="col-type" />
+						<col class="col-contact" />
+						<col class="col-date" />
+						<col class="col-method" />
+						<col class="col-amount" />
+						<col class="col-unallocated" />
+						<col class="col-reference" />
+						<col class="col-actions" />
+					</colgroup>
 					<thead>
 						<tr>
 							<th>{m.payments_number()}</th>
@@ -216,32 +332,50 @@
 							<th class="hide-mobile">{m.payments_contact()}</th>
 							<th>{m.common_date()}</th>
 							<th class="hide-mobile">{m.payments_method()}</th>
-							<th>{m.common_amount()}</th>
-							<th class="hide-mobile">{m.payments_unallocated()}</th>
+							<th class="amount-heading">{m.common_amount()}</th>
+							<th class="amount-heading hide-mobile">{m.payments_unallocated()}</th>
 							<th class="hide-mobile">{m.payments_reference()}</th>
-							<th>{m.common_actions()}</th>
+							<th class="actions-heading">{m.common_actions()}</th>
 						</tr>
 					</thead>
 					<tbody>
-						{#each payments as payment}
+						{#each payments as payment (payment.id)}
 							{@const unallocated = getUnallocatedAmount(payment)}
 							<tr>
-								<td class="number" data-label="Number">{payment.payment_number}</td>
-								<td data-label="Type">
+								<td class="number" data-label="Number">
+									<div class="cell-stack">
+										<span class="cell-primary">{payment.payment_number}</span>
+										{#if isReversalPayment(payment)}
+											<span class="table-state-badge">{m.payments_reversal()}</span>
+										{:else if isReversedPayment(payment)}
+											<span class="table-state-badge">{m.payments_reversed()}</span>
+										{/if}
+									</div>
+								</td>
+								<td class="payment-type" data-label="Type">
 									<StatusBadge status={payment.payment_type} config={typeConfig} />
 								</td>
-								<td class="hide-mobile" data-label="Contact">{getContactName(payment.contact_id)}</td>
-								<td data-label="Date">{formatDate(payment.payment_date)}</td>
-								<td class="hide-mobile" data-label="Method">{getMethodLabel(payment.payment_method || 'OTHER')}</td>
+								<td class="cell-muted hide-mobile" data-label="Contact">{getContactName(payment.contact_id)}</td>
+								<td class="date" data-label="Date">{formatDate(payment.payment_date)}</td>
+								<td class="cell-muted hide-mobile" data-label="Method">{getMethodLabel(payment.payment_method || 'OTHER')}</td>
 								<td class="amount" data-label="Amount">{formatCurrency(payment.amount)}</td>
 								<td class="amount hide-mobile" class:unallocated-warning={unallocated.greaterThan(0)} data-label="Unallocated">
 									{formatCurrency(unallocated)}
 								</td>
-								<td class="reference hide-mobile" data-label="Reference">{payment.reference || '-'}</td>
-								<td class="actions" data-label="Actions">
-									<button type="button" class="btn btn-secondary btn-small" onclick={() => openPaymentDocuments(payment)}>
-										{m.documents_manageAction()}
-									</button>
+								<td class="reference hide-mobile" data-label="Reference">
+									<span class="cell-ellipsis">{payment.reference || '-'}</span>
+								</td>
+								<td class="actions actions-cell" data-label="Actions">
+									<div class="actions-stack">
+										{#if canReversePayment(payment)}
+											<button type="button" class="btn btn-secondary btn-small" onclick={() => openReversePayment(payment)}>
+												{m.payments_reverse()}
+											</button>
+										{/if}
+										<button type="button" class="btn btn-secondary btn-small" onclick={() => openPaymentDocuments(payment)}>
+											{m.documents_manageAction()}
+										</button>
+									</div>
 								</td>
 							</tr>
 						{/each}
@@ -253,10 +387,21 @@
 </div>
 
 {#if showCreatePayment}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showCreatePayment = false)} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-payment-title" tabindex="-1">
+	<div
+		class="modal-backdrop"
+		onclick={closeCreatePayment}
+		onkeydown={handleCreatePaymentBackdropKeydown}
+		role="presentation"
+	>
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={handleModalKeydown}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="create-payment-title"
+			tabindex="-1"
+		>
 			<h2 id="create-payment-title">{m.payments_recordPayment()}</h2>
 			<form onsubmit={createPayment}>
 				<div class="form-row">
@@ -271,7 +416,7 @@
 						<label class="label" for="contact">{m.payments_contact()}</label>
 						<select class="input" id="contact" bind:value={newContactId}>
 							<option value="">{m.payments_noContact()}</option>
-							{#each contacts as contact}
+							{#each contacts as contact (contact.id)}
 								<option value={contact.id}>{contact.name}</option>
 							{/each}
 						</select>
@@ -322,11 +467,11 @@
 				{#if unpaidInvoices.length > 0}
 					<div class="allocations-section">
 						<h3>{m.payments_allocateToInvoices()}</h3>
-						{#each selectedInvoices as allocation, i}
+						{#each selectedInvoices as allocation, i (allocation.key)}
 							<div class="allocation-row">
 								<select class="input" bind:value={allocation.invoice_id}>
 									<option value="">{m.payments_selectInvoice()}</option>
-									{#each unpaidInvoices as invoice}
+									{#each unpaidInvoices as invoice (invoice.id)}
 										<option value={invoice.id}>
 											{invoice.invoice_number} - {formatCurrency(invoice.total)}
 										</option>
@@ -367,10 +512,90 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => (showCreatePayment = false)}>
+					<button type="button" class="btn btn-secondary" onclick={closeCreatePayment}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.payments_recordPayment()}</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+{#if showReversePayment && selectedPaymentForReversal}
+	<div
+		class="modal-backdrop"
+		onclick={closeReversePayment}
+		onkeydown={handleReversePaymentBackdropKeydown}
+		role="presentation"
+	>
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={handleModalKeydown}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="reverse-payment-title"
+			tabindex="-1"
+		>
+			<h2 id="reverse-payment-title">{m.payments_reversePayment()}</h2>
+			<form onsubmit={submitPaymentReversal}>
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="reversal-original">{m.payments_originalPayment()}</label>
+						<input
+							class="input"
+							id="reversal-original"
+							value={selectedPaymentForReversal.payment_number}
+							readonly
+						/>
+					</div>
+					<div class="form-group">
+						<label class="label" for="reversal-date">{m.payments_reversalDate()}</label>
+						<input class="input" type="date" id="reversal-date" bind:value={reversalDate} required />
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="reversal-reason">{m.payments_reversalReason()} *</label>
+					<input
+						class="input"
+						type="text"
+						id="reversal-reason"
+						bind:value={reversalReason}
+						placeholder={m.payments_reversalReasonPlaceholder()}
+						required
+					/>
+				</div>
+
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="reversal-reference">{m.payments_reversalReference()}</label>
+						<input
+							class="input"
+							type="text"
+							id="reversal-reference"
+							bind:value={reversalReference}
+						/>
+					</div>
+					<div class="form-group">
+						<label class="label" for="reversal-notes">{m.payments_reversalNotes()}</label>
+						<input
+							class="input"
+							type="text"
+							id="reversal-notes"
+							bind:value={reversalNotes}
+						/>
+					</div>
+				</div>
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={closeReversePayment}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-danger" disabled={actionLoading}>
+						{m.payments_reverse()}
+					</button>
 				</div>
 			</form>
 		</div>
@@ -405,35 +630,55 @@
 		gap: 1rem;
 	}
 
-	.number {
-		font-family: var(--font-mono);
-		font-weight: 500;
+	.payments-table {
+		min-width: 1120px;
 	}
 
-	.amount {
-		font-family: var(--font-mono);
-		text-align: right;
+	.payments-table .col-number {
+		width: 10%;
 	}
 
-	.reference {
-		font-family: var(--font-mono);
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
+	.payments-table .col-type {
+		width: 11%;
 	}
 
-	.actions {
-		width: 1%;
-		white-space: nowrap;
+	.payments-table .col-contact {
+		width: 12%;
+	}
+
+	.payments-table .col-date {
+		width: 9%;
+	}
+
+	.payments-table .col-method {
+		width: 10%;
+	}
+
+	.payments-table .col-amount {
+		width: 10%;
+	}
+
+	.payments-table .col-unallocated {
+		width: 11%;
+	}
+
+	.payments-table .col-reference {
+		width: 15%;
+	}
+
+	.payments-table .col-actions {
+		width: 12%;
+	}
+
+	@media (max-width: 768px) {
+		.payments-table {
+			min-width: 0;
+		}
 	}
 
 	.unallocated-warning {
 		color: #f59e0b;
-		font-weight: 500;
-	}
-
-	.btn-small {
-		padding: 0.25rem 0.5rem;
-		font-size: 0.75rem;
+		font-weight: 600;
 	}
 
 	.btn-danger {

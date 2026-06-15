@@ -1,3 +1,5 @@
+//go:build integration
+
 package invoicing
 
 import (
@@ -5,15 +7,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
-func TestPostgresRepository_UpdateOverdueStatus(t *testing.T) {
+func newIntegrationGORMRepository(t *testing.T, pool *pgxpool.Pool) *GORMRepository {
+	t.Helper()
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("failed to create gorm db: %v", err)
+	}
+	return NewGORMRepository(gormDB)
+}
+
+func TestGORMRepository_UpdateOverdueStatus(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -91,10 +104,10 @@ func TestPostgresRepository_UpdateOverdueStatus(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_Create(t *testing.T) {
+func TestGORMRepository_Create(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -142,10 +155,10 @@ func TestPostgresRepository_Create(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_List(t *testing.T) {
+func TestGORMRepository_List(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -193,10 +206,10 @@ func TestPostgresRepository_List(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_UpdateStatus(t *testing.T) {
+func TestGORMRepository_UpdateStatus(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -247,10 +260,10 @@ func TestPostgresRepository_UpdateStatus(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_UpdatePayment(t *testing.T) {
+func TestGORMRepository_UpdatePayment(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -307,10 +320,10 @@ func TestPostgresRepository_UpdatePayment(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GenerateNumber(t *testing.T) {
+func TestGORMRepository_GenerateNumber(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -387,10 +400,10 @@ func TestPostgresRepository_GenerateNumber(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_CreateWithLines(t *testing.T) {
+func TestGORMRepository_CreateWithLines(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact
@@ -468,10 +481,10 @@ func TestPostgresRepository_CreateWithLines(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_GetByID_NotFound(t *testing.T) {
+func TestGORMRepository_GetByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Try to get a non-existent invoice
@@ -481,10 +494,10 @@ func TestPostgresRepository_GetByID_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ListWithFilters(t *testing.T) {
+func TestGORMRepository_ListWithFilters(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contacts
@@ -584,10 +597,10 @@ func TestPostgresRepository_ListWithFilters(t *testing.T) {
 	})
 }
 
-func TestPostgresRepository_UpdateStatus_NotFound(t *testing.T) {
+func TestGORMRepository_UpdateStatus_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Try to update status of non-existent invoice
@@ -597,10 +610,10 @@ func TestPostgresRepository_UpdateStatus_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_UpdatePayment_NotFound(t *testing.T) {
+func TestGORMRepository_UpdatePayment_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Try to update payment on non-existent invoice
@@ -610,10 +623,10 @@ func TestPostgresRepository_UpdatePayment_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresRepository_ListWithDateRangeAndSearch(t *testing.T) {
+func TestGORMRepository_ListWithDateRangeAndSearch(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
-	repo := NewPostgresRepository(pool)
+	repo := newIntegrationGORMRepository(t, pool)
 	ctx := context.Background()
 
 	// Create test contact

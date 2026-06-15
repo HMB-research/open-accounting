@@ -96,21 +96,22 @@ Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
       │──────────────────▶│
       │                   │  2. Validate credentials
       │                   │  3. Generate JWT tokens
+      │                   │  4. Persist hashed refresh session
       │◀──────────────────│
       │ access_token      │
       │ refresh_token     │
       │                   │
-      │  4. Optional: create tenant-scoped API token
+      │  5. Optional: create tenant-scoped API token
       │──────────────────▶│
-      │                   │  5. Persist token hash + metadata
+      │                   │  6. Persist token hash + metadata
       │◀──────────────────│
       │ raw api token     │
       │                   │
-      │  6. API call + Bearer token
+      │  7. API call + Bearer token
       │──────────────────▶│
-      │                   │  7. Validate JWT or API token
-      │                   │  8. Extract claims
-      │                   │  9. Check tenant access
+      │                   │  8. Validate JWT or API token
+      │                   │  9. Extract claims
+      │                   │ 10. Check tenant access
       │◀──────────────────│
       │ Response          │
 ```
@@ -127,7 +128,7 @@ Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
 }
 ```
 
-`token_kind` is `access_token` for JWT access tokens and `api_token` for tenant-scoped API tokens used by the CLI or automation.
+`token_kind` is enforced during validation: JWT access tokens must use `access_token`, JWT refresh tokens must use `refresh_token`, and tenant-scoped API tokens use `api_token` after lookup by the API token service. Refresh tokens are accepted only by `/auth/refresh` and `/auth/logout`, access tokens are rejected as refresh tokens, and refresh tokens are stored server-side as hashed sessions so they can be rotated and revoked.
 
 ### API Token Notes
 
@@ -139,7 +140,7 @@ Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
 
 | Role | Description | Permissions |
 |------|-------------|-------------|
-| **Owner** | Organization creator | Full access, cannot be removed |
+| **Owner** | Organization creator | Full access, cannot be removed or assigned by invitation/role update |
 | **Admin** | Administrator | Manage users, settings, full accounting |
 | **Accountant** | Accounting staff | Full accounting, no user management |
 | **Viewer** | Read-only access | View reports only |
@@ -370,7 +371,7 @@ The codebase uses the **Repository Pattern** for data access, providing abstract
 
 ### Repository Interface Structure
 
-Each domain package defines a `Repository` interface and provides a PostgreSQL implementation:
+Each domain package defines a `Repository` interface and provides an ORM-backed implementation:
 
 ```go
 // Repository interface (domain contract)
@@ -381,17 +382,18 @@ type Repository interface {
     // ...
 }
 
-// PostgresRepository implementation
-type PostgresRepository struct {
-    db *pgxpool.Pool
+// GORMRepository implementation
+type GORMRepository struct {
+    db *gorm.DB
 }
 ```
 
 ### Data Access Direction
 
-- `pgx` is the primary runtime path for tenant-domain repositories.
-- `sqlc` is used for shared/public schema tables where generation is straightforward.
-- `gorm` adapters exist behind build tags for legacy or optional paths, and tenant-scoped adapters now use explicit schema-qualified tables instead of relying on `search_path`.
+- ORM-backed repositories are the preferred runtime path for tenant-domain persistence.
+- Direct `pgx`/SQL paths should stay isolated to migrations or repository methods where the ORM cannot express the query clearly.
+- Shared/public schema persistence uses the same ORM-backed repository direction as tenant-domain persistence.
+- Tenant-scoped adapters use explicit schema-qualified tables instead of relying on connection-level `search_path`.
 
 ### Multi-Tenant Schema Qualification
 
@@ -429,24 +431,30 @@ Coverage is tracked in CI and Codecov, but the repository does not currently cla
 
 | Layer | Current Gate |
 |-------|--------------|
-| Backend | `go test ./...` must pass |
-| Backend integration | `go test -tags=integration -race ...` must pass |
+| Backend | `go test -race ./...` must pass without PostgreSQL using Go's default package parallelism |
+| Backend integration | `DATABASE_URL=... make test-integration-coverage` must pass |
 | Frontend | `bun run check` and `bun run test` must pass |
-| E2E | Blocking smoke E2E plus informational demo shards |
+| E2E | Blocking smoke E2E plus blocking local seeded demo shards; optional remote hosted-demo E2E remains informational |
 
 ### Backend Testing
 
 ```bash
 # Unit tests (no database required)
-go test -race -cover ./...
+go test -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...
 
 # Integration tests (requires PostgreSQL)
-DATABASE_URL="postgres://..." go test -tags=integration -race -cover ./...
+DATABASE_URL="postgres://..." make test-integration-coverage
 ```
+
+In CI, the integration gate runs the same Make target across four shards by
+setting `INTEGRATION_SHARD` and `INTEGRATION_SHARDS`. Package selection is weight-aware through
+`scripts/select-integration-packages.sh` and `scripts/integration-package-weights.tsv`, so slower
+ORM/Postgres packages are spread across shards instead of assigned by package-list position. Local
+runs omit shard variables to execute the full tagged package set in one process.
 
 ### Integration Test Structure
 
-Integration tests use the `//go:build integration` build tag and test real database operations:
+Integration tests use the `//go:build integration` build tag and test real database operations. The Makefile discovers only tracked packages with tagged integration tests so local and CI runs avoid re-running unit-only packages under the integration gate:
 
 ```go
 //go:build integration

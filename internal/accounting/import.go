@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 type accountImportRow struct {
@@ -20,6 +22,9 @@ type accountImportPending struct {
 }
 
 var accountImportHeaderAliases = map[string]string{
+	"id":             "id",
+	"account_id":     "id",
+	"account_uuid":   "id",
 	"code":           "code",
 	"account_code":   "code",
 	"number":         "code",
@@ -53,7 +58,7 @@ var accountImportTypeAliases = map[string]AccountType{
 
 // ImportAccountsCSV imports chart-of-account rows from CSV content.
 func (s *Service) ImportAccountsCSV(ctx context.Context, schemaName, tenantID string, req *ImportAccountsRequest) (*ImportAccountsResult, error) {
-	if strings.TrimSpace(req.CSVContent) == "" {
+	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
 		return nil, fmt.Errorf("csv_content is required")
 	}
 
@@ -72,13 +77,15 @@ func (s *Service) ImportAccountsCSV(ctx context.Context, schemaName, tenantID st
 
 	codeToID := make(map[string]string, len(existingAccounts))
 	usedCodes := make(map[string]string, len(existingAccounts))
+	usedIDs := make(map[string]string, len(existingAccounts))
 	for _, account := range existingAccounts {
-		key := normalizedAccountImportKey(account.Code)
-		if key == "" {
-			continue
+		if idKey := normalizedAccountImportKey(account.ID); idKey != "" {
+			usedIDs[idKey] = account.Code
 		}
-		codeToID[key] = account.ID
-		usedCodes[key] = account.Name
+		if key := normalizedAccountImportKey(account.Code); key != "" {
+			codeToID[key] = account.ID
+			usedCodes[key] = account.Name
+		}
 	}
 
 	result := &ImportAccountsResult{
@@ -112,6 +119,19 @@ func (s *Service) ImportAccountsCSV(ctx context.Context, schemaName, tenantID st
 				Message: fmt.Sprintf("duplicate code %q matches existing account %q", createReq.Code, existingName),
 			})
 			continue
+		}
+		if idKey := normalizedAccountImportKey(createReq.ID); idKey != "" {
+			if existingCode, exists := usedIDs[idKey]; exists {
+				result.RowsSkipped++
+				result.Errors = append(result.Errors, ImportAccountsRowError{
+					Row:     row.rowNumber,
+					Code:    createReq.Code,
+					Name:    createReq.Name,
+					Message: fmt.Sprintf("duplicate id %q matches existing account code %q", createReq.ID, existingCode),
+				})
+				continue
+			}
+			usedIDs[idKey] = createReq.Code
 		}
 
 		usedCodes[codeKey] = createReq.Name
@@ -190,9 +210,6 @@ func parseAccountImportRows(content string) ([]accountImportRow, error) {
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("csv file is empty")
-		}
 		return nil, fmt.Errorf("parse csv header: %w", err)
 	}
 
@@ -259,6 +276,15 @@ func parseAccountImportRows(content string) ([]accountImportRow, error) {
 }
 
 func buildCreateAccountRequestFromImportRow(row accountImportRow) (*CreateAccountRequest, string, error) {
+	id := strings.TrimSpace(row.values["id"])
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, "", fmt.Errorf("id must be a valid UUID")
+		}
+		id = parsedID.String()
+	}
+
 	code := strings.TrimSpace(row.values["code"])
 	if code == "" {
 		return nil, "", fmt.Errorf("code is required")
@@ -280,6 +306,7 @@ func buildCreateAccountRequestFromImportRow(row accountImportRow) (*CreateAccoun
 	}
 
 	return &CreateAccountRequest{
+		ID:          id,
 		Code:        code,
 		Name:        name,
 		AccountType: accountType,
@@ -293,16 +320,16 @@ func parseAccountImportType(value string) (AccountType, error) {
 		return "", fmt.Errorf("account_type is required")
 	}
 
+	switch AccountType(strings.ToUpper(strings.TrimSpace(value))) {
+	case AccountTypeAsset, AccountTypeLiability, AccountTypeEquity, AccountTypeRevenue, AccountTypeExpense:
+		return AccountType(strings.ToUpper(strings.TrimSpace(value))), nil
+	}
+
 	if accountType, ok := accountImportTypeAliases[normalized]; ok {
 		return accountType, nil
 	}
 
-	switch AccountType(strings.ToUpper(strings.TrimSpace(value))) {
-	case AccountTypeAsset, AccountTypeLiability, AccountTypeEquity, AccountTypeRevenue, AccountTypeExpense:
-		return AccountType(strings.ToUpper(strings.TrimSpace(value))), nil
-	default:
-		return "", fmt.Errorf("invalid account_type %q", value)
-	}
+	return "", fmt.Errorf("invalid account_type %q", value)
 }
 
 func detectAccountImportDelimiter(content string) rune {

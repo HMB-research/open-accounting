@@ -128,6 +128,8 @@
 					<div class="nav-dropdown">
 						<span class="nav-dropdown-trigger">{m.nav_admin()}</span>
 						<div class="nav-dropdown-menu">
+							<a href={getNavUrl('/documents')}>{m.nav_documents()}</a>
+							<a href={getNavUrl('/migration')}>Migration</a>
 							<a href={getNavUrl('/admin/plugins')}>{m.nav_plugins()}</a>
 							<a href={getNavUrl('/settings')}>{m.nav_settings()}</a>
 						</div>
@@ -244,6 +246,8 @@
 						</button>
 						{#if expandedDropdown === 'admin'}
 							<div class="mobile-nav-accordion-content">
+								<a href={getNavUrl('/documents')} class="mobile-nav-link sub">{m.nav_documents()}</a>
+								<a href={getNavUrl('/migration')} class="mobile-nav-link sub">Migration</a>
 								<a href={getNavUrl('/admin/plugins')} class="mobile-nav-link sub">{m.nav_plugins()}</a>
 								<a href={getNavUrl('/settings')} class="mobile-nav-link sub">{m.nav_settings()}</a>
 							</div>
@@ -285,12 +289,14 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		min-width: 0;
 	}
 
 	.logo {
 		font-size: 1.25rem;
 		font-weight: 700;
 		color: var(--color-primary);
+		min-width: 0;
 	}
 
 	.logo:hover {
@@ -593,8 +599,16 @@
 
 	/* Mobile responsive */
 	@media (max-width: 768px) {
+		.nav-links {
+			display: none !important;
+			width: 0;
+			min-width: 0;
+			overflow: hidden;
+		}
+
 		.mobile-menu-btn {
 			display: block;
+			flex: 0 0 auto;
 		}
 
 		.main-content {

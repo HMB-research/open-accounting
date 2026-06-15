@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -230,7 +231,7 @@ func (h *Handlers) UninstallPlugin(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Param id path string true "Plugin ID"
 // @Param request body plugin.EnablePluginRequest true "Permissions to grant"
-// @Success 200 {object} object{status=string}
+// @Success 200 {object} plugin.Plugin
 // @Failure 400 {object} object{error=string}
 // @Router /admin/plugins/{id}/enable [post]
 func (h *Handlers) EnablePlugin(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +253,13 @@ func (h *Handlers) EnablePlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
+	updated, err := h.pluginService.GetPlugin(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load plugin")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, updated)
 }
 
 // DisablePlugin disables a plugin at the instance level
@@ -262,7 +269,7 @@ func (h *Handlers) EnablePlugin(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Plugin ID"
-// @Success 200 {object} object{status=string}
+// @Success 200 {object} plugin.Plugin
 // @Failure 400 {object} object{error=string}
 // @Router /admin/plugins/{id}/disable [post]
 func (h *Handlers) DisablePlugin(w http.ResponseWriter, r *http.Request) {
@@ -278,7 +285,13 @@ func (h *Handlers) DisablePlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
+	updated, err := h.pluginService.GetPlugin(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load plugin")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, updated)
 }
 
 // GetPlugin returns a plugin by ID
@@ -306,6 +319,70 @@ func (h *Handlers) GetPlugin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, p)
+}
+
+// GetPluginRuntimeStatus returns the backend runtime lifecycle status for a plugin.
+// @Summary Get plugin runtime status
+// @Description Get operator-visible lifecycle, health, crash, and backoff state for a plugin backend runtime
+// @Tags Plugins
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Plugin ID"
+// @Success 200 {object} plugin.PluginRuntimeStatus
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /admin/plugins/{id}/runtime [get]
+func (h *Handlers) GetPluginRuntimeStatus(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid plugin ID")
+		return
+	}
+
+	status, err := h.pluginService.GetPluginRuntimeStatus(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, status)
+}
+
+// RestartPluginRuntime manually restarts a supervised package runtime.
+// @Summary Restart plugin runtime
+// @Description Restart a supervised package plugin runtime and return its updated lifecycle status
+// @Tags Plugins
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Plugin ID"
+// @Success 200 {object} plugin.PluginRuntimeStatus
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 502 {object} object{error=string}
+// @Router /admin/plugins/{id}/runtime/restart [post]
+func (h *Handlers) RestartPluginRuntime(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid plugin ID")
+		return
+	}
+
+	status, err := h.pluginService.RestartPluginRuntime(r.Context(), id)
+	if err != nil {
+		switch {
+		case errors.Is(err, plugin.ErrPluginRuntimeUnavailable):
+			respondError(w, http.StatusBadGateway, err.Error())
+		case errors.Is(err, plugin.ErrPluginRuntimeUnsupported), errors.Is(err, plugin.ErrPluginNotEnabled):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			respondError(w, http.StatusNotFound, err.Error())
+		}
+		return
+	}
+
+	respondJSON(w, http.StatusOK, status)
 }
 
 // GetAllPermissions returns all available plugin permissions
@@ -371,7 +448,7 @@ func (h *Handlers) ListTenantPlugins(w http.ResponseWriter, r *http.Request) {
 // @Param tenantID path string true "Tenant ID"
 // @Param pluginID path string true "Plugin ID"
 // @Param request body plugin.TenantPluginSettingsRequest false "Initial settings"
-// @Success 200 {object} object{status=string}
+// @Success 200 {object} plugin.TenantPlugin
 // @Failure 400 {object} object{error=string}
 // @Router /tenants/{tenantID}/plugins/{pluginID}/enable [post]
 func (h *Handlers) EnableTenantPlugin(w http.ResponseWriter, r *http.Request) {
@@ -413,7 +490,19 @@ func (h *Handlers) EnableTenantPlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
+	plugins, err := h.pluginService.GetTenantPlugins(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load tenant plugin")
+		return
+	}
+	for _, tenantPlugin := range plugins {
+		if tenantPlugin.PluginID == pluginID {
+			respondJSON(w, http.StatusOK, tenantPlugin)
+			return
+		}
+	}
+
+	respondError(w, http.StatusInternalServerError, "Failed to load tenant plugin")
 }
 
 // DisableTenantPlugin disables a plugin for a tenant
@@ -560,4 +649,82 @@ func (h *Handlers) UpdateTenantPluginSettings(w http.ResponseWriter, r *http.Req
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// InvokeTenantPluginRoute proxies a declared plugin runtime route for a tenant.
+// @Summary Invoke tenant plugin route
+// @Description Invoke a manifest-declared plugin runtime route through the out-of-process HTTP plugin runtime
+// @Tags Plugins
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param pluginID path string true "Plugin ID"
+// @Param path path string true "Plugin route path"
+// @Success 200 {object} object
+// @Failure 400 {object} object{error=string}
+// @Failure 403 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 502 {object} object{error=string}
+// @Router /tenants/{tenantID}/plugins/{pluginID}/runtime/{path} [get]
+// @Router /tenants/{tenantID}/plugins/{pluginID}/runtime/{path} [post]
+// @Router /tenants/{tenantID}/plugins/{pluginID}/runtime/{path} [put]
+// @Router /tenants/{tenantID}/plugins/{pluginID}/runtime/{path} [patch]
+// @Router /tenants/{tenantID}/plugins/{pluginID}/runtime/{path} [delete]
+func (h *Handlers) InvokeTenantPluginRoute(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	tenantID, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid tenant ID")
+		return
+	}
+
+	pluginID, err := uuid.Parse(chi.URLParam(r, "pluginID"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid plugin ID")
+		return
+	}
+
+	if _, err := h.tenantService.GetUserRole(r.Context(), tenantID.String(), claims.UserID); err != nil {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
+	runtimePath := "/" + chi.URLParam(r, "*")
+	resp, err := h.pluginService.InvokeTenantPluginRoute(
+		r.Context(),
+		tenantID,
+		pluginID,
+		r.Method,
+		runtimePath,
+		r.URL.RawQuery,
+		r.Header,
+		r.Body,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, plugin.ErrPluginNotEnabled):
+			respondError(w, http.StatusForbidden, "Plugin is not enabled for this tenant")
+		case errors.Is(err, plugin.ErrPluginRouteNotFound):
+			respondError(w, http.StatusNotFound, "Plugin route is not registered")
+		case errors.Is(err, plugin.ErrPluginRuntimeUnavailable), errors.Is(err, plugin.ErrPluginRuntimeUnsupported):
+			respondError(w, http.StatusBadGateway, err.Error())
+		default:
+			respondError(w, http.StatusBadGateway, "Plugin runtime request failed")
+		}
+		return
+	}
+
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(resp.Body)
 }

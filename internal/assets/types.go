@@ -36,6 +36,17 @@ const (
 	DisposalLost     DisposalMethod = "LOST"
 )
 
+const (
+	// SourceTypeAssetDepreciation marks journal entries posted from fixed-asset depreciation.
+	SourceTypeAssetDepreciation = "ASSET_DEPRECIATION"
+	// SourceTypeAssetDisposal marks journal entries posted from fixed-asset disposals.
+	SourceTypeAssetDisposal = "ASSET_DISPOSAL"
+)
+
+var (
+	ErrAssetAccountingInvalid = errors.New("asset accounting configuration is invalid")
+)
+
 // AssetCategory represents a category of fixed assets
 type AssetCategory struct {
 	ID                            string             `json:"id"`
@@ -83,10 +94,11 @@ type FixedAsset struct {
 	LastDepreciationDate    *time.Time      `json:"last_depreciation_date,omitempty"`
 
 	// Disposal Information
-	DisposalDate     *time.Time      `json:"disposal_date,omitempty"`
-	DisposalMethod   *DisposalMethod `json:"disposal_method,omitempty"`
-	DisposalProceeds decimal.Decimal `json:"disposal_proceeds"`
-	DisposalNotes    string          `json:"disposal_notes,omitempty"`
+	DisposalDate           *time.Time      `json:"disposal_date,omitempty"`
+	DisposalMethod         *DisposalMethod `json:"disposal_method,omitempty"`
+	DisposalProceeds       decimal.Decimal `json:"disposal_proceeds"`
+	DisposalNotes          string          `json:"disposal_notes,omitempty"`
+	DisposalJournalEntryID *string         `json:"disposal_journal_entry_id,omitempty"`
 
 	// Account Links
 	AssetAccountID                *string `json:"asset_account_id,omitempty"`
@@ -198,6 +210,30 @@ type CreateAssetRequest struct {
 	UserID                        string             `json:"-"`
 }
 
+// ImportAssetsRequest contains CSV payload for fixed-asset migration.
+type ImportAssetsRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+	UserID     string `json:"-"`
+}
+
+// ImportAssetsResult summarizes a fixed-asset CSV import.
+type ImportAssetsResult struct {
+	FileName      string                 `json:"file_name,omitempty"`
+	RowsProcessed int                    `json:"rows_processed"`
+	AssetsCreated int                    `json:"assets_created"`
+	RowsSkipped   int                    `json:"rows_skipped"`
+	Errors        []ImportAssetsRowError `json:"errors,omitempty"`
+}
+
+// ImportAssetsRowError describes a row-level fixed-asset import failure.
+type ImportAssetsRowError struct {
+	Row         int    `json:"row"`
+	AssetNumber string `json:"asset_number,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Message     string `json:"message"`
+}
+
 // UpdateAssetRequest is the request to update a fixed asset
 type UpdateAssetRequest struct {
 	Name                          string             `json:"name"`
@@ -215,11 +251,13 @@ type UpdateAssetRequest struct {
 
 // DisposeAssetRequest is the request to dispose of an asset
 type DisposeAssetRequest struct {
-	DisposalDate     time.Time       `json:"disposal_date"`
-	DisposalMethod   DisposalMethod  `json:"disposal_method"`
-	DisposalProceeds decimal.Decimal `json:"disposal_proceeds,omitempty"`
-	DisposalNotes    string          `json:"disposal_notes,omitempty"`
-	UserID           string          `json:"-"`
+	DisposalDate              time.Time       `json:"disposal_date"`
+	DisposalMethod            DisposalMethod  `json:"disposal_method"`
+	DisposalProceeds          decimal.Decimal `json:"disposal_proceeds,omitempty"`
+	DisposalNotes             string          `json:"disposal_notes,omitempty"`
+	DisposalProceedsAccountID *string         `json:"disposal_proceeds_account_id,omitempty"`
+	DisposalGainLossAccountID *string         `json:"disposal_gain_loss_account_id,omitempty"`
+	UserID                    string          `json:"-"`
 }
 
 // CreateCategoryRequest is the request to create an asset category

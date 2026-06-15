@@ -14,7 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/assets"
+	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -163,6 +165,22 @@ func (m *mockAssetsRepository) UpdateStatus(ctx context.Context, schemaName, ten
 	return errAssetNotFound
 }
 
+func (m *mockAssetsRepository) UpdateDisposal(ctx context.Context, schemaName string, asset *assets.FixedAsset, status assets.AssetStatus) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	if a, ok := m.assets[asset.ID]; ok && a.TenantID == asset.TenantID && a.Status == assets.AssetStatusActive {
+		a.Status = status
+		a.DisposalDate = asset.DisposalDate
+		a.DisposalMethod = asset.DisposalMethod
+		a.DisposalProceeds = asset.DisposalProceeds
+		a.DisposalNotes = asset.DisposalNotes
+		a.DisposalJournalEntryID = asset.DisposalJournalEntryID
+		return nil
+	}
+	return errAssetNotFound
+}
+
 func (m *mockAssetsRepository) Delete(ctx context.Context, schemaName, tenantID, assetID string) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -211,7 +229,7 @@ func (m *mockAssetsRepository) UpdateAssetDepreciation(ctx context.Context, sche
 
 func setupAssetsTestHandlers() (*Handlers, *mockAssetsRepository, *mockTenantRepository) {
 	assetsRepo := newMockAssetsRepository()
-	assetsSvc := assets.NewServiceWithRepository(assetsRepo)
+	assetsSvc := assets.NewServiceWithRepositoryAndAccounting(assetsRepo, newAssetHandlerAccounting())
 
 	tenantRepo := newMockTenantRepository()
 	tenantSvc := tenant.NewServiceWithRepository(tenantRepo)
@@ -221,6 +239,49 @@ func setupAssetsTestHandlers() (*Handlers, *mockAssetsRepository, *mockTenantRep
 		tenantService: tenantSvc,
 	}
 	return h, assetsRepo, tenantRepo
+}
+
+type assetHandlerAccounting struct {
+	accounts  map[string]*accounting.Account
+	postedIDs []string
+}
+
+func newAssetHandlerAccounting() *assetHandlerAccounting {
+	return &assetHandlerAccounting{
+		accounts: map[string]*accounting.Account{
+			"fixed-assets":             {ID: "fixed-assets", Code: "FA", AccountType: accounting.AccountTypeAsset},
+			"accumulated-depreciation": {ID: "accumulated-depreciation", Code: "ACC-DEP", AccountType: accounting.AccountTypeAsset},
+			"cash-account":             {ID: "cash-account", Code: "CASH", AccountType: accounting.AccountTypeAsset},
+			"asset-disposal-gain":      {ID: "asset-disposal-gain", Code: "GAIN", AccountType: accounting.AccountTypeRevenue},
+			"asset-disposal-loss":      {ID: "asset-disposal-loss", Code: "LOSS", AccountType: accounting.AccountTypeExpense},
+			"depreciation-expense":     {ID: "depreciation-expense", Code: "DEP-EXP", AccountType: accounting.AccountTypeExpense},
+		},
+	}
+}
+
+func (a *assetHandlerAccounting) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	accounts := make([]accounting.Account, 0, len(a.accounts))
+	for _, account := range a.accounts {
+		accounts = append(accounts, *account)
+	}
+	return accounts, nil
+}
+
+func (a *assetHandlerAccounting) GetAccount(_ context.Context, _, _, accountID string) (*accounting.Account, error) {
+	account, ok := a.accounts[accountID]
+	if !ok {
+		return nil, errors.New("account not found")
+	}
+	return account, nil
+}
+
+func (a *assetHandlerAccounting) CreateJournalEntry(_ context.Context, _, tenantID string, _ *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error) {
+	return &accounting.JournalEntry{ID: "asset-je-1", TenantID: tenantID, Status: accounting.StatusDraft}, nil
+}
+
+func (a *assetHandlerAccounting) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
+	a.postedIDs = append(a.postedIDs, entryID)
+	return nil
 }
 
 func TestListAssetCategories(t *testing.T) {
@@ -329,6 +390,52 @@ func TestGetAssetCategory(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, rr.Code)
 		})
 	}
+}
+
+func TestDeleteAssetCategory(t *testing.T) {
+	h, repo, tenantRepo := setupAssetsTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.categories["cat-1"] = &assets.AssetCategory{
+		ID:       "cat-1",
+		TenantID: "tenant-1",
+		Name:     "Computers",
+	}
+
+	tests := []struct {
+		name       string
+		categoryID string
+		wantStatus int
+	}{
+		{
+			name:       "delete existing category",
+			categoryID: "cat-1",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "delete missing category",
+			categoryID: "cat-999",
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodDelete, "/tenants/tenant-1/assets/categories/"+tt.categoryID, nil)
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "categoryID": tt.categoryID})
+			req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+			rr := httptest.NewRecorder()
+			h.DeleteAssetCategory(rr, req)
+
+			assert.Equal(t, tt.wantStatus, rr.Code)
+		})
+	}
+	assert.NotContains(t, repo.categories, "cat-1")
 }
 
 func TestListAssets(t *testing.T) {
@@ -458,6 +565,47 @@ func TestCreateAsset(t *testing.T) {
 				assert.Equal(t, "New Laptop", result.Name)
 			}
 		})
+	}
+}
+
+func TestImportAssets(t *testing.T) {
+	h, repo, tenantRepo := setupAssetsTestHandlers()
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	body := map[string]interface{}{
+		"file_name":   "assets.csv",
+		"csv_content": "asset_number,name,status,purchase_date,purchase_cost,accumulated_depreciation,book_value\nLEG-001,Laptop,ACTIVE,2025-01-10,1200.00,300.00,900.00\n",
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/import", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ImportAssets(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var result assets.ImportAssetsResult
+	err := json.Unmarshal(rr.Body.Bytes(), &result)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.AssetsCreated)
+	assert.Equal(t, 0, result.RowsSkipped)
+
+	require.Len(t, repo.assets, 1)
+	for _, asset := range repo.assets {
+		assert.Equal(t, "LEG-001", asset.AssetNumber)
+		assert.Equal(t, "Laptop", asset.Name)
+		assert.Equal(t, assets.AssetStatusActive, asset.Status)
+		assert.Equal(t, "user-1", asset.CreatedBy)
+		assert.True(t, asset.BookValue.Equal(decimal.RequireFromString("900.00")))
 	}
 }
 
@@ -620,6 +768,12 @@ func TestActivateAsset(t *testing.T) {
 		UsefulLifeMonths: 36,
 		ResidualValue:    decimal.NewFromInt(100),
 	}
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-asset-activation",
+		EntityType:   documents.EntityTypeAsset,
+		EntityID:     "asset-1",
+		DocumentType: documents.DocumentTypeAssetRecord,
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/asset-1/activate", nil)
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "assetID": "asset-1"})
@@ -631,6 +785,58 @@ func TestActivateAsset(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
+func TestActivateAssetRequiresApprovedAssetEvidence(t *testing.T) {
+	h, repo, tenantRepo := setupAssetsTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.assets["asset-1"] = &assets.FixedAsset{
+		ID:               "asset-1",
+		TenantID:         "tenant-1",
+		Name:             "Dell Laptop",
+		Status:           assets.AssetStatusDraft,
+		PurchaseDate:     time.Now(),
+		PurchaseCost:     decimal.NewFromInt(1500),
+		UsefulLifeMonths: 36,
+		ResidualValue:    decimal.NewFromInt(100),
+	}
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeAsset,
+		EntityID:     "asset-1",
+		DocumentType: documents.DocumentTypeAssetRecord,
+		FileName:     "asset-record.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/asset-1/activate", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "assetID": "asset-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+
+	rr := httptest.NewRecorder()
+	h.ActivateAsset(rr, req)
+
+	assertAssetEvidenceConflict(t, rr, "asset-1", "approved asset activation evidence is required", "doc-1")
+	assert.Equal(t, assets.AssetStatusDraft, repo.assets["asset-1"].Status)
+
+	docRepo.docs["doc-1"].ReviewStatus = documents.ReviewStatusApproved
+
+	rr = httptest.NewRecorder()
+	h.ActivateAsset(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, assets.AssetStatusActive, repo.assets["asset-1"].Status)
+}
+
 func TestDisposeAsset(t *testing.T) {
 	h, repo, tenantRepo := setupAssetsTestHandlers()
 
@@ -640,18 +846,30 @@ func TestDisposeAsset(t *testing.T) {
 	}
 
 	repo.assets["asset-1"] = &assets.FixedAsset{
-		ID:           "asset-1",
-		TenantID:     "tenant-1",
-		Name:         "Dell Laptop",
-		Status:       assets.AssetStatusActive,
-		PurchaseDate: time.Now().AddDate(-2, 0, 0),
-		PurchaseCost: decimal.NewFromInt(1500),
+		ID:                            "asset-1",
+		TenantID:                      "tenant-1",
+		Name:                          "Dell Laptop",
+		Status:                        assets.AssetStatusActive,
+		PurchaseDate:                  time.Now().AddDate(-2, 0, 0),
+		PurchaseCost:                  decimal.NewFromInt(1500),
+		AccumulatedDepreciation:       decimal.NewFromInt(900),
+		BookValue:                     decimal.NewFromInt(600),
+		AssetAccountID:                stringPtr("fixed-assets"),
+		AccumulatedDepreciationAcctID: stringPtr("accumulated-depreciation"),
 	}
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-asset-disposal",
+		EntityType:   documents.EntityTypeAsset,
+		EntityID:     "asset-1",
+		DocumentType: documents.DocumentTypeSupportingDocument,
+	})
 
 	body := map[string]interface{}{
-		"disposal_date":     time.Now().Format(time.RFC3339),
-		"disposal_method":   "SOLD",
-		"disposal_proceeds": "500.00",
+		"disposal_date":                 time.Now().Format(time.RFC3339),
+		"disposal_method":               "SOLD",
+		"disposal_proceeds":             "500.00",
+		"disposal_proceeds_account_id":  "cash-account",
+		"disposal_gain_loss_account_id": "asset-disposal-loss",
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -664,6 +882,101 @@ func TestDisposeAsset(t *testing.T) {
 	h.DisposeAsset(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, assets.AssetStatusSold, repo.assets["asset-1"].Status)
+	require.NotNil(t, repo.assets["asset-1"].DisposalMethod)
+	assert.Equal(t, assets.DisposalSold, *repo.assets["asset-1"].DisposalMethod)
+	assert.True(t, repo.assets["asset-1"].DisposalProceeds.Equal(decimal.RequireFromString("500.00")))
+	require.NotNil(t, repo.assets["asset-1"].DisposalJournalEntryID)
+}
+
+func TestDisposeAssetRequiresApprovedAssetEvidence(t *testing.T) {
+	h, repo, tenantRepo := setupAssetsTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+
+	repo.assets["asset-1"] = &assets.FixedAsset{
+		ID:                            "asset-1",
+		TenantID:                      "tenant-1",
+		Name:                          "Dell Laptop",
+		Status:                        assets.AssetStatusActive,
+		PurchaseDate:                  time.Now().AddDate(-2, 0, 0),
+		PurchaseCost:                  decimal.NewFromInt(1500),
+		AccumulatedDepreciation:       decimal.NewFromInt(900),
+		BookValue:                     decimal.NewFromInt(600),
+		AssetAccountID:                stringPtr("fixed-assets"),
+		AccumulatedDepreciationAcctID: stringPtr("accumulated-depreciation"),
+	}
+
+	docRepo.docs["doc-1"] = &documents.Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeAsset,
+		EntityID:     "asset-1",
+		DocumentType: documents.DocumentTypeSupportingDocument,
+		FileName:     "asset-disposal-approval.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now(),
+	}
+
+	newRequest := func() *http.Request {
+		body := map[string]interface{}{
+			"disposal_date":                 "2026-05-01T00:00:00Z",
+			"disposal_method":               "SOLD",
+			"disposal_proceeds":             "500.00",
+			"disposal_proceeds_account_id":  "cash-account",
+			"disposal_gain_loss_account_id": "asset-disposal-loss",
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/asset-1/dispose", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "assetID": "asset-1"})
+		return req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+	}
+
+	rr := httptest.NewRecorder()
+	h.DisposeAsset(rr, newRequest())
+
+	assertAssetEvidenceConflict(t, rr, "asset-1", "approved asset disposal evidence is required", "doc-1")
+	assert.Equal(t, assets.AssetStatusActive, repo.assets["asset-1"].Status)
+
+	docRepo.docs["doc-1"].ReviewStatus = documents.ReviewStatusApproved
+
+	rr = httptest.NewRecorder()
+	h.DisposeAsset(rr, newRequest())
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, assets.AssetStatusSold, repo.assets["asset-1"].Status)
+	require.NotNil(t, repo.assets["asset-1"].DisposalDate)
+	assert.Equal(t, "2026-05-01", repo.assets["asset-1"].DisposalDate.Format("2006-01-02"))
+	require.NotNil(t, repo.assets["asset-1"].DisposalJournalEntryID)
+}
+
+func assertAssetEvidenceConflict(t *testing.T, rr *httptest.ResponseRecorder, assetID, message, documentID string) {
+	t.Helper()
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, message)
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeAsset, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, assetID, conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_unapproved", conflict.RemediationActions[0].Code)
+	assert.Equal(t, documentID, conflict.RemediationActions[0].DocumentID)
+	assert.Equal(t, "oa documents review --id "+documentID+" --status approved", conflict.RemediationActions[0].CLICommand)
 }
 
 func TestRecordDepreciation(t *testing.T) {
@@ -675,16 +988,18 @@ func TestRecordDepreciation(t *testing.T) {
 	}
 
 	repo.assets["asset-1"] = &assets.FixedAsset{
-		ID:                 "asset-1",
-		TenantID:           "tenant-1",
-		Name:               "Dell Laptop",
-		Status:             assets.AssetStatusActive,
-		PurchaseDate:       time.Now().AddDate(-1, 0, 0),
-		PurchaseCost:       decimal.NewFromInt(1500),
-		UsefulLifeMonths:   36,
-		ResidualValue:      decimal.NewFromInt(150),
-		DepreciationMethod: assets.DepreciationStraightLine,
-		BookValue:          decimal.NewFromInt(1500),
+		ID:                            "asset-1",
+		TenantID:                      "tenant-1",
+		Name:                          "Dell Laptop",
+		Status:                        assets.AssetStatusActive,
+		PurchaseDate:                  time.Now().AddDate(-1, 0, 0),
+		PurchaseCost:                  decimal.NewFromInt(1500),
+		UsefulLifeMonths:              36,
+		ResidualValue:                 decimal.NewFromInt(150),
+		DepreciationMethod:            assets.DepreciationStraightLine,
+		BookValue:                     decimal.NewFromInt(1500),
+		DepreciationExpenseAccountID:  stringPtr("depreciation-expense"),
+		AccumulatedDepreciationAcctID: stringPtr("accumulated-depreciation"),
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/assets/asset-1/depreciate", nil)

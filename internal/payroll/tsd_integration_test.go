@@ -1,3 +1,5 @@
+//go:build integration
+
 package payroll
 
 import (
@@ -324,7 +326,7 @@ func TestService_ListTSD(t *testing.T) {
 	}
 
 	// List TSD declarations
-	declarations, err := service.ListTSD(ctx, tenant.SchemaName, tenant.ID)
+	declarations, err := service.ListTSD(ctx, tenant.SchemaName, tenant.ID, TSDListFilter{})
 	if err != nil {
 		t.Fatalf("ListTSD failed: %v", err)
 	}
@@ -343,6 +345,40 @@ func TestService_ListTSD(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected to find current period TSD in list")
+	}
+
+	filtered, err := service.ListTSD(ctx, tenant.SchemaName, tenant.ID, TSDListFilter{
+		Year:  now.Year(),
+		Month: int(now.Month()),
+	})
+	if err != nil {
+		t.Fatalf("ListTSD filtered failed: %v", err)
+	}
+	if len(filtered) != 1 {
+		t.Fatalf("expected exactly one filtered TSD declaration, got %d", len(filtered))
+	}
+	if filtered[0].PeriodYear != now.Year() || filtered[0].PeriodMonth != int(now.Month()) {
+		t.Fatalf("expected filtered current period, got %d-%02d", filtered[0].PeriodYear, filtered[0].PeriodMonth)
+	}
+
+	futureYear, err := service.ListTSD(ctx, tenant.SchemaName, tenant.ID, TSDListFilter{Year: now.Year() + 1})
+	if err != nil {
+		t.Fatalf("ListTSD future year failed: %v", err)
+	}
+	if len(futureYear) != 0 {
+		t.Fatalf("expected no future-year TSD declarations, got %d", len(futureYear))
+	}
+
+	otherMonth := int(now.Month())%12 + 1
+	wrongMonth, err := service.ListTSD(ctx, tenant.SchemaName, tenant.ID, TSDListFilter{
+		Year:  now.Year(),
+		Month: otherMonth,
+	})
+	if err != nil {
+		t.Fatalf("ListTSD wrong month failed: %v", err)
+	}
+	if len(wrongMonth) != 0 {
+		t.Fatalf("expected no wrong-month TSD declarations, got %d", len(wrongMonth))
 	}
 }
 
@@ -531,7 +567,7 @@ func TestService_GenerateTSD_ReplacesExisting(t *testing.T) {
 	}
 
 	// Verify only one TSD exists for this period
-	declarations, err := service.ListTSD(ctx, tenant.SchemaName, tenant.ID)
+	declarations, err := service.ListTSD(ctx, tenant.SchemaName, tenant.ID, TSDListFilter{})
 	if err != nil {
 		t.Fatalf("ListTSD failed: %v", err)
 	}

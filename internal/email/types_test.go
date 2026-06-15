@@ -12,8 +12,11 @@ func TestTemplateTypeConstants(t *testing.T) {
 		expected     string
 	}{
 		{TemplateInvoiceSend, "INVOICE_SEND"},
+		{TemplateQuoteSend, "QUOTE_SEND"},
+		{TemplateOrderConfirm, "ORDER_CONFIRM"},
 		{TemplatePaymentReceipt, "PAYMENT_RECEIPT"},
 		{TemplateOverdueReminder, "OVERDUE_REMINDER"},
+		{TemplateDocumentRetentionReminder, "DOCUMENT_RETENTION_REMINDER"},
 	}
 
 	for _, tt := range tests {
@@ -296,13 +299,89 @@ func TestSendPaymentReceiptRequest_Validate(t *testing.T) {
 	}
 }
 
+func TestSendQuoteRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		request     SendQuoteRequest
+		expectError bool
+	}{
+		{
+			name: "Valid request",
+			request: SendQuoteRequest{
+				RecipientEmail: "customer@example.com",
+				AttachPDF:      true,
+			},
+			expectError: false,
+		},
+		{
+			name: "Missing recipient email",
+			request: SendQuoteRequest{
+				RecipientName: "Customer",
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.request.Validate()
+			if tt.expectError && err == nil {
+				t.Error("Validate() expected error, got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Validate() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestSendOrderRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		request     SendOrderRequest
+		expectError bool
+	}{
+		{
+			name: "Valid request",
+			request: SendOrderRequest{
+				RecipientEmail:          "customer@example.com",
+				AttachPDF:               true,
+				RequireApprovedEvidence: true,
+			},
+			expectError: false,
+		},
+		{
+			name: "Missing recipient email",
+			request: SendOrderRequest{
+				RecipientName: "Customer",
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.request.Validate()
+			if tt.expectError && err == nil {
+				t.Error("Validate() expected error, got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Validate() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestDefaultTemplates(t *testing.T) {
 	templates := DefaultTemplates()
 
 	expectedTypes := []TemplateType{
 		TemplateInvoiceSend,
+		TemplateQuoteSend,
+		TemplateOrderConfirm,
 		TemplatePaymentReceipt,
 		TemplateOverdueReminder,
+		TemplateDocumentRetentionReminder,
 	}
 
 	for _, tt := range expectedTypes {
@@ -352,12 +431,38 @@ func TestDefaultTemplates_ContainPlaceholders(t *testing.T) {
 		}
 	}
 
+	// Quote template should have quote-specific placeholders
+	quoteTemplate := templates[TemplateQuoteSend]
+	quotePlaceholders := []string{"{{.QuoteNumber}}", "{{.ContactName}}", "{{.TotalAmount}}", "{{.QuoteDate}}", "{{.ValidUntil}}"}
+	for _, ph := range quotePlaceholders {
+		if !containsString(quoteTemplate.BodyHTML, ph) && !containsString(quoteTemplate.Subject, ph) {
+			t.Errorf("Quote template missing placeholder: %s", ph)
+		}
+	}
+
+	// Order template should have order-specific placeholders
+	orderTemplate := templates[TemplateOrderConfirm]
+	orderPlaceholders := []string{"{{.OrderNumber}}", "{{.ContactName}}", "{{.TotalAmount}}", "{{.OrderDate}}", "{{.ExpectedDelivery}}"}
+	for _, ph := range orderPlaceholders {
+		if !containsString(orderTemplate.BodyHTML, ph) && !containsString(orderTemplate.Subject, ph) {
+			t.Errorf("Order template missing placeholder: %s", ph)
+		}
+	}
+
 	// Overdue template should have overdue-specific placeholders
 	overdueTemplate := templates[TemplateOverdueReminder]
 	overduePlaceholders := []string{"{{.InvoiceNumber}}", "{{.DaysOverdue}}"}
 	for _, ph := range overduePlaceholders {
 		if !containsString(overdueTemplate.BodyHTML, ph) && !containsString(overdueTemplate.Subject, ph) {
 			t.Errorf("Overdue template missing placeholder: %s", ph)
+		}
+	}
+
+	retentionTemplate := templates[TemplateDocumentRetentionReminder]
+	retentionPlaceholders := []string{"{{.RetentionActionCount}}", "{{.RetentionAsOfDate}}", "{{range .RetentionActions}}"}
+	for _, ph := range retentionPlaceholders {
+		if !containsString(retentionTemplate.BodyHTML, ph) && !containsString(retentionTemplate.Subject, ph) {
+			t.Errorf("Retention template missing placeholder: %s", ph)
 		}
 	}
 }
@@ -522,18 +627,24 @@ func TestTestSMTPResponse_JSONSerialization(t *testing.T) {
 
 func TestTemplateData_Fields(t *testing.T) {
 	data := TemplateData{
-		CompanyName:   "Acme Corp",
-		ContactName:   "John Doe",
-		Message:       "Custom message",
-		InvoiceNumber: "INV-2025-001",
-		TotalAmount:   "1000.00",
-		Currency:      "EUR",
-		DueDate:       "2025-02-01",
-		IssueDate:     "2025-01-01",
-		DaysOverdue:   15,
-		Amount:        "500.00",
-		PaymentDate:   "2025-01-15",
-		Reference:     "PAY-001",
+		CompanyName:      "Acme Corp",
+		ContactName:      "John Doe",
+		Message:          "Custom message",
+		InvoiceNumber:    "INV-2025-001",
+		TotalAmount:      "1000.00",
+		Currency:         "EUR",
+		DueDate:          "2025-02-01",
+		IssueDate:        "2025-01-01",
+		DaysOverdue:      15,
+		QuoteNumber:      "QUO-2025-001",
+		QuoteDate:        "2025-01-05",
+		ValidUntil:       "2025-02-05",
+		OrderNumber:      "ORD-2025-001",
+		OrderDate:        "2025-01-06",
+		ExpectedDelivery: "2025-01-20",
+		Amount:           "500.00",
+		PaymentDate:      "2025-01-15",
+		Reference:        "PAY-001",
 	}
 
 	if data.CompanyName != "Acme Corp" {
@@ -689,6 +800,26 @@ func TestService_RenderTemplate(t *testing.T) {
 			expectedSubject: "Overdue: INV-002",
 			checkBodyHTML: func(body string) bool {
 				return containsString(body, "INV-002") && containsString(body, "15")
+			},
+		},
+		{
+			name: "Document retention reminder template",
+			template: EmailTemplate{
+				TemplateType: TemplateDocumentRetentionReminder,
+				Subject:      "Retention: {{.RetentionActionCount}} actions",
+				BodyHTML:     "{{range .RetentionActions}}<p>{{.Action}} {{.FileName}} {{.Message}}</p>{{end}}",
+				BodyText:     "{{range .RetentionActions}}{{.Action}} {{.FileName}}\n{{end}}",
+			},
+			data: TemplateData{
+				RetentionActionCount: 1,
+				RetentionActions: []RetentionReminderTemplateAction{
+					{Action: "expired_retention", FileName: "statement.pdf", Message: "Retention expired"},
+				},
+			},
+			expectError:     false,
+			expectedSubject: "Retention: 1 actions",
+			checkBodyHTML: func(body string) bool {
+				return containsString(body, "expired_retention") && containsString(body, "statement.pdf")
 			},
 		},
 		{

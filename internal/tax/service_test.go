@@ -3,6 +3,7 @@ package tax
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,19 +14,23 @@ import (
 
 // MockRepository implements Repository for testing
 type MockRepository struct {
-	ensureSchemaErr        error
 	queryVATDataResult     []VATAggregateRow
 	queryVATDataErr        error
+	queryKMDINFDataResult  []KMDINFReportRow
+	queryKMDINFDataErr     error
+	queryEUVATOSSResult    []EUVATOSSReportRow
+	queryEUVATOSSErr       error
 	saveDeclarationErr     error
 	getDeclarationResult   *KMDDeclaration
+	existingDeclarations   map[string]*KMDDeclaration
 	getDeclarationErr      error
 	listDeclarationsResult []KMDDeclaration
 	listDeclarationsErr    error
 	savedDeclarations      []*KMDDeclaration
-}
-
-func (m *MockRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	return m.ensureSchemaErr
+	markSubmittedErr       error
+	updateStatusErr        error
+	markedSubmittedIDs     []string
+	updatedStatuses        map[string]string
 }
 
 func (m *MockRepository) QueryVATData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]VATAggregateRow, error) {
@@ -33,6 +38,20 @@ func (m *MockRepository) QueryVATData(ctx context.Context, schemaName, tenantID 
 		return nil, m.queryVATDataErr
 	}
 	return m.queryVATDataResult, nil
+}
+
+func (m *MockRepository) QueryKMDINFData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, threshold decimal.Decimal) ([]KMDINFReportRow, error) {
+	if m.queryKMDINFDataErr != nil {
+		return nil, m.queryKMDINFDataErr
+	}
+	return m.queryKMDINFDataResult, nil
+}
+
+func (m *MockRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, includeB2B bool) ([]EUVATOSSReportRow, error) {
+	if m.queryEUVATOSSErr != nil {
+		return nil, m.queryEUVATOSSErr
+	}
+	return m.queryEUVATOSSResult, nil
 }
 
 func (m *MockRepository) SaveDeclaration(ctx context.Context, schemaName string, decl *KMDDeclaration) error {
@@ -47,6 +66,9 @@ func (m *MockRepository) GetDeclaration(ctx context.Context, schemaName, tenantI
 	if m.getDeclarationErr != nil {
 		return nil, m.getDeclarationErr
 	}
+	if m.existingDeclarations != nil {
+		return m.existingDeclarations[fmt.Sprintf("%04d-%02d", year, month)], nil
+	}
 	return m.getDeclarationResult, nil
 }
 
@@ -55,6 +77,25 @@ func (m *MockRepository) ListDeclarations(ctx context.Context, schemaName, tenan
 		return nil, m.listDeclarationsErr
 	}
 	return m.listDeclarationsResult, nil
+}
+
+func (m *MockRepository) MarkKMDSubmitted(ctx context.Context, schemaName, tenantID, declarationID string, submittedAt time.Time) error {
+	if m.markSubmittedErr != nil {
+		return m.markSubmittedErr
+	}
+	m.markedSubmittedIDs = append(m.markedSubmittedIDs, declarationID)
+	return nil
+}
+
+func (m *MockRepository) UpdateKMDStatus(ctx context.Context, schemaName, tenantID, declarationID, status string, updatedAt time.Time) error {
+	if m.updateStatusErr != nil {
+		return m.updateStatusErr
+	}
+	if m.updatedStatuses == nil {
+		m.updatedStatuses = make(map[string]string)
+	}
+	m.updatedStatuses[declarationID] = status
+	return nil
 }
 
 func TestService_AggregateVATByCode(t *testing.T) {
@@ -77,6 +118,53 @@ func TestService_AggregateVATByCode(t *testing.T) {
 	assert.NotNil(t, row1)
 	assert.Equal(t, "1500", row1.TaxBase.String())
 	assert.Equal(t, "330", row1.TaxAmount.String())
+}
+
+func TestService_MarkKMDStatusTransitions(t *testing.T) {
+	repo := &MockRepository{
+		existingDeclarations: map[string]*KMDDeclaration{
+			"2026-03": {
+				ID:       "kmd-1",
+				TenantID: "tenant-1",
+				Year:     2026,
+				Month:    3,
+				Status:   KMDStatusDraft,
+			},
+		},
+	}
+	service := NewServiceWithRepository(repo)
+
+	err := service.MarkKMDSubmitted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+	require.NoError(t, err)
+	require.Equal(t, []string{"kmd-1"}, repo.markedSubmittedIDs)
+
+	err = service.MarkKMDAccepted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+	require.NoError(t, err)
+	require.Equal(t, KMDStatusAccepted, repo.updatedStatuses["kmd-1"])
+}
+
+func TestService_MarkKMDStatusTransitionsErrors(t *testing.T) {
+	service := NewServiceWithRepository(&MockRepository{})
+	err := service.MarkKMDSubmitted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+	require.ErrorIs(t, err, ErrKMDDeclarationNotFound)
+
+	service = NewServiceWithRepository(&MockRepository{
+		existingDeclarations: map[string]*KMDDeclaration{
+			"2026-03": {ID: "kmd-1", TenantID: "tenant-1", Year: 2026, Month: 3},
+		},
+		markSubmittedErr: errors.New("submit failed"),
+	})
+	err = service.MarkKMDSubmitted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+	require.ErrorContains(t, err, "submit failed")
+
+	service = NewServiceWithRepository(&MockRepository{
+		existingDeclarations: map[string]*KMDDeclaration{
+			"2026-03": {ID: "kmd-1", TenantID: "tenant-1", Year: 2026, Month: 3},
+		},
+		updateStatusErr: errors.New("status failed"),
+	})
+	err = service.MarkKMDAccepted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+	require.ErrorContains(t, err, "status failed")
 }
 
 func TestMapVATRateToKMDCode(t *testing.T) {
@@ -264,20 +352,9 @@ func TestService_GenerateKMD_Success(t *testing.T) {
 	assert.Equal(t, "220", decl.TotalOutputVAT.String())
 	assert.Equal(t, "110", decl.TotalInputVAT.String())
 	assert.Len(t, decl.Rows, 2)
+	require.NotEmpty(t, decl.RemediationActions)
+	assert.Equal(t, "kmd_payable_review", decl.RemediationActions[len(decl.RemediationActions)-1].Code)
 	assert.Len(t, repo.savedDeclarations, 1)
-}
-
-func TestService_GenerateKMD_EnsureSchemaError(t *testing.T) {
-	repo := &MockRepository{
-		ensureSchemaErr: errors.New("schema error"),
-	}
-	svc := NewServiceWithRepository(repo)
-
-	req := &CreateKMDRequest{Year: 2024, Month: 1}
-	_, err := svc.GenerateKMD(context.Background(), "tenant-1", "test_schema", req)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ensure schema")
 }
 
 func TestService_GenerateKMD_QueryVATDataError(t *testing.T) {
@@ -321,6 +398,325 @@ func TestService_GenerateKMD_EmptyVATData(t *testing.T) {
 	assert.True(t, decl.TotalOutputVAT.IsZero())
 	assert.True(t, decl.TotalInputVAT.IsZero())
 	assert.Len(t, decl.Rows, 0)
+	require.Len(t, decl.RemediationActions, 2)
+	assert.Equal(t, "kmd_no_vat_rows", decl.RemediationActions[0].Code)
+	assert.Equal(t, "kmd_zero_payable_review", decl.RemediationActions[1].Code)
+}
+
+func TestBuildKMDRemediationActions(t *testing.T) {
+	submittedAt := time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name        string
+		declaration *KMDDeclaration
+		wantCodes   []string
+	}{
+		{
+			name: "draft payable",
+			declaration: &KMDDeclaration{
+				ID:             "kmd-payable",
+				Year:           2026,
+				Month:          3,
+				Status:         "DRAFT",
+				TotalOutputVAT: decimal.NewFromInt(220),
+				TotalInputVAT:  decimal.NewFromInt(80),
+				Rows:           []KMDRow{{Code: KMDRow1}},
+			},
+			wantCodes: []string{"kmd_payable_review"},
+		},
+		{
+			name: "draft refund",
+			declaration: &KMDDeclaration{
+				ID:             "kmd-refund",
+				Year:           2026,
+				Month:          4,
+				Status:         "DRAFT",
+				TotalOutputVAT: decimal.NewFromInt(40),
+				TotalInputVAT:  decimal.NewFromInt(140),
+				Rows:           []KMDRow{{Code: KMDRow4}},
+			},
+			wantCodes: []string{"kmd_refund_review"},
+		},
+		{
+			name: "submitted with timestamp",
+			declaration: &KMDDeclaration{
+				ID:          "kmd-submitted",
+				Year:        2026,
+				Month:       5,
+				Status:      "SUBMITTED",
+				SubmittedAt: &submittedAt,
+			},
+			wantCodes: []string{"kmd_awaiting_authority_acceptance"},
+		},
+		{
+			name: "submitted missing timestamp",
+			declaration: &KMDDeclaration{
+				ID:     "kmd-submitted-missing-date",
+				Year:   2026,
+				Month:  6,
+				Status: "SUBMITTED",
+			},
+			wantCodes: []string{"kmd_awaiting_authority_acceptance", "kmd_submission_date_missing"},
+		},
+		{
+			name: "accepted",
+			declaration: &KMDDeclaration{
+				ID:     "kmd-accepted",
+				Year:   2026,
+				Month:  7,
+				Status: "ACCEPTED",
+			},
+			wantCodes: []string{"kmd_accepted_archive"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actions := BuildKMDRemediationActions(tt.declaration)
+			assert.Equal(t, tt.wantCodes, kmdRemediationCodes(actions))
+			for _, action := range actions {
+				assert.Equal(t, "tax", action.Scope)
+				assert.Equal(t, "accountant", action.OwnerRole)
+				assert.NotEmpty(t, action.Period)
+				assert.NotEmpty(t, action.Action)
+				assert.Equal(t, "kmd_declarations", action.WorkspaceQueue)
+				assert.NotEmpty(t, action.AssignmentKey)
+				assert.NotEmpty(t, action.Priority)
+				if action.Severity == "ACTION" {
+					assert.Equal(t, "high", action.Priority)
+					assert.Equal(t, 1, action.DueInDays)
+				}
+			}
+		})
+	}
+
+	assert.Nil(t, BuildKMDRemediationActions(nil))
+}
+
+func TestBuildTaxReportRemediationActions(t *testing.T) {
+	infReport := &KMDINFReport{
+		Year:      2026,
+		Month:     3,
+		Threshold: decimal.NewFromInt(1000),
+		Rows: []KMDINFReportRow{{
+			Part:                       KMDINFPartSales,
+			ContactID:                  "contact-1",
+			ContactName:                "Alpha OU",
+			InvoiceID:                  "invoice-1",
+			InvoiceNumber:              "INV-1",
+			TaxableAmount:              decimal.NewFromInt(1200),
+			PartnerPeriodTaxableAmount: decimal.NewFromInt(1200),
+		}},
+	}
+	infActions := BuildKMDINFRemediationActions(infReport)
+	require.Len(t, infActions, 1)
+	assert.Equal(t, []string{"kmd_inf_review_required"}, taxReportRemediationCodes(infActions))
+	assert.Equal(t, "tax_reports", infActions[0].WorkspaceQueue)
+	assert.Equal(t, "high", infActions[0].Priority)
+	assert.Equal(t, 1, infActions[0].DueInDays)
+	assert.Contains(t, infActions[0].AssignmentKey, "kmd-inf-report")
+	assert.Contains(t, infActions[0].CLICommand, "oa tax kmd inf --year 2026 --month 3 --threshold 1000 --json")
+
+	emptyINFActions := BuildKMDINFRemediationActions(&KMDINFReport{
+		Year:      2026,
+		Month:     4,
+		Threshold: decimal.NewFromInt(1000),
+	})
+	require.Len(t, emptyINFActions, 1)
+	assert.Equal(t, "kmd_inf_no_threshold_rows", emptyINFActions[0].Code)
+	assert.Equal(t, "normal", emptyINFActions[0].Priority)
+	assert.Equal(t, 3, emptyINFActions[0].DueInDays)
+
+	ossReport := &EUVATOSSReport{
+		Year:       2026,
+		Quarter:    1,
+		IncludeB2B: true,
+		VATAmount:  decimal.NewFromInt(19),
+		Rows: []EUVATOSSReportRow{{
+			CountryCode: "DE",
+			VATRate:     decimal.NewFromInt(19),
+		}},
+	}
+	ossActions := BuildEUVATOSSRemediationActions(ossReport)
+	require.Len(t, ossActions, 1)
+	assert.Equal(t, []string{"eu_vat_oss_review_required"}, taxReportRemediationCodes(ossActions))
+	assert.Equal(t, "tax_reports", ossActions[0].WorkspaceQueue)
+	assert.Equal(t, "high", ossActions[0].Priority)
+	assert.Contains(t, ossActions[0].CLICommand, "--include-b2b")
+
+	emptyOSSActions := BuildEUVATOSSRemediationActions(&EUVATOSSReport{Year: 2026, Quarter: 2})
+	require.Len(t, emptyOSSActions, 1)
+	assert.Equal(t, "eu_vat_oss_no_rows", emptyOSSActions[0].Code)
+	assert.Equal(t, "normal", emptyOSSActions[0].Priority)
+
+	assert.Nil(t, BuildKMDINFRemediationActions(nil))
+	assert.Nil(t, BuildEUVATOSSRemediationActions(nil))
+}
+
+func TestService_GenerateKMDINF_Success(t *testing.T) {
+	repo := &MockRepository{
+		queryKMDINFDataResult: []KMDINFReportRow{
+			{
+				Part:                       KMDINFPartSales,
+				ContactID:                  "contact-1",
+				ContactName:                "Alpha OU",
+				ContactRegCode:             "12345678",
+				InvoiceID:                  "invoice-1",
+				InvoiceNumber:              "INV-1",
+				InvoiceDate:                time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC),
+				InvoiceType:                "SALES",
+				TaxableAmount:              decimal.NewFromInt(1200),
+				VATAmount:                  decimal.NewFromInt(264),
+				TotalAmount:                decimal.NewFromInt(1464),
+				PartnerPeriodTaxableAmount: decimal.NewFromInt(1200),
+			},
+			{
+				Part:                       KMDINFPartPurchases,
+				ContactID:                  "contact-2",
+				ContactName:                "Beta OU",
+				ContactRegCode:             "87654321",
+				InvoiceID:                  "invoice-2",
+				InvoiceNumber:              "PUR-1",
+				InvoiceDate:                time.Date(2026, 3, 7, 0, 0, 0, 0, time.UTC),
+				InvoiceType:                "PURCHASE",
+				TaxableAmount:              decimal.NewFromInt(1500),
+				VATAmount:                  decimal.NewFromInt(330),
+				TotalAmount:                decimal.NewFromInt(1830),
+				PartnerPeriodTaxableAmount: decimal.NewFromInt(1500),
+			},
+		},
+	}
+	svc := NewServiceWithRepository(repo)
+
+	report, err := svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{
+		Year:  2026,
+		Month: 3,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.Equal(t, "tenant-1", report.TenantID)
+	assert.Equal(t, 2026, report.Year)
+	assert.Equal(t, 3, report.Month)
+	assert.True(t, report.Threshold.Equal(KMDINFDefaultThreshold))
+	assert.Len(t, report.Rows, 2)
+	require.Len(t, report.Summary, 2)
+	assert.Equal(t, KMDINFPartSales, report.Summary[0].Part)
+	assert.Equal(t, 1, report.Summary[0].PartnerCount)
+	assert.Equal(t, 1, report.Summary[0].InvoiceCount)
+	assert.True(t, report.Summary[0].TaxableAmount.Equal(decimal.NewFromInt(1200)))
+	assert.Equal(t, KMDINFPartPurchases, report.Summary[1].Part)
+	assert.True(t, report.Summary[1].VATAmount.Equal(decimal.NewFromInt(330)))
+	require.Len(t, report.RemediationActions, 1)
+	assert.Equal(t, "kmd_inf_review_required", report.RemediationActions[0].Code)
+	assert.Equal(t, "tax_reports", report.RemediationActions[0].WorkspaceQueue)
+}
+
+func TestService_GenerateKMDINF_ValidationAndRepositoryErrors(t *testing.T) {
+	svc := NewServiceWithRepository(&MockRepository{})
+
+	_, err := svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "request is required")
+
+	_, err = svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{Year: 2019, Month: 3})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid year")
+
+	_, err = svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{Year: 2026, Month: 13})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid month")
+
+	_, err = svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{
+		Year:      2026,
+		Month:     3,
+		Threshold: decimal.NewFromInt(-1),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "threshold must be positive")
+
+	repo := &MockRepository{queryKMDINFDataErr: errors.New("query failed")}
+	svc = NewServiceWithRepository(repo)
+	_, err = svc.GenerateKMDINF(context.Background(), "tenant-1", "test_schema", &KMDINFReportRequest{Year: 2026, Month: 3})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "query KMD INF data")
+}
+
+func TestService_GenerateEUVATOSS_Success(t *testing.T) {
+	repo := &MockRepository{
+		queryEUVATOSSResult: []EUVATOSSReportRow{
+			{
+				CountryCode:   "DE",
+				VATRate:       decimal.NewFromInt(19),
+				InvoiceCount:  1,
+				LineCount:     1,
+				TaxableAmount: decimal.NewFromInt(100),
+				VATAmount:     decimal.NewFromInt(19),
+				TotalAmount:   decimal.NewFromInt(119),
+			},
+			{
+				CountryCode:   "FI",
+				VATRate:       decimal.NewFromInt(24),
+				InvoiceCount:  2,
+				LineCount:     3,
+				TaxableAmount: decimal.NewFromInt(200),
+				VATAmount:     decimal.NewFromInt(48),
+				TotalAmount:   decimal.NewFromInt(248),
+			},
+		},
+	}
+	svc := NewServiceWithRepository(repo)
+
+	report, err := svc.GenerateEUVATOSS(context.Background(), "tenant-1", "test_schema", &EUVATOSSReportRequest{
+		Year:       2026,
+		Quarter:    1,
+		IncludeB2B: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.Equal(t, "tenant-1", report.TenantID)
+	assert.Equal(t, 2026, report.Year)
+	assert.Equal(t, 1, report.Quarter)
+	assert.Equal(t, "UNION", report.Scheme)
+	assert.Equal(t, "EUR", report.Currency)
+	assert.Equal(t, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), report.PeriodStart)
+	assert.Equal(t, time.Date(2026, 4, 1, 0, 0, 0, -1, time.UTC), report.PeriodEnd)
+	assert.True(t, report.IncludeB2B)
+	assert.True(t, report.TaxableAmount.Equal(decimal.NewFromInt(300)))
+	assert.True(t, report.VATAmount.Equal(decimal.NewFromInt(67)))
+	assert.Equal(t, 3, report.InvoiceCount)
+	assert.Equal(t, 4, report.LineCount)
+	require.Len(t, report.Summary, 2)
+	assert.Equal(t, "DE", report.Summary[0].CountryCode)
+	assert.Equal(t, "Germany", report.Summary[0].CountryName)
+	assert.Equal(t, "FI", report.Summary[1].CountryCode)
+	assert.Equal(t, "Finland", report.Summary[1].CountryName)
+	require.Len(t, report.RemediationActions, 1)
+	assert.Equal(t, "eu_vat_oss_review_required", report.RemediationActions[0].Code)
+	assert.Equal(t, "tax_reports", report.RemediationActions[0].WorkspaceQueue)
+}
+
+func TestService_GenerateEUVATOSS_ValidationAndRepositoryErrors(t *testing.T) {
+	svc := NewServiceWithRepository(&MockRepository{})
+
+	_, err := svc.GenerateEUVATOSS(context.Background(), "tenant-1", "test_schema", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "request is required")
+
+	_, err = svc.GenerateEUVATOSS(context.Background(), "tenant-1", "test_schema", &EUVATOSSReportRequest{Year: 2019, Quarter: 1})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid year")
+
+	_, err = svc.GenerateEUVATOSS(context.Background(), "tenant-1", "test_schema", &EUVATOSSReportRequest{Year: 2026, Quarter: 5})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid quarter")
+
+	repo := &MockRepository{queryEUVATOSSErr: errors.New("query failed")}
+	svc = NewServiceWithRepository(repo)
+	_, err = svc.GenerateEUVATOSS(context.Background(), "tenant-1", "test_schema", &EUVATOSSReportRequest{Year: 2026, Quarter: 1})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "query EU VAT OSS data")
 }
 
 func TestService_GetKMD_Success(t *testing.T) {
@@ -347,6 +743,7 @@ func TestService_GetKMD_Success(t *testing.T) {
 	assert.Equal(t, "decl-1", decl.ID)
 	assert.Equal(t, 2024, decl.Year)
 	assert.Equal(t, 1, decl.Month)
+	assert.NotEmpty(t, decl.RemediationActions)
 }
 
 func TestService_GetKMD_InvalidYear(t *testing.T) {
@@ -396,6 +793,24 @@ func TestService_ListKMD_Success(t *testing.T) {
 	assert.Len(t, declarations, 2)
 	assert.Equal(t, "decl-1", declarations[0].ID)
 	assert.Equal(t, "decl-2", declarations[1].ID)
+	assert.NotEmpty(t, declarations[0].RemediationActions)
+	assert.NotEmpty(t, declarations[1].RemediationActions)
+}
+
+func kmdRemediationCodes(actions []KMDRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
+}
+
+func taxReportRemediationCodes(actions []TaxReportRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
 }
 
 func TestService_ListKMD_Empty(t *testing.T) {
@@ -421,30 +836,9 @@ func TestService_ListKMD_Error(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestService_EnsureSchema_Success(t *testing.T) {
-	repo := &MockRepository{}
-	svc := NewServiceWithRepository(repo)
-
-	err := svc.EnsureSchema(context.Background(), "test_schema")
-
-	require.NoError(t, err)
-}
-
-func TestService_EnsureSchema_Error(t *testing.T) {
-	repo := &MockRepository{
-		ensureSchemaErr: errors.New("schema error"),
-	}
-	svc := NewServiceWithRepository(repo)
-
-	err := svc.EnsureSchema(context.Background(), "test_schema")
-
-	require.Error(t, err)
-}
-
 // TestNewService_WithNilPool tests the NewService constructor with a nil pool
 func TestNewService_WithNilPool(t *testing.T) {
-	// NewService should create a service with nil pool (won't panic until used)
 	svc := NewService(nil)
 	require.NotNil(t, svc)
-	assert.NotNil(t, svc.repo)
+	assert.Nil(t, svc.repo)
 }

@@ -9,10 +9,18 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
+
+type migrationDB interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
 
 func main() {
 	// Configure logging
@@ -73,7 +81,7 @@ func main() {
 	log.Info().Msg("Migration completed successfully")
 }
 
-func ensureMigrationsTable(ctx context.Context, pool *pgxpool.Pool) error {
+func ensureMigrationsTable(ctx context.Context, pool migrationDB) error {
 	_, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version VARCHAR(255) PRIMARY KEY,
@@ -83,7 +91,7 @@ func ensureMigrationsTable(ctx context.Context, pool *pgxpool.Pool) error {
 	return err
 }
 
-func getAppliedMigrations(ctx context.Context, pool *pgxpool.Pool) (map[string]bool, error) {
+func getAppliedMigrations(ctx context.Context, pool migrationDB) (map[string]bool, error) {
 	rows, err := pool.Query(ctx, "SELECT version FROM schema_migrations ORDER BY version")
 	if err != nil {
 		return nil, err
@@ -97,6 +105,9 @@ func getAppliedMigrations(ctx context.Context, pool *pgxpool.Pool) (map[string]b
 			return nil, err
 		}
 		applied[version] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return applied, nil
 }
@@ -119,7 +130,7 @@ func extractVersion(filename string) string {
 	return base
 }
 
-func migrateUp(ctx context.Context, pool *pgxpool.Pool, path string, steps int) error {
+func migrateUp(ctx context.Context, pool migrationDB, path string, steps int) error {
 	applied, err := getAppliedMigrations(ctx, pool)
 	if err != nil {
 		return fmt.Errorf("get applied migrations: %w", err)
@@ -181,7 +192,7 @@ func migrateUp(ctx context.Context, pool *pgxpool.Pool, path string, steps int) 
 	return nil
 }
 
-func migrateDown(ctx context.Context, pool *pgxpool.Pool, path string, steps int) error {
+func migrateDown(ctx context.Context, pool migrationDB, path string, steps int) error {
 	applied, err := getAppliedMigrations(ctx, pool)
 	if err != nil {
 		return fmt.Errorf("get applied migrations: %w", err)

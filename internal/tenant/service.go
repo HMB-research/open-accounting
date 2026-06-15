@@ -15,25 +15,46 @@ import (
 
 var slugRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
 
-// Service provides tenant management operations
-type Service struct {
-	db   *pgxpool.Pool
-	repo Repository
+const defaultPasswordHashCost = 12
+
+// ServiceOption customizes tenant service behavior.
+type ServiceOption func(*Service)
+
+// WithPasswordHashCost overrides the bcrypt cost used when hashing new passwords.
+// Production constructors use cost 12 by default; tests can use bcrypt.MinCost.
+func WithPasswordHashCost(cost int) ServiceOption {
+	return func(s *Service) {
+		if cost < bcrypt.MinCost {
+			cost = bcrypt.MinCost
+		}
+		if cost > bcrypt.MaxCost {
+			cost = bcrypt.MaxCost
+		}
+		s.passwordHashCost = cost
+	}
 }
 
-// NewService creates a new tenant service
-func NewService(db *pgxpool.Pool) *Service {
-	return &Service{
-		db:   db,
-		repo: NewPostgresRepository(db),
-	}
+// Service provides tenant management operations
+type Service struct {
+	repo             Repository
+	passwordHashCost int
+}
+
+// NewService creates a new tenant service with an ORM-backed repository.
+func NewService(db *pgxpool.Pool, opts ...ServiceOption) *Service {
+	return NewServiceWithRepository(NewRepository(db), opts...)
 }
 
 // NewServiceWithRepository creates a new tenant service with a custom repository (for testing)
-func NewServiceWithRepository(repo Repository) *Service {
-	return &Service{
-		repo: repo,
+func NewServiceWithRepository(repo Repository, opts ...ServiceOption) *Service {
+	s := &Service{
+		repo:             repo,
+		passwordHashCost: defaultPasswordHashCost,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // CreateTenant creates a new tenant with its schema
@@ -51,6 +72,9 @@ func (s *Service) CreateTenant(ctx context.Context, req *CreateTenantRequest) (*
 	settings := DefaultSettings()
 	if req.Settings != nil {
 		settings = *req.Settings
+	}
+	if err := normalizeInventoryPolicySettings(&settings); err != nil {
+		return nil, err
 	}
 
 	settingsJSON, err := json.Marshal(settings)
@@ -109,6 +133,9 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 
 	// Update settings if provided
 	if req.Settings != nil {
+		current.Settings.InventoryIssueCostingMethod = EffectiveInventoryIssueCostingMethod(current.Settings.InventoryIssueCostingMethod)
+		current.Settings.InventoryValuationMethod = EffectiveInventoryValuationMethod(current.Settings.InventoryValuationMethod)
+
 		if req.Settings.PeriodLockDate != nil {
 			requestedLockDate := strings.TrimSpace(*req.Settings.PeriodLockDate)
 			currentLockDate := ""
@@ -167,8 +194,44 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 		if req.Settings.FiscalYearStart != 0 {
 			current.Settings.FiscalYearStart = req.Settings.FiscalYearStart
 		}
+		if req.Settings.InventoryIssueCostingMethod != "" {
+			method, err := NormalizeInventoryIssueCostingMethod(req.Settings.InventoryIssueCostingMethod)
+			if err != nil {
+				return nil, err
+			}
+			current.Settings.InventoryIssueCostingMethod = method
+		}
+		if req.Settings.InventoryValuationMethod != "" {
+			method, err := NormalizeInventoryValuationMethod(req.Settings.InventoryValuationMethod)
+			if err != nil {
+				return nil, err
+			}
+			current.Settings.InventoryValuationMethod = method
+		}
 	}
 
+	current.UpdatedAt = time.Now()
+
+	settingsJSON, err := json.Marshal(current.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("marshal settings: %w", err)
+	}
+
+	if err := s.repo.UpdateTenant(ctx, tenantID, current.Name, settingsJSON, current.UpdatedAt); err != nil {
+		return nil, err
+	}
+
+	return current, nil
+}
+
+// UpdateLatePaymentInterestRate updates the tenant's late payment interest rate.
+func (s *Service) UpdateLatePaymentInterestRate(ctx context.Context, tenantID string, rate float64) (*Tenant, error) {
+	current, err := s.GetTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	current.Settings.LatePaymentInterestRate = rate
 	current.UpdatedAt = time.Now()
 
 	settingsJSON, err := json.Marshal(current.Settings)
@@ -191,6 +254,40 @@ func (s *Service) ListUserTenants(ctx context.Context, userID string) ([]TenantM
 // CompleteOnboarding marks the tenant's onboarding as completed
 func (s *Service) CompleteOnboarding(ctx context.Context, tenantID string) error {
 	return s.repo.CompleteOnboarding(ctx, tenantID)
+}
+
+// RecordTenantAuditEvent records a tenant administration audit event.
+func (s *Service) RecordTenantAuditEvent(ctx context.Context, event *TenantAuditEvent) error {
+	if event == nil {
+		return fmt.Errorf("audit event is required")
+	}
+	if event.TenantID == "" {
+		return fmt.Errorf("tenant_id is required")
+	}
+	if event.Action == "" {
+		return fmt.Errorf("action is required")
+	}
+	if event.TargetType == "" {
+		return fmt.Errorf("target_type is required")
+	}
+	if event.TargetID == "" {
+		return fmt.Errorf("target_id is required")
+	}
+	if event.ID == "" {
+		event.ID = uuid.New().String()
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now()
+	}
+	if event.Metadata == nil {
+		event.Metadata = map[string]string{}
+	}
+	return s.repo.CreateTenantAuditEvent(ctx, event)
+}
+
+// ListTenantAuditEvents returns recent tenant administration audit events.
+func (s *Service) ListTenantAuditEvents(ctx context.Context, tenantID string, limit int) ([]TenantAuditEvent, error) {
+	return s.repo.ListTenantAuditEvents(ctx, tenantID, limit)
 }
 
 // AddUserToTenant adds a user to a tenant with a specified role
@@ -216,10 +313,18 @@ func (s *Service) GetUserRole(ctx context.Context, tenantID, userID string) (str
 	return role, err
 }
 
+// GetTenantUser retrieves one tenant membership, including inactive memberships.
+func (s *Service) GetTenantUser(ctx context.Context, tenantID, userID string) (*TenantUser, error) {
+	membership, err := s.repo.GetTenantUser(ctx, tenantID, userID)
+	if err == ErrUserNotInTenant {
+		return nil, fmt.Errorf("user not member of tenant")
+	}
+	return membership, err
+}
+
 // CreateUser creates a new user
 func (s *Service) CreateUser(ctx context.Context, req *CreateUserRequest) (*User, error) {
-	// Hash password with cost 12 (stronger than default 10)
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
+	hash, err := s.hashPassword(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
@@ -266,6 +371,58 @@ func (s *Service) GetUserByID(ctx context.Context, userID string) (*User, error)
 func (s *Service) ValidatePassword(user *User, password string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	return err == nil
+}
+
+func (s *Service) hashPassword(password string) ([]byte, error) {
+	cost := s.passwordHashCost
+	if cost == 0 {
+		cost = defaultPasswordHashCost
+	}
+	return bcrypt.GenerateFromPassword([]byte(password), cost)
+}
+
+// ChangeUserPassword verifies the current password and stores a new password hash.
+func (s *Service) ChangeUserPassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+	if strings.TrimSpace(userID) == "" {
+		return fmt.Errorf("user ID is required")
+	}
+	if currentPassword == "" || newPassword == "" {
+		return fmt.Errorf("current password and new password are required")
+	}
+	if len(newPassword) < 8 {
+		return fmt.Errorf("new password must be at least 8 characters")
+	}
+
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err == ErrUserNotFound {
+		return fmt.Errorf("user not found")
+	}
+	if err != nil {
+		return err
+	}
+	if !user.IsActive {
+		return fmt.Errorf("account is disabled")
+	}
+	if !s.ValidatePassword(user, currentPassword) {
+		return fmt.Errorf("current password is incorrect")
+	}
+	if s.ValidatePassword(user, newPassword) {
+		return fmt.Errorf("new password must be different from current password")
+	}
+
+	hash, err := s.hashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	updatedAt := time.Now()
+	if err := s.repo.UpdateUserPassword(ctx, userID, string(hash), updatedAt); err != nil {
+		if err == ErrUserNotFound {
+			return fmt.Errorf("user not found")
+		}
+		return err
+	}
+	return nil
 }
 
 // DeleteTenant deletes a tenant and its schema (use with caution)
@@ -370,7 +527,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, req *AcceptInvitationReq
 	// Hash password if creating user
 	var passwordHash string
 	if createUser {
-		hash, hashErr := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		hash, hashErr := s.hashPassword(req.Password)
 		if hashErr != nil {
 			return nil, fmt.Errorf("hash password: %w", hashErr)
 		}
@@ -423,7 +580,7 @@ func (s *Service) RemoveTenantUser(ctx context.Context, tenantID, userID string)
 
 // UpdateTenantUserRole updates a user's role in a tenant
 func (s *Service) UpdateTenantUserRole(ctx context.Context, tenantID, userID, newRole string) error {
-	if !IsValidRole(newRole) && newRole != RoleOwner {
+	if !IsValidRole(newRole) {
 		return fmt.Errorf("invalid role: %s", newRole)
 	}
 
@@ -440,6 +597,24 @@ func (s *Service) UpdateTenantUserRole(ctx context.Context, tenantID, userID, ne
 	}
 
 	return s.repo.UpdateTenantUserRole(ctx, tenantID, userID, newRole)
+}
+
+// SetTenantUserActive suspends or restores a user's membership in one tenant.
+func (s *Service) SetTenantUserActive(ctx context.Context, tenantID, userID string, active bool) error {
+	membership, err := s.repo.GetTenantUser(ctx, tenantID, userID)
+	if err == ErrUserNotInTenant {
+		return fmt.Errorf("user not found in tenant")
+	}
+	if err != nil {
+		return fmt.Errorf("check current membership: %w", err)
+	}
+	if membership.Role == RoleOwner {
+		return fmt.Errorf("cannot change owner membership status")
+	}
+	if membership.IsActive == active {
+		return nil
+	}
+	return s.repo.SetTenantUserActive(ctx, tenantID, userID, active)
 }
 
 // ListTenantUsers lists all users in a tenant

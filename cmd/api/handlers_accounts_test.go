@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,12 +20,14 @@ import (
 type mockAccountingRepository struct {
 	accounts       map[string]*accounting.Account
 	journalEntries map[string]*accounting.JournalEntry
+	templates      map[string]*accounting.JournalEntryTemplate
 
 	accountBalance       decimal.Decimal
 	trialBalances        []accounting.AccountBalance
 	periodBalances       []accounting.AccountBalance
 	listAccountsErr      error
 	createAccountErr     error
+	updateAccountErr     error
 	getAccountErr        error
 	getJournalErr        error
 	createJournalErr     error
@@ -41,6 +42,7 @@ func newMockAccountingRepository() *mockAccountingRepository {
 	return &mockAccountingRepository{
 		accounts:       make(map[string]*accounting.Account),
 		journalEntries: make(map[string]*accounting.JournalEntry),
+		templates:      make(map[string]*accounting.JournalEntryTemplate),
 	}
 }
 
@@ -75,6 +77,17 @@ func (m *mockAccountingRepository) ListAccounts(ctx context.Context, schemaName,
 func (m *mockAccountingRepository) CreateAccount(ctx context.Context, schemaName string, account *accounting.Account) error {
 	if m.createAccountErr != nil {
 		return m.createAccountErr
+	}
+	m.accounts[account.ID] = account
+	return nil
+}
+
+func (m *mockAccountingRepository) UpdateAccount(ctx context.Context, schemaName string, account *accounting.Account) error {
+	if m.updateAccountErr != nil {
+		return m.updateAccountErr
+	}
+	if _, ok := m.accounts[account.ID]; !ok {
+		return assert.AnError
 	}
 	m.accounts[account.ID] = account
 	return nil
@@ -128,8 +141,63 @@ func (m *mockAccountingRepository) CreateJournalEntry(ctx context.Context, schem
 	return nil
 }
 
-func (m *mockAccountingRepository) CreateJournalEntryTx(ctx context.Context, schemaName string, tx pgx.Tx, je *accounting.JournalEntry) error {
-	return m.CreateJournalEntry(ctx, schemaName, je)
+func (m *mockAccountingRepository) CreateJournalEntryTemplate(ctx context.Context, schemaName string, template *accounting.JournalEntryTemplate) error {
+	if m.createJournalErr != nil {
+		return m.createJournalErr
+	}
+	m.templates[template.ID] = template
+	return nil
+}
+
+func (m *mockAccountingRepository) ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]accounting.JournalEntryTemplate, error) {
+	result := make([]accounting.JournalEntryTemplate, 0, len(m.templates))
+	for _, template := range m.templates {
+		if template.TenantID != tenantID {
+			continue
+		}
+		if activeOnly && !template.IsActive {
+			continue
+		}
+		result = append(result, *template)
+	}
+	return result, nil
+}
+
+func (m *mockAccountingRepository) GetJournalEntryTemplateByID(ctx context.Context, schemaName, tenantID, templateID string) (*accounting.JournalEntryTemplate, error) {
+	template, ok := m.templates[templateID]
+	if !ok || template.TenantID != tenantID {
+		return nil, assert.AnError
+	}
+	return template, nil
+}
+
+func (m *mockAccountingRepository) GetDueJournalEntryTemplateIDs(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]string, error) {
+	var ids []string
+	for _, template := range m.templates {
+		if template.TenantID != tenantID || !template.IsActive || !template.IsRecurring() || template.NextGenerationDate == nil {
+			continue
+		}
+		if template.NextGenerationDate.After(asOfDate) {
+			continue
+		}
+		if template.EndDate != nil && template.NextGenerationDate.After(*template.EndDate) {
+			continue
+		}
+		ids = append(ids, template.ID)
+	}
+	return ids, nil
+}
+
+func (m *mockAccountingRepository) UpdateJournalEntryTemplateAfterGeneration(ctx context.Context, schemaName, tenantID, templateID string, nextDate time.Time, generatedAt time.Time) error {
+	template, ok := m.templates[templateID]
+	if !ok || template.TenantID != tenantID {
+		return assert.AnError
+	}
+	template.NextGenerationDate = &nextDate
+	template.LastGeneratedAt = &generatedAt
+	template.GeneratedCount++
+	template.UpdatedAt = generatedAt
+	return nil
 }
 
 func (m *mockAccountingRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status accounting.JournalEntryStatus, userID string) error {
@@ -198,7 +266,7 @@ func setupAccountingTestHandlers() (*Handlers, *mockTenantRepository, *mockAccou
 	accountingRepo := newMockAccountingRepository()
 
 	tenantSvc := tenant.NewServiceWithRepository(tenantRepo)
-	accountingSvc := accounting.NewServiceWithRepo(nil, accountingRepo)
+	accountingSvc := accounting.NewServiceWithRepository(accountingRepo)
 	tokenSvc := auth.NewTokenService("test-secret-key-for-testing-only", 15*time.Minute, 7*24*time.Hour)
 
 	h := &Handlers{
@@ -526,6 +594,143 @@ func TestImportOpeningBalances(t *testing.T) {
 
 			if tt.checkResponse != nil {
 				var resp accounting.ImportOpeningBalancesResult
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				tt.checkResponse(t, resp)
+			}
+		})
+	}
+}
+
+func TestImportJournalEntries(t *testing.T) {
+	tests := []struct {
+		name           string
+		tenantID       string
+		claims         *auth.Claims
+		body           map[string]interface{}
+		setupMock      func(*mockTenantRepository, *mockAccountingRepository)
+		wantStatus     int
+		wantErrContain string
+		checkResponse  func(*testing.T, accounting.ImportJournalEntriesResult)
+	}{
+		{
+			name:     "imports posted historical journal entries",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"file_name":    "journals.csv",
+				"source_type":  "LEGACY_GL",
+				"post_entries": true,
+				"csv_content": "entry_reference,entry_date,entry_description,account_code,line_description,debit,credit\n" +
+					"LEG-001,2026-03-31,Imported sale,1000,Cash received,100.00,0\n" +
+					"LEG-001,2026-03-31,Imported sale,4000,Revenue,0,100.00\n",
+			},
+			setupMock: func(tr *mockTenantRepository, ar *mockAccountingRepository) {
+				tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				ar.accounts["acc-1000"] = &accounting.Account{
+					ID:          "acc-1000",
+					TenantID:    "tenant-1",
+					Code:        "1000",
+					Name:        "Cash",
+					AccountType: accounting.AccountTypeAsset,
+					IsActive:    true,
+				}
+				ar.accounts["acc-4000"] = &accounting.Account{
+					ID:          "acc-4000",
+					TenantID:    "tenant-1",
+					Code:        "4000",
+					Name:        "Revenue",
+					AccountType: accounting.AccountTypeRevenue,
+					IsActive:    true,
+				}
+			},
+			wantStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp accounting.ImportJournalEntriesResult) {
+				assert.Equal(t, "journals.csv", resp.FileName)
+				assert.Equal(t, 2, resp.RowsProcessed)
+				assert.Equal(t, 1, resp.EntriesCreated)
+				assert.Equal(t, 2, resp.LinesImported)
+				assert.True(t, resp.TotalDebit.Equal(decimal.NewFromInt(100)))
+				assert.True(t, resp.TotalCredit.Equal(decimal.NewFromInt(100)))
+				require.Len(t, resp.JournalEntries, 1)
+				assert.Equal(t, accounting.StatusPosted, resp.JournalEntries[0].Status)
+				assert.Equal(t, "LEG-001", resp.JournalEntries[0].Reference)
+				assert.Equal(t, "LEGACY_GL", resp.JournalEntries[0].SourceType)
+			},
+		},
+		{
+			name:     "locked period rows are skipped",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body: map[string]interface{}{
+				"csv_content": "entry_reference,entry_date,account_code,debit,credit\n" +
+					"LOCKED,2026-02-15,1000,100.00,0\n" +
+					"LOCKED,2026-02-15,4000,0,100.00\n" +
+					"OK,2026-03-31,1000,50.00,0\n" +
+					"OK,2026-03-31,4000,0,50.00\n",
+			},
+			setupMock: func(tr *mockTenantRepository, ar *mockAccountingRepository) {
+				tenantRecord := tr.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				lockDate := "2026-02-28"
+				tenantRecord.Settings.PeriodLockDate = &lockDate
+				ar.accounts["acc-1000"] = &accounting.Account{ID: "acc-1000", TenantID: "tenant-1", Code: "1000", Name: "Cash", AccountType: accounting.AccountTypeAsset, IsActive: true}
+				ar.accounts["acc-4000"] = &accounting.Account{ID: "acc-4000", TenantID: "tenant-1", Code: "4000", Name: "Revenue", AccountType: accounting.AccountTypeRevenue, IsActive: true}
+			},
+			wantStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp accounting.ImportJournalEntriesResult) {
+				assert.Equal(t, 4, resp.RowsProcessed)
+				assert.Equal(t, 1, resp.EntriesCreated)
+				assert.Equal(t, 2, resp.RowsSkipped)
+				require.Len(t, resp.Errors, 1)
+				assert.Contains(t, resp.Errors[0].Message, "period locked through 2026-02-28")
+			},
+		},
+		{
+			name:     "rejects missing csv content",
+			tenantID: "tenant-1",
+			claims: &auth.Claims{
+				UserID:   "user-1",
+				TenantID: "tenant-1",
+				Role:     tenant.RoleOwner,
+			},
+			body:           map[string]interface{}{},
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "csv_content is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, tenantRepo, accountingRepo := setupAccountingTestHandlers()
+			if tt.setupMock != nil {
+				tt.setupMock(tenantRepo, accountingRepo)
+			}
+
+			req := makeAuthenticatedRequest(http.MethodPost, "/tenants/"+tt.tenantID+"/journal-entries/import", tt.body, tt.claims)
+			req = withURLParams(req, map[string]string{"tenantID": tt.tenantID})
+			w := httptest.NewRecorder()
+
+			h.ImportJournalEntries(w, req)
+
+			assert.Equal(t, tt.wantStatus, w.Code, "response body: %s", w.Body.String())
+
+			if tt.wantErrContain != "" {
+				var resp map[string]string
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				assert.Contains(t, resp["error"], tt.wantErrContain)
+			}
+
+			if tt.checkResponse != nil {
+				var resp accounting.ImportJournalEntriesResult
 				err := json.NewDecoder(w.Body).Decode(&resp)
 				require.NoError(t, err)
 				tt.checkResponse(t, resp)

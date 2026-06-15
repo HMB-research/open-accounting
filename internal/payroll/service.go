@@ -3,24 +3,33 @@ package payroll
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
 // Service provides payroll operations
 type Service struct {
-	db   *pgxpool.Pool
 	repo Repository
 	uuid UUIDGenerator
 }
 
 // NewService creates a new payroll service
 func NewService(db *pgxpool.Pool) *Service {
+	if db == nil {
+		return &Service{
+			uuid: &DefaultUUIDGenerator{},
+		}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create payroll GORM repository: %w", err))
+	}
 	return &Service{
-		db:   db,
-		repo: NewPostgresRepository(db),
+		repo: NewGORMRepository(gormDB),
 		uuid: &DefaultUUIDGenerator{},
 	}
 }
@@ -179,6 +188,13 @@ func (s *Service) UpdateEmployee(ctx context.Context, schemaName, tenantID, empl
 
 // SetBaseSalary sets or updates an employee's base salary
 func (s *Service) SetBaseSalary(ctx context.Context, schemaName, tenantID, employeeID string, amount decimal.Decimal, effectiveFrom time.Time) error {
+	if amount.LessThanOrEqual(decimal.Zero) {
+		return fmt.Errorf("amount must be positive")
+	}
+	if effectiveFrom.IsZero() {
+		return fmt.Errorf("effective from date is required")
+	}
+
 	// End any existing base salary (ignore errors - may not exist)
 	_ = s.repo.EndCurrentBaseSalary(ctx, schemaName, tenantID, employeeID, effectiveFrom.AddDate(0, 0, -1))
 
@@ -187,7 +203,7 @@ func (s *Service) SetBaseSalary(ctx context.Context, schemaName, tenantID, emplo
 		ID:            s.uuid.New(),
 		TenantID:      tenantID,
 		EmployeeID:    employeeID,
-		ComponentType: "BASE_SALARY",
+		ComponentType: SalaryComponentBaseSalary,
 		Name:          "Base Salary",
 		Amount:        amount,
 		IsTaxable:     true,
@@ -203,6 +219,72 @@ func (s *Service) SetBaseSalary(ctx context.Context, schemaName, tenantID, emplo
 	return nil
 }
 
+// AddSalaryComponent creates an additional salary component for an employee.
+func (s *Service) AddSalaryComponent(ctx context.Context, schemaName, tenantID, employeeID string, req *CreateSalaryComponentRequest) (*SalaryComponent, error) {
+	if req == nil {
+		return nil, fmt.Errorf("salary component request is required")
+	}
+	if _, err := s.GetEmployee(ctx, schemaName, tenantID, employeeID); err != nil {
+		return nil, err
+	}
+	componentType, err := normalizeSalaryComponentType(req.ComponentType)
+	if err != nil {
+		return nil, err
+	}
+	if req.Amount.LessThanOrEqual(decimal.Zero) {
+		return nil, fmt.Errorf("amount must be positive")
+	}
+	if req.EffectiveFrom.IsZero() {
+		return nil, fmt.Errorf("effective from date is required")
+	}
+	if req.EffectiveTo != nil && req.EffectiveTo.Before(req.EffectiveFrom) {
+		return nil, fmt.Errorf("effective to date must be on or after effective from date")
+	}
+
+	isTaxable := true
+	if req.IsTaxable != nil {
+		isTaxable = *req.IsTaxable
+	}
+	isRecurring := true
+	if req.IsRecurring != nil {
+		isRecurring = *req.IsRecurring
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = defaultSalaryComponentName(componentType)
+	}
+
+	comp := &SalaryComponent{
+		ID:            s.uuid.New(),
+		TenantID:      tenantID,
+		EmployeeID:    employeeID,
+		ComponentType: componentType,
+		Name:          name,
+		Amount:        req.Amount,
+		IsTaxable:     isTaxable,
+		IsRecurring:   isRecurring,
+		EffectiveFrom: req.EffectiveFrom,
+		EffectiveTo:   req.EffectiveTo,
+		CreatedAt:     time.Now(),
+	}
+	if err := s.repo.CreateSalaryComponent(ctx, schemaName, comp); err != nil {
+		return nil, fmt.Errorf("create salary component: %w", err)
+	}
+	return comp, nil
+}
+
+// ListSalaryComponents returns salary components for an employee.
+func (s *Service) ListSalaryComponents(ctx context.Context, schemaName, tenantID, employeeID string, activeOn *time.Time) ([]SalaryComponent, error) {
+	if _, err := s.GetEmployee(ctx, schemaName, tenantID, employeeID); err != nil {
+		return nil, err
+	}
+	components, err := s.repo.ListSalaryComponents(ctx, schemaName, tenantID, employeeID, activeOn)
+	if err != nil {
+		return nil, fmt.Errorf("list salary components: %w", err)
+	}
+	return components, nil
+}
+
 // GetCurrentSalary returns the current salary for an employee
 func (s *Service) GetCurrentSalary(ctx context.Context, schemaName, tenantID, employeeID string) (decimal.Decimal, error) {
 	salary, err := s.repo.GetCurrentSalary(ctx, schemaName, tenantID, employeeID)
@@ -210,6 +292,34 @@ func (s *Service) GetCurrentSalary(ctx context.Context, schemaName, tenantID, em
 		return decimal.Zero, fmt.Errorf("get current salary: %w", err)
 	}
 	return salary, nil
+}
+
+func normalizeSalaryComponentType(componentType string) (string, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(componentType))
+	if normalized == "" {
+		return SalaryComponentSecondaryEmployment, nil
+	}
+	switch normalized {
+	case SalaryComponentBaseSalary, SalaryComponentSecondaryEmployment, SalaryComponentBonus, SalaryComponentCommission, SalaryComponentBenefit:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported salary component type %q", normalized)
+	}
+}
+
+func defaultSalaryComponentName(componentType string) string {
+	switch componentType {
+	case SalaryComponentBaseSalary:
+		return "Base Salary"
+	case SalaryComponentBonus:
+		return "Bonus"
+	case SalaryComponentCommission:
+		return "Commission"
+	case SalaryComponentBenefit:
+		return "Benefit"
+	default:
+		return "Secondary employment"
+	}
 }
 
 // =============================================================================
@@ -242,6 +352,7 @@ func (s *Service) CreatePayrollRun(ctx context.Context, schemaName, tenantID, us
 		return nil, fmt.Errorf("create payroll run: %w", err)
 	}
 
+	run.RemediationActions = BuildPayrollRunRemediationActions(run)
 	return run, nil
 }
 
@@ -263,81 +374,108 @@ func (s *Service) CalculatePayroll(ctx context.Context, schemaName, tenantID, pa
 		return nil, err
 	}
 
-	tx, err := s.repo.BeginTx(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	txRepo := s.repo.WithTx(tx)
-
-	// Delete any existing payslips for this run
-	_ = txRepo.DeletePayslipsByRunID(ctx, schemaName, payrollRunID)
-
 	var totalGross, totalNet, totalEmployerCost decimal.Decimal
 	payslips := make([]Payslip, 0, len(employees))
 
-	for _, emp := range employees {
-		// Get current salary
-		salary, err := s.GetCurrentSalary(ctx, schemaName, tenantID, emp.ID)
-		if err != nil || salary.IsZero() {
-			continue // Skip employees without salary
+	if err := s.repo.WithTransaction(ctx, func(txRepo Repository) error {
+		// Delete any existing payslips for this run
+		_ = txRepo.DeletePayslipsByRunID(ctx, schemaName, payrollRunID)
+
+		for _, emp := range employees {
+			// Get current salary
+			salary, err := txRepo.GetCurrentSalary(ctx, schemaName, tenantID, emp.ID)
+			if err != nil || salary.IsZero() {
+				continue // Skip employees without salary
+			}
+
+			// Calculate taxes
+			basicExemption := decimal.Zero
+			if emp.ApplyBasicExemption {
+				basicExemption = emp.BasicExemptionAmount
+			}
+			calc := CalculateEstonianTaxes(salary, basicExemption, emp.FundedPensionRate)
+
+			// Create payslip
+			payslip := Payslip{
+				ID:                      s.uuid.New(),
+				TenantID:                tenantID,
+				PayrollRunID:            payrollRunID,
+				EmployeeID:              emp.ID,
+				GrossSalary:             calc.GrossSalary,
+				TaxableIncome:           calc.TaxableIncome,
+				IncomeTax:               calc.IncomeTax,
+				UnemploymentInsuranceEE: calc.UnemploymentEE,
+				FundedPension:           calc.FundedPension,
+				NetSalary:               calc.NetSalary,
+				SocialTax:               calc.SocialTax,
+				UnemploymentInsuranceER: calc.UnemploymentER,
+				TotalEmployerCost:       calc.TotalEmployerCost,
+				BasicExemptionApplied:   basicExemption,
+				PaymentStatus:           "PENDING",
+				CreatedAt:               time.Now(),
+			}
+
+			if err := txRepo.CreatePayslip(ctx, schemaName, &payslip); err != nil {
+				return fmt.Errorf("insert payslip: %w", err)
+			}
+
+			totalGross = totalGross.Add(calc.GrossSalary)
+			totalNet = totalNet.Add(calc.NetSalary)
+			totalEmployerCost = totalEmployerCost.Add(calc.TotalEmployerCost)
+			payslips = append(payslips, payslip)
 		}
 
-		// Calculate taxes
-		basicExemption := decimal.Zero
-		if emp.ApplyBasicExemption {
-			basicExemption = emp.BasicExemptionAmount
+		// Update payroll run totals and status
+		run.Status = PayrollCalculated
+		run.TotalGross = totalGross
+		run.TotalNet = totalNet
+		run.TotalEmployerCost = totalEmployerCost
+
+		if err := txRepo.UpdatePayrollRun(ctx, schemaName, run); err != nil {
+			return fmt.Errorf("update payroll run: %w", err)
 		}
-		calc := CalculateEstonianTaxes(salary, basicExemption, emp.FundedPensionRate)
-
-		// Create payslip
-		payslip := Payslip{
-			ID:                      s.uuid.New(),
-			TenantID:                tenantID,
-			PayrollRunID:            payrollRunID,
-			EmployeeID:              emp.ID,
-			GrossSalary:             calc.GrossSalary,
-			TaxableIncome:           calc.TaxableIncome,
-			IncomeTax:               calc.IncomeTax,
-			UnemploymentInsuranceEE: calc.UnemploymentEE,
-			FundedPension:           calc.FundedPension,
-			NetSalary:               calc.NetSalary,
-			SocialTax:               calc.SocialTax,
-			UnemploymentInsuranceER: calc.UnemploymentER,
-			TotalEmployerCost:       calc.TotalEmployerCost,
-			BasicExemptionApplied:   basicExemption,
-			PaymentStatus:           "PENDING",
-			CreatedAt:               time.Now(),
-		}
-
-		if err := txRepo.CreatePayslip(ctx, schemaName, &payslip); err != nil {
-			return nil, fmt.Errorf("insert payslip: %w", err)
-		}
-
-		totalGross = totalGross.Add(calc.GrossSalary)
-		totalNet = totalNet.Add(calc.NetSalary)
-		totalEmployerCost = totalEmployerCost.Add(calc.TotalEmployerCost)
-		payslips = append(payslips, payslip)
-	}
-
-	// Update payroll run totals and status
-	run.Status = PayrollCalculated
-	run.TotalGross = totalGross
-	run.TotalNet = totalNet
-	run.TotalEmployerCost = totalEmployerCost
-
-	if err := txRepo.UpdatePayrollRun(ctx, schemaName, run); err != nil {
-		return nil, fmt.Errorf("update payroll run: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit: %w", err)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	run.Payslips = payslips
+	run.RemediationActions = BuildPayrollRunRemediationActions(run)
 
 	return run, nil
+}
+
+// ProcessPayrollRun calculates all active employee payslips and optionally approves the run.
+func (s *Service) ProcessPayrollRun(ctx context.Context, schemaName, tenantID, runID, approverID string, req *ProcessPayrollRunRequest) (*PayrollRunProcessResult, error) {
+	if req == nil {
+		req = &ProcessPayrollRunRequest{}
+	}
+
+	run, err := s.CalculatePayroll(ctx, schemaName, tenantID, runID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &PayrollRunProcessResult{
+		PayrollRun:   run,
+		PayslipCount: len(run.Payslips),
+		Approved:     false,
+	}
+
+	if req.Approve {
+		if err := s.ApprovePayrollRun(ctx, schemaName, tenantID, runID, approverID); err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		run.Status = PayrollApproved
+		run.ApprovedBy = approverID
+		run.ApprovedAt = &now
+		run.UpdatedAt = now
+		result.Approved = true
+	}
+	run.RemediationActions = BuildPayrollRunRemediationActions(run)
+
+	return result, nil
 }
 
 // GetPayrollRun retrieves a payroll run by ID
@@ -349,7 +487,32 @@ func (s *Service) GetPayrollRun(ctx context.Context, schemaName, tenantID, runID
 	if err != nil {
 		return nil, fmt.Errorf("get payroll run: %w", err)
 	}
+	run.RemediationActions = BuildPayrollRunRemediationActions(run)
 	return run, nil
+}
+
+// UpdatePayrollRunPaymentDate sets the intended salary payment date on a run.
+func (s *Service) UpdatePayrollRunPaymentDate(ctx context.Context, schemaName, tenantID, runID string, req *UpdatePayrollRunPaymentDateRequest) (*PayrollRun, error) {
+	if req == nil || req.PaymentDate.IsZero() {
+		return nil, fmt.Errorf("payment date is required")
+	}
+
+	run, err := s.GetPayrollRun(ctx, schemaName, tenantID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if run.Status == PayrollDeclared {
+		return nil, fmt.Errorf("declared payroll runs cannot change payment date")
+	}
+
+	paymentDate := req.PaymentDate
+	run.PaymentDate = &paymentDate
+	run.UpdatedAt = time.Now()
+	if err := s.repo.UpdatePayrollRun(ctx, schemaName, run); err != nil {
+		return nil, fmt.Errorf("update payroll payment date: %w", err)
+	}
+
+	return s.GetPayrollRun(ctx, schemaName, tenantID, runID)
 }
 
 // ListPayrollRuns lists payroll runs for a tenant
@@ -357,6 +520,9 @@ func (s *Service) ListPayrollRuns(ctx context.Context, schemaName, tenantID stri
 	runs, err := s.repo.ListPayrollRuns(ctx, schemaName, tenantID, year)
 	if err != nil {
 		return nil, fmt.Errorf("list payroll runs: %w", err)
+	}
+	for i := range runs {
+		runs[i].RemediationActions = BuildPayrollRunRemediationActions(&runs[i])
 	}
 	return runs, nil
 }

@@ -13,12 +13,13 @@ func TestService_ImportCSV(t *testing.T) {
 	t.Run("creates contacts with defaults and aliases", func(t *testing.T) {
 		repo := NewMockRepository()
 		service := NewServiceWithRepository(repo)
+		legacyContactID := "11111111-1111-1111-1111-111111111111"
 
 		req := &ImportContactsRequest{
 			FileName: "contacts.csv",
-			CSVContent: "company_name;type;email;payment_days;credit_limit\n" +
-				"Northwind OU;customer;northwind@example.com;;1500,50\n" +
-				"Supply Partner;tarnija;supplier@example.com;30;2500.00\n",
+			CSVContent: "contact_id;company_name;type;email;payment_days;credit_limit\n" +
+				legacyContactID + ";Northwind OU;customer;northwind@example.com;;1500,50\n" +
+				";Supply Partner;tarnija;supplier@example.com;30;1,500.50\n",
 		}
 
 		result, err := service.ImportCSV(ctx, "tenant-1", "tenant_tenant_1", req)
@@ -56,6 +57,12 @@ func TestService_ImportCSV(t *testing.T) {
 		if importedCustomer == nil {
 			t.Fatal("Northwind OU contact was not created")
 		}
+		if importedCustomer.ID != legacyContactID {
+			t.Fatalf("customer ID = %s, want %s", importedCustomer.ID, legacyContactID)
+		}
+		if _, ok := repo.contacts[legacyContactID]; !ok {
+			t.Fatalf("contact map does not contain preserved ID %s", legacyContactID)
+		}
 		if importedCustomer.ContactType != ContactTypeCustomer {
 			t.Fatalf("customer ContactType = %s, want %s", importedCustomer.ContactType, ContactTypeCustomer)
 		}
@@ -77,6 +84,78 @@ func TestService_ImportCSV(t *testing.T) {
 		}
 		if importedSupplier.PaymentTermsDays != 30 {
 			t.Fatalf("supplier PaymentTermsDays = %d, want 30", importedSupplier.PaymentTermsDays)
+		}
+		if !importedSupplier.CreditLimit.Equal(decimal.RequireFromString("1500.50")) {
+			t.Fatalf("supplier CreditLimit = %s, want 1500.50", importedSupplier.CreditLimit)
+		}
+	})
+
+	t.Run("skips invalid imported contact id", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo)
+
+		result, err := service.ImportCSV(ctx, "tenant-1", "tenant_tenant_1", &ImportContactsRequest{
+			CSVContent: "id,name,type,email\nlegacy-id,Bad ID,customer,bad@example.com\n",
+		})
+		if err != nil {
+			t.Fatalf("ImportCSV returned error: %v", err)
+		}
+
+		if result.RowsProcessed != 1 {
+			t.Fatalf("RowsProcessed = %d, want 1", result.RowsProcessed)
+		}
+		if result.ContactsCreated != 0 {
+			t.Fatalf("ContactsCreated = %d, want 0", result.ContactsCreated)
+		}
+		if result.RowsSkipped != 1 {
+			t.Fatalf("RowsSkipped = %d, want 1", result.RowsSkipped)
+		}
+		if len(result.Errors) != 1 {
+			t.Fatalf("len(Errors) = %d, want 1", len(result.Errors))
+		}
+		if result.Errors[0].Row != 2 {
+			t.Fatalf("Errors[0].Row = %d, want 2", result.Errors[0].Row)
+		}
+		if !contains(result.Errors[0].Message, "invalid id") {
+			t.Fatalf("Errors[0].Message = %q, want invalid id", result.Errors[0].Message)
+		}
+	})
+
+	t.Run("skips duplicate imported contact id", func(t *testing.T) {
+		repo := NewMockRepository()
+		existingContactID := "22222222-2222-2222-2222-222222222222"
+		repo.contacts[existingContactID] = &Contact{
+			ID:               existingContactID,
+			TenantID:         "tenant-1",
+			Name:             "Existing Customer",
+			ContactType:      ContactTypeCustomer,
+			CountryCode:      "EE",
+			PaymentTermsDays: 14,
+			IsActive:         true,
+		}
+		service := NewServiceWithRepository(repo)
+
+		result, err := service.ImportCSV(ctx, "tenant-1", "tenant_tenant_1", &ImportContactsRequest{
+			CSVContent: "contact_id,name,type,email\n" + existingContactID + ",Replacement Customer,customer,new@example.com\n",
+		})
+		if err != nil {
+			t.Fatalf("ImportCSV returned error: %v", err)
+		}
+
+		if result.RowsProcessed != 1 {
+			t.Fatalf("RowsProcessed = %d, want 1", result.RowsProcessed)
+		}
+		if result.ContactsCreated != 0 {
+			t.Fatalf("ContactsCreated = %d, want 0", result.ContactsCreated)
+		}
+		if result.RowsSkipped != 1 {
+			t.Fatalf("RowsSkipped = %d, want 1", result.RowsSkipped)
+		}
+		if len(result.Errors) != 1 {
+			t.Fatalf("len(Errors) = %d, want 1", len(result.Errors))
+		}
+		if !contains(result.Errors[0].Message, "duplicate id") {
+			t.Fatalf("Errors[0].Message = %q, want duplicate id", result.Errors[0].Message)
 		}
 	})
 

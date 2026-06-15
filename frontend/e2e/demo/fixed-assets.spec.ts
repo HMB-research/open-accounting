@@ -1,154 +1,249 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import {
+  test,
+  expect,
+  type Page,
+  type Response,
+  type TestInfo,
+} from "@playwright/test";
+import {
+  ensureAuthenticated,
+  navigateTo,
+  ensureDemoTenant,
+  waitForRouteReady,
+} from "./utils";
 
-test.describe('Fixed Assets View', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
-		await ensureAuthenticated(page, testInfo);
-		await ensureDemoTenant(page, testInfo);
-	});
+interface FixedAssetResponse {
+  id: string;
+  asset_number: string;
+  name: string;
+  status: string;
+  category_id?: string;
+  serial_number?: string;
+  location?: string;
+  depreciation_method?: string;
+  useful_life_months?: number;
+  residual_value?: string;
+}
 
-	test('displays fixed assets page with correct structure', async ({ page }, testInfo) => {
-		await navigateTo(page, '/assets', testInfo);
+function isAssetsListResponse(response: Response): boolean {
+  return (
+    response.request().method() === "GET" &&
+    response.status() === 200 &&
+    /\/api\/v1\/tenants\/[^/]+\/assets$/.test(new URL(response.url()).pathname)
+  );
+}
 
-		// Wait for page to load - heading should be visible
-		await expect(page.getByRole('heading', { name: /fixed assets|assets/i })).toBeVisible();
+function isAssetCreateResponse(response: Response): boolean {
+  return (
+    response.request().method() === "POST" &&
+    /\/api\/v1\/tenants\/[^/]+\/assets$/.test(new URL(response.url()).pathname)
+  );
+}
 
-		// Wait for page content to load
-		await page.waitForTimeout(2000);
+function isAssetUpdateResponse(assetId: string) {
+  return (response: Response): boolean =>
+    response.request().method() === "PUT" &&
+    new URL(response.url()).pathname.endsWith(`/assets/${assetId}`);
+}
 
-		// Check for page content (table, empty state, or content area)
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
+function isAssetDeleteResponse(assetId: string) {
+  return (response: Response): boolean =>
+    response.request().method() === "DELETE" &&
+    new URL(response.url()).pathname.endsWith(`/assets/${assetId}`);
+}
 
-		// If table has data, verify it's displaying correctly
-		if (hasTable) {
-			const rows = table.locator('tbody tr');
-			const count = await rows.count();
-			if (count > 0) {
-				// Should have asset number pattern visible
-				const hasAssetNumber = await page.getByText(/FA-\d{4}-\d{3}/i).isVisible().catch(() => false);
-				if (hasAssetNumber) {
-					expect(hasAssetNumber).toBe(true);
-				}
-			}
-		}
+async function waitForAssetsReady(page: Page) {
+  await waitForRouteReady(page, ".filters, table, .empty-state, .alert-error");
+  await page
+    .getByText(/^Loading\.\.\.$/)
+    .waitFor({ state: "hidden", timeout: 10000 })
+    .catch(() => {});
+  await expect(
+    page.getByRole("heading", { name: /fixed assets|assets/i }),
+  ).toBeVisible();
+  await expect(
+    page.locator("table, .empty-state, .alert-error").first(),
+  ).toBeVisible();
+}
 
-		// Page loaded successfully if we got here
-		expect(true).toBe(true);
-	});
+async function openAssets(
+  page: Page,
+  testInfo: TestInfo,
+): Promise<FixedAssetResponse[]> {
+  const assetsResponsePromise = page.waitForResponse(isAssetsListResponse);
+  await navigateTo(page, "/assets", testInfo, { waitForNetworkIdle: false });
+  const assetsResponse = await assetsResponsePromise;
+  await waitForAssetsReady(page);
+  return (await assetsResponse.json()) as FixedAssetResponse[];
+}
 
-	test('displays asset statuses in table when data exists', async ({ page }, testInfo) => {
-		await navigateTo(page, '/assets', testInfo);
-		await expect(page.getByRole('heading', { name: /fixed assets|assets/i })).toBeVisible();
+function assetRows(page: Page) {
+  return page.locator("table tbody tr");
+}
 
-		// Wait for data to load
-		await page.waitForTimeout(2000);
+function statusFilter(page: Page) {
+  return page.locator(".filters select").first();
+}
 
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
+test.describe("Fixed Assets View", () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await ensureAuthenticated(page, testInfo);
+    await ensureDemoTenant(page, testInfo);
+  });
 
-		if (hasTable) {
-			const rows = table.locator('tbody tr');
-			const count = await rows.count();
+  test("renders seeded asset details and filters by status", async ({
+    page,
+  }, testInfo) => {
+    const assets = await openAssets(page, testInfo);
+    const rows = assetRows(page);
 
-			// Only check statuses if we have data
-			if (count > 0) {
-				// Status badges should be visible in table rows (case insensitive)
-				const statusTexts = ['active', 'draft', 'disposed', 'sold', 'scrapped'];
-				let foundStatus = false;
-				for (const status of statusTexts) {
-					const hasStatus = await table.getByText(new RegExp(status, 'i')).first().isVisible().catch(() => false);
-					if (hasStatus) {
-						foundStatus = true;
-						break;
-					}
-				}
-				expect(foundStatus).toBe(true);
-			}
-		}
-	});
+    expect(assets.length).toBeGreaterThanOrEqual(6);
+    await expect(rows).toHaveCount(assets.length);
+    await expect(page.locator(".filters select").first()).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /new asset|new|create|add/i }),
+    ).toBeVisible();
+    await expect(page.locator("table thead")).toContainText(/category/i);
 
-	test('shows asset categories when data exists', async ({ page }, testInfo) => {
-		await navigateTo(page, '/assets', testInfo);
+    const serverRow = rows.filter({ hasText: "Dell PowerEdge Server" });
+    await expect(serverRow).toBeVisible();
+    await expect(serverRow).toContainText("FA-2024-001");
+    await expect(serverRow).toContainText(/active/i);
+    await expect(serverRow).toContainText("IT Equipment");
+    await expect(serverRow.locator("td").nth(0)).toBeVisible();
+    await expect(serverRow.locator("td").nth(1)).toBeVisible();
 
-		// Wait for data to load
-		await page.waitForTimeout(2000);
+    await expect(rows.filter({ hasText: "Old Projector" })).toContainText(
+      /disposed/i,
+    );
+    await expect(rows.filter({ hasText: "New Monitor Setup" })).toContainText(
+      /draft/i,
+    );
 
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
+    const draftAssetsResponsePromise = page.waitForResponse((response) => {
+      if (!isAssetsListResponse(response)) return false;
+      return new URL(response.url()).searchParams.get("status") === "DRAFT";
+    });
+    await statusFilter(page).selectOption("DRAFT");
+    const draftAssetsResponse = await draftAssetsResponsePromise;
+    const draftAssets =
+      (await draftAssetsResponse.json()) as FixedAssetResponse[];
 
-		if (hasTable) {
-			const rows = table.locator('tbody tr');
-			const count = await rows.count();
-			if (count > 0) {
-				// Check for category names in the table (case insensitive)
-				const categoryTexts = ['IT Equipment', 'Office Furniture', 'Vehicles', 'Software'];
-				let foundCategory = false;
-				for (const category of categoryTexts) {
-					const hasCategory = await table.getByText(new RegExp(category, 'i')).first().isVisible().catch(() => false);
-					if (hasCategory) {
-						foundCategory = true;
-						break;
-					}
-				}
-				// Categories might be shown differently, so just check if page structure is correct
-				if (foundCategory) {
-					expect(foundCategory).toBe(true);
-				}
-			}
-		}
-	});
+    expect(draftAssets).toHaveLength(1);
+    expect(draftAssets[0]?.name).toBe("New Monitor Setup");
+    expect(draftAssets[0]?.status).toBe("DRAFT");
+    await waitForAssetsReady(page);
+    await expect(statusFilter(page)).toHaveValue("DRAFT");
+    await expect(assetRows(page)).toHaveCount(draftAssets.length);
+    await expect(assetRows(page).first()).toContainText("New Monitor Setup");
+    await expect(assetRows(page).first()).toContainText(/draft/i);
+    await expect(page.getByText("Old Projector")).toHaveCount(0);
+  });
 
-	test('displays asset details when data exists', async ({ page }, testInfo) => {
-		await navigateTo(page, '/assets', testInfo);
+  test("creates, edits, and deletes a draft asset", async ({
+    page,
+  }, testInfo) => {
+    await openAssets(page, testInfo);
 
-		// Wait for data to load
-		await page.waitForTimeout(2000);
+    const suffix = `${testInfo.parallelIndex}-${testInfo.retry}-${Date.now().toString(36)}`;
+    const assetName = `E2E Asset ${suffix}`;
+    const updatedAssetName = `E2E Asset Updated ${suffix}`;
+    const serialNumber = `SN-${suffix}`;
+    const location = `Shelf ${suffix}`;
+    const updatedSerialNumber = `SN-UPD-${suffix}`;
+    const updatedLocation = `Storage ${suffix}`;
 
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
+    await page.getByRole("button", { name: /new asset/i }).click();
+    const createDialog = page.getByRole("dialog", { name: /new asset/i });
+    await expect(createDialog).toBeVisible();
 
-		if (hasTable) {
-			const rows = table.locator('tbody tr');
-			const count = await rows.count();
-			if (count > 0) {
-				// Just verify the table has visible data
-				const firstRow = rows.first();
-				await expect(firstRow).toBeVisible();
-			}
-		}
-	});
+    await createDialog.locator("#name").fill(assetName);
+    await createDialog
+      .locator("#category")
+      .selectOption({ label: "IT Equipment" });
+    await createDialog
+      .locator("#description")
+      .fill("Created by demo E2E fixed-assets workflow");
+    await createDialog.locator("#purchase-date").fill("2026-01-15");
+    await createDialog.locator("#purchase-cost").fill("1250.00");
+    await createDialog.locator("#serial-number").fill(serialNumber);
+    await createDialog.locator("#location").fill(location);
+    await createDialog
+      .locator("#depreciation-method")
+      .selectOption("STRAIGHT_LINE");
+    await createDialog.locator("#useful-life").fill("48");
+    await createDialog.locator("#residual-value").fill("125.00");
+    await createDialog.locator("#depreciation-start").fill("2026-02-01");
 
-	test('can filter assets by status', async ({ page }, testInfo) => {
-		await navigateTo(page, '/assets', testInfo);
+    const createResponsePromise = page.waitForResponse(isAssetCreateResponse);
+    await createDialog.getByRole("button", { name: /create asset/i }).click();
+    const createResponse = await createResponsePromise;
+    expect(createResponse.status()).toBe(201);
+    const createdAsset = (await createResponse.json()) as FixedAssetResponse;
 
-		// Find and use the status filter
-		const statusFilter = page.locator('select').first();
+    expect(createdAsset.id).toBeTruthy();
+    expect(createdAsset.asset_number).toBeTruthy();
+    expect(createdAsset.name).toBe(assetName);
+    expect(createdAsset.status).toBe("DRAFT");
+    expect(createdAsset.serial_number).toBe(serialNumber);
+    expect(createdAsset.location).toBe(location);
+    await expect(createDialog).toBeHidden();
 
-		if (await statusFilter.isVisible().catch(() => false)) {
-			// Get initial row count
-			await page.waitForTimeout(1000);
+    const createdRow = assetRows(page).filter({ hasText: assetName });
+    await expect(createdRow).toBeVisible();
+    await expect(createdRow).toContainText(/draft/i);
+    await expect(createdRow).toContainText("IT Equipment");
 
-			// Select a filter option
-			await statusFilter.selectOption({ index: 1 });
+    await createdRow.getByRole("button", { name: /edit/i }).click();
+    const editDialog = page.getByRole("dialog", {
+      name: new RegExp(`edit:\\s*${createdAsset.asset_number}`, "i"),
+    });
+    await expect(editDialog).toBeVisible();
 
-			// Wait for filter to apply
-			await page.waitForTimeout(1000);
+    await expect(editDialog.locator("#edit-name")).toHaveValue(assetName);
+    await editDialog.locator("#edit-name").fill(updatedAssetName);
+    await editDialog
+      .locator("#edit-description")
+      .fill("Updated by demo E2E fixed-assets workflow");
+    await editDialog.locator("#edit-serial-number").fill(updatedSerialNumber);
+    await editDialog.locator("#edit-location").fill(updatedLocation);
+    await editDialog
+      .locator("#edit-depreciation-method")
+      .selectOption("DECLINING_BALANCE");
+    await editDialog.locator("#edit-useful-life").fill("36");
+    await editDialog.locator("#edit-residual-value").fill("250.00");
 
-			// Filter should work (even if count is 0 or same)
-			const filteredRows = await page.locator('table tbody tr').count().catch(() => 0);
-			// Just verify the filter doesn't cause errors
-			expect(filteredRows).toBeGreaterThanOrEqual(0);
-		}
-	});
+    const updateResponsePromise = page.waitForResponse(
+      isAssetUpdateResponse(createdAsset.id),
+    );
+    await editDialog.getByRole("button", { name: /^save$/i }).click();
+    const updateResponse = await updateResponsePromise;
+    expect(updateResponse.status()).toBe(200);
+    const updatedAsset = (await updateResponse.json()) as FixedAssetResponse;
 
-	test('has New Asset button', async ({ page }, testInfo) => {
-		await navigateTo(page, '/assets', testInfo);
+    expect(updatedAsset.id).toBe(createdAsset.id);
+    expect(updatedAsset.name).toBe(updatedAssetName);
+    expect(updatedAsset.status).toBe("DRAFT");
+    expect(updatedAsset.serial_number).toBe(updatedSerialNumber);
+    expect(updatedAsset.location).toBe(updatedLocation);
+    expect(updatedAsset.depreciation_method).toBe("DECLINING_BALANCE");
+    expect(updatedAsset.useful_life_months).toBe(36);
+    await expect(editDialog).toBeHidden();
 
-		// Verify New button exists
-		const newButton = page.getByRole('button', { name: /new|create|add/i }).or(
-			page.getByRole('link', { name: /new|create|add/i })
-		);
-		await expect(newButton).toBeVisible();
-	});
+    const updatedRow = assetRows(page).filter({ hasText: updatedAssetName });
+    await expect(updatedRow).toBeVisible();
+    await expect(updatedRow).toContainText(/draft/i);
+    await expect(page.getByText(assetName)).toHaveCount(0);
+
+    page.once("dialog", async (confirmDialog) => {
+      await confirmDialog.accept();
+    });
+    const deleteResponsePromise = page.waitForResponse(
+      isAssetDeleteResponse(createdAsset.id),
+    );
+    await updatedRow.getByRole("button", { name: /delete/i }).click();
+    const deleteResponse = await deleteResponsePromise;
+    expect(deleteResponse.status()).toBe(204);
+    await expect(updatedRow).toBeHidden();
+  });
 });

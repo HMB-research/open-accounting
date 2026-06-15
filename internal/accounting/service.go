@@ -2,34 +2,47 @@ package accounting
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
+// JournalEntryTemplateRepository is the optional repository surface for reusable entry templates.
+type JournalEntryTemplateRepository interface {
+	CreateJournalEntryTemplate(ctx context.Context, schemaName string, template *JournalEntryTemplate) error
+	ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]JournalEntryTemplate, error)
+	GetJournalEntryTemplateByID(ctx context.Context, schemaName, tenantID, templateID string) (*JournalEntryTemplate, error)
+	GetDueJournalEntryTemplateIDs(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]string, error)
+	UpdateJournalEntryTemplateAfterGeneration(ctx context.Context, schemaName, tenantID, templateID string, nextDate time.Time, generatedAt time.Time) error
+}
+
+var (
+	errJournalEntryTemplatesUnsupported = errors.New("journal entry templates are not supported by repository")
+	ErrTemplateEvidenceAutoPost         = errors.New("cannot auto-post a template entry that requires evidence")
+	ErrSystemAccountImmutable           = errors.New("system accounts cannot be modified")
+)
+
 // Service provides accounting operations
 type Service struct {
-	db   *pgxpool.Pool
 	repo RepositoryInterface
 }
 
 // NewService creates a new accounting service
 func NewService(db *pgxpool.Pool) *Service {
 	return &Service{
-		db:   db,
 		repo: NewRepository(db),
 	}
 }
 
-// NewServiceWithRepo creates a new accounting service with a custom repository (for testing)
-func NewServiceWithRepo(db *pgxpool.Pool, repo RepositoryInterface) *Service {
+// NewServiceWithRepository creates a new accounting service with a custom repository.
+func NewServiceWithRepository(repo RepositoryInterface) *Service {
 	return &Service{
-		db:   db,
 		repo: repo,
 	}
 }
@@ -44,18 +57,129 @@ func (s *Service) ListAccounts(ctx context.Context, schemaName, tenantID string,
 	return s.repo.ListAccounts(ctx, schemaName, tenantID, activeOnly)
 }
 
+// GetAccountHierarchy returns accounts in parent-child chart order.
+func (s *Service) GetAccountHierarchy(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]AccountHierarchyRow, error) {
+	accounts, err := s.repo.ListAccounts(ctx, schemaName, tenantID, activeOnly)
+	if err != nil {
+		return nil, err
+	}
+	return BuildAccountHierarchy(accounts), nil
+}
+
+// BuildAccountHierarchy flattens accounts into deterministic parent-child order.
+func BuildAccountHierarchy(accounts []Account) []AccountHierarchyRow {
+	accountsByID := make(map[string]Account, len(accounts))
+	for _, account := range accounts {
+		accountsByID[account.ID] = account
+	}
+
+	childrenByParent := make(map[string][]Account)
+	var roots []Account
+	for _, account := range accounts {
+		if account.ParentID != nil {
+			if _, ok := accountsByID[*account.ParentID]; ok {
+				childrenByParent[*account.ParentID] = append(childrenByParent[*account.ParentID], account)
+				continue
+			}
+		}
+		roots = append(roots, account)
+	}
+
+	sortAccounts := func(items []Account) {
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].Code != items[j].Code {
+				return items[i].Code < items[j].Code
+			}
+			if items[i].Name != items[j].Name {
+				return items[i].Name < items[j].Name
+			}
+			return items[i].ID < items[j].ID
+		})
+	}
+	sortAccounts(roots)
+	for parentID := range childrenByParent {
+		sortAccounts(childrenByParent[parentID])
+	}
+
+	rows := make([]AccountHierarchyRow, 0, len(accounts))
+	visited := make(map[string]bool, len(accounts))
+	var walk func(account Account, depth int, parentCode, parentName, parentPath string)
+	walk = func(account Account, depth int, parentCode, parentName, parentPath string) {
+		if visited[account.ID] {
+			return
+		}
+		visited[account.ID] = true
+
+		path := account.Code
+		if strings.TrimSpace(parentPath) != "" {
+			path = parentPath + "/" + account.Code
+		}
+		children := childrenByParent[account.ID]
+		rows = append(rows, AccountHierarchyRow{
+			Account:     account,
+			ParentCode:  parentCode,
+			ParentName:  parentName,
+			Depth:       depth,
+			Path:        path,
+			HasChildren: len(children) > 0,
+		})
+		for _, child := range children {
+			walk(child, depth+1, account.Code, account.Name, path)
+		}
+	}
+
+	for _, root := range roots {
+		walk(root, 0, "", "", "")
+	}
+
+	sortedAccounts := make([]Account, 0, len(accounts))
+	sortedAccounts = append(sortedAccounts, accounts...)
+	sortAccounts(sortedAccounts)
+	for _, account := range sortedAccounts {
+		if !visited[account.ID] {
+			walk(account, 0, "", "", "")
+		}
+	}
+
+	return rows
+}
+
 // CreateAccount creates a new account
 func (s *Service) CreateAccount(ctx context.Context, schemaName, tenantID string, req *CreateAccountRequest) (*Account, error) {
+	id := strings.TrimSpace(req.ID)
+	code := strings.TrimSpace(req.Code)
+	name := strings.TrimSpace(req.Name)
+	description := strings.TrimSpace(req.Description)
+	if code == "" || name == "" || req.AccountType == "" {
+		return nil, errors.New("code, name, and account_type are required")
+	}
+	if !isValidAccountType(req.AccountType) {
+		return nil, fmt.Errorf("invalid account_type: %s", req.AccountType)
+	}
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, errors.New("id must be a valid UUID")
+		}
+		id = parsedID.String()
+	} else {
+		id = uuid.New().String()
+	}
+	parentID, err := normalizeOptionalAccountUUIDPtr(req.ParentID, "parent_id")
+	if err != nil {
+		return nil, err
+	}
+
 	account := &Account{
-		ID:          uuid.New().String(),
+		ID:          id,
 		TenantID:    tenantID,
-		Code:        req.Code,
-		Name:        req.Name,
+		Code:        code,
+		Name:        name,
 		AccountType: req.AccountType,
-		ParentID:    req.ParentID,
+		ParentID:    parentID,
 		IsActive:    true,
 		IsSystem:    false,
-		Description: req.Description,
+		Description: description,
 		CreatedAt:   time.Now(),
 	}
 
@@ -67,11 +191,99 @@ func (s *Service) CreateAccount(ctx context.Context, schemaName, tenantID string
 
 // CreateAccountRequest is the request to create an account
 type CreateAccountRequest struct {
+	ID          string      `json:"id,omitempty"`
 	Code        string      `json:"code"`
 	Name        string      `json:"name"`
 	AccountType AccountType `json:"account_type"`
 	ParentID    *string     `json:"parent_id,omitempty"`
 	Description string      `json:"description,omitempty"`
+}
+
+// UpdateAccount updates an editable chart-of-accounts row.
+func (s *Service) UpdateAccount(ctx context.Context, schemaName, tenantID, accountID string, req *UpdateAccountRequest) (*Account, error) {
+	account, err := s.repo.GetAccountByID(ctx, schemaName, tenantID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account.IsSystem {
+		return nil, ErrSystemAccountImmutable
+	}
+
+	code := strings.TrimSpace(req.Code)
+	name := strings.TrimSpace(req.Name)
+	description := strings.TrimSpace(req.Description)
+	if code == "" || name == "" || req.AccountType == "" {
+		return nil, errors.New("code, name, and account_type are required")
+	}
+	if !isValidAccountType(req.AccountType) {
+		return nil, fmt.Errorf("invalid account_type: %s", req.AccountType)
+	}
+	parentID, err := normalizeOptionalAccountUUIDPtr(req.ParentID, "parent_id")
+	if err != nil {
+		return nil, err
+	}
+
+	account.Code = code
+	account.Name = name
+	account.AccountType = req.AccountType
+	account.ParentID = parentID
+	account.Description = description
+
+	if err := s.repo.UpdateAccount(ctx, schemaName, account); err != nil {
+		return nil, err
+	}
+	return account, nil
+}
+
+// DeactivateAccount soft-deletes a chart-of-accounts row while preserving accounting history.
+func (s *Service) DeactivateAccount(ctx context.Context, schemaName, tenantID, accountID string) (*Account, error) {
+	account, err := s.repo.GetAccountByID(ctx, schemaName, tenantID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account.IsSystem {
+		return nil, ErrSystemAccountImmutable
+	}
+
+	account.IsActive = false
+	if err := s.repo.UpdateAccount(ctx, schemaName, account); err != nil {
+		return nil, err
+	}
+	return account, nil
+}
+
+// UpdateAccountRequest is the request to update an editable account.
+type UpdateAccountRequest struct {
+	Code        string      `json:"code"`
+	Name        string      `json:"name"`
+	AccountType AccountType `json:"account_type"`
+	ParentID    *string     `json:"parent_id,omitempty"`
+	Description string      `json:"description,omitempty"`
+}
+
+func isValidAccountType(accountType AccountType) bool {
+	switch accountType {
+	case AccountTypeAsset, AccountTypeLiability, AccountTypeEquity, AccountTypeRevenue, AccountTypeExpense:
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeOptionalAccountUUIDPtr(value *string, field string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", field)
+	}
+	id := parsedID.String()
+	return &id, nil
 }
 
 // GetJournalEntry retrieves a journal entry by ID
@@ -86,32 +298,44 @@ func (s *Service) ListJournalEntries(ctx context.Context, schemaName, tenantID s
 
 // CreateJournalEntry creates a new journal entry
 func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *CreateJournalEntryRequest) (*JournalEntry, error) {
+	sourceID, err := normalizeOptionalJournalUUIDPtr(req.SourceID, "source_id")
+	if err != nil {
+		return nil, err
+	}
+
 	entry := &JournalEntry{
-		ID:          uuid.New().String(),
-		TenantID:    tenantID,
-		EntryDate:   req.EntryDate,
-		Description: req.Description,
-		Reference:   req.Reference,
-		SourceType:  req.SourceType,
-		SourceID:    req.SourceID,
-		Status:      StatusDraft,
-		CreatedAt:   time.Now(),
-		CreatedBy:   req.UserID,
+		ID:               uuid.New().String(),
+		TenantID:         tenantID,
+		EntryDate:        req.EntryDate,
+		Description:      req.Description,
+		Reference:        req.Reference,
+		SourceType:       req.SourceType,
+		SourceID:         sourceID,
+		RequiresEvidence: req.RequiresEvidence,
+		Status:           StatusDraft,
+		CreatedAt:        time.Now(),
+		CreatedBy:        req.UserID,
 	}
 
 	// Convert request lines to entry lines
-	for _, reqLine := range req.Lines {
-		currency := reqLine.Currency
-		if currency == "" {
-			currency = "EUR"
+	lineIDs := make(map[string]struct{}, len(req.Lines))
+	for i, reqLine := range req.Lines {
+		currency := normalizeJournalLineCurrency(reqLine.Currency)
+		exchangeRate, err := normalizeJournalLineExchangeRate(reqLine.ExchangeRate)
+		if err != nil {
+			return nil, fmt.Errorf("validation failed: line %d: %w", i+1, err)
 		}
-		exchangeRate := reqLine.ExchangeRate
-		if exchangeRate.IsZero() {
-			exchangeRate = decimal.NewFromInt(1)
+		lineID, err := normalizeJournalLineID(reqLine.LineID)
+		if err != nil {
+			return nil, fmt.Errorf("validation failed: line %d: %w", i+1, err)
 		}
+		if _, exists := lineIDs[lineID]; exists {
+			return nil, fmt.Errorf("validation failed: line %d: duplicate line_id %q", i+1, lineID)
+		}
+		lineIDs[lineID] = struct{}{}
 
 		line := JournalEntryLine{
-			ID:           uuid.New().String(),
+			ID:           lineID,
 			AccountID:    reqLine.AccountID,
 			Description:  reqLine.Description,
 			DebitAmount:  reqLine.DebitAmount,
@@ -135,6 +359,377 @@ func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID s
 	}
 
 	return entry, nil
+}
+
+func normalizeJournalLineID(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return uuid.New().String(), nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("line_id must be a valid UUID")
+	}
+	return parsedID.String(), nil
+}
+
+func normalizeOptionalJournalUUIDPtr(value *string, field string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsedID, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a valid UUID", field)
+	}
+	id := parsedID.String()
+	return &id, nil
+}
+
+// CreateJournalEntryTemplate stores a balanced reusable journal entry template.
+func (s *Service) CreateJournalEntryTemplate(ctx context.Context, schemaName, tenantID string, req *CreateJournalEntryTemplateRequest) (*JournalEntryTemplate, error) {
+	repo, err := s.templateRepository()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return nil, errors.New("name is required")
+	}
+	if len(req.Lines) < 2 {
+		return nil, errors.New("at least two lines are required")
+	}
+
+	now := time.Now()
+	template := &JournalEntryTemplate{
+		ID:                 uuid.New().String(),
+		TenantID:           tenantID,
+		Name:               strings.TrimSpace(req.Name),
+		Description:        strings.TrimSpace(req.Description),
+		Reference:          strings.TrimSpace(req.Reference),
+		RequiresEvidence:   req.RequiresEvidence,
+		IsActive:           true,
+		Frequency:          req.Frequency,
+		StartDate:          cloneTemplateDate(req.StartDate),
+		EndDate:            cloneTemplateDate(req.EndDate),
+		NextGenerationDate: cloneTemplateDate(req.NextGenerationDate),
+		CreatedAt:          now,
+		CreatedBy:          req.UserID,
+		UpdatedAt:          now,
+	}
+	normalizeJournalEntryTemplateSchedule(template)
+	for i, reqLine := range req.Lines {
+		line, err := newJournalEntryTemplateLine(template.ID, i+1, reqLine)
+		if err != nil {
+			return nil, fmt.Errorf("validation failed: %w", err)
+		}
+		template.Lines = append(template.Lines, line)
+	}
+	template.LineCount = len(template.Lines)
+
+	if err := validateJournalEntryTemplate(template); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+	if err := repo.CreateJournalEntryTemplate(ctx, schemaName, template); err != nil {
+		return nil, fmt.Errorf("create journal entry template: %w", err)
+	}
+	return template, nil
+}
+
+// ListJournalEntryTemplates retrieves reusable journal entry templates.
+func (s *Service) ListJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]JournalEntryTemplate, error) {
+	repo, err := s.templateRepository()
+	if err != nil {
+		return nil, err
+	}
+	return repo.ListJournalEntryTemplates(ctx, schemaName, tenantID, activeOnly)
+}
+
+// GetJournalEntryTemplate retrieves a reusable journal entry template.
+func (s *Service) GetJournalEntryTemplate(ctx context.Context, schemaName, tenantID, templateID string) (*JournalEntryTemplate, error) {
+	repo, err := s.templateRepository()
+	if err != nil {
+		return nil, err
+	}
+	return repo.GetJournalEntryTemplateByID(ctx, schemaName, tenantID, templateID)
+}
+
+// ApplyJournalEntryTemplate creates a journal entry from a reusable template.
+func (s *Service) ApplyJournalEntryTemplate(ctx context.Context, schemaName, tenantID, templateID string, req *ApplyJournalEntryTemplateRequest) (*JournalEntry, error) {
+	template, err := s.GetJournalEntryTemplate(ctx, schemaName, tenantID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	if !template.IsActive {
+		return nil, errors.New("journal entry template is inactive")
+	}
+	if req.Post && template.RequiresEvidence {
+		return nil, ErrTemplateEvidenceAutoPost
+	}
+
+	entryDate := req.EntryDate
+	if entryDate.IsZero() {
+		entryDate = time.Now()
+	}
+	description := strings.TrimSpace(req.Description)
+	if description == "" {
+		description = template.Description
+	}
+	reference := strings.TrimSpace(req.Reference)
+	if reference == "" {
+		reference = template.Reference
+	}
+
+	sourceID := template.ID
+	lines := make([]CreateJournalEntryLineReq, 0, len(template.Lines))
+	for _, line := range template.Lines {
+		lines = append(lines, CreateJournalEntryLineReq{
+			AccountID:    line.AccountID,
+			Description:  line.Description,
+			DebitAmount:  line.DebitAmount,
+			CreditAmount: line.CreditAmount,
+			Currency:     line.Currency,
+			ExchangeRate: line.ExchangeRate,
+		})
+	}
+
+	entry, err := s.CreateJournalEntry(ctx, schemaName, tenantID, &CreateJournalEntryRequest{
+		EntryDate:        entryDate,
+		Description:      description,
+		Reference:        reference,
+		SourceType:       SourceTypeJournalTemplate,
+		SourceID:         &sourceID,
+		RequiresEvidence: template.RequiresEvidence,
+		Lines:            lines,
+		UserID:           req.UserID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !req.Post {
+		return entry, nil
+	}
+	if err := s.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, req.UserID); err != nil {
+		return nil, err
+	}
+	return s.GetJournalEntry(ctx, schemaName, tenantID, entry.ID)
+}
+
+// GenerateJournalEntryTemplate generates one due recurring journal template and advances its schedule.
+func (s *Service) GenerateJournalEntryTemplate(ctx context.Context, schemaName, tenantID, templateID string, req *GenerateJournalEntryTemplateRequest) (*JournalEntryTemplateGenerationResult, error) {
+	repo, err := s.templateRepository()
+	if err != nil {
+		return nil, err
+	}
+
+	template, err := s.GetJournalEntryTemplate(ctx, schemaName, tenantID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	entryDate, err := recurringTemplateEntryDate(template, req.EntryDate)
+	if err != nil {
+		return nil, err
+	}
+	if req.PeriodLockDate != nil && !entryDate.After(*req.PeriodLockDate) {
+		return nil, fmt.Errorf("period locked through %s; recurring template date %s must be later", req.PeriodLockDate.Format("2006-01-02"), entryDate.Format("2006-01-02"))
+	}
+
+	entry, err := s.ApplyJournalEntryTemplate(ctx, schemaName, tenantID, templateID, &ApplyJournalEntryTemplateRequest{
+		EntryDate: entryDate,
+		Post:      req.Post,
+		UserID:    req.UserID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	nextDate := normalizeJournalTemplateDate(template.CalculateNextDate(entryDate))
+	generatedAt := time.Now()
+	if err := repo.UpdateJournalEntryTemplateAfterGeneration(ctx, schemaName, tenantID, templateID, nextDate, generatedAt); err != nil {
+		return nil, fmt.Errorf("update recurring journal template: %w", err)
+	}
+
+	return &JournalEntryTemplateGenerationResult{
+		TemplateID:           template.ID,
+		TemplateName:         template.Name,
+		GeneratedEntryID:     entry.ID,
+		GeneratedEntryNumber: entry.EntryNumber,
+		EntryDate:            &entryDate,
+		NextGenerationDate:   &nextDate,
+		Status:               "generated",
+	}, nil
+}
+
+// GenerateDueJournalEntryTemplates generates all recurring journal templates due by a date.
+func (s *Service) GenerateDueJournalEntryTemplates(ctx context.Context, schemaName, tenantID string, req *GenerateDueJournalEntryTemplatesRequest) ([]JournalEntryTemplateGenerationResult, error) {
+	repo, err := s.templateRepository()
+	if err != nil {
+		return nil, err
+	}
+	asOfDate := time.Now()
+	if req.AsOfDate != nil {
+		asOfDate = *req.AsOfDate
+	}
+	asOfDate = normalizeJournalTemplateDate(asOfDate)
+
+	ids, err := repo.GetDueJournalEntryTemplateIDs(ctx, schemaName, tenantID, asOfDate)
+	if err != nil {
+		return nil, fmt.Errorf("list due recurring journal templates: %w", err)
+	}
+
+	results := make([]JournalEntryTemplateGenerationResult, 0, len(ids))
+	for _, id := range ids {
+		result, err := s.GenerateJournalEntryTemplate(ctx, schemaName, tenantID, id, &GenerateJournalEntryTemplateRequest{
+			Post:           req.Post,
+			UserID:         req.UserID,
+			PeriodLockDate: req.PeriodLockDate,
+		})
+		if err != nil {
+			results = append(results, JournalEntryTemplateGenerationResult{
+				TemplateID: id,
+				Status:     "error",
+				Error:      err.Error(),
+			})
+			continue
+		}
+		results = append(results, *result)
+	}
+	return results, nil
+}
+
+func (s *Service) templateRepository() (JournalEntryTemplateRepository, error) {
+	repo, ok := s.repo.(JournalEntryTemplateRepository)
+	if !ok {
+		return nil, errJournalEntryTemplatesUnsupported
+	}
+	return repo, nil
+}
+
+func newJournalEntryTemplateLine(templateID string, lineNumber int, reqLine CreateJournalEntryLineReq) (JournalEntryTemplateLine, error) {
+	exchangeRate, err := normalizeJournalLineExchangeRate(reqLine.ExchangeRate)
+	if err != nil {
+		return JournalEntryTemplateLine{}, fmt.Errorf("line %d: %w", lineNumber, err)
+	}
+	return JournalEntryTemplateLine{
+		ID:           uuid.New().String(),
+		TemplateID:   templateID,
+		LineNumber:   lineNumber,
+		AccountID:    strings.TrimSpace(reqLine.AccountID),
+		Description:  strings.TrimSpace(reqLine.Description),
+		DebitAmount:  reqLine.DebitAmount,
+		CreditAmount: reqLine.CreditAmount,
+		Currency:     normalizeJournalLineCurrency(reqLine.Currency),
+		ExchangeRate: exchangeRate,
+	}, nil
+}
+
+func normalizeJournalLineCurrency(value string) string {
+	currency := strings.ToUpper(strings.TrimSpace(value))
+	if currency == "" {
+		return "EUR"
+	}
+	return currency
+}
+
+func normalizeJournalLineExchangeRate(value decimal.Decimal) (decimal.Decimal, error) {
+	if value.IsZero() {
+		return decimal.NewFromInt(1), nil
+	}
+	if value.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, errors.New("exchange_rate must be positive")
+	}
+	return value, nil
+}
+
+func validateJournalEntryTemplate(template *JournalEntryTemplate) error {
+	if err := validateJournalEntryTemplateSchedule(template); err != nil {
+		return err
+	}
+	entry := &JournalEntry{Lines: make([]JournalEntryLine, 0, len(template.Lines))}
+	for _, templateLine := range template.Lines {
+		if strings.TrimSpace(templateLine.AccountID) == "" {
+			return errors.New("line account_id is required")
+		}
+		entry.Lines = append(entry.Lines, JournalEntryLine{
+			AccountID:    templateLine.AccountID,
+			Description:  templateLine.Description,
+			DebitAmount:  templateLine.DebitAmount,
+			CreditAmount: templateLine.CreditAmount,
+			Currency:     templateLine.Currency,
+			ExchangeRate: templateLine.ExchangeRate,
+			BaseDebit:    templateLine.DebitAmount.Mul(templateLine.ExchangeRate),
+			BaseCredit:   templateLine.CreditAmount.Mul(templateLine.ExchangeRate),
+		})
+	}
+	return entry.Validate()
+}
+
+func validateJournalEntryTemplateSchedule(template *JournalEntryTemplate) error {
+	if template.Frequency == "" {
+		return nil
+	}
+	if !isValidJournalEntryTemplateFrequency(template.Frequency) {
+		return errors.New("invalid journal entry template frequency")
+	}
+	if template.StartDate == nil {
+		return errors.New("start_date is required for recurring journal entry templates")
+	}
+	if template.EndDate != nil && template.EndDate.Before(*template.StartDate) {
+		return errors.New("end_date cannot be before start_date")
+	}
+	if template.NextGenerationDate == nil {
+		return errors.New("next_generation_date is required for recurring journal entry templates")
+	}
+	if template.NextGenerationDate.Before(*template.StartDate) {
+		return errors.New("next_generation_date cannot be before start_date")
+	}
+	return nil
+}
+
+func normalizeJournalEntryTemplateSchedule(template *JournalEntryTemplate) {
+	template.StartDate = cloneTemplateDate(template.StartDate)
+	template.EndDate = cloneTemplateDate(template.EndDate)
+	template.NextGenerationDate = cloneTemplateDate(template.NextGenerationDate)
+	if template.Frequency != "" && template.NextGenerationDate == nil && template.StartDate != nil {
+		next := *template.StartDate
+		template.NextGenerationDate = &next
+	}
+}
+
+func recurringTemplateEntryDate(template *JournalEntryTemplate, requested *time.Time) (time.Time, error) {
+	if !template.IsRecurring() {
+		return time.Time{}, errors.New("journal entry template is not recurring")
+	}
+	var entryDate time.Time
+	if requested != nil {
+		entryDate = *requested
+	} else if template.NextGenerationDate != nil {
+		entryDate = *template.NextGenerationDate
+	} else if template.StartDate != nil {
+		entryDate = *template.StartDate
+	} else {
+		return time.Time{}, errors.New("recurring journal entry template has no next generation date")
+	}
+	entryDate = normalizeJournalTemplateDate(entryDate)
+	if template.EndDate != nil && entryDate.After(*template.EndDate) {
+		return time.Time{}, fmt.Errorf("recurring journal entry template ended on %s", template.EndDate.Format("2006-01-02"))
+	}
+	return entryDate, nil
+}
+
+func cloneTemplateDate(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	normalized := normalizeJournalTemplateDate(*value)
+	return &normalized
+}
+
+func normalizeJournalTemplateDate(value time.Time) time.Time {
+	utc := value.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 // PostJournalEntry posts a draft journal entry
@@ -165,20 +760,25 @@ func (s *Service) VoidJournalEntry(ctx context.Context, schemaName, tenantID, en
 		return nil, err
 	}
 
+	return s.voidPostedJournalEntry(ctx, schemaName, tenantID, original, userID, reason, "VOID", time.Now(), fmt.Sprintf("Reversal of %s: %s", original.EntryNumber, reason))
+}
+
+func (s *Service) voidPostedJournalEntry(ctx context.Context, schemaName, tenantID string, original *JournalEntry, userID, reason, sourceType string, entryDate time.Time, description string) (*JournalEntry, error) {
 	if original.Status != StatusPosted {
 		return nil, fmt.Errorf("only posted entries can be voided, current status: %s", original.Status)
 	}
 
 	// Create reversing entry
 	now := time.Now()
+	sourceID := original.ID
 	reversal := &JournalEntry{
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
-		EntryDate:   time.Now(),
-		Description: fmt.Sprintf("Reversal of %s: %s", original.EntryNumber, reason),
+		EntryDate:   entryDate,
+		Description: description,
 		Reference:   original.EntryNumber,
-		SourceType:  "VOID",
-		SourceID:    &original.ID,
+		SourceType:  sourceType,
+		SourceID:    &sourceID,
 		Status:      StatusPosted,
 		PostedAt:    &now,
 		PostedBy:    &userID,
@@ -202,7 +802,7 @@ func (s *Service) VoidJournalEntry(ctx context.Context, schemaName, tenantID, en
 	}
 
 	// Void the entry and create reversal via repository
-	if err := s.repo.VoidJournalEntry(ctx, schemaName, tenantID, entryID, userID, reason, reversal); err != nil {
+	if err := s.repo.VoidJournalEntry(ctx, schemaName, tenantID, original.ID, userID, reason, reversal); err != nil {
 		return nil, err
 	}
 
@@ -325,11 +925,4 @@ func (s *Service) GetIncomeStatement(ctx context.Context, schemaName, tenantID s
 	is.NetIncome = is.TotalRevenue.Sub(is.TotalExpenses)
 
 	return is, nil
-}
-
-// Tx interface for transaction support
-type Tx interface {
-	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
 }

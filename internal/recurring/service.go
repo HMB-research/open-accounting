@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -47,7 +48,6 @@ type PDFService interface {
 
 // Service provides recurring invoice operations
 type Service struct {
-	db        *pgxpool.Pool
 	repo      Repository
 	invoicing InvoicingService
 	email     EmailService
@@ -56,11 +56,23 @@ type Service struct {
 	contacts  ContactsService
 }
 
-// NewService creates a new recurring invoice service
+// NewService creates a new recurring invoice service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool, invoicingService *invoicing.Service, emailService *email.Service, pdfService *pdf.Service, tenantService *tenant.Service, contactsService *contacts.Service) *Service {
+	if db == nil {
+		return &Service{
+			invoicing: invoicingService,
+			email:     emailService,
+			pdfSvc:    pdfService,
+			tenant:    tenantService,
+			contacts:  contactsService,
+		}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create recurring GORM repository: %w", err))
+	}
 	return &Service{
-		db:        db,
-		repo:      NewPostgresRepository(db),
+		repo:      NewGORMRepository(gormDB),
 		invoicing: invoicingService,
 		email:     emailService,
 		pdfSvc:    pdfService,
@@ -81,20 +93,16 @@ func NewServiceWithDependencies(repo Repository, invoicing InvoicingService, ema
 	}
 }
 
-// EnsureSchema ensures the recurring invoice tables exist in the tenant schema
-func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
+func (s *Service) requireRepository() error {
 	if s.repo == nil {
 		return fmt.Errorf("repository not available")
-	}
-	if err := s.repo.EnsureSchema(ctx, schemaName); err != nil {
-		return fmt.Errorf("ensure recurring schema: %w", err)
 	}
 	return nil
 }
 
 // Create creates a new recurring invoice
 func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *CreateRecurringInvoiceRequest) (*RecurringInvoice, error) {
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
+	if err := s.requireRepository(); err != nil {
 		return nil, err
 	}
 
@@ -232,7 +240,7 @@ func (s *Service) CreateFromInvoice(ctx context.Context, tenantID, schemaName st
 
 // GetByID retrieves a recurring invoice by ID
 func (s *Service) GetByID(ctx context.Context, tenantID, schemaName, id string) (*RecurringInvoice, error) {
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
+	if err := s.requireRepository(); err != nil {
 		return nil, err
 	}
 
@@ -256,7 +264,7 @@ func (s *Service) GetByID(ctx context.Context, tenantID, schemaName, id string) 
 
 // List retrieves all recurring invoices for a tenant
 func (s *Service) List(ctx context.Context, tenantID, schemaName string, activeOnly bool) ([]RecurringInvoice, error) {
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
+	if err := s.requireRepository(); err != nil {
 		return nil, err
 	}
 
@@ -365,7 +373,7 @@ func (s *Service) Update(ctx context.Context, tenantID, schemaName, id string, r
 
 // Delete deletes a recurring invoice
 func (s *Service) Delete(ctx context.Context, tenantID, schemaName, id string) error {
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
+	if err := s.requireRepository(); err != nil {
 		return err
 	}
 
@@ -400,7 +408,7 @@ func (s *Service) setActive(ctx context.Context, tenantID, schemaName, id string
 
 // GenerateDueInvoices generates invoices for all due recurring invoices
 func (s *Service) GenerateDueInvoices(ctx context.Context, tenantID, schemaName, userID string) ([]GenerationResult, error) {
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
+	if err := s.requireRepository(); err != nil {
 		return nil, err
 	}
 

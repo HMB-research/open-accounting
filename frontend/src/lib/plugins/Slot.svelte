@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { pluginManager, type PluginSlotRegistration } from './manager';
+	import { resolvePluginFrontendComponent } from './componentRegistry';
 
 	interface Props {
 		/** The slot name to render (e.g., "dashboard.widgets", "invoice.sidebar") */
@@ -24,27 +25,58 @@
 	});
 </script>
 
+{#snippet declarativeSlotItem(registration: PluginSlotRegistration)}
+	{#if registration.path}
+		<a
+			class={`plugin-slot-item plugin-slot-item-${registration.kind}`}
+			href={registration.path}
+			data-plugin-id={registration.pluginId}
+			data-plugin-name={registration.pluginName}
+		>
+			<span class="plugin-slot-text">
+				<span class="plugin-slot-title">{registration.label}</span>
+				{#if registration.description}
+					<span class="plugin-slot-description">{registration.description}</span>
+				{/if}
+			</span>
+			{#if registration.badge}
+				<span class="plugin-slot-badge">{registration.badge}</span>
+			{/if}
+		</a>
+	{:else}
+		<section
+			class={`plugin-slot-item plugin-slot-item-${registration.kind}`}
+			data-plugin-id={registration.pluginId}
+			data-plugin-name={registration.pluginName}
+		>
+			<span class="plugin-slot-text">
+				<span class="plugin-slot-title">{registration.label}</span>
+				{#if registration.description}
+					<span class="plugin-slot-description">{registration.description}</span>
+				{/if}
+			</span>
+			{#if registration.badge}
+				<span class="plugin-slot-badge">{registration.badge}</span>
+			{/if}
+		</section>
+	{/if}
+{/snippet}
+
 {#if registrations.length > 0}
 	<div class="plugin-slot" data-slot={name}>
-		{#each registrations as reg}
-			<div class="plugin-slot-item" data-plugin={reg.pluginName}>
-				<!--
-					Note: In a full implementation, this would dynamically load and render
-					the plugin's Svelte component. Since Svelte doesn't support dynamic
-					component loading at runtime, plugins would need to:
+		{#each registrations as registration (registration.pluginId + registration.componentName)}
+			{@const PluginComponent = resolvePluginFrontendComponent(registration)}
+			{#if PluginComponent}
+				<svelte:boundary>
+					<PluginComponent {...props} {registration} />
 
-					1. Register their components via a build-time process, or
-					2. Use web components that can be loaded dynamically, or
-					3. Use iframe-based isolation for plugin UIs
-
-					For now, this displays a placeholder indicating where plugin content
-					would appear. The architecture is in place for future enhancement.
-				-->
-				<div class="plugin-placeholder">
-					<span class="plugin-badge">{reg.pluginName}</span>
-					<span class="component-name">{reg.componentName}</span>
-				</div>
-			</div>
+					{#snippet failed()}
+						{@render declarativeSlotItem(registration)}
+					{/snippet}
+				</svelte:boundary>
+			{:else}
+				{@render declarativeSlotItem(registration)}
+			{/if}
 		{/each}
 	</div>
 {:else if fallback}
@@ -53,37 +85,64 @@
 
 <style>
 	.plugin-slot {
-		display: contents;
+		display: grid;
+		gap: 0.75rem;
 	}
 
 	.plugin-slot-item {
-		display: contents;
-	}
-
-	/* Development placeholder styles - would be removed in production with real plugin components */
-	.plugin-placeholder {
-		padding: 1rem;
-		border: 2px dashed var(--color-border, #e5e7eb);
-		border-radius: 8px;
-		background: var(--color-bg, #f9fafb);
-		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		background: var(--color-surface, #ffffff);
+		border: 1px solid var(--color-border, #d8dee4);
+		border-radius: 0.5rem;
+		color: inherit;
+		display: flex;
+		gap: 0.75rem;
+		justify-content: space-between;
+		min-height: 3rem;
+		padding: 0.75rem;
+		text-decoration: none;
+	}
+
+	.plugin-slot-item-link,
+	.plugin-slot-item-action {
+		cursor: pointer;
+	}
+
+	.plugin-slot-item-link:hover,
+	.plugin-slot-item-action:hover {
+		border-color: var(--color-primary, #2563eb);
+	}
+
+	.plugin-slot-text {
+		display: grid;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+
+	.plugin-slot-title,
+	.plugin-slot-description {
+		overflow-wrap: anywhere;
+	}
+
+	.plugin-slot-title {
+		font-weight: 600;
+	}
+
+	.plugin-slot-description {
+		color: var(--color-muted, #5f6b7a);
 		font-size: 0.875rem;
-		color: var(--color-text-muted, #6b7280);
 	}
 
-	.plugin-badge {
-		background: var(--color-primary-light, #e0e7ff);
-		color: var(--color-primary, #4f46e5);
-		padding: 0.125rem 0.5rem;
-		border-radius: 9999px;
+	.plugin-slot-badge {
+		background: var(--color-accent-subtle, #eef2ff);
+		border-radius: 999px;
+		color: var(--color-accent, #3730a3);
+		flex: 0 0 auto;
 		font-size: 0.75rem;
-		font-weight: 500;
-	}
-
-	.component-name {
-		font-family: monospace;
-		font-size: 0.8rem;
+		font-weight: 600;
+		line-height: 1;
+		max-width: 12rem;
+		overflow-wrap: anywhere;
+		padding: 0.375rem 0.5rem;
 	}
 </style>

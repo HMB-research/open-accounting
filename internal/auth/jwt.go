@@ -2,12 +2,15 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // Claims represents the JWT claims
@@ -20,9 +23,16 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// RefreshClaims represents JWT claims for refresh tokens.
+type RefreshClaims struct {
+	TokenKind string `json:"token_kind,omitempty"`
+	jwt.RegisteredClaims
+}
+
 const (
-	TokenKindAccessToken = "access_token"
-	TokenKindAPIToken    = "api_token"
+	TokenKindAccessToken  = "access_token"
+	TokenKindRefreshToken = "refresh_token"
+	TokenKindAPIToken     = "api_token"
 )
 
 // APITokenValidator validates non-JWT API tokens and maps them to auth claims.
@@ -73,10 +83,19 @@ func (s *TokenService) SetAPITokenValidator(validator APITokenValidator) {
 
 // GenerateRefreshToken generates a new refresh token
 func (s *TokenService) GenerateRefreshToken(userID string) (string, error) {
-	claims := &jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.refreshExpiry)),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		Subject:   userID,
+	return s.GenerateRefreshTokenWithID(userID, uuid.NewString())
+}
+
+// GenerateRefreshTokenWithID generates a refresh token with a specific token id.
+func (s *TokenService) GenerateRefreshTokenWithID(userID, tokenID string) (string, error) {
+	claims := &RefreshClaims{
+		TokenKind: TokenKindRefreshToken,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.refreshExpiry)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ID:        tokenID,
+			Subject:   userID,
+		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -99,28 +118,61 @@ func (s *TokenService) ValidateAccessToken(tokenString string) (*Claims, error) 
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token claims")
 	}
+	if claims.TokenKind != TokenKindAccessToken {
+		return nil, fmt.Errorf("invalid token kind")
+	}
+	if claims.UserID == "" || claims.Subject == "" || claims.Subject != claims.UserID {
+		return nil, fmt.Errorf("invalid token subject")
+	}
+	if claims.ExpiresAt == nil {
+		return nil, fmt.Errorf("invalid token expiry")
+	}
 
 	return claims, nil
 }
 
 // ValidateRefreshToken validates a refresh token and returns the user ID
 func (s *TokenService) ValidateRefreshToken(tokenString string) (string, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+	claims, err := s.ValidateRefreshTokenClaims(tokenString)
+	if err != nil {
+		return "", err
+	}
+	return claims.Subject, nil
+}
+
+// ValidateRefreshTokenClaims validates a refresh token and returns all refresh claims.
+func (s *TokenService) ValidateRefreshTokenClaims(tokenString string) (*RefreshClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &RefreshClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return s.secretKey, nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("parse token: %w", err)
+		return nil, fmt.Errorf("parse token: %w", err)
 	}
 
-	claims, ok := token.Claims.(*jwt.RegisteredClaims)
+	claims, ok := token.Claims.(*RefreshClaims)
 	if !ok || !token.Valid {
-		return "", fmt.Errorf("invalid token claims")
+		return nil, fmt.Errorf("invalid token claims")
+	}
+	if claims.TokenKind != TokenKindRefreshToken {
+		return nil, fmt.Errorf("invalid token kind")
+	}
+	if claims.Subject == "" || claims.ID == "" {
+		return nil, fmt.Errorf("invalid token subject")
+	}
+	if claims.ExpiresAt == nil {
+		return nil, fmt.Errorf("invalid token expiry")
 	}
 
-	return claims.Subject, nil
+	return claims, nil
+}
+
+// HashRefreshToken returns the stable SHA-256 hex digest stored for a refresh token.
+func HashRefreshToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // Context key type

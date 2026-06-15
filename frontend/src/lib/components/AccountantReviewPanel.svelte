@@ -3,8 +3,10 @@
 	import {
 		api,
 		type BankTransaction,
+		type DocumentAttachment,
 		type FollowUpStatus,
 		type JournalEntry,
+		type OverdueInvoice,
 		type OverdueInvoicesSummary,
 		type PeriodCloseEvent,
 		type Tenant
@@ -15,7 +17,9 @@
 		getSuggestedCloseDate,
 		loadTenantReviewSnapshot,
 		toDecimal,
-		type BankExceptionGroup
+		type BankExceptionGroup,
+		type WorkspaceAssignmentAction,
+		type WorkspaceAssignmentSource
 	} from '$lib/review/workspace';
 
 	let { tenant }: { tenant: Tenant } = $props();
@@ -26,12 +30,68 @@
 	let bankExceptions = $state<BankExceptionGroup[]>([]);
 	let periodCloseEvents = $state<PeriodCloseEvent[]>([]);
 	let journalEntries = $state<JournalEntry[]>([]);
+	let assignmentActions = $state<WorkspaceAssignmentAction[]>([]);
+	let assignmentErrorCount = $state(0);
 	let reviewDrafts = $state<Record<string, { followUpStatus: FollowUpStatus; reviewNote: string }>>({});
 	let reviewSavingId = $state('');
 	let reviewSavedId = $state('');
 	let reviewErrorId = $state('');
 	let reviewError = $state('');
+	let reminderSendingId = $state('');
+	let reminderSentId = $state('');
+	let reminderErrorId = $state('');
+	let reminderError = $state('');
+	let assignmentCompletingId = $state('');
+	let assignmentCompletedMessage = $state('');
+	let assignmentCompletionErrorId = $state('');
+	let assignmentCompletionError = $state('');
+	let assignmentRetentionDrafts = $state<Record<string, string>>({});
+	let assignmentUploadDrafts = $state<Record<string, File | undefined>>({});
+	let assignmentTsdReferenceDrafts = $state<Record<string, string>>({});
+	let assignmentCarryForwardReversalReasons = $state<Record<string, string>>({});
 	let loadedTenantKey = '';
+
+	const carryForwardReverseButtonLabel = 'Reverse carry-forward';
+	const carryForwardReverseLoadingLabel = 'Reversing...';
+	const carryForwardReversalReasonLabel = 'Reversal reason';
+	const carryForwardReversalReasonPlaceholder = 'Approved late correction';
+	const carryForwardReversedMessage = 'Carry-forward reversed from workspace.';
+	const carryForwardReverseErrorMessage = 'Could not reverse carry-forward from the workspace.';
+
+	type AssignmentEvidenceUploadTarget = {
+		entityType: DocumentAttachment['entity_type'];
+		entityId: string;
+		documentType: DocumentAttachment['document_type'];
+		notes: string;
+		replacement: boolean;
+		replacesDocumentId?: string;
+		replacementNote?: string;
+	};
+
+	const documentUploadEntityTypes: DocumentAttachment['entity_type'][] = [
+		'invoice',
+		'journal_entry',
+		'payment',
+		'bank_transaction',
+		'asset',
+		'expense',
+		'quote',
+		'order',
+		'leave_record',
+		'year_end_close',
+		'tsd_declaration',
+		'kmd_declaration'
+	];
+	const documentUploadTypes: DocumentAttachment['document_type'][] = [
+		'supporting_document',
+		'receipt',
+		'reconciliation_evidence',
+		'contract',
+		'asset_record',
+		'tax_support',
+		'close_pack',
+		'other'
+	];
 
 	$effect(() => {
 		const tenantKey = buildTenantKey(tenant);
@@ -52,10 +112,15 @@
 		periodCloseEvents = snapshot.periodCloseEvents;
 		journalEntries = snapshot.journalEntries;
 		bankExceptions = snapshot.bankExceptions;
+		assignmentActions = snapshot.assignmentActions;
+		assignmentErrorCount = snapshot.assignmentErrorCount;
 		reviewDrafts = buildReviewDrafts(snapshot.bankExceptions);
 		reviewSavedId = '';
 		reviewErrorId = '';
 		reviewError = '';
+		reminderSentId = '';
+		reminderErrorId = '';
+		reminderError = '';
 
 		if (snapshot.errorCount === 4) {
 			error = m.errors_loadFailed();
@@ -112,6 +177,16 @@
 	);
 	const topOverdueInvoices = $derived(overdueSummary?.invoices.slice(0, 4) ?? []);
 	const topUnmatchedTransactions = $derived(unmatchedTransactions.slice(0, 4));
+	const topAssignmentActions = $derived(assignmentActions.slice(0, 6));
+	const highPriorityAssignmentCount = $derived(
+		assignmentActions.filter((action) => action.priority.toLowerCase() === 'high').length
+	);
+	const dueNowAssignmentCount = $derived(
+		assignmentActions.filter((action) => action.dueInDays <= 0).length
+	);
+	const cliReadyAssignmentCount = $derived(
+		assignmentActions.filter((action) => Boolean(action.cliCommand)).length
+	);
 	const topJournalEntries = $derived(journalEntries.slice(0, 4));
 	const journalDraftCount = $derived(journalEntries.filter((entry) => entry.status === 'DRAFT').length);
 	const journalPostedCount = $derived(journalEntries.filter((entry) => entry.status === 'POSTED').length);
@@ -158,6 +233,380 @@
 		}
 	}
 
+	function getAssignmentSourceLabel(source: WorkspaceAssignmentSource): string {
+		switch (source) {
+			case 'close':
+				return m.dashboard_reviewAssignmentSourceClose();
+			case 'banking':
+				return m.dashboard_reviewAssignmentSourceBanking();
+			case 'documents':
+				return m.dashboard_reviewAssignmentSourceDocuments();
+			case 'expenses':
+				return m.dashboard_reviewAssignmentSourceExpenses();
+			case 'payroll':
+				return m.dashboard_reviewAssignmentSourcePayroll();
+			case 'tsd':
+				return m.dashboard_reviewAssignmentSourceTsd();
+			case 'kmd':
+				return m.dashboard_reviewAssignmentSourceKmd();
+			case 'tax_reports':
+				return m.dashboard_reviewAssignmentSourceTaxReports();
+			case 'migration':
+				return m.dashboard_reviewAssignmentSourceMigration();
+		}
+	}
+
+	function getAssignmentDueLabel(days: number): string {
+		if (days < 0) {
+			return m.dashboard_reviewAssignmentOverdue();
+		}
+		if (days === 0) {
+			return m.dashboard_reviewAssignmentDueToday();
+		}
+		return m.dashboard_reviewAssignmentDueDays({ days });
+	}
+
+	function buildTenantScopedHref(path: string | undefined): string {
+		if (!path) {
+			return `/dashboard?tenant=${tenant.id}`;
+		}
+
+		const url = new URL(path.startsWith('/') ? path : `/${path}`, 'http://open-accounting.local');
+		url.searchParams.set('tenant', tenant.id);
+		return `${url.pathname}${url.search}${url.hash}`;
+	}
+
+	function canApproveAssignmentDocument(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'documents' &&
+			['document_review_pending', 'document_evidence_unapproved'].includes(action.code) &&
+			Boolean(action.documentId)
+		);
+	}
+
+	function canSetAssignmentDocumentRetention(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'documents' &&
+			['document_retention_missing', 'document_retention_due_soon', 'document_retention_expired'].includes(
+				action.code
+			) &&
+			Boolean(action.documentId)
+		);
+	}
+
+	function getAssignmentEvidenceUploadTarget(action: WorkspaceAssignmentAction): AssignmentEvidenceUploadTarget | null {
+		if (action.source === 'banking' && action.code === 'bank_evidence_required' && action.entityId) {
+			return {
+				entityType: 'bank_transaction',
+				entityId: action.entityId,
+				documentType: 'reconciliation_evidence',
+				notes: m.dashboard_reviewAssignmentEvidenceUploadNote(),
+				replacement: false
+			};
+		}
+
+		if (
+			action.source !== 'documents' ||
+			!['document_evidence_missing', 'document_evidence_policy_violation', 'document_review_rejected'].includes(
+				action.code
+			) ||
+			!action.entityId
+		) {
+			return null;
+		}
+
+		const entityType = getDocumentUploadEntityType(action.entityType);
+		const documentType = getDocumentUploadType(action.documentType);
+		if (!entityType || !documentType) {
+			return null;
+		}
+
+		const replacement = action.code === 'document_review_rejected';
+		if (replacement && !action.documentId) {
+			return null;
+		}
+
+		const notes = replacement
+			? m.dashboard_reviewAssignmentReplacementUploadNote()
+			: m.dashboard_reviewAssignmentEvidenceUploadNote();
+		return {
+			entityType,
+			entityId: action.entityId,
+			documentType,
+			notes,
+			replacement,
+			replacesDocumentId: replacement ? action.documentId : undefined,
+			replacementNote: replacement ? notes : undefined
+		};
+	}
+
+	function getDocumentUploadEntityType(value: string | undefined): DocumentAttachment['entity_type'] | null {
+		return documentUploadEntityTypes.includes(value as DocumentAttachment['entity_type'])
+			? (value as DocumentAttachment['entity_type'])
+			: null;
+	}
+
+	function getDocumentUploadType(value: string | undefined): DocumentAttachment['document_type'] | null {
+		return documentUploadTypes.includes(value as DocumentAttachment['document_type'])
+			? (value as DocumentAttachment['document_type'])
+			: null;
+	}
+
+	function updateAssignmentUploadDraft(action: WorkspaceAssignmentAction, event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		assignmentUploadDrafts = {
+			...assignmentUploadDrafts,
+			[action.id]: target.files?.[0]
+		};
+	}
+
+	function updateAssignmentTsdReferenceDraft(action: WorkspaceAssignmentAction, event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		assignmentTsdReferenceDrafts = {
+			...assignmentTsdReferenceDrafts,
+			[action.id]: target.value
+		};
+	}
+
+	function getAssignmentCarryForwardReversalReason(action: WorkspaceAssignmentAction): string {
+		return assignmentCarryForwardReversalReasons[action.id] ?? '';
+	}
+
+	function updateAssignmentCarryForwardReversalReason(action: WorkspaceAssignmentAction, event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		assignmentCarryForwardReversalReasons = {
+			...assignmentCarryForwardReversalReasons,
+			[action.id]: target.value
+		};
+	}
+
+	function canUploadAssignmentEvidence(action: WorkspaceAssignmentAction): boolean {
+		return getAssignmentEvidenceUploadTarget(action) !== null;
+	}
+
+	function getAssignmentUploadFieldLabel(action: WorkspaceAssignmentAction): string {
+		return getAssignmentEvidenceUploadTarget(action)?.replacement
+			? m.dashboard_reviewAssignmentsReplacementFile()
+			: m.dashboard_reviewAssignmentsEvidenceFile();
+	}
+
+	function getAssignmentUploadButtonLabel(action: WorkspaceAssignmentAction): string {
+		return getAssignmentEvidenceUploadTarget(action)?.replacement
+			? m.dashboard_reviewAssignmentsUploadReplacement()
+			: m.dashboard_reviewAssignmentsUploadEvidence();
+	}
+
+	function getDefaultAssignmentRetentionDate(action: WorkspaceAssignmentAction): string {
+		if (!action.dueDate?.match(/^\d{4}-\d{2}-\d{2}$/)) {
+			return '';
+		}
+
+		const dueYear = Number(action.dueDate.slice(0, 4));
+		if (!dueYear) {
+			return '';
+		}
+		return `${dueYear + 1}${action.dueDate.slice(4)}`;
+	}
+
+	function getAssignmentRetentionDate(action: WorkspaceAssignmentAction): string {
+		return assignmentRetentionDrafts[action.id] ?? getDefaultAssignmentRetentionDate(action);
+	}
+
+	function updateAssignmentRetentionDraft(action: WorkspaceAssignmentAction, event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		assignmentRetentionDrafts = {
+			...assignmentRetentionDrafts,
+			[action.id]: target.value
+		};
+	}
+
+	function canCalculateAssignmentPayroll(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'payroll' &&
+			['payroll_run_calculate', 'payroll_no_payslips'].includes(action.code) &&
+			Boolean(action.entityId)
+		);
+	}
+
+	function canApproveAssignmentPayroll(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'payroll' && action.code === 'payroll_run_approve' && Boolean(action.entityId);
+	}
+
+	function canSetAssignmentPayrollPaymentDate(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'payroll' &&
+			action.code === 'payroll_payment_date_missing' &&
+			Boolean(action.entityId) &&
+			parseAssignmentPeriod(action) !== null
+		);
+	}
+
+	function canGenerateAssignmentTSD(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'payroll' &&
+			['payroll_generate_tsd', 'payroll_paid_tsd_followup'].includes(action.code) &&
+			Boolean(action.entityId)
+		);
+	}
+
+	function canExportAssignmentTSD(action: WorkspaceAssignmentAction): boolean {
+		if (parseAssignmentPeriod(action) === null) {
+			return false;
+		}
+
+		if (action.source === 'tsd') {
+			return ['tsd_export_and_submit', 'tsd_accepted_archive'].includes(action.code);
+		}
+
+		return action.source === 'payroll' && action.code === 'payroll_declared_archive';
+	}
+
+	function canSubmitAssignmentTSD(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'tsd' &&
+			action.code === 'tsd_export_and_submit' &&
+			parseAssignmentPeriod(action) !== null
+		);
+	}
+
+	function canAcceptAssignmentTSD(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'tsd' &&
+			action.code === 'tsd_awaiting_authority_acceptance' &&
+			parseAssignmentPeriod(action) !== null
+		);
+	}
+
+	function canExecuteAssignmentMigration(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'migration' &&
+			action.code === 'migration_execution_needs_confirmation' &&
+			Boolean(action.entityId)
+		);
+	}
+
+	function canSubmitAssignmentExpense(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'expenses' && action.code === 'expense_submit_for_approval' && Boolean(action.entityId);
+	}
+
+	function canApproveAssignmentExpense(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'expenses' && action.code === 'expense_approve_or_reject' && Boolean(action.entityId);
+	}
+
+	function canPostAssignmentExpense(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'expenses' && action.code === 'expense_post_to_ledger' && Boolean(action.entityId);
+	}
+
+	function canCloseAssignmentFiscalYear(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'close' && action.code === 'fiscal_year_not_closed' && Boolean(action.periodEndDate);
+	}
+
+	function canPostAssignmentCarryForward(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'close' && action.code === 'ready_to_post_carry_forward' && Boolean(action.periodEndDate);
+	}
+
+	function canReverseAssignmentCarryForward(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'close' && action.code === 'carry_forward_already_posted' && Boolean(action.periodEndDate);
+	}
+
+	type AssignmentPeriod = {
+		year: number;
+		month: number;
+	};
+
+	function parseAssignmentPeriod(action: WorkspaceAssignmentAction): AssignmentPeriod | null {
+		const match = action.period?.match(/^(\d{4})-(\d{2})$/);
+		if (!match) {
+			return null;
+		}
+
+		const year = Number(match[1]);
+		const month = Number(match[2]);
+		if (!year || month < 1 || month > 12) {
+			return null;
+		}
+
+		return { year, month };
+	}
+
+	function getMonthEndDate(period: AssignmentPeriod): string {
+		const date = new Date(Date.UTC(period.year, period.month, 0));
+		const year = date.getUTCFullYear();
+		const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+		const day = String(date.getUTCDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
+	function canRegenerateAssignmentKMD(action: WorkspaceAssignmentAction): boolean {
+		return action.source === 'kmd' && action.code === 'kmd_no_vat_rows' && parseAssignmentPeriod(action) !== null;
+	}
+
+	function canExportAssignmentKMD(action: WorkspaceAssignmentAction): boolean {
+		if (action.source !== 'kmd' || parseAssignmentPeriod(action) === null) {
+			return false;
+		}
+
+		return [
+			'kmd_payable_review',
+			'kmd_refund_review',
+			'kmd_zero_payable_review',
+			'kmd_awaiting_authority_acceptance',
+			'kmd_accepted_archive'
+		].includes(action.code);
+	}
+
+	function canSubmitAssignmentKMD(action: WorkspaceAssignmentAction): boolean {
+		if (action.source !== 'kmd' || parseAssignmentPeriod(action) === null) {
+			return false;
+		}
+
+		return ['kmd_payable_review', 'kmd_refund_review', 'kmd_zero_payable_review'].includes(action.code);
+	}
+
+	function canAcceptAssignmentKMD(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'kmd' &&
+			action.code === 'kmd_awaiting_authority_acceptance' &&
+			parseAssignmentPeriod(action) !== null
+		);
+	}
+
+	function canGenerateAssignmentKMDINF(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'tax_reports' &&
+			['kmd_inf_review_required', 'kmd_inf_no_threshold_rows'].includes(action.code) &&
+			parseAssignmentPeriod(action) !== null
+		);
+	}
+
+	function canGenerateAssignmentOSS(action: WorkspaceAssignmentAction): boolean {
+		return (
+			action.source === 'tax_reports' &&
+			['eu_vat_oss_review_required', 'eu_vat_oss_no_rows'].includes(action.code) &&
+			parseAssignmentQuarter(action) !== null
+		);
+	}
+
+	type AssignmentQuarter = {
+		year: number;
+		quarter: number;
+	};
+
+	function parseAssignmentQuarter(action: WorkspaceAssignmentAction): AssignmentQuarter | null {
+		const match = action.period?.match(/^(\d{4})-Q([1-4])$/);
+		if (!match) {
+			return null;
+		}
+
+		const year = Number(match[1]);
+		const quarter = Number(match[2]);
+		if (!year || quarter < 1 || quarter > 4) {
+			return null;
+		}
+
+		return { year, quarter };
+	}
+
 	function isReviewDirty(transaction: BankTransaction): boolean {
 		const draft = reviewDrafts[transaction.id];
 		if (!draft) {
@@ -192,6 +641,622 @@
 			reviewError = err instanceof Error ? err.message : m.dashboard_reviewFollowUpSaveError();
 		} finally {
 			reviewSavingId = '';
+		}
+	}
+
+	async function approveAssignmentDocument(action: WorkspaceAssignmentAction) {
+		if (!action.documentId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.reviewDocument(tenant.id, action.documentId, {
+				review_status: 'APPROVED'
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentDocumentApproved();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentDocumentApproveError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function setAssignmentDocumentRetention(action: WorkspaceAssignmentAction) {
+		if (!action.documentId) {
+			return;
+		}
+
+		const retentionUntil = getAssignmentRetentionDate(action).trim();
+		if (!retentionUntil.match(/^\d{4}-\d{2}-\d{2}$/)) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError = m.dashboard_reviewAssignmentDocumentRetentionDateRequired();
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.updateDocumentRetention(tenant.id, action.documentId, {
+				retention_until: retentionUntil
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentDocumentRetentionSet();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentDocumentRetentionSetError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function uploadAssignmentEvidence(action: WorkspaceAssignmentAction) {
+		const target = getAssignmentEvidenceUploadTarget(action);
+		if (!target) {
+			return;
+		}
+
+		const file = assignmentUploadDrafts[action.id];
+		if (!file) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError = m.dashboard_reviewAssignmentEvidenceFileRequired();
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.uploadDocument(tenant.id, target.entityType, target.entityId, file, {
+				document_type: target.documentType,
+				notes: target.notes,
+				replaces_document_id: target.replacesDocumentId,
+				replacement_note: target.replacementNote
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentEvidenceUploaded();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentEvidenceUploadError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function calculateAssignmentPayroll(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.calculatePayroll(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentPayrollCalculated();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentPayrollCalculateError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function approveAssignmentPayroll(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.approvePayroll(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentPayrollApproved();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentPayrollApproveError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function setAssignmentPayrollPaymentDate(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!action.entityId || !period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.updatePayrollPaymentDate(tenant.id, action.entityId, {
+				payment_date: getMonthEndDate(period)
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentPayrollPaymentDateSet();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentPayrollPaymentDateError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function generateAssignmentTSD(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.generateTSD(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentTsdGenerated();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentTsdGenerateError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function exportAssignmentTSD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.downloadTSDXml(tenant.id, period.year, period.month);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentTsdExported();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentTsdExportError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function submitAssignmentTSD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		const emtaReference = assignmentTsdReferenceDrafts[action.id]?.trim();
+		if (!period || !emtaReference) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.markTSDSubmitted(tenant.id, period.year, period.month, emtaReference);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentTsdSubmitted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentTsdSubmitError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function acceptAssignmentTSD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.markTSDAccepted(tenant.id, period.year, period.month);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentTsdAccepted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentTsdAcceptError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function executeAssignmentMigration(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.executeMigration(tenant.id, {
+				files: [],
+				confirm: true,
+				resume_from_run_id: action.entityId
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentMigrationExecuted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentMigrationExecuteError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function submitAssignmentExpense(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.submitExpense(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentExpenseSubmitted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentExpenseSubmitError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function approveAssignmentExpense(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.approveExpense(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentExpenseApproved();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentExpenseApproveError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function postAssignmentExpense(action: WorkspaceAssignmentAction) {
+		if (!action.entityId) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.postExpense(tenant.id, action.entityId);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentExpensePosted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentExpensePostError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function closeAssignmentFiscalYear(action: WorkspaceAssignmentAction) {
+		if (!action.periodEndDate) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.closePeriod(tenant.id, {
+				period_end_date: action.periodEndDate,
+				note: m.dashboard_reviewAssignmentCloseYearNote(),
+				reviewer_sign_off: true,
+				...(tenant.settings?.inventory_valuation_method
+					? { inventory_valuation_method: tenant.settings.inventory_valuation_method }
+					: {})
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentCloseYearClosed();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentCloseYearError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function postAssignmentCarryForward(action: WorkspaceAssignmentAction) {
+		if (!action.periodEndDate) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.createYearEndCarryForward(tenant.id, {
+				period_end_date: action.periodEndDate,
+				...(tenant.settings?.inventory_valuation_method
+					? { inventory_valuation_method: tenant.settings.inventory_valuation_method }
+					: {})
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentCarryForwardPosted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentCarryForwardPostError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function reverseAssignmentCarryForward(action: WorkspaceAssignmentAction) {
+		const reason = getAssignmentCarryForwardReversalReason(action).trim();
+		if (!action.periodEndDate || !reason) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.reverseYearEndCarryForward(tenant.id, {
+				period_end_date: action.periodEndDate,
+				reason
+			});
+			await loadReviewWorkspace(tenant);
+			assignmentCarryForwardReversalReasons = {
+				...assignmentCarryForwardReversalReasons,
+				[action.id]: ''
+			};
+			assignmentCompletedMessage = carryForwardReversedMessage;
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : carryForwardReverseErrorMessage;
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function regenerateAssignmentKMD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.generateKMD(tenant.id, period);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentKmdRegenerated();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdGenerateError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function exportAssignmentKMD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.downloadKMDXml(tenant.id, period.year, period.month);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentKmdExported();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdExportError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function submitAssignmentKMD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.markKMDSubmitted(tenant.id, period.year, period.month);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentKmdSubmitted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdSubmitError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function acceptAssignmentKMD(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.markKMDAccepted(tenant.id, period.year, period.month);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentKmdAccepted();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdAcceptError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function generateAssignmentKMDINF(action: WorkspaceAssignmentAction) {
+		const period = parseAssignmentPeriod(action);
+		if (!period) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.generateKMDINF(tenant.id, period);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentKmdInfGenerated();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentKmdInfGenerateError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function generateAssignmentOSS(action: WorkspaceAssignmentAction) {
+		const quarter = parseAssignmentQuarter(action);
+		if (!quarter) {
+			return;
+		}
+
+		assignmentCompletingId = action.id;
+		assignmentCompletedMessage = '';
+		assignmentCompletionErrorId = '';
+		assignmentCompletionError = '';
+
+		try {
+			await api.generateEUVATOSS(tenant.id, quarter);
+			await loadReviewWorkspace(tenant);
+			assignmentCompletedMessage = m.dashboard_reviewAssignmentOssGenerated();
+		} catch (err) {
+			assignmentCompletionErrorId = action.id;
+			assignmentCompletionError =
+				err instanceof Error ? err.message : m.dashboard_reviewAssignmentOssGenerateError();
+		} finally {
+			assignmentCompletingId = '';
+		}
+	}
+
+	async function sendInvoiceReminder(invoice: OverdueInvoice) {
+		if (!invoice.contact_email) {
+			return;
+		}
+
+		reminderSendingId = invoice.id;
+		reminderSentId = '';
+		reminderErrorId = '';
+		reminderError = '';
+
+		try {
+			const result = await api.sendPaymentReminder(tenant.id, invoice.id, undefined);
+			if (!result.success) {
+				throw new Error(result.message || m.dashboard_reviewReminderSendError());
+			}
+
+			await loadReviewWorkspace(tenant);
+			reminderSentId = invoice.id;
+		} catch (err) {
+			reminderErrorId = invoice.id;
+			reminderError = err instanceof Error ? err.message : m.dashboard_reviewReminderSendError();
+		} finally {
+			reminderSendingId = '';
 		}
 	}
 </script>
@@ -242,15 +1307,38 @@
 
 				{#if topOverdueInvoices.length > 0}
 					<ul class="review-list">
-						{#each topOverdueInvoices as invoice}
-							<li>
-								<div>
+						{#each topOverdueInvoices as invoice (invoice.id)}
+							<li class="review-list-item-invoice">
+								<div class="review-list-main">
 									<strong>{invoice.invoice_number}</strong>
 									<span>{invoice.contact_name}</span>
+									{#if invoice.contact_email}
+										<span>{invoice.contact_email}</span>
+									{:else}
+										<span>{m.reminder_no_email()}</span>
+									{/if}
 								</div>
 								<div class="review-list-meta">
 									<strong>{formatCurrency(invoice.outstanding_amount)}</strong>
 									<span>{invoice.days_overdue} {m.dashboard_reviewDaysShort()}</span>
+								</div>
+								<div class="review-invoice-actions">
+									<button
+										class="btn btn-secondary review-reminder-button"
+										type="button"
+										onclick={() => sendInvoiceReminder(invoice)}
+										disabled={reminderSendingId === invoice.id || !invoice.contact_email}
+									>
+										{reminderSendingId === invoice.id ? m.reminder_sending() : m.reminder_send_now()}
+									</button>
+									{#if reminderSentId === invoice.id}
+										<span class="review-feedback review-feedback-success">
+											{m.reminder_sent_success({ invoice: invoice.invoice_number })}
+										</span>
+									{/if}
+									{#if reminderErrorId === invoice.id}
+										<span class="review-feedback review-feedback-error">{reminderError}</span>
+									{/if}
 								</div>
 							</li>
 						{/each}
@@ -286,7 +1374,7 @@
 
 				{#if topUnmatchedTransactions.length > 0}
 					<ul class="review-list">
-						{#each topUnmatchedTransactions as item}
+						{#each topUnmatchedTransactions as item (item.transaction.id)}
 							<li class="review-list-item-banking">
 								<div class="review-list-main">
 									<strong>{item.account.name}</strong>
@@ -346,6 +1434,377 @@
 				{/if}
 			</article>
 
+			<article id="assignment-queue" class="review-card">
+				<div class="review-card-topline">
+					<span class="review-card-kicker">{m.dashboard_reviewAssignmentsTitle()}</span>
+					<a href="/documents?tenant={tenant.id}&review_status=PENDING" class="review-action">{m.dashboard_reviewAssignmentsOpenDocuments()}</a>
+				</div>
+				<div class="review-figure">
+					<strong>{assignmentActions.length}</strong>
+					<span>{m.dashboard_reviewAssignmentsCount()}</span>
+				</div>
+				<div class="review-metrics">
+					<div>
+						<strong>{highPriorityAssignmentCount}</strong>
+						<span>{m.dashboard_reviewAssignmentsHighPriority()}</span>
+					</div>
+					<div>
+						<strong>{dueNowAssignmentCount}</strong>
+						<span>{m.dashboard_reviewAssignmentsDueNow()}</span>
+					</div>
+					<div>
+						<strong>{cliReadyAssignmentCount}</strong>
+						<span>{m.dashboard_reviewAssignmentsCliReady()}</span>
+					</div>
+				</div>
+
+				{#if assignmentErrorCount > 0}
+					<p class="review-feedback review-feedback-error">{m.dashboard_reviewAssignmentsPartial()}</p>
+				{/if}
+				{#if assignmentCompletedMessage}
+					<p class="review-feedback review-feedback-success">{assignmentCompletedMessage}</p>
+				{/if}
+
+				{#if topAssignmentActions.length > 0}
+					<ul class="review-list review-assignment-list">
+						{#each topAssignmentActions as action (action.id)}
+							<li class="review-list-item-assignment">
+								<div class="review-list-main">
+									<strong>{action.message}</strong>
+									<span>
+										{getAssignmentSourceLabel(action.source)} · {action.queue} · {action.severity}
+									</span>
+									<span>{action.action}</span>
+									{#if action.cliCommand}
+										<code>{m.dashboard_reviewAssignmentCommand()}: {action.cliCommand}</code>
+									{/if}
+								</div>
+								<div class="review-list-meta review-list-meta-assignment">
+									<strong>{action.priority}</strong>
+									<span>{getAssignmentDueLabel(action.dueInDays)}</span>
+									<a class="review-action" href={buildTenantScopedHref(action.uiPath)}>
+										{m.dashboard_reviewAssignmentsOpenAction()}
+									</a>
+									{#if canCloseAssignmentFiscalYear(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => closeAssignmentFiscalYear(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsCloseYear()}
+										</button>
+									{/if}
+									{#if canPostAssignmentCarryForward(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => postAssignmentCarryForward(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsPostCarryForward()}
+										</button>
+									{/if}
+									{#if canReverseAssignmentCarryForward(action)}
+										<label class="review-assignment-inline-field review-assignment-reversal-field">
+											<span>{carryForwardReversalReasonLabel}</span>
+											<input
+												type="text"
+												placeholder={carryForwardReversalReasonPlaceholder}
+												value={getAssignmentCarryForwardReversalReason(action)}
+												oninput={(event) => updateAssignmentCarryForwardReversalReason(action, event)}
+											/>
+										</label>
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => reverseAssignmentCarryForward(action)}
+											disabled={assignmentCompletingId === action.id || !getAssignmentCarryForwardReversalReason(action).trim()}
+										>
+											{assignmentCompletingId === action.id
+												? carryForwardReverseLoadingLabel
+												: carryForwardReverseButtonLabel}
+										</button>
+									{/if}
+									{#if canApproveAssignmentDocument(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => approveAssignmentDocument(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsApproveDocument()}
+										</button>
+									{/if}
+									{#if canSetAssignmentDocumentRetention(action)}
+										<label class="review-assignment-inline-field">
+											<span>{m.dashboard_reviewAssignmentsRetentionDate()}</span>
+											<input
+												type="date"
+												value={getAssignmentRetentionDate(action)}
+												oninput={(event) => updateAssignmentRetentionDraft(action, event)}
+											/>
+										</label>
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => setAssignmentDocumentRetention(action)}
+											disabled={assignmentCompletingId === action.id || !getAssignmentRetentionDate(action)}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsSetRetention()}
+										</button>
+									{/if}
+									{#if canUploadAssignmentEvidence(action)}
+										<label class="review-assignment-upload-field">
+											<span>{getAssignmentUploadFieldLabel(action)}</span>
+											<input
+												type="file"
+												onchange={(event) => updateAssignmentUploadDraft(action, event)}
+											/>
+										</label>
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => uploadAssignmentEvidence(action)}
+											disabled={assignmentCompletingId === action.id || !assignmentUploadDrafts[action.id]}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: getAssignmentUploadButtonLabel(action)}
+										</button>
+									{/if}
+									{#if canCalculateAssignmentPayroll(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => calculateAssignmentPayroll(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsCalculatePayroll()}
+										</button>
+									{/if}
+									{#if canApproveAssignmentPayroll(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => approveAssignmentPayroll(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsApprovePayroll()}
+										</button>
+									{/if}
+									{#if canSetAssignmentPayrollPaymentDate(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => setAssignmentPayrollPaymentDate(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsSetPayrollPaymentDate()}
+										</button>
+									{/if}
+									{#if canGenerateAssignmentTSD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => generateAssignmentTSD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsGenerateTsd()}
+										</button>
+									{/if}
+									{#if canExportAssignmentTSD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => exportAssignmentTSD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsExportTsdXml()}
+										</button>
+									{/if}
+									{#if canSubmitAssignmentTSD(action)}
+										<label class="review-assignment-inline-field">
+											<span>{m.dashboard_reviewAssignmentsTsdEmtaReference()}</span>
+											<input
+												type="text"
+												value={assignmentTsdReferenceDrafts[action.id] ?? ''}
+												oninput={(event) => updateAssignmentTsdReferenceDraft(action, event)}
+											/>
+										</label>
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => submitAssignmentTSD(action)}
+											disabled={assignmentCompletingId === action.id || !assignmentTsdReferenceDrafts[action.id]?.trim()}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsSubmitTsd()}
+										</button>
+									{/if}
+									{#if canAcceptAssignmentTSD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => acceptAssignmentTSD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsAcceptTsd()}
+										</button>
+									{/if}
+									{#if canExecuteAssignmentMigration(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => executeAssignmentMigration(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsExecuteMigration()}
+										</button>
+									{/if}
+									{#if canSubmitAssignmentExpense(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => submitAssignmentExpense(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsSubmitExpense()}
+										</button>
+									{/if}
+									{#if canApproveAssignmentExpense(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => approveAssignmentExpense(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsApproveExpense()}
+										</button>
+									{/if}
+									{#if canPostAssignmentExpense(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => postAssignmentExpense(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsPostExpense()}
+										</button>
+									{/if}
+									{#if canRegenerateAssignmentKMD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => regenerateAssignmentKMD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsRegenerateKmd()}
+										</button>
+									{/if}
+									{#if canExportAssignmentKMD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => exportAssignmentKMD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsExportKmdXml()}
+										</button>
+									{/if}
+									{#if canSubmitAssignmentKMD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => submitAssignmentKMD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsSubmitKmd()}
+										</button>
+									{/if}
+									{#if canAcceptAssignmentKMD(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => acceptAssignmentKMD(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsAcceptKmd()}
+										</button>
+									{/if}
+									{#if canGenerateAssignmentKMDINF(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => generateAssignmentKMDINF(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsGenerateKmdInf()}
+										</button>
+									{/if}
+									{#if canGenerateAssignmentOSS(action)}
+										<button
+											class="review-action review-action-button"
+											type="button"
+											onclick={() => generateAssignmentOSS(action)}
+											disabled={assignmentCompletingId === action.id}
+										>
+											{assignmentCompletingId === action.id
+												? m.common_loading()
+												: m.dashboard_reviewAssignmentsGenerateOss()}
+										</button>
+									{/if}
+									{#if assignmentCompletionErrorId === action.id}
+										<span class="review-feedback review-feedback-error">{assignmentCompletionError}</span>
+									{/if}
+								</div>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="review-empty">{m.dashboard_reviewAssignmentsEmpty()}</p>
+				{/if}
+			</article>
+
 			<article class="review-card">
 				<div class="review-card-topline">
 					<span class="review-card-kicker">{m.dashboard_reviewCloseTitle()}</span>
@@ -378,7 +1837,7 @@
 
 				{#if periodCloseEvents.length > 0}
 					<ul class="review-list">
-						{#each periodCloseEvents.slice(0, 4) as event}
+						{#each periodCloseEvents.slice(0, 4) as event (event.id)}
 							<li>
 								<div>
 									<strong>{getCloseActionLabel(event)}</strong>
@@ -422,7 +1881,7 @@
 
 				{#if topJournalEntries.length > 0}
 					<ul class="review-list">
-						{#each topJournalEntries as entry}
+						{#each topJournalEntries as entry (entry.id)}
 							<li>
 								<div>
 									<strong>{entry.entry_number}</strong>
@@ -544,6 +2003,60 @@
 		text-decoration: underline;
 	}
 
+	.review-action-button {
+		border: none;
+		background: transparent;
+		padding: 0;
+		cursor: pointer;
+	}
+
+	.review-action-button:disabled {
+		cursor: wait;
+		opacity: 0.65;
+		text-decoration: none;
+	}
+
+	.review-assignment-inline-field {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 0.35rem;
+		font-size: 0.78rem;
+		color: var(--color-text-muted);
+	}
+
+	.review-assignment-inline-field input {
+		width: 8.7rem;
+		min-height: 1.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		padding: 0.15rem 0.35rem;
+		color: var(--color-text);
+		background: var(--color-surface);
+		font: inherit;
+	}
+
+	.review-assignment-reversal-field input {
+		width: 12rem;
+	}
+
+	.review-assignment-upload-field {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.25rem;
+		max-width: 12rem;
+		font-size: 0.78rem;
+		color: var(--color-text-muted);
+	}
+
+	.review-assignment-upload-field input {
+		width: 100%;
+		max-width: 12rem;
+		font-size: 0.75rem;
+		color: var(--color-text);
+	}
+
 	.review-figure {
 		display: flex;
 		flex-direction: column;
@@ -615,13 +2128,35 @@
 		gap: 0.15rem;
 	}
 
-	.review-list-item-banking {
+	.review-list li.review-list-item-banking {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
 	}
 
+	.review-list li.review-list-item-invoice {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto minmax(9rem, auto);
+		align-items: flex-start;
+	}
+
+	.review-list li.review-list-item-assignment {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(9rem, auto);
+	}
+
 	.review-list-main {
 		min-width: 0;
+	}
+
+	.review-list-main code {
+		display: block;
+		max-width: 100%;
+		overflow-wrap: anywhere;
+		color: var(--color-text);
+		background: rgba(15, 23, 42, 0.05);
+		border-radius: 0.5rem;
+		padding: 0.4rem 0.5rem;
+		font-size: 0.75rem;
 	}
 
 	.review-list-meta {
@@ -632,8 +2167,39 @@
 		align-items: flex-end;
 	}
 
+	.review-list-meta-assignment {
+		align-items: flex-end;
+	}
+
 	.review-note-preview {
 		font-style: italic;
+	}
+
+	.review-invoice-actions {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.45rem;
+		min-width: 9rem;
+	}
+
+	.review-reminder-button {
+		justify-content: center;
+		width: 100%;
+	}
+
+	.review-card-emphasis .review-reminder-button {
+		background: rgba(255, 255, 255, 0.12);
+		border-color: rgba(226, 232, 240, 0.24);
+		color: rgba(248, 250, 252, 0.96);
+	}
+
+	.review-card-emphasis .review-reminder-button:hover:not(:disabled) {
+		background: rgba(255, 255, 255, 0.2);
+	}
+
+	.review-card-emphasis .review-reminder-button:disabled {
+		color: rgba(226, 232, 240, 0.52);
 	}
 
 	.review-transaction-review {
@@ -723,13 +2289,40 @@
 			grid-template-columns: 1fr;
 		}
 
-		.review-list-item-banking {
+		.review-list li.review-list-item-banking {
 			grid-template-columns: 1fr;
+		}
+
+		.review-list li.review-list-item-invoice {
+			grid-template-columns: 1fr;
+		}
+
+		.review-list li.review-list-item-assignment {
+			grid-template-columns: 1fr;
+		}
+
+		.review-invoice-actions {
+			align-items: stretch;
+			width: 100%;
 		}
 
 		.review-list-meta-banking {
 			align-items: flex-start;
 			text-align: left;
+		}
+
+		.review-list-meta-assignment {
+			align-items: flex-start;
+			text-align: left;
+		}
+
+		.review-assignment-inline-field {
+			justify-content: flex-start;
+		}
+
+		.review-assignment-upload-field {
+			align-items: flex-start;
+			max-width: 100%;
 		}
 
 		.review-transaction-review {

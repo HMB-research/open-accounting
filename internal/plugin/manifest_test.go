@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -332,6 +333,198 @@ func TestManifestValidate(t *testing.T) {
 				if !containsString(err.Error(), tt.errMsg) {
 					t.Errorf("Manifest.Validate() error = %q, should contain %q", err.Error(), tt.errMsg)
 				}
+			}
+		})
+	}
+}
+
+func TestManifestValidateBackendRuntimeModes(t *testing.T) {
+	tests := []struct {
+		name    string
+		backend BackendConfig
+		perms   []string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "Legacy backend remains valid",
+			backend: BackendConfig{
+				Package: "./backend",
+				Entry:   "NewService",
+				Hooks:   []HookConfig{{Event: "invoice.created", Handler: "OnInvoiceCreated"}},
+			},
+			perms: []string{"hooks:register"},
+		},
+		{
+			name: "HTTP runtime uses loopback base URL without package entry",
+			backend: BackendConfig{
+				Runtime: BackendRuntimeHTTP,
+				BaseURL: "http://127.0.0.1:9123",
+				Routes:  []RouteConfig{{Method: "POST", Path: "/status", Handler: "/routes/status"}},
+			},
+			perms: []string{"routes:register"},
+		},
+		{
+			name: "HTTP runtime accepts legacy package metadata",
+			backend: BackendConfig{
+				Package: "./backend",
+				Entry:   "NewService",
+				Runtime: BackendRuntimeHTTP,
+				BaseURL: "http://localhost:9123",
+				Hooks:   []HookConfig{{Event: "invoice.created", Handler: "/hooks/invoice"}},
+			},
+			perms: []string{"hooks:register"},
+		},
+		{
+			name: "HTTP runtime rejects non HTTP scheme",
+			backend: BackendConfig{
+				Runtime: BackendRuntimeHTTP,
+				BaseURL: "https://127.0.0.1:9123",
+				Routes:  []RouteConfig{{Method: "GET", Path: "/status", Handler: "/routes/status"}},
+			},
+			perms:   []string{"routes:register"},
+			wantErr: true,
+			errMsg:  "backend.base_url must use http loopback",
+		},
+		{
+			name: "HTTP runtime rejects non loopback host",
+			backend: BackendConfig{
+				Runtime: BackendRuntimeHTTP,
+				BaseURL: "http://example.com",
+				Routes:  []RouteConfig{{Method: "GET", Path: "/status", Handler: "/routes/status"}},
+			},
+			perms:   []string{"routes:register"},
+			wantErr: true,
+			errMsg:  "backend.base_url must use a loopback host",
+		},
+		{
+			name: "HTTP runtime rejects executable",
+			backend: BackendConfig{
+				Runtime:    BackendRuntimeHTTP,
+				BaseURL:    "http://127.0.0.1:9123",
+				Executable: "bin/plugin-runtime",
+			},
+			wantErr: true,
+			errMsg:  "backend.executable is only valid with backend.runtime: package",
+		},
+		{
+			name: "Package runtime requires safe package and executable",
+			backend: BackendConfig{
+				Runtime:    BackendRuntimePackage,
+				Package:    "./backend",
+				Executable: "bin/plugin-runtime",
+				Routes:     []RouteConfig{{Method: "GET", Path: "/status", Handler: "/routes/status"}},
+			},
+			perms: []string{"routes:register"},
+		},
+		{
+			name: "Package runtime rejects base URL",
+			backend: BackendConfig{
+				Runtime:    BackendRuntimePackage,
+				Package:    "./backend",
+				Executable: "bin/plugin-runtime",
+				BaseURL:    "http://127.0.0.1:9123",
+			},
+			wantErr: true,
+			errMsg:  "backend.base_url is only valid with backend.runtime: http",
+		},
+		{
+			name: "Package runtime requires executable",
+			backend: BackendConfig{
+				Runtime: BackendRuntimePackage,
+				Package: "./backend",
+			},
+			wantErr: true,
+			errMsg:  "backend.executable is required for package runtime",
+		},
+		{
+			name: "Package runtime rejects absolute package path",
+			backend: BackendConfig{
+				Runtime:    BackendRuntimePackage,
+				Package:    "/tmp/backend",
+				Executable: "bin/plugin-runtime",
+			},
+			wantErr: true,
+			errMsg:  "backend.package must be a plugin-relative path",
+		},
+		{
+			name: "Package runtime rejects executable traversal",
+			backend: BackendConfig{
+				Runtime:    BackendRuntimePackage,
+				Package:    "./backend",
+				Executable: "../plugin-runtime",
+			},
+			wantErr: true,
+			errMsg:  "backend.executable must stay within the plugin package",
+		},
+		{
+			name: "Package runtime rejects absolute executable path",
+			backend: BackendConfig{
+				Runtime:    BackendRuntimePackage,
+				Package:    "./backend",
+				Executable: "/tmp/plugin-runtime",
+			},
+			wantErr: true,
+			errMsg:  "backend.executable must be a plugin-relative path",
+		},
+		{
+			name: "Package runtime rejects shell metacharacters",
+			backend: BackendConfig{
+				Runtime:    BackendRuntimePackage,
+				Package:    "./backend",
+				Executable: "bin/plugin-runtime;rm",
+			},
+			wantErr: true,
+			errMsg:  "backend.executable contains unsafe characters",
+		},
+		{
+			name: "Legacy backend rejects base URL without runtime",
+			backend: BackendConfig{
+				Package: "./backend",
+				Entry:   "NewService",
+				BaseURL: "http://127.0.0.1:9123",
+			},
+			wantErr: true,
+			errMsg:  "backend.base_url requires backend.runtime: http",
+		},
+		{
+			name: "Legacy backend rejects executable without runtime",
+			backend: BackendConfig{
+				Package:    "./backend",
+				Entry:      "NewService",
+				Executable: "bin/plugin-runtime",
+			},
+			wantErr: true,
+			errMsg:  "backend.executable requires backend.runtime: package",
+		},
+		{
+			name: "Unsupported runtime",
+			backend: BackendConfig{
+				Runtime: "docker",
+				Routes:  []RouteConfig{{Method: "GET", Path: "/status", Handler: "/routes/status"}},
+			},
+			perms:   []string{"routes:register"},
+			wantErr: true,
+			errMsg:  "backend.runtime must be one of",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest := Manifest{
+				Name:        "runtime-plugin",
+				DisplayName: "Runtime Plugin",
+				Version:     "1.0.0",
+				Permissions: tt.perms,
+				Backend:     &tt.backend,
+			}
+
+			err := manifest.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Manifest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
+				t.Fatalf("expected %q in error, got %v", tt.errMsg, err)
 			}
 		})
 	}
@@ -944,8 +1137,13 @@ func TestManifestNavigationPosition(t *testing.T) {
 			},
 			Slots: []SlotConfig{
 				{
-					Name:      "sidebar.main",
-					Component: "SidebarWidget.svelte",
+					Name:        "sidebar.main",
+					Component:   "SidebarWidget.svelte",
+					Label:       "Supplier risk",
+					Description: "Open supplier risk review.",
+					Path:        "/plugins/nav-plugin/supplier-risk",
+					Kind:        "link",
+					Badge:       "Review",
 				},
 			},
 		},
@@ -961,5 +1159,101 @@ func TestManifestNavigationPosition(t *testing.T) {
 	frontendPath := manifest.GetFrontendPath(pluginDir)
 	if frontendPath != "/plugins/nav-plugin/frontend" {
 		t.Errorf("GetFrontendPath() = %q, want %q", frontendPath, "/plugins/nav-plugin/frontend")
+	}
+}
+
+func TestManifestValidateFrontendSlotRuntimeMetadata(t *testing.T) {
+	order := 10
+	manifest := Manifest{
+		Name:        "slot-plugin",
+		DisplayName: "Slot Plugin",
+		Version:     "1.0.0",
+		Frontend: &FrontendConfig{
+			Components: "./frontend",
+			Slots: []SlotConfig{
+				{
+					Name:        "dashboard.widgets",
+					Component:   "RiskWidget.svelte",
+					Label:       "Risk dashboard",
+					Description: "Review supplier risk exceptions.",
+					Path:        "/plugins/slot-plugin/risk",
+					Kind:        "card",
+					Badge:       "3 open",
+					Order:       &order,
+				},
+				{
+					Name:      "dashboard.actions",
+					Component: "RiskAction.svelte",
+					Label:     "Review risk",
+					Path:      "/plugins/slot-plugin/risk",
+					Kind:      "action",
+				},
+			},
+		},
+	}
+
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestManifestValidateRejectsInvalidFrontendSlots(t *testing.T) {
+	tests := []struct {
+		name string
+		slot SlotConfig
+		want string
+	}{
+		{
+			name: "missing name",
+			slot: SlotConfig{Component: "Widget.svelte"},
+			want: "name is required",
+		},
+		{
+			name: "missing component",
+			slot: SlotConfig{Name: "dashboard.widgets"},
+			want: "component is required",
+		},
+		{
+			name: "invalid kind",
+			slot: SlotConfig{Name: "dashboard.widgets", Component: "Widget.svelte", Kind: "script"},
+			want: "kind must be one of card, link, or action",
+		},
+		{
+			name: "link missing path",
+			slot: SlotConfig{Name: "dashboard.widgets", Component: "Widget.svelte", Kind: "link"},
+			want: "path is required for link slots",
+		},
+		{
+			name: "external path",
+			slot: SlotConfig{Name: "dashboard.widgets", Component: "Widget.svelte", Kind: "link", Path: "https://example.com/plugin"},
+			want: "path must be an internal route",
+		},
+		{
+			name: "protocol-relative path",
+			slot: SlotConfig{Name: "dashboard.widgets", Component: "Widget.svelte", Kind: "link", Path: "//example.com/plugin"},
+			want: "path must be an internal route",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest := Manifest{
+				Name:        "slot-plugin",
+				DisplayName: "Slot Plugin",
+				Version:     "1.0.0",
+				Frontend: &FrontendConfig{
+					Components: "./frontend",
+					Slots:      []SlotConfig{tt.slot},
+				},
+			}
+
+			err := manifest.Validate()
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q in error, got %v", tt.want, err)
+			}
+		})
 	}
 }

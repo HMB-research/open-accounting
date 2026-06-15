@@ -1,10 +1,17 @@
-.PHONY: all build run test clean docker-build docker-up docker-down migrate help
+.PHONY: all build run test test-coverage test-affected test-backend-coverage test-integration test-integration-coverage test-cli-coverage verify-cli-coverage clean docker-build docker-up docker-down migrate help
 
 # Variables
 BINARY_API=api
 BINARY_MIGRATE=migrate
 GO=go
 DOCKER_COMPOSE=docker-compose
+COVERAGE_PROFILE ?= coverage.out
+CLI_COVERAGE_PROFILE ?= coverage-cli.out
+GO_BIN ?= $(shell $(GO) env GOPATH)/bin
+GOLANGCI_LINT ?= $(GO_BIN)/golangci-lint
+
+INTEGRATION_PACKAGE_LIST = git grep -l '^//go:build .*integration' -- '*_test.go' | while IFS= read -r file; do dirname "$$file"; done | sort -u | sed 's|^|./|'
+INTEGRATION_PACKAGE_SHARD = scripts/select-integration-packages.sh
 
 # Default target
 all: build
@@ -25,12 +32,48 @@ test:
 
 # Run tests with coverage
 test-coverage:
-	$(GO) test -v -coverprofile=coverage.out ./...
-	$(GO) tool cover -html=coverage.out -o coverage.html
+	$(GO) test -v -coverprofile=$(COVERAGE_PROFILE) ./...
+	$(GO) tool cover -html=$(COVERAGE_PROFILE) -o coverage.html
+
+# Run tests selected from the changed files in the current branch/worktree.
+test-affected:
+	scripts/run-affected-tests.sh
+
+# Run the backend gate once and enforce the operator CLI coverage invariant
+# from the same profile. This avoids rerunning cmd/oa after the full test pass.
+test-backend-coverage:
+	$(GO) test -v -race -coverprofile=$(COVERAGE_PROFILE) ./...
+	scripts/verify-cli-coverage.sh $(COVERAGE_PROFILE)
+
+# Run DB-backed integration tests. Packages are discovered from tracked build-tagged tests
+# so local and CI runs do not duplicate every unit-only package. Set
+# INTEGRATION_SHARD and INTEGRATION_SHARDS to run one weight-balanced shard of the same
+# package set.
+test-integration:
+	@packages="$$( $(INTEGRATION_PACKAGE_LIST) | $(INTEGRATION_PACKAGE_SHARD) )"; \
+	status=$$?; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	if [ -z "$$packages" ]; then echo "No integration test packages found"; exit 0; fi; \
+	$(GO) test -p 1 -v -race -tags=integration $$packages
+
+test-integration-coverage:
+	@packages="$$( $(INTEGRATION_PACKAGE_LIST) | $(INTEGRATION_PACKAGE_SHARD) )"; \
+	status=$$?; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	if [ -z "$$packages" ]; then echo "No integration test packages found"; exit 0; fi; \
+	$(GO) test -p 1 -v -race -tags=integration -coverprofile=coverage-integration.out $$packages
+
+# Verify the operator CLI stays fully covered.
+test-cli-coverage:
+	$(GO) test ./cmd/oa -coverprofile=$(CLI_COVERAGE_PROFILE) -count=1
+	scripts/verify-cli-coverage.sh $(CLI_COVERAGE_PROFILE)
+
+verify-cli-coverage:
+	scripts/verify-cli-coverage.sh $(COVERAGE_PROFILE)
 
 # Lint code
 lint:
-	golangci-lint run
+	$(GOLANGCI_LINT) run
 
 # Format code
 fmt:
@@ -40,7 +83,7 @@ fmt:
 # Clean build artifacts
 clean:
 	rm -rf bin/
-	rm -f coverage.out coverage.html
+	rm -f coverage.out coverage.html coverage-cli.out coverage-integration.out
 
 # Docker commands
 docker-build:
@@ -102,7 +145,7 @@ deploy-prod-down:
 # Generate API documentation
 swagger:
 	@echo "Generating Swagger documentation..."
-	~/go/bin/swag init -g cmd/api/main.go -o docs --parseDependency
+	GOROOT="$$(go env GOROOT)" ~/go/bin/swag init -g cmd/api/main.go -o docs --parseDependency
 	@echo "Swagger docs generated in docs/"
 
 docs: swagger
@@ -110,7 +153,7 @@ docs: swagger
 
 # Install development tools
 install-tools:
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	go install mvdan.cc/gofumpt@latest
 	go install github.com/swaggo/swag/cmd/swag@latest
 
@@ -124,6 +167,9 @@ help:
 	@echo "  make run            - Run API server locally"
 	@echo "  make test           - Run tests"
 	@echo "  make test-coverage  - Run tests with coverage report"
+	@echo "  make test-affected  - Run tests selected from changed files"
+	@echo "  make test-backend-coverage - Run backend tests and enforce CLI coverage"
+	@echo "  make test-cli-coverage - Enforce 100% cmd/oa coverage"
 	@echo "  make lint           - Run linter"
 	@echo "  make fmt            - Format code"
 	@echo "  make clean          - Clean build artifacts"

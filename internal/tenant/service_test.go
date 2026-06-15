@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // =============================================================================
@@ -22,6 +23,7 @@ type MockRepository struct {
 	tenantUsers       map[string][]TenantUser
 	invitations       map[string]*UserInvitation
 	periodCloseEvents map[string][]PeriodCloseEvent
+	auditEvents       map[string][]TenantAuditEvent
 
 	// Error injection
 	createTenantErr          error
@@ -34,6 +36,7 @@ type MockRepository struct {
 	addUserToTenantErr       error
 	removeUserFromTenantErr  error
 	getUserRoleErr           error
+	getTenantUserErr         error
 	listUserTenantsErr       error
 	listTenantUsersErr       error
 	updateTenantUserRoleErr  error
@@ -41,12 +44,15 @@ type MockRepository struct {
 	createUserErr            error
 	getUserByEmailErr        error
 	getUserByIDErr           error
+	updateUserPasswordErr    error
 	createInvitationErr      error
 	getInvitationByTokenErr  error
 	acceptInvitationErr      error
 	listInvitationsErr       error
 	listPeriodCloseEventsErr error
 	getLatestCloseEventErr   error
+	createAuditEventErr      error
+	listAuditEventsErr       error
 	revokeInvitationErr      error
 	checkUserIsMemberErr     error
 	userIsMember             bool
@@ -59,7 +65,12 @@ func NewMockRepository() *MockRepository {
 		tenantUsers:       make(map[string][]TenantUser),
 		invitations:       make(map[string]*UserInvitation),
 		periodCloseEvents: make(map[string][]PeriodCloseEvent),
+		auditEvents:       make(map[string][]TenantAuditEvent),
 	}
+}
+
+func newTestServiceWithRepository(repo Repository) *Service {
+	return NewServiceWithRepository(repo, WithPasswordHashCost(bcrypt.MinCost))
 }
 
 func (m *MockRepository) CreateTenant(ctx context.Context, tenant *Tenant, settingsJSON []byte, ownerID string) error {
@@ -73,6 +84,7 @@ func (m *MockRepository) CreateTenant(ctx context.Context, tenant *Tenant, setti
 			UserID:    ownerID,
 			Role:      RoleOwner,
 			IsDefault: true,
+			IsActive:  true,
 			CreatedAt: time.Now(),
 		})
 	}
@@ -177,6 +189,25 @@ func (m *MockRepository) GetLatestCloseEventForPeriod(ctx context.Context, tenan
 	return nil, nil
 }
 
+func (m *MockRepository) CreateTenantAuditEvent(ctx context.Context, event *TenantAuditEvent) error {
+	if m.createAuditEventErr != nil {
+		return m.createAuditEventErr
+	}
+	m.auditEvents[event.TenantID] = append([]TenantAuditEvent{*event}, m.auditEvents[event.TenantID]...)
+	return nil
+}
+
+func (m *MockRepository) ListTenantAuditEvents(ctx context.Context, tenantID string, limit int) ([]TenantAuditEvent, error) {
+	if m.listAuditEventsErr != nil {
+		return nil, m.listAuditEventsErr
+	}
+	events := append([]TenantAuditEvent(nil), m.auditEvents[tenantID]...)
+	if limit > 0 && len(events) > limit {
+		events = events[:limit]
+	}
+	return events, nil
+}
+
 func (m *MockRepository) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {
 	if m.addUserToTenantErr != nil {
 		return m.addUserToTenantErr
@@ -186,6 +217,7 @@ func (m *MockRepository) AddUserToTenant(ctx context.Context, tenantID, userID, 
 		UserID:    userID,
 		Role:      role,
 		IsDefault: false,
+		IsActive:  true,
 		CreatedAt: time.Now(),
 	})
 	return nil
@@ -211,10 +243,26 @@ func (m *MockRepository) GetUserRole(ctx context.Context, tenantID, userID strin
 	}
 	for _, u := range m.tenantUsers[tenantID] {
 		if u.UserID == userID {
+			if !u.IsActive && !u.CreatedAt.IsZero() {
+				return "", ErrUserNotInTenant
+			}
 			return u.Role, nil
 		}
 	}
 	return "", ErrUserNotInTenant
+}
+
+func (m *MockRepository) GetTenantUser(ctx context.Context, tenantID, userID string) (*TenantUser, error) {
+	if m.getTenantUserErr != nil {
+		return nil, m.getTenantUserErr
+	}
+	for _, u := range m.tenantUsers[tenantID] {
+		if u.UserID == userID {
+			user := u
+			return &user, nil
+		}
+	}
+	return nil, ErrUserNotInTenant
 }
 
 func (m *MockRepository) ListUserTenants(ctx context.Context, userID string) ([]TenantMembership, error) {
@@ -225,6 +273,9 @@ func (m *MockRepository) ListUserTenants(ctx context.Context, userID string) ([]
 	for tenantID, users := range m.tenantUsers {
 		for _, u := range users {
 			if u.UserID == userID {
+				if !u.IsActive && !u.CreatedAt.IsZero() {
+					continue
+				}
 				if t, ok := m.tenants[tenantID]; ok {
 					memberships = append(memberships, TenantMembership{
 						Tenant:    *t,
@@ -256,6 +307,16 @@ func (m *MockRepository) UpdateTenantUserRole(ctx context.Context, tenantID, use
 		}
 	}
 	return nil
+}
+
+func (m *MockRepository) SetTenantUserActive(ctx context.Context, tenantID, userID string, active bool) error {
+	for i := range m.tenantUsers[tenantID] {
+		if m.tenantUsers[tenantID][i].UserID == userID {
+			m.tenantUsers[tenantID][i].IsActive = active
+			return nil
+		}
+	}
+	return ErrUserNotInTenant
 }
 
 func (m *MockRepository) RemoveTenantUser(ctx context.Context, tenantID, userID string) error {
@@ -301,6 +362,19 @@ func (m *MockRepository) GetUserByID(ctx context.Context, userID string) (*User,
 		return nil, ErrUserNotFound
 	}
 	return u, nil
+}
+
+func (m *MockRepository) UpdateUserPassword(ctx context.Context, userID, passwordHash string, updatedAt time.Time) error {
+	if m.updateUserPasswordErr != nil {
+		return m.updateUserPasswordErr
+	}
+	u, ok := m.users[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	u.PasswordHash = passwordHash
+	u.UpdatedAt = updatedAt
+	return nil
 }
 
 func (m *MockRepository) CreateInvitation(ctx context.Context, inv *UserInvitation) error {
@@ -392,6 +466,9 @@ func (m *MockRepository) AddTestUser(u *User) {
 }
 
 func (m *MockRepository) AddTestTenantUser(tu TenantUser) {
+	if !tu.IsActive && tu.CreatedAt.IsZero() {
+		tu.IsActive = true
+	}
 	m.tenantUsers[tu.TenantID] = append(m.tenantUsers[tu.TenantID], tu)
 }
 
@@ -405,6 +482,7 @@ func TestNewServiceWithRepository(t *testing.T) {
 
 	assert.NotNil(t, svc)
 	assert.NotNil(t, svc.repo)
+	assert.Equal(t, defaultPasswordHashCost, svc.passwordHashCost)
 }
 
 func TestService_CreateTenant(t *testing.T) {
@@ -481,7 +559,7 @@ func TestService_CreateTenant(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			tenant, err := svc.CreateTenant(context.Background(), tt.req)
 
@@ -536,7 +614,7 @@ func TestService_GetTenant(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			tenant, err := svc.GetTenant(context.Background(), tt.tenantID)
 
@@ -560,7 +638,7 @@ func TestService_GetTenantBySlug(t *testing.T) {
 		Slug:     "test-company",
 		IsActive: true,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("existing slug", func(t *testing.T) {
 		tenant, err := svc.GetTenantBySlug(context.Background(), "test-company")
@@ -716,7 +794,7 @@ func TestService_UpdateTenant(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			tenant, err := svc.UpdateTenant(context.Background(), tt.tenantID, tt.req)
 
@@ -731,6 +809,42 @@ func TestService_UpdateTenant(t *testing.T) {
 	}
 }
 
+func TestService_CreateTenantNormalizesInventoryPolicySettings(t *testing.T) {
+	repo := NewMockRepository()
+	svc := newTestServiceWithRepository(repo)
+
+	created, err := svc.CreateTenant(context.Background(), &CreateTenantRequest{
+		Name: "Inventory Tenant",
+		Slug: "inventory-tenant",
+		Settings: &TenantSettings{
+			DefaultCurrency:             "EUR",
+			CountryCode:                 "EE",
+			InventoryIssueCostingMethod: "weighted-average",
+			InventoryValuationMethod:    "fifo",
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, InventoryIssueCostingMethodWeightedAverage, created.Settings.InventoryIssueCostingMethod)
+	assert.Equal(t, InventoryValuationMethodFIFO, created.Settings.InventoryValuationMethod)
+}
+
+func TestService_CreateTenantRejectsInvalidInventoryPolicySettings(t *testing.T) {
+	repo := NewMockRepository()
+	svc := newTestServiceWithRepository(repo)
+
+	_, err := svc.CreateTenant(context.Background(), &CreateTenantRequest{
+		Name: "Inventory Tenant",
+		Slug: "inventory-tenant",
+		Settings: &TenantSettings{
+			InventoryIssueCostingMethod: "lifo",
+		},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid inventory issue costing method")
+}
+
 func TestService_UpdateTenantRejectsPeriodLockMutation(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenant(&Tenant{
@@ -739,7 +853,7 @@ func TestService_UpdateTenantRejectsPeriodLockMutation(t *testing.T) {
 		Slug:     "test",
 		Settings: DefaultSettings(),
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
 		Settings: &TenantSettings{
@@ -761,7 +875,7 @@ func TestService_UpdateTenantAllowsUnchangedPeriodLockDate(t *testing.T) {
 		Slug:     "test",
 		Settings: initialSettings,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	updatedTenant, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
 		Settings: &TenantSettings{
@@ -776,6 +890,92 @@ func TestService_UpdateTenantAllowsUnchangedPeriodLockDate(t *testing.T) {
 	assert.Equal(t, "updated@example.com", updatedTenant.Settings.Email)
 }
 
+func TestService_UpdateTenantNormalizesInventoryPolicySettings(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	updatedTenant, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
+		Settings: &TenantSettings{
+			InventoryIssueCostingMethod: "standard-cost",
+			InventoryValuationMethod:    "weighted-average",
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, InventoryIssueCostingMethodStandardCost, updatedTenant.Settings.InventoryIssueCostingMethod)
+	assert.Equal(t, InventoryValuationMethodWeightedAverage, updatedTenant.Settings.InventoryValuationMethod)
+}
+
+func TestService_UpdateTenantRejectsInvalidInventoryPolicySettings(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, err := svc.UpdateTenant(context.Background(), "tenant-123", &UpdateTenantRequest{
+		Settings: &TenantSettings{
+			InventoryValuationMethod: "replacement-cost",
+		},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid inventory valuation method")
+}
+
+func TestService_UpdateLatePaymentInterestRate(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.Email = "billing@example.com"
+	initialSettings.LatePaymentInterestRate = 0.001
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	updatedTenant, err := svc.UpdateLatePaymentInterestRate(context.Background(), "tenant-123", 0)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, updatedTenant.Settings.LatePaymentInterestRate)
+	assert.Equal(t, "billing@example.com", updatedTenant.Settings.Email)
+	assert.Equal(t, 0.0, repo.tenants["tenant-123"].Settings.LatePaymentInterestRate)
+
+	updatedTenant, err = svc.UpdateLatePaymentInterestRate(context.Background(), "tenant-123", 0.0005)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0005, updatedTenant.Settings.LatePaymentInterestRate)
+	assert.Equal(t, "billing@example.com", updatedTenant.Settings.Email)
+	assert.Equal(t, 0.0005, repo.tenants["tenant-123"].Settings.LatePaymentInterestRate)
+}
+
+func TestService_UpdateLatePaymentInterestRateErrors(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, err := svc.UpdateLatePaymentInterestRate(context.Background(), "missing", 0.0005)
+	require.Error(t, err)
+
+	repo.updateTenantErr = errors.New("db error")
+	_, err = svc.UpdateLatePaymentInterestRate(context.Background(), "tenant-123", 0.0005)
+	require.Error(t, err)
+}
+
 func TestService_ClosePeriod(t *testing.T) {
 	repo := NewMockRepository()
 	initialSettings := DefaultSettings()
@@ -785,7 +985,7 @@ func TestService_ClosePeriod(t *testing.T) {
 		Slug:     "test",
 		Settings: initialSettings,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	updatedTenant, event, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
 		PeriodEndDate: "2026-01-31",
@@ -799,10 +999,40 @@ func TestService_ClosePeriod(t *testing.T) {
 	assert.Equal(t, PeriodCloseActionClose, event.Action)
 	assert.Equal(t, PeriodCloseKindMonthEnd, event.CloseKind)
 	assert.Equal(t, "2026-01-31", event.PeriodEndDate)
+	assert.False(t, event.ReviewerSignOff)
 	assert.Nil(t, event.LockDateBefore)
 	require.NotNil(t, event.LockDateAfter)
 	assert.Equal(t, "2026-01-31", *event.LockDateAfter)
 	require.Len(t, repo.periodCloseEvents["tenant-123"], 1)
+}
+
+func TestService_ClosePeriodYearEndRequiresReviewerSignOff(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
+		PeriodEndDate: "2026-12-31",
+		Note:          "Year-end reviewed",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reviewer sign-off")
+
+	updatedTenant, event, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
+		PeriodEndDate:   "2026-12-31",
+		Note:            "Year-end reviewed",
+		ReviewerSignOff: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, "2026-12-31", *updatedTenant.Settings.PeriodLockDate)
+	assert.Equal(t, PeriodCloseKindYearEnd, event.CloseKind)
+	assert.True(t, event.ReviewerSignOff)
 }
 
 func TestService_ClosePeriodRejectsInvalidDate(t *testing.T) {
@@ -813,7 +1043,7 @@ func TestService_ClosePeriodRejectsInvalidDate(t *testing.T) {
 		Slug:     "test",
 		Settings: DefaultSettings(),
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
 		PeriodEndDate: "2026-01-30",
@@ -821,6 +1051,38 @@ func TestService_ClosePeriodRejectsInvalidDate(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "last day of a month")
+}
+
+func TestService_ClosePeriodReturnsTenantLookupError(t *testing.T) {
+	repo := NewMockRepository()
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ClosePeriod(context.Background(), "missing-tenant", "user-123", &ClosePeriodRequest{
+		PeriodEndDate: "2026-01-31",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tenant not found: missing-tenant")
+}
+
+func TestService_ClosePeriodRejectsInvalidTenantLockDate(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("bad-date")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
+		PeriodEndDate: "2026-02-28",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid tenant period lock date")
 }
 
 func TestService_ClosePeriodRejectsAlreadyClosedDate(t *testing.T) {
@@ -833,7 +1095,7 @@ func TestService_ClosePeriodRejectsAlreadyClosedDate(t *testing.T) {
 		Slug:     "test",
 		Settings: initialSettings,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, _, err := svc.ClosePeriod(context.Background(), "tenant-123", "user-123", &ClosePeriodRequest{
 		PeriodEndDate: "2026-01-31",
@@ -876,7 +1138,7 @@ func TestService_ReopenPeriodRestoresPreviousLockDate(t *testing.T) {
 			CreatedAt:     time.Now().Add(-time.Hour),
 		},
 	}
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	updatedTenant, event, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
 		PeriodEndDate: "2026-02-28",
@@ -913,7 +1175,7 @@ func TestService_ReopenPeriodClearsInitialLockDate(t *testing.T) {
 			CreatedAt:     time.Now(),
 		},
 	}
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	updatedTenant, event, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
 		PeriodEndDate: "2026-01-31",
@@ -923,6 +1185,46 @@ func TestService_ReopenPeriodClearsInitialLockDate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, updatedTenant.Settings.PeriodLockDate)
 	assert.Nil(t, event.LockDateAfter)
+}
+
+func TestService_ReopenPeriodRejectsNoClosedPeriod(t *testing.T) {
+	repo := NewMockRepository()
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: DefaultSettings(),
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
+		PeriodEndDate: "2026-01-31",
+		Note:          "Undo close",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no closed period to reopen")
+}
+
+func TestService_ReopenPeriodRejectsDateAfterCurrentLock(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-01-31")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
+		PeriodEndDate: "2026-02-28",
+		Note:          "Undo close",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is not currently closed")
 }
 
 func TestService_ReopenPeriodRequiresNote(t *testing.T) {
@@ -935,7 +1237,7 @@ func TestService_ReopenPeriodRequiresNote(t *testing.T) {
 		Slug:     "test",
 		Settings: initialSettings,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
 		PeriodEndDate: "2026-01-31",
@@ -955,7 +1257,7 @@ func TestService_ReopenPeriodRequiresExistingCloseEvent(t *testing.T) {
 		Slug:     "test",
 		Settings: initialSettings,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
 		PeriodEndDate: "2026-01-31",
@@ -966,6 +1268,98 @@ func TestService_ReopenPeriodRequiresExistingCloseEvent(t *testing.T) {
 	assert.Contains(t, err.Error(), "has not been closed yet")
 }
 
+func TestService_ReopenPeriodPropagatesLatestCloseLookupError(t *testing.T) {
+	repo := NewMockRepository()
+	initialSettings := DefaultSettings()
+	initialSettings.PeriodLockDate = strPtr("2026-01-31")
+	repo.AddTestTenant(&Tenant{
+		ID:       "tenant-123",
+		Name:     "Test",
+		Slug:     "test",
+		Settings: initialSettings,
+	})
+	repo.getLatestCloseEventErr = errors.New("database error")
+	svc := newTestServiceWithRepository(repo)
+
+	_, _, err := svc.ReopenPeriod(context.Background(), "tenant-123", "user-123", &ReopenPeriodRequest{
+		PeriodEndDate: "2026-01-31",
+		Note:          "Undo close",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
+}
+
+func TestService_ListPeriodCloseEvents(t *testing.T) {
+	repo := NewMockRepository()
+	repo.periodCloseEvents["tenant-123"] = []PeriodCloseEvent{
+		{ID: "event-2", TenantID: "tenant-123", PeriodEndDate: "2026-02-28"},
+		{ID: "event-1", TenantID: "tenant-123", PeriodEndDate: "2026-01-31"},
+	}
+	svc := newTestServiceWithRepository(repo)
+
+	events, err := svc.ListPeriodCloseEvents(context.Background(), "tenant-123", 1)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "event-2", events[0].ID)
+
+	repo.listPeriodCloseEventsErr = errors.New("database error")
+	_, err = svc.ListPeriodCloseEvents(context.Background(), "tenant-123", 10)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
+}
+
+func TestPeriodCloseDateHelpers(t *testing.T) {
+	t.Run("parse month end trims and normalizes", func(t *testing.T) {
+		parsed, err := parseMonthEndDate(" 2026-02-28 ")
+		require.NoError(t, err)
+		assert.Equal(t, time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC), parsed)
+	})
+
+	t.Run("parse month end rejects blank date", func(t *testing.T) {
+		_, err := parseMonthEndDate(" ")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "period end date is required")
+	})
+
+	t.Run("parse month end rejects wrong format", func(t *testing.T) {
+		_, err := parseMonthEndDate("2026/02/28")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "YYYY-MM-DD")
+	})
+
+	t.Run("parse optional lock handles nil and blank", func(t *testing.T) {
+		parsed, err := parseOptionalLockDate(nil)
+		require.NoError(t, err)
+		assert.Nil(t, parsed)
+
+		parsed, err = parseOptionalLockDate(strPtr(" "))
+		require.NoError(t, err)
+		assert.Nil(t, parsed)
+	})
+
+	t.Run("parse optional lock trims valid date", func(t *testing.T) {
+		parsed, err := parseOptionalLockDate(strPtr(" 2026-02-28 "))
+		require.NoError(t, err)
+		require.NotNil(t, parsed)
+		assert.Equal(t, time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC), *parsed)
+	})
+
+	t.Run("parse optional lock rejects invalid date", func(t *testing.T) {
+		_, err := parseOptionalLockDate(strPtr("2026/02/28"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid tenant period lock date")
+	})
+
+	t.Run("format optional string date handles nil and blank", func(t *testing.T) {
+		assert.Nil(t, formatOptionalDateFromString(nil))
+		assert.Nil(t, formatOptionalDateFromString(strPtr(" ")))
+		formatted := formatOptionalDateFromString(strPtr(" 2026-02-28 "))
+		require.NotNil(t, formatted)
+		assert.Equal(t, "2026-02-28", *formatted)
+	})
+}
+
 func TestService_DeleteTenant(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenant(&Tenant{
@@ -974,7 +1368,7 @@ func TestService_DeleteTenant(t *testing.T) {
 		Slug:       "test",
 		SchemaName: "tenant_test",
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("delete existing", func(t *testing.T) {
 		err := svc.DeleteTenant(context.Background(), "tenant-123")
@@ -997,13 +1391,77 @@ func TestService_CompleteOnboarding(t *testing.T) {
 		ID:                  "tenant-123",
 		OnboardingCompleted: false,
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	err := svc.CompleteOnboarding(context.Background(), "tenant-123")
 	require.NoError(t, err)
 
 	tenant, _ := repo.GetTenant(context.Background(), "tenant-123")
 	assert.True(t, tenant.OnboardingCompleted)
+}
+
+func TestService_RecordTenantAuditEvent(t *testing.T) {
+	repo := NewMockRepository()
+	svc := newTestServiceWithRepository(repo)
+
+	event := &TenantAuditEvent{
+		TenantID:    "tenant-1",
+		ActorUserID: "user-1",
+		Action:      AuditActionUserRoleUpdated,
+		TargetType:  AuditTargetUser,
+		TargetID:    "user-2",
+		Metadata: map[string]string{
+			"previous_role": RoleViewer,
+			"new_role":      RoleAccountant,
+		},
+	}
+
+	err := svc.RecordTenantAuditEvent(context.Background(), event)
+	require.NoError(t, err)
+	assert.NotEmpty(t, event.ID)
+	assert.False(t, event.CreatedAt.IsZero())
+
+	events, err := svc.ListTenantAuditEvents(context.Background(), "tenant-1", 10)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, AuditActionUserRoleUpdated, events[0].Action)
+	assert.Equal(t, "user-2", events[0].TargetID)
+	assert.Equal(t, RoleAccountant, events[0].Metadata["new_role"])
+}
+
+func TestService_RecordTenantAuditEventValidatesRequiredFields(t *testing.T) {
+	repo := NewMockRepository()
+	svc := newTestServiceWithRepository(repo)
+
+	tests := []struct {
+		name       string
+		event      *TenantAuditEvent
+		errContain string
+	}{
+		{name: "nil event", event: nil, errContain: "audit event is required"},
+		{name: "tenant required", event: &TenantAuditEvent{Action: AuditActionUserRemoved, TargetType: AuditTargetUser, TargetID: "user-1"}, errContain: "tenant_id is required"},
+		{name: "action required", event: &TenantAuditEvent{TenantID: "tenant-1", TargetType: AuditTargetUser, TargetID: "user-1"}, errContain: "action is required"},
+		{name: "target type required", event: &TenantAuditEvent{TenantID: "tenant-1", Action: AuditActionUserRemoved, TargetID: "user-1"}, errContain: "target_type is required"},
+		{name: "target id required", event: &TenantAuditEvent{TenantID: "tenant-1", Action: AuditActionUserRemoved, TargetType: AuditTargetUser}, errContain: "target_id is required"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := svc.RecordTenantAuditEvent(context.Background(), tt.event)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errContain)
+		})
+	}
+}
+
+func TestService_ListTenantAuditEventsRepositoryError(t *testing.T) {
+	repo := NewMockRepository()
+	repo.listAuditEventsErr = errors.New("database error")
+	svc := newTestServiceWithRepository(repo)
+
+	_, err := svc.ListTenantAuditEvents(context.Background(), "tenant-1", 50)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
 }
 
 func TestService_ListUserTenants(t *testing.T) {
@@ -1013,7 +1471,7 @@ func TestService_ListUserTenants(t *testing.T) {
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleOwner, IsDefault: true})
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-2", UserID: "user-1", Role: RoleAdmin})
 
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	memberships, err := svc.ListUserTenants(context.Background(), "user-1")
 	require.NoError(t, err)
@@ -1022,7 +1480,7 @@ func TestService_ListUserTenants(t *testing.T) {
 
 func TestService_AddUserToTenant(t *testing.T) {
 	repo := NewMockRepository()
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	err := svc.AddUserToTenant(context.Background(), "tenant-1", "user-1", RoleAdmin)
 	require.NoError(t, err)
@@ -1035,7 +1493,7 @@ func TestService_AddUserToTenant(t *testing.T) {
 func TestService_RemoveUserFromTenant(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleAdmin})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("remove existing user", func(t *testing.T) {
 		err := svc.RemoveUserFromTenant(context.Background(), "tenant-1", "user-1")
@@ -1052,7 +1510,7 @@ func TestService_RemoveUserFromTenant(t *testing.T) {
 func TestService_GetUserRole(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleAccountant})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("existing user", func(t *testing.T) {
 		role, err := svc.GetUserRole(context.Background(), "tenant-1", "user-1")
@@ -1067,10 +1525,54 @@ func TestService_GetUserRole(t *testing.T) {
 	})
 }
 
+func TestService_GetTenantUser(t *testing.T) {
+	t.Run("returns inactive membership", func(t *testing.T) {
+		repo := NewMockRepository()
+		createdAt := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+		repo.AddTestTenantUser(TenantUser{
+			TenantID:  "tenant-1",
+			UserID:    "user-1",
+			Role:      RoleViewer,
+			IsActive:  false,
+			CreatedAt: createdAt,
+		})
+		svc := newTestServiceWithRepository(repo)
+
+		membership, err := svc.GetTenantUser(context.Background(), "tenant-1", "user-1")
+
+		require.NoError(t, err)
+		require.NotNil(t, membership)
+		assert.Equal(t, RoleViewer, membership.Role)
+		assert.False(t, membership.IsActive)
+		assert.Equal(t, createdAt, membership.CreatedAt)
+	})
+
+	t.Run("maps missing membership", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := newTestServiceWithRepository(repo)
+
+		_, err := svc.GetTenantUser(context.Background(), "tenant-1", "missing")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user not member of tenant")
+	})
+
+	t.Run("propagates repository error", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.getTenantUserErr = errors.New("database error")
+		svc := newTestServiceWithRepository(repo)
+
+		_, err := svc.GetTenantUser(context.Background(), "tenant-1", "user-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "database error")
+	})
+}
+
 func TestService_CreateUser(t *testing.T) {
 	t.Run("valid user", func(t *testing.T) {
 		repo := NewMockRepository()
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
 			Email:    "  Test@Example.COM  ",
 			Password: "password123",
@@ -1084,7 +1586,7 @@ func TestService_CreateUser(t *testing.T) {
 	t.Run("duplicate email", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.createUserErr = ErrEmailExists
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 		_, err := svc.CreateUser(context.Background(), &CreateUserRequest{
 			Email:    "test@example.com",
 			Password: "password",
@@ -1097,7 +1599,7 @@ func TestService_CreateUser(t *testing.T) {
 	t.Run("repository error", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.createUserErr = errors.New("database connection failed")
-		svc := NewServiceWithRepository(repo)
+		svc := newTestServiceWithRepository(repo)
 		_, err := svc.CreateUser(context.Background(), &CreateUserRequest{
 			Email:    "test@example.com",
 			Password: "password",
@@ -1114,7 +1616,7 @@ func TestService_GetUserByEmail(t *testing.T) {
 		Email: "test@example.com",
 		Name:  "Test User",
 	})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("existing user", func(t *testing.T) {
 		user, err := svc.GetUserByEmail(context.Background(), "test@example.com")
@@ -1132,7 +1634,7 @@ func TestService_GetUserByEmail(t *testing.T) {
 func TestService_GetUserByID(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestUser(&User{ID: "user-123", Email: "test@example.com"})
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("existing user", func(t *testing.T) {
 		user, err := svc.GetUserByID(context.Background(), "user-123")
@@ -1144,6 +1646,61 @@ func TestService_GetUserByID(t *testing.T) {
 		_, err := svc.GetUserByID(context.Background(), "nonexistent")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "user not found")
+	})
+}
+
+func TestService_ChangeUserPassword(t *testing.T) {
+	t.Run("changes password after verifying current password", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := newTestServiceWithRepository(repo)
+		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
+			Email:    "change@example.com",
+			Password: "oldpassword123",
+			Name:     "Change User",
+		})
+		require.NoError(t, err)
+
+		err = svc.ChangeUserPassword(context.Background(), user.ID, "oldpassword123", "newpassword123")
+		require.NoError(t, err)
+
+		updated, err := svc.GetUserByID(context.Background(), user.ID)
+		require.NoError(t, err)
+		assert.True(t, svc.ValidatePassword(updated, "newpassword123"))
+		assert.False(t, svc.ValidatePassword(updated, "oldpassword123"))
+	})
+
+	t.Run("rejects invalid current password", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := newTestServiceWithRepository(repo)
+		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
+			Email:    "wrong-current@example.com",
+			Password: "oldpassword123",
+			Name:     "Wrong Current",
+		})
+		require.NoError(t, err)
+
+		err = svc.ChangeUserPassword(context.Background(), user.ID, "wrongpassword", "newpassword123")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "current password is incorrect")
+	})
+
+	t.Run("rejects weak or reused new password", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := newTestServiceWithRepository(repo)
+		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
+			Email:    "weak@example.com",
+			Password: "oldpassword123",
+			Name:     "Weak User",
+		})
+		require.NoError(t, err)
+
+		err = svc.ChangeUserPassword(context.Background(), user.ID, "oldpassword123", "short")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "at least 8 characters")
+
+		err = svc.ChangeUserPassword(context.Background(), user.ID, "oldpassword123", "oldpassword123")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "different")
 	})
 }
 
@@ -1211,7 +1768,7 @@ func TestService_CreateInvitation(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			inv, err := svc.CreateInvitation(context.Background(), tt.tenantID, tt.invitedBy, tt.req)
 
@@ -1242,7 +1799,7 @@ func TestService_GetInvitationByToken(t *testing.T) {
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
 	repo.invitations["valid-token"] = validInv
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	t.Run("valid token", func(t *testing.T) {
 		inv, err := svc.GetInvitationByToken(context.Background(), "valid-token")
@@ -1429,7 +1986,7 @@ func TestService_AcceptInvitation(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			membership, err := svc.AcceptInvitation(context.Background(), tt.req)
 
@@ -1463,7 +2020,7 @@ func TestService_AcceptInvitation_GetTenantError(t *testing.T) {
 	// Don't add tenant - GetTenant will fail
 	repo.getTenantErr = errors.New("tenant not found")
 
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.AcceptInvitation(context.Background(), &AcceptInvitationRequest{
 		Token: "valid-token",
@@ -1475,7 +2032,7 @@ func TestService_AcceptInvitation_GetTenantError(t *testing.T) {
 func TestService_CreateInvitation_CheckMemberError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.checkUserIsMemberErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.CreateInvitation(context.Background(), "tenant-1", "user-1", &CreateInvitationRequest{
 		Email: "test@example.com",
@@ -1487,7 +2044,7 @@ func TestService_CreateInvitation_CheckMemberError(t *testing.T) {
 func TestService_CreateInvitation_RepositoryError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.createInvitationErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.CreateInvitation(context.Background(), "tenant-1", "user-1", &CreateInvitationRequest{
 		Email: "test@example.com",
@@ -1499,7 +2056,7 @@ func TestService_CreateInvitation_RepositoryError(t *testing.T) {
 func TestService_GetInvitationByToken_RepositoryError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.getInvitationByTokenErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	_, err := svc.GetInvitationByToken(context.Background(), "token")
 	require.Error(t, err)
@@ -1509,7 +2066,7 @@ func TestService_RemoveTenantUser_RepositoryError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleAdmin})
 	repo.getUserRoleErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	err := svc.RemoveTenantUser(context.Background(), "tenant-1", "user-1")
 	require.Error(t, err)
@@ -1520,7 +2077,7 @@ func TestService_UpdateTenantUserRole_RepositoryError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleAdmin})
 	repo.getUserRoleErr = errors.New("database error")
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	err := svc.UpdateTenantUserRole(context.Background(), "tenant-1", "user-1", RoleViewer)
 	require.Error(t, err)
@@ -1541,7 +2098,7 @@ func TestService_ListInvitations(t *testing.T) {
 		Email:     "test2@example.com",
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	invitations, err := svc.ListInvitations(context.Background(), "tenant-1")
 	require.NoError(t, err)
@@ -1556,7 +2113,7 @@ func TestService_RevokeInvitation(t *testing.T) {
 		Token:     "token-1",
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	err := svc.RevokeInvitation(context.Background(), "tenant-1", "inv-1")
 	require.NoError(t, err)
@@ -1608,7 +2165,7 @@ func TestService_RemoveTenantUser(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			err := svc.RemoveTenantUser(context.Background(), tt.tenantID, tt.userID)
 
@@ -1654,6 +2211,17 @@ func TestService_UpdateTenantUserRole(t *testing.T) {
 			errContain: "invalid role",
 		},
 		{
+			name:     "cannot assign owner role",
+			tenantID: "tenant-1",
+			userID:   "user-1",
+			newRole:  RoleOwner,
+			setupRepo: func(m *MockRepository) {
+				m.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleViewer})
+			},
+			wantErr:    true,
+			errContain: "invalid role",
+		},
+		{
 			name:     "cannot change owner role",
 			tenantID: "tenant-1",
 			userID:   "user-owner",
@@ -1679,7 +2247,7 @@ func TestService_UpdateTenantUserRole(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewServiceWithRepository(repo)
+			svc := newTestServiceWithRepository(repo)
 
 			err := svc.UpdateTenantUserRole(context.Background(), tt.tenantID, tt.userID, tt.newRole)
 
@@ -1696,13 +2264,73 @@ func TestService_UpdateTenantUserRole(t *testing.T) {
 	}
 }
 
+func TestService_SetTenantUserActive(t *testing.T) {
+	t.Run("suspends non-owner membership", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleViewer, IsActive: true})
+		svc := newTestServiceWithRepository(repo)
+
+		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "user-1", false)
+
+		require.NoError(t, err)
+		membership, err := repo.GetTenantUser(context.Background(), "tenant-1", "user-1")
+		require.NoError(t, err)
+		assert.False(t, membership.IsActive)
+	})
+
+	t.Run("cannot change owner membership status", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "owner-1", Role: RoleOwner, IsActive: true})
+		svc := newTestServiceWithRepository(repo)
+
+		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "owner-1", false)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot change owner membership status")
+	})
+
+	t.Run("no-op when membership already has requested status", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleViewer, IsActive: true})
+		svc := newTestServiceWithRepository(repo)
+
+		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "user-1", true)
+
+		require.NoError(t, err)
+		membership, err := repo.GetTenantUser(context.Background(), "tenant-1", "user-1")
+		require.NoError(t, err)
+		assert.True(t, membership.IsActive)
+	})
+
+	t.Run("maps missing membership", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := newTestServiceWithRepository(repo)
+
+		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "missing", false)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user not found in tenant")
+	})
+
+	t.Run("wraps membership lookup error", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.getTenantUserErr = errors.New("database error")
+		svc := newTestServiceWithRepository(repo)
+
+		err := svc.SetTenantUserActive(context.Background(), "tenant-1", "user-1", false)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "check current membership")
+	})
+}
+
 func TestService_ListTenantUsers(t *testing.T) {
 	repo := NewMockRepository()
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-1", Role: RoleOwner})
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-2", Role: RoleAdmin})
 	repo.AddTestTenantUser(TenantUser{TenantID: "tenant-1", UserID: "user-3", Role: RoleViewer})
 
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	users, err := svc.ListTenantUsers(context.Background(), "tenant-1")
 	require.NoError(t, err)
@@ -1716,7 +2344,7 @@ func strPtr(s string) *string {
 
 func TestService_CreateUser_PasswordTooLong(t *testing.T) {
 	repo := NewMockRepository()
-	svc := NewServiceWithRepository(repo)
+	svc := newTestServiceWithRepository(repo)
 
 	// bcrypt has a 72 byte limit for passwords
 	longPassword := string(make([]byte, 100))

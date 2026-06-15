@@ -1,10 +1,14 @@
+//go:build integration
+
 package inventory
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -14,7 +18,7 @@ func TestRepository_CreateAndGetProduct(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	product := &Product{
@@ -62,7 +66,7 @@ func TestRepository_GetProductByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Use valid UUID format that doesn't exist
@@ -77,7 +81,7 @@ func TestRepository_ListProducts(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create multiple products
@@ -114,7 +118,7 @@ func TestRepository_ListProducts_WithFilter(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create goods product
@@ -172,7 +176,7 @@ func TestRepository_UpdateProduct(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	product := &Product{
@@ -218,7 +222,7 @@ func TestRepository_DeleteProduct(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	product := &Product{
@@ -253,7 +257,7 @@ func TestRepository_GenerateCode(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	code, err := repo.GenerateCode(ctx, tenant.SchemaName, tenant.ID)
@@ -298,7 +302,7 @@ func TestRepository_CreateAndGetCategory(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	category := &ProductCategory{
@@ -329,7 +333,7 @@ func TestRepository_GetCategoryByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Use valid UUID format that doesn't exist
@@ -344,7 +348,7 @@ func TestRepository_ListCategories(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create categories
@@ -376,7 +380,7 @@ func TestRepository_DeleteCategory(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	category := &ProductCategory{
@@ -404,7 +408,7 @@ func TestRepository_CreateAndGetWarehouse(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	warehouse := &Warehouse{
@@ -441,7 +445,7 @@ func TestRepository_GetWarehouseByID_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Use valid UUID format that doesn't exist
@@ -456,7 +460,7 @@ func TestRepository_ListWarehouses(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create warehouses
@@ -509,7 +513,7 @@ func TestRepository_UpdateWarehouse(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	warehouse := &Warehouse{
@@ -550,7 +554,7 @@ func TestRepository_DeleteWarehouse(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	warehouse := &Warehouse{
@@ -580,7 +584,7 @@ func TestRepository_StockLevelOperations(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create product
@@ -663,7 +667,7 @@ func TestRepository_GetStockLevel_NotFound(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Use valid UUID formats that don't exist
@@ -679,7 +683,7 @@ func TestRepository_GetStockLevelsByProduct(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create product
@@ -744,7 +748,7 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create product
@@ -780,6 +784,7 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 	}
 
 	// Create movements
+	sourceID := uuid.New().String()
 	movement := &InventoryMovement{
 		ID:           uuid.New().String(),
 		TenantID:     tenant.ID,
@@ -789,7 +794,12 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 		Quantity:     decimal.NewFromInt(50),
 		UnitCost:     decimal.NewFromFloat(10.00),
 		TotalCost:    decimal.NewFromFloat(500.00),
+		LotNumber:    "LOT-2026-01",
+		SerialNumber: "SN-001",
+		ExpiryDate:   "2027-01-31",
 		Reference:    "PO-001",
+		SourceType:   "purchase_order",
+		SourceID:     sourceID,
 		Notes:        "Initial stock inbound",
 		MovementDate: time.Now(),
 		CreatedAt:    time.Now(),
@@ -810,13 +820,302 @@ func TestRepository_CreateAndListMovements(t *testing.T) {
 	if movements[0].MovementType != "IN" {
 		t.Errorf("expected movement type 'IN', got '%s'", movements[0].MovementType)
 	}
+	if movements[0].LotNumber != "LOT-2026-01" {
+		t.Errorf("expected lot number to round-trip, got %q", movements[0].LotNumber)
+	}
+	if movements[0].SerialNumber != "SN-001" {
+		t.Errorf("expected serial number to round-trip, got %q", movements[0].SerialNumber)
+	}
+	if movements[0].ExpiryDate != "2027-01-31" {
+		t.Errorf("expected expiry date to round-trip, got %q", movements[0].ExpiryDate)
+	}
+	if movements[0].SourceType != "purchase_order" {
+		t.Errorf("expected source type to round-trip, got %q", movements[0].SourceType)
+	}
+	if movements[0].SourceID != sourceID {
+		t.Errorf("expected source ID to round-trip, got %q", movements[0].SourceID)
+	}
+}
+
+func TestRepository_WithInventoryLedgerTransactionRollsBackInventoryAndLedger(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewGORMRepository(pool)
+	ctx := context.Background()
+	accountingSvc := accounting.NewService(pool)
+	accounts, err := accountingSvc.ListAccounts(ctx, tenant.SchemaName, tenant.ID, false)
+	if err != nil {
+		t.Fatalf("ListAccounts failed: %v", err)
+	}
+	accountIDByCode := make(map[string]string, len(accounts))
+	for _, account := range accounts {
+		accountIDByCode[account.Code] = account.ID
+	}
+	inventoryAccountID := accountIDByCode["1300"]
+	cogsAccountID := accountIDByCode["5100"]
+	if inventoryAccountID == "" || cogsAccountID == "" {
+		t.Fatalf("expected default inventory and COGS accounts, got inventory=%q cogs=%q", inventoryAccountID, cogsAccountID)
+	}
+
+	product := &Product{
+		ID:                 uuid.New().String(),
+		TenantID:           tenant.ID,
+		Code:               "PRD-TX-ISSUE",
+		Name:               "Transactional Issue Product",
+		ProductType:        ProductTypeGoods,
+		Unit:               "pcs",
+		PurchasePrice:      decimal.RequireFromString("6.00"),
+		SalesPrice:         decimal.RequireFromString("10.00"),
+		VATRate:            decimal.RequireFromString("22.00"),
+		CurrentStock:       decimal.RequireFromString("5.00"),
+		InventoryAccountID: inventoryAccountID,
+		TrackInventory:     true,
+		IsActive:           true,
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	if err := repo.CreateProduct(ctx, tenant.SchemaName, product); err != nil {
+		t.Fatalf("CreateProduct failed: %v", err)
+	}
+	warehouse := &Warehouse{
+		ID:        uuid.New().String(),
+		TenantID:  tenant.ID,
+		Code:      "WH-TX-ISSUE",
+		Name:      "Transactional Issue Warehouse",
+		IsActive:  true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := repo.CreateWarehouse(ctx, tenant.SchemaName, warehouse); err != nil {
+		t.Fatalf("CreateWarehouse failed: %v", err)
+	}
+	level := &StockLevel{
+		ID:           uuid.New().String(),
+		TenantID:     tenant.ID,
+		ProductID:    product.ID,
+		WarehouseID:  warehouse.ID,
+		Quantity:     decimal.RequireFromString("5.00"),
+		AvailableQty: decimal.RequireFromString("5.00"),
+		LastUpdated:  time.Now(),
+	}
+	if err := repo.UpsertStockLevel(ctx, tenant.SchemaName, level); err != nil {
+		t.Fatalf("UpsertStockLevel failed: %v", err)
+	}
+	userID := uuid.New().String()
+	inbound := &InventoryMovement{
+		ID:           uuid.New().String(),
+		TenantID:     tenant.ID,
+		ProductID:    product.ID,
+		WarehouseID:  warehouse.ID,
+		MovementType: MovementTypeIn,
+		Quantity:     decimal.RequireFromString("5.00"),
+		UnitCost:     decimal.RequireFromString("6.00"),
+		TotalCost:    decimal.RequireFromString("30.00"),
+		Reference:    "Opening stock",
+		MovementDate: time.Now(),
+		CreatedAt:    time.Now(),
+		CreatedBy:    userID,
+	}
+	if err := repo.CreateMovement(ctx, tenant.SchemaName, inbound); err != nil {
+		t.Fatalf("CreateMovement failed: %v", err)
+	}
+
+	sourceID := uuid.New().String()
+	transactioner, ok := repo.(inventoryLedgerTransactioner)
+	if !ok {
+		t.Fatal("expected GORM inventory repository to support inventory ledger transactions")
+	}
+	err = transactioner.WithInventoryLedgerTransaction(ctx, accountingSvc, func(txRepo Repository, ledger accountingPoster) error {
+		outbound := &InventoryMovement{
+			ID:           uuid.New().String(),
+			TenantID:     tenant.ID,
+			ProductID:    product.ID,
+			WarehouseID:  warehouse.ID,
+			MovementType: MovementTypeOut,
+			Quantity:     decimal.RequireFromString("2.00"),
+			UnitCost:     decimal.RequireFromString("6.00"),
+			TotalCost:    decimal.RequireFromString("12.00"),
+			Reference:    "Issue with forced rollback",
+			SourceType:   inventoryIssueSourceTypeDefault,
+			SourceID:     sourceID,
+			MovementDate: time.Now(),
+			CreatedAt:    time.Now(),
+			CreatedBy:    userID,
+		}
+		if err := txRepo.CreateMovement(ctx, tenant.SchemaName, outbound); err != nil {
+			return err
+		}
+		if err := txRepo.UpdateProductStock(ctx, tenant.SchemaName, tenant.ID, product.ID, decimal.RequireFromString("3.00")); err != nil {
+			return err
+		}
+		level.Quantity = decimal.RequireFromString("3.00")
+		level.AvailableQty = decimal.RequireFromString("3.00")
+		level.LastUpdated = time.Now()
+		if err := txRepo.UpsertStockLevel(ctx, tenant.SchemaName, level); err != nil {
+			return err
+		}
+		entry, err := ledger.CreateJournalEntry(ctx, tenant.SchemaName, tenant.ID, &accounting.CreateJournalEntryRequest{
+			EntryDate:   time.Now(),
+			Description: "Issue stock for Transactional Issue Product",
+			Reference:   "Issue with forced rollback",
+			SourceType:  inventoryIssueSourceTypeDefault,
+			SourceID:    &sourceID,
+			UserID:      userID,
+			Lines: []accounting.CreateJournalEntryLineReq{
+				{
+					AccountID:    cogsAccountID,
+					Description:  "COGS",
+					DebitAmount:  decimal.RequireFromString("12.00"),
+					Currency:     "EUR",
+					ExchangeRate: decimal.NewFromInt(1),
+				},
+				{
+					AccountID:    inventoryAccountID,
+					Description:  "Inventory",
+					CreditAmount: decimal.RequireFromString("12.00"),
+					Currency:     "EUR",
+					ExchangeRate: decimal.NewFromInt(1),
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := ledger.PostJournalEntry(ctx, tenant.SchemaName, tenant.ID, entry.ID, userID); err != nil {
+			return err
+		}
+		return fmt.Errorf("force rollback after inventory and ledger writes")
+	})
+	if err == nil {
+		t.Fatal("expected forced rollback error")
+	}
+
+	reloadedProduct, err := repo.GetProductByID(ctx, tenant.SchemaName, tenant.ID, product.ID)
+	if err != nil {
+		t.Fatalf("GetProductByID failed: %v", err)
+	}
+	if !reloadedProduct.CurrentStock.Equal(decimal.RequireFromString("5.00")) {
+		t.Fatalf("expected product stock rollback to 5.00, got %s", reloadedProduct.CurrentStock)
+	}
+	reloadedLevel, err := repo.GetStockLevel(ctx, tenant.SchemaName, tenant.ID, product.ID, warehouse.ID)
+	if err != nil {
+		t.Fatalf("GetStockLevel failed: %v", err)
+	}
+	if !reloadedLevel.Quantity.Equal(decimal.RequireFromString("5.00")) || !reloadedLevel.AvailableQty.Equal(decimal.RequireFromString("5.00")) {
+		t.Fatalf("expected stock level rollback to 5.00/5.00, got %s/%s", reloadedLevel.Quantity, reloadedLevel.AvailableQty)
+	}
+	movements, err := repo.ListMovements(ctx, tenant.SchemaName, tenant.ID, product.ID)
+	if err != nil {
+		t.Fatalf("ListMovements failed: %v", err)
+	}
+	if len(movements) != 1 || movements[0].ID != inbound.ID {
+		t.Fatalf("expected only inbound movement after rollback, got %#v", movements)
+	}
+	accountingRepo := accounting.NewRepository(pool)
+	entry, err := accountingRepo.GetJournalEntryBySource(ctx, tenant.SchemaName, tenant.ID, inventoryIssueSourceTypeDefault, sourceID)
+	if err != nil {
+		t.Fatalf("GetJournalEntryBySource failed: %v", err)
+	}
+	if entry != nil {
+		t.Fatal("expected journal entry to be rolled back")
+	}
+}
+
+func TestRepository_LotReservations(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+
+	repo := NewGORMRepository(pool)
+	ctx := context.Background()
+
+	product := &Product{
+		ID:             uuid.New().String(),
+		TenantID:       tenant.ID,
+		Code:           "PRD-LOT-RES",
+		Name:           "Lot Reserved Product",
+		ProductType:    ProductTypeGoods,
+		Unit:           "pcs",
+		PurchasePrice:  decimal.NewFromFloat(10.00),
+		SalesPrice:     decimal.NewFromFloat(15.00),
+		VATRate:        decimal.NewFromFloat(22.00),
+		TrackInventory: true,
+		IsActive:       true,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	if err := repo.CreateProduct(ctx, tenant.SchemaName, product); err != nil {
+		t.Fatalf("CreateProduct failed: %v", err)
+	}
+
+	warehouse := &Warehouse{
+		ID:        uuid.New().String(),
+		TenantID:  tenant.ID,
+		Code:      "WH-LOT-RES",
+		Name:      "Lot Reservation Warehouse",
+		IsActive:  true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := repo.CreateWarehouse(ctx, tenant.SchemaName, warehouse); err != nil {
+		t.Fatalf("CreateWarehouse failed: %v", err)
+	}
+
+	first := &InventoryLotReservation{
+		ID:          uuid.New().String(),
+		TenantID:    tenant.ID,
+		ProductID:   product.ID,
+		WarehouseID: warehouse.ID,
+		LotNumber:   "LOT-2026-01",
+		ExpiryDate:  "2027-01-31",
+		Quantity:    decimal.NewFromInt(3),
+		Reason:      "sales order",
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		CreatedBy:   uuid.New().String(),
+	}
+	if err := repo.UpsertLotReservation(ctx, tenant.SchemaName, first); err != nil {
+		t.Fatalf("UpsertLotReservation create failed: %v", err)
+	}
+	second := *first
+	second.ID = uuid.New().String()
+	second.Quantity = decimal.NewFromInt(2)
+	second.Reason = "second order"
+	second.UpdatedAt = time.Now()
+	if err := repo.UpsertLotReservation(ctx, tenant.SchemaName, &second); err != nil {
+		t.Fatalf("UpsertLotReservation increment failed: %v", err)
+	}
+
+	reservations, err := repo.ListLotReservations(ctx, tenant.SchemaName, tenant.ID, product.ID, warehouse.ID)
+	if err != nil {
+		t.Fatalf("ListLotReservations failed: %v", err)
+	}
+	if len(reservations) != 1 {
+		t.Fatalf("expected one lot reservation, got %d", len(reservations))
+	}
+	if !reservations[0].Quantity.Equal(decimal.NewFromInt(5)) {
+		t.Errorf("expected reserved quantity 5, got %s", reservations[0].Quantity)
+	}
+
+	released, err := repo.ReleaseLotReservation(ctx, tenant.SchemaName, tenant.ID, product.ID, warehouse.ID, "LOT-2026-01", "", "2027-01-31", decimal.NewFromInt(4), "packed", uuid.New().String())
+	if err != nil {
+		t.Fatalf("ReleaseLotReservation failed: %v", err)
+	}
+	if !released.Quantity.Equal(decimal.NewFromInt(1)) {
+		t.Errorf("expected remaining quantity 1, got %s", released.Quantity)
+	}
+
+	_, err = repo.ReleaseLotReservation(ctx, tenant.SchemaName, tenant.ID, product.ID, warehouse.ID, "LOT-2026-01", "", "2027-01-31", decimal.NewFromInt(2), "over-release", uuid.New().String())
+	if err == nil {
+		t.Fatal("expected over-release error")
+	}
 }
 
 func TestRepository_UpdateProductStock(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	product := &Product{
@@ -858,7 +1157,7 @@ func TestRepository_ListProducts_LowStock(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create product with low stock
@@ -917,7 +1216,7 @@ func TestRepository_ListProducts_Search(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
 
-	repo := NewPostgresRepository(pool)
+	repo := NewGORMRepository(pool)
 	ctx := context.Background()
 
 	// Create products

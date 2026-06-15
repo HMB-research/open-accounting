@@ -1,3 +1,5 @@
+//go:build integration
+
 package main
 
 import (
@@ -15,25 +17,26 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/HMB-research/open-accounting/internal/demo"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 	"github.com/HMB-research/open-accounting/internal/testutil"
 )
 
 type mockTaxRepository struct {
-	ensureSchemaErr        error
 	queryVATDataResult     []tax.VATAggregateRow
 	queryVATDataErr        error
+	queryKMDINFDataResult  []tax.KMDINFReportRow
+	queryKMDINFDataErr     error
+	queryEUVATOSSResult    []tax.EUVATOSSReportRow
+	queryEUVATOSSErr       error
 	saveDeclarationErr     error
 	getDeclarationResult   *tax.KMDDeclaration
+	existingDeclarations   map[string]*tax.KMDDeclaration
 	getDeclarationErr      error
 	listDeclarationsResult []tax.KMDDeclaration
 	listDeclarationsErr    error
 	savedDeclarations      []*tax.KMDDeclaration
-}
-
-func (m *mockTaxRepository) EnsureSchema(ctx context.Context, schemaName string) error {
-	return m.ensureSchemaErr
 }
 
 func (m *mockTaxRepository) QueryVATData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]tax.VATAggregateRow, error) {
@@ -41,6 +44,20 @@ func (m *mockTaxRepository) QueryVATData(ctx context.Context, schemaName, tenant
 		return nil, m.queryVATDataErr
 	}
 	return m.queryVATDataResult, nil
+}
+
+func (m *mockTaxRepository) QueryKMDINFData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, threshold decimal.Decimal) ([]tax.KMDINFReportRow, error) {
+	if m.queryKMDINFDataErr != nil {
+		return nil, m.queryKMDINFDataErr
+	}
+	return m.queryKMDINFDataResult, nil
+}
+
+func (m *mockTaxRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, includeB2B bool) ([]tax.EUVATOSSReportRow, error) {
+	if m.queryEUVATOSSErr != nil {
+		return nil, m.queryEUVATOSSErr
+	}
+	return m.queryEUVATOSSResult, nil
 }
 
 func (m *mockTaxRepository) SaveDeclaration(ctx context.Context, schemaName string, decl *tax.KMDDeclaration) error {
@@ -55,6 +72,9 @@ func (m *mockTaxRepository) GetDeclaration(ctx context.Context, schemaName, tena
 	if m.getDeclarationErr != nil {
 		return nil, m.getDeclarationErr
 	}
+	if m.existingDeclarations != nil {
+		return m.existingDeclarations[fmt.Sprintf("%04d-%02d", year, month)], nil
+	}
 	return m.getDeclarationResult, nil
 }
 
@@ -63,6 +83,14 @@ func (m *mockTaxRepository) ListDeclarations(ctx context.Context, schemaName, te
 		return nil, m.listDeclarationsErr
 	}
 	return m.listDeclarationsResult, nil
+}
+
+func (m *mockTaxRepository) MarkKMDSubmitted(ctx context.Context, schemaName, tenantID, declarationID string, submittedAt time.Time) error {
+	return nil
+}
+
+func (m *mockTaxRepository) UpdateKMDStatus(ctx context.Context, schemaName, tenantID, declarationID, status string, updatedAt time.Time) error {
+	return nil
 }
 
 func setupTaxHandlers() (*Handlers, *mockTenantRepository, *mockTaxRepository) {
@@ -128,6 +156,56 @@ func TestKMDHandlers(t *testing.T) {
 	require.Len(t, declarations, 1)
 	assert.Equal(t, 2025, declarations[0].Year)
 
+	taxRepo.queryKMDINFDataResult = []tax.KMDINFReportRow{{
+		Part:                       tax.KMDINFPartSales,
+		ContactID:                  "contact-1",
+		ContactName:                "Alpha OU",
+		ContactRegCode:             "12345678",
+		InvoiceID:                  "invoice-1",
+		InvoiceNumber:              "INV-1",
+		InvoiceDate:                time.Date(2025, 2, 5, 0, 0, 0, 0, time.UTC),
+		InvoiceType:                "SALES",
+		TaxableAmount:              decimal.NewFromInt(1200),
+		VATAmount:                  decimal.NewFromInt(264),
+		TotalAmount:                decimal.NewFromInt(1464),
+		PartnerPeriodTaxableAmount: decimal.NewFromInt(1200),
+	}}
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd/2025/2/inf?threshold=1000", nil), map[string]string{
+		"tenantID": "tenant-1",
+		"year":     "2025",
+		"month":    "2",
+	})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateKMDINF(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var infReport tax.KMDINFReport
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&infReport))
+	require.Len(t, infReport.Rows, 1)
+	assert.Equal(t, tax.KMDINFPartSales, infReport.Rows[0].Part)
+	assert.True(t, infReport.Threshold.Equal(decimal.NewFromInt(1000)))
+
+	taxRepo.queryEUVATOSSResult = []tax.EUVATOSSReportRow{{
+		CountryCode:   "DE",
+		VATRate:       decimal.NewFromInt(19),
+		InvoiceCount:  1,
+		LineCount:     1,
+		TaxableAmount: decimal.NewFromInt(100),
+		VATAmount:     decimal.NewFromInt(19),
+		TotalAmount:   decimal.NewFromInt(119),
+	}}
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/eu-vat/oss?year=2026&quarter=1", nil), map[string]string{
+		"tenantID": "tenant-1",
+	})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateEUVATOSS(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var ossReport tax.EUVATOSSReport
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&ossReport))
+	require.Len(t, ossReport.Rows, 1)
+	assert.Equal(t, "DE", ossReport.Rows[0].CountryCode)
+	assert.Equal(t, "Germany", ossReport.Rows[0].CountryName)
+	assert.True(t, ossReport.VATAmount.Equal(decimal.NewFromInt(19)))
+
 	taxRepo.getDeclarationResult = &tax.KMDDeclaration{
 		ID:             "decl-export",
 		TenantID:       tenantRecord.ID,
@@ -158,6 +236,28 @@ func TestKMDHandlers(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "<periood>2025-02</periood>")
 }
 
+func TestKMDImportHistoryHandler(t *testing.T) {
+	h, tenantRepo, taxRepo := setupTaxHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/tax/kmd/import-history", map[string]any{
+		"file_name":   "kmd-history.csv",
+		"csv_content": "year,month,row_code,tax_base,tax_amount\n2025,12,1,1000.00,220.00\n",
+	}, nil)
+	rr := httptest.NewRecorder()
+
+	h.HandleImportKMDHistory(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var result tax.ImportKMDHistoryResult
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.DeclarationsCreated)
+	assert.Equal(t, 1, result.RowsImported)
+	require.Len(t, taxRepo.savedDeclarations, 1)
+	assert.Equal(t, 2025, taxRepo.savedDeclarations[0].Year)
+}
+
 func TestKMDHandlersValidationAndErrorPaths(t *testing.T) {
 	h, tenantRepo, taxRepo := setupTaxHandlers()
 	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")
@@ -168,14 +268,14 @@ func TestKMDHandlersValidationAndErrorPaths(t *testing.T) {
 	h.HandleGenerateKMD(rr, req)
 	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
 
-	taxRepo.ensureSchemaErr = errors.New("schema unavailable")
+	taxRepo.queryVATDataErr = errors.New("vat data unavailable")
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/tax/kmd", map[string]int{"year": 2025, "month": 2}, nil)
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.HandleGenerateKMD(rr, req)
 	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
-	assert.Contains(t, rr.Body.String(), "schema unavailable")
-	taxRepo.ensureSchemaErr = nil
+	assert.Contains(t, rr.Body.String(), "vat data unavailable")
+	taxRepo.queryVATDataErr = nil
 
 	taxRepo.listDeclarationsErr = errors.New("list failed")
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd", nil), map[string]string{"tenantID": "tenant-1"})
@@ -184,6 +284,48 @@ func TestKMDHandlersValidationAndErrorPaths(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
 	assert.Contains(t, rr.Body.String(), "list failed")
 	taxRepo.listDeclarationsErr = nil
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd/2025/2/inf?threshold=bad", nil), map[string]string{
+		"tenantID": "tenant-1",
+		"year":     "2025",
+		"month":    "2",
+	})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateKMDINF(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "Invalid threshold")
+
+	taxRepo.queryKMDINFDataErr = errors.New("inf query failed")
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd/2025/2/inf", nil), map[string]string{
+		"tenantID": "tenant-1",
+		"year":     "2025",
+		"month":    "2",
+	})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateKMDINF(rr, req)
+	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "inf query failed")
+	taxRepo.queryKMDINFDataErr = nil
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/eu-vat/oss?year=bad&quarter=1", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateEUVATOSS(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "Invalid year")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/eu-vat/oss?year=2026&quarter=5", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateEUVATOSS(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "Invalid quarter")
+
+	taxRepo.queryEUVATOSSErr = errors.New("oss query failed")
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/eu-vat/oss?year=2026&quarter=1", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.HandleGenerateEUVATOSS(rr, req)
+	require.Equal(t, http.StatusInternalServerError, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "oss query failed")
+	taxRepo.queryEUVATOSSErr = nil
 
 	tenantRepo.getTenantErr = tenant.ErrTenantNotFound
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/tax/kmd/2025/2/xml", nil), map[string]string{
@@ -277,8 +419,15 @@ func TestDemoHandlersValidation(t *testing.T) {
 
 func TestDemoHandlersResetAndStatus(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
-	h := &Handlers{pool: pool}
 	ctx := context.Background()
+	resetService, err := demo.NewResetService(ctx, pool, demo.SeedSQLForUsers)
+	require.NoError(t, err)
+	statusReader, err := demo.NewStatusReader(pool)
+	require.NoError(t, err)
+	h := &Handlers{
+		demoResetService: resetService,
+		demoStatusReader: statusReader,
+	}
 
 	t.Setenv("DEMO_MODE", "true")
 	t.Setenv("DEMO_RESET_SECRET", "demo-secret")
@@ -289,10 +438,10 @@ func TestDemoHandlersResetAndStatus(t *testing.T) {
 		require.NoError(t, err)
 		defer conn.Release()
 
-		_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", demoResetAdvisoryLockKey)
+		_, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", demo.ResetAdvisoryLockKey)
 		require.NoError(t, err)
 		defer func() {
-			_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", demoResetAdvisoryLockKey)
+			_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", demo.ResetAdvisoryLockKey)
 		}()
 
 		for _, userNum := range users {
@@ -350,19 +499,18 @@ func TestDemoHandlersResetAndStatus(t *testing.T) {
 	assert.GreaterOrEqual(t, status.Accounts.Count, 10)
 	assert.GreaterOrEqual(t, status.Contacts.Count, 3)
 
-	missingStatus := h.getEntityStatus(ctx, "tenant_missing", "accounts", "name")
-	assert.Equal(t, 0, missingStatus.Count)
-	assert.Empty(t, missingStatus.Keys)
+	statusReader, err = h.getDemoStatusReader()
+	require.NoError(t, err)
+	missingStatus, err := statusReader.ReadDemoStatus(ctx, "tenant_missing", 99)
+	require.NoError(t, err)
+	assert.Equal(t, 0, missingStatus.Accounts.Count)
+	assert.Empty(t, missingStatus.Accounts.Keys)
+	assert.Equal(t, 0, missingStatus.Employees.Count)
+	assert.Empty(t, missingStatus.Employees.Keys)
+	assert.Equal(t, 0, missingStatus.PayrollRuns.Count)
+	assert.Empty(t, missingStatus.PayrollRuns.Keys)
 
-	missingConcat := h.getEntityStatusConcat(ctx, "tenant_missing", "employees", "first_name", "last_name")
-	assert.Equal(t, 0, missingConcat.Count)
-	assert.Empty(t, missingConcat.Keys)
-
-	missingPeriod := h.getEntityStatusPeriod(ctx, "tenant_missing", "payroll_runs")
-	assert.Equal(t, 0, missingPeriod.Count)
-	assert.Empty(t, missingPeriod.Keys)
-
-	sql := getDemoSeedSQLForUsers([]int{1, 3})
+	sql := demo.SeedSQLForUsers([]int{1, 3})
 	assert.Contains(t, sql, "demo1@example.com")
 	assert.Contains(t, sql, "demo3@example.com")
 	assert.Contains(t, sql, "tenant_demo1")

@@ -1,3 +1,5 @@
+//go:build integration
+
 package main
 
 import (
@@ -143,6 +145,40 @@ func TestMainRunsMigrateUp(t *testing.T) {
 	}
 }
 
+func TestMainRunsMigrateDownWithDatabaseURLEnv(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	dir := t.TempDir()
+	version := fmt.Sprintf("999998_%d_main_down", time.Now().UnixNano())
+	tableName := fmt.Sprintf("migration_main_down_%d", time.Now().UnixNano())
+	writeMigration(t, dir, version+".up.sql", fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (id INT PRIMARY KEY);`, tableName))
+	writeMigration(t, dir, version+".down.sql", fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, tableName))
+
+	if err := migrateUp(ctx, pool, dir, 1); err != nil {
+		t.Fatalf("migrateUp setup failed: %v", err)
+	}
+	if !tableExists(t, ctx, pool, tableName) {
+		t.Fatalf("expected table %s to exist before main helper rollback", tableName)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess", "--", "-path", dir, "-direction", "down", "-steps", "1")
+	cmd.Env = append(os.Environ(), "GO_WANT_MIGRATE_HELPER=1", "DATABASE_URL="+connStringFromPool(pool))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("main helper down failed: %v\n%s", err, string(out))
+	}
+
+	if tableExists(t, ctx, pool, tableName) {
+		t.Fatalf("expected table %s to be removed after main helper rollback", tableName)
+	}
+}
+
 func TestMainRejectsInvalidDirection(t *testing.T) {
 	pool := setupMigrationTestDB(t)
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess", "--", "-db", connStringFromPool(pool), "-direction", "sideways")
@@ -239,10 +275,373 @@ func TestMigrateDownDefaultsToSingleRollback(t *testing.T) {
 	}
 }
 
+func TestMigrateUpRollsBackFailedMigration(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	dir := t.TempDir()
+	version := fmt.Sprintf("999993_%d_failed_up", time.Now().UnixNano())
+	tableName := fmt.Sprintf("migration_failed_up_%d", time.Now().UnixNano())
+	writeMigration(t, dir, version+".up.sql", fmt.Sprintf(`
+		CREATE TABLE %s (id INT PRIMARY KEY);
+		SELECT open_accounting_missing_function();
+	`, tableName))
+
+	err := migrateUp(ctx, pool, dir, 0)
+	if err == nil {
+		t.Fatal("expected failed migration error")
+	}
+	if !strings.Contains(err.Error(), "execute migration") {
+		t.Fatalf("expected execute migration error, got: %v", err)
+	}
+	if tableExists(t, ctx, pool, tableName) {
+		t.Fatalf("expected failed migration table %s to be rolled back", tableName)
+	}
+
+	applied, err := getAppliedMigrations(ctx, pool)
+	if err != nil {
+		t.Fatalf("getAppliedMigrations failed: %v", err)
+	}
+	if applied[version] {
+		t.Fatalf("expected failed migration %s not to be recorded", version)
+	}
+}
+
+func TestMigrateDownRollsBackFailedRollback(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	dir := t.TempDir()
+	version := fmt.Sprintf("999992_%d_failed_down", time.Now().UnixNano())
+	tableName := fmt.Sprintf("migration_failed_down_%d", time.Now().UnixNano())
+	writeMigration(t, dir, version+".up.sql", fmt.Sprintf(`CREATE TABLE %s (id INT PRIMARY KEY);`, tableName))
+	writeMigration(t, dir, version+".down.sql", fmt.Sprintf(`
+		DROP TABLE %s;
+		SELECT open_accounting_missing_function();
+	`, tableName))
+
+	if err := migrateUp(ctx, pool, dir, 1); err != nil {
+		t.Fatalf("migrateUp setup failed: %v", err)
+	}
+	if !tableExists(t, ctx, pool, tableName) {
+		t.Fatalf("expected table %s to exist before failed rollback", tableName)
+	}
+
+	err := migrateDown(ctx, pool, dir, 1)
+	if err == nil {
+		t.Fatal("expected failed rollback error")
+	}
+	if !strings.Contains(err.Error(), "execute rollback") {
+		t.Fatalf("expected execute rollback error, got: %v", err)
+	}
+	if !tableExists(t, ctx, pool, tableName) {
+		t.Fatalf("expected failed rollback table %s to remain", tableName)
+	}
+
+	applied, err := getAppliedMigrations(ctx, pool)
+	if err != nil {
+		t.Fatalf("getAppliedMigrations failed: %v", err)
+	}
+	if !applied[version] {
+		t.Fatalf("expected failed rollback migration %s to remain recorded", version)
+	}
+}
+
+func TestMigrateDownSkipsUnappliedMigration(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	dir := t.TempDir()
+	version := fmt.Sprintf("999991_%d_unapplied_down", time.Now().UnixNano())
+	tableName := fmt.Sprintf("migration_unapplied_down_%d", time.Now().UnixNano())
+	writeMigration(t, dir, version+".down.sql", fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, tableName))
+
+	if err := migrateDown(ctx, pool, dir, 1); err != nil {
+		t.Fatalf("migrateDown should skip unapplied migration: %v", err)
+	}
+}
+
+func TestTenantFeatureMigrationsHandlePartialSchemas(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	execSQL(t, ctx, pool, `
+		CREATE EXTENSION IF NOT EXISTS pgcrypto;
+		CREATE TABLE tenants (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			schema_name TEXT NOT NULL UNIQUE,
+			is_active BOOLEAN NOT NULL DEFAULT true
+		);
+		CREATE SCHEMA tenant_partial;
+		CREATE SCHEMA tenant_complete;
+		INSERT INTO tenants (schema_name, is_active)
+		VALUES ('tenant_partial', true), ('tenant_complete', true);
+
+		CREATE TABLE tenant_complete.email_templates (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			tenant_id UUID NOT NULL,
+			template_type VARCHAR(50) NOT NULL,
+			subject TEXT,
+			body_html TEXT,
+			body_text TEXT,
+			UNIQUE (tenant_id, template_type)
+		);
+		CREATE TABLE tenant_complete.orders (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+		CREATE TABLE tenant_complete.products (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+		CREATE TABLE tenant_complete.warehouses (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+	`)
+
+	dir := t.TempDir()
+	copyRepositoryMigration(t, dir, "021_reminder_rules.up.sql")
+	copyRepositoryMigration(t, dir, "021_reminder_rules.down.sql")
+	copyRepositoryMigration(t, dir, "033_order_stock_reservations.up.sql")
+	copyRepositoryMigration(t, dir, "033_order_stock_reservations.down.sql")
+
+	if err := migrateUp(ctx, pool, dir, 0); err != nil {
+		t.Fatalf("migrateUp with partial tenant schemas failed: %v", err)
+	}
+
+	if !schemaTableExists(t, ctx, pool, "tenant_partial", "reminder_rules") {
+		t.Fatalf("expected reminder_rules to be created for partial schema")
+	}
+	if schemaTableExists(t, ctx, pool, "tenant_partial", "order_stock_reservations") {
+		t.Fatalf("expected order_stock_reservations to be skipped for schema missing order inventory tables")
+	}
+	if !schemaTableExists(t, ctx, pool, "tenant_complete", "order_stock_reservations") {
+		t.Fatalf("expected order_stock_reservations to be created for complete schema")
+	}
+
+	if err := migrateDown(ctx, pool, dir, 2); err != nil {
+		t.Fatalf("migrateDown with partial tenant schemas failed: %v", err)
+	}
+	if schemaTableExists(t, ctx, pool, "tenant_partial", "reminder_rules") {
+		t.Fatalf("expected reminder_rules to be removed after rollback")
+	}
+	if schemaTableExists(t, ctx, pool, "tenant_complete", "order_stock_reservations") {
+		t.Fatalf("expected order_stock_reservations to be removed after rollback")
+	}
+}
+
+func TestEmailTemplateTypeMigrationAllowsQuoteAndOrderTemplates(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	execSQL(t, ctx, pool, `
+		CREATE EXTENSION IF NOT EXISTS pgcrypto;
+		CREATE TABLE tenants (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			schema_name TEXT NOT NULL UNIQUE,
+			is_active BOOLEAN NOT NULL DEFAULT true
+		);
+		CREATE SCHEMA tenant_email_types;
+		INSERT INTO tenants (schema_name, is_active) VALUES ('tenant_email_types', true);
+
+		CREATE TABLE tenant_email_types.email_templates (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			tenant_id UUID NOT NULL,
+			template_type VARCHAR(50) NOT NULL
+				CONSTRAINT email_templates_template_type_check
+				CHECK (template_type IN (
+					'INVOICE_SEND',
+					'INVOICE_REMINDER',
+					'PAYMENT_RECEIPT',
+					'OVERDUE_REMINDER',
+					'WELCOME',
+					'CUSTOM',
+					'PAYMENT_DUE_SOON',
+					'PAYMENT_DUE_TODAY'
+				)),
+			subject TEXT NOT NULL,
+			body_html TEXT NOT NULL,
+			body_text TEXT,
+			is_active BOOLEAN DEFAULT true,
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW(),
+			UNIQUE (tenant_id, template_type)
+		);
+	`)
+
+	dir := t.TempDir()
+	copyRepositoryMigration(t, dir, "053_quote_order_email_template_types.up.sql")
+	copyRepositoryMigration(t, dir, "053_quote_order_email_template_types.down.sql")
+
+	if err := migrateUp(ctx, pool, dir, 0); err != nil {
+		t.Fatalf("migrateUp failed: %v", err)
+	}
+
+	execSQL(t, ctx, pool, `
+		INSERT INTO tenant_email_types.email_templates (tenant_id, template_type, subject, body_html, body_text)
+		VALUES
+			((SELECT id FROM tenants WHERE schema_name = 'tenant_email_types'), 'QUOTE_SEND', 'Quote', '<p>Quote</p>', 'Quote'),
+			((SELECT id FROM tenants WHERE schema_name = 'tenant_email_types'), 'ORDER_CONFIRM', 'Order', '<p>Order</p>', 'Order');
+	`)
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tenant_email_types.email_templates (tenant_id, template_type, subject, body_html)
+		VALUES ((SELECT id FROM tenants WHERE schema_name = 'tenant_email_types'), 'UNKNOWN_TEMPLATE', 'Unknown', '<p>Unknown</p>')
+	`); err == nil {
+		t.Fatalf("expected unknown template type to be rejected")
+	}
+
+	if err := migrateDown(ctx, pool, dir, 1); err != nil {
+		t.Fatalf("migrateDown failed: %v", err)
+	}
+
+	var remaining int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM tenant_email_types.email_templates
+		WHERE template_type IN ('QUOTE_SEND', 'ORDER_CONFIRM')
+	`).Scan(&remaining); err != nil {
+		t.Fatalf("count quote/order templates after rollback: %v", err)
+	}
+	if remaining != 0 {
+		t.Fatalf("expected quote/order templates to be removed on rollback, got %d", remaining)
+	}
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tenant_email_types.email_templates (tenant_id, template_type, subject, body_html)
+		VALUES ((SELECT id FROM tenants WHERE schema_name = 'tenant_email_types'), 'QUOTE_SEND', 'Quote', '<p>Quote</p>')
+	`); err == nil {
+		t.Fatalf("expected quote template type to be rejected after rollback")
+	}
+}
+
+func TestEmailTemplateTypeMigrationAllowsDocumentRetentionReminderTemplate(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	execSQL(t, ctx, pool, `
+		CREATE EXTENSION IF NOT EXISTS pgcrypto;
+		CREATE TABLE tenants (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			schema_name TEXT NOT NULL UNIQUE,
+			is_active BOOLEAN NOT NULL DEFAULT true
+		);
+		CREATE SCHEMA tenant_retention_email_types;
+		INSERT INTO tenants (schema_name, is_active) VALUES ('tenant_retention_email_types', true);
+
+		CREATE TABLE tenant_retention_email_types.email_templates (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			tenant_id UUID NOT NULL,
+			template_type VARCHAR(50) NOT NULL
+				CONSTRAINT email_templates_template_type_check
+				CHECK (template_type IN (
+					'INVOICE_SEND',
+					'INVOICE_REMINDER',
+					'PAYMENT_RECEIPT',
+					'OVERDUE_REMINDER',
+					'WELCOME',
+					'CUSTOM',
+					'PAYMENT_DUE_SOON',
+					'PAYMENT_DUE_TODAY',
+					'QUOTE_SEND',
+					'ORDER_CONFIRM'
+				)),
+			subject TEXT NOT NULL,
+			body_html TEXT NOT NULL,
+			body_text TEXT,
+			is_active BOOLEAN DEFAULT true,
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW(),
+			UNIQUE (tenant_id, template_type)
+		);
+	`)
+
+	dir := t.TempDir()
+	copyRepositoryMigration(t, dir, "054_document_retention_reminder_template.up.sql")
+	copyRepositoryMigration(t, dir, "054_document_retention_reminder_template.down.sql")
+
+	if err := migrateUp(ctx, pool, dir, 0); err != nil {
+		t.Fatalf("migrateUp failed: %v", err)
+	}
+
+	execSQL(t, ctx, pool, `
+		INSERT INTO tenant_retention_email_types.email_templates (tenant_id, template_type, subject, body_html, body_text)
+		VALUES ((SELECT id FROM tenants WHERE schema_name = 'tenant_retention_email_types'), 'DOCUMENT_RETENTION_REMINDER', 'Retention', '<p>Retention</p>', 'Retention');
+	`)
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tenant_retention_email_types.email_templates (tenant_id, template_type, subject, body_html)
+		VALUES ((SELECT id FROM tenants WHERE schema_name = 'tenant_retention_email_types'), 'UNKNOWN_TEMPLATE', 'Unknown', '<p>Unknown</p>')
+	`); err == nil {
+		t.Fatalf("expected unknown template type to be rejected")
+	}
+
+	if err := migrateDown(ctx, pool, dir, 1); err != nil {
+		t.Fatalf("migrateDown failed: %v", err)
+	}
+
+	var remaining int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM tenant_retention_email_types.email_templates
+		WHERE template_type = 'DOCUMENT_RETENTION_REMINDER'
+	`).Scan(&remaining); err != nil {
+		t.Fatalf("count document retention reminder templates after rollback: %v", err)
+	}
+	if remaining != 0 {
+		t.Fatalf("expected document retention reminder templates to be removed on rollback, got %d", remaining)
+	}
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tenant_retention_email_types.email_templates (tenant_id, template_type, subject, body_html)
+		VALUES ((SELECT id FROM tenants WHERE schema_name = 'tenant_retention_email_types'), 'DOCUMENT_RETENTION_REMINDER', 'Retention', '<p>Retention</p>')
+	`); err == nil {
+		t.Fatalf("expected document retention reminder template type to be rejected after rollback")
+	}
+}
+
 func writeMigration(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write migration %s: %v", name, err)
+	}
+}
+
+func copyRepositoryMigration(t *testing.T, dir, name string) {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
+	if err != nil {
+		t.Fatalf("failed to read repository migration %s: %v", name, err)
+	}
+	writeMigration(t, dir, name, string(content))
+}
+
+func execSQL(t *testing.T, ctx context.Context, pool *pgxpool.Pool, sql string) {
+	t.Helper()
+	if _, err := pool.Exec(ctx, sql); err != nil {
+		t.Fatalf("failed to execute test sql: %v", err)
 	}
 }
 
@@ -259,6 +658,19 @@ func tableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tableNam
 	return exists
 }
 
+func schemaTableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, schemaName, tableName string) bool {
+	t.Helper()
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1
+		FROM information_schema.tables
+		WHERE table_schema = $1 AND table_name = $2
+	)`, schemaName, tableName).Scan(&exists); err != nil {
+		t.Fatalf("failed to check schema table existence: %v", err)
+	}
+	return exists
+}
+
 func connStringFromPool(pool *pgxpool.Pool) string {
 	cfg := pool.Config().ConnConfig
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable", cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Database)
@@ -269,7 +681,7 @@ func setupMigrationTestDB(t *testing.T) *pgxpool.Pool {
 
 	baseURL := os.Getenv("DATABASE_URL")
 	if baseURL == "" {
-		return testutil.SetupTestDB(t)
+		baseURL = connStringFromPool(testutil.SetupTestDB(t))
 	}
 
 	adminURL, err := url.Parse(baseURL)

@@ -1,11 +1,11 @@
-//go:build gorm
-
 package database
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -38,6 +38,28 @@ func NewGormDB(ctx context.Context, connString string) (*GormDB, error) {
 	}
 
 	return &GormDB{DB: db}, nil
+}
+
+// NewGormDBFromPool creates a GORM handle from the existing pgx pool configuration.
+func NewGormDBFromPool(ctx context.Context, pool *pgxpool.Pool) (*gorm.DB, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("database connection not available")
+	}
+
+	sqlDB := stdlib.OpenDBFromPool(pool)
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
+		Logger:                 logger.Default.LogMode(logger.Warn),
+		SkipDefaultTransaction: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open gorm connection: %w", err)
+	}
+
+	if err := sqlDB.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	return db, nil
 }
 
 // Close closes the database connection

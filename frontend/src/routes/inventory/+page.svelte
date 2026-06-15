@@ -1,9 +1,23 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { api, type Product, type ProductCategory, type Warehouse, type ProductType, type ProductStatus, type StockLevel, type InventoryMovement, type MovementType } from '$lib/api';
+	import {
+		api,
+		type Product,
+		type ProductCategory,
+		type Warehouse,
+		type ProductType,
+		type ProductStatus,
+		type StockLevel,
+		type InventoryMovement,
+		type MovementType,
+		type InventoryValuationReport,
+		type InventoryValuationMethod,
+		type InventorySubledgerReconciliationLine,
+		type InventorySubledgerReconciliationReport
+	} from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
-	import { formatCurrency, formatDate } from '$lib/utils/formatting';
+	import { formatCurrency, formatDate, formStringValue, optionalFormStringValue } from '$lib/utils/formatting';
 
 	type Tab = 'products' | 'warehouses' | 'categories';
 
@@ -27,9 +41,16 @@
 	let showCreateCategory = $state(false);
 	let showAdjustStock = $state(false);
 	let showTransferStock = $state(false);
+	let showStockLevels = $state(false);
+	let showStockReservation = $state(false);
+	let showValuation = $state(false);
+	let showSubledgerReconciliation = $state(false);
 	let showMovements = $state(false);
 	let selectedProduct = $state<Product | null>(null);
+	let stockLevels = $state<StockLevel[]>([]);
 	let movements = $state<InventoryMovement[]>([]);
+	let valuationReport = $state<InventoryValuationReport | null>(null);
+	let subledgerReport = $state<InventorySubledgerReconciliationReport | null>(null);
 
 	// New product form
 	let newProductName = $state('');
@@ -58,6 +79,9 @@
 	// Stock adjustment form
 	let adjustQuantity = $state('');
 	let adjustUnitCost = $state('');
+	let adjustLotNumber = $state('');
+	let adjustSerialNumber = $state('');
+	let adjustExpiryDate = $state('');
 	let adjustReason = $state('');
 	let adjustWarehouseId = $state('');
 
@@ -67,12 +91,37 @@
 	let transferToWarehouseId = $state('');
 	let transferNotes = $state('');
 
+	// Stock reservation form
+	let stockReservationMode = $state<'reserve' | 'release'>('reserve');
+	let stockReservationWarehouseId = $state('');
+	let stockReservationQuantity = $state('');
+	let stockReservationReason = $state('');
+
+	// Inventory valuation filters
+	let valuationWarehouseId = $state('');
+	let valuationMethod = $state<InventoryValuationMethod>('standard-cost');
+	let subledgerWarehouseId = $state('');
+	let subledgerMethod = $state<InventoryValuationMethod>('standard-cost');
+	let subledgerAsOfDate = $state('');
+	let showSubledgerProductLines = $state(false);
+
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (tenantId) {
 			loadData(tenantId);
 		}
 	});
+
+	function handleInventoryModalKeydown(e: KeyboardEvent) {
+		if (e.key !== 'Escape') return;
+
+		if (showAdjustStock) showAdjustStock = false;
+		if (showStockLevels) showStockLevels = false;
+		if (showStockReservation) showStockReservation = false;
+		if (showValuation) showValuation = false;
+		if (showSubledgerReconciliation) showSubledgerReconciliation = false;
+		if (showMovements) showMovements = false;
+	}
 
 	async function loadData(tenantId: string) {
 		isLoading = true;
@@ -120,11 +169,11 @@
 				product_type: newProductType,
 				category_id: newProductCategoryId || undefined,
 				unit: newProductUnit,
-				purchase_price: newProductPurchasePrice || undefined,
-				sales_price: newProductSalesPrice,
-				vat_rate: newProductVatRate || '22',
-				min_stock_level: newProductMinStock || undefined,
-				reorder_point: newProductReorderPoint || undefined,
+				purchase_price: optionalFormStringValue(newProductPurchasePrice),
+				sales_price: formStringValue(newProductSalesPrice),
+				vat_rate: formStringValue(newProductVatRate || '22'),
+				min_stock_level: optionalFormStringValue(newProductMinStock),
+				reorder_point: optionalFormStringValue(newProductReorderPoint),
 				barcode: newProductBarcode || undefined
 			});
 			products = [product, ...products];
@@ -208,7 +257,7 @@
 
 		try {
 			await api.deleteProduct(tenantId, productId);
-			products = products.filter(p => p.id !== productId);
+			products = products.filter((p) => p.id !== productId);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to delete product';
 		}
@@ -222,7 +271,7 @@
 
 		try {
 			await api.deleteWarehouse(tenantId, warehouseId);
-			warehouses = warehouses.filter(w => w.id !== warehouseId);
+			warehouses = warehouses.filter((w) => w.id !== warehouseId);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to delete warehouse';
 		}
@@ -236,7 +285,7 @@
 
 		try {
 			await api.deleteProductCategory(tenantId, categoryId);
-			categories = categories.filter(c => c.id !== categoryId);
+			categories = categories.filter((c) => c.id !== categoryId);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to delete category';
 		}
@@ -246,6 +295,9 @@
 		selectedProduct = product;
 		adjustQuantity = '';
 		adjustUnitCost = '';
+		adjustLotNumber = '';
+		adjustSerialNumber = '';
+		adjustExpiryDate = '';
 		adjustReason = '';
 		adjustWarehouseId = warehouses.length > 0 ? warehouses[0].id : '';
 		showAdjustStock = true;
@@ -260,8 +312,11 @@
 			await api.adjustStock(tenantId, {
 				product_id: selectedProduct.id,
 				warehouse_id: adjustWarehouseId,
-				quantity: adjustQuantity,
-				unit_cost: adjustUnitCost || undefined,
+				quantity: formStringValue(adjustQuantity),
+				unit_cost: optionalFormStringValue(adjustUnitCost),
+				lot_number: adjustLotNumber || undefined,
+				serial_number: adjustSerialNumber || undefined,
+				expiry_date: adjustExpiryDate || undefined,
 				reason: adjustReason || undefined
 			});
 			showAdjustStock = false;
@@ -291,7 +346,7 @@
 				product_id: selectedProduct.id,
 				from_warehouse_id: transferFromWarehouseId,
 				to_warehouse_id: transferToWarehouseId,
-				quantity: transferQuantity,
+				quantity: formStringValue(transferQuantity),
 				notes: transferNotes || undefined
 			});
 			showTransferStock = false;
@@ -302,13 +357,129 @@
 		}
 	}
 
+	async function loadStockLevels(tenantId: string, productId: string) {
+		stockLevels = (await api.getProductStockLevels(tenantId, productId)) ?? [];
+	}
+
+	async function openStockLevels(product: Product) {
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		selectedProduct = product;
+		try {
+			await loadStockLevels(tenantId, product.id);
+			showStockLevels = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load stock levels';
+		}
+	}
+
+	function openStockReservation(product: Product, mode: 'reserve' | 'release') {
+		selectedProduct = product;
+		stockReservationMode = mode;
+		stockReservationWarehouseId = warehouses.length > 0 ? warehouses[0].id : '';
+		stockReservationQuantity = '';
+		stockReservationReason = '';
+		showStockReservation = true;
+	}
+
+	async function submitStockReservation(e: Event) {
+		e.preventDefault();
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId || !selectedProduct) return;
+
+		try {
+			const payload = {
+				product_id: selectedProduct.id,
+				warehouse_id: stockReservationWarehouseId,
+				quantity: formStringValue(stockReservationQuantity),
+				reason: stockReservationReason || undefined
+			};
+			if (stockReservationMode === 'reserve') {
+				await api.reserveStock(tenantId, payload);
+			} else {
+				await api.releaseStock(tenantId, payload);
+			}
+			showStockReservation = false;
+			await loadStockLevels(tenantId, selectedProduct.id);
+			await loadData(tenantId);
+		} catch (err) {
+			error =
+				err instanceof Error ? err.message : stockReservationMode === 'reserve' ? 'Failed to reserve stock' : 'Failed to release stock';
+		}
+	}
+
+	async function loadValuation(tenantId: string) {
+		valuationReport = await api.getInventoryValuation(tenantId, {
+			warehouse_id: valuationWarehouseId || undefined,
+			method: valuationMethod
+		});
+	}
+
+	async function openValuation() {
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		try {
+			await loadValuation(tenantId);
+			showValuation = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load inventory valuation';
+		}
+	}
+
+	async function refreshValuation(e: Event) {
+		e.preventDefault();
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		try {
+			await loadValuation(tenantId);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load inventory valuation';
+		}
+	}
+
+	async function loadSubledgerReconciliation(tenantId: string) {
+		subledgerReport = await api.getInventorySubledgerReconciliation(tenantId, {
+			warehouse_id: subledgerWarehouseId || undefined,
+			method: subledgerMethod,
+			as_of_date: subledgerAsOfDate || undefined
+		});
+	}
+
+	async function openSubledgerReconciliation() {
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		try {
+			showSubledgerProductLines = false;
+			await loadSubledgerReconciliation(tenantId);
+			showSubledgerReconciliation = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load inventory subledger reconciliation';
+		}
+	}
+
+	async function refreshSubledgerReconciliation(e: Event) {
+		e.preventDefault();
+		const tenantId = $page.url.searchParams.get('tenant');
+		if (!tenantId) return;
+
+		try {
+			await loadSubledgerReconciliation(tenantId);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load inventory subledger reconciliation';
+		}
+	}
+
 	async function openMovements(product: Product) {
 		const tenantId = $page.url.searchParams.get('tenant');
 		if (!tenantId) return;
 
 		selectedProduct = product;
 		try {
-			movements = await api.getProductMovements(tenantId, product.id);
+			movements = (await api.getProductMovements(tenantId, product.id)) ?? [];
 			showMovements = true;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load movements';
@@ -317,36 +488,90 @@
 
 	function getProductTypeLabel(type: ProductType): string {
 		switch (type) {
-			case 'GOODS': return m.inventory_typeGoods();
-			case 'SERVICE': return m.inventory_typeService();
+			case 'GOODS':
+				return m.inventory_typeGoods();
+			case 'SERVICE':
+				return m.inventory_typeService();
 		}
 	}
 
 	function getProductStatusLabel(status: ProductStatus): string {
 		switch (status) {
-			case 'ACTIVE': return m.inventory_statusActive();
-			case 'INACTIVE': return m.inventory_statusInactive();
+			case 'ACTIVE':
+				return m.inventory_statusActive();
+			case 'INACTIVE':
+				return m.inventory_statusInactive();
 		}
 	}
 
 	function getMovementTypeLabel(type: MovementType): string {
 		switch (type) {
-			case 'IN': return m.inventory_movementIn();
-			case 'OUT': return m.inventory_movementOut();
-			case 'ADJUSTMENT': return m.inventory_movementAdjustment();
-			case 'TRANSFER': return m.inventory_movementTransfer();
+			case 'IN':
+				return m.inventory_movementIn();
+			case 'OUT':
+				return m.inventory_movementOut();
+			case 'ADJUSTMENT':
+				return m.inventory_movementAdjustment();
+			case 'TRANSFER':
+				return m.inventory_movementTransfer();
 		}
+	}
+
+	function getValuationMethodLabel(method: string): string {
+		switch (method) {
+			case 'WEIGHTED_AVERAGE':
+			case 'weighted-average':
+				return m.inventory_weightedAverage();
+			case 'FIFO':
+			case 'fifo':
+				return m.inventory_fifo();
+			default:
+				return m.inventory_standardCost();
+		}
+	}
+
+	function getSubledgerStatusLabel(status: string): string {
+		switch (status) {
+			case 'MAPPED':
+				return m.inventory_accountStatusMapped();
+			case 'MISSING_INVENTORY_ACCOUNT':
+				return m.inventory_accountStatusMissing();
+			case 'UNKNOWN_INVENTORY_ACCOUNT':
+				return m.inventory_accountStatusUnknown();
+			case 'INVALID_INVENTORY_ACCOUNT_TYPE':
+				return m.inventory_accountStatusInvalidType();
+			default:
+				return status || m.common_notSet();
+		}
+	}
+
+	function getSubledgerProductLabel(line: InventorySubledgerReconciliationLine): string {
+		return `${line.product_code} ${line.product_name}`.trim();
+	}
+
+	function getSubledgerAccountLabel(line: InventorySubledgerReconciliationLine): string {
+		if (!line.account_code && !line.account_name) return m.common_notSet();
+		return `${line.account_code || ''} ${line.account_name || ''}`.trim();
+	}
+
+	function getSubledgerExceptionLines(report: InventorySubledgerReconciliationReport): InventorySubledgerReconciliationLine[] {
+		return report.lines.filter((line) => line.status !== 'MAPPED');
+	}
+
+	function formatReportDate(dateStr: string | undefined): string {
+		if (!dateStr || dateStr.startsWith('0001-')) return '-';
+		return formatDate(dateStr);
 	}
 
 	function getCategoryName(categoryId: string | undefined): string {
 		if (!categoryId) return '-';
-		const category = categories.find(c => c.id === categoryId);
+		const category = categories.find((c) => c.id === categoryId);
 		return category?.name || '-';
 	}
 
 	function getWarehouseName(warehouseId: string | undefined): string {
 		if (!warehouseId) return '-';
-		const warehouse = warehouses.find(w => w.id === warehouseId);
+		const warehouse = warehouses.find((w) => w.id === warehouseId);
 		return warehouse?.name || '-';
 	}
 
@@ -357,15 +582,19 @@
 	}
 
 	function isLowStock(product: Product): boolean {
-		const current = typeof product.current_stock === 'object' && 'toNumber' in product.current_stock
-			? product.current_stock.toNumber()
-			: Number(product.current_stock || 0);
-		const minLevel = typeof product.min_stock_level === 'object' && 'toNumber' in product.min_stock_level
-			? product.min_stock_level.toNumber()
-			: Number(product.min_stock_level || 0);
+		const current =
+			typeof product.current_stock === 'object' && 'toNumber' in product.current_stock
+				? product.current_stock.toNumber()
+				: Number(product.current_stock || 0);
+		const minLevel =
+			typeof product.min_stock_level === 'object' && 'toNumber' in product.min_stock_level
+				? product.min_stock_level.toNumber()
+				: Number(product.min_stock_level || 0);
 		return minLevel > 0 && current <= minLevel;
 	}
 </script>
+
+<svelte:window onkeydown={handleInventoryModalKeydown} />
 
 <svelte:head>
 	<title>{m.inventory_title()} - Open Accounting</title>
@@ -377,13 +606,13 @@
 	</div>
 
 	<div class="tabs">
-		<button class="tab" class:active={activeTab === 'products'} onclick={() => activeTab = 'products'}>
+		<button class="tab" class:active={activeTab === 'products'} onclick={() => (activeTab = 'products')}>
 			{m.inventory_products()}
 		</button>
-		<button class="tab" class:active={activeTab === 'warehouses'} onclick={() => activeTab = 'warehouses'}>
+		<button class="tab" class:active={activeTab === 'warehouses'} onclick={() => (activeTab = 'warehouses')}>
 			{m.inventory_warehouses()}
 		</button>
-		<button class="tab" class:active={activeTab === 'categories'} onclick={() => activeTab = 'categories'}>
+		<button class="tab" class:active={activeTab === 'categories'} onclick={() => (activeTab = 'categories')}>
 			{m.inventory_categories()}
 		</button>
 	</div>
@@ -396,7 +625,13 @@
 		<p>{m.common_loading()}</p>
 	{:else if activeTab === 'products'}
 		<div class="page-actions">
-			<button class="btn btn-primary" onclick={() => showCreateProduct = true}>
+			<button class="btn btn-secondary" onclick={openValuation}>
+				{m.inventory_inventoryValuation()}
+			</button>
+			<button class="btn btn-secondary" onclick={openSubledgerReconciliation}>
+				{m.inventory_subledgerReconciliation()}
+			</button>
+			<button class="btn btn-primary" onclick={() => (showCreateProduct = true)}>
 				+ {m.inventory_newProduct()}
 			</button>
 		</div>
@@ -416,7 +651,7 @@
 				</select>
 				<select class="input" bind:value={filterCategory} onchange={handleFilter}>
 					<option value="">{m.inventory_filterByCategory()}</option>
-					{#each categories as category}
+					{#each categories as category (category.id)}
 						<option value={category.id}>{category.name}</option>
 					{/each}
 				</select>
@@ -447,13 +682,15 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each products as product}
+							{#each products as product (product.id)}
 								<tr class:low-stock={isLowStock(product)}>
 									<td data-label={m.inventory_code()}>{product.code}</td>
 									<td data-label={m.inventory_productName()}>{product.name}</td>
 									<td class="hide-mobile" data-label={m.inventory_productType()}>{getProductTypeLabel(product.product_type)}</td>
 									<td class="hide-mobile" data-label={m.inventory_category()}>{getCategoryName(product.category_id)}</td>
-									<td class="amount text-right" data-label={m.inventory_salesPrice()}>{product.sales_price ? formatCurrency(product.sales_price) : '-'}</td>
+									<td class="amount text-right" data-label={m.inventory_salesPrice()}
+										>{product.sales_price ? formatCurrency(product.sales_price) : '-'}</td
+									>
 									<td class="text-right" data-label={m.inventory_currentStock()}>
 										{formatNumber(product.current_stock)}
 										{#if isLowStock(product)}
@@ -463,6 +700,23 @@
 									<td class="actions hide-mobile" data-label={m.common_actions()}>
 										<button class="btn btn-small" onclick={() => openAdjustStock(product)} title={m.inventory_adjustStock()}>
 											{m.inventory_adjustStock()}
+										</button>
+										<button class="btn btn-small" onclick={() => openStockLevels(product)} title={m.inventory_stockLevels()}>
+											{m.inventory_stockLevels()}
+										</button>
+										<button
+											class="btn btn-small"
+											onclick={() => openStockReservation(product, 'reserve')}
+											title={m.inventory_reserveStock()}
+										>
+											{m.inventory_reserveStock()}
+										</button>
+										<button
+											class="btn btn-small"
+											onclick={() => openStockReservation(product, 'release')}
+											title={m.inventory_releaseStock()}
+										>
+											{m.inventory_releaseStock()}
 										</button>
 										{#if warehouses.length >= 2}
 											<button class="btn btn-small" onclick={() => openTransferStock(product)} title={m.inventory_transferStock()}>
@@ -485,7 +739,7 @@
 		{/if}
 	{:else if activeTab === 'warehouses'}
 		<div class="page-actions">
-			<button class="btn btn-primary" onclick={() => showCreateWarehouse = true}>
+			<button class="btn btn-primary" onclick={() => (showCreateWarehouse = true)}>
 				+ {m.inventory_newWarehouse()}
 			</button>
 		</div>
@@ -509,7 +763,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each warehouses as warehouse}
+							{#each warehouses as warehouse (warehouse.id)}
 								<tr>
 									<td data-label={m.inventory_warehouseCode()}>{warehouse.code}</td>
 									<td data-label={m.inventory_warehouseName()}>{warehouse.name}</td>
@@ -542,7 +796,7 @@
 		{/if}
 	{:else if activeTab === 'categories'}
 		<div class="page-actions">
-			<button class="btn btn-primary" onclick={() => showCreateCategory = true}>
+			<button class="btn btn-primary" onclick={() => (showCreateCategory = true)}>
 				+ {m.inventory_newCategory()}
 			</button>
 		</div>
@@ -563,7 +817,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each categories as category}
+							{#each categories as category (category.id)}
 								<tr>
 									<td data-label={m.common_name()}>{category.name}</td>
 									<td data-label={m.common_description()}>{category.description || '-'}</td>
@@ -585,8 +839,15 @@
 {#if showCreateProduct}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showCreateProduct = false} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-product-title" tabindex="-1">
+	<div class="modal-backdrop" onclick={() => (showCreateProduct = false)} role="presentation">
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="create-product-title"
+			tabindex="-1"
+		>
 			<h2 id="create-product-title">{m.inventory_newProduct()}</h2>
 			<form onsubmit={createProduct}>
 				<div class="form-row">
@@ -612,7 +873,7 @@
 						<label class="label" for="product-category">{m.inventory_category()}</label>
 						<select class="input" id="product-category" bind:value={newProductCategoryId}>
 							<option value="">-</option>
-							{#each categories as category}
+							{#each categories as category (category.id)}
 								<option value={category.id}>{category.name}</option>
 							{/each}
 						</select>
@@ -662,7 +923,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => showCreateProduct = false}>
+					<button type="button" class="btn btn-secondary" onclick={() => (showCreateProduct = false)}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.inventory_createProduct()}</button>
@@ -675,8 +936,15 @@
 {#if showCreateWarehouse}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showCreateWarehouse = false} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-warehouse-title" tabindex="-1">
+	<div class="modal-backdrop" onclick={() => (showCreateWarehouse = false)} role="presentation">
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="create-warehouse-title"
+			tabindex="-1"
+		>
 			<h2 id="create-warehouse-title">{m.inventory_newWarehouse()}</h2>
 			<form onsubmit={createWarehouse}>
 				<div class="form-row">
@@ -703,7 +971,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => showCreateWarehouse = false}>
+					<button type="button" class="btn btn-secondary" onclick={() => (showCreateWarehouse = false)}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.inventory_createWarehouse()}</button>
@@ -716,8 +984,15 @@
 {#if showCreateCategory}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showCreateCategory = false} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-category-title" tabindex="-1">
+	<div class="modal-backdrop" onclick={() => (showCreateCategory = false)} role="presentation">
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="create-category-title"
+			tabindex="-1"
+		>
 			<h2 id="create-category-title">{m.inventory_newCategory()}</h2>
 			<form onsubmit={createCategory}>
 				<div class="form-group">
@@ -731,7 +1006,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => showCreateCategory = false}>
+					<button type="button" class="btn btn-secondary" onclick={() => (showCreateCategory = false)}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.inventory_createCategory()}</button>
@@ -742,16 +1017,29 @@
 {/if}
 
 {#if showAdjustStock && selectedProduct}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showAdjustStock = false} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="adjust-stock-title" tabindex="-1">
-			<h2 id="adjust-stock-title">{m.inventory_adjustStock()}: {selectedProduct.name}</h2>
+	<div
+		class="modal-backdrop"
+		onclick={() => (showAdjustStock = false)}
+		onkeydown={(e) => e.key === 'Escape' && (showAdjustStock = false)}
+		role="presentation"
+	>
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.key === 'Escape' && (showAdjustStock = false)}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="adjust-stock-title"
+			tabindex="-1"
+		>
+			<h2 id="adjust-stock-title">
+				{m.inventory_adjustStock()}: {selectedProduct.name}
+			</h2>
 			<form onsubmit={adjustStock}>
 				<div class="form-group">
 					<label class="label" for="adjust-warehouse">{m.inventory_warehouses()} *</label>
 					<select class="input" id="adjust-warehouse" bind:value={adjustWarehouseId} required>
-						{#each warehouses as warehouse}
+						{#each warehouses as warehouse (warehouse.id)}
 							<option value={warehouse.id}>{warehouse.name}</option>
 						{/each}
 					</select>
@@ -760,11 +1048,34 @@
 				<div class="form-row">
 					<div class="form-group">
 						<label class="label" for="adjust-quantity">{m.inventory_quantity()} *</label>
-						<input class="input" type="number" step="0.01" id="adjust-quantity" bind:value={adjustQuantity} required placeholder="Positive to add, negative to remove" />
+						<input
+							class="input"
+							type="number"
+							step="0.01"
+							id="adjust-quantity"
+							bind:value={adjustQuantity}
+							required
+							placeholder="Positive to add, negative to remove"
+						/>
 					</div>
 					<div class="form-group">
 						<label class="label" for="adjust-cost">{m.inventory_unitCost()}</label>
 						<input class="input" type="number" step="0.01" min="0" id="adjust-cost" bind:value={adjustUnitCost} />
+					</div>
+				</div>
+
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="adjust-lot-number">{m.inventory_lotNumber()}</label>
+						<input class="input" type="text" id="adjust-lot-number" bind:value={adjustLotNumber} />
+					</div>
+					<div class="form-group">
+						<label class="label" for="adjust-serial-number">{m.inventory_serialNumber()}</label>
+						<input class="input" type="text" id="adjust-serial-number" bind:value={adjustSerialNumber} />
+					</div>
+					<div class="form-group">
+						<label class="label" for="adjust-expiry-date">{m.inventory_expiryDate()}</label>
+						<input class="input" type="date" id="adjust-expiry-date" bind:value={adjustExpiryDate} />
 					</div>
 				</div>
 
@@ -774,7 +1085,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => showAdjustStock = false}>
+					<button type="button" class="btn btn-secondary" onclick={() => (showAdjustStock = false)}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.inventory_adjustStock()}</button>
@@ -787,15 +1098,24 @@
 {#if showTransferStock && selectedProduct}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showTransferStock = false} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="transfer-stock-title" tabindex="-1">
-			<h2 id="transfer-stock-title">{m.inventory_transferStock()}: {selectedProduct.name}</h2>
+	<div class="modal-backdrop" onclick={() => (showTransferStock = false)} role="presentation">
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="transfer-stock-title"
+			tabindex="-1"
+		>
+			<h2 id="transfer-stock-title">
+				{m.inventory_transferStock()}: {selectedProduct.name}
+			</h2>
 			<form onsubmit={transferStock}>
 				<div class="form-row">
 					<div class="form-group">
 						<label class="label" for="transfer-from">{m.inventory_fromWarehouse()} *</label>
 						<select class="input" id="transfer-from" bind:value={transferFromWarehouseId} required>
-							{#each warehouses as warehouse}
+							{#each warehouses as warehouse (warehouse.id)}
 								<option value={warehouse.id}>{warehouse.name}</option>
 							{/each}
 						</select>
@@ -803,7 +1123,7 @@
 					<div class="form-group">
 						<label class="label" for="transfer-to">{m.inventory_toWarehouse()} *</label>
 						<select class="input" id="transfer-to" bind:value={transferToWarehouseId} required>
-							{#each warehouses as warehouse}
+							{#each warehouses as warehouse (warehouse.id)}
 								<option value={warehouse.id}>{warehouse.name}</option>
 							{/each}
 						</select>
@@ -821,7 +1141,7 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => showTransferStock = false}>
+					<button type="button" class="btn btn-secondary" onclick={() => (showTransferStock = false)}>
 						{m.common_cancel()}
 					</button>
 					<button type="submit" class="btn btn-primary">{m.inventory_transferStock()}</button>
@@ -831,12 +1151,412 @@
 	</div>
 {/if}
 
-{#if showMovements && selectedProduct}
+{#if showStockLevels && selectedProduct}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => showMovements = false} role="presentation">
-		<div class="modal modal-large card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="movements-title" tabindex="-1">
-			<h2 id="movements-title">{m.inventory_movements()}: {selectedProduct.name}</h2>
+	<div class="modal-backdrop" onclick={() => (showStockLevels = false)} role="presentation">
+		<div
+			class="modal modal-large card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="stock-levels-title"
+			tabindex="-1"
+		>
+			<h2 id="stock-levels-title">
+				{m.inventory_stockLevels()}: {selectedProduct.name}
+			</h2>
+
+			{#if stockLevels.length === 0}
+				<p class="empty-message">{m.inventory_noStockLevels()}</p>
+			{:else}
+				<div class="table-container">
+					<table class="table">
+						<thead>
+							<tr>
+								<th>{m.inventory_warehouses()}</th>
+								<th class="text-right">{m.inventory_onHandQty()}</th>
+								<th class="text-right">{m.inventory_reservedQty()}</th>
+								<th class="text-right">{m.inventory_availableQty()}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each stockLevels as level (level.id)}
+								<tr>
+									<td>{getWarehouseName(level.warehouse_id)}</td>
+									<td class="text-right">{formatNumber(level.quantity)}</td>
+									<td class="text-right">{formatNumber(level.reserved_qty)}</td>
+									<td class="text-right">{formatNumber(level.available_qty)}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+
+			<div class="modal-actions">
+				<button type="button" class="btn btn-secondary" onclick={() => (showStockLevels = false)}>
+					{m.common_close()}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if showStockReservation && selectedProduct}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={() => (showStockReservation = false)} role="presentation">
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="stock-reservation-title"
+			tabindex="-1"
+		>
+			<h2 id="stock-reservation-title">
+				{stockReservationMode === 'reserve' ? m.inventory_reserveStock() : m.inventory_releaseStock()}: {selectedProduct.name}
+			</h2>
+			<form onsubmit={submitStockReservation}>
+				<div class="form-group">
+					<label class="label" for="stock-reservation-warehouse">{m.inventory_warehouses()} *</label>
+					<select class="input" id="stock-reservation-warehouse" bind:value={stockReservationWarehouseId} required>
+						{#each warehouses as warehouse (warehouse.id)}
+							<option value={warehouse.id}>{warehouse.name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="stock-reservation-quantity">{m.inventory_quantity()} *</label>
+					<input
+						class="input"
+						type="number"
+						step="0.01"
+						min="0.01"
+						id="stock-reservation-quantity"
+						bind:value={stockReservationQuantity}
+						required
+					/>
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="stock-reservation-reason">{m.inventory_reason()}</label>
+					<textarea class="input" id="stock-reservation-reason" bind:value={stockReservationReason} rows="2"></textarea>
+				</div>
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={() => (showStockReservation = false)}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-primary">
+						{stockReservationMode === 'reserve' ? m.inventory_reserveStock() : m.inventory_releaseStock()}
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+{#if showValuation}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={() => (showValuation = false)} role="presentation">
+		<div
+			class="modal modal-large card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="valuation-title"
+			tabindex="-1"
+		>
+			<h2 id="valuation-title">{m.inventory_inventoryValuation()}</h2>
+			<form class="valuation-filters" onsubmit={refreshValuation}>
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="valuation-warehouse">{m.inventory_warehouses()}</label>
+						<select class="input" id="valuation-warehouse" bind:value={valuationWarehouseId}>
+							<option value="">{m.inventory_allWarehouses()}</option>
+							{#each warehouses as warehouse (warehouse.id)}
+								<option value={warehouse.id}>{warehouse.name}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="form-group">
+						<label class="label" for="valuation-method">{m.inventory_valuationMethod()}</label>
+						<select class="input" id="valuation-method" bind:value={valuationMethod}>
+							<option value="standard-cost">{m.inventory_standardCost()}</option>
+							<option value="weighted-average">{m.inventory_weightedAverage()}</option>
+							<option value="fifo">{m.inventory_fifo()}</option>
+						</select>
+					</div>
+				</div>
+				<div class="modal-actions modal-actions-left">
+					<button type="submit" class="btn btn-secondary">{m.inventory_refreshValuation()}</button>
+				</div>
+			</form>
+
+			{#if valuationReport}
+				<div class="valuation-summary">
+					<span>{m.inventory_valuationMethod()}: {getValuationMethodLabel(valuationReport.valuation_method)}</span>
+					<span>{m.inventory_totalQuantity()}: {formatNumber(valuationReport.total_quantity)}</span>
+					<span>{m.inventory_totalReserved()}: {formatNumber(valuationReport.total_reserved)}</span>
+					<span>{m.inventory_totalAvailable()}: {formatNumber(valuationReport.total_available)}</span>
+					<span>{m.inventory_totalValue()}: {formatCurrency(valuationReport.total_value)}</span>
+				</div>
+
+				{#if valuationReport.lines.length === 0}
+					<p class="empty-message">{m.inventory_noValuationLines()}</p>
+				{:else}
+					<div class="table-container">
+						<table class="table">
+							<thead>
+								<tr>
+									<th>{m.inventory_productName()}</th>
+									<th>{m.inventory_warehouses()}</th>
+									<th class="text-right">{m.inventory_onHandQty()}</th>
+									<th class="text-right">{m.inventory_reservedQty()}</th>
+									<th class="text-right">{m.inventory_availableQty()}</th>
+									<th class="text-right">{m.inventory_unitCost()}</th>
+									<th class="text-right">{m.inventory_totalValue()}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each valuationReport.lines as line (`${line.product_id}-${line.warehouse_id || 'all'}`)}
+									<tr>
+										<td>{line.product_code} {line.product_name}</td>
+										<td>{line.warehouse_name || '-'}</td>
+										<td class="text-right">{formatNumber(line.quantity)}</td>
+										<td class="text-right">{formatNumber(line.reserved_qty)}</td>
+										<td class="text-right">{formatNumber(line.available_qty)}</td>
+										<td class="text-right">{formatCurrency(line.unit_cost)}</td>
+										<td class="text-right">{formatCurrency(line.inventory_value)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			{/if}
+
+			<div class="modal-actions">
+				<button type="button" class="btn btn-secondary" onclick={() => (showValuation = false)}>
+					{m.common_close()}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if showSubledgerReconciliation}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="modal-backdrop" onclick={() => (showSubledgerReconciliation = false)} role="presentation">
+		<div
+			class="modal modal-large card"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="subledger-reconciliation-title"
+			tabindex="-1"
+		>
+			<h2 id="subledger-reconciliation-title">{m.inventory_subledgerReconciliation()}</h2>
+			<form class="valuation-filters" onsubmit={refreshSubledgerReconciliation}>
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="subledger-warehouse">{m.inventory_warehouses()}</label>
+						<select class="input" id="subledger-warehouse" bind:value={subledgerWarehouseId}>
+							<option value="">{m.inventory_allWarehouses()}</option>
+							{#each warehouses as warehouse (warehouse.id)}
+								<option value={warehouse.id}>{warehouse.name}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="form-group">
+						<label class="label" for="subledger-method">{m.inventory_valuationMethod()}</label>
+						<select class="input" id="subledger-method" bind:value={subledgerMethod}>
+							<option value="standard-cost">{m.inventory_standardCost()}</option>
+							<option value="weighted-average">{m.inventory_weightedAverage()}</option>
+							<option value="fifo">{m.inventory_fifo()}</option>
+						</select>
+					</div>
+					<div class="form-group">
+						<label class="label" for="subledger-as-of">{m.inventory_asOfDate()}</label>
+						<input class="input" type="date" id="subledger-as-of" bind:value={subledgerAsOfDate} />
+					</div>
+				</div>
+				<div class="modal-actions modal-actions-left">
+					<button type="submit" class="btn btn-secondary">{m.inventory_refreshSubledgerReconciliation()}</button>
+				</div>
+			</form>
+
+			{#if subledgerReport}
+				<div class="valuation-summary">
+					<span>{m.inventory_valuationMethod()}: {getValuationMethodLabel(subledgerReport.valuation_method)}</span>
+					<span>{m.inventory_asOfDate()}: {formatReportDate(subledgerReport.as_of_date)}</span>
+					<span>
+						{m.inventory_readyForClose()}:
+						<span class="badge" class:badge-ready={subledgerReport.ready} class:badge-blocked={!subledgerReport.ready}>
+							{subledgerReport.ready ? m.common_yes() : m.common_no()}
+						</span>
+					</span>
+					<span>{m.inventory_subledgerValue()}: {formatCurrency(subledgerReport.total_subledger_value)}</span>
+					<span>{m.inventory_generalLedgerBalance()}: {formatCurrency(subledgerReport.total_general_ledger_balance)}</span>
+					<span>{m.inventory_difference()}: {formatCurrency(subledgerReport.total_difference)}</span>
+					<span>{m.inventory_blockingExceptions()}: {subledgerReport.blocking_exception_line_count + subledgerReport.blocking_exception_account_count}</span>
+				</div>
+
+				<section
+					class="guidance-panel"
+					class:guidance-ready={subledgerReport.ready}
+					class:guidance-blocked={!subledgerReport.ready}
+					aria-labelledby="subledger-guidance-title"
+				>
+					<h3 id="subledger-guidance-title">{m.inventory_closeGuidance()}</h3>
+					<p>{subledgerReport.ready ? m.inventory_closeGuidanceReady() : m.inventory_closeGuidanceBlocked()}</p>
+				</section>
+
+				<h3 class="section-title">{m.inventory_accountExceptions()}</h3>
+				{#if subledgerReport.account_lines.length === 0}
+					<p class="empty-message">{m.inventory_noSubledgerAccounts()}</p>
+				{:else}
+					<div class="table-container">
+						<table class="table">
+							<thead>
+								<tr>
+									<th>{m.inventory_inventoryAccount()}</th>
+									<th class="text-right">{m.inventory_subledgerValue()}</th>
+									<th class="text-right">{m.inventory_generalLedgerBalance()}</th>
+									<th class="text-right">{m.inventory_difference()}</th>
+									<th>{m.inventory_balanced()}</th>
+									<th class="text-right">{m.inventory_productLines()}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each subledgerReport.account_lines as line (line.account_id)}
+									<tr>
+										<td>{line.account_code} {line.account_name}</td>
+										<td class="text-right">{formatCurrency(line.subledger_value)}</td>
+										<td class="text-right">{formatCurrency(line.general_ledger_balance)}</td>
+										<td class="text-right">{formatCurrency(line.difference)}</td>
+										<td>
+											<span class="badge" class:badge-ready={line.balanced} class:badge-blocked={!line.balanced}>
+												{line.balanced ? m.common_yes() : m.common_no()}
+											</span>
+										</td>
+										<td class="text-right">{line.product_line_count}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+
+				<h3 class="section-title">{m.inventory_productAccountExceptions()}</h3>
+				{#if getSubledgerExceptionLines(subledgerReport).length === 0}
+					<p class="empty-message">{m.inventory_noSubledgerExceptions()}</p>
+				{:else}
+					<div class="table-container">
+						<table class="table">
+							<thead>
+								<tr>
+									<th>{m.inventory_productName()}</th>
+									<th>{m.inventory_warehouses()}</th>
+									<th>{m.inventory_inventoryAccount()}</th>
+									<th>{m.common_status()}</th>
+									<th class="text-right">{m.inventory_onHandQty()}</th>
+									<th class="text-right">{m.inventory_totalValue()}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each getSubledgerExceptionLines(subledgerReport) as line (`${line.status}-${line.product_id}-${line.warehouse_id || 'all'}`)}
+									<tr>
+										<td>{getSubledgerProductLabel(line)}</td>
+										<td>{line.warehouse_name || '-'}</td>
+										<td>{getSubledgerAccountLabel(line)}</td>
+										<td><span class="badge badge-blocked">{getSubledgerStatusLabel(line.status)}</span></td>
+										<td class="text-right">{formatNumber(line.quantity)}</td>
+										<td class="text-right">{formatCurrency(line.inventory_value)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+
+				<label class="checkbox-label product-lines-toggle">
+					<input type="checkbox" bind:checked={showSubledgerProductLines} />
+					{m.inventory_showProductLines()}
+				</label>
+
+				{#if showSubledgerProductLines}
+					<h3 class="section-title">{m.inventory_productLines()}</h3>
+					{#if subledgerReport.lines.length === 0}
+						<p class="empty-message">{m.inventory_noValuationLines()}</p>
+					{:else}
+						<div class="table-container">
+							<table class="table">
+								<thead>
+									<tr>
+										<th>{m.inventory_productName()}</th>
+										<th>{m.inventory_warehouses()}</th>
+										<th>{m.inventory_inventoryAccount()}</th>
+										<th>{m.common_status()}</th>
+										<th class="text-right">{m.inventory_onHandQty()}</th>
+										<th class="text-right">{m.inventory_totalValue()}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each subledgerReport.lines as line (`${line.product_id}-${line.warehouse_id || 'all'}-${line.status}`)}
+										<tr>
+											<td>{getSubledgerProductLabel(line)}</td>
+											<td>{line.warehouse_name || '-'}</td>
+											<td>{getSubledgerAccountLabel(line)}</td>
+											<td>
+												<span class="badge" class:badge-ready={line.status === 'MAPPED'} class:badge-blocked={line.status !== 'MAPPED'}>
+													{getSubledgerStatusLabel(line.status)}
+												</span>
+											</td>
+											<td class="text-right">{formatNumber(line.quantity)}</td>
+											<td class="text-right">{formatCurrency(line.inventory_value)}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/if}
+				{/if}
+			{/if}
+
+			<div class="modal-actions">
+				<button type="button" class="btn btn-secondary" onclick={() => (showSubledgerReconciliation = false)}>
+					{m.common_close()}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if showMovements && selectedProduct}
+	<div
+		class="modal-backdrop"
+		onclick={() => (showMovements = false)}
+		onkeydown={(e) => e.key === 'Escape' && (showMovements = false)}
+		role="presentation"
+	>
+		<div
+			class="modal modal-large card"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.key === 'Escape' && (showMovements = false)}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="movements-title"
+			tabindex="-1"
+		>
+			<h2 id="movements-title">
+				{m.inventory_movements()}: {selectedProduct.name}
+			</h2>
 
 			{#if movements.length === 0}
 				<p class="empty-message">{m.inventory_noMovements()}</p>
@@ -850,11 +1570,14 @@
 								<th>{m.inventory_warehouses()}</th>
 								<th class="text-right">{m.inventory_quantity()}</th>
 								<th class="text-right">{m.inventory_unitCost()}</th>
+								<th>{m.inventory_lotNumber()}</th>
+								<th>{m.inventory_serialNumber()}</th>
+								<th>{m.inventory_expiryDate()}</th>
 								<th>{m.inventory_reference()}</th>
 							</tr>
 						</thead>
 						<tbody>
-							{#each movements as movement}
+							{#each movements as movement (movement.id)}
 								<tr>
 									<td>{formatDate(movement.movement_date)}</td>
 									<td>
@@ -865,6 +1588,9 @@
 									<td>{getWarehouseName(movement.warehouse_id)}</td>
 									<td class="text-right">{formatNumber(movement.quantity)}</td>
 									<td class="text-right">{movement.unit_cost ? formatCurrency(movement.unit_cost) : '-'}</td>
+									<td>{movement.lot_number || '-'}</td>
+									<td>{movement.serial_number || '-'}</td>
+									<td>{movement.expiry_date ? formatDate(movement.expiry_date) : '-'}</td>
 									<td>{movement.reference || '-'}</td>
 								</tr>
 							{/each}
@@ -874,7 +1600,7 @@
 			{/if}
 
 			<div class="modal-actions">
-				<button type="button" class="btn btn-secondary" onclick={() => showMovements = false}>
+				<button type="button" class="btn btn-secondary" onclick={() => (showMovements = false)}>
 					{m.common_close()}
 				</button>
 			</div>
@@ -914,6 +1640,8 @@
 	.page-actions {
 		display: flex;
 		justify-content: flex-end;
+		gap: 0.75rem;
+		flex-wrap: wrap;
 		margin-bottom: 1rem;
 	}
 
@@ -980,8 +1708,65 @@
 		color: #fff;
 	}
 
+	.badge-ready {
+		background-color: #28a745;
+		color: #fff;
+	}
+
+	.badge-blocked {
+		background-color: #dc3545;
+		color: #fff;
+	}
+
 	.modal-large {
 		max-width: 900px;
+	}
+
+	.modal-actions-left {
+		justify-content: flex-start;
+	}
+
+	.valuation-filters {
+		margin-bottom: 1rem;
+	}
+
+	.valuation-summary {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem 1.5rem;
+		margin-bottom: 1rem;
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+	}
+
+	.guidance-panel {
+		border: 1px solid var(--border);
+		border-left-width: 4px;
+		padding: 0.75rem 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.guidance-panel h3,
+	.section-title {
+		font-size: 1rem;
+		margin: 0 0 0.75rem;
+	}
+
+	.guidance-panel p {
+		margin: 0;
+		color: var(--text-secondary);
+	}
+
+	.guidance-ready {
+		border-left-color: #28a745;
+	}
+
+	.guidance-blocked {
+		border-left-color: #dc3545;
+	}
+
+	.product-lines-toggle {
+		margin: 1rem 0;
 	}
 
 	.empty-message {

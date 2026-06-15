@@ -63,8 +63,12 @@ coverage/
 *.lcov
 playwright-report/
 test-results/
+frontend/playwright-report-demo/
+frontend/demo-test-results.json
+frontend/test-results/
 
 # Database files
 *.db
 *.sqlite
+data/
 frontend/.auth/

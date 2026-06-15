@@ -49,20 +49,70 @@ func (m *mockDocumentRepository) ListDocuments(ctx context.Context, schemaName, 
 	return result, nil
 }
 
+func (m *mockDocumentRepository) ListReviewQueueDocuments(ctx context.Context, schemaName, tenantID string, filter documents.ReviewQueueFilter) ([]documents.Document, error) {
+	result := make([]documents.Document, 0, len(m.docs))
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID {
+			continue
+		}
+		if filter.EntityType != "" && doc.EntityType != filter.EntityType {
+			continue
+		}
+		if filter.DocumentType != "" && doc.DocumentType != filter.DocumentType {
+			continue
+		}
+		if filter.ReviewStatus != "" && doc.ReviewStatus != filter.ReviewStatus {
+			continue
+		}
+		result = append(result, *doc)
+		if filter.Limit > 0 && len(result) >= filter.Limit {
+			break
+		}
+	}
+	return result, nil
+}
+
+func (m *mockDocumentRepository) ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]documents.Document, error) {
+	result := make([]documents.Document, 0, len(m.docs))
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID {
+			continue
+		}
+		if doc.RetentionUntil == nil {
+			if includeMissing {
+				result = append(result, *doc)
+			}
+			continue
+		}
+		if !doc.RetentionUntil.After(cutoff) {
+			result = append(result, *doc)
+		}
+	}
+	return result, nil
+}
+
 func (m *mockDocumentRepository) ListReviewSummaries(ctx context.Context, schemaName, tenantID, entityType string, entityIDs []string) (map[string]documents.ReviewSummary, error) {
 	result := make(map[string]documents.ReviewSummary, len(entityIDs))
 	for _, entityID := range entityIDs {
 		total := 0
 		pending := 0
 		reviewed := 0
+		approved := 0
+		rejected := 0
 		for _, doc := range m.docs {
 			if doc.TenantID != tenantID || doc.EntityType != entityType || doc.EntityID != entityID {
 				continue
 			}
 			total++
 			switch doc.ReviewStatus {
-			case documents.ReviewStatusReviewed:
+			case documents.ReviewStatusReviewed, documents.ReviewStatusApproved, documents.ReviewStatusRejected:
 				reviewed++
+				if doc.ReviewStatus == documents.ReviewStatusApproved {
+					approved++
+				}
+				if doc.ReviewStatus == documents.ReviewStatusRejected {
+					rejected++
+				}
 			default:
 				pending++
 			}
@@ -73,8 +123,11 @@ func (m *mockDocumentRepository) ListReviewSummaries(ctx context.Context, schema
 			TotalCount:         total,
 			PendingReviewCount: pending,
 			ReviewedCount:      reviewed,
+			ApprovedCount:      approved,
+			RejectedCount:      rejected,
 			MissingEvidence:    total == 0,
 			HasPendingReview:   pending > 0,
+			HasRejected:        rejected > 0,
 		}
 	}
 	return result, nil
@@ -88,12 +141,59 @@ func (m *mockDocumentRepository) GetDocumentByID(ctx context.Context, schemaName
 	return doc, nil
 }
 
-func (m *mockDocumentRepository) MarkDocumentReviewed(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string, reviewedAt time.Time) error {
+func (m *mockDocumentRepository) DocumentHasSupersededDependents(ctx context.Context, schemaName, tenantID, documentID string) (bool, error) {
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID || doc.SupersededBy == nil {
+			continue
+		}
+		if *doc.SupersededBy == documentID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (m *mockDocumentRepository) UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error {
 	doc, ok := m.docs[documentID]
 	if !ok || doc.TenantID != tenantID {
 		return io.EOF
 	}
-	doc.ReviewStatus = documents.ReviewStatusReviewed
+	doc.RetentionUntil = retentionUntil
+	return nil
+}
+
+func (m *mockDocumentRepository) UpdateDocumentLifecycle(ctx context.Context, schemaName, tenantID, documentID, lifecycleStatus, lifecycleNote, lifecycleBy string, lifecycleAt time.Time, supersededBy *string) error {
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return io.EOF
+	}
+	doc.LifecycleStatus = lifecycleStatus
+	doc.LifecycleNote = lifecycleNote
+	doc.LifecycleBy = &lifecycleBy
+	doc.LifecycleAt = &lifecycleAt
+	doc.SupersededBy = supersededBy
+	return nil
+}
+
+func (m *mockDocumentRepository) UpdateDocumentLegalHold(ctx context.Context, schemaName, tenantID, documentID string, legalHold bool, note, actionedBy string, actionedAt time.Time) error {
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return io.EOF
+	}
+	doc.LegalHold = legalHold
+	doc.LegalHoldNote = note
+	doc.LegalHoldBy = &actionedBy
+	doc.LegalHoldAt = &actionedAt
+	return nil
+}
+
+func (m *mockDocumentRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return io.EOF
+	}
+	doc.ReviewStatus = reviewStatus
+	doc.ReviewNote = reviewNote
 	doc.ReviewedBy = &reviewedBy
 	doc.ReviewedAt = &reviewedAt
 	return nil
@@ -183,6 +283,79 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, "txn-2", summaries[1].EntityID)
 	require.True(t, summaries[1].MissingEvidence)
 
+	retentionReq := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/documents/retention?as_of=2027-03-01&horizon_days=45", nil, claims)
+	retentionReq = withURLParams(retentionReq, map[string]string{"tenantID": "tenant-1"})
+	retentionResp := httptest.NewRecorder()
+	h.GetDocumentRetentionReview(retentionResp, retentionReq)
+	require.Equal(t, http.StatusOK, retentionResp.Code)
+
+	var retentionReview documents.RetentionReview
+	require.NoError(t, json.NewDecoder(retentionResp.Body).Decode(&retentionReview))
+	require.Equal(t, 1, retentionReview.TotalCount)
+	require.Equal(t, 1, retentionReview.DueSoonCount)
+	require.Len(t, retentionReview.Documents, 1)
+	require.Len(t, retentionReview.ReminderActions, 2)
+	require.Equal(t, documents.RetentionReminderDueSoon, retentionReview.ReminderActions[0].Action)
+	require.Equal(t, uploaded.ID, retentionReview.ReminderActions[0].DocumentID)
+	require.Equal(t, documents.RetentionReminderPendingReview, retentionReview.ReminderActions[1].Action)
+	require.Equal(t, uploaded.ID, retentionReview.ReminderActions[1].DocumentID)
+	require.Len(t, retentionReview.RemediationActions, 2)
+	require.Equal(t, "document_retention_due_soon", retentionReview.RemediationActions[0].Code)
+	require.Equal(t, uploaded.ID, retentionReview.RemediationActions[0].DocumentID)
+	require.Equal(t, "document_review_pending", retentionReview.RemediationActions[1].Code)
+	require.Equal(t, uploaded.ID, retentionReview.RemediationActions[1].DocumentID)
+
+	retentionSetReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/retention", map[string]any{
+		"retention_until": "2028-03-31",
+	}, claims)
+	retentionSetReq = withURLParams(retentionSetReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	retentionSetResp := httptest.NewRecorder()
+	h.UpdateDocumentRetention(retentionSetResp, retentionSetReq)
+	require.Equal(t, http.StatusOK, retentionSetResp.Code)
+
+	var retentionSetDoc documents.Document
+	require.NoError(t, json.NewDecoder(retentionSetResp.Body).Decode(&retentionSetDoc))
+	require.NotNil(t, retentionSetDoc.RetentionUntil)
+	require.Equal(t, "2028-03-31", retentionSetDoc.RetentionUntil.Format("2006-01-02"))
+
+	retentionConflictReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/retention", map[string]any{
+		"retention_until": "2029-03-31",
+		"clear_retention": true,
+	}, claims)
+	retentionConflictReq = withURLParams(retentionConflictReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	retentionConflictResp := httptest.NewRecorder()
+	h.UpdateDocumentRetention(retentionConflictResp, retentionConflictReq)
+	require.Equal(t, http.StatusBadRequest, retentionConflictResp.Code)
+
+	retentionClearReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/retention", map[string]any{
+		"clear_retention": true,
+	}, claims)
+	retentionClearReq = withURLParams(retentionClearReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	retentionClearResp := httptest.NewRecorder()
+	h.UpdateDocumentRetention(retentionClearResp, retentionClearReq)
+	require.Equal(t, http.StatusOK, retentionClearResp.Code)
+
+	var retentionClearDoc documents.Document
+	require.NoError(t, json.NewDecoder(retentionClearResp.Body).Decode(&retentionClearDoc))
+	require.Nil(t, retentionClearDoc.RetentionUntil)
+
+	queueReq := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/documents/review-queue?entity_type=bank_transaction&document_type=reconciliation_evidence&review_status=PENDING&limit=25", nil, claims)
+	queueReq = withURLParams(queueReq, map[string]string{"tenantID": "tenant-1"})
+	queueResp := httptest.NewRecorder()
+	h.GetDocumentReviewQueue(queueResp, queueReq)
+	require.Equal(t, http.StatusOK, queueResp.Code)
+
+	var reviewQueue documents.ReviewQueue
+	require.NoError(t, json.NewDecoder(queueResp.Body).Decode(&reviewQueue))
+	require.Equal(t, documents.EntityTypeBankTxn, reviewQueue.EntityType)
+	require.Equal(t, documents.DocumentTypeReconciliation, reviewQueue.DocumentType)
+	require.Equal(t, documents.ReviewStatusPending, reviewQueue.ReviewStatus)
+	require.Equal(t, 25, reviewQueue.Limit)
+	require.Equal(t, 1, reviewQueue.TotalCount)
+	require.Equal(t, 1, reviewQueue.PendingReviewCount)
+	require.Len(t, reviewQueue.Documents, 1)
+	require.Equal(t, uploaded.ID, reviewQueue.Documents[0].ID)
+
 	reviewReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/mark-reviewed", nil, claims)
 	reviewReq = withURLParams(reviewReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
 	reviewResp := httptest.NewRecorder()
@@ -194,6 +367,115 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Equal(t, documents.ReviewStatusReviewed, reviewed.ReviewStatus)
 	require.NotNil(t, reviewed.ReviewedBy)
 	require.Equal(t, "user-1", *reviewed.ReviewedBy)
+
+	approveReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/review", map[string]any{
+		"review_status": "APPROVED",
+		"review_note":   "Evidence matches bank statement",
+	}, claims)
+	approveReq = withURLParams(approveReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	approveResp := httptest.NewRecorder()
+	h.ReviewDocument(approveResp, approveReq)
+	require.Equal(t, http.StatusOK, approveResp.Code)
+
+	var approved documents.Document
+	require.NoError(t, json.NewDecoder(approveResp.Body).Decode(&approved))
+	require.Equal(t, documents.ReviewStatusApproved, approved.ReviewStatus)
+	require.Equal(t, "Evidence matches bank statement", approved.ReviewNote)
+
+	policyReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/evidence-policy", map[string]any{
+		"entity_type": "bank_transaction",
+		"entity_ids":  []string{"txn-1", "txn-2"},
+		"rules": []map[string]any{{
+			"document_types":   []string{"reconciliation_evidence"},
+			"min_count":        1,
+			"require_approved": true,
+		}},
+	}, claims)
+	policyReq = withURLParams(policyReq, map[string]string{"tenantID": "tenant-1"})
+	policyResp := httptest.NewRecorder()
+	h.EvaluateDocumentEvidencePolicy(policyResp, policyReq)
+	require.Equal(t, http.StatusOK, policyResp.Code)
+
+	var policyResults []documents.EvidencePolicyResult
+	require.NoError(t, json.NewDecoder(policyResp.Body).Decode(&policyResults))
+	require.Len(t, policyResults, 2)
+	require.Equal(t, "txn-1", policyResults[0].EntityID)
+	require.True(t, policyResults[0].Compliant)
+	require.Equal(t, 1, policyResults[0].ApprovedDocumentTypeCounts[documents.DocumentTypeReconciliation])
+	require.Equal(t, "txn-2", policyResults[1].EntityID)
+	require.False(t, policyResults[1].Compliant)
+	require.True(t, policyResults[1].MissingEvidence)
+	require.Len(t, policyResults[1].RemediationActions, 1)
+	require.Equal(t, "document_evidence_missing", policyResults[1].RemediationActions[0].Code)
+	require.Equal(t, "oa documents upload --entity-type bank_transaction --entity-id txn-2 --document-type reconciliation_evidence --file <file>", policyResults[1].RemediationActions[0].CLICommand)
+
+	lifecycleNoNoteReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/lifecycle", map[string]any{
+		"lifecycle_status": documents.LifecycleStatusDisposed,
+	}, claims)
+	lifecycleNoNoteReq = withURLParams(lifecycleNoNoteReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	lifecycleNoNoteResp := httptest.NewRecorder()
+	h.UpdateDocumentLifecycle(lifecycleNoNoteResp, lifecycleNoNoteReq)
+	require.Equal(t, http.StatusBadRequest, lifecycleNoNoteResp.Code)
+
+	lifecycleReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/lifecycle", map[string]any{
+		"lifecycle_status": documents.LifecycleStatusArchived,
+		"lifecycle_note":   "Retention reviewed for audit archive",
+	}, claims)
+	lifecycleReq = withURLParams(lifecycleReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	lifecycleResp := httptest.NewRecorder()
+	h.UpdateDocumentLifecycle(lifecycleResp, lifecycleReq)
+	require.Equal(t, http.StatusOK, lifecycleResp.Code)
+
+	var lifecycleDoc documents.Document
+	require.NoError(t, json.NewDecoder(lifecycleResp.Body).Decode(&lifecycleDoc))
+	require.Equal(t, documents.LifecycleStatusArchived, lifecycleDoc.LifecycleStatus)
+	require.Equal(t, "Retention reviewed for audit archive", lifecycleDoc.LifecycleNote)
+	require.NotNil(t, lifecycleDoc.LifecycleBy)
+	require.Equal(t, "user-1", *lifecycleDoc.LifecycleBy)
+
+	legalHoldReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/legal-hold", map[string]any{
+		"legal_hold": true,
+		"note":       "Litigation hold",
+	}, claims)
+	legalHoldReq = withURLParams(legalHoldReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	legalHoldResp := httptest.NewRecorder()
+	h.UpdateDocumentLegalHold(legalHoldResp, legalHoldReq)
+	require.Equal(t, http.StatusOK, legalHoldResp.Code)
+
+	var legalHoldDoc documents.Document
+	require.NoError(t, json.NewDecoder(legalHoldResp.Body).Decode(&legalHoldDoc))
+	require.True(t, legalHoldDoc.LegalHold)
+	require.Equal(t, "Litigation hold", legalHoldDoc.LegalHoldNote)
+	require.NotNil(t, legalHoldDoc.LegalHoldBy)
+	require.Equal(t, "user-1", *legalHoldDoc.LegalHoldBy)
+
+	deleteHeldReq := makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/documents/"+uploaded.ID, nil, claims)
+	deleteHeldReq = withURLParams(deleteHeldReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	deleteHeldResp := httptest.NewRecorder()
+	h.DeleteDocument(deleteHeldResp, deleteHeldReq)
+	require.Equal(t, http.StatusBadRequest, deleteHeldResp.Code)
+
+	releaseHoldReq := makeAuthenticatedRequest(http.MethodPatch, "/tenants/tenant-1/documents/"+uploaded.ID+"/legal-hold", map[string]any{
+		"legal_hold": false,
+		"note":       "Litigation hold released",
+	}, claims)
+	releaseHoldReq = withURLParams(releaseHoldReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	releaseHoldResp := httptest.NewRecorder()
+	h.UpdateDocumentLegalHold(releaseHoldResp, releaseHoldReq)
+	require.Equal(t, http.StatusOK, releaseHoldResp.Code)
+
+	var releasedHoldDoc documents.Document
+	require.NoError(t, json.NewDecoder(releaseHoldResp.Body).Decode(&releasedHoldDoc))
+	require.False(t, releasedHoldDoc.LegalHold)
+	require.Equal(t, "Litigation hold released", releasedHoldDoc.LegalHoldNote)
+
+	rejectReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/"+uploaded.ID+"/review", map[string]any{
+		"review_status": "REJECTED",
+	}, claims)
+	rejectReq = withURLParams(rejectReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
+	rejectResp := httptest.NewRecorder()
+	h.ReviewDocument(rejectResp, rejectReq)
+	require.Equal(t, http.StatusBadRequest, rejectResp.Code)
 
 	downloadReq := makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/documents/"+uploaded.ID+"/download", nil, claims)
 	downloadReq = withURLParams(downloadReq, map[string]string{"tenantID": "tenant-1", "documentID": uploaded.ID})
@@ -208,4 +490,188 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	h.DeleteDocument(deleteResp, deleteReq)
 	require.Equal(t, http.StatusOK, deleteResp.Code)
 	require.Empty(t, repo.docs)
+}
+
+func TestPurgeExpiredDocumentsDryRunAndExecute(t *testing.T) {
+	h, repo := setupDocumentHandlers(t)
+	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
+	expired := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	repo.docs["doc-purge"] = &documents.Document{
+		ID:              "doc-purge",
+		TenantID:        "tenant-1",
+		EntityType:      documents.EntityTypeExpense,
+		EntityID:        "expense-1",
+		DocumentType:    documents.DocumentTypeReceipt,
+		FileName:        "old-receipt.pdf",
+		StorageKey:      "missing/doc-purge.pdf",
+		RetentionUntil:  &expired,
+		ReviewStatus:    documents.ReviewStatusApproved,
+		LifecycleStatus: documents.LifecycleStatusDisposed,
+		UploadedBy:      "user-1",
+		CreatedAt:       expired,
+	}
+	repo.docs["doc-held"] = &documents.Document{
+		ID:              "doc-held",
+		TenantID:        "tenant-1",
+		EntityType:      documents.EntityTypeExpense,
+		EntityID:        "expense-2",
+		DocumentType:    documents.DocumentTypeReceipt,
+		FileName:        "held-receipt.pdf",
+		StorageKey:      "missing/doc-held.pdf",
+		RetentionUntil:  &expired,
+		ReviewStatus:    documents.ReviewStatusApproved,
+		LifecycleStatus: documents.LifecycleStatusDisposed,
+		LegalHold:       true,
+		UploadedBy:      "user-1",
+		CreatedAt:       expired,
+	}
+
+	dryRunReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/purge", map[string]any{
+		"as_of": "2026-03-15",
+		"limit": 10,
+	}, claims)
+	dryRunReq = withURLParams(dryRunReq, map[string]string{"tenantID": "tenant-1"})
+	dryRunResp := httptest.NewRecorder()
+	h.PurgeExpiredDocuments(dryRunResp, dryRunReq)
+	require.Equal(t, http.StatusOK, dryRunResp.Code)
+
+	var dryRun documents.DocumentPurgeResult
+	require.NoError(t, json.NewDecoder(dryRunResp.Body).Decode(&dryRun))
+	require.True(t, dryRun.DryRun)
+	require.Equal(t, "2026-03-15", dryRun.AsOfDate)
+	require.Equal(t, 2, dryRun.CandidateCount)
+	require.Equal(t, 1, dryRun.EligibleCount)
+	require.Equal(t, 0, dryRun.PurgedCount)
+	require.Equal(t, 1, dryRun.SkippedCount)
+	require.Contains(t, repo.docs, "doc-purge")
+
+	invalidDateReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/purge", map[string]any{
+		"as_of": "2026/03/15",
+	}, claims)
+	invalidDateReq = withURLParams(invalidDateReq, map[string]string{"tenantID": "tenant-1"})
+	invalidDateResp := httptest.NewRecorder()
+	h.PurgeExpiredDocuments(invalidDateResp, invalidDateReq)
+	require.Equal(t, http.StatusBadRequest, invalidDateResp.Code)
+
+	executeReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/purge", map[string]any{
+		"as_of":   "2026-03-15",
+		"dry_run": false,
+		"limit":   10,
+	}, claims)
+	executeReq = withURLParams(executeReq, map[string]string{"tenantID": "tenant-1"})
+	executeResp := httptest.NewRecorder()
+	h.PurgeExpiredDocuments(executeResp, executeReq)
+	require.Equal(t, http.StatusOK, executeResp.Code)
+
+	var executed documents.DocumentPurgeResult
+	require.NoError(t, json.NewDecoder(executeResp.Body).Decode(&executed))
+	require.False(t, executed.DryRun)
+	require.Equal(t, 1, executed.PurgedCount)
+	require.NotContains(t, repo.docs, "doc-purge")
+	require.Contains(t, repo.docs, "doc-held")
+}
+
+func TestUploadDocumentRetentionYears(t *testing.T) {
+	h, _ := setupDocumentHandlers(t)
+	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("entity_type", documents.EntityTypeBankTxn))
+	require.NoError(t, writer.WriteField("entity_id", "txn-1"))
+	require.NoError(t, writer.WriteField("document_type", documents.DocumentTypeReconciliation))
+	require.NoError(t, writer.WriteField("retention_years", "7"))
+	part, err := writer.CreateFormFile("file", "statement.pdf")
+	require.NoError(t, err)
+	_, err = io.Copy(part, bytes.NewBufferString("statement pdf"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/documents", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), claims))
+
+	resp := httptest.NewRecorder()
+	h.UploadDocument(resp, req)
+	require.Equal(t, http.StatusCreated, resp.Code)
+
+	var uploaded documents.Document
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&uploaded))
+	require.NotNil(t, uploaded.RetentionUntil)
+	require.Equal(t, uploaded.CreatedAt.AddDate(7, 0, 0).Format("2006-01-02"), uploaded.RetentionUntil.Format("2006-01-02"))
+}
+
+func TestUploadDocumentReplacementSupersedesOriginal(t *testing.T) {
+	h, repo := setupDocumentHandlers(t)
+	claims := createTestClaims("reviewer-1", "reviewer@example.com", "tenant-1", "admin")
+	repo.docs["doc-rejected"] = &documents.Document{
+		ID:              "doc-rejected",
+		TenantID:        "tenant-1",
+		EntityType:      documents.EntityTypeExpense,
+		EntityID:        "expense-1",
+		DocumentType:    documents.DocumentTypeReceipt,
+		FileName:        "old-receipt.pdf",
+		ReviewStatus:    documents.ReviewStatusRejected,
+		LifecycleStatus: documents.LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("entity_type", documents.EntityTypeExpense))
+	require.NoError(t, writer.WriteField("entity_id", "expense-1"))
+	require.NoError(t, writer.WriteField("document_type", documents.DocumentTypeReceipt))
+	require.NoError(t, writer.WriteField("replaces_document_id", "doc-rejected"))
+	require.NoError(t, writer.WriteField("replacement_note", "Corrected receipt attached"))
+	part, err := writer.CreateFormFile("file", "corrected-receipt.pdf")
+	require.NoError(t, err)
+	_, err = io.Copy(part, bytes.NewBufferString("corrected receipt"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/documents", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), claims))
+
+	resp := httptest.NewRecorder()
+	h.UploadDocument(resp, req)
+	require.Equal(t, http.StatusCreated, resp.Code)
+
+	var replacement documents.Document
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&replacement))
+	require.NotEmpty(t, replacement.ID)
+	require.Equal(t, documents.LifecycleStatusActive, replacement.LifecycleStatus)
+	original := repo.docs["doc-rejected"]
+	require.Equal(t, documents.LifecycleStatusSuperseded, original.LifecycleStatus)
+	require.Equal(t, "Corrected receipt attached", original.LifecycleNote)
+	require.NotNil(t, original.SupersededBy)
+	require.Equal(t, replacement.ID, *original.SupersededBy)
+	require.NotNil(t, original.LifecycleBy)
+	require.Equal(t, "reviewer-1", *original.LifecycleBy)
+}
+
+func TestUploadDocumentRejectsRetentionConflict(t *testing.T) {
+	h, _ := setupDocumentHandlers(t)
+	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("entity_type", documents.EntityTypeBankTxn))
+	require.NoError(t, writer.WriteField("entity_id", "txn-1"))
+	require.NoError(t, writer.WriteField("document_type", documents.DocumentTypeReconciliation))
+	require.NoError(t, writer.WriteField("retention_until", "2027-03-31"))
+	require.NoError(t, writer.WriteField("retention_years", "7"))
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/documents", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), claims))
+
+	resp := httptest.NewRecorder()
+	h.UploadDocument(resp, req)
+	require.Equal(t, http.StatusBadRequest, resp.Code)
 }

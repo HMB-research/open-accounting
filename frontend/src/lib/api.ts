@@ -63,6 +63,20 @@ export function buildQuery(filter?: object): string {
   return queryString ? `?${queryString}` : "";
 }
 
+function getCurrentTenantContext(): string | null {
+  if (!browser || typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return (
+      new URL(window.location.href).searchParams.get("tenant")?.trim() || null
+    );
+  } catch {
+    return null;
+  }
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -197,6 +211,12 @@ class ApiClient {
     if (!skipAuth && this.accessToken) {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
     }
+    if (!skipAuth && path.startsWith("/api/v1/admin/")) {
+      const tenantContext = getCurrentTenantContext();
+      if (tenantContext) {
+        headers["X-Tenant-ID"] = tenantContext;
+      }
+    }
 
     const isFormData =
       typeof FormData !== "undefined" && body instanceof FormData;
@@ -297,8 +317,40 @@ class ApiClient {
     return this.parseDecimals(data) as T;
   }
 
-  private parseDecimals(obj: unknown): unknown {
-    if (typeof obj === "string" && /^-?\d+(\.\d+)?$/.test(obj)) {
+  private async downloadFile(
+    path: string,
+    fileName: string,
+    errorMessage: string,
+  ) {
+    const response = await fetch(`${getApiBase()}${path}`, {
+      method: "GET",
+      headers: this.accessToken
+        ? { Authorization: `Bearer ${this.accessToken}` }
+        : {},
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}) as ApiError);
+      throw new Error(error.error || errorMessage);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  }
+
+  private parseDecimals(obj: unknown, key?: string): unknown {
+    if (
+      typeof obj === "string" &&
+      /^-?\d+(\.\d+)?$/.test(obj) &&
+      this.shouldParseDecimalField(key)
+    ) {
       return new Decimal(obj);
     }
     if (Array.isArray(obj)) {
@@ -307,11 +359,99 @@ class ApiClient {
     if (obj !== null && typeof obj === "object") {
       const result: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(obj)) {
-        result[key] = this.parseDecimals(value);
+        result[key] = this.parseDecimals(value, key);
       }
       return result;
     }
     return obj;
+  }
+
+  private shouldParseDecimalField(key?: string): boolean {
+    if (!key) return false;
+
+    const normalized = key.toLowerCase();
+    const stringFieldHints = [
+      "id",
+      "code",
+      "number",
+      "email",
+      "phone",
+      "postal",
+      "country",
+      "reg",
+      "reference",
+      "status",
+      "type",
+      "name",
+      "date",
+      "time",
+      "currency",
+      "token",
+      "url",
+      "slug",
+      "iban",
+      "bic",
+      "swift",
+      "file",
+      "message",
+      "description",
+    ];
+    if (
+      stringFieldHints.some(
+        (hint) =>
+          normalized === hint ||
+          normalized.endsWith(`_${hint}`) ||
+          normalized.includes(`${hint}_`),
+      )
+    ) {
+      return false;
+    }
+
+    const exactDecimalFields = [
+      "reserved_qty",
+      "available_qty",
+      "inventory_value",
+      "subledger_value",
+      "general_ledger_balance",
+      "difference",
+    ];
+    if (exactDecimalFields.includes(normalized)) {
+      return true;
+    }
+
+    return [
+      "amount",
+      "balance",
+      "total",
+      "subtotal",
+      "price",
+      "rate",
+      "percent",
+      "percentage",
+      "quantity",
+      "debit",
+      "credit",
+      "vat",
+      "tax",
+      "discount",
+      "income",
+      "revenue",
+      "expense",
+      "payable",
+      "receivable",
+      "cost",
+      "budget",
+      "salary",
+      "days",
+      "hours",
+      "net",
+      "base",
+      "current",
+      "opening",
+      "paid",
+      "used",
+      "limit",
+    ].some((hint) => normalized.includes(hint));
   }
 
   private async refreshAccessToken(): Promise<boolean> {
@@ -408,6 +548,133 @@ class ApiClient {
     );
   }
 
+  async listTenantAuditEvents(tenantId: string, limit: number = 50) {
+    return this.request<TenantAuditEvent[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/audit-events?limit=${limit}`,
+    );
+  }
+
+  async listTenantUsers(tenantId: string) {
+    return this.request<TenantUser[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/users`,
+    );
+  }
+
+  async updateTenantUserRole(
+    tenantId: string,
+    userId: string,
+    role: EditableTenantRole,
+  ) {
+    return this.request<{ status: string }>(
+      "PUT",
+      `/api/v1/tenants/${tenantId}/users/${userId}/role`,
+      { role },
+    );
+  }
+
+  async updateTenantUserStatus(
+    tenantId: string,
+    userId: string,
+    isActive: boolean,
+  ) {
+    return this.request<{ status: string; is_active: boolean }>(
+      "PUT",
+      `/api/v1/tenants/${tenantId}/users/${userId}/status`,
+      { is_active: isActive },
+    );
+  }
+
+  async removeTenantUser(tenantId: string, userId: string) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/users/${userId}`,
+    );
+  }
+
+  async listTenantUserAuthSessions(
+    tenantId: string,
+    userId: string,
+    includeInactive = false,
+  ) {
+    const query = buildQuery({ include_inactive: includeInactive });
+    return this.request<RefreshSession[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/users/${userId}/sessions${query}`,
+    );
+  }
+
+  async revokeTenantUserAuthSession(
+    tenantId: string,
+    userId: string,
+    sessionId: string,
+  ) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/users/${userId}/sessions/${sessionId}`,
+    );
+  }
+
+  async revokeTenantUserAuthSessions(tenantId: string, userId: string) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/users/${userId}/sessions`,
+    );
+  }
+
+  async listTenantUserAPITokens(tenantId: string, userId: string) {
+    return this.request<APIToken[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/users/${userId}/api-tokens`,
+    );
+  }
+
+  async revokeTenantUserAPIToken(
+    tenantId: string,
+    userId: string,
+    tokenId: string,
+  ) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/users/${userId}/api-tokens/${tokenId}`,
+    );
+  }
+
+  async listTenantUserSecurityAuditEvents(
+    tenantId: string,
+    userId: string,
+    limit: number = 50,
+  ) {
+    const query = buildQuery({ limit });
+    return this.request<SecurityAuditEvent[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/users/${userId}/security-events${query}`,
+    );
+  }
+
+  async listInvitations(tenantId: string) {
+    return this.request<UserInvitation[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/invitations`,
+    );
+  }
+
+  async createInvitation(tenantId: string, data: CreateInvitationRequest) {
+    return this.request<UserInvitation>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/invitations`,
+      data,
+    );
+  }
+
+  async revokeInvitation(tenantId: string, invitationId: string) {
+    return this.request<{ status: string }>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/invitations/${invitationId}`,
+    );
+  }
+
   async closePeriod(tenantId: string, data: ClosePeriodRequest) {
     return this.request<PeriodCloseResponse>(
       "POST",
@@ -424,8 +691,15 @@ class ApiClient {
     );
   }
 
-  async getYearEndCloseStatus(tenantId: string, periodEndDate: string) {
-    const query = buildQuery({ period_end_date: periodEndDate });
+  async getYearEndCloseStatus(
+    tenantId: string,
+    periodEndDate: string,
+    inventoryValuationMethod = "",
+  ) {
+    const query = buildQuery({
+      period_end_date: periodEndDate,
+      inventory_valuation_method: inventoryValuationMethod,
+    });
     return this.request<YearEndCloseStatus>(
       "GET",
       `/api/v1/tenants/${tenantId}/year-end-close-status${query}`,
@@ -439,6 +713,17 @@ class ApiClient {
     return this.request<YearEndCarryForwardResult>(
       "POST",
       `/api/v1/tenants/${tenantId}/year-end-carry-forward`,
+      data,
+    );
+  }
+
+  async reverseYearEndCarryForward(
+    tenantId: string,
+    data: ReverseYearEndCarryForwardRequest,
+  ) {
+    return this.request<YearEndCarryForwardReversalResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/year-end-carry-forward/reverse`,
       data,
     );
   }
@@ -470,6 +755,261 @@ class ApiClient {
     );
   }
 
+  async getDocumentReviewQueue(
+    tenantId: string,
+    filter: DocumentReviewQueueFilter = {},
+  ) {
+    const query = buildQuery(filter);
+    return this.request<DocumentReviewQueue>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/documents/review-queue${query}`,
+    );
+  }
+
+  async getDocumentRetentionReview(
+    tenantId: string,
+    filter: DocumentRetentionReviewFilter = {},
+  ) {
+    const query = buildQuery(filter);
+    return this.request<DocumentRetentionReview>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/documents/retention${query}`,
+    );
+  }
+
+  async evaluateDocumentEvidencePolicy(
+    tenantId: string,
+    data: EvidencePolicyRequest,
+  ) {
+    return this.request<EvidencePolicyResult[]>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/documents/evidence-policy`,
+      data,
+    );
+  }
+
+  async listMigrationProviderPresets(tenantId: string) {
+    return this.request<MigrationProviderPresetInfo[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/migration/provider-presets`,
+    );
+  }
+
+  async validateMigrationBundle(tenantId: string, data: ValidateBundleRequest) {
+    return this.request<BundleValidationReport>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/migration/validate`,
+      data,
+    );
+  }
+
+  async planMigrationExecution(
+    tenantId: string,
+    data: PlanMigrationExecutionRequest,
+  ) {
+    return this.request<MigrationExecutionPlan>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/migration/execution-plan`,
+      data,
+    );
+  }
+
+  async executeMigration(tenantId: string, data: ExecuteMigrationRequest) {
+    return this.request<MigrationExecutionRun>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/migration/execute`,
+      data,
+    );
+  }
+
+  async listMigrationExecutionRuns(
+    tenantId: string,
+    filter: MigrationExecutionRunFilter = {},
+  ) {
+    const query = buildQuery(filter);
+    return this.request<MigrationExecutionRun[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/migration/execution-runs${query}`,
+    );
+  }
+
+  async getMigrationExecutionRun(tenantId: string, runId: string) {
+    return this.request<MigrationExecutionRun>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/migration/execution-runs/${runId}`,
+    );
+  }
+
+  async watchMigrationExecutionRun(
+    tenantId: string,
+    runId: string,
+    options: WatchMigrationExecutionRunOptions,
+  ): Promise<void> {
+    const params = new URLSearchParams();
+    if (options.intervalMs !== undefined) {
+      params.set("interval_ms", String(options.intervalMs));
+    }
+    if (options.maxEvents !== undefined) {
+      params.set("max_events", String(options.maxEvents));
+    }
+    const query = params.toString();
+    const path = `/api/v1/tenants/${tenantId}/migration/execution-runs/${runId}/events${query ? `?${query}` : ""}`;
+    const headers: Record<string, string> = {
+      Accept: "text/event-stream",
+    };
+    if (this.accessToken) {
+      headers["Authorization"] = `Bearer ${this.accessToken}`;
+    }
+
+    let response = await fetch(`${getApiBase()}${path}`, {
+      method: "GET",
+      headers,
+      signal: options.signal,
+    });
+
+    if (response.status === 401) {
+      if (this.refreshToken) {
+        const refreshed = await this.refreshAccessToken();
+        if (refreshed && this.accessToken) {
+          headers["Authorization"] = `Bearer ${this.accessToken}`;
+          response = await fetch(`${getApiBase()}${path}`, {
+            method: "GET",
+            headers,
+            signal: options.signal,
+          });
+        }
+      }
+      if (response.status === 401) {
+        this.clearTokens();
+        if (browser) {
+          window.location.href = "/login";
+        }
+        throw new Error("Session expired. Please log in again.");
+      }
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}) as ApiError);
+      throw new Error(
+        error.error ||
+          `Migration execution run stream failed with status ${response.status}`,
+      );
+    }
+
+    if (!response.body) {
+      throw new Error("Migration execution run stream is not available.");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const emitFrame = async (frame: string) => {
+      const dataLines: string[] = [];
+      let eventType = "";
+      let sequence = 0;
+
+      for (const line of frame.split("\n")) {
+        if (!line || line.startsWith(":")) {
+          continue;
+        }
+        if (line.startsWith("event:")) {
+          eventType = line.slice("event:".length).trim();
+          continue;
+        }
+        if (line.startsWith("id:")) {
+          const parsed = Number(line.slice("id:".length).trim());
+          if (Number.isFinite(parsed)) {
+            sequence = parsed;
+          }
+          continue;
+        }
+        if (line.startsWith("data:")) {
+          dataLines.push(line.slice("data:".length).trimStart());
+        }
+      }
+
+      if (dataLines.length === 0) {
+        return;
+      }
+
+      const parsed = JSON.parse(
+        dataLines.join("\n"),
+      ) as Partial<MigrationExecutionRunEvent>;
+      const event = this.parseDecimals({
+        ...parsed,
+        type: parsed.type || eventType,
+        sequence: parsed.sequence || sequence,
+      }) as MigrationExecutionRunEvent;
+      await options.onEvent(event);
+    };
+
+    const flushFrames = async () => {
+      let frameEnd = buffer.indexOf("\n\n");
+      while (frameEnd >= 0) {
+        const frame = buffer.slice(0, frameEnd);
+        buffer = buffer.slice(frameEnd + 2);
+        await emitFrame(frame);
+        frameEnd = buffer.indexOf("\n\n");
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      await flushFrames();
+    }
+
+    buffer += decoder.decode().replace(/\r\n/g, "\n");
+    if (buffer.trim()) {
+      await emitFrame(buffer);
+    }
+  }
+
+  async listExpenses(tenantId: string, filter: ListExpensesFilter = {}) {
+    const query = buildQuery(filter);
+    return this.request<ExpenseClaim[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/expenses${query}`,
+    );
+  }
+
+  async submitExpense(tenantId: string, expenseId: string) {
+    return this.request<ExpenseClaim>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/expenses/${expenseId}/submit`,
+    );
+  }
+
+  async approveExpense(tenantId: string, expenseId: string) {
+    return this.request<ExpenseClaim>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/expenses/${expenseId}/approve`,
+    );
+  }
+
+  async postExpense(tenantId: string, expenseId: string) {
+    return this.request<ExpenseClaim>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/expenses/${expenseId}/post`,
+    );
+  }
+
+  async updateDocumentRetention(
+    tenantId: string,
+    documentId: string,
+    data: DocumentRetentionUpdateRequest,
+  ) {
+    return this.request<DocumentAttachment>(
+      "PATCH",
+      `/api/v1/tenants/${tenantId}/documents/${documentId}/retention`,
+      data,
+    );
+  }
+
   async uploadDocument(
     tenantId: string,
     entityType: DocumentAttachment["entity_type"],
@@ -479,6 +1019,8 @@ class ApiClient {
       document_type?: DocumentAttachment["document_type"];
       notes?: string;
       retention_until?: string;
+      replaces_document_id?: string;
+      replacement_note?: string;
     },
   ) {
     const formData = new FormData();
@@ -494,6 +1036,12 @@ class ApiClient {
     if (options?.retention_until) {
       formData.set("retention_until", options.retention_until);
     }
+    if (options?.replaces_document_id) {
+      formData.set("replaces_document_id", options.replaces_document_id);
+    }
+    if (options?.replacement_note) {
+      formData.set("replacement_note", options.replacement_note);
+    }
 
     return this.request<DocumentAttachment>(
       "POST",
@@ -506,6 +1054,18 @@ class ApiClient {
     return this.request<DocumentAttachment>(
       "POST",
       `/api/v1/tenants/${tenantId}/documents/${documentId}/mark-reviewed`,
+    );
+  }
+
+  async reviewDocument(
+    tenantId: string,
+    documentId: string,
+    data: ReviewDocumentRequest,
+  ) {
+    return this.request<DocumentAttachment>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/documents/${documentId}/review`,
+      data,
     );
   }
 
@@ -547,6 +1107,43 @@ class ApiClient {
     document.body.removeChild(a);
   }
 
+  async downloadYearEndCloseAuditArchive(
+    tenantId: string,
+    periodEndDate: string,
+    inventoryValuationMethod = "",
+  ) {
+    const query = buildQuery({
+      period_end_date: periodEndDate,
+      inventory_valuation_method: inventoryValuationMethod,
+    });
+    const response = await fetch(
+      `${getApiBase()}/api/v1/tenants/${tenantId}/year-end-close-audit-archive${query}`,
+      {
+        method: "GET",
+        headers: this.accessToken
+          ? { Authorization: `Bearer ${this.accessToken}` }
+          : {},
+      },
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}) as ApiError);
+      throw new Error(
+        error.error || "Failed to download year-end audit archive",
+      );
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `year-end-close-audit-${periodEndDate}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
+
   // Account endpoints
   async listAccounts(tenantId: string, activeOnly = false) {
     const query = activeOnly ? "?active_only=true" : "";
@@ -561,6 +1158,25 @@ class ApiClient {
       "POST",
       `/api/v1/tenants/${tenantId}/accounts`,
       data,
+    );
+  }
+
+  async updateAccount(
+    tenantId: string,
+    accountId: string,
+    data: UpdateAccountRequest,
+  ) {
+    return this.request<Account>(
+      "PUT",
+      `/api/v1/tenants/${tenantId}/accounts/${accountId}`,
+      data,
+    );
+  }
+
+  async deleteAccount(tenantId: string, accountId: string) {
+    return this.request<Account>(
+      "DELETE",
+      `/api/v1/tenants/${tenantId}/accounts/${accountId}`,
     );
   }
 
@@ -836,6 +1452,18 @@ class ApiClient {
     );
   }
 
+  async reversePayment(
+    tenantId: string,
+    paymentId: string,
+    data: ReversePaymentRequest,
+  ) {
+    return this.request<PaymentReversalResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/payments/${paymentId}/reverse`,
+      data,
+    );
+  }
+
   async getUnallocatedPayments(
     tenantId: string,
     type: "RECEIVED" | "MADE" = "RECEIVED",
@@ -896,6 +1524,30 @@ class ApiClient {
     );
   }
 
+  async downloadQuotePDF(
+    tenantId: string,
+    quoteId: string,
+    quoteNumber: string,
+  ) {
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/quotes/${quoteId}/pdf`,
+      `quote-${quoteNumber}.pdf`,
+      "Failed to download quote PDF",
+    );
+  }
+
+  async emailQuote(
+    tenantId: string,
+    quoteId: string,
+    data: SendQuoteEmailRequest,
+  ) {
+    return this.request<EmailSentResponse>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/quotes/${quoteId}/email`,
+      data,
+    );
+  }
+
   async acceptQuote(tenantId: string, quoteId: string) {
     return this.request<{ status: string }>(
       "POST",
@@ -907,6 +1559,18 @@ class ApiClient {
     return this.request<{ status: string }>(
       "POST",
       `/api/v1/tenants/${tenantId}/quotes/${quoteId}/reject`,
+    );
+  }
+
+  async convertQuoteToInvoice(
+    tenantId: string,
+    quoteId: string,
+    data: ConvertQuoteToInvoiceRequest = {},
+  ) {
+    return this.request<QuoteInvoiceConversionResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/quotes/${quoteId}/convert-to-invoice`,
+      data,
     );
   }
 
@@ -960,6 +1624,30 @@ class ApiClient {
     );
   }
 
+  async downloadOrderPDF(
+    tenantId: string,
+    orderId: string,
+    orderNumber: string,
+  ) {
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/orders/${orderId}/pdf`,
+      `order-${orderNumber}.pdf`,
+      "Failed to download order PDF",
+    );
+  }
+
+  async emailOrder(
+    tenantId: string,
+    orderId: string,
+    data: SendOrderEmailRequest,
+  ) {
+    return this.request<EmailSentResponse>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/orders/${orderId}/email`,
+      data,
+    );
+  }
+
   async processOrder(tenantId: string, orderId: string) {
     return this.request<{ status: string }>(
       "POST",
@@ -985,6 +1673,18 @@ class ApiClient {
     return this.request<{ status: string }>(
       "POST",
       `/api/v1/tenants/${tenantId}/orders/${orderId}/cancel`,
+    );
+  }
+
+  async convertOrderToInvoice(
+    tenantId: string,
+    orderId: string,
+    data: ConvertOrderToInvoiceRequest = {},
+  ) {
+    return this.request<OrderInvoiceConversionResult>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/orders/${orderId}/convert-to-invoice`,
+      data,
     );
   }
 
@@ -1096,7 +1796,7 @@ class ApiClient {
   ) {
     return this.request<DepreciationEntry>(
       "POST",
-      `/api/v1/tenants/${tenantId}/assets/${assetId}/depreciate`,
+      `/api/v1/tenants/${tenantId}/assets/${assetId}/depreciation`,
       data,
     );
   }
@@ -1193,7 +1893,7 @@ class ApiClient {
   async getProductStockLevels(tenantId: string, productId: string) {
     return this.request<StockLevel[]>(
       "GET",
-      `/api/v1/tenants/${tenantId}/products/${productId}/stock`,
+      `/api/v1/tenants/${tenantId}/products/${productId}/stock-levels`,
     );
   }
 
@@ -1261,6 +1961,53 @@ class ApiClient {
       "POST",
       `/api/v1/tenants/${tenantId}/inventory/transfer`,
       data,
+    );
+  }
+
+  async reserveStock(tenantId: string, data: StockReservationRequest) {
+    return this.request<StockLevel>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/inventory/reserve`,
+      data,
+    );
+  }
+
+  async releaseStock(tenantId: string, data: StockReservationRequest) {
+    return this.request<StockLevel>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/inventory/release`,
+      data,
+    );
+  }
+
+  async getInventoryValuation(
+    tenantId: string,
+    options: InventoryValuationOptions = {},
+  ) {
+    const params = new URLSearchParams();
+    if (options.warehouse_id) params.set("warehouse_id", options.warehouse_id);
+    if (options.method) params.set("method", options.method);
+    const query = params.toString() ? `?${params.toString()}` : "";
+
+    return this.request<InventoryValuationReport>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/inventory/valuation${query}`,
+    );
+  }
+
+  async getInventorySubledgerReconciliation(
+    tenantId: string,
+    options: InventorySubledgerReconciliationOptions = {},
+  ) {
+    const params = new URLSearchParams();
+    if (options.warehouse_id) params.set("warehouse_id", options.warehouse_id);
+    if (options.method) params.set("method", options.method);
+    if (options.as_of_date) params.set("as_of_date", options.as_of_date);
+    const query = params.toString() ? `?${params.toString()}` : "";
+
+    return this.request<InventorySubledgerReconciliationReport>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/inventory/subledger-reconciliation${query}`,
     );
   }
 
@@ -1768,6 +2515,40 @@ class ApiClient {
     );
   }
 
+  async generateKMDINF(tenantId: string, data: KMDINFReportRequest) {
+    const query = buildQuery({ threshold: data.threshold });
+    return this.request<KMDINFReport>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/tax/kmd/${data.year}/${data.month}/inf${query}`,
+    );
+  }
+
+  async generateEUVATOSS(tenantId: string, data: EUVATOSSReportRequest) {
+    const query = buildQuery({
+      year: data.year,
+      quarter: data.quarter,
+      include_b2b: data.include_b2b,
+    });
+    return this.request<EUVATOSSReport>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/tax/eu-vat/oss${query}`,
+    );
+  }
+
+  async markKMDSubmitted(tenantId: string, year: number, month: number) {
+    return this.request<{ status: string }>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/tax/kmd/${year}/${month}/submit`,
+    );
+  }
+
+  async markKMDAccepted(tenantId: string, year: number, month: number) {
+    return this.request<{ status: string }>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/tax/kmd/${year}/${month}/accept`,
+    );
+  }
+
   async downloadKMDXml(tenantId: string, year: number, month: number) {
     const headers: Record<string, string> = {};
     if (this.accessToken) {
@@ -1827,6 +2608,35 @@ class ApiClient {
     return this.request<BalanceConfirmation>(
       "GET",
       `/api/v1/tenants/${tenantId}/reports/balance-confirmations/${contactId}?type=${type}&as_of_date=${asOfDate}`,
+    );
+  }
+
+  async downloadBalanceConfirmationSummary(
+    tenantId: string,
+    type: BalanceConfirmationType,
+    asOfDate: string,
+    format: ReportExportFormat,
+  ) {
+    const query = buildQuery({ type, as_of_date: asOfDate, format });
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/reports/balance-confirmations${query}`,
+      `balance-confirmations-${type.toLowerCase()}-${asOfDate}.${format}`,
+      `Failed to download balance confirmations ${format.toUpperCase()}`,
+    );
+  }
+
+  async downloadBalanceConfirmation(
+    tenantId: string,
+    contactId: string,
+    type: BalanceConfirmationType,
+    asOfDate: string,
+    format: ReportExportFormat,
+  ) {
+    const query = buildQuery({ type, as_of_date: asOfDate, format });
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/reports/balance-confirmations/${encodeURIComponent(contactId)}${query}`,
+      `balance-confirmation-${contactId}-${asOfDate}.${format}`,
+      `Failed to download balance confirmation ${format.toUpperCase()}`,
     );
   }
 
@@ -1915,6 +2725,27 @@ class ApiClient {
     return this.request<void>(
       "DELETE",
       `/api/v1/tenants/${tenantId}/cost-centers/${costCenterId}`,
+    );
+  }
+
+  async listCostAllocations(
+    tenantId: string,
+    filters: CostAllocationFilters = {},
+  ) {
+    return this.request<CostAllocation[]>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/cost-centers/allocations${buildQuery(filters)}`,
+    );
+  }
+
+  async createCostAllocation(
+    tenantId: string,
+    data: CreateCostAllocationRequest,
+  ) {
+    return this.request<CostAllocation>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/cost-centers/allocations`,
+      data,
     );
   }
 
@@ -2038,8 +2869,20 @@ class ApiClient {
     );
   }
 
-  async approvePayroll(tenantId: string, runId: string) {
+  async updatePayrollPaymentDate(
+    tenantId: string,
+    runId: string,
+    data: UpdatePayrollRunPaymentDateRequest,
+  ) {
     return this.request<PayrollRun>(
+      "PATCH",
+      `/api/v1/tenants/${tenantId}/payroll-runs/${runId}/payment-date`,
+      data,
+    );
+  }
+
+  async approvePayroll(tenantId: string, runId: string) {
+    return this.request<{ status: string }>(
       "POST",
       `/api/v1/tenants/${tenantId}/payroll-runs/${runId}/approve`,
     );
@@ -2063,7 +2906,8 @@ class ApiClient {
   async calculateTaxPreview(
     tenantId: string,
     grossSalary: string,
-    basicExemption?: string,
+    applyBasicExemption?: boolean,
+    basicExemptionAmount?: string,
     fundedPensionRate?: string,
   ) {
     return this.request<TaxCalculation>(
@@ -2071,7 +2915,8 @@ class ApiClient {
       `/api/v1/tenants/${tenantId}/payroll/tax-preview`,
       {
         gross_salary: grossSalary,
-        basic_exemption: basicExemption,
+        apply_basic_exemption: applyBasicExemption,
+        basic_exemption_amount: basicExemptionAmount,
         funded_pension_rate: fundedPensionRate,
       },
     );
@@ -2155,6 +3000,13 @@ class ApiClient {
       "POST",
       `/api/v1/tenants/${tenantId}/tsd/${year}/${month}/submit`,
       { emta_reference: emtaReference },
+    );
+  }
+
+  async markTSDAccepted(tenantId: string, year: number, month: number) {
+    return this.request<{ status: string }>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/tsd/${year}/${month}/accept`,
     );
   }
 
@@ -2341,7 +3193,7 @@ class ApiClient {
       "POST",
       `/api/v1/admin/plugins/${pluginId}/enable`,
       {
-        permissions,
+        granted_permissions: permissions,
       },
     );
   }
@@ -2432,6 +3284,8 @@ export interface TenantSettings {
   pdf_footer_text?: string;
   bank_details?: string;
   invoice_terms?: string;
+  inventory_issue_costing_method?: InventoryIssueCostingMethod;
+  inventory_valuation_method?: InventoryValuationMethod;
 }
 
 export interface PeriodCloseEvent {
@@ -2447,9 +3301,100 @@ export interface PeriodCloseEvent {
   created_at: string;
 }
 
+export type TenantAuditAction =
+  | "user_role_updated"
+  | "user_removed"
+  | "invitation_created"
+  | "invitation_revoked"
+  | "tenant_updated"
+  | "user_session_revoked"
+  | "user_sessions_revoked"
+  | "user_api_token_revoked"
+  | "user_status_updated";
+
+export type TenantAuditTargetType = "user" | "invitation" | "tenant";
+
+export interface TenantAuditEvent {
+  id: string;
+  tenant_id: string;
+  actor_user_id?: string;
+  action: TenantAuditAction;
+  target_type: TenantAuditTargetType;
+  target_id: string;
+  target_email?: string;
+  metadata?: Record<string, string>;
+  created_at: string;
+}
+
+export type TenantRole = "owner" | "admin" | "accountant" | "viewer";
+
+export type EditableTenantRole = Exclude<TenantRole, "owner">;
+
+export interface TenantUser {
+  tenant_id: string;
+  user_id: string;
+  role: TenantRole;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RefreshSession {
+  id: string;
+  user_id: string;
+  created_at: string;
+  last_used_at?: string;
+  expires_at: string;
+  revoked_at?: string;
+}
+
+export interface APIToken {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  name: string;
+  token_prefix: string;
+  last_used_at?: string;
+  expires_at?: string;
+  revoked_at?: string;
+  created_at: string;
+}
+
+export interface SecurityAuditEvent {
+  id: string;
+  actor_user_id?: string;
+  actor_email?: string;
+  action: string;
+  target_user_id?: string;
+  target_email?: string;
+  request_ip?: string;
+  user_agent?: string;
+  metadata?: Record<string, string>;
+  created_at: string;
+}
+
+export interface UserInvitation {
+  id: string;
+  tenant_id: string;
+  tenant_name?: string;
+  email: string;
+  role: EditableTenantRole;
+  invited_by: string;
+  expires_at: string;
+  accepted_at?: string;
+  created_at: string;
+}
+
+export interface CreateInvitationRequest {
+  email: string;
+  role: EditableTenantRole;
+}
+
 export interface ClosePeriodRequest {
   period_end_date: string;
   note?: string;
+  reviewer_sign_off?: boolean;
+  inventory_valuation_method?: string;
 }
 
 export interface ReopenPeriodRequest {
@@ -2493,14 +3438,62 @@ export interface YearEndCloseStatus {
   retained_earnings_account?: AccountSummary | null;
   net_income: Decimal;
   existing_carry_forward?: JournalEntrySummary | null;
+  close_pack_evidence_entity_id?: string;
+  close_pack_evidence?: EvidencePolicyResult | null;
+  inventory_costing_review?: YearEndInventoryCostingReview | null;
+  remediation_actions?: YearEndCloseRemediationAction[];
+}
+
+export interface YearEndInventoryCostingReview {
+  valuation_method: string;
+  line_count: number;
+  total_quantity: Decimal;
+  total_reserved: Decimal;
+  total_available: Decimal;
+  total_value: Decimal;
+  negative_quantity_line_count: number;
+  negative_available_line_count: number;
+  negative_value_line_count: number;
+  missing_cost_line_count: number;
+  blocking_exception_line_count: number;
+  ready: boolean;
+  generated_at: string;
+}
+
+export interface YearEndCloseRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
 }
 
 export interface CreateYearEndCarryForwardRequest {
   period_end_date: string;
+  inventory_valuation_method?: string;
 }
 
 export interface YearEndCarryForwardResult {
   journal_entry: JournalEntry;
+  status: YearEndCloseStatus;
+}
+
+export interface ReverseYearEndCarryForwardRequest {
+  period_end_date: string;
+  reason: string;
+}
+
+export interface YearEndCarryForwardReversalResult {
+  reversal_journal_entry: JournalEntry;
   status: YearEndCloseStatus;
 }
 
@@ -2512,7 +3505,14 @@ export interface DocumentAttachment {
     | "journal_entry"
     | "payment"
     | "bank_transaction"
-    | "asset";
+    | "asset"
+    | "expense"
+    | "quote"
+    | "order"
+    | "leave_record"
+    | "year_end_close"
+    | "tsd_declaration"
+    | "kmd_declaration";
   entity_id: string;
   document_type:
     | "supporting_document"
@@ -2521,17 +3521,29 @@ export interface DocumentAttachment {
     | "contract"
     | "asset_record"
     | "tax_support"
+    | "close_pack"
     | "other";
   file_name: string;
   content_type: string;
   file_size: number;
   notes?: string;
   retention_until?: string;
-  review_status: "PENDING" | "REVIEWED";
+  review_status: "PENDING" | "REVIEWED" | "APPROVED" | "REJECTED";
+  review_note?: string;
   reviewed_by?: string;
   reviewed_at?: string;
+  lifecycle_status?: "ACTIVE" | "SUPERSEDED" | "ARCHIVED" | "DISPOSED";
+  lifecycle_note?: string;
+  superseded_by_document_id?: string;
+  lifecycle_actioned_by?: string;
+  lifecycle_actioned_at?: string;
   uploaded_by: string;
   created_at: string;
+}
+
+export interface ReviewDocumentRequest {
+  review_status: "REVIEWED" | "APPROVED" | "REJECTED";
+  review_note?: string;
 }
 
 export interface DocumentReviewSummary {
@@ -2540,8 +3552,456 @@ export interface DocumentReviewSummary {
   total_count: number;
   pending_review_count: number;
   reviewed_count: number;
+  approved_count: number;
+  rejected_count: number;
   missing_evidence: boolean;
   has_pending_review: boolean;
+  has_rejected: boolean;
+}
+
+export type DocumentReviewStatusFilter =
+  | DocumentAttachment["review_status"]
+  | "ALL";
+
+export interface DocumentReviewQueueFilter {
+  entity_type?: DocumentAttachment["entity_type"] | "";
+  document_type?: DocumentAttachment["document_type"] | "";
+  review_status?: DocumentReviewStatusFilter;
+  limit?: number;
+}
+
+export interface DocumentReviewQueue {
+  entity_type?: DocumentAttachment["entity_type"];
+  document_type?: DocumentAttachment["document_type"];
+  review_status: DocumentReviewStatusFilter;
+  limit: number;
+  total_count: number;
+  pending_review_count: number;
+  reviewed_count: number;
+  approved_count: number;
+  rejected_count: number;
+  documents: DocumentAttachment[];
+}
+
+export interface DocumentRetentionReviewFilter {
+  as_of?: string;
+  horizon_days?: number;
+  include_missing?: boolean;
+}
+
+export interface DocumentRetentionUpdateRequest {
+  retention_until?: string;
+  clear_retention?: boolean;
+}
+
+export interface RetentionReminderAction {
+  document_id: string;
+  entity_type: DocumentAttachment["entity_type"];
+  entity_id: string;
+  document_type: DocumentAttachment["document_type"];
+  file_name: string;
+  action: string;
+  message: string;
+  days_until_retention?: number;
+  retention_until?: string;
+}
+
+export interface DocumentRetentionReview {
+  as_of_date: string;
+  cutoff_date: string;
+  total_count: number;
+  expired_count: number;
+  due_soon_count: number;
+  missing_retention_count: number;
+  pending_review_count: number;
+  rejected_count: number;
+  documents: DocumentAttachment[];
+  reminder_actions?: RetentionReminderAction[];
+  remediation_actions?: DocumentRemediationAction[];
+}
+
+export interface DocumentRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  entity_type?: DocumentAttachment["entity_type"];
+  entity_id?: string;
+  document_id?: string;
+  document_type?: DocumentAttachment["document_type"];
+  file_name?: string;
+  due_date?: string;
+  days_until_retention?: number;
+  ui_path?: string;
+  cli_command?: string;
+}
+
+export interface EvidencePolicyRule {
+  document_types?: DocumentAttachment["document_type"][];
+  min_count: number;
+  require_approved?: boolean;
+}
+
+export interface EvidencePolicyRequest {
+  entity_type: DocumentAttachment["entity_type"];
+  entity_ids: string[];
+  rules: EvidencePolicyRule[];
+}
+
+export interface EvidencePolicyRuleResult {
+  rule_index: number;
+  document_types?: DocumentAttachment["document_type"][];
+  required_count: number;
+  matching_count: number;
+  approved_matching_count: number;
+  accepted_count: number;
+  require_approved: boolean;
+  compliant: boolean;
+  message?: string;
+}
+
+export interface EvidencePolicyResult {
+  entity_type: DocumentAttachment["entity_type"];
+  entity_id: string;
+  compliant: boolean;
+  total_count: number;
+  pending_review_count: number;
+  reviewed_count: number;
+  approved_count: number;
+  rejected_count: number;
+  missing_evidence: boolean;
+  document_type_counts?: Partial<
+    Record<DocumentAttachment["document_type"], number>
+  >;
+  approved_document_type_counts?: Partial<
+    Record<DocumentAttachment["document_type"], number>
+  >;
+  rule_results?: EvidencePolicyRuleResult[];
+  violations?: EvidencePolicyRuleResult[];
+  remediation_actions?: DocumentRemediationAction[];
+}
+
+export type MigrationFileKind =
+  | "accounts"
+  | "contacts"
+  | "employees"
+  | "expenses"
+  | "invoices"
+  | "e_invoices"
+  | "payments"
+  | "bank_accounts"
+  | "bank_transactions"
+  | "payroll_history"
+  | "leave_balances"
+  | "tsd_history"
+  | "kmd_history"
+  | "quotes"
+  | "orders"
+  | "recurring_invoices"
+  | "cost_centers"
+  | "cost_allocations"
+  | "product_categories"
+  | "warehouses"
+  | "products"
+  | "stock_adjustments"
+  | "fixed_assets"
+  | "opening_balances"
+  | "journal_entries";
+
+export type MigrationProviderPreset =
+  | "generic"
+  | "merit"
+  | "smartaccounts"
+  | "directo";
+export type EInvoiceContactMode = "supplier" | "customer" | "both";
+export type MigrationIssueSeverity = "ERROR" | "WARNING";
+
+export interface MigrationProviderPresetAlias {
+  source_header: string;
+  canonical_header: string;
+}
+
+export interface MigrationProviderPresetKindInfo {
+  kind: MigrationFileKind;
+  required_column_groups?: string[][];
+  preset_alias_count: number;
+  sample_aliases?: MigrationProviderPresetAlias[];
+}
+
+export interface MigrationProviderPresetInfo {
+  preset: MigrationProviderPreset;
+  label: string;
+  description: string;
+  file_kind_count: number;
+  preset_alias_count: number;
+  file_kinds?: MigrationProviderPresetKindInfo[];
+}
+
+export interface BundleFile {
+  kind: MigrationFileKind;
+  file_name: string;
+  csv_content?: string;
+  xml_content?: string;
+}
+
+export interface ValidateBundleRequest {
+  files: BundleFile[];
+  e_invoice_contact_mode?: EInvoiceContactMode;
+  e_invoice_invoice_type?: string;
+  provider_preset?: MigrationProviderPreset;
+}
+
+export interface PlanMigrationExecutionRequest extends ValidateBundleRequest {
+  bank_transaction_account_id?: string;
+  opening_balance_entry_date?: string;
+}
+
+export interface ExecuteMigrationRequest extends PlanMigrationExecutionRequest {
+  bank_transaction_format?: string;
+  confirm?: boolean;
+  resume_from_run?: MigrationExecutionRun;
+  resume_from_run_id?: string;
+}
+
+export interface MigrationExecutionRunFilter {
+  status?: string;
+  limit?: number;
+}
+
+export interface BundleValidationSummary {
+  files_validated: number;
+  rows_validated: number;
+  error_count: number;
+  warning_count: number;
+  ready: boolean;
+}
+
+export interface FileValidation {
+  kind: MigrationFileKind;
+  file_name: string;
+  rows: number;
+  headers?: string[];
+  missing_columns?: string[];
+}
+
+export interface ValidationIssue {
+  severity: MigrationIssueSeverity;
+  kind: MigrationFileKind;
+  file_name: string;
+  row?: number;
+  field?: string;
+  value?: string;
+  target_kind?: MigrationFileKind;
+  message: string;
+}
+
+export interface MigrationRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  kind?: MigrationFileKind;
+  file_name?: string;
+  field?: string;
+  target_kind?: MigrationFileKind;
+  issue_count: number;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
+}
+
+export interface BundleValidationReport {
+  summary: BundleValidationSummary;
+  files: FileValidation[];
+  issues?: ValidationIssue[];
+  remediation_actions?: MigrationRemediationAction[];
+}
+
+export type MigrationExecutionStepStatus =
+  | "READY"
+  | "NEEDS_CONTEXT"
+  | "BLOCKED";
+
+export interface MigrationExecutionPlanSummary {
+  validation_ready: boolean;
+  ready: boolean;
+  step_count: number;
+  ready_step_count: number;
+  needs_context_count: number;
+  blocked_step_count: number;
+}
+
+export interface MigrationExecutionStep {
+  step_number: number;
+  kind: MigrationFileKind;
+  file_name: string;
+  status: MigrationExecutionStepStatus;
+  message: string;
+  action: string;
+  api_method?: string;
+  api_path?: string;
+  cli_command?: string;
+  depends_on?: MigrationFileKind[];
+  context_fields?: string[];
+}
+
+export interface MigrationExecutionPlan {
+  summary: MigrationExecutionPlanSummary;
+  validation: BundleValidationReport;
+  steps?: MigrationExecutionStep[];
+  remediation_actions?: MigrationRemediationAction[];
+}
+
+export type MigrationExecutionResultStatus =
+  | "PLANNED"
+  | "RUNNING"
+  | "SKIPPED"
+  | "SUCCEEDED"
+  | "FAILED";
+
+export interface MigrationExecutionRunSummary {
+  status: string;
+  confirmed: boolean;
+  resumed: boolean;
+  plan_ready: boolean;
+  validation_ready: boolean;
+  step_count: number;
+  running_step_count: number;
+  succeeded_step_count: number;
+  failed_step_count: number;
+  skipped_step_count: number;
+  planned_step_count: number;
+  resumed_step_count: number;
+  completed_step_count: number;
+  remaining_step_count: number;
+  progress_percent: number;
+  duration_ms?: number;
+  needs_context_count: number;
+  blocked_step_count: number;
+  active_step_number?: number;
+  active_step_kind?: MigrationFileKind;
+  active_step_file_name?: string;
+  active_step_status?: MigrationExecutionResultStatus;
+  active_step_started_at?: string;
+  active_step_completed_at?: string;
+  active_step_duration_ms?: number;
+}
+
+export interface MigrationExecutionStepRun {
+  step_number: number;
+  kind: MigrationFileKind;
+  file_name: string;
+  status: MigrationExecutionResultStatus;
+  message?: string;
+  error?: string;
+  api_path?: string;
+  cli_command?: string;
+  response?: unknown;
+  started_at?: string;
+  completed_at?: string;
+  duration_ms?: number;
+}
+
+export interface MigrationExecutionRun {
+  id?: string;
+  tenant_id?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  summary: MigrationExecutionRunSummary;
+  plan?: MigrationExecutionPlan;
+  steps?: MigrationExecutionStepRun[];
+  remediation_actions?: MigrationRemediationAction[];
+}
+
+export interface MigrationExecutionRunEvent {
+  type: string;
+  sequence: number;
+  run?: MigrationExecutionRun;
+}
+
+export interface WatchMigrationExecutionRunOptions {
+  intervalMs?: number;
+  maxEvents?: number;
+  signal?: AbortSignal;
+  onEvent: (event: MigrationExecutionRunEvent) => void | Promise<void>;
+}
+
+export type ExpenseStatus =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "POSTED";
+
+export interface ExpenseClaim {
+  id: string;
+  tenant_id: string;
+  expense_number: string;
+  expense_date: string;
+  merchant: string;
+  description?: string;
+  employee_id?: string;
+  contact_id?: string;
+  expense_account_id: string;
+  payment_account_id: string;
+  amount: Decimal;
+  currency: string;
+  exchange_rate: Decimal;
+  base_amount: Decimal;
+  requires_receipt: boolean;
+  status: ExpenseStatus;
+  journal_entry_id?: string;
+  remediation_actions?: ExpenseRemediationAction[];
+  submitted_at?: string;
+  submitted_by?: string;
+  approved_at?: string;
+  approved_by?: string;
+  rejected_at?: string;
+  rejected_by?: string;
+  rejection_reason?: string;
+  posted_at?: string;
+  posted_by?: string;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+}
+
+export interface ExpenseRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  entity_type?: string;
+  entity_id?: string;
+  expense_number?: string;
+  status?: string;
+  ui_path?: string;
+  cli_command?: string;
+}
+
+export interface ListExpensesFilter {
+  status?: ExpenseStatus | "";
+  limit?: number;
 }
 
 export interface TenantMembership {
@@ -2564,6 +4024,14 @@ export interface Account {
 }
 
 export interface CreateAccountRequest {
+  code: string;
+  name: string;
+  account_type: Account["account_type"];
+  parent_id?: string;
+  description?: string;
+}
+
+export interface UpdateAccountRequest {
   code: string;
   name: string;
   account_type: Account["account_type"];
@@ -2600,6 +4068,7 @@ export interface JournalEntry {
   reference?: string;
   source_type?: string;
   source_id?: string;
+  requires_evidence: boolean;
   status: "DRAFT" | "POSTED" | "VOIDED";
   lines: JournalEntryLine[];
   posted_at?: string;
@@ -2630,6 +4099,7 @@ export interface CreateJournalEntryRequest {
   reference?: string;
   source_type?: string;
   source_id?: string;
+  requires_evidence?: boolean;
   lines: {
     account_id: string;
     description?: string;
@@ -2922,6 +4392,11 @@ export interface Payment {
   notes?: string;
   allocations: PaymentAllocation[];
   journal_entry_id?: string;
+  reversal_of_payment_id?: string;
+  reversed_by_payment_id?: string;
+  reversed_at?: string;
+  reversed_by?: string;
+  reversal_reason?: string;
   created_at: string;
   created_by: string;
 }
@@ -2960,6 +4435,18 @@ export interface PaymentFilter {
   contact_id?: string;
   from_date?: string;
   to_date?: string;
+}
+
+export interface ReversePaymentRequest {
+  payment_date?: string;
+  reason: string;
+  reference?: string;
+  notes?: string;
+}
+
+export interface PaymentReversalResult {
+  original_payment: Payment;
+  reversal_payment: Payment;
 }
 
 // Quote types
@@ -3049,6 +4536,17 @@ export interface QuoteFilter {
   search?: string;
 }
 
+export interface ConvertQuoteToInvoiceRequest {
+  issue_date?: string;
+  due_date?: string;
+  notes?: string;
+}
+
+export interface QuoteInvoiceConversionResult {
+  quote: Quote;
+  invoice: Invoice;
+}
+
 // Order types
 export type OrderStatus =
   | "PENDING"
@@ -3056,7 +4554,7 @@ export type OrderStatus =
   | "PROCESSING"
   | "SHIPPED"
   | "DELIVERED"
-  | "CANCELLED";
+  | "CANCELED";
 
 export interface Order {
   id: string;
@@ -3137,6 +4635,17 @@ export interface OrderFilter {
   search?: string;
 }
 
+export interface ConvertOrderToInvoiceRequest {
+  issue_date?: string;
+  due_date?: string;
+  notes?: string;
+}
+
+export interface OrderInvoiceConversionResult {
+  order: Order;
+  invoice: Invoice;
+}
+
 // Fixed Asset types
 export type AssetStatus = "DRAFT" | "ACTIVE" | "DISPOSED" | "SOLD";
 export type DepreciationMethod =
@@ -3185,6 +4694,7 @@ export interface FixedAsset {
   disposal_method?: DisposalMethod;
   disposal_proceeds?: Decimal;
   disposal_notes?: string;
+  disposal_journal_entry_id?: string;
   asset_account_id?: string;
   depreciation_expense_account_id?: string;
   accumulated_depreciation_account_id?: string;
@@ -3256,6 +4766,8 @@ export interface DisposeAssetRequest {
   disposal_method: DisposalMethod;
   disposal_proceeds?: string;
   disposal_notes?: string;
+  disposal_proceeds_account_id?: string;
+  disposal_gain_loss_account_id?: string;
 }
 
 export interface AssetFilter {
@@ -3345,6 +4857,9 @@ export interface InventoryMovement {
   quantity: Decimal;
   unit_cost: Decimal;
   total_cost: Decimal;
+  lot_number?: string;
+  serial_number?: string;
+  expiry_date?: string;
   reference?: string;
   source_type?: string;
   source_id?: string;
@@ -3421,6 +4936,9 @@ export interface AdjustStockRequest {
   warehouse_id: string;
   quantity: string;
   unit_cost?: string;
+  lot_number?: string;
+  serial_number?: string;
+  expiry_date?: string;
   reason?: string;
 }
 
@@ -3430,6 +4948,114 @@ export interface TransferStockRequest {
   to_warehouse_id: string;
   quantity: string;
   notes?: string;
+}
+
+export interface StockReservationRequest {
+  product_id: string;
+  warehouse_id: string;
+  quantity: string;
+  reason?: string;
+}
+
+export type InventoryValuationMethod =
+  | "standard-cost"
+  | "weighted-average"
+  | "fifo"
+  | "STANDARD_COST"
+  | "WEIGHTED_AVERAGE"
+  | "FIFO";
+
+export type InventoryIssueCostingMethod =
+  | "lot"
+  | "weighted-average"
+  | "standard-cost"
+  | "LOT"
+  | "WEIGHTED_AVERAGE"
+  | "STANDARD_COST";
+
+export interface InventoryValuationOptions {
+  warehouse_id?: string;
+  method?: InventoryValuationMethod;
+}
+
+export interface InventoryValuationLine {
+  product_id: string;
+  product_code: string;
+  product_name: string;
+  warehouse_id?: string;
+  warehouse_code?: string;
+  warehouse_name?: string;
+  quantity: Decimal;
+  reserved_qty: Decimal;
+  available_qty: Decimal;
+  unit_cost: Decimal;
+  inventory_value: Decimal;
+}
+
+export interface InventoryValuationReport {
+  tenant_id: string;
+  warehouse_id?: string;
+  valuation_method: string;
+  lines: InventoryValuationLine[];
+  total_quantity: Decimal;
+  total_reserved: Decimal;
+  total_available: Decimal;
+  total_value: Decimal;
+  generated_at: string;
+}
+
+export interface InventorySubledgerReconciliationOptions {
+  warehouse_id?: string;
+  method?: InventoryValuationMethod;
+  as_of_date?: string;
+}
+
+export interface InventorySubledgerReconciliationLine {
+  product_id: string;
+  product_code: string;
+  product_name: string;
+  warehouse_id?: string;
+  warehouse_code?: string;
+  warehouse_name?: string;
+  inventory_account_id?: string;
+  account_code?: string;
+  account_name?: string;
+  account_type?: string;
+  quantity: Decimal;
+  inventory_value: Decimal;
+  status: string;
+}
+
+export interface InventorySubledgerReconciliationAccountLine {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  product_line_count: number;
+  subledger_value: Decimal;
+  general_ledger_balance: Decimal;
+  difference: Decimal;
+  balanced: boolean;
+}
+
+export interface InventorySubledgerReconciliationReport {
+  tenant_id: string;
+  warehouse_id?: string;
+  valuation_method: string;
+  as_of_date: string;
+  lines: InventorySubledgerReconciliationLine[];
+  account_lines: InventorySubledgerReconciliationAccountLine[];
+  total_subledger_value: Decimal;
+  total_general_ledger_balance: Decimal;
+  total_difference: Decimal;
+  missing_account_line_count: number;
+  unknown_account_line_count: number;
+  invalid_account_type_line_count: number;
+  difference_account_count: number;
+  blocking_exception_line_count: number;
+  blocking_exception_account_count: number;
+  ready: boolean;
+  generated_at: string;
 }
 
 export interface ProductFilter {
@@ -3621,6 +5247,8 @@ export interface GenerationResult {
 // Email types
 export type TemplateType =
   | "INVOICE_SEND"
+  | "QUOTE_SEND"
+  | "ORDER_CONFIRM"
   | "PAYMENT_RECEIPT"
   | "OVERDUE_REMINDER";
 export type EmailStatus = "PENDING" | "SENT" | "FAILED";
@@ -3691,11 +5319,30 @@ export interface SendInvoiceEmailRequest {
   attach_pdf: boolean;
 }
 
+export interface SendQuoteEmailRequest {
+  recipient_email: string;
+  recipient_name?: string;
+  subject?: string;
+  message?: string;
+  attach_pdf: boolean;
+  require_approved_evidence?: boolean;
+}
+
+export interface SendOrderEmailRequest {
+  recipient_email: string;
+  recipient_name?: string;
+  subject?: string;
+  message?: string;
+  attach_pdf: boolean;
+  require_approved_evidence?: boolean;
+}
+
 export interface SendPaymentReceiptRequest {
   recipient_email: string;
   recipient_name?: string;
   subject?: string;
   message?: string;
+  require_approved_evidence?: boolean;
 }
 
 export interface EmailSentResponse {
@@ -3757,12 +5404,12 @@ export interface BankAccount {
   account_number: string;
   bank_name?: string;
   currency: string;
-  opening_balance: Decimal;
-  current_balance: Decimal;
+  balance?: Decimal;
   gl_account_id?: string;
+  is_default?: boolean;
   is_active: boolean;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface BankTransaction {
@@ -3786,6 +5433,27 @@ export interface BankTransaction {
   reconciliation_id?: string;
   import_id?: string;
   created_at: string;
+  remediation_actions?: BankRemediationAction[];
+}
+
+export interface BankRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  entity_type?: string;
+  entity_id?: string;
+  bank_account_id?: string;
+  transaction_status?: string;
+  follow_up_status?: string;
+  ui_path?: string;
+  cli_command?: string;
 }
 
 export interface UpdateBankTransactionReviewRequest {
@@ -3818,7 +5486,7 @@ export interface BankStatementImport {
   file_name: string;
   transactions_imported: number;
   transactions_matched: number;
-  transactions_duplicates: number;
+  duplicates_skipped: number;
   created_at: string;
   created_by: string;
 }
@@ -3839,7 +5507,6 @@ export interface CreateBankAccountRequest {
   account_number: string;
   bank_name?: string;
   currency?: string;
-  opening_balance?: string;
   gl_account_id?: string;
 }
 
@@ -3850,30 +5517,25 @@ export interface UpdateBankAccountRequest {
   is_active?: boolean;
 }
 
+export type BankTransactionImportFormat =
+  | "auto"
+  | "generic"
+  | "lhv"
+  | "camt053"
+  | "lhv-camt";
+
 export interface ImportTransactionsRequest {
   csv_content: string;
   file_name: string;
-  mapping: CSVColumnMapping;
+  format?: BankTransactionImportFormat;
   skip_duplicates?: boolean;
-}
-
-export interface CSVColumnMapping {
-  date_column: number;
-  description_column: number;
-  amount_column: number;
-  reference_column?: number;
-  counterparty_column?: number;
-  date_format: string;
-  decimal_separator: string;
-  thousands_separator?: string;
-  skip_header: boolean;
 }
 
 export interface ImportResult {
   import_id: string;
   transactions_imported: number;
-  transactions_duplicates: number;
-  errors: string[];
+  duplicates_skipped: number;
+  errors?: string[];
 }
 
 export interface CreateReconciliationRequest {
@@ -3899,14 +5561,140 @@ export interface KMDDeclaration {
   total_output_vat: Decimal;
   total_input_vat: Decimal;
   rows: KMDRow[];
+  remediation_actions?: KMDRemediationAction[];
   submitted_at?: string;
   created_at: string;
   updated_at: string;
 }
 
+export interface KMDRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  period?: string;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
+}
+
+export interface TaxReportRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  period?: string;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
+}
+
 export interface CreateKMDRequest {
   year: number;
   month: number;
+}
+
+export interface KMDINFReportRequest {
+  year: number;
+  month: number;
+  threshold?: string | number | Decimal;
+}
+
+export interface KMDINFPartSummary {
+  part: "A" | "B";
+  partner_count: number;
+  invoice_count: number;
+  taxable_amount: Decimal;
+  vat_amount: Decimal;
+  total_amount: Decimal;
+}
+
+export interface KMDINFReportRow {
+  part: "A" | "B";
+  contact_id: string;
+  contact_name: string;
+  contact_reg_code?: string;
+  contact_vat_number?: string;
+  invoice_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  invoice_type: string;
+  taxable_amount: Decimal;
+  vat_amount: Decimal;
+  total_amount: Decimal;
+  partner_period_taxable_amount: Decimal;
+}
+
+export interface KMDINFReport {
+  tenant_id: string;
+  year: number;
+  month: number;
+  threshold: Decimal;
+  generated_at: string;
+  summary: KMDINFPartSummary[];
+  rows: KMDINFReportRow[];
+  remediation_actions?: TaxReportRemediationAction[];
+}
+
+export interface EUVATOSSReportRequest {
+  year: number;
+  quarter: number;
+  include_b2b?: boolean;
+}
+
+export interface EUVATOSSCountrySummary {
+  country_code: string;
+  country_name: string;
+  invoice_count: number;
+  line_count: number;
+  taxable_amount: Decimal;
+  vat_amount: Decimal;
+  total_amount: Decimal;
+}
+
+export interface EUVATOSSReportRow {
+  country_code: string;
+  country_name: string;
+  vat_rate: Decimal;
+  invoice_count: number;
+  line_count: number;
+  taxable_amount: Decimal;
+  vat_amount: Decimal;
+  total_amount: Decimal;
+}
+
+export interface EUVATOSSReport {
+  tenant_id: string;
+  year: number;
+  quarter: number;
+  period_start: string;
+  period_end: string;
+  scheme: string;
+  currency: string;
+  include_b2b: boolean;
+  generated_at: string;
+  summary: EUVATOSSCountrySummary[];
+  rows: EUVATOSSReportRow[];
+  taxable_amount: Decimal;
+  vat_amount: Decimal;
+  total_amount: Decimal;
+  invoice_count: number;
+  line_count: number;
+  remediation_actions?: TaxReportRemediationAction[];
 }
 
 // Cash Flow types
@@ -3936,6 +5724,7 @@ export interface CashFlowStatement {
 
 // Balance Confirmation types
 export type BalanceConfirmationType = "RECEIVABLE" | "PAYABLE";
+export type ReportExportFormat = "csv" | "xlsx" | "pdf";
 
 export interface BalanceInvoice {
   invoice_id: string;
@@ -4217,6 +6006,7 @@ export interface PayrollRun {
   total_net: Decimal;
   total_employer_cost: Decimal;
   notes?: string;
+  remediation_actions?: PayrollRunRemediationAction[];
   created_by?: string;
   approved_by?: string;
   approved_at?: string;
@@ -4225,11 +6015,51 @@ export interface PayrollRun {
   payslips?: Payslip[];
 }
 
+export interface PayrollRunRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  period?: string;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
+}
+
+export interface TSDRemediationAction {
+  code: string;
+  severity: string;
+  scope: string;
+  owner_role: string;
+  workspace_queue?: string;
+  assignment_key?: string;
+  priority?: string;
+  due_in_days?: number;
+  message: string;
+  action: string;
+  period?: string;
+  entity_type?: string;
+  entity_id?: string;
+  ui_path?: string;
+  cli_command?: string;
+}
+
 export interface CreatePayrollRunRequest {
   period_year: number;
   period_month: number;
   payment_date?: string;
   notes?: string;
+}
+
+export interface UpdatePayrollRunPaymentDateRequest {
+  payment_date: string;
 }
 
 export interface Payslip {
@@ -4269,6 +6099,7 @@ export interface TSDDeclaration {
   status: TSDStatus;
   submitted_at?: string;
   emta_reference?: string;
+  remediation_actions?: TSDRemediationAction[];
   created_at: string;
   updated_at: string;
   rows?: TSDRow[];
@@ -4486,6 +6317,12 @@ export interface PluginNavItem {
 export interface PluginSlot {
   name: string;
   component: string;
+  label?: string;
+  description?: string;
+  path?: string;
+  kind?: "card" | "link" | "action";
+  badge?: string;
+  order?: number;
 }
 
 export interface PluginDatabaseConfig {
@@ -4571,6 +6408,37 @@ export interface UpdateCostCenterRequest {
   is_active: boolean;
   budget_amount?: string;
   budget_period?: BudgetPeriod;
+}
+
+export interface CostAllocation {
+  id: string;
+  tenant_id: string;
+  cost_center_id: string;
+  journal_entry_line_id: string;
+  amount: Decimal;
+  allocation_percentage?: Decimal;
+  allocation_date: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  cost_center_code?: string;
+  cost_center_name?: string;
+}
+
+export interface CreateCostAllocationRequest {
+  cost_center_id: string;
+  journal_entry_line_id: string;
+  amount: string;
+  allocation_percentage?: string;
+  allocation_date: string;
+  notes?: string;
+}
+
+export interface CostAllocationFilters {
+  cost_center_id?: string;
+  journal_entry_line_id?: string;
+  start_date?: string;
+  end_date?: string;
 }
 
 export interface CostCenterSummary {

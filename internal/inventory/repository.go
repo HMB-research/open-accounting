@@ -2,12 +2,17 @@ package inventory
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/database"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Repository defines the interface for inventory data operations
@@ -37,6 +42,9 @@ type Repository interface {
 	GetStockLevel(ctx context.Context, schemaName, tenantID, productID, warehouseID string) (*StockLevel, error)
 	GetStockLevelsByProduct(ctx context.Context, schemaName, tenantID, productID string) ([]StockLevel, error)
 	UpsertStockLevel(ctx context.Context, schemaName string, level *StockLevel) error
+	ListLotReservations(ctx context.Context, schemaName, tenantID, productID, warehouseID string) ([]InventoryLotReservation, error)
+	UpsertLotReservation(ctx context.Context, schemaName string, reservation *InventoryLotReservation) error
+	ReleaseLotReservation(ctx context.Context, schemaName, tenantID, productID, warehouseID, lotNumber, serialNumber, expiryDate string, quantity decimal.Decimal, reason, releasedBy string) (*InventoryLotReservation, error)
 
 	// Movements
 	CreateMovement(ctx context.Context, schemaName string, movement *InventoryMovement) error
@@ -46,515 +54,784 @@ type Repository interface {
 	UpdateProductStock(ctx context.Context, schemaName, tenantID, productID string, newStock decimal.Decimal) error
 }
 
-// PostgresRepository implements Repository for PostgreSQL
-type PostgresRepository struct {
-	db *pgxpool.Pool
+// GORMRepository implements Repository with the shared ORM layer.
+type GORMRepository struct {
+	db *gorm.DB
 }
 
-// NewPostgresRepository creates a new PostgreSQL repository
-func NewPostgresRepository(db *pgxpool.Pool) Repository {
-	return &PostgresRepository{db: db}
-}
-
-func (r *PostgresRepository) qualifyQuery(schemaName, tableName, queryTemplate string) (string, error) {
-	qualifiedTable, err := database.QualifiedTable(schemaName, tableName)
-	if err != nil {
-		return "", err
+// NewGORMRepository creates an ORM-backed inventory repository.
+func NewGORMRepository(pool *pgxpool.Pool) Repository {
+	if pool == nil {
+		return &GORMRepository{}
 	}
-	return fmt.Sprintf(queryTemplate, qualifiedTable), nil
-}
-
-// execInTable executes a query against an explicit schema-qualified table.
-func (r *PostgresRepository) execInTable(ctx context.Context, schemaName, tableName, queryTemplate string, args ...interface{}) error {
-	query, err := r.qualifyQuery(schemaName, tableName, queryTemplate)
+	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
 	if err != nil {
-		return err
+		panic(fmt.Errorf("create inventory GORM repository: %w", err))
 	}
-	_, err = r.db.Exec(ctx, query, args...)
-	return err
+	return &GORMRepository{db: gormDB}
 }
 
-// queryInTable executes a query against an explicit schema-qualified table and returns rows.
-func (r *PostgresRepository) queryInTable(ctx context.Context, schemaName, tableName, queryTemplate string, args ...interface{}) (pgx.Rows, error) {
-	query, err := r.qualifyQuery(schemaName, tableName, queryTemplate)
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	qualifiedTable, err := qualifiedInventoryTable(schemaName, tableName)
 	if err != nil {
 		return nil, err
 	}
-	return r.db.Query(ctx, query, args...)
+	if r.db == nil {
+		return nil, fmt.Errorf("inventory repository database is not configured")
+	}
+	return r.db.WithContext(ctx).Table(qualifiedTable), nil
 }
 
-// queryRowInTable executes a query against an explicit schema-qualified table and returns a single row.
-func (r *PostgresRepository) queryRowInTable(ctx context.Context, schemaName, tableName, queryTemplate string, args ...interface{}) (pgx.Row, error) {
-	query, err := r.qualifyQuery(schemaName, tableName, queryTemplate)
-	if err != nil {
-		return nil, err
+func (r *GORMRepository) WithInventoryLedgerTransaction(ctx context.Context, _ accountingPoster, fn func(repo Repository, ledger accountingPoster) error) error {
+	if r.db == nil {
+		return fmt.Errorf("inventory repository database is not configured")
 	}
-	return r.db.QueryRow(ctx, query, args...), nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txLedger := accounting.NewServiceWithRepository(accounting.NewGORMRepository(tx))
+		return fn(&GORMRepository{db: tx}, txLedger)
+	})
+}
+
+func qualifiedInventoryTable(schemaName, tableName string) (string, error) {
+	return database.QualifiedTable(schemaName, tableName)
 }
 
 // CreateProduct creates a new product
-func (r *PostgresRepository) CreateProduct(ctx context.Context, schemaName string, product *Product) error {
-	query := `
-		INSERT INTO %s (
-			id, tenant_id, code, name, description, product_type, category_id, unit,
-			purchase_price, sale_price, vat_rate, min_stock_level, current_stock,
-			reorder_point, sale_account_id, purchase_account_id, inventory_account_id,
-			track_inventory, is_active, barcode, supplier_id, lead_time_days, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`
-
-	return r.execInTable(ctx, schemaName, "products", query,
-		product.ID, product.TenantID, product.Code, product.Name, product.Description,
-		product.ProductType, nullIfEmpty(product.CategoryID), product.Unit,
-		product.PurchasePrice, product.SalesPrice, product.VATRate,
-		product.MinStockLevel, product.CurrentStock, product.ReorderPoint,
-		nullIfEmpty(product.SaleAccountID), nullIfEmpty(product.PurchaseAccountID),
-		nullIfEmpty(product.InventoryAccountID), product.TrackInventory, product.IsActive, product.Barcode,
-		nullIfEmpty(product.SupplierID), product.LeadTimeDays, product.CreatedAt, product.UpdatedAt,
-	)
+func (r *GORMRepository) CreateProduct(ctx context.Context, schemaName string, product *Product) error {
+	db, err := r.tenantTable(ctx, schemaName, "products")
+	if err != nil {
+		return err
+	}
+	return db.Create(productCreateValues(product)).Error
 }
 
 // GetProductByID retrieves a product by ID
-func (r *PostgresRepository) GetProductByID(ctx context.Context, schemaName, tenantID, productID string) (*Product, error) {
-	query := `
-		SELECT id, tenant_id, code, name, COALESCE(description, ''), product_type, category_id, COALESCE(unit, 'pcs'),
-			COALESCE(purchase_price, 0), COALESCE(sale_price, 0), vat_rate,
-			COALESCE(min_stock_level, 0), COALESCE(current_stock, 0), COALESCE(reorder_point, 0),
-			sale_account_id, purchase_account_id, inventory_account_id,
-			COALESCE(track_inventory, false), COALESCE(is_active, true), COALESCE(barcode, ''),
-			supplier_id, COALESCE(lead_time_days, 0), created_at, updated_at
-		FROM %s
-		WHERE id = $1 AND tenant_id = $2`
-
-	row, err := r.queryRowInTable(ctx, schemaName, "products", query, productID, tenantID)
+func (r *GORMRepository) GetProductByID(ctx context.Context, schemaName, tenantID, productID string) (*Product, error) {
+	db, err := r.tenantTable(ctx, schemaName, "products")
 	if err != nil {
 		return nil, err
 	}
 
-	var p Product
-	var categoryID, saleAcctID, purchaseAcctID, inventoryAcctID, supplierID *string
-	err = row.Scan(
-		&p.ID, &p.TenantID, &p.Code, &p.Name, &p.Description, &p.ProductType,
-		&categoryID, &p.Unit, &p.PurchasePrice, &p.SalesPrice, &p.VATRate,
-		&p.MinStockLevel, &p.CurrentStock, &p.ReorderPoint,
-		&saleAcctID, &purchaseAcctID, &inventoryAcctID, &p.TrackInventory, &p.IsActive, &p.Barcode,
-		&supplierID, &p.LeadTimeDays, &p.CreatedAt, &p.UpdatedAt,
-	)
+	var row productRow
+	err = db.Select(productSelectColumns()).
+		Where("id = ? AND tenant_id = ?", productID, tenantID).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("product not found")
+	}
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("product not found")
-		}
 		return nil, err
 	}
-
-	if categoryID != nil {
-		p.CategoryID = *categoryID
-	}
-	if saleAcctID != nil {
-		p.SaleAccountID = *saleAcctID
-	}
-	if purchaseAcctID != nil {
-		p.PurchaseAccountID = *purchaseAcctID
-	}
-	if inventoryAcctID != nil {
-		p.InventoryAccountID = *inventoryAcctID
-	}
-	if supplierID != nil {
-		p.SupplierID = *supplierID
-	}
-
-	return &p, nil
+	return productFromRow(row), nil
 }
 
 // ListProducts retrieves products with optional filtering
-func (r *PostgresRepository) ListProducts(ctx context.Context, schemaName, tenantID string, filter *ProductFilter) ([]Product, error) {
-	query := `
-		SELECT id, tenant_id, code, name, COALESCE(description, ''), product_type, category_id, COALESCE(unit, 'pcs'),
-			COALESCE(purchase_price, 0), COALESCE(sale_price, 0), vat_rate,
-			COALESCE(min_stock_level, 0), COALESCE(current_stock, 0), COALESCE(reorder_point, 0),
-			sale_account_id, purchase_account_id, inventory_account_id,
-			COALESCE(track_inventory, false), COALESCE(is_active, true), COALESCE(barcode, ''),
-			supplier_id, COALESCE(lead_time_days, 0), created_at, updated_at
-		FROM %s
-		WHERE tenant_id = $1`
-
-	args := []interface{}{tenantID}
-	argNum := 2
-
-	if filter != nil {
-		if filter.ProductType != "" {
-			query += fmt.Sprintf(" AND product_type = $%d", argNum)
-			args = append(args, filter.ProductType)
-			argNum++
-		}
-		if filter.Status != "" {
-			// Map status to is_active
-			isActive := filter.Status == "ACTIVE"
-			query += fmt.Sprintf(" AND is_active = $%d", argNum)
-			args = append(args, isActive)
-			argNum++
-		}
-		if filter.CategoryID != "" {
-			query += fmt.Sprintf(" AND category_id = $%d", argNum)
-			args = append(args, filter.CategoryID)
-			argNum++
-		}
-		if filter.Search != "" {
-			query += fmt.Sprintf(" AND (name ILIKE $%d OR code ILIKE $%d)", argNum, argNum)
-			args = append(args, "%"+filter.Search+"%")
-			// argNum not incremented as it's the last filter
-		}
-		if filter.LowStock {
-			query += " AND current_stock <= reorder_point"
-		}
-	}
-
-	query += " ORDER BY name"
-
-	rows, err := r.queryInTable(ctx, schemaName, "products", query, args...)
+func (r *GORMRepository) ListProducts(ctx context.Context, schemaName, tenantID string, filter *ProductFilter) ([]Product, error) {
+	db, err := r.tenantTable(ctx, schemaName, "products")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var products []Product
-	for rows.Next() {
-		var p Product
-		var categoryID, saleAcctID, purchaseAcctID, inventoryAcctID, supplierID *string
-		err := rows.Scan(
-			&p.ID, &p.TenantID, &p.Code, &p.Name, &p.Description, &p.ProductType,
-			&categoryID, &p.Unit, &p.PurchasePrice, &p.SalesPrice, &p.VATRate,
-			&p.MinStockLevel, &p.CurrentStock, &p.ReorderPoint,
-			&saleAcctID, &purchaseAcctID, &inventoryAcctID, &p.TrackInventory, &p.IsActive, &p.Barcode,
-			&supplierID, &p.LeadTimeDays, &p.CreatedAt, &p.UpdatedAt,
-		)
-		if err != nil {
-			return nil, err
+	query := db.Select(productSelectColumns()).Where("tenant_id = ?", tenantID)
+	if filter != nil {
+		if filter.ProductType != "" {
+			query = query.Where("product_type = ?", filter.ProductType)
 		}
-
-		if categoryID != nil {
-			p.CategoryID = *categoryID
+		if filter.Status != "" {
+			query = query.Where("is_active = ?", filter.Status == ProductStatusActive)
 		}
-		if saleAcctID != nil {
-			p.SaleAccountID = *saleAcctID
+		if filter.CategoryID != "" {
+			query = query.Where("category_id = ?", filter.CategoryID)
 		}
-		if purchaseAcctID != nil {
-			p.PurchaseAccountID = *purchaseAcctID
+		if filter.Search != "" {
+			searchPattern := "%" + filter.Search + "%"
+			query = query.Where("name ILIKE ? OR code ILIKE ?", searchPattern, searchPattern)
 		}
-		if inventoryAcctID != nil {
-			p.InventoryAccountID = *inventoryAcctID
+		if filter.LowStock {
+			query = query.Where("current_stock <= reorder_point")
 		}
-		if supplierID != nil {
-			p.SupplierID = *supplierID
-		}
-
-		products = append(products, p)
 	}
 
+	var rows []productRow
+	if err := query.Order("name ASC").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	products := make([]Product, 0, len(rows))
+	for _, row := range rows {
+		products = append(products, *productFromRow(row))
+	}
 	return products, nil
 }
 
 // UpdateProduct updates a product
-func (r *PostgresRepository) UpdateProduct(ctx context.Context, schemaName string, product *Product) error {
-	query := `
-		UPDATE %s SET
-			name = $1, description = $2, category_id = $3, unit = $4,
-			purchase_price = $5, sale_price = $6, vat_rate = $7,
-			min_stock_level = $8, reorder_point = $9,
-			sale_account_id = $10, purchase_account_id = $11, inventory_account_id = $12,
-			track_inventory = $13, is_active = $14, barcode = $15, supplier_id = $16, lead_time_days = $17, updated_at = $18
-		WHERE id = $19 AND tenant_id = $20`
-
-	return r.execInTable(ctx, schemaName, "products", query,
-		product.Name, product.Description, nullIfEmpty(product.CategoryID), product.Unit,
-		product.PurchasePrice, product.SalesPrice, product.VATRate,
-		product.MinStockLevel, product.ReorderPoint,
-		nullIfEmpty(product.SaleAccountID), nullIfEmpty(product.PurchaseAccountID),
-		nullIfEmpty(product.InventoryAccountID), product.TrackInventory, product.IsActive, product.Barcode,
-		nullIfEmpty(product.SupplierID), product.LeadTimeDays, product.UpdatedAt,
-		product.ID, product.TenantID,
-	)
+func (r *GORMRepository) UpdateProduct(ctx context.Context, schemaName string, product *Product) error {
+	db, err := r.tenantTable(ctx, schemaName, "products")
+	if err != nil {
+		return err
+	}
+	return db.Where("id = ? AND tenant_id = ?", product.ID, product.TenantID).
+		Updates(productUpdateValues(product)).Error
 }
 
 // DeleteProduct deletes a product
-func (r *PostgresRepository) DeleteProduct(ctx context.Context, schemaName, tenantID, productID string) error {
-	query := `DELETE FROM %s WHERE id = $1 AND tenant_id = $2`
-	return r.execInTable(ctx, schemaName, "products", query, productID, tenantID)
+func (r *GORMRepository) DeleteProduct(ctx context.Context, schemaName, tenantID, productID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "products")
+	if err != nil {
+		return err
+	}
+	return db.Where("id = ? AND tenant_id = ?", productID, tenantID).Delete(map[string]interface{}{}).Error
 }
 
 // GenerateCode generates a unique product code
-func (r *PostgresRepository) GenerateCode(ctx context.Context, schemaName, tenantID string) (string, error) {
-	query := `SELECT COALESCE(MAX(CAST(SUBSTRING(code FROM 'PRD-([0-9]+)') AS INTEGER)), 0) + 1 FROM %s WHERE tenant_id = $1 AND code LIKE 'PRD-%%'`
-	row, err := r.queryRowInTable(ctx, schemaName, "products", query, tenantID)
+func (r *GORMRepository) GenerateCode(ctx context.Context, schemaName, tenantID string) (string, error) {
+	db, err := r.tenantTable(ctx, schemaName, "products")
 	if err != nil {
 		return "", err
 	}
 
-	var nextNum int
-	if err := row.Scan(&nextNum); err != nil {
-		nextNum = 1
+	var row struct {
+		NextNum int `gorm:"column:next_num"`
 	}
-
-	return fmt.Sprintf("PRD-%05d", nextNum), nil
+	if err := db.
+		Select("COALESCE(MAX(CAST(SUBSTRING(code FROM 'PRD-([0-9]+)') AS INTEGER)), 0) + 1 AS next_num").
+		Where("tenant_id = ? AND code LIKE ?", tenantID, "PRD-%").
+		Scan(&row).Error; err != nil {
+		return "", err
+	}
+	if row.NextNum == 0 {
+		row.NextNum = 1
+	}
+	return fmt.Sprintf("PRD-%05d", row.NextNum), nil
 }
 
 // CreateCategory creates a new category
-func (r *PostgresRepository) CreateCategory(ctx context.Context, schemaName string, category *ProductCategory) error {
-	query := `INSERT INTO %s (id, tenant_id, name, description, parent_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`
-
-	return r.execInTable(ctx, schemaName, "product_categories", query,
-		category.ID, category.TenantID, category.Name, category.Description,
-		nullIfEmpty(category.ParentID), category.CreatedAt, category.UpdatedAt,
-	)
+func (r *GORMRepository) CreateCategory(ctx context.Context, schemaName string, category *ProductCategory) error {
+	db, err := r.tenantTable(ctx, schemaName, "product_categories")
+	if err != nil {
+		return err
+	}
+	return db.Create(map[string]interface{}{
+		"id":          category.ID,
+		"tenant_id":   category.TenantID,
+		"name":        category.Name,
+		"description": category.Description,
+		"parent_id":   nullableString(category.ParentID),
+		"created_at":  category.CreatedAt,
+		"updated_at":  category.UpdatedAt,
+	}).Error
 }
 
 // GetCategoryByID retrieves a category by ID
-func (r *PostgresRepository) GetCategoryByID(ctx context.Context, schemaName, tenantID, categoryID string) (*ProductCategory, error) {
-	query := `SELECT id, tenant_id, name, COALESCE(description, ''), parent_id, created_at, updated_at FROM %s WHERE id = $1 AND tenant_id = $2`
-	row, err := r.queryRowInTable(ctx, schemaName, "product_categories", query, categoryID, tenantID)
+func (r *GORMRepository) GetCategoryByID(ctx context.Context, schemaName, tenantID, categoryID string) (*ProductCategory, error) {
+	db, err := r.tenantTable(ctx, schemaName, "product_categories")
 	if err != nil {
 		return nil, err
 	}
 
-	var c ProductCategory
-	var parentID *string
-	err = row.Scan(&c.ID, &c.TenantID, &c.Name, &c.Description, &parentID, &c.CreatedAt, &c.UpdatedAt)
+	var row productCategoryRow
+	err = db.Select("id, tenant_id, name, COALESCE(description, '') AS description, parent_id, created_at, updated_at").
+		Where("id = ? AND tenant_id = ?", categoryID, tenantID).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("category not found")
+	}
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("category not found")
-		}
 		return nil, err
 	}
-
-	if parentID != nil {
-		c.ParentID = *parentID
-	}
-
-	return &c, nil
+	return productCategoryFromRow(row), nil
 }
 
 // ListCategories retrieves all categories for a tenant
-func (r *PostgresRepository) ListCategories(ctx context.Context, schemaName, tenantID string) ([]ProductCategory, error) {
-	query := `SELECT id, tenant_id, name, COALESCE(description, ''), parent_id, created_at, updated_at FROM %s WHERE tenant_id = $1 ORDER BY name`
-	rows, err := r.queryInTable(ctx, schemaName, "product_categories", query, tenantID)
+func (r *GORMRepository) ListCategories(ctx context.Context, schemaName, tenantID string) ([]ProductCategory, error) {
+	db, err := r.tenantTable(ctx, schemaName, "product_categories")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var categories []ProductCategory
-	for rows.Next() {
-		var c ProductCategory
-		var parentID *string
-		if err := rows.Scan(&c.ID, &c.TenantID, &c.Name, &c.Description, &parentID, &c.CreatedAt, &c.UpdatedAt); err != nil {
-			return nil, err
-		}
-		if parentID != nil {
-			c.ParentID = *parentID
-		}
-		categories = append(categories, c)
+	var rows []productCategoryRow
+	if err := db.Select("id, tenant_id, name, COALESCE(description, '') AS description, parent_id, created_at, updated_at").
+		Where("tenant_id = ?", tenantID).
+		Order("name ASC").
+		Scan(&rows).Error; err != nil {
+		return nil, err
 	}
 
+	categories := make([]ProductCategory, 0, len(rows))
+	for _, row := range rows {
+		categories = append(categories, *productCategoryFromRow(row))
+	}
 	return categories, nil
 }
 
 // DeleteCategory deletes a category
-func (r *PostgresRepository) DeleteCategory(ctx context.Context, schemaName, tenantID, categoryID string) error {
-	query := `DELETE FROM %s WHERE id = $1 AND tenant_id = $2`
-	return r.execInTable(ctx, schemaName, "product_categories", query, categoryID, tenantID)
+func (r *GORMRepository) DeleteCategory(ctx context.Context, schemaName, tenantID, categoryID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "product_categories")
+	if err != nil {
+		return err
+	}
+	return db.Where("id = ? AND tenant_id = ?", categoryID, tenantID).Delete(map[string]interface{}{}).Error
 }
 
 // CreateWarehouse creates a new warehouse
-func (r *PostgresRepository) CreateWarehouse(ctx context.Context, schemaName string, warehouse *Warehouse) error {
-	query := `INSERT INTO %s (id, tenant_id, code, name, address, is_default, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
-
-	return r.execInTable(ctx, schemaName, "warehouses", query,
-		warehouse.ID, warehouse.TenantID, warehouse.Code, warehouse.Name, warehouse.Address,
-		warehouse.IsDefault, warehouse.IsActive, warehouse.CreatedAt, warehouse.UpdatedAt,
-	)
+func (r *GORMRepository) CreateWarehouse(ctx context.Context, schemaName string, warehouse *Warehouse) error {
+	db, err := r.tenantTable(ctx, schemaName, "warehouses")
+	if err != nil {
+		return err
+	}
+	return db.Create(map[string]interface{}{
+		"id":         warehouse.ID,
+		"tenant_id":  warehouse.TenantID,
+		"code":       warehouse.Code,
+		"name":       warehouse.Name,
+		"address":    warehouse.Address,
+		"is_default": warehouse.IsDefault,
+		"is_active":  warehouse.IsActive,
+		"created_at": warehouse.CreatedAt,
+		"updated_at": warehouse.UpdatedAt,
+	}).Error
 }
 
 // GetWarehouseByID retrieves a warehouse by ID
-func (r *PostgresRepository) GetWarehouseByID(ctx context.Context, schemaName, tenantID, warehouseID string) (*Warehouse, error) {
-	query := `SELECT id, tenant_id, code, name, COALESCE(address, ''), is_default, is_active, created_at, updated_at FROM %s WHERE id = $1 AND tenant_id = $2`
-	row, err := r.queryRowInTable(ctx, schemaName, "warehouses", query, warehouseID, tenantID)
+func (r *GORMRepository) GetWarehouseByID(ctx context.Context, schemaName, tenantID, warehouseID string) (*Warehouse, error) {
+	db, err := r.tenantTable(ctx, schemaName, "warehouses")
 	if err != nil {
 		return nil, err
 	}
 
-	var w Warehouse
-	err = row.Scan(&w.ID, &w.TenantID, &w.Code, &w.Name, &w.Address, &w.IsDefault, &w.IsActive, &w.CreatedAt, &w.UpdatedAt)
+	var warehouse Warehouse
+	err = db.Select("id, tenant_id, code, name, COALESCE(address, '') AS address, is_default, is_active, created_at, updated_at").
+		Where("id = ? AND tenant_id = ?", warehouseID, tenantID).
+		Take(&warehouse).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("warehouse not found")
+	}
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("warehouse not found")
-		}
 		return nil, err
 	}
-
-	return &w, nil
+	return &warehouse, nil
 }
 
 // ListWarehouses retrieves all warehouses for a tenant
-func (r *PostgresRepository) ListWarehouses(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Warehouse, error) {
-	query := `SELECT id, tenant_id, code, name, COALESCE(address, ''), is_default, is_active, created_at, updated_at FROM %s WHERE tenant_id = $1`
-	if activeOnly {
-		query += " AND is_active = true"
-	}
-	query += " ORDER BY name"
-
-	rows, err := r.queryInTable(ctx, schemaName, "warehouses", query, tenantID)
+func (r *GORMRepository) ListWarehouses(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Warehouse, error) {
+	db, err := r.tenantTable(ctx, schemaName, "warehouses")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var warehouses []Warehouse
-	for rows.Next() {
-		var w Warehouse
-		if err := rows.Scan(&w.ID, &w.TenantID, &w.Code, &w.Name, &w.Address, &w.IsDefault, &w.IsActive, &w.CreatedAt, &w.UpdatedAt); err != nil {
-			return nil, err
-		}
-		warehouses = append(warehouses, w)
+	query := db.Select("id, tenant_id, code, name, COALESCE(address, '') AS address, is_default, is_active, created_at, updated_at").
+		Where("tenant_id = ?", tenantID)
+	if activeOnly {
+		query = query.Where("is_active = ?", true)
 	}
 
+	var warehouses []Warehouse
+	if err := query.Order("name ASC").Scan(&warehouses).Error; err != nil {
+		return nil, err
+	}
 	return warehouses, nil
 }
 
 // UpdateWarehouse updates a warehouse
-func (r *PostgresRepository) UpdateWarehouse(ctx context.Context, schemaName string, warehouse *Warehouse) error {
-	query := `UPDATE %s SET name = $1, address = $2, is_default = $3, is_active = $4, updated_at = $5 WHERE id = $6 AND tenant_id = $7`
-	return r.execInTable(ctx, schemaName, "warehouses", query,
-		warehouse.Name, warehouse.Address, warehouse.IsDefault, warehouse.IsActive, warehouse.UpdatedAt,
-		warehouse.ID, warehouse.TenantID,
-	)
+func (r *GORMRepository) UpdateWarehouse(ctx context.Context, schemaName string, warehouse *Warehouse) error {
+	db, err := r.tenantTable(ctx, schemaName, "warehouses")
+	if err != nil {
+		return err
+	}
+	return db.Where("id = ? AND tenant_id = ?", warehouse.ID, warehouse.TenantID).
+		Updates(map[string]interface{}{
+			"name":       warehouse.Name,
+			"address":    warehouse.Address,
+			"is_default": warehouse.IsDefault,
+			"is_active":  warehouse.IsActive,
+			"updated_at": warehouse.UpdatedAt,
+		}).Error
 }
 
 // DeleteWarehouse deletes a warehouse
-func (r *PostgresRepository) DeleteWarehouse(ctx context.Context, schemaName, tenantID, warehouseID string) error {
-	query := `DELETE FROM %s WHERE id = $1 AND tenant_id = $2`
-	return r.execInTable(ctx, schemaName, "warehouses", query, warehouseID, tenantID)
+func (r *GORMRepository) DeleteWarehouse(ctx context.Context, schemaName, tenantID, warehouseID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "warehouses")
+	if err != nil {
+		return err
+	}
+	return db.Where("id = ? AND tenant_id = ?", warehouseID, tenantID).Delete(map[string]interface{}{}).Error
 }
 
 // GetStockLevel retrieves stock level for a product in a warehouse
-func (r *PostgresRepository) GetStockLevel(ctx context.Context, schemaName, tenantID, productID, warehouseID string) (*StockLevel, error) {
-	query := `SELECT id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated FROM %s WHERE product_id = $1 AND warehouse_id = $2 AND tenant_id = $3`
-	row, err := r.queryRowInTable(ctx, schemaName, "stock_levels", query, productID, warehouseID, tenantID)
+func (r *GORMRepository) GetStockLevel(ctx context.Context, schemaName, tenantID, productID, warehouseID string) (*StockLevel, error) {
+	db, err := r.tenantTable(ctx, schemaName, "stock_levels")
 	if err != nil {
 		return nil, err
 	}
 
-	var s StockLevel
-	err = row.Scan(&s.ID, &s.TenantID, &s.ProductID, &s.WarehouseID, &s.Quantity, &s.ReservedQty, &s.AvailableQty, &s.LastUpdated)
+	var level StockLevel
+	err = db.Select("id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated").
+		Where("product_id = ? AND warehouse_id = ? AND tenant_id = ?", productID, warehouseID, tenantID).
+		Take(&level).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("stock level not found")
+	}
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("stock level not found")
-		}
 		return nil, err
 	}
-
-	return &s, nil
+	return &level, nil
 }
 
 // GetStockLevelsByProduct retrieves all stock levels for a product
-func (r *PostgresRepository) GetStockLevelsByProduct(ctx context.Context, schemaName, tenantID, productID string) ([]StockLevel, error) {
-	query := `SELECT id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated FROM %s WHERE product_id = $1 AND tenant_id = $2`
-	rows, err := r.queryInTable(ctx, schemaName, "stock_levels", query, productID, tenantID)
+func (r *GORMRepository) GetStockLevelsByProduct(ctx context.Context, schemaName, tenantID, productID string) ([]StockLevel, error) {
+	db, err := r.tenantTable(ctx, schemaName, "stock_levels")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	var levels []StockLevel
-	for rows.Next() {
-		var s StockLevel
-		if err := rows.Scan(&s.ID, &s.TenantID, &s.ProductID, &s.WarehouseID, &s.Quantity, &s.ReservedQty, &s.AvailableQty, &s.LastUpdated); err != nil {
-			return nil, err
-		}
-		levels = append(levels, s)
+	if err := db.Select("id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated").
+		Where("product_id = ? AND tenant_id = ?", productID, tenantID).
+		Scan(&levels).Error; err != nil {
+		return nil, err
 	}
-
 	return levels, nil
 }
 
 // UpsertStockLevel creates or updates a stock level
-func (r *PostgresRepository) UpsertStockLevel(ctx context.Context, schemaName string, level *StockLevel) error {
-	query := `
-		INSERT INTO %s (id, tenant_id, product_id, warehouse_id, quantity, reserved_qty, available_qty, last_updated)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (tenant_id, product_id, warehouse_id) DO UPDATE SET
-			quantity = EXCLUDED.quantity,
-			reserved_qty = EXCLUDED.reserved_qty,
-			available_qty = EXCLUDED.available_qty,
-			last_updated = EXCLUDED.last_updated`
-
-	return r.execInTable(ctx, schemaName, "stock_levels", query,
-		level.ID, level.TenantID, level.ProductID, level.WarehouseID,
-		level.Quantity, level.ReservedQty, level.AvailableQty, level.LastUpdated,
-	)
+func (r *GORMRepository) UpsertStockLevel(ctx context.Context, schemaName string, level *StockLevel) error {
+	db, err := r.tenantTable(ctx, schemaName, "stock_levels")
+	if err != nil {
+		return err
+	}
+	return db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "tenant_id"},
+			{Name: "product_id"},
+			{Name: "warehouse_id"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"quantity":      level.Quantity,
+			"reserved_qty":  level.ReservedQty,
+			"available_qty": level.AvailableQty,
+			"last_updated":  level.LastUpdated,
+		}),
+	}).Create(map[string]interface{}{
+		"id":            level.ID,
+		"tenant_id":     level.TenantID,
+		"product_id":    level.ProductID,
+		"warehouse_id":  nullableString(level.WarehouseID),
+		"quantity":      level.Quantity,
+		"reserved_qty":  level.ReservedQty,
+		"available_qty": level.AvailableQty,
+		"last_updated":  level.LastUpdated,
+	}).Error
 }
 
-// CreateMovement creates a new inventory movement
-func (r *PostgresRepository) CreateMovement(ctx context.Context, schemaName string, movement *InventoryMovement) error {
-	query := `
-		INSERT INTO %s (
-			id, tenant_id, product_id, warehouse_id, movement_type, quantity, unit_cost, total_cost,
-			reference, to_warehouse_id, notes, movement_date, created_at, created_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
-
-	return r.execInTable(ctx, schemaName, "inventory_movements", query,
-		movement.ID, movement.TenantID, movement.ProductID, movement.WarehouseID,
-		movement.MovementType, movement.Quantity, movement.UnitCost, movement.TotalCost,
-		movement.Reference, nullIfEmpty(movement.ToWarehouseID), movement.Notes, movement.MovementDate,
-		movement.CreatedAt, movement.CreatedBy,
-	)
-}
-
-// ListMovements retrieves inventory movements for a product
-func (r *PostgresRepository) ListMovements(ctx context.Context, schemaName, tenantID, productID string) ([]InventoryMovement, error) {
-	query := `
-		SELECT id, tenant_id, product_id, warehouse_id, movement_type, quantity, unit_cost, total_cost,
-			COALESCE(reference, ''), to_warehouse_id, COALESCE(notes, ''), movement_date, created_at, COALESCE(created_by::text, '')
-		FROM %s
-		WHERE tenant_id = $1 AND product_id = $2
-		ORDER BY movement_date DESC, created_at DESC`
-
-	rows, err := r.queryInTable(ctx, schemaName, "inventory_movements", query, tenantID, productID)
+// ListLotReservations retrieves active tracked-lot reservations for one product and warehouse.
+func (r *GORMRepository) ListLotReservations(ctx context.Context, schemaName, tenantID, productID, warehouseID string) ([]InventoryLotReservation, error) {
+	db, err := r.tenantTable(ctx, schemaName, "inventory_lot_reservations")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var movements []InventoryMovement
-	for rows.Next() {
-		var m InventoryMovement
-		var toWarehouseID *string
-		if err := rows.Scan(
-			&m.ID, &m.TenantID, &m.ProductID, &m.WarehouseID, &m.MovementType,
-			&m.Quantity, &m.UnitCost, &m.TotalCost, &m.Reference,
-			&toWarehouseID, &m.Notes, &m.MovementDate, &m.CreatedAt, &m.CreatedBy,
-		); err != nil {
-			return nil, err
-		}
-		if toWarehouseID != nil {
-			m.ToWarehouseID = *toWarehouseID
-		}
-		movements = append(movements, m)
+	var reservations []InventoryLotReservation
+	if err := db.Select(`
+			id, tenant_id, product_id, warehouse_id,
+			COALESCE(lot_number, '') AS lot_number,
+			COALESCE(serial_number, '') AS serial_number,
+			COALESCE(expiry_date, '') AS expiry_date,
+			quantity,
+			COALESCE(reason, '') AS reason,
+			created_at,
+			updated_at,
+			COALESCE(created_by::text, '') AS created_by
+		`).
+		Where("tenant_id = ? AND product_id = ? AND warehouse_id = ? AND quantity > 0", tenantID, productID, warehouseID).
+		Order("NULLIF(expiry_date, '') ASC NULLS LAST, lot_number ASC, serial_number ASC, created_at ASC").
+		Scan(&reservations).Error; err != nil {
+		return nil, err
+	}
+	return reservations, nil
+}
+
+// UpsertLotReservation increases or creates a tracked-lot reservation.
+func (r *GORMRepository) UpsertLotReservation(ctx context.Context, schemaName string, reservation *InventoryLotReservation) error {
+	db, err := r.tenantTable(ctx, schemaName, "inventory_lot_reservations")
+	if err != nil {
+		return err
+	}
+	return db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "tenant_id"},
+			{Name: "product_id"},
+			{Name: "warehouse_id"},
+			{Name: "lot_number"},
+			{Name: "serial_number"},
+			{Name: "expiry_date"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"quantity":   gorm.Expr("inventory_lot_reservations.quantity + EXCLUDED.quantity"),
+			"reason":     gorm.Expr("COALESCE(EXCLUDED.reason, inventory_lot_reservations.reason)"),
+			"updated_at": reservation.UpdatedAt,
+			"created_by": nullableString(reservation.CreatedBy),
+		}),
+	}).Create(map[string]interface{}{
+		"id":            reservation.ID,
+		"tenant_id":     reservation.TenantID,
+		"product_id":    reservation.ProductID,
+		"warehouse_id":  reservation.WarehouseID,
+		"lot_number":    strings.TrimSpace(reservation.LotNumber),
+		"serial_number": strings.TrimSpace(reservation.SerialNumber),
+		"expiry_date":   strings.TrimSpace(reservation.ExpiryDate),
+		"quantity":      reservation.Quantity,
+		"reason":        nullableString(reservation.Reason),
+		"created_at":    reservation.CreatedAt,
+		"updated_at":    reservation.UpdatedAt,
+		"created_by":    nullableString(reservation.CreatedBy),
+	}).Error
+}
+
+// ReleaseLotReservation decreases a tracked-lot reservation.
+func (r *GORMRepository) ReleaseLotReservation(
+	ctx context.Context,
+	schemaName, tenantID, productID, warehouseID, lotNumber, serialNumber, expiryDate string,
+	quantity decimal.Decimal,
+	reason, releasedBy string,
+) (*InventoryLotReservation, error) {
+	db, err := r.tenantTable(ctx, schemaName, "inventory_lot_reservations")
+	if err != nil {
+		return nil, err
 	}
 
+	now := time.Now()
+	result := db.
+		Where(`
+			tenant_id = ? AND product_id = ? AND warehouse_id = ?
+			AND lot_number = ? AND serial_number = ? AND expiry_date = ?
+			AND quantity >= ?
+		`, tenantID, productID, warehouseID, strings.TrimSpace(lotNumber), strings.TrimSpace(serialNumber), strings.TrimSpace(expiryDate), quantity).
+		Updates(map[string]interface{}{
+			"quantity":   gorm.Expr("quantity - ?", quantity),
+			"reason":     nullableString(reason),
+			"updated_at": now,
+			"created_by": nullableString(releasedBy),
+		})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, fmt.Errorf("tracked lot reservation not found")
+	}
+
+	reservations, err := r.ListLotReservations(ctx, schemaName, tenantID, productID, warehouseID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range reservations {
+		reservation := reservations[i]
+		if reservation.LotNumber == strings.TrimSpace(lotNumber) &&
+			reservation.SerialNumber == strings.TrimSpace(serialNumber) &&
+			reservation.ExpiryDate == strings.TrimSpace(expiryDate) {
+			return &reservation, nil
+		}
+	}
+
+	return &InventoryLotReservation{
+		TenantID:     tenantID,
+		ProductID:    productID,
+		WarehouseID:  warehouseID,
+		LotNumber:    strings.TrimSpace(lotNumber),
+		SerialNumber: strings.TrimSpace(serialNumber),
+		ExpiryDate:   strings.TrimSpace(expiryDate),
+		Quantity:     decimal.Zero,
+		Reason:       reason,
+		UpdatedAt:    now,
+		CreatedBy:    releasedBy,
+	}, nil
+}
+
+// CreateMovement creates a new inventory movement
+func (r *GORMRepository) CreateMovement(ctx context.Context, schemaName string, movement *InventoryMovement) error {
+	db, err := r.tenantTable(ctx, schemaName, "inventory_movements")
+	if err != nil {
+		return err
+	}
+	return db.Create(map[string]interface{}{
+		"id":              movement.ID,
+		"tenant_id":       movement.TenantID,
+		"product_id":      movement.ProductID,
+		"warehouse_id":    movement.WarehouseID,
+		"movement_type":   movement.MovementType,
+		"quantity":        movement.Quantity,
+		"unit_cost":       movement.UnitCost,
+		"total_cost":      movement.TotalCost,
+		"lot_number":      nullableString(movement.LotNumber),
+		"serial_number":   nullableString(movement.SerialNumber),
+		"expiry_date":     nullableString(movement.ExpiryDate),
+		"reference":       movement.Reference,
+		"source_type":     nullableString(movement.SourceType),
+		"source_id":       nullableString(movement.SourceID),
+		"to_warehouse_id": nullableString(movement.ToWarehouseID),
+		"notes":           movement.Notes,
+		"movement_date":   movement.MovementDate,
+		"created_at":      movement.CreatedAt,
+		"created_by":      nullableString(movement.CreatedBy),
+	}).Error
+}
+
+// ListMovements retrieves inventory movements for a product
+func (r *GORMRepository) ListMovements(ctx context.Context, schemaName, tenantID, productID string) ([]InventoryMovement, error) {
+	db, err := r.tenantTable(ctx, schemaName, "inventory_movements")
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []inventoryMovementRow
+	if err := db.Select(`
+			id, tenant_id, product_id, warehouse_id, movement_type, quantity, unit_cost, total_cost,
+			COALESCE(lot_number, '') AS lot_number,
+			COALESCE(serial_number, '') AS serial_number,
+			COALESCE(expiry_date::text, '') AS expiry_date,
+			COALESCE(reference, '') AS reference,
+			COALESCE(source_type, '') AS source_type,
+			COALESCE(source_id::text, '') AS source_id,
+			to_warehouse_id,
+			COALESCE(notes, '') AS notes,
+			movement_date,
+			created_at,
+			COALESCE(created_by::text, '') AS created_by
+		`).
+		Where("tenant_id = ? AND product_id = ?", tenantID, productID).
+		Order("movement_date DESC, created_at DESC").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	movements := make([]InventoryMovement, 0, len(rows))
+	for _, row := range rows {
+		movements = append(movements, *inventoryMovementFromRow(row))
+	}
 	return movements, nil
 }
 
-// nullIfEmpty returns nil if the string is empty
-func nullIfEmpty(s string) interface{} {
+// UpdateProductStock updates the current stock of a product
+func (r *GORMRepository) UpdateProductStock(ctx context.Context, schemaName, tenantID, productID string, newStock decimal.Decimal) error {
+	db, err := r.tenantTable(ctx, schemaName, "products")
+	if err != nil {
+		return err
+	}
+	return db.Where("id = ? AND tenant_id = ?", productID, tenantID).
+		Updates(map[string]interface{}{
+			"current_stock": newStock,
+			"updated_at":    time.Now(),
+		}).Error
+}
+
+func productSelectColumns() string {
+	return `
+		id, tenant_id, code, name, COALESCE(description, '') AS description, product_type, category_id,
+		COALESCE(unit, 'pcs') AS unit,
+		COALESCE(purchase_price, 0) AS purchase_price,
+		COALESCE(sale_price, 0) AS sales_price,
+		vat_rate,
+		COALESCE(min_stock_level, 0) AS min_stock_level,
+		COALESCE(current_stock, 0) AS current_stock,
+		COALESCE(reorder_point, 0) AS reorder_point,
+		sale_account_id,
+		purchase_account_id,
+		inventory_account_id,
+		COALESCE(track_inventory, false) AS track_inventory,
+		COALESCE(is_active, true) AS is_active,
+		COALESCE(barcode, '') AS barcode,
+		supplier_id,
+		COALESCE(lead_time_days, 0) AS lead_time_days,
+		created_at,
+		updated_at
+	`
+}
+
+func productCreateValues(product *Product) map[string]interface{} {
+	return map[string]interface{}{
+		"id":                   product.ID,
+		"tenant_id":            product.TenantID,
+		"code":                 product.Code,
+		"name":                 product.Name,
+		"description":          product.Description,
+		"product_type":         product.ProductType,
+		"category_id":          nullableString(product.CategoryID),
+		"unit":                 product.Unit,
+		"purchase_price":       product.PurchasePrice,
+		"sale_price":           product.SalesPrice,
+		"vat_rate":             product.VATRate,
+		"min_stock_level":      product.MinStockLevel,
+		"current_stock":        product.CurrentStock,
+		"reorder_point":        product.ReorderPoint,
+		"sale_account_id":      nullableString(product.SaleAccountID),
+		"purchase_account_id":  nullableString(product.PurchaseAccountID),
+		"inventory_account_id": nullableString(product.InventoryAccountID),
+		"track_inventory":      product.TrackInventory,
+		"is_active":            product.IsActive,
+		"barcode":              product.Barcode,
+		"supplier_id":          nullableString(product.SupplierID),
+		"lead_time_days":       product.LeadTimeDays,
+		"created_at":           product.CreatedAt,
+		"updated_at":           product.UpdatedAt,
+	}
+}
+
+func productUpdateValues(product *Product) map[string]interface{} {
+	return map[string]interface{}{
+		"name":                 product.Name,
+		"description":          product.Description,
+		"category_id":          nullableString(product.CategoryID),
+		"unit":                 product.Unit,
+		"purchase_price":       product.PurchasePrice,
+		"sale_price":           product.SalesPrice,
+		"vat_rate":             product.VATRate,
+		"min_stock_level":      product.MinStockLevel,
+		"reorder_point":        product.ReorderPoint,
+		"sale_account_id":      nullableString(product.SaleAccountID),
+		"purchase_account_id":  nullableString(product.PurchaseAccountID),
+		"inventory_account_id": nullableString(product.InventoryAccountID),
+		"track_inventory":      product.TrackInventory,
+		"is_active":            product.IsActive,
+		"barcode":              product.Barcode,
+		"supplier_id":          nullableString(product.SupplierID),
+		"lead_time_days":       product.LeadTimeDays,
+		"updated_at":           product.UpdatedAt,
+	}
+}
+
+func nullableString(s string) interface{} {
 	if s == "" {
 		return nil
 	}
 	return s
 }
 
-// UpdateProductStock updates the current stock of a product
-func (r *PostgresRepository) UpdateProductStock(ctx context.Context, schemaName, tenantID, productID string, newStock decimal.Decimal) error {
-	query := `UPDATE %s SET current_stock = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`
-	return r.execInTable(ctx, schemaName, "products", query, newStock, productID, tenantID)
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+type productRow struct {
+	ID                 string
+	TenantID           string
+	Code               string
+	Name               string
+	Description        string
+	ProductType        ProductType
+	CategoryID         *string
+	Unit               string
+	PurchasePrice      decimal.Decimal
+	SalesPrice         decimal.Decimal `gorm:"column:sales_price"`
+	VATRate            decimal.Decimal
+	MinStockLevel      decimal.Decimal
+	CurrentStock       decimal.Decimal
+	ReorderPoint       decimal.Decimal
+	SaleAccountID      *string
+	PurchaseAccountID  *string
+	InventoryAccountID *string
+	TrackInventory     bool
+	IsActive           bool
+	Barcode            string
+	SupplierID         *string
+	LeadTimeDays       int
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+func productFromRow(row productRow) *Product {
+	return &Product{
+		ID:                 row.ID,
+		TenantID:           row.TenantID,
+		Code:               row.Code,
+		Name:               row.Name,
+		Description:        row.Description,
+		ProductType:        row.ProductType,
+		CategoryID:         stringValue(row.CategoryID),
+		Unit:               row.Unit,
+		PurchasePrice:      row.PurchasePrice,
+		SalesPrice:         row.SalesPrice,
+		VATRate:            row.VATRate,
+		MinStockLevel:      row.MinStockLevel,
+		CurrentStock:       row.CurrentStock,
+		ReorderPoint:       row.ReorderPoint,
+		SaleAccountID:      stringValue(row.SaleAccountID),
+		PurchaseAccountID:  stringValue(row.PurchaseAccountID),
+		InventoryAccountID: stringValue(row.InventoryAccountID),
+		TrackInventory:     row.TrackInventory,
+		IsActive:           row.IsActive,
+		Barcode:            row.Barcode,
+		SupplierID:         stringValue(row.SupplierID),
+		LeadTimeDays:       row.LeadTimeDays,
+		CreatedAt:          row.CreatedAt,
+		UpdatedAt:          row.UpdatedAt,
+	}
+}
+
+type productCategoryRow struct {
+	ID          string
+	TenantID    string
+	Name        string
+	Description string
+	ParentID    *string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func productCategoryFromRow(row productCategoryRow) *ProductCategory {
+	return &ProductCategory{
+		ID:          row.ID,
+		TenantID:    row.TenantID,
+		Name:        row.Name,
+		Description: row.Description,
+		ParentID:    stringValue(row.ParentID),
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
+	}
+}
+
+type inventoryMovementRow struct {
+	ID            string
+	TenantID      string
+	ProductID     string
+	WarehouseID   string
+	MovementType  MovementType
+	Quantity      decimal.Decimal
+	UnitCost      decimal.Decimal
+	TotalCost     decimal.Decimal
+	LotNumber     string
+	SerialNumber  string
+	ExpiryDate    string
+	Reference     string
+	SourceType    string
+	SourceID      string
+	ToWarehouseID *string
+	Notes         string
+	MovementDate  time.Time
+	CreatedAt     time.Time
+	CreatedBy     string
+}
+
+func inventoryMovementFromRow(row inventoryMovementRow) *InventoryMovement {
+	return &InventoryMovement{
+		ID:            row.ID,
+		TenantID:      row.TenantID,
+		ProductID:     row.ProductID,
+		WarehouseID:   row.WarehouseID,
+		MovementType:  row.MovementType,
+		Quantity:      row.Quantity,
+		UnitCost:      row.UnitCost,
+		TotalCost:     row.TotalCost,
+		LotNumber:     row.LotNumber,
+		SerialNumber:  row.SerialNumber,
+		ExpiryDate:    row.ExpiryDate,
+		Reference:     row.Reference,
+		SourceType:    row.SourceType,
+		SourceID:      row.SourceID,
+		ToWarehouseID: stringValue(row.ToWarehouseID),
+		Notes:         row.Notes,
+		MovementDate:  row.MovementDate,
+		CreatedAt:     row.CreatedAt,
+		CreatedBy:     row.CreatedBy,
+	}
 }

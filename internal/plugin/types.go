@@ -84,16 +84,16 @@ type PluginMigration struct {
 
 // PluginInfo represents plugin information from a registry
 type PluginInfo struct {
-	Name        string   `json:"name"`
-	DisplayName string   `json:"display_name"`
-	Description string   `json:"description,omitempty"`
-	Repository  string   `json:"repository"`
-	Version     string   `json:"version"`
-	Author      string   `json:"author,omitempty"`
-	License     string   `json:"license,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Downloads   int      `json:"downloads,omitempty"`
-	Stars       int      `json:"stars,omitempty"`
+	Name        string   `yaml:"name" json:"name"`
+	DisplayName string   `yaml:"display_name" json:"display_name"`
+	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Repository  string   `yaml:"repository" json:"repository"`
+	Version     string   `yaml:"version" json:"version"`
+	Author      string   `yaml:"author,omitempty" json:"author,omitempty"`
+	License     string   `yaml:"license,omitempty" json:"license,omitempty"`
+	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Downloads   int      `yaml:"downloads,omitempty" json:"downloads,omitempty"`
+	Stars       int      `yaml:"stars,omitempty" json:"stars,omitempty"`
 }
 
 // RegistryIndex represents the structure of a registry's plugins.yaml

@@ -7,6 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 )
 
 // OrderStatus represents the status of an order
@@ -154,6 +155,36 @@ type CreateOrderLineRequest struct {
 	ProductID       *string         `json:"product_id,omitempty"`
 }
 
+// ImportOrdersRequest contains CSV payload for order migration.
+type ImportOrdersRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+	UserID     string `json:"-"`
+}
+
+// ImportQuoteReference describes a quote that imported orders can reference.
+type ImportQuoteReference struct {
+	ID          string
+	QuoteNumber string
+}
+
+// ImportOrdersResult summarizes an order CSV import.
+type ImportOrdersResult struct {
+	FileName      string                 `json:"file_name,omitempty"`
+	RowsProcessed int                    `json:"rows_processed"`
+	OrdersCreated int                    `json:"orders_created"`
+	LinesImported int                    `json:"lines_imported"`
+	RowsSkipped   int                    `json:"rows_skipped"`
+	Errors        []ImportOrdersRowError `json:"errors,omitempty"`
+}
+
+// ImportOrdersRowError describes a row-level order import failure.
+type ImportOrdersRowError struct {
+	Row         int    `json:"row"`
+	OrderNumber string `json:"order_number,omitempty"`
+	Message     string `json:"message"`
+}
+
 // UpdateOrderRequest is the request to update an order
 type UpdateOrderRequest struct {
 	ContactID        string                   `json:"contact_id"`
@@ -165,6 +196,20 @@ type UpdateOrderRequest struct {
 	Lines            []CreateOrderLineRequest `json:"lines"`
 }
 
+// ConvertOrderToInvoiceRequest requests conversion of a delivered order into a sales invoice.
+type ConvertOrderToInvoiceRequest struct {
+	IssueDate time.Time `json:"issue_date,omitempty"`
+	DueDate   time.Time `json:"due_date,omitempty"`
+	Notes     string    `json:"notes,omitempty"`
+	UserID    string    `json:"-"`
+}
+
+// OrderInvoiceConversionResult returns the converted order and created invoice.
+type OrderInvoiceConversionResult struct {
+	Order   *Order             `json:"order"`
+	Invoice *invoicing.Invoice `json:"invoice"`
+}
+
 // OrderFilter provides filtering options
 type OrderFilter struct {
 	Status    OrderStatus
@@ -172,4 +217,117 @@ type OrderFilter struct {
 	FromDate  *time.Time
 	ToDate    *time.Time
 	Search    string
+}
+
+const (
+	OrderStockLineStatusAvailable       = "AVAILABLE"
+	OrderStockLineStatusShortage        = "SHORTAGE"
+	OrderStockLineStatusNotTracked      = "NOT_TRACKED"
+	OrderStockLineStatusProductNotFound = "PRODUCT_NOT_FOUND"
+)
+
+const (
+	OrderPickListLineStatusReady           = "READY"
+	OrderPickListLineStatusUnreserved      = "UNRESERVED"
+	OrderPickListLineStatusShortage        = "SHORTAGE"
+	OrderPickListLineStatusNotTracked      = "NOT_TRACKED"
+	OrderPickListLineStatusProductNotFound = "PRODUCT_NOT_FOUND"
+)
+
+const (
+	OrderStockReservationActionReserve  = "RESERVE"
+	OrderStockReservationActionRelease  = "RELEASE"
+	OrderStockReservationStatusReserved = "RESERVED"
+	OrderStockReservationStatusReleased = "RELEASED"
+)
+
+// OrderStockReservation stores the current reserved quantity for one order/product/warehouse.
+type OrderStockReservation struct {
+	ID          string          `json:"id"`
+	TenantID    string          `json:"tenant_id"`
+	OrderID     string          `json:"order_id"`
+	ProductID   string          `json:"product_id"`
+	WarehouseID string          `json:"warehouse_id"`
+	Quantity    decimal.Decimal `json:"quantity"`
+	Status      string          `json:"status"`
+	Reason      string          `json:"reason,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
+	CreatedBy   string          `json:"created_by,omitempty"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	ReleasedAt  *time.Time      `json:"released_at,omitempty"`
+	ReleasedBy  string          `json:"released_by,omitempty"`
+}
+
+// OrderStockCheck summarizes whether an order's product lines can be fulfilled.
+type OrderStockCheck struct {
+	OrderID     string                `json:"order_id"`
+	OrderNumber string                `json:"order_number"`
+	WarehouseID string                `json:"warehouse_id,omitempty"`
+	Ready       bool                  `json:"ready"`
+	Lines       []OrderStockCheckLine `json:"lines"`
+}
+
+// OrderStockCheckLine describes availability for one order line.
+type OrderStockCheckLine struct {
+	LineID       string          `json:"line_id"`
+	LineNumber   int             `json:"line_number"`
+	Description  string          `json:"description"`
+	ProductID    string          `json:"product_id,omitempty"`
+	ProductCode  string          `json:"product_code,omitempty"`
+	ProductName  string          `json:"product_name,omitempty"`
+	RequiredQty  decimal.Decimal `json:"required_qty"`
+	AvailableQty decimal.Decimal `json:"available_qty"`
+	ShortageQty  decimal.Decimal `json:"shortage_qty"`
+	Status       string          `json:"status"`
+}
+
+// OrderPickList summarizes warehouse picking readiness for an order.
+type OrderPickList struct {
+	OrderID     string              `json:"order_id"`
+	OrderNumber string              `json:"order_number"`
+	WarehouseID string              `json:"warehouse_id"`
+	Ready       bool                `json:"ready"`
+	Lines       []OrderPickListLine `json:"lines"`
+}
+
+// OrderPickListLine describes one order line on a warehouse pick list.
+type OrderPickListLine struct {
+	LineID       string          `json:"line_id"`
+	LineNumber   int             `json:"line_number"`
+	Description  string          `json:"description"`
+	ProductID    string          `json:"product_id,omitempty"`
+	ProductCode  string          `json:"product_code,omitempty"`
+	ProductName  string          `json:"product_name,omitempty"`
+	RequiredQty  decimal.Decimal `json:"required_qty"`
+	ReservedQty  decimal.Decimal `json:"reserved_qty"`
+	PickQty      decimal.Decimal `json:"pick_qty"`
+	AvailableQty decimal.Decimal `json:"available_qty"`
+	ShortageQty  decimal.Decimal `json:"shortage_qty"`
+	Status       string          `json:"status"`
+}
+
+// OrderStockReservationRequest selects the warehouse used for order stock reservations.
+type OrderStockReservationRequest struct {
+	WarehouseID string `json:"warehouse_id"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// OrderStockReservationResult summarizes reserved or released stock for an order.
+type OrderStockReservationResult struct {
+	OrderID     string                      `json:"order_id"`
+	OrderNumber string                      `json:"order_number"`
+	WarehouseID string                      `json:"warehouse_id"`
+	Action      string                      `json:"action"`
+	Lines       []OrderStockReservationLine `json:"lines"`
+}
+
+// OrderStockReservationLine reports one product-level reservation mutation.
+type OrderStockReservationLine struct {
+	ProductID    string          `json:"product_id"`
+	ProductCode  string          `json:"product_code,omitempty"`
+	ProductName  string          `json:"product_name,omitempty"`
+	Quantity     decimal.Decimal `json:"quantity"`
+	ReservedQty  decimal.Decimal `json:"reserved_qty"`
+	AvailableQty decimal.Decimal `json:"available_qty"`
+	Status       string          `json:"status"`
 }

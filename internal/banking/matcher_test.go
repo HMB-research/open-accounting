@@ -235,6 +235,88 @@ func TestMatchPayments(t *testing.T) {
 	}
 }
 
+func TestBankMatchRuleMatchesTransaction(t *testing.T) {
+	transaction := &BankTransaction{
+		Description:         "Stripe payout for March",
+		Reference:           "INV-100",
+		CounterpartyName:    "Stripe Payments Europe",
+		CounterpartyAccount: "EE123",
+	}
+
+	tests := []struct {
+		name  string
+		rule  *BankMatchRule
+		match bool
+	}{
+		{
+			name: "description contains pattern",
+			rule: &BankMatchRule{
+				MatchField: BankMatchFieldDescription,
+				Pattern:    "stripe",
+			},
+			match: true,
+		},
+		{
+			name: "reference contains pattern",
+			rule: &BankMatchRule{
+				MatchField: BankMatchFieldReference,
+				Pattern:    "INV-",
+			},
+			match: true,
+		},
+		{
+			name: "counterparty account no match",
+			rule: &BankMatchRule{
+				MatchField: BankMatchFieldCounterpartyAccount,
+				Pattern:    "LV",
+			},
+			match: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := bankMatchRuleMatchesTransaction(tt.rule, transaction); got != tt.match {
+				t.Fatalf("expected match %t, got %t", tt.match, got)
+			}
+		})
+	}
+}
+
+func TestMatcherConfigForBankMatchRule(t *testing.T) {
+	rule := &BankMatchRule{
+		MinConfidence:   0.85,
+		MaxDateDiffDays: 3,
+	}
+
+	config := matcherConfigForBankMatchRule(rule, 0.7)
+	if config.MinConfidence != 0.85 {
+		t.Fatalf("expected rule min confidence 0.85, got %f", config.MinConfidence)
+	}
+	if config.MaxDateDiff != 3 {
+		t.Fatalf("expected rule max date diff 3, got %d", config.MaxDateDiff)
+	}
+
+	config = matcherConfigForBankMatchRule(rule, 0.9)
+	if config.MinConfidence != 0.9 {
+		t.Fatalf("expected caller min confidence 0.9, got %f", config.MinConfidence)
+	}
+}
+
+func TestFilterPaymentsForBankMatchRule_RequireExactAmount(t *testing.T) {
+	transaction := &BankTransaction{Amount: decimal.NewFromInt(100)}
+	payments := []PaymentForMatching{
+		{ID: "exact", Amount: decimal.NewFromInt(100)},
+		{ID: "different", Amount: decimal.NewFromInt(99)},
+	}
+	rule := &BankMatchRule{RequireExactAmount: true}
+
+	filtered := filterPaymentsForBankMatchRule(payments, transaction, rule)
+	if len(filtered) != 1 || filtered[0].ID != "exact" {
+		t.Fatalf("expected only exact payment, got %#v", filtered)
+	}
+}
+
 func TestMatchPayments_ExactAmountMatch(t *testing.T) {
 	config := DefaultMatcherConfig()
 	now := time.Now()

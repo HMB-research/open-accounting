@@ -3,12 +3,17 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
+
+// ErrPluginRuntimeUnavailable is returned when a plugin hook is invoked without
+// a backend runtime capable of executing plugin code.
+var ErrPluginRuntimeUnavailable = errors.New("plugin backend runtime is not available")
 
 // Event types for the hook system
 const (
@@ -32,6 +37,13 @@ const (
 	EventJournalEntryPosted  = "journal_entry.posted"
 	EventJournalEntryVoided  = "journal_entry.voided"
 
+	// Expense events
+	EventExpenseCreated   = "expense.created"
+	EventExpenseSubmitted = "expense.submitted"
+	EventExpenseApproved  = "expense.approved"
+	EventExpenseRejected  = "expense.rejected"
+	EventExpensePosted    = "expense.posted"
+
 	// Recurring invoice events
 	EventRecurringCreated   = "recurring.created"
 	EventRecurringGenerated = "recurring.generated"
@@ -54,6 +66,9 @@ const (
 	// Email events
 	EventEmailSent   = "email.sent"
 	EventEmailFailed = "email.failed"
+
+	// Webhook events
+	EventWebhookTest = "webhook.test"
 )
 
 // Event represents an event emitted by the system
@@ -99,23 +114,25 @@ func (r *HookRegistry) Register(eventType string, handler HookHandler) {
 
 // registerPluginHook registers a plugin's hook handler
 func (r *HookRegistry) registerPluginHook(pluginID uuid.UUID, eventType, handlerName string) {
+	r.registerPluginHookHandler(pluginID, eventType, handlerName, func(ctx context.Context, event Event) error {
+		log.Error().
+			Str("plugin_id", pluginID.String()).
+			Str("handler", handlerName).
+			Str("event", eventType).
+			Msg("Plugin hook declared but backend runtime is unavailable")
+		return ErrPluginRuntimeUnavailable
+	})
+}
+
+// registerPluginHookHandler registers a plugin hook with an executable handler.
+func (r *HookRegistry) registerPluginHookHandler(pluginID uuid.UUID, eventType, handlerName string, handler HookHandler) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Note: The actual handler implementation would be loaded from the plugin
-	// For now, we store the metadata and log when the hook is called
 	r.handlers[eventType] = append(r.handlers[eventType], pluginHookHandler{
 		PluginID:    pluginID,
 		HandlerName: handlerName,
-		Handler: func(ctx context.Context, event Event) error {
-			// This is a placeholder - actual implementation would invoke the plugin's handler
-			log.Debug().
-				Str("plugin_id", pluginID.String()).
-				Str("handler", handlerName).
-				Str("event", eventType).
-				Msg("Plugin hook invoked")
-			return nil
-		},
+		Handler:     handler,
 	})
 }
 
@@ -265,6 +282,11 @@ var AllEventTypes = []string{
 	EventJournalEntryCreated,
 	EventJournalEntryPosted,
 	EventJournalEntryVoided,
+	EventExpenseCreated,
+	EventExpenseSubmitted,
+	EventExpenseApproved,
+	EventExpenseRejected,
+	EventExpensePosted,
 	EventRecurringCreated,
 	EventRecurringGenerated,
 	EventRecurringStopped,
@@ -278,6 +300,7 @@ var AllEventTypes = []string{
 	EventTenantUpdated,
 	EventEmailSent,
 	EventEmailFailed,
+	EventWebhookTest,
 }
 
 // IsValidEventType checks if an event type is valid

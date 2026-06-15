@@ -90,7 +90,7 @@ type SalaryComponent struct {
 	ID            string          `json:"id"`
 	TenantID      string          `json:"tenant_id"`
 	EmployeeID    string          `json:"employee_id"`
-	ComponentType string          `json:"component_type"` // BASE_SALARY, BONUS, COMMISSION, BENEFIT, DEDUCTION
+	ComponentType string          `json:"component_type"` // BASE_SALARY, SECONDARY_EMPLOYMENT, BONUS, COMMISSION, BENEFIT, DEDUCTION
 	Name          string          `json:"name"`
 	Amount        decimal.Decimal `json:"amount"`
 	IsTaxable     bool            `json:"is_taxable"`
@@ -100,26 +100,55 @@ type SalaryComponent struct {
 	CreatedAt     time.Time       `json:"created_at"`
 }
 
+const (
+	SalaryComponentBaseSalary          = "BASE_SALARY"
+	SalaryComponentSecondaryEmployment = "SECONDARY_EMPLOYMENT"
+	SalaryComponentBonus               = "BONUS"
+	SalaryComponentCommission          = "COMMISSION"
+	SalaryComponentBenefit             = "BENEFIT"
+	SalaryComponentDeduction           = "DEDUCTION"
+)
+
 // PayrollRun represents a monthly payroll calculation
 type PayrollRun struct {
-	ID                string          `json:"id"`
-	TenantID          string          `json:"tenant_id"`
-	PeriodYear        int             `json:"period_year"`
-	PeriodMonth       int             `json:"period_month"`
-	Status            PayrollStatus   `json:"status"`
-	PaymentDate       *time.Time      `json:"payment_date,omitempty"`
-	TotalGross        decimal.Decimal `json:"total_gross"`
-	TotalNet          decimal.Decimal `json:"total_net"`
-	TotalEmployerCost decimal.Decimal `json:"total_employer_cost"`
-	Notes             string          `json:"notes,omitempty"`
-	CreatedBy         string          `json:"created_by,omitempty"`
-	ApprovedBy        string          `json:"approved_by,omitempty"`
-	ApprovedAt        *time.Time      `json:"approved_at,omitempty"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
+	ID                 string                        `json:"id"`
+	TenantID           string                        `json:"tenant_id"`
+	PeriodYear         int                           `json:"period_year"`
+	PeriodMonth        int                           `json:"period_month"`
+	Status             PayrollStatus                 `json:"status"`
+	PaymentDate        *time.Time                    `json:"payment_date,omitempty"`
+	TotalGross         decimal.Decimal               `json:"total_gross"`
+	TotalNet           decimal.Decimal               `json:"total_net"`
+	TotalEmployerCost  decimal.Decimal               `json:"total_employer_cost"`
+	Notes              string                        `json:"notes,omitempty"`
+	RemediationActions []PayrollRunRemediationAction `json:"remediation_actions,omitempty"`
+	CreatedBy          string                        `json:"created_by,omitempty"`
+	ApprovedBy         string                        `json:"approved_by,omitempty"`
+	ApprovedAt         *time.Time                    `json:"approved_at,omitempty"`
+	CreatedAt          time.Time                     `json:"created_at"`
+	UpdatedAt          time.Time                     `json:"updated_at"`
 
 	// Loaded relations
 	Payslips []Payslip `json:"payslips,omitempty"`
+}
+
+// PayrollRunRemediationAction describes one operator action for payroll run follow-up.
+type PayrollRunRemediationAction struct {
+	Code           string `json:"code"`
+	Severity       string `json:"severity"`
+	Scope          string `json:"scope"`
+	OwnerRole      string `json:"owner_role"`
+	WorkspaceQueue string `json:"workspace_queue,omitempty"`
+	AssignmentKey  string `json:"assignment_key,omitempty"`
+	Priority       string `json:"priority,omitempty"`
+	DueInDays      int    `json:"due_in_days,omitempty"`
+	Message        string `json:"message"`
+	Action         string `json:"action"`
+	Period         string `json:"period,omitempty"`
+	EntityType     string `json:"entity_type,omitempty"`
+	EntityID       string `json:"entity_id,omitempty"`
+	UIPath         string `json:"ui_path,omitempty"`
+	CLICommand     string `json:"cli_command,omitempty"`
 }
 
 // Payslip represents an individual employee's payslip
@@ -180,11 +209,37 @@ type TSDDeclaration struct {
 	SubmittedAt   *time.Time `json:"submitted_at,omitempty"`
 	EMTAReference string     `json:"emta_reference,omitempty"`
 
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	RemediationActions []TSDRemediationAction `json:"remediation_actions,omitempty"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
 
 	// Loaded relations
 	Rows []TSDRow `json:"rows,omitempty"`
+}
+
+// TSDRemediationAction describes one operator action for TSD declaration follow-up.
+type TSDRemediationAction struct {
+	Code           string `json:"code"`
+	Severity       string `json:"severity"`
+	Scope          string `json:"scope"`
+	OwnerRole      string `json:"owner_role"`
+	WorkspaceQueue string `json:"workspace_queue,omitempty"`
+	AssignmentKey  string `json:"assignment_key,omitempty"`
+	Priority       string `json:"priority,omitempty"`
+	DueInDays      int    `json:"due_in_days,omitempty"`
+	Message        string `json:"message"`
+	Action         string `json:"action"`
+	Period         string `json:"period,omitempty"`
+	EntityType     string `json:"entity_type,omitempty"`
+	EntityID       string `json:"entity_id,omitempty"`
+	UIPath         string `json:"ui_path,omitempty"`
+	CLICommand     string `json:"cli_command,omitempty"`
+}
+
+// TSDListFilter contains optional filters for listing TSD declarations.
+type TSDListFilter struct {
+	Year  int
+	Month int
 }
 
 // TSDRow represents a single row in TSD Annex 1 (payments to residents)
@@ -242,6 +297,34 @@ type CreatePayrollRunRequest struct {
 	PeriodMonth int        `json:"period_month"`
 	PaymentDate *time.Time `json:"payment_date,omitempty"`
 	Notes       string     `json:"notes,omitempty"`
+}
+
+// ProcessPayrollRunRequest is the request to bulk-process a payroll run.
+type ProcessPayrollRunRequest struct {
+	Approve bool `json:"approve,omitempty"`
+}
+
+// UpdatePayrollRunPaymentDateRequest updates the salary payment date for a run.
+type UpdatePayrollRunPaymentDateRequest struct {
+	PaymentDate time.Time `json:"payment_date"`
+}
+
+// CreateSalaryComponentRequest creates an additional salary component for an employee.
+type CreateSalaryComponentRequest struct {
+	ComponentType string          `json:"component_type,omitempty"`
+	Name          string          `json:"name,omitempty"`
+	Amount        decimal.Decimal `json:"amount"`
+	IsTaxable     *bool           `json:"is_taxable,omitempty"`
+	IsRecurring   *bool           `json:"is_recurring,omitempty"`
+	EffectiveFrom time.Time       `json:"effective_from"`
+	EffectiveTo   *time.Time      `json:"effective_to,omitempty"`
+}
+
+// PayrollRunProcessResult is returned after bulk payroll processing.
+type PayrollRunProcessResult struct {
+	PayrollRun   *PayrollRun `json:"payroll_run"`
+	PayslipCount int         `json:"payslip_count"`
+	Approved     bool        `json:"approved"`
 }
 
 // UpdateEmployeeRequest is the request to update an employee
@@ -307,6 +390,33 @@ type ImportPayrollHistoryResult struct {
 
 // ImportPayrollHistoryRowError describes a row-level historical payroll import failure.
 type ImportPayrollHistoryRowError struct {
+	Row            int    `json:"row"`
+	PeriodYear     int    `json:"period_year,omitempty"`
+	PeriodMonth    int    `json:"period_month,omitempty"`
+	EmployeeName   string `json:"employee_name,omitempty"`
+	EmployeeNumber string `json:"employee_number,omitempty"`
+	Message        string `json:"message"`
+}
+
+// ImportTSDHistoryRequest contains CSV payload for historical TSD declarations.
+// Each CSV row represents one TSD declaration row inside a period.
+type ImportTSDHistoryRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+}
+
+// ImportTSDHistoryResult summarizes a historical TSD declaration import.
+type ImportTSDHistoryResult struct {
+	FileName            string                     `json:"file_name,omitempty"`
+	RowsProcessed       int                        `json:"rows_processed"`
+	DeclarationsCreated int                        `json:"declarations_created"`
+	RowsImported        int                        `json:"rows_imported"`
+	RowsSkipped         int                        `json:"rows_skipped"`
+	Errors              []ImportTSDHistoryRowError `json:"errors,omitempty"`
+}
+
+// ImportTSDHistoryRowError describes a row-level historical TSD import failure.
+type ImportTSDHistoryRowError struct {
 	Row            int    `json:"row"`
 	PeriodYear     int    `json:"period_year,omitempty"`
 	PeriodMonth    int    `json:"period_month,omitempty"`

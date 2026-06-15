@@ -3,16 +3,32 @@ package documents
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 type mockRepository struct {
-	entityExists bool
-	docs         map[string]*Document
+	entityExists          bool
+	entityErr             error
+	createErr             error
+	listErr               error
+	reviewQueueErr        error
+	retentionReviewErr    error
+	reviewSummaryErr      error
+	getErr                error
+	updateRetentionErr    error
+	updateLifecycleErr    error
+	updateLegalHoldErr    error
+	reviewErr             error
+	deleteErr             error
+	reviewCount           int
+	lastReviewQueueFilter ReviewQueueFilter
+	docs                  map[string]*Document
 }
 
 func newMockRepository() *mockRepository {
@@ -23,15 +39,24 @@ func newMockRepository() *mockRepository {
 }
 
 func (m *mockRepository) EntityExists(ctx context.Context, schemaName, tenantID, entityType, entityID string) (bool, error) {
+	if m.entityErr != nil {
+		return false, m.entityErr
+	}
 	return m.entityExists, nil
 }
 
 func (m *mockRepository) CreateDocument(ctx context.Context, schemaName string, doc *Document) error {
+	if m.createErr != nil {
+		return m.createErr
+	}
 	m.docs[doc.ID] = doc
 	return nil
 }
 
 func (m *mockRepository) ListDocuments(ctx context.Context, schemaName, tenantID, entityType, entityID string) ([]Document, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
 	result := make([]Document, 0, len(m.docs))
 	for _, doc := range m.docs {
 		if doc.TenantID == tenantID && doc.EntityType == entityType && doc.EntityID == entityID {
@@ -41,20 +66,80 @@ func (m *mockRepository) ListDocuments(ctx context.Context, schemaName, tenantID
 	return result, nil
 }
 
+func (m *mockRepository) ListReviewQueueDocuments(ctx context.Context, schemaName, tenantID string, filter ReviewQueueFilter) ([]Document, error) {
+	if m.reviewQueueErr != nil {
+		return nil, m.reviewQueueErr
+	}
+	m.lastReviewQueueFilter = filter
+	result := make([]Document, 0, len(m.docs))
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID {
+			continue
+		}
+		if filter.EntityType != "" && doc.EntityType != filter.EntityType {
+			continue
+		}
+		if filter.DocumentType != "" && doc.DocumentType != filter.DocumentType {
+			continue
+		}
+		if filter.ReviewStatus != "" && doc.ReviewStatus != filter.ReviewStatus {
+			continue
+		}
+		result = append(result, *doc)
+		if filter.Limit > 0 && len(result) >= filter.Limit {
+			break
+		}
+	}
+	return result, nil
+}
+
+func (m *mockRepository) ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]Document, error) {
+	if m.retentionReviewErr != nil {
+		return nil, m.retentionReviewErr
+	}
+	result := make([]Document, 0, len(m.docs))
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID {
+			continue
+		}
+		if doc.RetentionUntil == nil {
+			if includeMissing {
+				result = append(result, *doc)
+			}
+			continue
+		}
+		if !doc.RetentionUntil.After(cutoff) {
+			result = append(result, *doc)
+		}
+	}
+	return result, nil
+}
+
 func (m *mockRepository) ListReviewSummaries(ctx context.Context, schemaName, tenantID, entityType string, entityIDs []string) (map[string]ReviewSummary, error) {
+	if m.reviewSummaryErr != nil {
+		return nil, m.reviewSummaryErr
+	}
 	result := make(map[string]ReviewSummary, len(entityIDs))
 	for _, entityID := range entityIDs {
 		total := 0
 		pending := 0
 		reviewed := 0
+		approved := 0
+		rejected := 0
 		for _, doc := range m.docs {
 			if doc.TenantID != tenantID || doc.EntityType != entityType || doc.EntityID != entityID {
 				continue
 			}
 			total++
 			switch doc.ReviewStatus {
-			case ReviewStatusReviewed:
+			case ReviewStatusReviewed, ReviewStatusApproved, ReviewStatusRejected:
 				reviewed++
+				if doc.ReviewStatus == ReviewStatusApproved {
+					approved++
+				}
+				if doc.ReviewStatus == ReviewStatusRejected {
+					rejected++
+				}
 			default:
 				pending++
 			}
@@ -68,14 +153,20 @@ func (m *mockRepository) ListReviewSummaries(ctx context.Context, schemaName, te
 			TotalCount:         total,
 			PendingReviewCount: pending,
 			ReviewedCount:      reviewed,
+			ApprovedCount:      approved,
+			RejectedCount:      rejected,
 			MissingEvidence:    false,
 			HasPendingReview:   pending > 0,
+			HasRejected:        rejected > 0,
 		}
 	}
 	return result, nil
 }
 
 func (m *mockRepository) GetDocumentByID(ctx context.Context, schemaName, tenantID, documentID string) (*Document, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
 	doc, ok := m.docs[documentID]
 	if !ok || doc.TenantID != tenantID {
 		return nil, os.ErrNotExist
@@ -83,20 +174,921 @@ func (m *mockRepository) GetDocumentByID(ctx context.Context, schemaName, tenant
 	return doc, nil
 }
 
-func (m *mockRepository) MarkDocumentReviewed(ctx context.Context, schemaName, tenantID, documentID, reviewedBy string, reviewedAt time.Time) error {
+func (m *mockRepository) DocumentHasSupersededDependents(ctx context.Context, schemaName, tenantID, documentID string) (bool, error) {
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID || doc.SupersededBy == nil {
+			continue
+		}
+		if *doc.SupersededBy == documentID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (m *mockRepository) UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error {
+	if m.updateRetentionErr != nil {
+		return m.updateRetentionErr
+	}
 	doc, ok := m.docs[documentID]
 	if !ok || doc.TenantID != tenantID {
 		return os.ErrNotExist
 	}
-	doc.ReviewStatus = ReviewStatusReviewed
+	doc.RetentionUntil = retentionUntil
+	return nil
+}
+
+func (m *mockRepository) UpdateDocumentLifecycle(ctx context.Context, schemaName, tenantID, documentID, lifecycleStatus, lifecycleNote, lifecycleBy string, lifecycleAt time.Time, supersededBy *string) error {
+	if m.updateLifecycleErr != nil {
+		return m.updateLifecycleErr
+	}
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return os.ErrNotExist
+	}
+	doc.LifecycleStatus = lifecycleStatus
+	doc.LifecycleNote = lifecycleNote
+	doc.LifecycleBy = nilIfEmpty(lifecycleBy)
+	doc.LifecycleAt = &lifecycleAt
+	doc.SupersededBy = supersededBy
+	return nil
+}
+
+func (m *mockRepository) UpdateDocumentLegalHold(ctx context.Context, schemaName, tenantID, documentID string, legalHold bool, note, actionedBy string, actionedAt time.Time) error {
+	if m.updateLegalHoldErr != nil {
+		return m.updateLegalHoldErr
+	}
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return os.ErrNotExist
+	}
+	doc.LegalHold = legalHold
+	doc.LegalHoldNote = note
+	doc.LegalHoldBy = nilIfEmpty(actionedBy)
+	doc.LegalHoldAt = &actionedAt
+	return nil
+}
+
+func (m *mockRepository) ReviewDocument(ctx context.Context, schemaName, tenantID, documentID, reviewStatus, reviewNote, reviewedBy string, reviewedAt time.Time) error {
+	if m.reviewErr != nil {
+		return m.reviewErr
+	}
+	doc, ok := m.docs[documentID]
+	if !ok || doc.TenantID != tenantID {
+		return os.ErrNotExist
+	}
+	m.reviewCount++
+	doc.ReviewStatus = reviewStatus
+	doc.ReviewNote = reviewNote
 	doc.ReviewedBy = &reviewedBy
 	doc.ReviewedAt = &reviewedAt
 	return nil
 }
 
 func (m *mockRepository) DeleteDocument(ctx context.Context, schemaName, tenantID, documentID string) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
 	delete(m.docs, documentID)
 	return nil
+}
+
+type mockStore struct {
+	saveErr   error
+	openErr   error
+	deleteErr error
+	savedKey  string
+	deleted   []string
+	content   []byte
+}
+
+func (m *mockStore) Save(_ context.Context, key string, content io.Reader) error {
+	if m.saveErr != nil {
+		return m.saveErr
+	}
+	payload, err := io.ReadAll(content)
+	if err != nil {
+		return err
+	}
+	m.savedKey = key
+	m.content = payload
+	return nil
+}
+
+func (m *mockStore) Open(_ context.Context, key string) (io.ReadCloser, error) {
+	if m.openErr != nil {
+		return nil, m.openErr
+	}
+	if key != m.savedKey {
+		return nil, os.ErrNotExist
+	}
+	return io.NopCloser(bytes.NewReader(m.content)), nil
+}
+
+func (m *mockStore) Delete(_ context.Context, key string) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	m.deleted = append(m.deleted, key)
+	return nil
+}
+
+func TestService_UploadDocumentValidationAndCleanup(t *testing.T) {
+	t.Parallel()
+
+	validRequest := func(mutators ...func(*UploadDocumentRequest)) *UploadDocumentRequest {
+		req := &UploadDocumentRequest{
+			EntityType:   EntityTypePayment,
+			EntityID:     "payment-1",
+			DocumentType: DocumentTypeReceipt,
+			FileName:     " receipt 001.txt ",
+			FileSize:     int64(len("receipt")),
+			UploadedBy:   " user-1 ",
+		}
+		for _, mutate := range mutators {
+			mutate(req)
+		}
+		return req
+	}
+
+	t.Run("normalizes defaults", func(t *testing.T) {
+		repo := newMockRepository()
+		store := &mockStore{}
+		svc := NewService(repo, store)
+
+		doc, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", validRequest(func(req *UploadDocumentRequest) {
+			req.DocumentType = ""
+			req.ContentType = ""
+			req.Notes = "  Receipt attached  "
+		}), bytes.NewBufferString("receipt"))
+
+		if err != nil {
+			t.Fatalf("UploadDocument failed: %v", err)
+		}
+		if doc.DocumentType != DocumentTypeSupportingDocument {
+			t.Fatalf("expected default document type %q, got %q", DocumentTypeSupportingDocument, doc.DocumentType)
+		}
+		if doc.ContentType != "text/plain; charset=utf-8" {
+			t.Fatalf("expected inferred content type, got %q", doc.ContentType)
+		}
+		if doc.FileName != "receipt_001.txt" {
+			t.Fatalf("expected sanitized file name, got %q", doc.FileName)
+		}
+		if doc.Notes != "Receipt attached" {
+			t.Fatalf("expected trimmed notes, got %q", doc.Notes)
+		}
+		if !strings.Contains(store.savedKey, "receipt_001.txt") {
+			t.Fatalf("expected storage key to include sanitized file name, got %q", store.savedKey)
+		}
+	})
+
+	tests := []struct {
+		name    string
+		req     *UploadDocumentRequest
+		content io.Reader
+		want    string
+	}{
+		{name: "unsupported entity type", req: validRequest(func(req *UploadDocumentRequest) { req.EntityType = "unknown" }), content: bytes.NewBufferString("receipt"), want: "unsupported document entity type"},
+		{name: "unsupported document type", req: validRequest(func(req *UploadDocumentRequest) { req.DocumentType = "unknown" }), content: bytes.NewBufferString("receipt"), want: "unsupported document type"},
+		{name: "blank entity id", req: validRequest(func(req *UploadDocumentRequest) { req.EntityID = " " }), content: bytes.NewBufferString("receipt"), want: "entity ID is required"},
+		{name: "blank uploaded by", req: validRequest(func(req *UploadDocumentRequest) { req.UploadedBy = " " }), content: bytes.NewBufferString("receipt"), want: "uploaded by user is required"},
+		{name: "blank file name", req: validRequest(func(req *UploadDocumentRequest) { req.FileName = "!!!" }), content: bytes.NewBufferString("receipt"), want: "file name is required"},
+		{name: "empty file", req: validRequest(func(req *UploadDocumentRequest) { req.FileSize = 0 }), content: bytes.NewBufferString(""), want: "document file is empty"},
+		{name: "oversized file", req: validRequest(func(req *UploadDocumentRequest) { req.FileSize = MaxDocumentSizeBytes + 1 }), content: bytes.NewBufferString("receipt"), want: "document exceeds"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewService(newMockRepository(), &mockStore{})
+
+			_, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", tt.req, tt.content)
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+
+	t.Run("entity lookup error", func(t *testing.T) {
+		repo := newMockRepository()
+		repo.entityErr = errors.New("lookup failed")
+		svc := NewService(repo, &mockStore{})
+
+		_, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", validRequest(), bytes.NewBufferString("receipt"))
+
+		if err == nil || !strings.Contains(err.Error(), "lookup failed") {
+			t.Fatalf("expected lookup error, got %v", err)
+		}
+	})
+
+	t.Run("target not found", func(t *testing.T) {
+		repo := newMockRepository()
+		repo.entityExists = false
+		svc := NewService(repo, &mockStore{})
+
+		_, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", validRequest(), bytes.NewBufferString("receipt"))
+
+		if err == nil || !strings.Contains(err.Error(), "target record not found") {
+			t.Fatalf("expected target record error, got %v", err)
+		}
+	})
+
+	t.Run("store save error", func(t *testing.T) {
+		svc := NewService(newMockRepository(), &mockStore{saveErr: errors.New("save failed")})
+
+		_, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", validRequest(), bytes.NewBufferString("receipt"))
+
+		if err == nil || !strings.Contains(err.Error(), "save failed") {
+			t.Fatalf("expected save error, got %v", err)
+		}
+	})
+
+	t.Run("repository create error deletes stored content", func(t *testing.T) {
+		repo := newMockRepository()
+		repo.createErr = errors.New("create failed")
+		store := &mockStore{}
+		svc := NewService(repo, store)
+
+		_, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", validRequest(), bytes.NewBufferString("receipt"))
+
+		if err == nil || !strings.Contains(err.Error(), "create failed") {
+			t.Fatalf("expected create error, got %v", err)
+		}
+		if len(store.deleted) != 1 || store.deleted[0] != store.savedKey {
+			t.Fatalf("expected saved content cleanup, saved=%q deleted=%#v", store.savedKey, store.deleted)
+		}
+	})
+}
+
+func TestService_GetReviewQueueFiltersClosePackDocuments(t *testing.T) {
+	t.Parallel()
+
+	store, err := NewLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocalStore failed: %v", err)
+	}
+	repo := newMockRepository()
+	svc := NewService(repo, store)
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+
+	repo.docs["doc-close-pack"] = &Document{
+		ID:           "doc-close-pack",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypeYearEndClose,
+		EntityID:     "year-end-close-2025",
+		DocumentType: DocumentTypeClosePack,
+		FileName:     "close-pack.pdf",
+		ReviewStatus: ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+	repo.docs["doc-receipt"] = &Document{
+		ID:           "doc-receipt",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypePayment,
+		EntityID:     "pay-1",
+		DocumentType: DocumentTypeReceipt,
+		FileName:     "receipt.pdf",
+		ReviewStatus: ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+	repo.docs["doc-approved"] = &Document{
+		ID:           "doc-approved",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypeYearEndClose,
+		EntityID:     "year-end-close-2024",
+		DocumentType: DocumentTypeClosePack,
+		FileName:     "approved-close-pack.pdf",
+		ReviewStatus: ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+
+	queue, err := svc.GetReviewQueue(context.Background(), "tenant_demo", "tenant-1", ReviewQueueFilter{
+		EntityType:   EntityTypeYearEndClose,
+		DocumentType: DocumentTypeClosePack,
+	})
+	if err != nil {
+		t.Fatalf("GetReviewQueue failed: %v", err)
+	}
+	if queue.ReviewStatus != ReviewStatusPending || queue.Limit != defaultReviewQueueLimit {
+		t.Fatalf("unexpected queue metadata: %#v", queue)
+	}
+	if queue.TotalCount != 1 || queue.PendingReviewCount != 1 || queue.Documents[0].ID != "doc-close-pack" {
+		t.Fatalf("unexpected filtered queue: %#v", queue)
+	}
+
+	allQueue, err := svc.GetReviewQueue(context.Background(), "tenant_demo", "tenant-1", ReviewQueueFilter{
+		EntityType:   EntityTypeYearEndClose,
+		DocumentType: DocumentTypeClosePack,
+		ReviewStatus: "all",
+	})
+	if err != nil {
+		t.Fatalf("GetReviewQueue all failed: %v", err)
+	}
+	if allQueue.TotalCount != 2 || allQueue.ApprovedCount != 1 || allQueue.ReviewStatus != "ALL" {
+		t.Fatalf("unexpected all-status queue: %#v", allQueue)
+	}
+}
+
+func TestService_GetReviewQueueValidationAndLimit(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepository()
+	svc := NewService(repo, &mockStore{})
+
+	tests := []struct {
+		name   string
+		filter ReviewQueueFilter
+		want   string
+	}{
+		{name: "invalid entity type", filter: ReviewQueueFilter{EntityType: "unsupported"}, want: "unsupported document entity type"},
+		{name: "invalid document type", filter: ReviewQueueFilter{DocumentType: "unsupported"}, want: "unsupported document type"},
+		{name: "invalid review status", filter: ReviewQueueFilter{ReviewStatus: "unknown"}, want: "review_status must be PENDING"},
+		{name: "negative limit", filter: ReviewQueueFilter{Limit: -1}, want: "limit must be zero or greater"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.GetReviewQueue(context.Background(), "tenant_demo", "tenant-1", tt.filter)
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+
+	queue, err := svc.GetReviewQueue(context.Background(), "tenant_demo", "tenant-1", ReviewQueueFilter{
+		ReviewStatus: "approved",
+		Limit:        maxReviewQueueLimit + 1,
+	})
+	if err != nil {
+		t.Fatalf("GetReviewQueue failed: %v", err)
+	}
+	if queue.Limit != maxReviewQueueLimit {
+		t.Fatalf("expected capped limit %d, got %d", maxReviewQueueLimit, queue.Limit)
+	}
+	if repo.lastReviewQueueFilter.ReviewStatus != ReviewStatusApproved {
+		t.Fatalf("expected normalized approved status, got %#v", repo.lastReviewQueueFilter)
+	}
+
+	repo.reviewQueueErr = errors.New("queue failed")
+	_, err = svc.GetReviewQueue(context.Background(), "tenant_demo", "tenant-1", ReviewQueueFilter{})
+	if err == nil || !strings.Contains(err.Error(), "queue failed") {
+		t.Fatalf("expected queue error, got %v", err)
+	}
+}
+
+func TestService_UploadAcceptsWorkflowDocuments(t *testing.T) {
+	t.Parallel()
+
+	store, err := NewLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocalStore failed: %v", err)
+	}
+	repo := newMockRepository()
+	svc := NewService(repo, store)
+
+	tests := []struct {
+		name       string
+		entityType string
+		entityID   string
+	}{
+		{name: "quote", entityType: EntityTypeQuote, entityID: "quote-1"},
+		{name: "order", entityType: EntityTypeOrder, entityID: "order-1"},
+		{name: "leave", entityType: EntityTypeLeaveRecord, entityID: "leave-1"},
+		{name: "TSD", entityType: EntityTypeTSD, entityID: "tsd-1"},
+		{name: "KMD", entityType: EntityTypeKMD, entityID: "kmd-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", &UploadDocumentRequest{
+				EntityType:   tt.entityType,
+				EntityID:     tt.entityID,
+				DocumentType: DocumentTypeContract,
+				FileName:     tt.name + "-contract.pdf",
+				ContentType:  "application/pdf",
+				FileSize:     int64(len("contract")),
+				UploadedBy:   "user-1",
+			}, bytes.NewBufferString("contract"))
+			if err != nil {
+				t.Fatalf("UploadDocument failed: %v", err)
+			}
+			if doc.EntityType != tt.entityType || doc.EntityID != tt.entityID || doc.DocumentType != DocumentTypeContract {
+				t.Fatalf("unexpected workflow document: %#v", doc)
+			}
+		})
+	}
+}
+
+func TestService_UploadReplacementSupersedesOriginalDocument(t *testing.T) {
+	t.Parallel()
+
+	store, err := NewLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocalStore failed: %v", err)
+	}
+	repo := newMockRepository()
+	svc := NewService(repo, store)
+	repo.docs["doc-rejected"] = &Document{
+		ID:              "doc-rejected",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypeBankTxn,
+		EntityID:        "txn-1",
+		DocumentType:    DocumentTypeReconciliation,
+		FileName:        "old-evidence.pdf",
+		ReviewStatus:    ReviewStatusRejected,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+	}
+
+	replacement, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", &UploadDocumentRequest{
+		EntityType:         EntityTypeBankTxn,
+		EntityID:           "txn-1",
+		DocumentType:       DocumentTypeReconciliation,
+		FileName:           "replacement.pdf",
+		ContentType:        "application/pdf",
+		FileSize:           int64(len("replacement")),
+		ReplacesDocumentID: "doc-rejected",
+		ReplacementNote:    "Corrected statement evidence",
+		UploadedBy:         "reviewer-1",
+	}, bytes.NewBufferString("replacement"))
+	if err != nil {
+		t.Fatalf("UploadDocument replacement failed: %v", err)
+	}
+	if replacement.LifecycleStatus != LifecycleStatusActive {
+		t.Fatalf("expected replacement to stay active, got %#v", replacement)
+	}
+	original := repo.docs["doc-rejected"]
+	if original.LifecycleStatus != LifecycleStatusSuperseded {
+		t.Fatalf("expected original to be superseded, got %#v", original)
+	}
+	if original.SupersededBy == nil || *original.SupersededBy != replacement.ID {
+		t.Fatalf("expected original to link to replacement %s, got %#v", replacement.ID, original.SupersededBy)
+	}
+	if original.LifecycleNote != "Corrected statement evidence" {
+		t.Fatalf("unexpected lifecycle note %q", original.LifecycleNote)
+	}
+	if original.LifecycleBy == nil || *original.LifecycleBy != "reviewer-1" || original.LifecycleAt == nil {
+		t.Fatalf("expected audited lifecycle actor/time, got %#v", original)
+	}
+}
+
+func TestService_UpdateDocumentLifecycleValidationAndAudit(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepository()
+	svc := NewService(repo, &mockStore{})
+	repo.docs["doc-1"] = &Document{
+		ID:              "doc-1",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "receipt.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+	}
+	repo.docs["doc-replacement"] = &Document{
+		ID:              "doc-replacement",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "receipt-v2.pdf",
+		ReviewStatus:    ReviewStatusPending,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	if _, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-1", "reviewer-1", &DocumentLifecycleRequest{
+		LifecycleStatus: LifecycleStatusDisposed,
+	}); err == nil {
+		t.Fatal("expected disposed lifecycle to require an audit note")
+	}
+
+	archived, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-1", "reviewer-1", &DocumentLifecycleRequest{
+		LifecycleStatus: LifecycleStatusArchived,
+		LifecycleNote:   "Retention reviewed; archive for audit",
+	})
+	if err != nil {
+		t.Fatalf("UpdateDocumentLifecycle archive failed: %v", err)
+	}
+	if archived.LifecycleStatus != LifecycleStatusArchived || archived.LifecycleNote != "Retention reviewed; archive for audit" {
+		t.Fatalf("unexpected archived document: %#v", archived)
+	}
+	if archived.LifecycleBy == nil || *archived.LifecycleBy != "reviewer-1" || archived.LifecycleAt == nil {
+		t.Fatalf("expected lifecycle audit metadata: %#v", archived)
+	}
+
+	superseded, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-1", "reviewer-2", &DocumentLifecycleRequest{
+		LifecycleStatus:      LifecycleStatusSuperseded,
+		LifecycleNote:        "Replacement approved",
+		SupersededByDocument: "doc-replacement",
+	})
+	if err != nil {
+		t.Fatalf("UpdateDocumentLifecycle superseded failed: %v", err)
+	}
+	if superseded.LifecycleStatus != LifecycleStatusSuperseded || superseded.SupersededBy == nil || *superseded.SupersededBy != "doc-replacement" {
+		t.Fatalf("unexpected superseded document: %#v", superseded)
+	}
+}
+
+func TestService_DocumentLegalHoldAuditAndGuards(t *testing.T) {
+	t.Parallel()
+
+	store := &mockStore{}
+	repo := newMockRepository()
+	svc := NewService(repo, store)
+	repo.docs["doc-held"] = &Document{
+		ID:              "doc-held",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "receipt.pdf",
+		StorageKey:      "tenant-1/doc-held.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+	}
+	repo.docs["doc-replacement"] = &Document{
+		ID:              "doc-replacement",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "receipt-v2.pdf",
+		StorageKey:      "tenant-1/doc-replacement.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	if _, err := svc.UpdateDocumentLegalHold(context.Background(), "tenant_demo", "tenant-1", "doc-held", "legal-1", &DocumentLegalHoldRequest{
+		LegalHold: true,
+	}); err == nil || !strings.Contains(err.Error(), "note is required") {
+		t.Fatalf("expected note-required error, got %v", err)
+	}
+
+	held, err := svc.UpdateDocumentLegalHold(context.Background(), "tenant_demo", "tenant-1", "doc-held", "legal-1", &DocumentLegalHoldRequest{
+		LegalHold: true,
+		Note:      "Litigation hold for supplier dispute",
+	})
+	if err != nil {
+		t.Fatalf("UpdateDocumentLegalHold failed: %v", err)
+	}
+	if !held.LegalHold || held.LegalHoldNote != "Litigation hold for supplier dispute" || held.LegalHoldBy == nil || *held.LegalHoldBy != "legal-1" || held.LegalHoldAt == nil {
+		t.Fatalf("expected legal hold audit metadata: %#v", held)
+	}
+
+	if _, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-held", "reviewer-1", &DocumentLifecycleRequest{
+		LifecycleStatus: LifecycleStatusDisposed,
+		LifecycleNote:   "Retention expired",
+	}); err == nil || !strings.Contains(err.Error(), "legal hold") {
+		t.Fatalf("expected legal hold to block disposal, got %v", err)
+	}
+	if _, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-held", "reviewer-1", &DocumentLifecycleRequest{
+		LifecycleStatus:      LifecycleStatusSuperseded,
+		LifecycleNote:        "Corrected evidence attached",
+		SupersededByDocument: "doc-replacement",
+	}); err == nil || !strings.Contains(err.Error(), "legal hold") {
+		t.Fatalf("expected legal hold to block supersession, got %v", err)
+	}
+
+	if err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", "doc-held"); err == nil || !strings.Contains(err.Error(), "legal hold") {
+		t.Fatalf("expected legal hold to block delete, got %v", err)
+	}
+	if len(store.deleted) != 0 {
+		t.Fatalf("delete should not touch storage while legal hold is active: %#v", store.deleted)
+	}
+
+	released, err := svc.UpdateDocumentLegalHold(context.Background(), "tenant_demo", "tenant-1", "doc-held", "legal-2", &DocumentLegalHoldRequest{
+		LegalHold: false,
+		Note:      "Supplier dispute resolved",
+	})
+	if err != nil {
+		t.Fatalf("UpdateDocumentLegalHold release failed: %v", err)
+	}
+	if released.LegalHold || released.LegalHoldNote != "Supplier dispute resolved" || released.LegalHoldBy == nil || *released.LegalHoldBy != "legal-2" {
+		t.Fatalf("expected released hold audit metadata: %#v", released)
+	}
+}
+
+func TestService_DeleteDocumentBlocksReplacementEvidenceLinksBeforeStorageDelete(t *testing.T) {
+	t.Parallel()
+
+	store := &mockStore{}
+	repo := newMockRepository()
+	svc := NewService(repo, store)
+	replacementID := "doc-replacement"
+	repo.docs["doc-superseded"] = &Document{
+		ID:              "doc-superseded",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "old-receipt.pdf",
+		StorageKey:      "tenant-1/doc-superseded.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusSuperseded,
+		SupersededBy:    &replacementID,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	repo.docs[replacementID] = &Document{
+		ID:              replacementID,
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "receipt-v2.pdf",
+		StorageKey:      "tenant-1/doc-replacement.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+
+	err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", replacementID)
+	if err == nil || !strings.Contains(err.Error(), "linked as replacement evidence") {
+		t.Fatalf("expected replacement-link delete guard, got %v", err)
+	}
+	if len(store.deleted) != 0 {
+		t.Fatalf("delete should not touch storage when replacement link guard fails: %#v", store.deleted)
+	}
+	if repo.docs[replacementID] == nil {
+		t.Fatalf("replacement document should remain after guarded delete")
+	}
+}
+
+func TestService_EvidencePolicyIgnoresSupersededAndDisposedDocuments(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepository()
+	svc := NewService(repo, &mockStore{})
+	repo.docs["doc-superseded"] = &Document{
+		ID:              "doc-superseded",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "old-receipt.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusSuperseded,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	repo.docs["doc-disposed"] = &Document{
+		ID:              "doc-disposed",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "disposed-receipt.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusDisposed,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+
+	results, err := svc.EvaluateEvidencePolicy(context.Background(), "tenant_demo", "tenant-1", &EvidencePolicyRequest{
+		EntityType: EntityTypePayment,
+		EntityIDs:  []string{"pay-1"},
+		Rules: []EvidencePolicyRule{{
+			DocumentTypes:   []string{DocumentTypeReceipt},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateEvidencePolicy failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Compliant || !results[0].MissingEvidence || results[0].ApprovedCount != 0 {
+		t.Fatalf("expected superseded/disposed evidence to be ignored: %#v", results[0])
+	}
+
+	repo.docs["doc-active"] = &Document{
+		ID:              "doc-active",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "active-receipt.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	results, err = svc.EvaluateEvidencePolicy(context.Background(), "tenant_demo", "tenant-1", &EvidencePolicyRequest{
+		EntityType: EntityTypePayment,
+		EntityIDs:  []string{"pay-1"},
+		Rules: []EvidencePolicyRule{{
+			DocumentTypes:   []string{DocumentTypeReceipt},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateEvidencePolicy with active replacement failed: %v", err)
+	}
+	if !results[0].Compliant || results[0].ApprovedCount != 1 {
+		t.Fatalf("expected active replacement to satisfy policy: %#v", results[0])
+	}
+}
+
+func TestService_PurgeExpiredDocumentsRequiresDisposedAndNoLegalHold(t *testing.T) {
+	t.Parallel()
+
+	expired := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	future := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	repo := newMockRepository()
+	store := &mockStore{}
+	svc := NewService(repo, store)
+	repo.docs["doc-purge"] = &Document{
+		ID:              "doc-purge",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypeExpense,
+		EntityID:        "expense-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "old-receipt.pdf",
+		StorageKey:      "tenant-1/doc-purge.pdf",
+		RetentionUntil:  &expired,
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusDisposed,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	repo.docs["doc-held"] = &Document{
+		ID:              "doc-held",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypeExpense,
+		EntityID:        "expense-2",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "held-receipt.pdf",
+		StorageKey:      "tenant-1/doc-held.pdf",
+		RetentionUntil:  &expired,
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusDisposed,
+		LegalHold:       true,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	repo.docs["doc-active"] = &Document{
+		ID:              "doc-active",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypeExpense,
+		EntityID:        "expense-3",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "active-receipt.pdf",
+		StorageKey:      "tenant-1/doc-active.pdf",
+		RetentionUntil:  &expired,
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	repo.docs["doc-future"] = &Document{
+		ID:              "doc-future",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypeExpense,
+		EntityID:        "expense-4",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "future-receipt.pdf",
+		StorageKey:      "tenant-1/doc-future.pdf",
+		RetentionUntil:  &future,
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusDisposed,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+
+	dryRun, err := svc.PurgeExpiredDocuments(context.Background(), "tenant_demo", "tenant-1", DocumentPurgeRequest{
+		AsOfDate: time.Date(2026, 3, 15, 8, 0, 0, 0, time.UTC),
+		DryRun:   true,
+	})
+	if err != nil {
+		t.Fatalf("PurgeExpiredDocuments dry-run failed: %v", err)
+	}
+	if dryRun.AsOfDate != "2026-03-15" || !dryRun.DryRun || dryRun.Limit != defaultPurgeLimit {
+		t.Fatalf("unexpected dry-run metadata: %#v", dryRun)
+	}
+	if dryRun.CandidateCount != 3 || dryRun.EligibleCount != 1 || dryRun.PurgedCount != 0 || dryRun.SkippedCount != 2 {
+		t.Fatalf("unexpected dry-run counts: %#v", dryRun)
+	}
+	if len(store.deleted) != 0 || repo.docs["doc-purge"] == nil {
+		t.Fatalf("dry-run should not delete files or rows, deleted=%#v docs=%#v", store.deleted, repo.docs)
+	}
+	skipReasons := map[string]bool{}
+	for _, candidate := range dryRun.Candidates {
+		if candidate.SkipReason != "" {
+			skipReasons[candidate.SkipReason] = true
+		}
+	}
+	if !skipReasons["legal_hold"] || !skipReasons["not_disposed"] {
+		t.Fatalf("expected legal_hold and not_disposed skip reasons: %#v", dryRun.Candidates)
+	}
+
+	executed, err := svc.PurgeExpiredDocuments(context.Background(), "tenant_demo", "tenant-1", DocumentPurgeRequest{
+		AsOfDate: time.Date(2026, 3, 15, 8, 0, 0, 0, time.UTC),
+		DryRun:   false,
+		Limit:    10,
+	})
+	if err != nil {
+		t.Fatalf("PurgeExpiredDocuments execute failed: %v", err)
+	}
+	if executed.DryRun || executed.CandidateCount != 3 || executed.EligibleCount != 1 || executed.PurgedCount != 1 || executed.SkippedCount != 2 {
+		t.Fatalf("unexpected execute counts: %#v", executed)
+	}
+	if _, ok := repo.docs["doc-purge"]; ok {
+		t.Fatalf("expected eligible disposed document to be purged")
+	}
+	if repo.docs["doc-held"] == nil || repo.docs["doc-active"] == nil || repo.docs["doc-future"] == nil {
+		t.Fatalf("expected held, active, and future documents to remain: %#v", repo.docs)
+	}
+	if len(store.deleted) != 1 || store.deleted[0] != "tenant-1/doc-purge.pdf" {
+		t.Fatalf("expected eligible storage key to be deleted, got %#v", store.deleted)
+	}
+
+	if _, err := svc.PurgeExpiredDocuments(context.Background(), "tenant_demo", "tenant-1", DocumentPurgeRequest{Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be zero or greater") {
+		t.Fatalf("expected negative limit to fail, got %v", err)
+	}
+}
+
+func TestService_ReviewDocumentValidationAndIdempotency(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepository()
+	svc := NewService(repo, &mockStore{})
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	repo.docs["doc-1"] = &Document{
+		ID:           "doc-1",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypePayment,
+		EntityID:     "pay-1",
+		DocumentType: DocumentTypeReceipt,
+		FileName:     "receipt.pdf",
+		ReviewStatus: ReviewStatusApproved,
+		ReviewNote:   "looks good",
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+
+	tests := []struct {
+		name       string
+		reviewedBy string
+		req        *ReviewDocumentRequest
+		want       string
+	}{
+		{name: "blank reviewer", reviewedBy: " ", req: &ReviewDocumentRequest{ReviewStatus: ReviewStatusReviewed}, want: "reviewed by user is required"},
+		{name: "nil request", reviewedBy: "reviewer-1", req: nil, want: "review request is required"},
+		{name: "invalid status", reviewedBy: "reviewer-1", req: &ReviewDocumentRequest{ReviewStatus: "PENDING"}, want: "review_status must be REVIEWED"},
+		{name: "long note", reviewedBy: "reviewer-1", req: &ReviewDocumentRequest{ReviewStatus: ReviewStatusReviewed, ReviewNote: strings.Repeat("x", 2001)}, want: "review note must be 2000 characters or less"},
+		{name: "rejection requires note", reviewedBy: "reviewer-1", req: &ReviewDocumentRequest{ReviewStatus: ReviewStatusRejected}, want: "review note is required when rejecting a document"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.ReviewDocument(context.Background(), "tenant_demo", "tenant-1", "doc-1", tt.reviewedBy, tt.req)
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+
+	doc, err := svc.ReviewDocument(context.Background(), "tenant_demo", "tenant-1", "doc-1", "reviewer-1", &ReviewDocumentRequest{
+		ReviewStatus: ReviewStatusApproved,
+		ReviewNote:   " looks good ",
+	})
+	if err != nil {
+		t.Fatalf("ReviewDocument idempotent call failed: %v", err)
+	}
+	if doc.ID != "doc-1" || repo.reviewCount != 0 {
+		t.Fatalf("expected idempotent review without repository update, doc=%#v reviewCount=%d", doc, repo.reviewCount)
+	}
+
+	reviewed, err := svc.ReviewDocument(context.Background(), "tenant_demo", "tenant-1", "doc-1", " reviewer-2 ", &ReviewDocumentRequest{
+		ReviewStatus: ReviewStatusRejected,
+		ReviewNote:   "Does not match payment",
+	})
+	if err != nil {
+		t.Fatalf("ReviewDocument rejected failed: %v", err)
+	}
+	if reviewed.ReviewStatus != ReviewStatusRejected || reviewed.ReviewedBy == nil || *reviewed.ReviewedBy != "reviewer-2" {
+		t.Fatalf("unexpected rejected document: %#v", reviewed)
+	}
 }
 
 func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
@@ -112,21 +1104,40 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	svc := NewService(repo, store)
 
 	doc, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", &UploadDocumentRequest{
-		EntityType:   EntityTypeBankTxn,
-		EntityID:     "txn-1",
-		DocumentType: DocumentTypeReconciliation,
-		FileName:     "invoice 001.pdf",
-		ContentType:  "application/pdf",
-		FileSize:     int64(len("hello world")),
-		Notes:        "Matched to March bank statement",
-		UploadedBy:   "user-1",
+		EntityType:     EntityTypeBankTxn,
+		EntityID:       "txn-1",
+		DocumentType:   DocumentTypeReconciliation,
+		FileName:       "invoice 001.pdf",
+		ContentType:    "application/pdf",
+		FileSize:       int64(len("hello world")),
+		Notes:          "Matched to March bank statement",
+		RetentionYears: 7,
+		UploadedBy:     "user-1",
 	}, bytes.NewBufferString("hello world"))
 	if err != nil {
 		t.Fatalf("UploadDocument failed: %v", err)
 	}
+	expectedRetention := dateOnlyUTC(doc.CreatedAt.AddDate(7, 0, 0))
+	if doc.RetentionUntil == nil || !doc.RetentionUntil.Equal(expectedRetention) {
+		t.Fatalf("expected retention until %s, got %#v", expectedRetention.Format("2006-01-02"), doc.RetentionUntil)
+	}
 
 	if _, err := os.Stat(filepath.Join(rootDir, doc.StorageKey)); err != nil {
 		t.Fatalf("expected stored file to exist: %v", err)
+	}
+	explicitRetention := time.Date(2029, 3, 31, 0, 0, 0, 0, time.UTC)
+	if _, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", &UploadDocumentRequest{
+		EntityType:     EntityTypeBankTxn,
+		EntityID:       "txn-1",
+		DocumentType:   DocumentTypeReconciliation,
+		FileName:       "conflict.pdf",
+		ContentType:    "application/pdf",
+		FileSize:       int64(len("hello world")),
+		RetentionUntil: &explicitRetention,
+		RetentionYears: 7,
+		UploadedBy:     "user-1",
+	}, bytes.NewBufferString("hello world")); err == nil {
+		t.Fatal("expected retention_until and retention_years to conflict")
 	}
 
 	listed, err := svc.ListDocuments(context.Background(), "tenant_demo", "tenant-1", EntityTypeBankTxn, "txn-1")
@@ -174,6 +1185,121 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 		t.Fatalf("expected reviewer-1, got %#v", reviewedDoc.ReviewedBy)
 	}
 
+	rejectedDoc, err := svc.ReviewDocument(context.Background(), "tenant_demo", "tenant-1", doc.ID, "reviewer-2", &ReviewDocumentRequest{
+		ReviewStatus: ReviewStatusRejected,
+		ReviewNote:   "Receipt does not match bank statement",
+	})
+	if err != nil {
+		t.Fatalf("ReviewDocument failed: %v", err)
+	}
+	if rejectedDoc.ReviewStatus != ReviewStatusRejected {
+		t.Fatalf("expected rejected status, got %q", rejectedDoc.ReviewStatus)
+	}
+	if rejectedDoc.ReviewNote != "Receipt does not match bank statement" {
+		t.Fatalf("unexpected review note %q", rejectedDoc.ReviewNote)
+	}
+	if _, err := svc.ReviewDocument(context.Background(), "tenant_demo", "tenant-1", doc.ID, "reviewer-2", &ReviewDocumentRequest{
+		ReviewStatus: ReviewStatusRejected,
+	}); err == nil {
+		t.Fatal("expected rejected documents to require a review note")
+	}
+
+	missingRetentionDoc := *doc
+	missingRetentionDoc.ID = "doc-missing-retention"
+	missingRetentionDoc.RetentionUntil = nil
+	missingRetentionDoc.ReviewStatus = ReviewStatusPending
+	repo.docs[missingRetentionDoc.ID] = &missingRetentionDoc
+
+	expiredDate := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	dueSoonDate := time.Date(2026, 3, 30, 0, 0, 0, 0, time.UTC)
+	dueSoonDoc := *doc
+	dueSoonDoc.ID = "doc-due-soon"
+	dueSoonDoc.EntityID = "txn-due-soon"
+	dueSoonDoc.RetentionUntil = &dueSoonDate
+	dueSoonDoc.ReviewStatus = ReviewStatusApproved
+	repo.docs[dueSoonDoc.ID] = &dueSoonDoc
+	repo.docs[doc.ID].RetentionUntil = &expiredDate
+	retentionReview, err := svc.GetRetentionReview(context.Background(), "tenant_demo", "tenant-1", time.Date(2026, 3, 15, 8, 0, 0, 0, time.UTC), 30, true)
+	if err != nil {
+		t.Fatalf("GetRetentionReview failed: %v", err)
+	}
+	if retentionReview.TotalCount != 3 || retentionReview.ExpiredCount != 1 || retentionReview.DueSoonCount != 1 || retentionReview.MissingRetentionCount != 1 {
+		t.Fatalf("unexpected retention review: %#v", retentionReview)
+	}
+	if retentionReview.PendingReviewCount != 1 || retentionReview.RejectedCount != 1 {
+		t.Fatalf("unexpected retention review status counts: %#v", retentionReview)
+	}
+	if len(retentionReview.ReminderActions) != 5 {
+		t.Fatalf("expected 5 retention reminder actions, got %#v", retentionReview.ReminderActions)
+	}
+	if len(retentionReview.RemediationActions) != 5 {
+		t.Fatalf("expected 5 retention remediation actions, got %#v", retentionReview.RemediationActions)
+	}
+	actionCounts := map[string]int{}
+	for _, action := range retentionReview.ReminderActions {
+		actionCounts[action.Action]++
+		if action.DocumentID == "doc-due-soon" && action.Action == RetentionReminderDueSoon {
+			if action.DaysUntilRetention == nil || *action.DaysUntilRetention != 15 {
+				t.Fatalf("expected due-soon reminder to be 15 days out, got %#v", action.DaysUntilRetention)
+			}
+			if action.RetentionUntil == nil || action.RetentionUntil.Format("2006-01-02") != "2026-03-30" {
+				t.Fatalf("unexpected reminder retention date: %#v", action.RetentionUntil)
+			}
+		}
+	}
+	for _, action := range []string{
+		RetentionReminderExpired,
+		RetentionReminderDueSoon,
+		RetentionReminderMissingRetention,
+		RetentionReminderPendingReview,
+		RetentionReminderRejected,
+	} {
+		if actionCounts[action] == 0 {
+			t.Fatalf("missing retention reminder action %q in %#v", action, retentionReview.ReminderActions)
+		}
+	}
+	remediationCodes := documentRemediationCodes(retentionReview.RemediationActions)
+	for _, code := range []string{
+		"document_retention_expired",
+		"document_retention_due_soon",
+		"document_retention_missing",
+		"document_review_pending",
+		"document_review_rejected",
+	} {
+		if remediationCodes[code] == 0 {
+			t.Fatalf("missing retention remediation code %q in %#v", code, retentionReview.RemediationActions)
+		}
+	}
+	if retentionReview.RemediationActions[0].Scope != "documents" || retentionReview.RemediationActions[0].OwnerRole != "accountant" {
+		t.Fatalf("unexpected retention remediation ownership: %#v", retentionReview.RemediationActions[0])
+	}
+	if retentionReview.RemediationActions[0].WorkspaceQueue != "document_review" || retentionReview.RemediationActions[0].AssignmentKey == "" || retentionReview.RemediationActions[0].Priority == "" {
+		t.Fatalf("expected retention remediation assignment metadata: %#v", retentionReview.RemediationActions[0])
+	}
+	if _, err := svc.GetRetentionReview(context.Background(), "tenant_demo", "tenant-1", time.Now(), -1, false); err == nil {
+		t.Fatal("expected negative retention horizon to fail")
+	}
+
+	correctedRetention := time.Date(2028, 3, 31, 15, 45, 0, 0, time.FixedZone("EET", 2*60*60))
+	correctedDoc, err := svc.UpdateDocumentRetention(context.Background(), "tenant_demo", "tenant-1", doc.ID, &correctedRetention)
+	if err != nil {
+		t.Fatalf("UpdateDocumentRetention failed: %v", err)
+	}
+	if correctedDoc.RetentionUntil == nil || correctedDoc.RetentionUntil.Format("2006-01-02T15:04:05Z07:00") != "2028-03-31T00:00:00Z" {
+		t.Fatalf("unexpected corrected retention: %#v", correctedDoc.RetentionUntil)
+	}
+
+	clearedDoc, err := svc.UpdateDocumentRetention(context.Background(), "tenant_demo", "tenant-1", doc.ID, nil)
+	if err != nil {
+		t.Fatalf("UpdateDocumentRetention clear failed: %v", err)
+	}
+	if clearedDoc.RetentionUntil != nil {
+		t.Fatalf("expected cleared retention, got %#v", clearedDoc.RetentionUntil)
+	}
+	if _, err := svc.UpdateDocumentRetention(context.Background(), "tenant_demo", "tenant-1", "", nil); err == nil {
+		t.Fatal("expected document ID to be required")
+	}
+
 	summaries, err := svc.ListReviewSummaries(context.Background(), "tenant_demo", "tenant-1", EntityTypeBankTxn, []string{"txn-1", "txn-2"})
 	if err != nil {
 		t.Fatalf("ListReviewSummaries failed: %v", err)
@@ -181,11 +1307,106 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	if len(summaries) != 2 {
 		t.Fatalf("expected 2 summaries, got %d", len(summaries))
 	}
-	if summaries[0].EntityID != "txn-1" || summaries[0].ReviewedCount != 1 {
+	if summaries[0].EntityID != "txn-1" || summaries[0].ReviewedCount != 1 || summaries[0].RejectedCount != 1 || !summaries[0].HasRejected {
 		t.Fatalf("unexpected first summary: %#v", summaries[0])
 	}
 	if summaries[1].EntityID != "txn-2" || !summaries[1].MissingEvidence {
 		t.Fatalf("unexpected missing-evidence summary: %#v", summaries[1])
+	}
+
+	repo.docs["doc-approved-receipt"] = &Document{
+		ID:           "doc-approved-receipt",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypePayment,
+		EntityID:     "pay-1",
+		DocumentType: DocumentTypeReceipt,
+		FileName:     "receipt.pdf",
+		ReviewStatus: ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now().UTC(),
+	}
+	repo.docs["doc-pending-receipt"] = &Document{
+		ID:           "doc-pending-receipt",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypePayment,
+		EntityID:     "pay-2",
+		DocumentType: DocumentTypeReceipt,
+		FileName:     "receipt-draft.pdf",
+		ReviewStatus: ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now().UTC(),
+	}
+	policyResults, err := svc.EvaluateEvidencePolicy(context.Background(), "tenant_demo", "tenant-1", &EvidencePolicyRequest{
+		EntityType: EntityTypePayment,
+		EntityIDs:  []string{"pay-1", "pay-2", "pay-3", "pay-1"},
+		Rules: []EvidencePolicyRule{{
+			DocumentTypes:   []string{DocumentTypeReceipt},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateEvidencePolicy failed: %v", err)
+	}
+	if len(policyResults) != 3 {
+		t.Fatalf("expected deduped 3 policy results, got %d", len(policyResults))
+	}
+	if !policyResults[0].Compliant || policyResults[0].ApprovedDocumentTypeCounts[DocumentTypeReceipt] != 1 {
+		t.Fatalf("expected pay-1 policy to pass with approved receipt: %#v", policyResults[0])
+	}
+	if len(policyResults[0].RemediationActions) != 0 {
+		t.Fatalf("expected compliant policy to have no remediation actions: %#v", policyResults[0].RemediationActions)
+	}
+	if policyResults[1].Compliant || len(policyResults[1].Violations) != 1 || policyResults[1].RuleResults[0].AcceptedCount != 0 {
+		t.Fatalf("expected pay-2 policy to fail without an approved receipt: %#v", policyResults[1])
+	}
+	if len(policyResults[1].RemediationActions) != 1 || policyResults[1].RemediationActions[0].Code != "document_evidence_unapproved" {
+		t.Fatalf("expected pay-2 unapproved-evidence remediation action: %#v", policyResults[1].RemediationActions)
+	}
+	if policyResults[1].RemediationActions[0].WorkspaceQueue != "document_review" || policyResults[1].RemediationActions[0].Priority != "high" || policyResults[1].RemediationActions[0].DueInDays != 1 {
+		t.Fatalf("expected evidence policy assignment metadata: %#v", policyResults[1].RemediationActions[0])
+	}
+	if policyResults[1].RemediationActions[0].DocumentID != "doc-pending-receipt" || policyResults[1].RemediationActions[0].FileName != "receipt-draft.pdf" {
+		t.Fatalf("expected unapproved evidence action to target pending document: %#v", policyResults[1].RemediationActions[0])
+	}
+	if policyResults[1].RemediationActions[0].CLICommand != "oa documents review --id doc-pending-receipt --status approved" {
+		t.Fatalf("expected direct review command, got %q", policyResults[1].RemediationActions[0].CLICommand)
+	}
+	if policyResults[2].Compliant || !policyResults[2].MissingEvidence {
+		t.Fatalf("expected pay-3 policy to fail as missing evidence: %#v", policyResults[2])
+	}
+	if len(policyResults[2].RemediationActions) != 1 || policyResults[2].RemediationActions[0].Code != "document_evidence_missing" {
+		t.Fatalf("expected pay-3 missing-evidence remediation action: %#v", policyResults[2].RemediationActions)
+	}
+
+	repo.docs["doc-close-pack"] = &Document{
+		ID:           "doc-close-pack",
+		TenantID:     "tenant-1",
+		EntityType:   EntityTypeYearEndClose,
+		EntityID:     "8a369f1a-f0c4-5a50-9b41-cb0fda4a09ee",
+		DocumentType: DocumentTypeClosePack,
+		FileName:     "close-pack.pdf",
+		ReviewStatus: ReviewStatusApproved,
+		UploadedBy:   "user-1",
+		CreatedAt:    time.Now().UTC(),
+	}
+	closePackResults, err := svc.EvaluateEvidencePolicy(context.Background(), "tenant_demo", "tenant-1", &EvidencePolicyRequest{
+		EntityType: EntityTypeYearEndClose,
+		EntityIDs:  []string{"8a369f1a-f0c4-5a50-9b41-cb0fda4a09ee"},
+		Rules: []EvidencePolicyRule{{
+			DocumentTypes:   []string{DocumentTypeClosePack},
+			MinCount:        1,
+			RequireApproved: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateEvidencePolicy close pack failed: %v", err)
+	}
+	if len(closePackResults) != 1 || !closePackResults[0].Compliant || closePackResults[0].ApprovedDocumentTypeCounts[DocumentTypeClosePack] != 1 {
+		t.Fatalf("expected close-pack policy to pass with approved close pack: %#v", closePackResults)
+	}
+	if len(closePackResults[0].RemediationActions) != 0 {
+		t.Fatalf("expected compliant close-pack policy to have no remediation actions: %#v", closePackResults[0].RemediationActions)
 	}
 
 	if err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", doc.ID); err != nil {
@@ -195,4 +1416,100 @@ func TestService_UploadOpenListAndDeleteDocument(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(rootDir, doc.StorageKey)); !os.IsNotExist(err) {
 		t.Fatalf("expected stored file to be deleted, got err=%v", err)
 	}
+}
+
+func TestNormalizeUploadRetentionValidation(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 3, 15, 8, 30, 0, 0, time.FixedZone("EET", 2*60*60))
+	explicitRetention := time.Date(2029, 3, 31, 15, 45, 0, 0, time.FixedZone("EET", 2*60*60))
+
+	tests := []struct {
+		name           string
+		retentionUntil *time.Time
+		retentionYears int
+		wantDate       string
+		wantErr        string
+	}{
+		{name: "no retention", wantDate: ""},
+		{name: "negative years", retentionYears: -1, wantErr: "retention years must be zero or greater"},
+		{name: "too many years", retentionYears: MaxRetentionYears + 1, wantErr: "retention years cannot exceed"},
+		{name: "explicit date", retentionUntil: &explicitRetention, wantDate: "2029-03-31"},
+		{name: "years from upload date", retentionYears: 7, wantDate: "2033-03-15"},
+		{name: "conflicting retention inputs", retentionUntil: &explicitRetention, retentionYears: 7, wantErr: "retention_until and retention_years cannot be combined"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			retentionUntil, err := normalizeUploadRetention(tt.retentionUntil, tt.retentionYears, createdAt)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("normalizeUploadRetention failed: %v", err)
+			}
+			if tt.wantDate == "" {
+				if retentionUntil != nil {
+					t.Fatalf("expected nil retention date, got %#v", retentionUntil)
+				}
+				return
+			}
+			if retentionUntil == nil || retentionUntil.Format("2006-01-02") != tt.wantDate {
+				t.Fatalf("expected retention date %s, got %#v", tt.wantDate, retentionUntil)
+			}
+		})
+	}
+}
+
+func TestService_EvaluateEvidencePolicyValidation(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(newMockRepository(), &mockStore{})
+
+	tests := []struct {
+		name string
+		req  *EvidencePolicyRequest
+		want string
+	}{
+		{name: "nil request", req: nil, want: "evidence policy request is required"},
+		{name: "invalid entity type", req: &EvidencePolicyRequest{EntityType: "bad", EntityIDs: []string{"id-1"}, Rules: []EvidencePolicyRule{{MinCount: 1}}}, want: "unsupported document entity type"},
+		{name: "empty entity IDs", req: &EvidencePolicyRequest{EntityType: EntityTypePayment, EntityIDs: []string{" ", ""}, Rules: []EvidencePolicyRule{{MinCount: 1}}}, want: "at least one entity ID is required"},
+		{name: "missing rules", req: &EvidencePolicyRequest{EntityType: EntityTypePayment, EntityIDs: []string{"id-1"}}, want: "at least one evidence policy rule is required"},
+		{name: "negative min count", req: &EvidencePolicyRequest{EntityType: EntityTypePayment, EntityIDs: []string{"id-1"}, Rules: []EvidencePolicyRule{{MinCount: -1}}}, want: "min_count must be one or greater"},
+		{name: "invalid rule document type", req: &EvidencePolicyRequest{EntityType: EntityTypePayment, EntityIDs: []string{"id-1"}, Rules: []EvidencePolicyRule{{DocumentTypes: []string{"bad"}, MinCount: 1}}}, want: "unsupported document type"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.EvaluateEvidencePolicy(context.Background(), "tenant_demo", "tenant-1", tt.req)
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+
+	repo := newMockRepository()
+	repo.listErr = errors.New("list failed")
+	svc = NewService(repo, &mockStore{})
+	_, err := svc.EvaluateEvidencePolicy(context.Background(), "tenant_demo", "tenant-1", &EvidencePolicyRequest{
+		EntityType: EntityTypePayment,
+		EntityIDs:  []string{"pay-1"},
+		Rules:      []EvidencePolicyRule{{MinCount: 1}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "list failed") {
+		t.Fatalf("expected list error, got %v", err)
+	}
+}
+
+func documentRemediationCodes(actions []DocumentRemediationAction) map[string]int {
+	codes := make(map[string]int, len(actions))
+	for _, action := range actions {
+		codes[action.Code]++
+	}
+	return codes
 }

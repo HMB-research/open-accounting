@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -61,6 +62,55 @@ func (h *Handlers) CreateRecurringInvoice(w http.ResponseWriter, r *http.Request
 	}
 
 	respondJSON(w, http.StatusCreated, invoice)
+}
+
+// ImportRecurringInvoices imports recurring invoice templates from CSV data.
+// @Summary Import recurring invoices
+// @Description Import recurring invoice templates from grouped CSV data and skip duplicate or invalid rows
+// @Tags Recurring
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body recurring.ImportRecurringInvoicesRequest true "CSV import payload"
+// @Success 200 {object} recurring.ImportRecurringInvoicesResult
+// @Failure 400 {object} object{error=string}
+// @Router /tenants/{tenantID}/recurring-invoices/import [post]
+func (h *Handlers) ImportRecurringInvoices(w http.ResponseWriter, r *http.Request) {
+	tenantCtx := h.tenantContextFromRequest(r)
+
+	var req recurring.ImportRecurringInvoicesRequest
+	if !decodeJSONRequest(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.CSVContent) == "" {
+		respondError(w, http.StatusBadRequest, "csv_content is required")
+		return
+	}
+	if req.FileName == "" {
+		req.FileName = "recurring_invoices_import.csv"
+	}
+	req.UserID = userIDFromRequest(r)
+
+	contactsList, err := h.contactsService.List(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, nil)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load contacts")
+		return
+	}
+
+	productsList, err := h.importProductList(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load products")
+		return
+	}
+
+	result, err := h.recurringService.ImportCSV(r.Context(), tenantCtx.tenantID, tenantCtx.schemaName, contactsList, productsList, &req)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
 }
 
 // CreateRecurringInvoiceFromInvoice creates a recurring invoice from an existing invoice

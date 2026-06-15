@@ -201,27 +201,28 @@ check_e2e_test() {
 
 check_demo_data() {
     local route=$1
+    local seed_file="internal/demo/seed_template.sql"
 
     # Map routes to table names
     case "$route" in
         "/dashboard") return 0 ;;  # Dashboard uses aggregate data
-        "/accounts") grep -q "INSERT INTO tenant_acme.accounts" cmd/api/handlers.go && return 0 ;;
-        "/journal") grep -q "INSERT INTO tenant_acme.journal_entries" cmd/api/handlers.go && return 0 ;;
-        "/contacts") grep -q "INSERT INTO tenant_acme.contacts" cmd/api/handlers.go && return 0 ;;
-        "/invoices"*) grep -q "INSERT INTO tenant_acme.invoices" cmd/api/handlers.go && return 0 ;;
-        "/quotes") grep -q "INSERT INTO tenant_acme.quotes" cmd/api/handlers.go && return 0 ;;
-        "/orders") grep -q "INSERT INTO tenant_acme.orders" cmd/api/handlers.go && return 0 ;;
-        "/payments"*) grep -q "INSERT INTO tenant_acme.payments" cmd/api/handlers.go && return 0 ;;
-        "/recurring") grep -q "INSERT INTO tenant_acme.recurring_invoices" cmd/api/handlers.go && return 0 ;;
-        "/employees"*) grep -q "INSERT INTO tenant_acme.employees" cmd/api/handlers.go && return 0 ;;
-        "/payroll"*) grep -q "INSERT INTO tenant_acme.payroll_runs" cmd/api/handlers.go && return 0 ;;
-        "/banking"*) grep -q "INSERT INTO tenant_acme.bank_accounts" cmd/api/handlers.go && return 0 ;;
-        "/assets") grep -q "INSERT INTO tenant_acme.fixed_assets" cmd/api/handlers.go && return 0 ;;
-        "/inventory") grep -q "INSERT INTO tenant_acme.inventory" cmd/api/handlers.go && return 0 ;;
+        "/accounts") grep -q "INSERT INTO tenant_acme.accounts" "$seed_file" && return 0 ;;
+        "/journal") grep -q "INSERT INTO tenant_acme.journal_entries" "$seed_file" && return 0 ;;
+        "/contacts") grep -q "INSERT INTO tenant_acme.contacts" "$seed_file" && return 0 ;;
+        "/invoices"*) grep -q "INSERT INTO tenant_acme.invoices" "$seed_file" && return 0 ;;
+        "/quotes") grep -q "INSERT INTO tenant_acme.quotes" "$seed_file" && return 0 ;;
+        "/orders") grep -q "INSERT INTO tenant_acme.orders" "$seed_file" && return 0 ;;
+        "/payments"*) grep -q "INSERT INTO tenant_acme.payments" "$seed_file" && return 0 ;;
+        "/recurring") grep -q "INSERT INTO tenant_acme.recurring_invoices" "$seed_file" && return 0 ;;
+        "/employees"*) grep -q "INSERT INTO tenant_acme.employees" "$seed_file" && return 0 ;;
+        "/payroll"*) grep -q "INSERT INTO tenant_acme.payroll_runs" "$seed_file" && return 0 ;;
+        "/banking"*) grep -q "INSERT INTO tenant_acme.bank_accounts" "$seed_file" && return 0 ;;
+        "/assets") grep -q "INSERT INTO tenant_acme.fixed_assets" "$seed_file" && return 0 ;;
+        "/inventory") grep -q "INSERT INTO tenant_acme.products" "$seed_file" && return 0 ;;
         "/reports"*) return 0 ;;  # Reports use aggregate data
         "/tax") return 0 ;;  # Tax uses aggregate data
         "/vat-returns") return 0 ;;  # Uses invoice data
-        "/tsd") grep -q "INSERT INTO tenant_acme.tsd_declarations" cmd/api/handlers.go && return 0 ;;
+        "/tsd") grep -q "INSERT INTO tenant_acme.tsd_declarations" "$seed_file" && return 0 ;;
         "/settings"*) return 0 ;;  # Settings are tenant config
         "/login") return 0 ;;  # No demo data needed
         *) return 1 ;;
@@ -234,7 +235,7 @@ run_e2e_test() {
     local name=$(echo "$route" | sed 's/\///g' | sed 's/-/_/g')
 
     cd frontend
-    if bun run test:e2e:demo -- --grep "$name" 2>/dev/null; then
+    if bun run test:e2e -- --project=demo-chromium --grep "$name" 2>/dev/null; then
         cd ..
         return 0
     fi
@@ -323,13 +324,13 @@ while [[ $ITERATION -lt $MAX_ITERATIONS && ${#NEEDS_WORK[@]} -gt 0 ]]; do
 Make the **$name** view ($route) fully functional with demo data.
 
 ## Requirements
-1. **Demo Data**: Add seed data to \`cmd/api/handlers.go\` in the demo reset SQL
+1. **Demo Data**: Add seed data to \`internal/demo/seed_template.sql\`
 2. **E2E Test**: Create \`frontend/e2e/demo/${name// /-}.spec.ts\` following existing patterns
 3. **Verify**: Run the E2E test and ensure it passes
 
 ## Existing Patterns
 - See \`frontend/e2e/demo/quotes.spec.ts\` for E2E test structure
-- See \`cmd/api/handlers.go\` around line 1750+ for demo seed SQL
+- See \`internal/demo/seed_template.sql\` for demo seed SQL
 - Use existing contact/account IDs from demo data
 
 ## Completion Criteria
@@ -468,7 +469,7 @@ test.describe('[View Name] View', () => {
 ### 3. Run and Verify
 ```bash
 cd frontend
-bun run test:e2e:demo -- --grep "[view-name]"
+bun run test:e2e -- --project=demo-chromium --grep "[view-name]"
 ```
 
 ## Completion Signal
@@ -517,7 +518,7 @@ while [[ $ITERATION -lt $MAX_ITERATIONS ]]; do
     cat /tmp/ralph-prompt.md | claude --print
 
     # Run tests to verify
-    cd frontend && bun run test:e2e:demo && cd ..
+    cd frontend && bun run test:e2e && cd ..
 
     # Reset demo data if tests failed
     if [[ $? -ne 0 ]]; then
@@ -568,7 +569,7 @@ When adding a new route to the application:
 ### Tests fail after demo reset
 ```bash
 # Wait longer for data propagation
-sleep 10 && cd frontend && bun run test:e2e:demo
+sleep 10 && cd frontend && bun run test:e2e
 ```
 
 ### Demo data not appearing

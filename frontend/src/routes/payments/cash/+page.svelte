@@ -3,14 +3,21 @@
 	import { api, type Payment, type PaymentType, type Contact } from '$lib/api';
 	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
-	import { formatCurrency, formatDate } from '$lib/utils/formatting';
+	import { dateInputToApiTimestamp } from '$lib/utils/dates';
+	import { formatCurrency, formatDate, formStringValue } from '$lib/utils/formatting';
+	import { requireTenantId, parseApiError } from '$lib/utils/tenant';
 
 	let payments = $state<Payment[]>([]);
 	let contacts = $state<Contact[]>([]);
 	let isLoading = $state(true);
 	let error = $state('');
+	let success = $state('');
+	let actionLoading = $state(false);
 	let showCreatePayment = $state(false);
+	let showReversePayment = $state(false);
+	let selectedPaymentForReversal = $state<Payment | null>(null);
 	let filterType = $state<PaymentType | ''>('');
 
 	// New payment form
@@ -20,6 +27,12 @@
 	let newAmount = $state('0');
 	let newReference = $state('');
 	let newNotes = $state('');
+
+	// Payment reversal form
+	let reversalDate = $state(new Date().toISOString().split('T')[0]);
+	let reversalReason = $state('');
+	let reversalReference = $state('');
+	let reversalNotes = $state('');
 
 	$effect(() => {
 		const tenantId = $page.url.searchParams.get('tenant');
@@ -51,25 +64,31 @@
 
 	async function createPayment(e: Event) {
 		e.preventDefault();
-		const tenantId = $page.url.searchParams.get('tenant');
+		const tenantId = requireTenantId($page, (err) => (error = err));
 		if (!tenantId) return;
 
+		actionLoading = true;
+		error = '';
 		try {
 			const payment = await api.createPayment(tenantId, {
 				payment_type: newType,
 				contact_id: newContactId || undefined,
-				payment_date: newPaymentDate,
-				amount: newAmount,
+				payment_date: dateInputToApiTimestamp(newPaymentDate),
+				amount: formStringValue(newAmount),
 				payment_method: 'CASH',
-				reference: newReference || undefined,
-				notes: newNotes || undefined,
+				reference: newReference ? formStringValue(newReference) : undefined,
+				notes: newNotes ? formStringValue(newNotes) : undefined,
 				allocations: []
 			});
-			payments = [payment, ...payments];
-			showCreatePayment = false;
+			payments = paymentMatchesFilter(payment) ? [payment, ...payments] : payments;
+			closeCreatePayment();
 			resetForm();
+			success = m.cashPayments_recordPayment();
+			setTimeout(() => (success = ''), 3000);
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to create payment';
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -80,6 +99,42 @@
 		newAmount = '0';
 		newReference = '';
 		newNotes = '';
+	}
+
+	async function submitPaymentReversal(e: Event) {
+		e.preventDefault();
+		const tenantId = requireTenantId($page, (err) => (error = err));
+		if (!tenantId || !selectedPaymentForReversal) return;
+
+		actionLoading = true;
+		error = '';
+		try {
+			const result = await api.reversePayment(tenantId, selectedPaymentForReversal.id, {
+				payment_date: dateInputToApiTimestamp(reversalDate),
+				reason: formStringValue(reversalReason),
+				reference: reversalReference ? formStringValue(reversalReference) : undefined,
+				notes: reversalNotes ? formStringValue(reversalNotes) : undefined
+			});
+
+			const originalID = result.original_payment.id;
+			const reversalID = result.reversal_payment.id;
+			const updatedPayments = payments
+				.map((payment) => (payment.id === originalID ? result.original_payment : payment))
+				.filter((payment) => payment.id !== reversalID && paymentMatchesFilter(payment));
+			payments = paymentMatchesFilter(result.reversal_payment)
+				? [result.reversal_payment, ...updatedPayments]
+				: updatedPayments;
+			closeReversePayment();
+			success = m.payments_reverseSuccess({
+				original: result.original_payment.payment_number,
+				reversal: result.reversal_payment.payment_number
+			});
+			setTimeout(() => (success = ''), 3000);
+		} catch (err) {
+			error = parseApiError(err);
+		} finally {
+			actionLoading = false;
+		}
 	}
 
 	async function handleFilter() {
@@ -98,6 +153,60 @@
 		if (!contactId) return '-';
 		const contact = contacts.find((c) => c.id === contactId);
 		return contact?.name || '-';
+	}
+
+	function paymentMatchesFilter(payment: Payment): boolean {
+		return payment.payment_method === 'CASH' && (!filterType || payment.payment_type === filterType);
+	}
+
+	function openReversePayment(payment: Payment) {
+		selectedPaymentForReversal = payment;
+		reversalDate = new Date().toISOString().split('T')[0];
+		reversalReason = '';
+		reversalReference = `REVERSAL-${payment.payment_number}`;
+		reversalNotes = '';
+		showReversePayment = true;
+	}
+
+	function closeReversePayment() {
+		showReversePayment = false;
+		selectedPaymentForReversal = null;
+		reversalDate = new Date().toISOString().split('T')[0];
+		reversalReason = '';
+		reversalReference = '';
+		reversalNotes = '';
+	}
+
+	function closeCreatePayment() {
+		showCreatePayment = false;
+	}
+
+	function handleCreatePaymentBackdropKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			closeCreatePayment();
+		}
+	}
+
+	function handleReversePaymentBackdropKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			closeReversePayment();
+		}
+	}
+
+	function handleModalKeydown() {
+		// Let keyboard events bubble to the backdrop so Escape still closes the modal.
+	}
+
+	function isReversalPayment(payment: Payment): boolean {
+		return !!payment.reversal_of_payment_id;
+	}
+
+	function isReversedPayment(payment: Payment): boolean {
+		return !!payment.reversed_by_payment_id;
+	}
+
+	function canReversePayment(payment: Payment): boolean {
+		return !isReversalPayment(payment) && !isReversedPayment(payment);
 	}
 
 	// Calculate totals as derived state
@@ -154,8 +263,12 @@
 		</div>
 	</div>
 
+	{#if success}
+		<ErrorAlert message={success} type="success" onDismiss={() => (success = '')} />
+	{/if}
+
 	{#if error}
-		<div class="alert alert-error">{error}</div>
+		<ErrorAlert message={error} type="error" onDismiss={() => (error = '')} />
 	{/if}
 
 	{#if isLoading}
@@ -165,30 +278,66 @@
 			<p>{m.cashPayments_noPayments()}</p>
 		</div>
 	{:else}
-		<div class="card">
+		<div class="card data-table-card">
 			<div class="table-container">
-				<table class="table table-mobile-cards">
+				<table class="table table-mobile-cards readable-table cash-payments-table">
+					<colgroup>
+						<col class="col-number" />
+						<col class="col-type" />
+						<col class="col-contact" />
+						<col class="col-date" />
+						<col class="col-amount" />
+						<col class="col-reference" />
+						<col class="col-actions" />
+					</colgroup>
 					<thead>
 						<tr>
 							<th>{m.payments_number()}</th>
 							<th>{m.accounts_accountType()}</th>
 							<th class="hide-mobile">{m.payments_contact()}</th>
 							<th>{m.common_date()}</th>
-							<th>{m.common_amount()}</th>
+							<th class="amount-heading">{m.common_amount()}</th>
 							<th class="hide-mobile">{m.payments_reference()}</th>
+							<th class="actions-heading">{m.common_actions()}</th>
 						</tr>
 					</thead>
 					<tbody>
-						{#each payments as payment}
+						{#each payments as payment (payment.id)}
 							<tr>
-								<td class="number" data-label="Number">{payment.payment_number}</td>
-								<td data-label="Type">
+								<td class="number" data-label={m.payments_number()}>
+									<div class="cell-stack">
+										<span class="cell-primary">{payment.payment_number}</span>
+										{#if isReversalPayment(payment)}
+											<span class="table-state-badge">{m.payments_reversal()}</span>
+										{:else if isReversedPayment(payment)}
+											<span class="table-state-badge">{m.payments_reversed()}</span>
+										{/if}
+									</div>
+								</td>
+								<td class="payment-type" data-label={m.accounts_accountType()}>
 									<StatusBadge status={payment.payment_type} config={typeConfig} />
 								</td>
-								<td class="hide-mobile" data-label="Contact">{getContactName(payment.contact_id)}</td>
-								<td data-label="Date">{formatDate(payment.payment_date)}</td>
-								<td class="amount" data-label="Amount">{formatCurrency(payment.amount)}</td>
-								<td class="reference hide-mobile" data-label="Reference">{payment.reference || '-'}</td>
+								<td class="contact cell-muted" data-label={m.payments_contact()}>
+									{getContactName(payment.contact_id)}
+								</td>
+								<td class="date" data-label={m.common_date()}>{formatDate(payment.payment_date)}</td>
+								<td class="amount" data-label={m.common_amount()}>{formatCurrency(payment.amount)}</td>
+								<td class="reference" data-label={m.payments_reference()}>
+									<span class="cell-ellipsis" title={payment.reference || undefined}>{payment.reference || '-'}</span>
+								</td>
+								<td
+									class="actions actions-cell"
+									class:no-actions={!canReversePayment(payment)}
+									data-label={m.common_actions()}
+								>
+									<div class="actions-stack">
+										{#if canReversePayment(payment)}
+											<button type="button" class="btn btn-secondary btn-small" onclick={() => openReversePayment(payment)}>
+												{m.payments_reverse()}
+											</button>
+										{/if}
+									</div>
+								</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -199,10 +348,21 @@
 </div>
 
 {#if showCreatePayment}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showCreatePayment = false)} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-payment-title" tabindex="-1">
+	<div
+		class="modal-backdrop"
+		onclick={closeCreatePayment}
+		onkeydown={handleCreatePaymentBackdropKeydown}
+		role="presentation"
+	>
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={handleModalKeydown}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="create-payment-title"
+			tabindex="-1"
+		>
 			<h2 id="create-payment-title">{m.cashPayments_recordPayment()}</h2>
 			<form onsubmit={createPayment}>
 				<div class="form-row">
@@ -217,7 +377,7 @@
 						<label class="label" for="contact">{m.payments_contact()}</label>
 						<select class="input" id="contact" bind:value={newContactId}>
 							<option value="">{m.payments_noContact()}</option>
-							{#each contacts as contact}
+							{#each contacts as contact (contact.id)}
 								<option value={contact.id}>{contact.name}</option>
 							{/each}
 						</select>
@@ -266,10 +426,92 @@
 				</div>
 
 				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={() => (showCreatePayment = false)}>
+					<button type="button" class="btn btn-secondary" onclick={closeCreatePayment}>
 						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">{m.cashPayments_recordPayment()}</button>
+					<button type="submit" class="btn btn-primary" disabled={actionLoading}>
+						{m.cashPayments_recordPayment()}
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+{#if showReversePayment && selectedPaymentForReversal}
+	<div
+		class="modal-backdrop"
+		onclick={closeReversePayment}
+		onkeydown={handleReversePaymentBackdropKeydown}
+		role="presentation"
+	>
+		<div
+			class="modal card"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={handleModalKeydown}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="reverse-payment-title"
+			tabindex="-1"
+		>
+			<h2 id="reverse-payment-title">{m.payments_reversePayment()}</h2>
+			<form onsubmit={submitPaymentReversal}>
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="reversal-original">{m.payments_originalPayment()}</label>
+						<input
+							class="input"
+							id="reversal-original"
+							value={selectedPaymentForReversal.payment_number}
+							readonly
+						/>
+					</div>
+					<div class="form-group">
+						<label class="label" for="reversal-date">{m.payments_reversalDate()}</label>
+						<input class="input" type="date" id="reversal-date" bind:value={reversalDate} required />
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label class="label" for="reversal-reason">{m.payments_reversalReason()} *</label>
+					<input
+						class="input"
+						type="text"
+						id="reversal-reason"
+						bind:value={reversalReason}
+						placeholder={m.payments_reversalReasonPlaceholder()}
+						required
+					/>
+				</div>
+
+				<div class="form-row">
+					<div class="form-group">
+						<label class="label" for="reversal-reference">{m.payments_reversalReference()}</label>
+						<input
+							class="input"
+							type="text"
+							id="reversal-reference"
+							bind:value={reversalReference}
+						/>
+					</div>
+					<div class="form-group">
+						<label class="label" for="reversal-notes">{m.payments_reversalNotes()}</label>
+						<input
+							class="input"
+							type="text"
+							id="reversal-notes"
+							bind:value={reversalNotes}
+						/>
+					</div>
+				</div>
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={closeReversePayment}>
+						{m.common_cancel()}
+					</button>
+					<button type="submit" class="btn btn-danger" disabled={actionLoading}>
+						{m.payments_reverse()}
+					</button>
 				</div>
 			</form>
 		</div>
@@ -342,20 +584,146 @@
 		gap: 1rem;
 	}
 
-	.number {
-		font-family: var(--font-mono);
-		font-weight: 500;
+	.cash-payments-table {
+		min-width: 980px;
 	}
 
-	.amount {
-		font-family: var(--font-mono);
-		text-align: right;
+	.cash-payments-table .col-number {
+		width: 12%;
 	}
 
-	.reference {
-		font-family: var(--font-mono);
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
+	.cash-payments-table .col-type {
+		width: 13%;
+	}
+
+	.cash-payments-table .col-contact {
+		width: 18%;
+	}
+
+	.cash-payments-table .col-date {
+		width: 11%;
+	}
+
+	.cash-payments-table .col-amount {
+		width: 11%;
+	}
+
+	.cash-payments-table .col-reference {
+		width: 25%;
+	}
+
+	.cash-payments-table .col-actions {
+		width: 10%;
+	}
+
+	.cash-payments-table th,
+	.cash-payments-table td {
+		padding-block: 0.85rem;
+		padding-inline: 0.85rem;
+		vertical-align: middle;
+	}
+
+	.cash-payments-table tbody tr {
+		height: 4.35rem;
+	}
+
+	.cash-payments-table .number,
+	.cash-payments-table .payment-type,
+	.cash-payments-table .contact,
+	.cash-payments-table .date,
+	.cash-payments-table .amount,
+	.cash-payments-table .reference,
+	.cash-payments-table .actions {
+		min-width: 0;
+	}
+
+	.cash-payments-table .number .cell-primary,
+	.cash-payments-table .reference .cell-ellipsis,
+	.cash-payments-table .date,
+	.cash-payments-table .amount {
+		font-size: 0.88rem;
+	}
+
+	.cash-payments-table .number .cell-primary {
+		font-weight: 750;
+		line-height: 1.2;
+		white-space: nowrap;
+	}
+
+	.cash-payments-table .contact {
+		max-width: 0;
+		color: #334155;
+		font-weight: 600;
+	}
+
+	.cash-payments-table .cell-muted {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.cash-payments-table .payment-type :global(.badge) {
+		width: 100%;
+		min-width: 0;
+		max-width: 8.6rem;
+		min-height: 1.75rem;
+		padding-inline: 0.6rem;
+		justify-content: center;
+		font-weight: 650;
+	}
+
+	.cash-payments-table .reference .cell-ellipsis {
+		max-width: 100%;
+		color: #334155;
+		line-height: 1.35;
+	}
+
+	.cash-payments-table .actions-stack {
+		justify-content: flex-end;
+		min-height: 2rem;
+	}
+
+	.cash-payments-table .btn-small {
+		min-height: 1.9rem;
+		min-width: 4.2rem;
+		justify-content: center;
+	}
+
+	@media (max-width: 768px) {
+		.cash-payments-table {
+			min-width: 0;
+		}
+
+		.cash-payments-table tbody tr {
+			height: auto;
+		}
+
+		.cash-payments-table th,
+		.cash-payments-table td {
+			padding-block: 0.45rem;
+			padding-inline: 0;
+		}
+
+		.cash-payments-table .payment-type :global(.badge) {
+			width: auto;
+			max-width: none;
+		}
+
+		.cash-payments-table .actions-cell.no-actions {
+			display: none;
+		}
+
+		.cash-payments-table .cell-muted {
+			max-width: 62%;
+			text-align: right;
+			white-space: normal;
+			overflow-wrap: anywhere;
+		}
+	}
+
+	.btn-danger {
+		background: #dc2626;
+		color: white;
 	}
 
 	.empty-state {

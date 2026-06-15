@@ -1,1122 +1,1328 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-	import { page } from '$app/stores';
-	import {
-		api,
-		type AbsenceType,
-		type ImportLeaveBalancesResult,
-		type LeaveBalance,
-		type LeaveRecord,
-		type LeaveStatus,
-		type Employee
-	} from '$lib/api';
-	import Decimal from 'decimal.js';
-	import * as m from '$lib/paraglide/messages.js';
-	import StatusBadge, { type StatusConfig } from '$lib/components/StatusBadge.svelte';
-	import { formatDate } from '$lib/utils/formatting';
+  import { browser } from "$app/environment";
+  import { page } from "$app/stores";
+  import {
+    api,
+    type AbsenceType,
+    type ImportLeaveBalancesResult,
+    type LeaveBalance,
+    type LeaveRecord,
+    type LeaveStatus,
+    type Employee,
+  } from "$lib/api";
+  import Decimal from "decimal.js";
+  import * as m from "$lib/paraglide/messages.js";
+  import StatusBadge, {
+    type StatusConfig,
+  } from "$lib/components/StatusBadge.svelte";
+  import DocumentManager from "$lib/components/DocumentManager.svelte";
+  import { dateInputToApiTimestamp } from "$lib/utils/dates";
+  import { formatDate } from "$lib/utils/formatting";
 
-	let absenceTypes = $state<AbsenceType[]>([]);
-	let leaveBalances = $state<LeaveBalance[]>([]);
-	let leaveRecords = $state<LeaveRecord[]>([]);
-	let employees = $state<Employee[]>([]);
-	let isLoading = $state(true);
-	let error = $state('');
-	let importError = $state('');
-	let importFileName = $state('');
-	let importCSVContent = $state('');
-	let isImporting = $state(false);
-	let importResult = $state<ImportLeaveBalancesResult | null>(null);
+  let absenceTypes = $state<AbsenceType[]>([]);
+  let leaveBalances = $state<LeaveBalance[]>([]);
+  let leaveRecords = $state<LeaveRecord[]>([]);
+  let employees = $state<Employee[]>([]);
+  let isLoading = $state(true);
+  let error = $state("");
+  let importError = $state("");
+  let importFileName = $state("");
+  let importCSVContent = $state("");
+  let isImporting = $state(false);
+  let importResult = $state<ImportLeaveBalancesResult | null>(null);
 
-	// Filters
-	let filterYear = $state(new Date().getFullYear());
-	let selectedEmployeeId = $state('');
-	let selectedTab = $state<'records' | 'balances'>('records');
+  // Filters
+  let filterYear = $state(new Date().getFullYear());
+  let selectedEmployeeId = $state("");
+  let selectedTab = $state<"records" | "balances">("records");
 
-	// Create leave request modal
-	let showCreateRequest = $state(false);
-	let newEmployeeId = $state('');
-	let newAbsenceTypeId = $state('');
-	let newStartDate = $state('');
-	let newEndDate = $state('');
-	let newTotalDays = $state('1');
-	let newWorkingDays = $state('1');
-	let newDocumentNumber = $state('');
-	let newNotes = $state('');
+  // Create leave request modal
+  let showCreateRequest = $state(false);
+  let newEmployeeId = $state("");
+  let newAbsenceTypeId = $state("");
+  let newStartDate = $state("");
+  let newEndDate = $state("");
+  let newTotalDays = $state("1");
+  let newWorkingDays = $state("1");
+  let newDocumentNumber = $state("");
+  let newNotes = $state("");
 
-	// Reject modal
-	let showRejectModal = $state(false);
-	let selectedRecordId = $state('');
-	let rejectionReason = $state('');
+  // Reject modal
+  let showRejectModal = $state(false);
+  let selectedRecordId = $state("");
+  let rejectionReason = $state("");
+  let selectedRecordForDocuments = $state<LeaveRecord | null>(null);
 
-	// Import balances modal
-	let showImportBalances = $state(false);
+  // Import balances modal
+  let showImportBalances = $state(false);
+  let yearOptions = $derived(
+    Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i),
+  );
 
-	$effect(() => {
-		const tenantId = $page.url.searchParams.get('tenant');
-		if (tenantId) {
-			loadData(tenantId);
-		}
-	});
+  $effect(() => {
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (tenantId) {
+      loadData(tenantId);
+    }
+  });
 
-	async function loadData(tenantId: string) {
-		isLoading = true;
-		error = '';
+  async function loadData(tenantId: string) {
+    isLoading = true;
+    error = "";
 
-		try {
-			const [typesData, employeesData, recordsData] = await Promise.all([
-				api.listAbsenceTypes(tenantId, true),
-				api.listEmployees(tenantId, true),
-				api.listLeaveRecords(tenantId, selectedEmployeeId || undefined, filterYear)
-			]);
-			absenceTypes = typesData;
-			employees = employeesData;
-			leaveRecords = recordsData;
+    try {
+      const [typesData, employeesData, recordsData] = await Promise.all([
+        api.listAbsenceTypes(tenantId, true),
+        api.listEmployees(tenantId, true),
+        api.listLeaveRecords(
+          tenantId,
+          selectedEmployeeId || undefined,
+          filterYear,
+        ),
+      ]);
+      absenceTypes = typesData;
+      employees = employeesData;
+      leaveRecords = recordsData;
 
-			// Load balances if an employee is selected
-			if (selectedEmployeeId) {
-				leaveBalances = await api.listLeaveBalances(tenantId, selectedEmployeeId, filterYear);
-			} else {
-				leaveBalances = [];
-			}
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load data';
-		} finally {
-			isLoading = false;
-		}
-	}
+      // Load balances if an employee is selected
+      if (selectedEmployeeId) {
+        leaveBalances = await api.listLeaveBalances(
+          tenantId,
+          selectedEmployeeId,
+          filterYear,
+        );
+      } else {
+        leaveBalances = [];
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to load data";
+    } finally {
+      isLoading = false;
+    }
+  }
 
-	async function handleFilterChange() {
-		const tenantId = $page.url.searchParams.get('tenant');
-		if (tenantId) {
-			loadData(tenantId);
-		}
-	}
+  async function handleFilterChange() {
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (tenantId) {
+      loadData(tenantId);
+    }
+  }
 
-	function openImportBalances() {
-		showImportBalances = true;
-		importError = '';
-		importFileName = '';
-		importCSVContent = '';
-		importResult = null;
-	}
+  function openImportBalances() {
+    showImportBalances = true;
+    importError = "";
+    importFileName = "";
+    importCSVContent = "";
+    importResult = null;
+  }
 
-	function closeImportBalances() {
-		showImportBalances = false;
-		importError = '';
-		importFileName = '';
-		importCSVContent = '';
-		importResult = null;
-	}
+  function closeImportBalances() {
+    showImportBalances = false;
+    importError = "";
+    importFileName = "";
+    importCSVContent = "";
+    importResult = null;
+  }
 
-	async function handleImportFileChange(event: Event) {
-		const input = event.currentTarget as HTMLInputElement | null;
-		const file = input?.files?.[0];
+  async function handleImportFileChange(event: Event) {
+    const input = event.currentTarget as HTMLInputElement | null;
+    const file = input?.files?.[0];
 
-		importResult = null;
+    importResult = null;
 
-		if (!file) {
-			importFileName = '';
-			importCSVContent = '';
-			return;
-		}
+    if (!file) {
+      importFileName = "";
+      importCSVContent = "";
+      return;
+    }
 
-		importFileName = file.name;
-		importCSVContent = await file.text();
-		importError = '';
-	}
+    importFileName = file.name;
+    importCSVContent = await file.text();
+    importError = "";
+  }
 
-	async function submitImportBalances(event: Event) {
-		event.preventDefault();
-		const tenantId = $page.url.searchParams.get('tenant');
-		if (!tenantId) return;
+  async function submitImportBalances(event: Event) {
+    event.preventDefault();
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (!tenantId) return;
 
-		if (!importCSVContent.trim()) {
-			importError = m.leave_importFileRequired();
-			return;
-		}
+    if (!importCSVContent.trim()) {
+      importError = m.leave_importFileRequired();
+      return;
+    }
 
-		isImporting = true;
-		importError = '';
+    isImporting = true;
+    importError = "";
 
-		try {
-			importResult = await api.importLeaveBalances(tenantId, {
-				file_name: importFileName || undefined,
-				csv_content: importCSVContent
-			});
+    try {
+      importResult = await api.importLeaveBalances(tenantId, {
+        file_name: importFileName || undefined,
+        csv_content: importCSVContent,
+      });
 
-			if (importResult.leave_balances_created > 0 || importResult.leave_balances_updated > 0) {
-				await loadData(tenantId);
-			}
-		} catch (err) {
-			importError = err instanceof Error ? err.message : m.leave_failedToImportBalances();
-		} finally {
-			isImporting = false;
-		}
-	}
+      if (
+        importResult.leave_balances_created > 0 ||
+        importResult.leave_balances_updated > 0
+      ) {
+        await loadData(tenantId);
+      }
+    } catch (err) {
+      importError =
+        err instanceof Error ? err.message : m.leave_failedToImportBalances();
+    } finally {
+      isImporting = false;
+    }
+  }
 
-	function downloadLeaveBalanceTemplate() {
-		if (!browser) return;
+  function downloadLeaveBalanceTemplate() {
+    if (!browser) return;
 
-		const template = [
-			'year,employee_number,absence_type_code,entitled_days,carryover_days,used_days,pending_days,notes',
-			'2025,EMP-001,ANNUAL_LEAVE,28,2,4,0,Imported leave balance'
-		].join('\n');
+    const template = [
+      "year,employee_number,absence_type_code,entitled_days,carryover_days,used_days,pending_days,notes",
+      "2025,EMP-001,ANNUAL_LEAVE,28,2,4,0,Imported leave balance",
+    ].join("\n");
 
-		const blob = new Blob([template], { type: 'text/csv;charset=utf-8' });
-		const url = window.URL.createObjectURL(blob);
-		const link = document.createElement('a');
-		link.href = url;
-		link.download = 'leave-balances-import-template.csv';
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
-		window.URL.revokeObjectURL(url);
-	}
+    const blob = new Blob([template], { type: "text/csv;charset=utf-8" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "leave-balances-import-template.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  }
 
-	async function createLeaveRequest(e: Event) {
-		e.preventDefault();
-		const tenantId = $page.url.searchParams.get('tenant');
-		if (!tenantId) return;
+  async function createLeaveRequest(e: Event) {
+    e.preventDefault();
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (!tenantId) return;
 
-		try {
-			const record = await api.createLeaveRecord(tenantId, {
-				employee_id: newEmployeeId,
-				absence_type_id: newAbsenceTypeId,
-				start_date: newStartDate,
-				end_date: newEndDate,
-				total_days: new Decimal(newTotalDays),
-				working_days: new Decimal(newWorkingDays),
-				document_number: newDocumentNumber || undefined,
-				notes: newNotes || undefined
-			});
-			leaveRecords = [record, ...leaveRecords];
-			showCreateRequest = false;
-			resetForm();
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to create leave request';
-		}
-	}
+    try {
+      const record = await api.createLeaveRecord(tenantId, {
+        employee_id: newEmployeeId,
+        absence_type_id: newAbsenceTypeId,
+        start_date: dateInputToApiTimestamp(newStartDate),
+        end_date: dateInputToApiTimestamp(newEndDate),
+        total_days: new Decimal(newTotalDays),
+        working_days: new Decimal(newWorkingDays),
+        document_number: newDocumentNumber || undefined,
+        notes: newNotes || undefined,
+      });
+      leaveRecords = [record, ...leaveRecords];
+      showCreateRequest = false;
+      resetForm();
+    } catch (err) {
+      error =
+        err instanceof Error ? err.message : "Failed to create leave request";
+    }
+  }
 
-	function resetForm() {
-		newEmployeeId = '';
-		newAbsenceTypeId = '';
-		newStartDate = '';
-		newEndDate = '';
-		newTotalDays = '1';
-		newWorkingDays = '1';
-		newDocumentNumber = '';
-		newNotes = '';
-	}
+  function resetForm() {
+    newEmployeeId = "";
+    newAbsenceTypeId = "";
+    newStartDate = "";
+    newEndDate = "";
+    newTotalDays = "1";
+    newWorkingDays = "1";
+    newDocumentNumber = "";
+    newNotes = "";
+  }
 
-	async function approveRecord(recordId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
-		if (!tenantId) return;
+  async function approveRecord(recordId: string) {
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (!tenantId) return;
 
-		try {
-			const updated = await api.approveLeaveRecord(tenantId, recordId);
-			leaveRecords = leaveRecords.map((r) => (r.id === updated.id ? updated : r));
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to approve leave request';
-		}
-	}
+    try {
+      const updated = await api.approveLeaveRecord(tenantId, recordId);
+      leaveRecords = leaveRecords.map((r) =>
+        r.id === updated.id ? updated : r,
+      );
+    } catch (err) {
+      error =
+        err instanceof Error ? err.message : "Failed to approve leave request";
+    }
+  }
 
-	function openRejectModal(recordId: string) {
-		selectedRecordId = recordId;
-		rejectionReason = '';
-		showRejectModal = true;
-	}
+  function openRejectModal(recordId: string) {
+    selectedRecordId = recordId;
+    rejectionReason = "";
+    showRejectModal = true;
+  }
 
-	async function rejectRecord() {
-		const tenantId = $page.url.searchParams.get('tenant');
-		if (!tenantId || !selectedRecordId || !rejectionReason) return;
+  function openDocumentManager(record: LeaveRecord) {
+    selectedRecordForDocuments = record;
+  }
 
-		try {
-			const updated = await api.rejectLeaveRecord(tenantId, selectedRecordId, rejectionReason);
-			leaveRecords = leaveRecords.map((r) => (r.id === updated.id ? updated : r));
-			showRejectModal = false;
-			selectedRecordId = '';
-			rejectionReason = '';
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to reject leave request';
-		}
-	}
+  function closeDocumentManager() {
+    selectedRecordForDocuments = null;
+  }
 
-	async function cancelRecord(recordId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
-		if (!tenantId) return;
+  function getLeaveRecordDocumentTitle(record: LeaveRecord): string {
+    return `${m.leave_records()}: ${getEmployeeName(record.employee_id)} ${formatDate(record.start_date)}`;
+  }
 
-		try {
-			const updated = await api.cancelLeaveRecord(tenantId, recordId);
-			leaveRecords = leaveRecords.map((r) => (r.id === updated.id ? updated : r));
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to cancel leave request';
-		}
-	}
+  async function rejectRecord() {
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (!tenantId || !selectedRecordId || !rejectionReason) return;
 
-	async function initializeBalances(employeeId: string) {
-		const tenantId = $page.url.searchParams.get('tenant');
-		if (!tenantId) return;
+    try {
+      const updated = await api.rejectLeaveRecord(
+        tenantId,
+        selectedRecordId,
+        rejectionReason,
+      );
+      leaveRecords = leaveRecords.map((r) =>
+        r.id === updated.id ? updated : r,
+      );
+      showRejectModal = false;
+      selectedRecordId = "";
+      rejectionReason = "";
+    } catch (err) {
+      error =
+        err instanceof Error ? err.message : "Failed to reject leave request";
+    }
+  }
 
-		try {
-			const balances = await api.initializeLeaveBalances(tenantId, employeeId, filterYear);
-			leaveBalances = balances;
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to initialize leave balances';
-		}
-	}
+  async function cancelRecord(recordId: string) {
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (!tenantId) return;
 
-	function formatDecimal(value: Decimal | string | number): string {
-		if (value instanceof Decimal) {
-			return value.toFixed(1);
-		}
-		return new Decimal(value).toFixed(1);
-	}
+    try {
+      const updated = await api.cancelLeaveRecord(tenantId, recordId);
+      leaveRecords = leaveRecords.map((r) =>
+        r.id === updated.id ? updated : r,
+      );
+    } catch (err) {
+      error =
+        err instanceof Error ? err.message : "Failed to cancel leave request";
+    }
+  }
 
-	const statusConfig: Record<LeaveStatus, StatusConfig> = {
-		PENDING: { class: 'badge-pending', label: m.leave_status_pending() },
-		APPROVED: { class: 'badge-approved', label: m.leave_status_approved() },
-		REJECTED: { class: 'badge-rejected', label: m.leave_status_rejected() },
-		CANCELLED: { class: 'badge-cancelled', label: m.leave_status_cancelled() }
-	};
+  async function initializeBalances(employeeId: string) {
+    const tenantId = $page.url.searchParams.get("tenant");
+    if (!tenantId) return;
 
-	function getAbsenceTypeName(typeId: string): string {
-		const type = absenceTypes.find((t) => t.id === typeId);
-		return type?.name || typeId;
-	}
+    try {
+      const balances = await api.initializeLeaveBalances(
+        tenantId,
+        employeeId,
+        filterYear,
+      );
+      leaveBalances = balances;
+    } catch (err) {
+      error =
+        err instanceof Error
+          ? err.message
+          : "Failed to initialize leave balances";
+    }
+  }
 
-	function getEmployeeName(employeeId: string): string {
-		const emp = employees.find((e) => e.id === employeeId);
-		return emp ? `${emp.last_name}, ${emp.first_name}` : employeeId;
-	}
+  function formatDecimal(value: Decimal | string | number): string {
+    if (value instanceof Decimal) {
+      return value.toFixed(1);
+    }
+    return new Decimal(value).toFixed(1);
+  }
 
-	function canApprove(record: LeaveRecord): boolean {
-		return record.status === 'PENDING';
-	}
+  const statusConfig: Record<LeaveStatus, StatusConfig> = {
+    PENDING: { class: "badge-pending", label: m.leave_status_pending() },
+    APPROVED: { class: "badge-approved", label: m.leave_status_approved() },
+    REJECTED: { class: "badge-rejected", label: m.leave_status_rejected() },
+    CANCELLED: { class: "badge-cancelled", label: m.leave_status_cancelled() },
+  };
 
-	function canReject(record: LeaveRecord): boolean {
-		return record.status === 'PENDING';
-	}
+  function getAbsenceTypeName(typeId: string): string {
+    const type = absenceTypes.find((t) => t.id === typeId);
+    return type?.name || typeId;
+  }
 
-	function canCancel(record: LeaveRecord): boolean {
-		return record.status === 'PENDING' || record.status === 'APPROVED';
-	}
+  function getEmployeeName(employeeId: string): string {
+    const emp = employees.find((e) => e.id === employeeId);
+    return emp ? `${emp.last_name}, ${emp.first_name}` : employeeId;
+  }
 
-	// Calculate days when dates change
-	$effect(() => {
-		if (newStartDate && newEndDate) {
-			const start = new Date(newStartDate);
-			const end = new Date(newEndDate);
-			if (end >= start) {
-				const diffTime = Math.abs(end.getTime() - start.getTime());
-				const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-				newTotalDays = String(diffDays);
-				// Estimate working days (rough: exclude weekends)
-				let workDays = 0;
-				const current = new Date(start);
-				while (current <= end) {
-					const day = current.getDay();
-					if (day !== 0 && day !== 6) workDays++;
-					current.setDate(current.getDate() + 1);
-				}
-				newWorkingDays = String(workDays);
-			}
-		}
-	});
+  function canApprove(record: LeaveRecord): boolean {
+    return record.status === "PENDING";
+  }
+
+  function canReject(record: LeaveRecord): boolean {
+    return record.status === "PENDING";
+  }
+
+  function canCancel(record: LeaveRecord): boolean {
+    return record.status === "PENDING" || record.status === "APPROVED";
+  }
+
+  function requiresDocument(record: LeaveRecord): boolean {
+    return (
+      record.absence_type?.requires_document ??
+      absenceTypes.find((type) => type.id === record.absence_type_id)
+        ?.requires_document ??
+      false
+    );
+  }
+
+  function parseDateInput(value: string): number | null {
+    const [year, month, day] = value.split("-").map(Number);
+    if (!year || !month || !day) {
+      return null;
+    }
+    return Date.UTC(year, month - 1, day);
+  }
+
+  function calculateLeaveDays(startValue: string, endValue: string) {
+    const start = parseDateInput(startValue);
+    const end = parseDateInput(endValue);
+    if (start === null || end === null || end < start) {
+      return null;
+    }
+
+    const millisecondsPerDay = 24 * 60 * 60 * 1000;
+    const totalDays = Math.floor((end - start) / millisecondsPerDay) + 1;
+    let workingDays = 0;
+
+    for (let current = start; current <= end; current += millisecondsPerDay) {
+      const day = new Date(current).getUTCDay();
+      if (day !== 0 && day !== 6) {
+        workingDays++;
+      }
+    }
+
+    return { totalDays, workingDays };
+  }
+
+  function syncLeaveDayFields() {
+    const days = calculateLeaveDays(newStartDate, newEndDate);
+    if (!days) {
+      return;
+    }
+    newTotalDays = String(days.totalDays);
+    newWorkingDays = String(days.workingDays);
+  }
 </script>
 
 <svelte:head>
-	<title>{m.leave_title()} - Open Accounting</title>
+  <title>{m.leave_title()} - Open Accounting</title>
 </svelte:head>
 
 <div class="container">
-	<div class="header">
-		<h1>{m.leave_title()}</h1>
-		<div class="header-actions">
-			<button class="btn btn-secondary" onclick={openImportBalances}>
-				{m.leave_importBalances()}
-			</button>
-			<button class="btn btn-primary" onclick={() => (showCreateRequest = true)}>
-				+ {m.leave_request()}
-			</button>
-		</div>
-	</div>
+  <div class="header">
+    <h1>{m.leave_title()}</h1>
+    <div class="header-actions">
+      <button class="btn btn-secondary" onclick={openImportBalances}>
+        {m.leave_importBalances()}
+      </button>
+      <button
+        class="btn btn-primary"
+        onclick={() => (showCreateRequest = true)}
+      >
+        + {m.leave_request()}
+      </button>
+    </div>
+  </div>
 
-	<div class="filters card">
-		<div class="filter-row">
-			<div class="filter-group">
-				<label class="label" for="yearFilter">{m.payroll_year()}</label>
-				<select class="input" id="yearFilter" bind:value={filterYear} onchange={handleFilterChange}>
-					{#each Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i) as year}
-						<option value={year}>{year}</option>
-					{/each}
-				</select>
-			</div>
-			<div class="filter-group">
-				<label class="label" for="employeeFilter">{m.leave_employee()}</label>
-				<select
-					class="input"
-					id="employeeFilter"
-					bind:value={selectedEmployeeId}
-					onchange={handleFilterChange}
-				>
-					<option value="">All Employees</option>
-					{#each employees as emp}
-						<option value={emp.id}>{emp.last_name}, {emp.first_name}</option>
-					{/each}
-				</select>
-			</div>
-		</div>
-	</div>
+  <div class="filters card">
+    <div class="filter-row">
+      <div class="filter-group">
+        <label class="label" for="yearFilter">{m.payroll_year()}</label>
+        <select
+          class="input"
+          id="yearFilter"
+          bind:value={filterYear}
+          onchange={handleFilterChange}
+        >
+          {#each yearOptions as year (year)}
+            <option value={year}>{year}</option>
+          {/each}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="label" for="employeeFilter">{m.leave_employee()}</label>
+        <select
+          class="input"
+          id="employeeFilter"
+          bind:value={selectedEmployeeId}
+          onchange={handleFilterChange}
+        >
+          <option value="">All Employees</option>
+          {#each employees as emp (emp.id)}
+            <option value={emp.id}>{emp.last_name}, {emp.first_name}</option>
+          {/each}
+        </select>
+      </div>
+    </div>
+  </div>
 
-	<div class="tabs">
-		<button
-			class="tab"
-			class:active={selectedTab === 'records'}
-			onclick={() => (selectedTab = 'records')}
-		>
-			{m.leave_records()}
-		</button>
-		<button
-			class="tab"
-			class:active={selectedTab === 'balances'}
-			onclick={() => (selectedTab = 'balances')}
-		>
-			{m.leave_balances()}
-		</button>
-	</div>
+  <div class="tabs">
+    <button
+      class="tab"
+      class:active={selectedTab === "records"}
+      onclick={() => (selectedTab = "records")}
+    >
+      {m.leave_records()}
+    </button>
+    <button
+      class="tab"
+      class:active={selectedTab === "balances"}
+      onclick={() => (selectedTab = "balances")}
+    >
+      {m.leave_balances()}
+    </button>
+  </div>
 
-	{#if error}
-		<div class="alert alert-error">{error}</div>
-	{/if}
+  {#if error}
+    <div class="alert alert-error">{error}</div>
+  {/if}
 
-	{#if isLoading}
-		<p>Loading...</p>
-	{:else if selectedTab === 'records'}
-		{#if leaveRecords.length === 0}
-			<div class="empty-state card">
-				<p>{m.leave_no_records()}</p>
-			</div>
-		{:else}
-			<div class="card table-container">
-				<table class="table table-mobile-cards">
-					<thead>
-						<tr>
-							<th>{m.leave_employee()}</th>
-							<th>{m.leave_type()}</th>
-							<th>{m.leave_start_date()}</th>
-							<th>{m.leave_end_date()}</th>
-							<th class="text-right">{m.leave_working_days()}</th>
-							<th>{m.leave_status()}</th>
-							<th>Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each leaveRecords as record}
-							<tr>
-								<td class="employee-name" data-label={m.leave_employee()}>
-									{record.employee
-										? `${record.employee.last_name}, ${record.employee.first_name}`
-										: getEmployeeName(record.employee_id)}
-								</td>
-								<td data-label={m.leave_type()}>
-									{record.absence_type?.name || getAbsenceTypeName(record.absence_type_id)}
-								</td>
-								<td data-label={m.leave_start_date()}>{formatDate(record.start_date)}</td>
-								<td data-label={m.leave_end_date()}>{formatDate(record.end_date)}</td>
-								<td class="text-right mono" data-label={m.leave_working_days()}>
-									{formatDecimal(record.working_days)}
-								</td>
-								<td data-label={m.leave_status()}>
-									<StatusBadge status={record.status} config={statusConfig} />
-								</td>
-								<td class="actions actions-cell">
-									{#if canApprove(record)}
-										<button
-											class="btn btn-small btn-success"
-											onclick={() => approveRecord(record.id)}
-										>
-											{m.leave_approve()}
-										</button>
-									{/if}
-									{#if canReject(record)}
-										<button
-											class="btn btn-small btn-danger"
-											onclick={() => openRejectModal(record.id)}
-										>
-											{m.leave_reject()}
-										</button>
-									{/if}
-									{#if canCancel(record)}
-										<button
-											class="btn btn-small btn-secondary"
-											onclick={() => cancelRecord(record.id)}
-										>
-											{m.leave_cancel()}
-										</button>
-									{/if}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		{/if}
-	{:else if selectedTab === 'balances'}
-		{#if !selectedEmployeeId}
-			<div class="empty-state card">
-				<p>Please select an employee to view leave balances</p>
-			</div>
-		{:else if leaveBalances.length === 0}
-			<div class="empty-state card">
-				<p>{m.leave_no_balances()}</p>
-				<div class="empty-actions">
-					<button class="btn btn-secondary" onclick={openImportBalances}>
-						{m.leave_importBalances()}
-					</button>
-					<button class="btn btn-primary" onclick={() => initializeBalances(selectedEmployeeId)}>
-						{m.leave_initialize_balances()}
-					</button>
-				</div>
-			</div>
-		{:else}
-			<div class="card table-container">
-				<table class="table table-mobile-cards">
-					<thead>
-						<tr>
-							<th>{m.leave_type()}</th>
-							<th class="text-right">{m.leave_entitled()}</th>
-							<th class="text-right">{m.leave_carryover()}</th>
-							<th class="text-right">{m.leave_used()}</th>
-							<th class="text-right">{m.leave_pending()}</th>
-							<th class="text-right">{m.leave_remaining()}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each leaveBalances as balance}
-							<tr>
-								<td data-label={m.leave_type()}>
-									{balance.absence_type?.name || getAbsenceTypeName(balance.absence_type_id)}
-								</td>
-								<td class="text-right mono" data-label={m.leave_entitled()}>
-									{formatDecimal(balance.entitled_days)}
-								</td>
-								<td class="text-right mono" data-label={m.leave_carryover()}>
-									{formatDecimal(balance.carryover_days)}
-								</td>
-								<td class="text-right mono" data-label={m.leave_used()}>
-									{formatDecimal(balance.used_days)}
-								</td>
-								<td class="text-right mono" data-label={m.leave_pending()}>
-									{formatDecimal(balance.pending_days)}
-								</td>
-								<td class="text-right mono remaining" data-label={m.leave_remaining()}>
-									{formatDecimal(balance.remaining_days)}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		{/if}
-	{/if}
+  {#if isLoading}
+    <p>Loading...</p>
+  {:else if selectedTab === "records"}
+    {#if leaveRecords.length === 0}
+      <div class="empty-state card">
+        <p>{m.leave_no_records()}</p>
+      </div>
+    {:else}
+      <div class="card table-container">
+        <table class="table table-mobile-cards">
+          <thead>
+            <tr>
+              <th>{m.leave_employee()}</th>
+              <th>{m.leave_type()}</th>
+              <th>{m.leave_start_date()}</th>
+              <th>{m.leave_end_date()}</th>
+              <th class="text-right">{m.leave_working_days()}</th>
+              <th>{m.leave_document_number()}</th>
+              <th>{m.leave_status()}</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each leaveRecords as record (record.id)}
+              <tr>
+                <td class="employee-name" data-label={m.leave_employee()}>
+                  {record.employee
+                    ? `${record.employee.last_name}, ${record.employee.first_name}`
+                    : getEmployeeName(record.employee_id)}
+                </td>
+                <td data-label={m.leave_type()}>
+                  {record.absence_type?.name ||
+                    getAbsenceTypeName(record.absence_type_id)}
+                </td>
+                <td data-label={m.leave_start_date()}
+                  >{formatDate(record.start_date)}</td
+                >
+                <td data-label={m.leave_end_date()}
+                  >{formatDate(record.end_date)}</td
+                >
+                <td class="text-right mono" data-label={m.leave_working_days()}>
+                  {formatDecimal(record.working_days)}
+                </td>
+                <td data-label={m.leave_document_number()}>
+                  {record.document_number || "-"}
+                </td>
+                <td data-label={m.leave_status()}>
+                  <StatusBadge status={record.status} config={statusConfig} />
+                </td>
+                <td class="actions actions-cell">
+                  <button
+                    class="btn btn-small btn-secondary"
+                    class:btn-warning={requiresDocument(record)}
+                    onclick={() => openDocumentManager(record)}
+                  >
+                    {m.documents_manageAction()}
+                  </button>
+                  {#if canApprove(record)}
+                    <button
+                      class="btn btn-small btn-success"
+                      onclick={() => approveRecord(record.id)}
+                    >
+                      {m.leave_approve()}
+                    </button>
+                  {/if}
+                  {#if canReject(record)}
+                    <button
+                      class="btn btn-small btn-danger"
+                      onclick={() => openRejectModal(record.id)}
+                    >
+                      {m.leave_reject()}
+                    </button>
+                  {/if}
+                  {#if canCancel(record)}
+                    <button
+                      class="btn btn-small btn-secondary"
+                      onclick={() => cancelRecord(record.id)}
+                    >
+                      {m.leave_cancel()}
+                    </button>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+  {:else if selectedTab === "balances"}
+    {#if !selectedEmployeeId}
+      <div class="empty-state card">
+        <p>Please select an employee to view leave balances</p>
+      </div>
+    {:else if leaveBalances.length === 0}
+      <div class="empty-state card">
+        <p>{m.leave_no_balances()}</p>
+        <div class="empty-actions">
+          <button class="btn btn-secondary" onclick={openImportBalances}>
+            {m.leave_importBalances()}
+          </button>
+          <button
+            class="btn btn-primary"
+            onclick={() => initializeBalances(selectedEmployeeId)}
+          >
+            {m.leave_initialize_balances()}
+          </button>
+        </div>
+      </div>
+    {:else}
+      <div class="card table-container">
+        <table class="table table-mobile-cards">
+          <thead>
+            <tr>
+              <th>{m.leave_type()}</th>
+              <th class="text-right">{m.leave_entitled()}</th>
+              <th class="text-right">{m.leave_carryover()}</th>
+              <th class="text-right">{m.leave_used()}</th>
+              <th class="text-right">{m.leave_pending()}</th>
+              <th class="text-right">{m.leave_remaining()}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each leaveBalances as balance (balance.id)}
+              <tr>
+                <td data-label={m.leave_type()}>
+                  {balance.absence_type?.name ||
+                    getAbsenceTypeName(balance.absence_type_id)}
+                </td>
+                <td class="text-right mono" data-label={m.leave_entitled()}>
+                  {formatDecimal(balance.entitled_days)}
+                </td>
+                <td class="text-right mono" data-label={m.leave_carryover()}>
+                  {formatDecimal(balance.carryover_days)}
+                </td>
+                <td class="text-right mono" data-label={m.leave_used()}>
+                  {formatDecimal(balance.used_days)}
+                </td>
+                <td class="text-right mono" data-label={m.leave_pending()}>
+                  {formatDecimal(balance.pending_days)}
+                </td>
+                <td
+                  class="text-right mono remaining"
+                  data-label={m.leave_remaining()}
+                >
+                  {formatDecimal(balance.remaining_days)}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+  {/if}
 </div>
 
 {#if showCreateRequest}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showCreateRequest = false)} role="presentation">
-		<div
-			class="modal card"
-			onclick={(e) => e.stopPropagation()}
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="create-request-title"
-			tabindex="-1"
-		>
-			<h2 id="create-request-title">{m.leave_request()}</h2>
-			<form onsubmit={createLeaveRequest}>
-				<div class="form-group">
-					<label class="label" for="employee">{m.leave_employee()} *</label>
-					<select class="input" id="employee" bind:value={newEmployeeId} required>
-						<option value="">Select employee...</option>
-						{#each employees as emp}
-							<option value={emp.id}>{emp.last_name}, {emp.first_name}</option>
-						{/each}
-					</select>
-				</div>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div
+    class="modal-backdrop"
+    onclick={() => (showCreateRequest = false)}
+    role="presentation"
+  >
+    <div
+      class="modal card"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-request-title"
+      tabindex="-1"
+    >
+      <h2 id="create-request-title">{m.leave_request()}</h2>
+      <form onsubmit={createLeaveRequest}>
+        <div class="form-group">
+          <label class="label" for="employee">{m.leave_employee()} *</label>
+          <select
+            class="input"
+            id="employee"
+            bind:value={newEmployeeId}
+            required
+          >
+            <option value="">Select employee...</option>
+            {#each employees as emp (emp.id)}
+              <option value={emp.id}>{emp.last_name}, {emp.first_name}</option>
+            {/each}
+          </select>
+        </div>
 
-				<div class="form-group">
-					<label class="label" for="absenceType">{m.leave_type()} *</label>
-					<select class="input" id="absenceType" bind:value={newAbsenceTypeId} required>
-						<option value="">Select type...</option>
-						{#each absenceTypes as type}
-							<option value={type.id}>{type.name}</option>
-						{/each}
-					</select>
-				</div>
+        <div class="form-group">
+          <label class="label" for="absenceType">{m.leave_type()} *</label>
+          <select
+            class="input"
+            id="absenceType"
+            bind:value={newAbsenceTypeId}
+            required
+          >
+            <option value="">Select type...</option>
+            {#each absenceTypes as type (type.id)}
+              <option value={type.id}>{type.name}</option>
+            {/each}
+          </select>
+        </div>
 
-				<div class="form-row">
-					<div class="form-group">
-						<label class="label" for="startDate">{m.leave_start_date()} *</label>
-						<input class="input" type="date" id="startDate" bind:value={newStartDate} required />
-					</div>
-					<div class="form-group">
-						<label class="label" for="endDate">{m.leave_end_date()} *</label>
-						<input class="input" type="date" id="endDate" bind:value={newEndDate} required />
-					</div>
-				</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="label" for="startDate">{m.leave_start_date()} *</label
+            >
+            <input
+              class="input"
+              type="date"
+              id="startDate"
+              bind:value={newStartDate}
+              onchange={syncLeaveDayFields}
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label class="label" for="endDate">{m.leave_end_date()} *</label>
+            <input
+              class="input"
+              type="date"
+              id="endDate"
+              bind:value={newEndDate}
+              onchange={syncLeaveDayFields}
+              required
+            />
+          </div>
+        </div>
 
-				<div class="form-row">
-					<div class="form-group">
-						<label class="label" for="totalDays">{m.leave_total_days()}</label>
-						<input
-							class="input"
-							type="number"
-							id="totalDays"
-							bind:value={newTotalDays}
-							min="0.5"
-							step="0.5"
-						/>
-					</div>
-					<div class="form-group">
-						<label class="label" for="workingDays">{m.leave_working_days()}</label>
-						<input
-							class="input"
-							type="number"
-							id="workingDays"
-							bind:value={newWorkingDays}
-							min="0.5"
-							step="0.5"
-						/>
-					</div>
-				</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="label" for="totalDays">{m.leave_total_days()}</label>
+            <input
+              class="input"
+              type="number"
+              id="totalDays"
+              bind:value={newTotalDays}
+              min="0.5"
+              step="0.5"
+            />
+          </div>
+          <div class="form-group">
+            <label class="label" for="workingDays"
+              >{m.leave_working_days()}</label
+            >
+            <input
+              class="input"
+              type="number"
+              id="workingDays"
+              bind:value={newWorkingDays}
+              min="0.5"
+              step="0.5"
+            />
+          </div>
+        </div>
 
-				<div class="form-group">
-					<label class="label" for="documentNumber">{m.leave_document_number()}</label>
-					<input class="input" type="text" id="documentNumber" bind:value={newDocumentNumber} />
-				</div>
+        <div class="form-group">
+          <label class="label" for="documentNumber"
+            >{m.leave_document_number()}</label
+          >
+          <input
+            class="input"
+            type="text"
+            id="documentNumber"
+            bind:value={newDocumentNumber}
+          />
+        </div>
 
-				<div class="form-group">
-					<label class="label" for="notes">{m.leave_notes()}</label>
-					<textarea class="input" id="notes" bind:value={newNotes} rows="2"></textarea>
-				</div>
+        <div class="form-group">
+          <label class="label" for="notes">{m.leave_notes()}</label>
+          <textarea class="input" id="notes" bind:value={newNotes} rows="2"
+          ></textarea>
+        </div>
 
-				<div class="modal-actions">
-					<button
-						type="button"
-						class="btn btn-secondary"
-						onclick={() => (showCreateRequest = false)}
-					>
-						{m.common_cancel()}
-					</button>
-					<button type="submit" class="btn btn-primary">{m.leave_request()}</button>
-				</div>
-			</form>
-		</div>
-	</div>
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick={() => (showCreateRequest = false)}
+          >
+            {m.common_cancel()}
+          </button>
+          <button type="submit" class="btn btn-primary"
+            >{m.leave_request()}</button
+          >
+        </div>
+      </form>
+    </div>
+  </div>
 {/if}
 
 {#if showImportBalances}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={closeImportBalances} role="presentation">
-		<div
-			class="modal card import-modal"
-			onclick={(e) => e.stopPropagation()}
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="import-leave-balances-title"
-			tabindex="-1"
-		>
-			<h2 id="import-leave-balances-title">{m.leave_importBalances()}</h2>
-			<p class="import-description">{m.leave_importDescription()}</p>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="modal-backdrop" onclick={closeImportBalances} role="presentation">
+    <div
+      class="modal card import-modal"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="import-leave-balances-title"
+      tabindex="-1"
+    >
+      <h2 id="import-leave-balances-title">{m.leave_importBalances()}</h2>
+      <p class="import-description">{m.leave_importDescription()}</p>
 
-			{#if importError}
-				<div class="alert alert-error">{importError}</div>
-			{/if}
+      {#if importError}
+        <div class="alert alert-error">{importError}</div>
+      {/if}
 
-			<form onsubmit={submitImportBalances}>
-				<div class="form-group">
-					<label class="label" for="leave-balances-file">{m.leave_importChooseFile()}</label>
-					<input
-						class="input"
-						id="leave-balances-file"
-						type="file"
-						accept=".csv,text/csv"
-						onchange={handleImportFileChange}
-					/>
-					<p class="help-text">{m.leave_importHint()}</p>
-					{#if importFileName}
-						<p class="selected-file">
-							{m.leave_importSelectedFile()}: <span>{importFileName}</span>
-						</p>
-					{/if}
-				</div>
+      <form onsubmit={submitImportBalances}>
+        <div class="form-group">
+          <label class="label" for="leave-balances-file"
+            >{m.leave_importChooseFile()}</label
+          >
+          <input
+            class="input"
+            id="leave-balances-file"
+            type="file"
+            accept=".csv,text/csv"
+            onchange={handleImportFileChange}
+          />
+          <p class="help-text">{m.leave_importHint()}</p>
+          {#if importFileName}
+            <p class="selected-file">
+              {m.leave_importSelectedFile()}: <span>{importFileName}</span>
+            </p>
+          {/if}
+        </div>
 
-				<div class="import-toolbar">
-					<button type="button" class="btn btn-secondary" onclick={downloadLeaveBalanceTemplate}>
-						{m.leave_importTemplate()}
-					</button>
-				</div>
+        <div class="import-toolbar">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick={downloadLeaveBalanceTemplate}
+          >
+            {m.leave_importTemplate()}
+          </button>
+        </div>
 
-				<div class="modal-actions">
-					<button type="button" class="btn btn-secondary" onclick={closeImportBalances}>
-						{m.common_cancel()}
-					</button>
-					<button type="submit" class="btn btn-primary" disabled={isImporting}>
-						{isImporting ? m.leave_importing() : m.leave_importBalances()}
-					</button>
-				</div>
-			</form>
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick={closeImportBalances}
+          >
+            {m.common_cancel()}
+          </button>
+          <button type="submit" class="btn btn-primary" disabled={isImporting}>
+            {isImporting ? m.leave_importing() : m.leave_importBalances()}
+          </button>
+        </div>
+      </form>
 
-			{#if importResult}
-				<div class="import-summary">
-					<h3>{m.leave_importSummary()}</h3>
-					<div class="summary-grid">
-						<div class="summary-tile">
-							<span class="summary-label">{m.leave_importRowsProcessed()}</span>
-							<strong>{importResult.rows_processed}</strong>
-						</div>
-						<div class="summary-tile">
-							<span class="summary-label">{m.leave_importBalancesCreated()}</span>
-							<strong>{importResult.leave_balances_created}</strong>
-						</div>
-						<div class="summary-tile">
-							<span class="summary-label">{m.leave_importBalancesUpdated()}</span>
-							<strong>{importResult.leave_balances_updated}</strong>
-						</div>
-						<div class="summary-tile">
-							<span class="summary-label">{m.leave_importRowsSkipped()}</span>
-							<strong>{importResult.rows_skipped}</strong>
-						</div>
-					</div>
+      {#if importResult}
+        <div class="import-summary">
+          <h3>{m.leave_importSummary()}</h3>
+          <div class="summary-grid">
+            <div class="summary-tile">
+              <span class="summary-label">{m.leave_importRowsProcessed()}</span>
+              <strong>{importResult.rows_processed}</strong>
+            </div>
+            <div class="summary-tile">
+              <span class="summary-label"
+                >{m.leave_importBalancesCreated()}</span
+              >
+              <strong>{importResult.leave_balances_created}</strong>
+            </div>
+            <div class="summary-tile">
+              <span class="summary-label"
+                >{m.leave_importBalancesUpdated()}</span
+              >
+              <strong>{importResult.leave_balances_updated}</strong>
+            </div>
+            <div class="summary-tile">
+              <span class="summary-label">{m.leave_importRowsSkipped()}</span>
+              <strong>{importResult.rows_skipped}</strong>
+            </div>
+          </div>
 
-					{#if importResult.errors?.length}
-						<div class="import-errors">
-							<h4>{m.leave_importRowErrors()}</h4>
-							<ul>
-								{#each importResult.errors as rowError}
-									<li>
-										<strong>{m.leave_importRow({ row: rowError.row.toString() })}</strong>
-										{#if rowError.year}
-											<span>{m.leave_importYear({ year: rowError.year.toString() })}</span>
-										{/if}
-										{#if rowError.employee_name}
-											<span>{rowError.employee_name}</span>
-										{:else if rowError.employee_number}
-											<span>{rowError.employee_number}</span>
-										{/if}
-										{#if rowError.absence_type_code}
-											<span>{m.leave_importType({ code: rowError.absence_type_code })}</span>
-										{/if}
-										<span>{rowError.message}</span>
-									</li>
-								{/each}
-							</ul>
-						</div>
-					{/if}
-				</div>
-			{/if}
-		</div>
-	</div>
+          {#if importResult.errors?.length}
+            <div class="import-errors">
+              <h4>{m.leave_importRowErrors()}</h4>
+              <ul>
+                {#each importResult.errors as rowError (rowError.row + rowError.message)}
+                  <li>
+                    <strong
+                      >{m.leave_importRow({
+                        row: rowError.row.toString(),
+                      })}</strong
+                    >
+                    {#if rowError.year}
+                      <span
+                        >{m.leave_importYear({
+                          year: rowError.year.toString(),
+                        })}</span
+                      >
+                    {/if}
+                    {#if rowError.employee_name}
+                      <span>{rowError.employee_name}</span>
+                    {:else if rowError.employee_number}
+                      <span>{rowError.employee_number}</span>
+                    {/if}
+                    {#if rowError.absence_type_code}
+                      <span
+                        >{m.leave_importType({
+                          code: rowError.absence_type_code,
+                        })}</span
+                      >
+                    {/if}
+                    <span>{rowError.message}</span>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </div>
 {/if}
 
-{#if showRejectModal}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showRejectModal = false)} role="presentation">
-		<div
-			class="modal card"
-			onclick={(e) => e.stopPropagation()}
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="reject-title"
-			tabindex="-1"
-		>
-			<h2 id="reject-title">{m.leave_reject()}</h2>
-			<form
-				onsubmit={(e) => {
-					e.preventDefault();
-					rejectRecord();
-				}}
-			>
-				<div class="form-group">
-					<label class="label" for="reason">{m.leave_rejection_reason()} *</label>
-					<textarea class="input" id="reason" bind:value={rejectionReason} rows="3" required
-					></textarea>
-				</div>
+<DocumentManager
+  open={!!selectedRecordForDocuments}
+  tenantId={$page.url.searchParams.get("tenant") || ""}
+  entityType="leave_record"
+  entityId={selectedRecordForDocuments?.id || ""}
+  title={selectedRecordForDocuments
+    ? getLeaveRecordDocumentTitle(selectedRecordForDocuments)
+    : m.documents_manageAction()}
+  onClose={closeDocumentManager}
+/>
 
-				<div class="modal-actions">
-					<button
-						type="button"
-						class="btn btn-secondary"
-						onclick={() => (showRejectModal = false)}
-					>
-						{m.common_cancel()}
-					</button>
-					<button type="submit" class="btn btn-danger">{m.leave_reject()}</button>
-				</div>
-			</form>
-		</div>
-	</div>
+{#if showRejectModal}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div
+    class="modal-backdrop"
+    onclick={() => (showRejectModal = false)}
+    role="presentation"
+  >
+    <div
+      class="modal card"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reject-title"
+      tabindex="-1"
+    >
+      <h2 id="reject-title">{m.leave_reject()}</h2>
+      <form
+        onsubmit={(e) => {
+          e.preventDefault();
+          rejectRecord();
+        }}
+      >
+        <div class="form-group">
+          <label class="label" for="reason"
+            >{m.leave_rejection_reason()} *</label
+          >
+          <textarea
+            class="input"
+            id="reason"
+            bind:value={rejectionReason}
+            rows="3"
+            required
+          ></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick={() => (showRejectModal = false)}
+          >
+            {m.common_cancel()}
+          </button>
+          <button type="submit" class="btn btn-danger"
+            >{m.leave_reject()}</button
+          >
+        </div>
+      </form>
+    </div>
+  </div>
 {/if}
 
 <style>
-	.header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1.5rem;
-	}
-
-	.header-actions {
-		display: flex;
-		gap: 0.75rem;
-	}
-
-	h1 {
-		font-size: 1.75rem;
-	}
-
-	.filters {
-		margin-bottom: 1.5rem;
-		padding: 1rem;
-	}
-
-	.filter-row {
-		display: flex;
-		gap: 1.5rem;
-		align-items: flex-end;
-	}
-
-	.filter-group {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.filter-group .input {
-		min-width: 200px;
-	}
-
-	.tabs {
-		display: flex;
-		gap: 0;
-		margin-bottom: 1.5rem;
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.tab {
-		padding: 0.75rem 1.5rem;
-		background: none;
-		border: none;
-		border-bottom: 2px solid transparent;
-		cursor: pointer;
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
-		transition: all 0.2s;
-	}
-
-	.tab:hover {
-		color: var(--color-text);
-	}
-
-	.tab.active {
-		color: var(--color-primary);
-		border-bottom-color: var(--color-primary);
-	}
-
-	.employee-name {
-		font-weight: 500;
-	}
-
-	.mono {
-		font-family: var(--font-mono);
-		font-size: 0.875rem;
-	}
-
-	.text-right {
-		text-align: right;
-	}
-
-	.remaining {
-		font-weight: 600;
-		color: var(--color-primary);
-	}
-
-	.actions {
-		display: flex;
-		gap: 0.5rem;
-	}
-
-	.btn-small {
-		padding: 0.25rem 0.5rem;
-		font-size: 0.75rem;
-	}
-
-	.btn-success {
-		background: #16a34a;
-		color: white;
-	}
-
-	.btn-success:hover {
-		background: #15803d;
-	}
-
-	.btn-danger {
-		background: #dc2626;
-		color: white;
-	}
-
-	.btn-danger:hover {
-		background: #b91c1c;
-	}
-
-	.empty-state {
-		text-align: center;
-		padding: 3rem;
-		color: var(--color-text-muted);
-	}
-
-	.empty-state .btn {
-		margin-top: 1rem;
-	}
-
-	.empty-actions {
-		display: flex;
-		justify-content: center;
-		gap: 0.75rem;
-		margin-top: 1rem;
-	}
-
-	.empty-actions .btn {
-		margin-top: 0;
-	}
-
-	.modal-backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.5);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 100;
-	}
-
-	.modal {
-		width: 100%;
-		max-width: 500px;
-		margin: 1rem;
-		max-height: 90vh;
-		overflow-y: auto;
-	}
-
-	.import-modal {
-		max-width: 760px;
-	}
-
-	.modal h2 {
-		margin-bottom: 1.5rem;
-	}
-
-	.form-row {
-		display: flex;
-		gap: 1rem;
-	}
-
-	.form-row .form-group {
-		flex: 1;
-	}
-
-	.help-text {
-		display: block;
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		margin-top: 0.25rem;
-	}
-
-	.modal-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 0.5rem;
-		margin-top: 1.5rem;
-	}
-
-	.import-description {
-		color: var(--color-text-muted);
-		margin-bottom: 1rem;
-	}
-
-	.import-toolbar {
-		display: flex;
-		justify-content: flex-start;
-		margin-top: 0.75rem;
-	}
-
-	.selected-file {
-		margin-top: 0.5rem;
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
-	}
-
-	.selected-file span {
-		color: var(--color-text);
-		font-weight: 600;
-	}
-
-	.import-summary {
-		margin-top: 1.5rem;
-	}
-
-	.summary-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-		gap: 0.75rem;
-		margin-top: 0.75rem;
-	}
-
-	.summary-tile {
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 6px;
-		padding: 0.75rem;
-	}
-
-	.summary-label {
-		display: block;
-		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		margin-bottom: 0.25rem;
-	}
-
-	.import-errors {
-		margin-top: 1rem;
-	}
-
-	.import-errors ul {
-		list-style: none;
-		padding: 0;
-		margin: 0.5rem 0 0;
-	}
-
-	.import-errors li {
-		display: grid;
-		gap: 0.25rem;
-		padding: 0.75rem 0;
-		border-top: 1px solid var(--color-border);
-	}
-
-	.import-errors strong,
-	.import-errors span {
-		font-size: 0.875rem;
-	}
-
-	textarea.input {
-		resize: vertical;
-		min-height: 60px;
-	}
-
-	/* Mobile responsive */
-	@media (max-width: 768px) {
-		h1 {
-			font-size: 1.25rem;
-		}
-
-		.header {
-			flex-direction: column;
-			align-items: flex-start;
-			gap: 1rem;
-		}
-
-		.header-actions {
-			flex-direction: column;
-			width: 100%;
-		}
-
-		.header-actions .btn {
-			width: 100%;
-			min-height: 44px;
-			justify-content: center;
-		}
-
-		.filter-row {
-			flex-direction: column;
-			gap: 0.75rem;
-			align-items: stretch;
-		}
-
-		.filter-group .input {
-			min-width: unset;
-			width: 100%;
-			min-height: 44px;
-		}
-
-		.tabs {
-			overflow-x: auto;
-		}
-
-		.tab {
-			flex: 1;
-			text-align: center;
-			min-height: 44px;
-		}
-
-		.actions {
-			flex-direction: column;
-			gap: 0.5rem;
-		}
-
-		.actions .btn {
-			width: 100%;
-			min-height: 44px;
-		}
-
-		.btn-small {
-			padding: 0.5rem 0.75rem;
-			font-size: 0.875rem;
-		}
-
-		.empty-state {
-			padding: 2rem 1rem;
-		}
-
-		.empty-actions {
-			flex-direction: column;
-		}
-
-		.empty-actions .btn {
-			width: 100%;
-			min-height: 44px;
-		}
-
-		.modal-backdrop {
-			padding: 0;
-			align-items: flex-end;
-		}
-
-		.modal {
-			max-width: 100%;
-			max-height: 95vh;
-			border-radius: 1rem 1rem 0 0;
-			margin: 0;
-		}
-
-		.modal h2 {
-			font-size: 1.25rem;
-		}
-
-		.form-row {
-			flex-direction: column;
-			gap: 0;
-		}
-
-		.modal-actions {
-			flex-direction: column-reverse;
-		}
-
-		.modal-actions button {
-			width: 100%;
-			min-height: 44px;
-		}
-	}
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  h1 {
+    font-size: 1.75rem;
+  }
+
+  .filters {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+  }
+
+  .filter-row {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-end;
+  }
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .filter-group .input {
+    min-width: 200px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .tab {
+    padding: 0.75rem 1.5rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+    transition: all 0.2s;
+  }
+
+  .tab:hover {
+    color: var(--color-text);
+  }
+
+  .tab.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+  }
+
+  .employee-name {
+    font-weight: 500;
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+  }
+
+  .text-right {
+    text-align: right;
+  }
+
+  .remaining {
+    font-weight: 600;
+    color: var(--color-primary);
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .btn-small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-success {
+    background: #16a34a;
+    color: white;
+  }
+
+  .btn-success:hover {
+    background: #15803d;
+  }
+
+  .btn-danger {
+    background: #dc2626;
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #b91c1c;
+  }
+
+  .btn-warning {
+    background: #f59e0b;
+    color: white;
+  }
+
+  .btn-warning:hover {
+    background: #d97706;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--color-text-muted);
+  }
+
+  .empty-state .btn {
+    margin-top: 1rem;
+  }
+
+  .empty-actions {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+
+  .empty-actions .btn {
+    margin-top: 0;
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+
+  .modal {
+    width: 100%;
+    max-width: 500px;
+    margin: 1rem;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .import-modal {
+    max-width: 760px;
+  }
+
+  .modal h2 {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 1rem;
+  }
+
+  .form-row .form-group {
+    flex: 1;
+  }
+
+  .help-text {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    margin-top: 0.25rem;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+  }
+
+  .import-description {
+    color: var(--color-text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .import-toolbar {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 0.75rem;
+  }
+
+  .selected-file {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+  }
+
+  .selected-file span {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .import-summary {
+    margin-top: 1.5rem;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .summary-tile {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 0.75rem;
+  }
+
+  .summary-label {
+    display: block;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .import-errors {
+    margin-top: 1rem;
+  }
+
+  .import-errors ul {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0;
+  }
+
+  .import-errors li {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.75rem 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .import-errors strong,
+  .import-errors span {
+    font-size: 0.875rem;
+  }
+
+  textarea.input {
+    resize: vertical;
+    min-height: 60px;
+  }
+
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    h1 {
+      font-size: 1.25rem;
+    }
+
+    .header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    .header-actions {
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .header-actions .btn {
+      width: 100%;
+      min-height: 44px;
+      justify-content: center;
+    }
+
+    .filter-row {
+      flex-direction: column;
+      gap: 0.75rem;
+      align-items: stretch;
+    }
+
+    .filter-group .input {
+      min-width: unset;
+      width: 100%;
+      min-height: 44px;
+    }
+
+    .tabs {
+      overflow-x: auto;
+    }
+
+    .tab {
+      flex: 1;
+      text-align: center;
+      min-height: 44px;
+    }
+
+    .actions {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .actions .btn {
+      width: 100%;
+      min-height: 44px;
+    }
+
+    .btn-small {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.875rem;
+    }
+
+    .empty-state {
+      padding: 2rem 1rem;
+    }
+
+    .empty-actions {
+      flex-direction: column;
+    }
+
+    .empty-actions .btn {
+      width: 100%;
+      min-height: 44px;
+    }
+
+    .modal-backdrop {
+      padding: 0;
+      align-items: flex-end;
+    }
+
+    .modal {
+      max-width: 100%;
+      max-height: 95vh;
+      border-radius: 1rem 1rem 0 0;
+      margin: 0;
+    }
+
+    .modal h2 {
+      font-size: 1.25rem;
+    }
+
+    .form-row {
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .modal-actions {
+      flex-direction: column-reverse;
+    }
+
+    .modal-actions button {
+      width: 100%;
+      min-height: 44px;
+    }
+  }
 </style>

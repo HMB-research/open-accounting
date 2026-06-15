@@ -14,6 +14,7 @@ const { apiMock } = vi.hoisted(() => ({
     listDocuments: vi.fn(),
     uploadDocument: vi.fn(),
     markDocumentReviewed: vi.fn(),
+    reviewDocument: vi.fn(),
     downloadDocument: vi.fn(),
     deleteDocument: vi.fn(),
   },
@@ -67,6 +68,14 @@ describe("DocumentManager", () => {
     apiMock.markDocumentReviewed.mockResolvedValue(
       createDocument({
         review_status: "REVIEWED",
+        reviewed_at: "2026-03-02T09:00:00Z",
+        reviewed_by: "reviewer-1",
+      }),
+    );
+    apiMock.reviewDocument.mockResolvedValue(
+      createDocument({
+        review_status: "APPROVED",
+        review_note: "Evidence accepted",
         reviewed_at: "2026-03-02T09:00:00Z",
         reviewed_by: "reviewer-1",
       }),
@@ -186,5 +195,103 @@ describe("DocumentManager", () => {
       expect(apiMock.listDocuments).toHaveBeenCalledTimes(2);
     });
     expect(screen.getByText("receipt.pdf")).toBeInTheDocument();
+  });
+
+  it("defaults year-end close uploads to close-pack evidence and approves reviews", async () => {
+    const onchanged = vi.fn();
+    apiMock.listDocuments.mockResolvedValueOnce([
+      createDocument({
+        entity_type: "year_end_close",
+        entity_id: "close-entity-1",
+        document_type: "close_pack",
+        file_name: "close-pack.pdf",
+      }),
+    ]);
+
+    const { container } = render(DocumentManager, {
+      open: true,
+      tenantId: "tenant-1",
+      entityType: "year_end_close",
+      entityId: "close-entity-1",
+      title: "Close-pack evidence",
+      onchanged,
+    });
+
+    await waitFor(() => {
+      expect(apiMock.listDocuments).toHaveBeenCalledWith(
+        "tenant-1",
+        "year_end_close",
+        "close-entity-1",
+      );
+    });
+
+    expect(screen.getByText("close-pack.pdf")).toBeInTheDocument();
+    const typeSelect = screen.getByLabelText("Document type") as HTMLSelectElement;
+    expect(typeSelect.value).toBe("close_pack");
+
+    await fireEvent.input(screen.getByLabelText("Review note for close-pack.pdf"), {
+      target: { value: "Evidence accepted" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(apiMock.reviewDocument).toHaveBeenCalledWith(
+      "tenant-1",
+      "doc-1",
+      {
+        review_status: "APPROVED",
+        review_note: "Evidence accepted",
+      },
+    );
+    await waitFor(() => {
+      expect(onchanged).toHaveBeenCalledTimes(1);
+    });
+
+    apiMock.listDocuments.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      createDocument({
+        id: "doc-close-pack",
+        entity_type: "year_end_close",
+        entity_id: "close-entity-1",
+        document_type: "close_pack",
+        file_name: "close-pack-uploaded.pdf",
+      }),
+    ]);
+    cleanup();
+    const uploadRender = render(DocumentManager, {
+      open: true,
+      tenantId: "tenant-1",
+      entityType: "year_end_close",
+      entityId: "close-entity-1",
+      title: "Close-pack evidence",
+    });
+
+    const fileInput = uploadRender.container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
+    const file = new File(["close pack"], "close-pack.pdf", {
+      type: "application/pdf",
+    });
+    Object.defineProperty(fileInput, "files", {
+      configurable: true,
+      value: [file],
+    });
+    await fireEvent.change(fileInput as HTMLInputElement);
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Upload selected files" }),
+    );
+
+    await waitFor(() => {
+      expect(apiMock.uploadDocument).toHaveBeenLastCalledWith(
+        "tenant-1",
+        "year_end_close",
+        "close-entity-1",
+        file,
+        {
+          document_type: "close_pack",
+          notes: undefined,
+          retention_until: undefined,
+        },
+      );
+    });
   });
 });

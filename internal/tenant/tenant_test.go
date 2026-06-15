@@ -120,7 +120,7 @@ func TestValidatePassword(t *testing.T) {
 	service := &Service{} // No DB needed for password validation
 
 	password := "securePassword123!"
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
 	require.NoError(t, err)
 
 	user := &User{
@@ -435,23 +435,25 @@ func TestGetRolePermissions_AllRoles(t *testing.T) {
 
 func TestTenantSettings_AllFields(t *testing.T) {
 	settings := TenantSettings{
-		DefaultCurrency: "USD",
-		CountryCode:     "US",
-		Timezone:        "America/New_York",
-		DateFormat:      "MM/DD/YYYY",
-		DecimalSep:      ".",
-		ThousandsSep:    ",",
-		FiscalYearStart: 7,
-		VATNumber:       "VAT123456",
-		RegCode:         "REG789",
-		Address:         "123 Main St",
-		Email:           "company@example.com",
-		Phone:           "+1-555-1234",
-		Logo:            "https://example.com/logo.png",
-		PDFPrimaryColor: "#ff0000",
-		PDFFooterText:   "Thank you for your business",
-		BankDetails:     "Bank: Example, IBAN: XX123",
-		InvoiceTerms:    "Net 30",
+		DefaultCurrency:             "USD",
+		CountryCode:                 "US",
+		Timezone:                    "America/New_York",
+		DateFormat:                  "MM/DD/YYYY",
+		DecimalSep:                  ".",
+		ThousandsSep:                ",",
+		FiscalYearStart:             7,
+		VATNumber:                   "VAT123456",
+		RegCode:                     "REG789",
+		Address:                     "123 Main St",
+		Email:                       "company@example.com",
+		Phone:                       "+1-555-1234",
+		Logo:                        "https://example.com/logo.png",
+		PDFPrimaryColor:             "#ff0000",
+		PDFFooterText:               "Thank you for your business",
+		BankDetails:                 "Bank: Example, IBAN: XX123",
+		InvoiceTerms:                "Net 30",
+		InventoryIssueCostingMethod: InventoryIssueCostingMethodWeightedAverage,
+		InventoryValuationMethod:    InventoryValuationMethodFIFO,
 	}
 
 	// Test JSON serialization
@@ -479,6 +481,8 @@ func TestTenantSettings_AllFields(t *testing.T) {
 	assert.Equal(t, settings.PDFFooterText, decoded.PDFFooterText)
 	assert.Equal(t, settings.BankDetails, decoded.BankDetails)
 	assert.Equal(t, settings.InvoiceTerms, decoded.InvoiceTerms)
+	assert.Equal(t, settings.InventoryIssueCostingMethod, decoded.InventoryIssueCostingMethod)
+	assert.Equal(t, settings.InventoryValuationMethod, decoded.InventoryValuationMethod)
 }
 
 func TestUserInvitation_JSONSerialization(t *testing.T) {
@@ -557,6 +561,7 @@ func TestTenantUser(t *testing.T) {
 		UserID:    "user-456",
 		Role:      RoleAccountant,
 		IsDefault: true,
+		IsActive:  true,
 		CreatedAt: now,
 	}
 
@@ -571,6 +576,7 @@ func TestTenantUser(t *testing.T) {
 	assert.Equal(t, tu.UserID, decoded.UserID)
 	assert.Equal(t, tu.Role, decoded.Role)
 	assert.Equal(t, tu.IsDefault, decoded.IsDefault)
+	assert.Equal(t, tu.IsActive, decoded.IsActive)
 }
 
 func TestUserWithTenants(t *testing.T) {
@@ -619,6 +625,7 @@ func TestUserWithTenants(t *testing.T) {
 func TestNewService(t *testing.T) {
 	service := NewService(nil)
 	assert.NotNil(t, service)
+	assert.Equal(t, defaultPasswordHashCost, service.passwordHashCost)
 }
 
 func TestSlugRegex(t *testing.T) {

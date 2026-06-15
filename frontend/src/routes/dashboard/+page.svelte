@@ -393,7 +393,7 @@
 					}
 				}}
 			>
-				{#each tenants as membership}
+				{#each tenants as membership (membership.tenant.id)}
 					<option value={membership.tenant.id} selected={selectedTenant?.id === membership.tenant.id}>
 						{membership.tenant.name}
 					</option>
@@ -603,10 +603,14 @@
 </div>
 
 {#if showCreateTenant}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showCreateTenant = false)} role="presentation">
-		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-org-title" tabindex="-1">
+	<div class="modal-backdrop" role="presentation">
+		<button
+			type="button"
+			class="modal-dismiss"
+			aria-label={m.common_close()}
+			onclick={() => (showCreateTenant = false)}
+		></button>
+		<div class="modal card" role="dialog" aria-modal="true" aria-labelledby="create-org-title" tabindex="-1">
 			<h2 id="create-org-title">{m.modal_createOrganization()}</h2>
 			<form onsubmit={createTenant}>
 				<div class="form-group">
@@ -688,6 +692,7 @@
 	.workspace-copy {
 		position: relative;
 		z-index: 1;
+		min-width: 0;
 		max-width: 46rem;
 		display: flex;
 		flex-direction: column;
@@ -697,6 +702,8 @@
 
 	.workspace-meta {
 		display: flex;
+		min-width: 0;
+		max-width: 100%;
 		align-items: center;
 		gap: 0.75rem;
 		flex-wrap: wrap;
@@ -725,11 +732,14 @@
 	}
 
 	.workspace-slug {
+		min-width: 0;
+		max-width: 100%;
 		font-family: var(--font-mono);
 		font-size: 0.78rem;
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		color: var(--color-text-muted);
+		overflow-wrap: anywhere;
 	}
 
 	.workspace-hero h2 {
@@ -737,8 +747,9 @@
 		font-size: clamp(2.8rem, 6vw, 5.1rem);
 		line-height: 0.88;
 		margin-bottom: 0;
-		letter-spacing: -0.04em;
+		letter-spacing: 0;
 		font-weight: 600;
+		overflow-wrap: anywhere;
 	}
 
 	.workspace-hero p {
@@ -749,11 +760,14 @@
 
 	.workspace-rail {
 		display: flex;
+		min-width: 0;
+		max-width: 100%;
 		flex-wrap: wrap;
 		gap: 0.55rem;
 	}
 
 	.workspace-rail span {
+		min-width: 0;
 		padding: 0.45rem 0.8rem;
 		border-radius: 999px;
 		background: rgba(255, 255, 255, 0.65);
@@ -761,10 +775,12 @@
 		font-size: 0.78rem;
 		font-weight: 600;
 		color: var(--color-text-muted);
+		overflow-wrap: anywhere;
 	}
 
 	.workspace-actions {
 		display: flex;
+		min-width: 0;
 		flex-wrap: wrap;
 		gap: 0.75rem;
 		justify-content: flex-start;
@@ -774,11 +790,13 @@
 		position: relative;
 		z-index: 1;
 		display: grid;
+		min-width: 0;
 		gap: 1rem;
 		align-content: start;
 	}
 
 	.workspace-panel {
+		min-width: 0;
 		padding: 1.1rem;
 		border-radius: 1.35rem;
 		border: 1px solid rgba(30, 41, 59, 0.08);
@@ -808,11 +826,13 @@
 
 	.workspace-signal-grid {
 		display: grid;
+		min-width: 0;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.85rem;
 	}
 
 	.workspace-signal {
+		min-width: 0;
 		padding: 0.85rem;
 		border-radius: 1rem;
 		background: rgba(255, 255, 255, 0.08);
@@ -834,12 +854,15 @@
 
 	.workspace-chip-row {
 		display: flex;
+		min-width: 0;
 		flex-wrap: wrap;
 		gap: 0.55rem;
 	}
 
 	.workspace-chip {
 		display: inline-flex;
+		min-width: 0;
+		max-width: 100%;
 		align-items: center;
 		padding: 0.55rem 0.85rem;
 		border-radius: 999px;
@@ -848,6 +871,7 @@
 		color: var(--color-primary);
 		font-weight: 600;
 		text-decoration: none;
+		overflow-wrap: anywhere;
 	}
 
 	.workspace-chip:hover {
@@ -940,6 +964,24 @@
 	}
 
 	@media (max-width: 480px) {
+		.workspace-hero {
+			gap: 1rem;
+			padding: 1rem;
+		}
+
+		.workspace-hero h2 {
+			font-size: clamp(2.15rem, 12vw, 2.8rem);
+			line-height: 0.95;
+		}
+
+		.workspace-meta {
+			align-items: flex-start;
+		}
+
+		.workspace-signal-grid {
+			grid-template-columns: 1fr;
+		}
+
 		h1 {
 			font-size: 1.25rem;
 		}
@@ -1067,6 +1109,11 @@
 		grid-template-columns: 2fr 1fr;
 		gap: 1.5rem;
 		margin-bottom: 1.5rem;
+		min-width: 0;
+	}
+
+	.analytics-section > :global(*) {
+		min-width: 0;
 	}
 
 	@media (max-width: 1024px) {
@@ -1078,6 +1125,8 @@
 	.chart-card {
 		margin-bottom: 1.5rem;
 		background: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(255, 251, 244, 0.92));
+		min-width: 0;
+		max-width: 100%;
 	}
 
 	.cash-flow-card {
@@ -1104,7 +1153,18 @@
 	}
 
 	.chart-container {
+		position: relative;
+		width: 100%;
+		min-width: 0;
+		max-width: 100%;
 		height: 300px;
+		overflow: hidden;
+	}
+
+	.chart-container :global(canvas) {
+		display: block;
+		width: 100% !important;
+		max-width: 100% !important;
 	}
 
 	.cash-flow-summary {
@@ -1169,7 +1229,18 @@
 		z-index: 100;
 	}
 
+	.modal-dismiss {
+		position: absolute;
+		inset: 0;
+		border: 0;
+		padding: 0;
+		background: transparent;
+		cursor: pointer;
+	}
+
 	.modal {
+		position: relative;
+		z-index: 1;
 		width: 100%;
 		max-width: 400px;
 		margin: 1rem;

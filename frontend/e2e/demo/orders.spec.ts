@@ -1,122 +1,331 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { ensureAuthenticated, navigateTo } from "./utils";
 
-test.describe('Orders View', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
-		await ensureAuthenticated(page, testInfo);
-		await ensureDemoTenant(page, testInfo);
-	});
+interface OrderResponse {
+  id: string;
+  order_number: string;
+  status: string;
+  converted_to_invoice_id?: string;
+}
 
-	test('displays orders page with correct structure', async ({ page }, testInfo) => {
-		await navigateTo(page, '/orders', testInfo);
+interface OrderInvoiceConversionResponse {
+  order: OrderResponse;
+  invoice: {
+    id: string;
+    invoice_number: string;
+    reference?: string;
+    status: string;
+  };
+}
 
-		// Wait for page to load - heading should be visible
-		await expect(page.getByRole('heading', { name: /orders/i })).toBeVisible();
+function responsePath(responseUrl: string) {
+  return new URL(responseUrl).pathname;
+}
 
-		// Wait for page content to load
-		await page.waitForTimeout(2000);
+async function waitForOrdersAndContacts(page: Page) {
+  const ordersResponsePromise = page.waitForResponse((response) => {
+    return (
+      response.request().method() === "GET" &&
+      /\/api\/v1\/tenants\/[^/]+\/orders$/.test(responsePath(response.url()))
+    );
+  });
+  const contactsResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      /\/api\/v1\/tenants\/[^/]+\/contacts$/.test(url.pathname) &&
+      url.searchParams.get("active_only") === "true"
+    );
+  });
 
-		// Check for page content (table, empty state, or content area)
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
+  const [ordersResponse, contactsResponse] = await Promise.all([
+    ordersResponsePromise,
+    contactsResponsePromise,
+  ]);
+  expect(ordersResponse.ok()).toBeTruthy();
+  expect(contactsResponse.ok()).toBeTruthy();
+}
 
-		// If table has data, verify it's displaying correctly
-		if (hasTable) {
-			const rows = table.locator('tbody tr');
-			const count = await rows.count();
-			if (count > 0) {
-				// Should have order number pattern visible
-				const hasOrderNumber = await page.getByText(/ORD-\d{4}-\d{3}/i).isVisible().catch(() => false);
-				if (hasOrderNumber) {
-					expect(hasOrderNumber).toBe(true);
-				}
-			}
-		}
+async function waitForOrdersLoaded(page: Page) {
+  await expect(async () => {
+    const isLoading = await page
+      .getByText(/^Loading\.\.\.$/i)
+      .first()
+      .isVisible()
+      .catch(() => false);
+    const hasTable = await page
+      .locator("table tbody tr")
+      .first()
+      .isVisible()
+      .catch(() => false);
+    const hasEmpty = await page
+      .locator(".empty-state")
+      .isVisible()
+      .catch(() => false);
+    expect(isLoading === false && (hasTable || hasEmpty)).toBeTruthy();
+  }).toPass({ timeout: 15000 });
+}
 
-		// Page loaded successfully if we got here
-		expect(true).toBe(true);
-	});
+async function openOrders(page: Page, testInfo: TestInfo) {
+  const loadedPromise = waitForOrdersAndContacts(page);
+  await navigateTo(page, "/orders", testInfo, { waitForNetworkIdle: false });
+  await loadedPromise;
+  await waitForOrdersLoaded(page);
+}
 
-	test('displays order statuses in table when data exists', async ({ page }, testInfo) => {
-		await navigateTo(page, '/orders', testInfo);
-		await expect(page.getByRole('heading', { name: /orders/i })).toBeVisible();
+function orderRow(page: Page, orderNumber: string) {
+  return page.locator("table tbody tr").filter({ hasText: orderNumber });
+}
 
-		// Wait for data to load
-		await page.waitForTimeout(2000);
+function statusFilter(page: Page) {
+  return page.locator(".filters select").first();
+}
 
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
+async function selectStatusFilter(page: Page, status: string) {
+  const loadedPromise = waitForOrdersAndContacts(page);
+  await statusFilter(page).selectOption(status);
+  await loadedPromise;
+  await waitForOrdersLoaded(page);
+}
 
-		if (hasTable) {
-			const rows = table.locator('tbody tr');
-			const count = await rows.count();
+async function createOrder(page: Page, label: string): Promise<OrderResponse> {
+  const unique = Date.now().toString(36);
+  await page
+    .getByRole("button", { name: /new order|uus tellimus|\+/i })
+    .click();
 
-			// Only check statuses if we have data
-			if (count > 0) {
-				// Status badges should be visible in table rows (case insensitive)
-				const statusTexts = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
-				let foundStatus = false;
-				for (const status of statusTexts) {
-					const hasStatus = await table.getByText(new RegExp(status, 'i')).first().isVisible().catch(() => false);
-					if (hasStatus) {
-						foundStatus = true;
-						break;
-					}
-				}
-				expect(foundStatus).toBe(true);
-			}
-		}
-	});
+  const modal = page.locator('[role="dialog"], .modal').first();
+  await expect(modal).toBeVisible({ timeout: 5000 });
+  await modal.locator("#contact").selectOption({ index: 1 });
+  await modal.locator("#order-date").fill("2026-03-25");
+  await modal.locator("#expected-delivery").fill("2026-03-31");
+  await modal.locator(".line-description").fill(`${label} service ${unique}`);
+  await modal.locator(".line-qty").fill("2");
+  await modal.locator(".line-price").fill("150");
+  await modal.locator(".line-vat").fill("22");
+  await modal.locator("#notes").fill(`${label} E2E ${unique}`);
 
-	test('shows order linked to quote when applicable', async ({ page }, testInfo) => {
-		await navigateTo(page, '/orders', testInfo);
+  const createResponsePromise = page.waitForResponse((response) => {
+    return (
+      response.request().method() === "POST" &&
+      /\/api\/v1\/tenants\/[^/]+\/orders$/.test(responsePath(response.url()))
+    );
+  });
+  await modal
+    .getByRole("button", { name: /create order|loo tellimus/i })
+    .click();
+  const createResponse = await createResponsePromise;
+  expect(createResponse.ok()).toBeTruthy();
+  const order = (await createResponse.json()) as OrderResponse;
 
-		// Wait for data to load
-		await page.waitForTimeout(2000);
+  const row = orderRow(page, order.order_number);
+  await expect(row).toBeVisible({ timeout: 10000 });
+  await expect(row).toContainText(/pending|ootel/i);
 
-		const table = page.locator('table');
-		const hasTable = await table.isVisible().catch(() => false);
+  return order;
+}
 
-		if (hasTable) {
-			// Check if there's an order with order number pattern
-			const hasOrderNumber = await page.getByText(/ORD-\d{4}-\d{3}/i).isVisible().catch(() => false);
-			// If orders exist, the page structure is correct
-			if (hasOrderNumber) {
-				expect(hasOrderNumber).toBe(true);
-			}
-		}
-	});
+async function waitForOrderActionReload(
+  page: Page,
+  action: () => Promise<void>,
+) {
+  const loadedPromise = waitForOrdersAndContacts(page);
+  await action();
+  await loadedPromise;
+}
 
-	test('can filter orders by status', async ({ page }, testInfo) => {
-		await navigateTo(page, '/orders', testInfo);
+test.describe("Orders View", () => {
+  test("covers order table, filters, deletion, lifecycle, and invoice conversion", async ({
+    page,
+  }, testInfo) => {
+    await ensureAuthenticated(page, testInfo);
+    await openOrders(page, testInfo);
 
-		// Find and use the status filter
-		const statusFilter = page.locator('select').first();
+    await expect(
+      page.getByRole("heading", { name: /orders|tellimused/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /new order|uus tellimus|\+/i }),
+    ).toBeVisible();
+    await expect(page.locator("table tbody tr").first()).toBeVisible();
+    await expect(page.locator("table")).toContainText(
+      /pending|confirmed|processing|shipped|delivered|ootel|kinnitatud|töötlemisel|saadetud|tarnitud/i,
+    );
 
-		if (await statusFilter.isVisible().catch(() => false)) {
-			// Get initial row count
-			await page.waitForTimeout(1000);
+    const filteredOrder = await createOrder(page, "Order filter");
 
-			// Select a filter option
-			await statusFilter.selectOption({ index: 1 });
+    await selectStatusFilter(page, "PENDING");
+    await expect(orderRow(page, filteredOrder.order_number)).toBeVisible({
+      timeout: 10000,
+    });
 
-			// Wait for filter to apply
-			await page.waitForTimeout(1000);
+    await selectStatusFilter(page, "CONFIRMED");
+    await expect(orderRow(page, filteredOrder.order_number)).toHaveCount(0);
 
-			// Filter should work (even if count is 0 or same)
-			const filteredRows = await page.locator('table tbody tr').count().catch(() => 0);
-			// Just verify the filter doesn't cause errors
-			expect(filteredRows).toBeGreaterThanOrEqual(0);
-		}
-	});
+    await selectStatusFilter(page, "");
+    const filteredOrderRow = orderRow(page, filteredOrder.order_number);
+    await expect(filteredOrderRow).toBeVisible({ timeout: 10000 });
 
-	test('has New Order button', async ({ page }, testInfo) => {
-		await navigateTo(page, '/orders', testInfo);
+    page.once("dialog", (dialog) => dialog.accept());
+    const deleteResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "DELETE" &&
+        response.url().includes(`/orders/${filteredOrder.id}`)
+      );
+    });
+    await filteredOrderRow
+      .getByRole("button", { name: /delete|kustuta/i })
+      .click();
+    const deleteResponse = await deleteResponsePromise;
+    expect(deleteResponse.ok()).toBeTruthy();
+    await expect(filteredOrderRow).toHaveCount(0);
 
-		// Verify New button exists
-		const newButton = page.getByRole('button', { name: /new|create|add/i }).or(
-			page.getByRole('link', { name: /new|create|add/i })
-		);
-		await expect(newButton).toBeVisible();
-	});
+    const order = await createOrder(page, "Order conversion");
+    let row = orderRow(page, order.order_number);
+
+    const orderDownloadPromise = page.waitForEvent("download");
+    await row.getByRole("button", { name: /^PDF$/i }).click();
+    const orderDownload = await orderDownloadPromise;
+    expect(orderDownload.suggestedFilename()).toContain(order.order_number);
+
+    let orderEmailPayload: Record<string, unknown> | undefined;
+    await page.route(
+      (url) => url.pathname.includes(`/orders/${order.id}/email`),
+      async (route) => {
+        orderEmailPayload = route.request().postDataJSON() as Record<
+          string,
+          unknown
+        >;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: true,
+            log_id: "order-email-e2e",
+            message: "Email sent successfully",
+          }),
+        });
+      },
+    );
+
+    await row.getByRole("button", { name: /email|e-post/i }).click();
+    const orderEmailModal = page.getByRole("dialog", {
+      name: /email order|saada tellimus/i,
+    });
+    await expect(orderEmailModal).toBeVisible();
+    await orderEmailModal.locator("#order-email-recipient").fill("order-e2e@example.com");
+    await orderEmailModal.locator("#order-email-name").fill("Order E2E");
+    const emailReloadPromise = waitForOrdersAndContacts(page);
+    await orderEmailModal
+      .getByRole("button", { name: /email|e-post/i })
+      .click();
+    await emailReloadPromise;
+    expect(orderEmailPayload).toMatchObject({
+      recipient_email: "order-e2e@example.com",
+      recipient_name: "Order E2E",
+      attach_pdf: true,
+      require_approved_evidence: false,
+    });
+    await expect(page.getByText(/order email sent|tellimuse e-kiri saadetud/i)).toBeVisible();
+
+    const confirmResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "POST" &&
+        response.url().includes(`/orders/${order.id}/confirm`)
+      );
+    });
+    await waitForOrderActionReload(page, () =>
+      row.getByRole("button", { name: /confirm|kinnita/i }).click(),
+    );
+    const confirmResponse = await confirmResponsePromise;
+    expect(confirmResponse.ok()).toBeTruthy();
+    row = orderRow(page, order.order_number);
+    await expect(row).toContainText(/confirmed|kinnitatud/i, {
+      timeout: 10000,
+    });
+
+    row = orderRow(page, order.order_number);
+    const processResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "POST" &&
+        response.url().includes(`/orders/${order.id}/process`)
+      );
+    });
+    await waitForOrderActionReload(page, () =>
+      row.getByRole("button", { name: /process|töötle/i }).click(),
+    );
+    const processResponse = await processResponsePromise;
+    expect(processResponse.ok()).toBeTruthy();
+    row = orderRow(page, order.order_number);
+    await expect(row).toContainText(/processing|töötlemisel/i, {
+      timeout: 10000,
+    });
+
+    row = orderRow(page, order.order_number);
+    const shipResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "POST" &&
+        response.url().includes(`/orders/${order.id}/ship`)
+      );
+    });
+    await waitForOrderActionReload(page, () =>
+      row.getByRole("button", { name: /ship|saada/i }).click(),
+    );
+    const shipResponse = await shipResponsePromise;
+    expect(shipResponse.ok()).toBeTruthy();
+    row = orderRow(page, order.order_number);
+    await expect(row).toContainText(/shipped|saadetud/i, {
+      timeout: 10000,
+    });
+
+    row = orderRow(page, order.order_number);
+    const deliverResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "POST" &&
+        response.url().includes(`/orders/${order.id}/deliver`)
+      );
+    });
+    await waitForOrderActionReload(page, () =>
+      row.getByRole("button", { name: /deliver|tarni/i }).click(),
+    );
+    const deliverResponse = await deliverResponsePromise;
+    expect(deliverResponse.ok()).toBeTruthy();
+    row = orderRow(page, order.order_number);
+    await expect(row).toContainText(/delivered|tarnitud/i, {
+      timeout: 10000,
+    });
+
+    row = orderRow(page, order.order_number);
+    await expect(
+      row.getByRole("button", { name: /convert to invoice|teisenda arveks/i }),
+    ).toBeVisible();
+
+    const conversionResponsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === "POST" &&
+        response.url().includes(`/orders/${order.id}/convert-to-invoice`)
+      );
+    });
+    await waitForOrderActionReload(page, () =>
+      row
+        .getByRole("button", { name: /convert to invoice|teisenda arveks/i })
+        .click(),
+    );
+    const conversionResponse = await conversionResponsePromise;
+    expect(conversionResponse.status()).toBe(201);
+    const result =
+      (await conversionResponse.json()) as OrderInvoiceConversionResponse;
+    expect(result.order.status).toBe("DELIVERED");
+    expect(result.order.order_number).toBe(order.order_number);
+    expect(result.order.converted_to_invoice_id).toBe(result.invoice.id);
+    expect(result.invoice.id).toBeTruthy();
+    expect(result.invoice.invoice_number).toBeTruthy();
+    expect(result.invoice.reference).toBe(order.order_number);
+    expect(result.invoice.status).toBe("DRAFT");
+
+    row = orderRow(page, order.order_number);
+    await expect(
+      row.getByRole("button", { name: /convert to invoice|teisenda arveks/i }),
+    ).toHaveCount(0);
+  });
 });

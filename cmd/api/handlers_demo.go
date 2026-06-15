@@ -1,20 +1,15 @@
 package main
 
 import (
-	"context"
-	"fmt"
+	"errors"
 	"net/http"
 	"os"
-	"time"
 
+	"github.com/HMB-research/open-accounting/internal/demo"
 	"github.com/rs/zerolog/log"
 )
 
-// Keep this aligned with the test schema lifecycle lock so demo reset DDL does
-// not deadlock against concurrent test processes using the same database.
-const demoResetAdvisoryLockKey = 12345678
-
-// DemoStatusResponse represents the demo data status
+// DemoStatusResponse represents the demo data status.
 type DemoStatusResponse struct {
 	User              int          `json:"user"`
 	Accounts          EntityStatus `json:"accounts"`
@@ -29,7 +24,7 @@ type DemoStatusResponse struct {
 	TsdDeclarations   EntityStatus `json:"tsdDeclarations"`
 }
 
-// EntityStatus represents count and key identifiers for an entity type
+// EntityStatus represents count and key identifiers for an entity type.
 type EntityStatus struct {
 	Count int      `json:"count"`
 	Keys  []string `json:"keys"`
@@ -70,73 +65,16 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		log.Info().Int("user", userNums[0]).Msg("Demo reset: resetting single user")
 	}
 
-	if h.pool == nil {
-		log.Error().Msg("Demo reset failed: database pool is not configured")
-		respondError(w, http.StatusInternalServerError, "Failed to acquire database connection")
-		return
-	}
-
-	conn, err := h.pool.Acquire(ctx)
-	if err != nil {
-		log.Error().Err(err).Msg("Demo reset failed: acquire connection")
-		respondError(w, http.StatusInternalServerError, "Failed to acquire database connection")
-		return
-	}
-	defer conn.Release()
-
-	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", demoResetAdvisoryLockKey); err != nil {
-		log.Error().Err(err).Msg("Demo reset failed: acquire advisory lock")
-		respondError(w, http.StatusInternalServerError, "Failed to acquire demo reset lock")
-		return
-	}
-	defer func() {
-		unlockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, _ = conn.Exec(unlockCtx, "SELECT pg_advisory_unlock($1)", demoResetAdvisoryLockKey)
-	}()
-
-	for _, demoUser := range selectedUsers {
-		log.Info().Str("schema", demoUser.schema).Msg("Demo reset: dropping tenant schema")
-		_, err := conn.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", demoUser.schema))
-		if err != nil {
-			log.Error().Err(err).Str("schema", demoUser.schema).Msg("Demo reset failed: drop schema")
-			respondError(w, http.StatusInternalServerError, "Failed to drop tenant schema: "+err.Error())
-			return
-		}
-	}
-
-	for _, demoUser := range selectedUsers {
-		log.Info().Str("slug", demoUser.slug).Msg("Demo reset: cleaning tenant_users by slug")
-		_, err := conn.Exec(ctx, "DELETE FROM tenant_users WHERE tenant_id IN (SELECT id FROM tenants WHERE slug = $1)", demoUser.slug)
-		if err != nil {
-			log.Error().Err(err).Msg("Demo reset failed: clean tenant_users")
-			respondError(w, http.StatusInternalServerError, "Failed to clean tenant_users: "+err.Error())
-			return
-		}
-
-		log.Info().Str("slug", demoUser.slug).Msg("Demo reset: cleaning tenants by slug")
-		_, err = conn.Exec(ctx, "DELETE FROM tenants WHERE slug = $1", demoUser.slug)
-		if err != nil {
-			log.Error().Err(err).Msg("Demo reset failed: clean tenants")
-			respondError(w, http.StatusInternalServerError, "Failed to clean tenants: "+err.Error())
-			return
-		}
-
-		log.Info().Str("email", demoUser.email).Msg("Demo reset: cleaning users by email")
-		_, err = conn.Exec(ctx, "DELETE FROM users WHERE email = $1", demoUser.email)
-		if err != nil {
-			log.Error().Err(err).Msg("Demo reset failed: clean users")
-			respondError(w, http.StatusInternalServerError, "Failed to clean users: "+err.Error())
-			return
-		}
-	}
-
 	log.Info().Ints("users", userNums).Msg("Demo reset: seeding demo data")
-	seedSQL := getDemoSeedSQLForUsers(userNums)
-	_, err = conn.Exec(ctx, seedSQL)
+	resetService, err := h.getDemoResetService()
 	if err != nil {
-		log.Error().Err(err).Str("sql_preview", seedSQL[:500]).Msg("Demo reset failed: seed data")
-		respondError(w, http.StatusInternalServerError, "Failed to seed demo data: "+err.Error())
+		log.Error().Err(err).Msg("Demo reset failed: reset service unavailable")
+		respondError(w, http.StatusInternalServerError, "Failed to initialize demo reset")
+		return
+	}
+	if err := resetService.Reset(ctx, demoResetUsers(selectedUsers), userNums); err != nil {
+		log.Error().Err(err).Msg("Demo reset failed")
+		respondError(w, http.StatusInternalServerError, "Failed to reset demo data: "+err.Error())
 		return
 	}
 
@@ -145,6 +83,26 @@ func (h *Handlers) DemoReset(w http.ResponseWriter, r *http.Request) {
 		"status":  "success",
 		"message": "Demo database reset successfully",
 	})
+}
+
+func (h *Handlers) getDemoResetService() (demoResetter, error) {
+	if h.demoResetService != nil {
+		return h.demoResetService, nil
+	}
+	return nil, errors.New("demo reset service not configured")
+}
+
+func demoResetUsers(users []demoUserDefinition) []demo.ResetUser {
+	resetUsers := make([]demo.ResetUser, len(users))
+	for i, user := range users {
+		resetUsers[i] = demo.ResetUser{
+			Number: user.number,
+			Email:  user.email,
+			Slug:   user.slug,
+			Schema: user.schema,
+		}
+	}
+	return resetUsers
 }
 
 // DemoStatus returns counts and key identifiers for demo data verification
@@ -179,20 +137,22 @@ func (h *Handlers) DemoStatus(w http.ResponseWriter, r *http.Request) {
 
 	demoUser, _ := demoUserByNumber(userNum)
 	ctx := r.Context()
-	response := DemoStatusResponse{User: userNum}
 
-	response.Accounts = h.getEntityStatus(ctx, demoUser.schema, "accounts", "name")
-	response.Contacts = h.getEntityStatus(ctx, demoUser.schema, "contacts", "name")
-	response.Invoices = h.getEntityStatus(ctx, demoUser.schema, "invoices", "invoice_number")
-	response.Employees = h.getEntityStatusConcat(ctx, demoUser.schema, "employees", "first_name", "last_name")
-	response.Payments = h.getEntityStatus(ctx, demoUser.schema, "payments", "payment_number")
-	response.JournalEntries = h.getEntityStatus(ctx, demoUser.schema, "journal_entries", "entry_number")
-	response.BankAccounts = h.getEntityStatus(ctx, demoUser.schema, "bank_accounts", "name")
-	response.RecurringInvoices = h.getEntityStatus(ctx, demoUser.schema, "recurring_invoices", "name")
-	response.PayrollRuns = h.getEntityStatusPeriod(ctx, demoUser.schema, "payroll_runs")
-	response.TsdDeclarations = h.getEntityStatusPeriod(ctx, demoUser.schema, "tsd_declarations")
+	statusReader, err := h.getDemoStatusReader()
+	if err != nil {
+		log.Error().Err(err).Msg("Demo status failed: status reader unavailable")
+		respondError(w, http.StatusInternalServerError, "Failed to read demo status")
+		return
+	}
 
-	respondJSON(w, http.StatusOK, response)
+	response, err := statusReader.ReadDemoStatus(ctx, demoUser.schema, userNum)
+	if err != nil {
+		log.Error().Err(err).Str("schema", demoUser.schema).Msg("Demo status failed")
+		respondError(w, http.StatusInternalServerError, "Failed to read demo status")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, demoStatusResponseFrom(response))
 }
 
 func validateDemoRequest(w http.ResponseWriter, r *http.Request, allowQuerySecret bool) (string, bool) {
@@ -223,65 +183,32 @@ func validateDemoRequest(w http.ResponseWriter, r *http.Request, allowQuerySecre
 	return secret, true
 }
 
-func (h *Handlers) getEntityStatus(ctx context.Context, schema, table, keyColumn string) EntityStatus {
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
-	_ = h.pool.QueryRow(ctx, query).Scan(&count)
-
-	var keys []string
-	keysQuery := fmt.Sprintf("SELECT %s FROM %s.%s ORDER BY %s LIMIT 10", keyColumn, schema, table, keyColumn)
-	rows, _ := h.pool.Query(ctx, keysQuery)
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var key string
-			if rows.Scan(&key) == nil {
-				keys = append(keys, key)
-			}
-		}
+func (h *Handlers) getDemoStatusReader() (demo.StatusReader, error) {
+	if h.demoStatusReader != nil {
+		return h.demoStatusReader, nil
 	}
-
-	return EntityStatus{Count: count, Keys: keys}
+	return nil, errors.New("demo status reader not configured")
 }
 
-func (h *Handlers) getEntityStatusConcat(ctx context.Context, schema, table, col1, col2 string) EntityStatus {
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
-	_ = h.pool.QueryRow(ctx, query).Scan(&count)
-
-	var keys []string
-	keysQuery := fmt.Sprintf("SELECT %s || ' ' || %s FROM %s.%s ORDER BY %s LIMIT 10", col1, col2, schema, table, col1)
-	rows, _ := h.pool.Query(ctx, keysQuery)
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var key string
-			if rows.Scan(&key) == nil {
-				keys = append(keys, key)
-			}
-		}
+func demoStatusResponseFrom(status demo.StatusResponse) DemoStatusResponse {
+	return DemoStatusResponse{
+		User:              status.User,
+		Accounts:          entityStatusFrom(status.Accounts),
+		Contacts:          entityStatusFrom(status.Contacts),
+		Invoices:          entityStatusFrom(status.Invoices),
+		Employees:         entityStatusFrom(status.Employees),
+		Payments:          entityStatusFrom(status.Payments),
+		JournalEntries:    entityStatusFrom(status.JournalEntries),
+		BankAccounts:      entityStatusFrom(status.BankAccounts),
+		RecurringInvoices: entityStatusFrom(status.RecurringInvoices),
+		PayrollRuns:       entityStatusFrom(status.PayrollRuns),
+		TsdDeclarations:   entityStatusFrom(status.TsdDeclarations),
 	}
-
-	return EntityStatus{Count: count, Keys: keys}
 }
 
-func (h *Handlers) getEntityStatusPeriod(ctx context.Context, schema, table string) EntityStatus {
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
-	_ = h.pool.QueryRow(ctx, query).Scan(&count)
-
-	var keys []string
-	keysQuery := fmt.Sprintf("SELECT period_year || '-' || LPAD(period_month::text, 2, '0') FROM %s.%s ORDER BY period_year, period_month LIMIT 10", schema, table)
-	rows, _ := h.pool.Query(ctx, keysQuery)
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var key string
-			if rows.Scan(&key) == nil {
-				keys = append(keys, key)
-			}
-		}
+func entityStatusFrom(status demo.EntityStatus) EntityStatus {
+	return EntityStatus{
+		Count: status.Count,
+		Keys:  status.Keys,
 	}
-
-	return EntityStatus{Count: count, Keys: keys}
 }

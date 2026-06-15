@@ -3,10 +3,13 @@ package assets
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -159,6 +162,23 @@ func (r *MockRepository) UpdateStatus(ctx context.Context, schemaName, tenantID,
 		return ErrAssetNotFound
 	}
 	asset.Status = status
+	return nil
+}
+
+// UpdateDisposal implements Repository
+func (r *MockRepository) UpdateDisposal(ctx context.Context, schemaName string, asset *FixedAsset, status AssetStatus) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	existing, exists := r.Assets[asset.ID]
+	if !exists || existing.TenantID != asset.TenantID || existing.Status != AssetStatusActive {
+		return ErrAssetNotFound
+	}
+	existing.Status = status
+	existing.DisposalDate = asset.DisposalDate
+	existing.DisposalMethod = asset.DisposalMethod
+	existing.DisposalProceeds = asset.DisposalProceeds
+	existing.DisposalNotes = asset.DisposalNotes
+	existing.DisposalJournalEntryID = asset.DisposalJournalEntryID
 	return nil
 }
 
@@ -688,6 +708,388 @@ func TestService_CreateAsset_Defaults(t *testing.T) {
 	assert.Equal(t, 60, asset.UsefulLifeMonths)
 }
 
+func TestService_CreateAsset_InheritsCategoryDefaults(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	assetAccountID := "asset-account"
+	depreciationExpenseAccountID := "depreciation-expense"
+	accumulatedDepreciationAccountID := "accumulated-depreciation"
+	ts.repo.Categories["cat-1"] = &AssetCategory{
+		ID:                            "cat-1",
+		TenantID:                      "tenant-1",
+		Name:                          "Equipment",
+		DepreciationMethod:            DepreciationDecliningBalance,
+		DefaultUsefulLifeMonths:       36,
+		DefaultResidualValuePercent:   decimal.NewFromInt(10),
+		AssetAccountID:                &assetAccountID,
+		DepreciationExpenseAccountID:  &depreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedDepreciationAccountID,
+	}
+	categoryID := "cat-1"
+
+	asset, err := ts.svc.Create(ctx, "tenant-1", "test_schema", &CreateAssetRequest{
+		Name:         "Laptop",
+		CategoryID:   &categoryID,
+		PurchaseDate: time.Now(),
+		PurchaseCost: decimal.NewFromInt(1200),
+		UserID:       "user-1",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, DepreciationDecliningBalance, asset.DepreciationMethod)
+	assert.Equal(t, 36, asset.UsefulLifeMonths)
+	assert.True(t, asset.ResidualValue.Equal(decimal.NewFromInt(120)))
+	require.NotNil(t, asset.AssetAccountID)
+	assert.Equal(t, assetAccountID, *asset.AssetAccountID)
+	require.NotNil(t, asset.DepreciationExpenseAccountID)
+	assert.Equal(t, depreciationExpenseAccountID, *asset.DepreciationExpenseAccountID)
+	require.NotNil(t, asset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, accumulatedDepreciationAccountID, *asset.AccumulatedDepreciationAcctID)
+}
+
+func TestService_ImportAssetsCSV(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	ts.svc.ledger = newFakeAssetAccountingPoster()
+
+	ts.repo.Categories["cat-1"] = &AssetCategory{
+		ID:       "cat-1",
+		TenantID: "tenant-1",
+		Name:     "Equipment",
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		FileName: "assets.csv",
+		UserID:   "user-1",
+		CSVContent: "asset_number,name,category_name,status,purchase_date,purchase_cost,accumulated_depreciation,book_value,useful_life_months,asset_account_code,depreciation_expense_account_code,accumulated_depreciation_account_code\n" +
+			"LEG-001,Laptop,Equipment,ACTIVE,2025-01-10,1200.00,300.00,900.00,36,FA,DEP-EXP,ACC-DEP\n" +
+			",Missing date,,ACTIVE,,500.00,,,60,,,\n" +
+			",Generated desk,,DRAFT,2026-02-01,600.00,,,60,,,\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "assets.csv", result.FileName)
+	assert.Equal(t, 3, result.RowsProcessed)
+	assert.Equal(t, 2, result.AssetsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 3, result.Errors[0].Row)
+	assert.Contains(t, result.Errors[0].Message, "purchase_date is required")
+
+	var legacyAsset *FixedAsset
+	var generatedAsset *FixedAsset
+	for _, asset := range ts.repo.Assets {
+		switch asset.Name {
+		case "Laptop":
+			legacyAsset = asset
+		case "Generated desk":
+			generatedAsset = asset
+		}
+	}
+
+	require.NotNil(t, legacyAsset)
+	assert.Equal(t, "LEG-001", legacyAsset.AssetNumber)
+	assert.Equal(t, AssetStatusActive, legacyAsset.Status)
+	assert.True(t, legacyAsset.BookValue.Equal(decimal.RequireFromString("900.00")))
+	assert.True(t, legacyAsset.AccumulatedDepreciation.Equal(decimal.RequireFromString("300.00")))
+	require.NotNil(t, legacyAsset.CategoryID)
+	assert.Equal(t, "cat-1", *legacyAsset.CategoryID)
+	require.NotNil(t, legacyAsset.AssetAccountID)
+	assert.Equal(t, "fixed-assets", *legacyAsset.AssetAccountID)
+	require.NotNil(t, legacyAsset.DepreciationExpenseAccountID)
+	assert.Equal(t, "depreciation-expense", *legacyAsset.DepreciationExpenseAccountID)
+	require.NotNil(t, legacyAsset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, "accumulated-depreciation", *legacyAsset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, "user-1", legacyAsset.CreatedBy)
+
+	require.NotNil(t, generatedAsset)
+	assert.Equal(t, "FA-00001", generatedAsset.AssetNumber)
+	assert.Equal(t, AssetStatusDraft, generatedAsset.Status)
+	assert.True(t, generatedAsset.BookValue.Equal(decimal.RequireFromString("600.00")))
+}
+
+func TestService_ImportAssetsCSVReportsMissingAccountCode(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	ts.svc.ledger = newFakeAssetAccountingPoster()
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,asset_account_code\nLEG-001,Laptop,2025-01-10,1200.00,MISSING\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.AssetsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `account code "MISSING" was not found for asset_account_code`)
+}
+
+func TestService_ImportAssetsCSVResolvesSupplierCode(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	supplierID := "11111111-1111-1111-1111-111111111111"
+	ts.svc.contacts = fakeAssetContactLister{
+		contacts: []contacts.Contact{
+			{ID: supplierID, TenantID: "tenant-1", Name: "Supplier One", Code: "SUP-001", ContactType: contacts.ContactTypeSupplier},
+		},
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_code\nLEG-001,Laptop,2025-01-10,1200.00,SUP-001\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.AssetsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+	require.Len(t, ts.repo.Assets, 1)
+	var imported *FixedAsset
+	for _, asset := range ts.repo.Assets {
+		imported = asset
+	}
+	require.NotNil(t, imported)
+	require.NotNil(t, imported.SupplierID)
+	assert.Equal(t, supplierID, *imported.SupplierID)
+}
+
+func TestService_ImportAssetsCSVReportsMissingSupplierCode(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	ts.svc.contacts = fakeAssetContactLister{
+		contacts: []contacts.Contact{
+			{ID: "11111111-1111-1111-1111-111111111111", TenantID: "tenant-1", Name: "Supplier One", Code: "SUP-001", ContactType: contacts.ContactTypeSupplier},
+		},
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_code\nLEG-001,Laptop,2025-01-10,1200.00,SUP-404\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.AssetsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `supplier_code "SUP-404" was not found`)
+}
+
+func TestService_ImportAssetsCSVResolvesSupplierIdentityFields(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	supplierID := "11111111-1111-1111-1111-111111111111"
+	ts.svc.contacts = fakeAssetContactLister{
+		contacts: []contacts.Contact{
+			{
+				ID:        supplierID,
+				TenantID:  "tenant-1",
+				Name:      "Supplier One",
+				RegCode:   "12345678",
+				VATNumber: "EE12345678",
+				Email:     "billing@supplier.example",
+			},
+		},
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_email,supplier_name\nLEG-001,Laptop,2025-01-10,1200.00,billing@supplier.example,Supplier One\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.AssetsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+	require.Len(t, ts.repo.Assets, 1)
+	var imported *FixedAsset
+	for _, asset := range ts.repo.Assets {
+		imported = asset
+	}
+	require.NotNil(t, imported)
+	require.NotNil(t, imported.SupplierID)
+	assert.Equal(t, supplierID, *imported.SupplierID)
+}
+
+func TestService_ImportAssetsCSVReportsAmbiguousSupplierName(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+	ts.svc.contacts = fakeAssetContactLister{
+		contacts: []contacts.Contact{
+			{ID: "11111111-1111-1111-1111-111111111111", TenantID: "tenant-1", Name: "Supplier One", ContactType: contacts.ContactTypeSupplier},
+			{ID: "22222222-2222-2222-2222-222222222222", TenantID: "tenant-1", Name: " supplier one ", ContactType: contacts.ContactTypeSupplier},
+		},
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,supplier_name\nLEG-001,Laptop,2025-01-10,1200.00,Supplier One\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Zero(t, result.AssetsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `supplier_name "Supplier One" matched multiple contacts`)
+}
+
+func TestService_ImportAssetsCSVResolvesInvoiceNumberAliases(t *testing.T) {
+	invoiceID := "11111111-1111-4111-8111-111111111111"
+	tests := []struct {
+		name   string
+		header string
+	}{
+		{name: "invoice_number", header: "invoice_number"},
+		{name: "invoice_no", header: "invoice_no"},
+		{name: "smartaccounts_purchase_invoice_no", header: "purchase_invoice_no"},
+		{name: "smartaccounts_document_no", header: "document_no"},
+		{name: "merit_arve_nr", header: "arve_nr"},
+		{name: "merit_ostuarve_nr", header: "ostuarve_nr"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := newTestService()
+			ts.svc.invoicing = &fakeAssetInvoiceResolver{invoiceIDsByNumber: map[string]string{"BILL-1": invoiceID}}
+
+			result, err := ts.svc.ImportAssetsCSV(context.Background(), "tenant-1", "test_schema", &ImportAssetsRequest{
+				CSVContent: "asset_number,name,purchase_date,purchase_cost," + tt.header + "\n" +
+					"LEG-001,Laptop,2025-01-10,1200.00,BILL-1\n",
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, 1, result.RowsProcessed)
+			assert.Equal(t, 1, result.AssetsCreated)
+			assert.Zero(t, result.RowsSkipped)
+			assert.Empty(t, result.Errors)
+			require.Len(t, ts.repo.Assets, 1)
+			for _, asset := range ts.repo.Assets {
+				require.NotNil(t, asset.InvoiceID)
+				assert.Equal(t, invoiceID, *asset.InvoiceID)
+			}
+		})
+	}
+}
+
+func TestService_ImportAssetsCSVInvoiceIDWinsOverInvoiceNumber(t *testing.T) {
+	ts := newTestService()
+	explicitInvoiceID := "11111111-1111-4111-8111-111111111111"
+	resolvedInvoiceID := "22222222-2222-4222-8222-222222222222"
+	resolver := &fakeAssetInvoiceResolver{invoiceIDsByNumber: map[string]string{"BILL-1": resolvedInvoiceID}}
+	ts.svc.invoicing = resolver
+
+	result, err := ts.svc.ImportAssetsCSV(context.Background(), "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost,invoice_id,invoice_number\n" +
+			"LEG-001,Laptop,2025-01-10,1200.00," + explicitInvoiceID + ",BILL-1\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.AssetsCreated)
+	assert.Zero(t, result.RowsSkipped)
+	assert.Empty(t, result.Errors)
+	assert.Empty(t, resolver.calls)
+	require.Len(t, ts.repo.Assets, 1)
+	for _, asset := range ts.repo.Assets {
+		require.NotNil(t, asset.InvoiceID)
+		assert.Equal(t, explicitInvoiceID, *asset.InvoiceID)
+	}
+}
+
+func TestService_ImportAssetsCSVReportsInvoiceNumberResolutionErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		resolver   assetInvoiceResolver
+		wantErrMsg string
+	}{
+		{
+			name:       "missing",
+			resolver:   &fakeAssetInvoiceResolver{},
+			wantErrMsg: `resolve invoice_number "BILL-404": invoice not found`,
+		},
+		{
+			name: "ambiguous",
+			resolver: &fakeAssetInvoiceResolver{errorsByNumber: map[string]error{
+				"BILL-404": fmt.Errorf(`invoice_number "BILL-404" matched multiple invoices`),
+			}},
+			wantErrMsg: `resolve invoice_number "BILL-404": invoice_number "BILL-404" matched multiple invoices`,
+		},
+		{
+			name:       "no resolver",
+			resolver:   nil,
+			wantErrMsg: `invoice_number "BILL-404" cannot be resolved without invoicing service`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := newTestService()
+			ts.svc.invoicing = tt.resolver
+
+			result, err := ts.svc.ImportAssetsCSV(context.Background(), "tenant-1", "test_schema", &ImportAssetsRequest{
+				CSVContent: "asset_number,name,purchase_date,purchase_cost,invoice_number\n" +
+					"LEG-001,Laptop,2025-01-10,1200.00,BILL-404\n",
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, 1, result.RowsProcessed)
+			assert.Zero(t, result.AssetsCreated)
+			assert.Equal(t, 1, result.RowsSkipped)
+			require.Len(t, result.Errors, 1)
+			assert.Equal(t, 2, result.Errors[0].Row)
+			assert.Contains(t, result.Errors[0].Message, tt.wantErrMsg)
+			assert.Empty(t, ts.repo.Assets)
+		})
+	}
+}
+
+func TestService_ImportAssetsCSVReportsInvalidUUIDFields(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "name,purchase_date,purchase_cost,category_id,asset_account_id,supplier_id,invoice_id\n" +
+			"Bad category,2025-01-10,1200.00,legacy-category,,,\n" +
+			"Bad account,2025-01-10,1200.00,,legacy-account,,\n" +
+			"Bad supplier,2025-01-10,1200.00,,,legacy-supplier,\n" +
+			"Bad invoice,2025-01-10,1200.00,,,,legacy-invoice\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 4, result.RowsProcessed)
+	assert.Zero(t, result.AssetsCreated)
+	assert.Equal(t, 4, result.RowsSkipped)
+	require.Len(t, result.Errors, 4)
+	assert.Contains(t, result.Errors[0].Message, "category_id must be a valid UUID")
+	assert.Contains(t, result.Errors[1].Message, "asset_account_id must be a valid UUID")
+	assert.Contains(t, result.Errors[2].Message, "supplier_id must be a valid UUID")
+	assert.Contains(t, result.Errors[3].Message, "invoice_id must be a valid UUID")
+}
+
+func TestService_ImportAssetsCSV_DuplicateAssetNumber(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	ts.repo.Assets["existing"] = &FixedAsset{
+		ID:          "existing",
+		TenantID:    "tenant-1",
+		AssetNumber: "LEG-001",
+		Name:        "Existing laptop",
+	}
+
+	result, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "asset_number,name,purchase_date,purchase_cost\nLEG-001,Laptop,2025-01-10,1200.00\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 0, result.AssetsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, "duplicate asset_number")
+}
+
 func TestService_CreateAsset_ValidationError(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
@@ -763,6 +1165,133 @@ func TestService_Update(t *testing.T) {
 	assert.Equal(t, 48, asset.UsefulLifeMonths)
 }
 
+func TestService_UpdatePreservesCategoryAndAccountsWhenOmitted(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	categoryID := "cat-1"
+	assetAccountID := "asset-account"
+	depreciationExpenseAccountID := "depreciation-expense"
+	accumulatedDepreciationAccountID := "accumulated-depreciation"
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Laptop",
+		CategoryID:                    &categoryID,
+		Status:                        AssetStatusActive,
+		PurchaseDate:                  time.Now(),
+		PurchaseCost:                  decimal.NewFromInt(1200),
+		UsefulLifeMonths:              36,
+		ResidualValue:                 decimal.NewFromInt(100),
+		DepreciationMethod:            DepreciationStraightLine,
+		AssetAccountID:                &assetAccountID,
+		DepreciationExpenseAccountID:  &depreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedDepreciationAccountID,
+	}
+
+	asset, err := ts.svc.Update(ctx, "tenant-1", "test_schema", "a1", &UpdateAssetRequest{
+		Name: "Updated laptop",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, asset.CategoryID)
+	assert.Equal(t, categoryID, *asset.CategoryID)
+	require.NotNil(t, asset.AssetAccountID)
+	assert.Equal(t, assetAccountID, *asset.AssetAccountID)
+	require.NotNil(t, asset.DepreciationExpenseAccountID)
+	assert.Equal(t, depreciationExpenseAccountID, *asset.DepreciationExpenseAccountID)
+	require.NotNil(t, asset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, accumulatedDepreciationAccountID, *asset.AccumulatedDepreciationAcctID)
+}
+
+func TestService_UpdateTrimsAndClearsExplicitAccountIDs(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	assetAccountID := "old-asset-account"
+	depreciationExpenseAccountID := "old-depreciation-expense"
+	accumulatedDepreciationAccountID := "old-accumulated-depreciation"
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Laptop",
+		Status:                        AssetStatusActive,
+		PurchaseDate:                  time.Now(),
+		PurchaseCost:                  decimal.NewFromInt(1200),
+		UsefulLifeMonths:              36,
+		ResidualValue:                 decimal.NewFromInt(100),
+		DepreciationMethod:            DepreciationStraightLine,
+		AssetAccountID:                &assetAccountID,
+		DepreciationExpenseAccountID:  &depreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedDepreciationAccountID,
+	}
+
+	blankAssetAccountID := " \t "
+	newDepreciationExpenseAccountID := " depreciation-expense "
+	newAccumulatedDepreciationAccountID := "\naccumulated-depreciation\t"
+	asset, err := ts.svc.Update(ctx, "tenant-1", "test_schema", "a1", &UpdateAssetRequest{
+		AssetAccountID:                &blankAssetAccountID,
+		DepreciationExpenseAccountID:  &newDepreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: &newAccumulatedDepreciationAccountID,
+	})
+
+	require.NoError(t, err)
+	assert.Nil(t, asset.AssetAccountID)
+	require.NotNil(t, asset.DepreciationExpenseAccountID)
+	assert.Equal(t, "depreciation-expense", *asset.DepreciationExpenseAccountID)
+	require.NotNil(t, asset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, "accumulated-depreciation", *asset.AccumulatedDepreciationAcctID)
+}
+
+func TestService_UpdateInheritsChangedCategoryDefaults(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	assetAccountID := "asset-account-2"
+	depreciationExpenseAccountID := "depreciation-expense-2"
+	accumulatedDepreciationAccountID := "accumulated-depreciation-2"
+	ts.repo.Categories["cat-2"] = &AssetCategory{
+		ID:                            "cat-2",
+		TenantID:                      "tenant-1",
+		Name:                          "Vehicles",
+		DepreciationMethod:            DepreciationDecliningBalance,
+		DefaultUsefulLifeMonths:       48,
+		DefaultResidualValuePercent:   decimal.NewFromInt(20),
+		AssetAccountID:                &assetAccountID,
+		DepreciationExpenseAccountID:  &depreciationExpenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedDepreciationAccountID,
+	}
+	ts.repo.Assets["a1"] = &FixedAsset{
+		ID:                 "a1",
+		TenantID:           "tenant-1",
+		Name:               "Truck",
+		Status:             AssetStatusActive,
+		PurchaseDate:       time.Now(),
+		PurchaseCost:       decimal.NewFromInt(10000),
+		UsefulLifeMonths:   60,
+		ResidualValue:      decimal.NewFromInt(500),
+		DepreciationMethod: DepreciationStraightLine,
+	}
+	categoryID := "cat-2"
+
+	asset, err := ts.svc.Update(ctx, "tenant-1", "test_schema", "a1", &UpdateAssetRequest{
+		CategoryID: &categoryID,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, asset.CategoryID)
+	assert.Equal(t, categoryID, *asset.CategoryID)
+	assert.Equal(t, DepreciationDecliningBalance, asset.DepreciationMethod)
+	assert.Equal(t, 48, asset.UsefulLifeMonths)
+	assert.True(t, asset.ResidualValue.Equal(decimal.NewFromInt(2000)))
+	require.NotNil(t, asset.AssetAccountID)
+	assert.Equal(t, assetAccountID, *asset.AssetAccountID)
+	require.NotNil(t, asset.DepreciationExpenseAccountID)
+	assert.Equal(t, depreciationExpenseAccountID, *asset.DepreciationExpenseAccountID)
+	require.NotNil(t, asset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, accumulatedDepreciationAccountID, *asset.AccumulatedDepreciationAcctID)
+}
+
 func TestService_Update_NotDraft(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
@@ -816,28 +1345,208 @@ func TestService_Activate_NotDraft(t *testing.T) {
 }
 
 func TestService_Dispose(t *testing.T) {
-	ts := newTestService()
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
 	ctx := context.Background()
+	disposalDate := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 
-	ts.repo.Assets["a1"] = &FixedAsset{
-		ID:       "a1",
-		TenantID: "tenant-1",
-		Name:     "Desk",
-		Status:   AssetStatusActive,
+	assetAccountID := "fixed-assets"
+	accumulatedAccountID := "accumulated-depreciation"
+	proceedsAccountID := "cash"
+	gainAccountID := "asset-disposal-gain"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Desk",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(1000),
+		AccumulatedDepreciation:       decimal.NewFromInt(950),
+		BookValue:                     decimal.NewFromInt(50),
+		AssetAccountID:                &assetAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
 	}
 
 	req := &DisposeAssetRequest{
-		DisposalDate:     time.Now(),
-		DisposalMethod:   DisposalSold,
-		DisposalProceeds: decimal.NewFromInt(100),
-		DisposalNotes:    "Sold to company X",
+		DisposalDate:              disposalDate,
+		DisposalMethod:            DisposalSold,
+		DisposalProceeds:          decimal.NewFromInt(100),
+		DisposalNotes:             "Sold to company X",
+		DisposalProceedsAccountID: &proceedsAccountID,
+		DisposalGainLossAccountID: &gainAccountID,
+		UserID:                    "user-1",
 	}
 
-	err := ts.svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
 	require.NoError(t, err)
 
-	asset, _ := ts.repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
+	asset, _ := repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
 	assert.Equal(t, AssetStatusSold, asset.Status)
+	require.NotNil(t, asset.DisposalDate)
+	assert.Equal(t, disposalDate, *asset.DisposalDate)
+	require.NotNil(t, asset.DisposalMethod)
+	assert.Equal(t, DisposalSold, *asset.DisposalMethod)
+	assert.True(t, asset.DisposalProceeds.Equal(decimal.NewFromInt(100)))
+	assert.Equal(t, "Sold to company X", asset.DisposalNotes)
+	require.NotNil(t, asset.DisposalJournalEntryID)
+}
+
+func TestService_DisposeCreatesAndPostsGainJournalWhenAccountsConfigured(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+	disposalDate := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+
+	assetAccountID := "fixed-assets"
+	accumulatedAccountID := "accumulated-depreciation"
+	proceedsAccountID := "cash"
+	gainAccountID := "asset-disposal-gain"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		AssetNumber:                   "FA-00001",
+		Name:                          "Equipment",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(1200),
+		AccumulatedDepreciation:       decimal.NewFromInt(300),
+		BookValue:                     decimal.NewFromInt(900),
+		AssetAccountID:                &assetAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
+	}
+
+	req := &DisposeAssetRequest{
+		DisposalDate:              disposalDate,
+		DisposalMethod:            DisposalSold,
+		DisposalProceeds:          decimal.NewFromInt(950),
+		DisposalProceedsAccountID: &proceedsAccountID,
+		DisposalGainLossAccountID: &gainAccountID,
+		UserID:                    "user-1",
+	}
+
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
+	require.NoError(t, err)
+
+	asset, _ := repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
+	assert.Equal(t, AssetStatusSold, asset.Status)
+	require.NotNil(t, asset.DisposalJournalEntryID)
+	assert.Equal(t, "je-1", *asset.DisposalJournalEntryID)
+	assert.Equal(t, []string{"je-1"}, ledger.postedIDs)
+	require.NotNil(t, ledger.createdRequest)
+	assert.Equal(t, SourceTypeAssetDisposal, ledger.createdRequest.SourceType)
+	require.NotNil(t, ledger.createdRequest.SourceID)
+	assert.Equal(t, "a1", *ledger.createdRequest.SourceID)
+	assert.Equal(t, disposalDate, ledger.createdRequest.EntryDate)
+	assert.Equal(t, "FA-00001-2026-05-01", ledger.createdRequest.Reference)
+	require.Len(t, ledger.createdRequest.Lines, 4)
+	assert.Equal(t, accumulatedAccountID, ledger.createdRequest.Lines[0].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[0].DebitAmount.Equal(decimal.NewFromInt(300)))
+	assert.Equal(t, proceedsAccountID, ledger.createdRequest.Lines[1].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[1].DebitAmount.Equal(decimal.NewFromInt(950)))
+	assert.Equal(t, assetAccountID, ledger.createdRequest.Lines[2].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[2].CreditAmount.Equal(decimal.NewFromInt(1200)))
+	assert.Equal(t, gainAccountID, ledger.createdRequest.Lines[3].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[3].CreditAmount.Equal(decimal.NewFromInt(50)))
+}
+
+func TestService_DisposeCreatesLossJournalWhenScrappedWithBookValue(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	assetAccountID := "fixed-assets"
+	accumulatedAccountID := "accumulated-depreciation"
+	lossAccountID := "asset-disposal-loss"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		AssetNumber:                   "FA-00002",
+		Name:                          "Old equipment",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(1200),
+		AccumulatedDepreciation:       decimal.NewFromInt(300),
+		BookValue:                     decimal.NewFromInt(900),
+		AssetAccountID:                &assetAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
+	}
+
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", &DisposeAssetRequest{
+		DisposalDate:              time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		DisposalMethod:            DisposalScrapped,
+		DisposalGainLossAccountID: &lossAccountID,
+		UserID:                    "user-1",
+	})
+	require.NoError(t, err)
+
+	asset, _ := repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
+	assert.Equal(t, AssetStatusDisposed, asset.Status)
+	require.NotNil(t, asset.DisposalJournalEntryID)
+	require.NotNil(t, ledger.createdRequest)
+	require.Len(t, ledger.createdRequest.Lines, 3)
+	assert.Equal(t, accumulatedAccountID, ledger.createdRequest.Lines[0].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[0].DebitAmount.Equal(decimal.NewFromInt(300)))
+	assert.Equal(t, lossAccountID, ledger.createdRequest.Lines[1].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[1].DebitAmount.Equal(decimal.NewFromInt(900)))
+	assert.Equal(t, assetAccountID, ledger.createdRequest.Lines[2].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[2].CreditAmount.Equal(decimal.NewFromInt(1200)))
+}
+
+func TestService_DisposeRejectsPartialDisposalAccountingConfiguration(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	assetAccountID := "fixed-assets"
+	accumulatedAccountID := "accumulated-depreciation"
+	proceedsAccountID := "cash"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Equipment",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(1200),
+		AccumulatedDepreciation:       decimal.NewFromInt(300),
+		BookValue:                     decimal.NewFromInt(900),
+		AssetAccountID:                &assetAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
+	}
+
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", &DisposeAssetRequest{
+		DisposalDate:              time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		DisposalMethod:            DisposalSold,
+		DisposalProceeds:          decimal.NewFromInt(950),
+		DisposalProceedsAccountID: &proceedsAccountID,
+		UserID:                    "user-1",
+	})
+	require.ErrorIs(t, err, ErrAssetAccountingInvalid)
+	assert.Empty(t, ledger.postedIDs)
+}
+
+func TestService_DisposeRejectsMissingDisposalAccountingConfiguration(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                      "a1",
+		TenantID:                "tenant-1",
+		Name:                    "Equipment",
+		Status:                  AssetStatusActive,
+		PurchaseCost:            decimal.NewFromInt(1200),
+		AccumulatedDepreciation: decimal.NewFromInt(300),
+		BookValue:               decimal.NewFromInt(900),
+	}
+
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", &DisposeAssetRequest{
+		DisposalDate:   time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		DisposalMethod: DisposalScrapped,
+		UserID:         "user-1",
+	})
+	require.ErrorIs(t, err, ErrAssetAccountingInvalid)
+	assert.Empty(t, ledger.postedIDs)
 }
 
 func TestService_Dispose_NotActive(t *testing.T) {
@@ -862,26 +1571,39 @@ func TestService_Dispose_NotActive(t *testing.T) {
 }
 
 func TestService_Dispose_Scrapped(t *testing.T) {
-	ts := newTestService()
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
 	ctx := context.Background()
 
-	ts.repo.Assets["a1"] = &FixedAsset{
-		ID:       "a1",
-		TenantID: "tenant-1",
-		Name:     "Old Computer",
-		Status:   AssetStatusActive,
+	assetAccountID := "fixed-assets"
+	accumulatedAccountID := "accumulated-depreciation"
+	lossAccountID := "asset-disposal-loss"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Old Computer",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(1000),
+		AccumulatedDepreciation:       decimal.NewFromInt(900),
+		BookValue:                     decimal.NewFromInt(100),
+		AssetAccountID:                &assetAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
 	}
 
 	req := &DisposeAssetRequest{
-		DisposalDate:   time.Now(),
-		DisposalMethod: DisposalScrapped,
+		DisposalDate:              time.Now(),
+		DisposalMethod:            DisposalScrapped,
+		DisposalGainLossAccountID: &lossAccountID,
+		UserID:                    "user-1",
 	}
 
-	err := ts.svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
+	err := svc.Dispose(ctx, "tenant-1", "test_schema", "a1", req)
 	require.NoError(t, err)
 
-	asset, _ := ts.repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
+	asset, _ := repo.GetByID(ctx, "test_schema", "tenant-1", "a1")
 	assert.Equal(t, AssetStatusDisposed, asset.Status)
+	require.NotNil(t, asset.DisposalJournalEntryID)
 }
 
 func TestService_Delete(t *testing.T) {
@@ -903,28 +1625,107 @@ func TestService_Delete(t *testing.T) {
 }
 
 func TestService_RecordDepreciation(t *testing.T) {
-	ts := newTestService()
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
 	ctx := context.Background()
 
-	ts.repo.Assets["a1"] = &FixedAsset{
-		ID:                      "a1",
-		TenantID:                "tenant-1",
-		Name:                    "Equipment",
-		Status:                  AssetStatusActive,
-		PurchaseCost:            decimal.NewFromInt(12000),
-		ResidualValue:           decimal.NewFromInt(0),
-		UsefulLifeMonths:        12,
-		DepreciationMethod:      DepreciationStraightLine,
-		AccumulatedDepreciation: decimal.Zero,
-		BookValue:               decimal.NewFromInt(12000),
+	expenseAccountID := "depreciation-expense"
+	accumulatedAccountID := "accumulated-depreciation"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		Name:                          "Equipment",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(12000),
+		ResidualValue:                 decimal.NewFromInt(0),
+		UsefulLifeMonths:              12,
+		DepreciationMethod:            DepreciationStraightLine,
+		AccumulatedDepreciation:       decimal.Zero,
+		BookValue:                     decimal.NewFromInt(12000),
+		DepreciationExpenseAccountID:  &expenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
 	}
 
 	now := time.Now()
-	entry, err := ts.svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", now.AddDate(0, -1, 0), now)
+	entry, err := svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", now.AddDate(0, -1, 0), now)
 	require.NoError(t, err)
 	assert.True(t, entry.DepreciationAmount.Equal(decimal.NewFromInt(1000)))
 	assert.True(t, entry.AccumulatedTotal.Equal(decimal.NewFromInt(1000)))
 	assert.True(t, entry.BookValueAfter.Equal(decimal.NewFromInt(11000)))
+	require.NotNil(t, entry.JournalEntryID)
+}
+
+func TestService_RecordDepreciationCreatesAndPostsJournalWhenAccountsConfigured(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	expenseAccountID := "depreciation-expense"
+	accumulatedAccountID := "accumulated-depreciation"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                            "a1",
+		TenantID:                      "tenant-1",
+		AssetNumber:                   "FA-00001",
+		Name:                          "Equipment",
+		Status:                        AssetStatusActive,
+		PurchaseCost:                  decimal.NewFromInt(12000),
+		ResidualValue:                 decimal.NewFromInt(0),
+		UsefulLifeMonths:              12,
+		DepreciationMethod:            DepreciationStraightLine,
+		AccumulatedDepreciation:       decimal.Zero,
+		BookValue:                     decimal.NewFromInt(12000),
+		DepreciationExpenseAccountID:  &expenseAccountID,
+		AccumulatedDepreciationAcctID: &accumulatedAccountID,
+	}
+
+	periodStart := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
+	entry, err := svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", periodStart, periodEnd)
+	require.NoError(t, err)
+
+	require.NotNil(t, entry.JournalEntryID)
+	assert.Equal(t, "je-1", *entry.JournalEntryID)
+	assert.Equal(t, []string{"je-1"}, ledger.postedIDs)
+	require.NotNil(t, ledger.createdRequest)
+	assert.Equal(t, SourceTypeAssetDepreciation, ledger.createdRequest.SourceType)
+	require.NotNil(t, ledger.createdRequest.SourceID)
+	assert.Equal(t, entry.ID, *ledger.createdRequest.SourceID)
+	assert.Equal(t, "FA-00001-2026-04", ledger.createdRequest.Reference)
+	assert.Equal(t, periodEnd, ledger.createdRequest.EntryDate)
+	require.Len(t, ledger.createdRequest.Lines, 2)
+	assert.Equal(t, expenseAccountID, ledger.createdRequest.Lines[0].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[0].DebitAmount.Equal(decimal.NewFromInt(1000)))
+	assert.Equal(t, accumulatedAccountID, ledger.createdRequest.Lines[1].AccountID)
+	assert.True(t, ledger.createdRequest.Lines[1].CreditAmount.Equal(decimal.NewFromInt(1000)))
+}
+
+func TestService_RecordDepreciationRejectsPartialAccountingConfiguration(t *testing.T) {
+	repo := NewMockRepository()
+	ledger := newFakeAssetAccountingPoster()
+	svc := NewServiceWithRepositoryAndAccounting(repo, ledger)
+	ctx := context.Background()
+
+	expenseAccountID := "depreciation-expense"
+	repo.Assets["a1"] = &FixedAsset{
+		ID:                           "a1",
+		TenantID:                     "tenant-1",
+		Name:                         "Equipment",
+		Status:                       AssetStatusActive,
+		PurchaseCost:                 decimal.NewFromInt(12000),
+		ResidualValue:                decimal.NewFromInt(0),
+		UsefulLifeMonths:             12,
+		DepreciationMethod:           DepreciationStraightLine,
+		AccumulatedDepreciation:      decimal.Zero,
+		BookValue:                    decimal.NewFromInt(12000),
+		DepreciationExpenseAccountID: &expenseAccountID,
+	}
+
+	now := time.Now()
+	_, err := svc.RecordDepreciation(ctx, "tenant-1", "test_schema", "a1", "user-1", now.AddDate(0, -1, 0), now)
+	require.ErrorIs(t, err, ErrAssetAccountingInvalid)
+	assert.Empty(t, ledger.postedIDs)
 }
 
 func TestService_RecordDepreciation_NotActive(t *testing.T) {
@@ -981,8 +1782,83 @@ func TestService_GetDepreciationHistory(t *testing.T) {
 	assert.Len(t, entries, 2)
 }
 
+type fakeAssetAccountingPoster struct {
+	accounts       map[string]*accounting.Account
+	createdRequest *accounting.CreateJournalEntryRequest
+	postedIDs      []string
+}
+
+func newFakeAssetAccountingPoster() *fakeAssetAccountingPoster {
+	return &fakeAssetAccountingPoster{
+		accounts: map[string]*accounting.Account{
+			"depreciation-expense":     {ID: "depreciation-expense", Code: "DEP-EXP", AccountType: accounting.AccountTypeExpense},
+			"accumulated-depreciation": {ID: "accumulated-depreciation", Code: "ACC-DEP", AccountType: accounting.AccountTypeAsset},
+			"fixed-assets":             {ID: "fixed-assets", Code: "FA", AccountType: accounting.AccountTypeAsset},
+			"cash":                     {ID: "cash", Code: "CASH", AccountType: accounting.AccountTypeAsset},
+			"asset-disposal-gain":      {ID: "asset-disposal-gain", Code: "GAIN", AccountType: accounting.AccountTypeRevenue},
+			"asset-disposal-loss":      {ID: "asset-disposal-loss", Code: "LOSS", AccountType: accounting.AccountTypeExpense},
+		},
+	}
+}
+
+func (f *fakeAssetAccountingPoster) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	accounts := make([]accounting.Account, 0, len(f.accounts))
+	for _, account := range f.accounts {
+		accounts = append(accounts, *account)
+	}
+	return accounts, nil
+}
+
+func (f *fakeAssetAccountingPoster) GetAccount(_ context.Context, _, _, accountID string) (*accounting.Account, error) {
+	account, ok := f.accounts[accountID]
+	if !ok {
+		return nil, fmt.Errorf("account not found")
+	}
+	return account, nil
+}
+
+func (f *fakeAssetAccountingPoster) CreateJournalEntry(_ context.Context, _, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error) {
+	f.createdRequest = req
+	return &accounting.JournalEntry{ID: "je-1", TenantID: tenantID, Status: accounting.StatusDraft}, nil
+}
+
+func (f *fakeAssetAccountingPoster) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
+	f.postedIDs = append(f.postedIDs, entryID)
+	return nil
+}
+
+type fakeAssetContactLister struct {
+	contacts []contacts.Contact
+	err      error
+}
+
+type fakeAssetInvoiceResolver struct {
+	invoiceIDsByNumber map[string]string
+	errorsByNumber     map[string]error
+	calls              []string
+}
+
+func (f fakeAssetContactLister) List(_ context.Context, _, _ string, _ *contacts.ContactFilter) ([]contacts.Contact, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.contacts, nil
+}
+
+func (f *fakeAssetInvoiceResolver) ResolveInvoiceIDByNumber(_ context.Context, _, _ string, invoiceNumber string) (string, error) {
+	trimmed := strings.TrimSpace(invoiceNumber)
+	f.calls = append(f.calls, trimmed)
+	if err, ok := f.errorsByNumber[trimmed]; ok {
+		return "", err
+	}
+	if invoiceID, ok := f.invoiceIDsByNumber[trimmed]; ok {
+		return invoiceID, nil
+	}
+	return "", fmt.Errorf("invoice not found")
+}
+
 func TestNewService(t *testing.T) {
-	// Test that NewService creates a service with PostgresRepository
+	// Test that NewService creates a service with a repository.
 	svc := NewService(nil)
 	assert.NotNil(t, svc)
 	assert.NotNil(t, svc.repo)

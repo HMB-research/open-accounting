@@ -5,11 +5,12 @@
 		type RecurringInvoice,
 		type Contact,
 		type Frequency,
-		type CreateRecurringInvoiceRequest
+		type CreateRecurringInvoiceRequest,
+		type UpdateRecurringInvoiceRequest
 	} from '$lib/api';
-	import Decimal from 'decimal.js';
 	import * as m from '$lib/paraglide/messages.js';
-	import { formatCurrency, formatDate } from '$lib/utils/formatting';
+	import { dateInputToApiTimestamp } from '$lib/utils/dates';
+	import { formatDate } from '$lib/utils/formatting';
 
 	let recurringInvoices = $state<RecurringInvoice[]>([]);
 	let contacts = $state<Contact[]>([]);
@@ -18,6 +19,7 @@
 	let selectedTenantId = $state('');
 	let showActiveOnly = $state(false);
 	let showCreateModal = $state(false);
+	let editingInvoice = $state<RecurringInvoice | null>(null);
 
 	// Create form state
 	let newName = $state('');
@@ -110,24 +112,25 @@
 		}
 	}
 
-	async function handleCreate(e: Event) {
+	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		error = '';
 
-		const data: CreateRecurringInvoiceRequest = {
+		const lines = newLines.map((l) => ({
+			description: l.description,
+			quantity: l.quantity,
+			unit_price: l.unit_price,
+			vat_rate: l.vat_rate
+		}));
+
+		const sharedData = {
 			name: newName,
 			contact_id: newContactId,
 			frequency: newFrequency,
-			start_date: newStartDate,
 			payment_terms_days: newPaymentTermsDays,
 			reference: newReference || undefined,
 			notes: newNotes || undefined,
-			lines: newLines.map((l) => ({
-				description: l.description,
-				quantity: l.quantity,
-				unit_price: l.unit_price,
-				vat_rate: l.vat_rate
-			})),
+			lines,
 			// Email configuration
 			send_email_on_generation: sendEmailOnGeneration,
 			attach_pdf_to_email: attachPdfToEmail,
@@ -136,21 +139,68 @@
 			email_message: emailMessage || undefined
 		};
 
-		if (newEndDate) {
-			data.end_date = newEndDate;
-		}
-
 		try {
-			await api.createRecurringInvoice(selectedTenantId, data);
+			if (editingInvoice) {
+				const data: UpdateRecurringInvoiceRequest = {
+					...sharedData,
+					end_date: newEndDate ? dateInputToApiTimestamp(newEndDate) : undefined
+				};
+				await api.updateRecurringInvoice(selectedTenantId, editingInvoice.id, data);
+			} else {
+				const data: CreateRecurringInvoiceRequest = {
+					...sharedData,
+					start_date: dateInputToApiTimestamp(newStartDate),
+					end_date: newEndDate ? dateInputToApiTimestamp(newEndDate) : undefined
+				};
+				await api.createRecurringInvoice(selectedTenantId, data);
+			}
 			showCreateModal = false;
 			resetForm();
 			await loadData();
 		} catch (err) {
-			error = err instanceof Error ? err.message : String(m.recurring_failedToCreate());
+			error = err instanceof Error ? err.message : String(editingInvoice ? m.recurring_failedToUpdate() : m.recurring_failedToCreate());
+		}
+	}
+
+	function openCreateModal() {
+		resetForm();
+		showCreateModal = true;
+	}
+
+	async function openEditModal(invoice: RecurringInvoice) {
+		try {
+			const details = await api.getRecurringInvoice(selectedTenantId, invoice.id);
+			editingInvoice = details;
+			newName = details.name;
+			newContactId = details.contact_id;
+			newFrequency = details.frequency;
+			newStartDate = dateToInputValue(details.start_date);
+			newEndDate = details.end_date ? dateToInputValue(details.end_date) : '';
+			newPaymentTermsDays = details.payment_terms_days;
+			newReference = details.reference || '';
+			newNotes = details.notes || '';
+			newLines = (details.lines || []).map((line) => ({
+				description: line.description,
+				quantity: String(line.quantity || '1'),
+				unit_price: String(line.unit_price || ''),
+				vat_rate: String(line.vat_rate || '22')
+			}));
+			if (newLines.length === 0) {
+				newLines = [{ description: '', quantity: '1', unit_price: '', vat_rate: '22' }];
+			}
+			sendEmailOnGeneration = details.send_email_on_generation;
+			attachPdfToEmail = details.attach_pdf_to_email;
+			recipientEmailOverride = details.recipient_email_override || '';
+			emailSubjectOverride = details.email_subject_override || '';
+			emailMessage = details.email_message || '';
+			showCreateModal = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(m.recurring_failedToLoad());
 		}
 	}
 
 	function resetForm() {
+		editingInvoice = null;
 		newName = '';
 		newContactId = '';
 		newFrequency = 'MONTHLY';
@@ -166,6 +216,16 @@
 		recipientEmailOverride = '';
 		emailSubjectOverride = '';
 		emailMessage = '';
+	}
+
+	function closeModal() {
+		showCreateModal = false;
+		resetForm();
+	}
+
+	function dateToInputValue(value: string): string {
+		if (!value) return '';
+		return new Date(value).toISOString().split('T')[0];
 	}
 
 	function addLine() {
@@ -202,7 +262,7 @@
 				<input type="checkbox" bind:checked={showActiveOnly} onchange={loadData} />
 				{m.recurring_activeOnly()}
 			</label>
-			<button class="btn btn-primary" onclick={() => (showCreateModal = true)}>
+			<button class="btn btn-primary" onclick={openCreateModal}>
 				{m.recurring_newRecurring()}
 			</button>
 		</div>
@@ -218,7 +278,7 @@
 		<div class="card empty-state">
 			<h2>{m.recurring_noRecurringInvoices()}</h2>
 			<p>{m.recurring_createFirst()}</p>
-			<button class="btn btn-primary" onclick={() => (showCreateModal = true)}>
+			<button class="btn btn-primary" onclick={openCreateModal}>
 				{m.recurring_createRecurringInvoice()}
 			</button>
 		</div>
@@ -238,7 +298,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each recurringInvoices as invoice}
+					{#each recurringInvoices as invoice (invoice.id)}
 						<tr>
 							<td data-label={m.common_name()}>
 								<strong>{invoice.name}</strong>
@@ -279,6 +339,12 @@
 									{invoice.is_active ? m.recurring_pause() : m.recurring_resume()}
 								</button>
 								<button
+									class="btn btn-secondary btn-sm"
+									onclick={() => openEditModal(invoice)}
+								>
+									{m.common_edit()}
+								</button>
+								<button
 									class="btn btn-danger btn-sm"
 									onclick={() => handleDelete(invoice)}
 								>
@@ -294,12 +360,11 @@
 </div>
 
 {#if showCreateModal}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="modal-backdrop" onclick={() => (showCreateModal = false)} role="presentation">
+	<div class="modal-backdrop" onclick={closeModal} role="presentation">
 		<div class="modal card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-recurring-title" tabindex="-1">
-			<h2 id="create-recurring-title">{m.recurring_createRecurringInvoice()}</h2>
-			<form onsubmit={handleCreate}>
+			<h2 id="create-recurring-title">{editingInvoice ? m.recurring_updateRecurringInvoice() : m.recurring_createRecurringInvoice()}</h2>
+			<form onsubmit={handleSubmit}>
 				<div class="form-row">
 					<div class="form-group">
 						<label class="label" for="name">{m.common_name()}</label>
@@ -316,7 +381,7 @@
 						<label class="label" for="contact">{m.recurring_contact()}</label>
 						<select class="input" id="contact" bind:value={newContactId} required>
 							<option value="">{m.recurring_selectContact()}</option>
-							{#each contacts as contact}
+							{#each contacts as contact (contact.id)}
 								<option value={contact.id}>{contact.name}</option>
 							{/each}
 						</select>
@@ -355,6 +420,7 @@
 							id="start_date"
 							bind:value={newStartDate}
 							required
+							disabled={!!editingInvoice}
 						/>
 					</div>
 					<div class="form-group">
@@ -369,7 +435,7 @@
 				</div>
 
 				<h3>{m.recurring_lineItems()}</h3>
-				{#each newLines as line, index}
+				{#each newLines as line, index (line)}
 					<div class="line-row">
 						<input
 							class="input"
@@ -468,11 +534,11 @@
 					<button
 						type="button"
 						class="btn btn-secondary"
-						onclick={() => (showCreateModal = false)}
+						onclick={closeModal}
 					>
 						{m.common_cancel()}
 					</button>
-					<button type="submit" class="btn btn-primary">{m.common_create()}</button>
+					<button type="submit" class="btn btn-primary">{editingInvoice ? m.common_save() : m.common_create()}</button>
 				</div>
 			</form>
 		</div>

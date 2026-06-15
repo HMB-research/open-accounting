@@ -34,6 +34,16 @@ const (
 	ReconciliationCompleted  ReconciliationStatus = "COMPLETED"
 )
 
+// BankMatchField defines the transaction field inspected by a bank match rule.
+type BankMatchField string
+
+const (
+	BankMatchFieldDescription         BankMatchField = "DESCRIPTION"
+	BankMatchFieldReference           BankMatchField = "REFERENCE"
+	BankMatchFieldCounterpartyName    BankMatchField = "COUNTERPARTY_NAME"
+	BankMatchFieldCounterpartyAccount BankMatchField = "COUNTERPARTY_ACCOUNT"
+)
+
 // BankAccount represents a bank account
 type BankAccount struct {
 	ID            string          `json:"id"`
@@ -52,27 +62,49 @@ type BankAccount struct {
 
 // BankTransaction represents an imported bank transaction
 type BankTransaction struct {
-	ID                  string            `json:"id"`
-	TenantID            string            `json:"tenant_id"`
-	BankAccountID       string            `json:"bank_account_id"`
-	TransactionDate     time.Time         `json:"transaction_date"`
-	ValueDate           *time.Time        `json:"value_date,omitempty"`
-	Amount              decimal.Decimal   `json:"amount"`
-	Currency            string            `json:"currency"`
-	Description         string            `json:"description,omitempty"`
-	Reference           string            `json:"reference,omitempty"`
-	CounterpartyName    string            `json:"counterparty_name,omitempty"`
-	CounterpartyAccount string            `json:"counterparty_account,omitempty"`
-	Status              TransactionStatus `json:"status"`
-	FollowUpStatus      FollowUpStatus    `json:"follow_up_status"`
-	ReviewNote          string            `json:"review_note,omitempty"`
-	ReviewedBy          *string           `json:"reviewed_by,omitempty"`
-	ReviewedAt          *time.Time        `json:"reviewed_at,omitempty"`
-	MatchedPaymentID    *string           `json:"matched_payment_id,omitempty"`
-	JournalEntryID      *string           `json:"journal_entry_id,omitempty"`
-	ReconciliationID    *string           `json:"reconciliation_id,omitempty"`
-	ImportedAt          time.Time         `json:"imported_at"`
-	ExternalID          string            `json:"external_id,omitempty"`
+	ID                  string                  `json:"id"`
+	TenantID            string                  `json:"tenant_id"`
+	BankAccountID       string                  `json:"bank_account_id"`
+	TransactionDate     time.Time               `json:"transaction_date"`
+	ValueDate           *time.Time              `json:"value_date,omitempty"`
+	Amount              decimal.Decimal         `json:"amount"`
+	Currency            string                  `json:"currency"`
+	Description         string                  `json:"description,omitempty"`
+	Reference           string                  `json:"reference,omitempty"`
+	CounterpartyName    string                  `json:"counterparty_name,omitempty"`
+	CounterpartyAccount string                  `json:"counterparty_account,omitempty"`
+	Status              TransactionStatus       `json:"status"`
+	FollowUpStatus      FollowUpStatus          `json:"follow_up_status"`
+	ReviewNote          string                  `json:"review_note,omitempty"`
+	ReviewedBy          *string                 `json:"reviewed_by,omitempty"`
+	ReviewedAt          *time.Time              `json:"reviewed_at,omitempty"`
+	MatchedPaymentID    *string                 `json:"matched_payment_id,omitempty"`
+	JournalEntryID      *string                 `json:"journal_entry_id,omitempty"`
+	ReconciliationID    *string                 `json:"reconciliation_id,omitempty"`
+	ImportedAt          time.Time               `json:"imported_at"`
+	ExternalID          string                  `json:"external_id,omitempty"`
+	RemediationActions  []BankRemediationAction `json:"remediation_actions,omitempty"`
+}
+
+// BankRemediationAction describes one operator action for bank transaction follow-up.
+type BankRemediationAction struct {
+	Code              string `json:"code"`
+	Severity          string `json:"severity"`
+	Scope             string `json:"scope"`
+	OwnerRole         string `json:"owner_role"`
+	WorkspaceQueue    string `json:"workspace_queue,omitempty"`
+	AssignmentKey     string `json:"assignment_key,omitempty"`
+	Priority          string `json:"priority,omitempty"`
+	DueInDays         int    `json:"due_in_days,omitempty"`
+	Message           string `json:"message"`
+	Action            string `json:"action"`
+	EntityType        string `json:"entity_type,omitempty"`
+	EntityID          string `json:"entity_id,omitempty"`
+	BankAccountID     string `json:"bank_account_id,omitempty"`
+	TransactionStatus string `json:"transaction_status,omitempty"`
+	FollowUpStatus    string `json:"follow_up_status,omitempty"`
+	UIPath            string `json:"ui_path,omitempty"`
+	CLICommand        string `json:"cli_command,omitempty"`
 }
 
 // BankReconciliation represents a reconciliation session
@@ -113,6 +145,23 @@ type MatchSuggestion struct {
 	MatchReason   string          `json:"match_reason"`
 }
 
+// BankMatchRule tunes automatic matching for transactions that match a pattern.
+type BankMatchRule struct {
+	ID                 string         `json:"id"`
+	TenantID           string         `json:"tenant_id"`
+	BankAccountID      *string        `json:"bank_account_id,omitempty"`
+	Name               string         `json:"name"`
+	Priority           int            `json:"priority"`
+	MatchField         BankMatchField `json:"match_field"`
+	Pattern            string         `json:"pattern"`
+	MinConfidence      float64        `json:"min_confidence"`
+	MaxDateDiffDays    int            `json:"max_date_diff_days"`
+	RequireExactAmount bool           `json:"require_exact_amount"`
+	IsActive           bool           `json:"is_active"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+}
+
 // CreateBankAccountRequest is the request to create a bank account
 type CreateBankAccountRequest struct {
 	Name          string  `json:"name"`
@@ -122,6 +171,7 @@ type CreateBankAccountRequest struct {
 	Currency      string  `json:"currency,omitempty"`
 	GLAccountID   *string `json:"gl_account_id,omitempty"`
 	IsDefault     bool    `json:"is_default"`
+	IsActive      *bool   `json:"is_active,omitempty"`
 }
 
 // UpdateBankAccountRequest is the request to update a bank account
@@ -134,11 +184,71 @@ type UpdateBankAccountRequest struct {
 	IsDefault   *bool   `json:"is_default,omitempty"`
 }
 
-// ImportCSVRequest is the request to import transactions from CSV
+// CreateBankMatchRuleRequest is the request to create a bank auto-match rule.
+type CreateBankMatchRuleRequest struct {
+	BankAccountID      *string        `json:"bank_account_id,omitempty"`
+	Name               string         `json:"name"`
+	Priority           int            `json:"priority,omitempty"`
+	MatchField         BankMatchField `json:"match_field,omitempty"`
+	Pattern            string         `json:"pattern"`
+	MinConfidence      float64        `json:"min_confidence,omitempty"`
+	MaxDateDiffDays    int            `json:"max_date_diff_days,omitempty"`
+	RequireExactAmount bool           `json:"require_exact_amount,omitempty"`
+	IsActive           *bool          `json:"is_active,omitempty"`
+}
+
+// UpdateBankMatchRuleRequest is the request to update a bank auto-match rule.
+type UpdateBankMatchRuleRequest struct {
+	BankAccountID      *string         `json:"bank_account_id,omitempty"`
+	ClearBankAccount   bool            `json:"clear_bank_account,omitempty"`
+	Name               *string         `json:"name,omitempty"`
+	Priority           *int            `json:"priority,omitempty"`
+	MatchField         *BankMatchField `json:"match_field,omitempty"`
+	Pattern            *string         `json:"pattern,omitempty"`
+	MinConfidence      *float64        `json:"min_confidence,omitempty"`
+	MaxDateDiffDays    *int            `json:"max_date_diff_days,omitempty"`
+	RequireExactAmount *bool           `json:"require_exact_amount,omitempty"`
+	IsActive           *bool           `json:"is_active,omitempty"`
+}
+
+// ImportCSVRequest is the request to import bank transactions from raw statement
+// content or already normalized rows. Format supports auto, generic, lhv,
+// camt053, and lhv-camt.
 type ImportCSVRequest struct {
-	FileName       string              `json:"-"`
-	Transactions   []CSVTransactionRow `json:"transactions"`
+	FileName       string              `json:"file_name,omitempty"`
+	CSVContent     string              `json:"csv_content,omitempty"`
+	Format         string              `json:"format,omitempty"`
+	Transactions   []CSVTransactionRow `json:"transactions,omitempty"`
 	SkipDuplicates bool                `json:"skip_duplicates"`
+}
+
+// ImportBankAccountsRequest is the request to import bank account master data.
+type ImportBankAccountsRequest struct {
+	FileName       string              `json:"file_name,omitempty"`
+	Rows           []CSVBankAccountRow `json:"rows"`
+	SkipDuplicates bool                `json:"skip_duplicates"`
+}
+
+// CSVBankAccountRow represents a bank account row in CSV import payloads.
+type CSVBankAccountRow struct {
+	Name          string `json:"name"`
+	AccountNumber string `json:"account_number"`
+	BankName      string `json:"bank_name,omitempty"`
+	SwiftCode     string `json:"swift_code,omitempty"`
+	Currency      string `json:"currency,omitempty"`
+	GLAccountID   string `json:"gl_account_id,omitempty"`
+	GLAccountCode string `json:"gl_account_code,omitempty"`
+	IsDefault     string `json:"is_default,omitempty"`
+	IsActive      string `json:"is_active,omitempty"`
+}
+
+// ImportBankAccountsResult is the result of a bank account import.
+type ImportBankAccountsResult struct {
+	FileName         string   `json:"file_name"`
+	RowsProcessed    int      `json:"rows_processed"`
+	AccountsImported int      `json:"accounts_imported"`
+	RowsSkipped      int      `json:"rows_skipped"`
+	Errors           []string `json:"errors,omitempty"`
 }
 
 // CSVTransactionRow represents a row in the CSV import
@@ -146,6 +256,8 @@ type CSVTransactionRow struct {
 	Date                string `json:"date"`
 	ValueDate           string `json:"value_date,omitempty"`
 	Amount              string `json:"amount"`
+	Currency            string `json:"currency,omitempty"`
+	SourceAccount       string `json:"source_account,omitempty"`
 	Description         string `json:"description"`
 	Reference           string `json:"reference,omitempty"`
 	CounterpartyName    string `json:"counterparty_name,omitempty"`
@@ -190,18 +302,26 @@ type TransactionReviewUpdate struct {
 
 // TransactionFilter provides filtering options for bank transactions
 type TransactionFilter struct {
-	BankAccountID string
-	Status        TransactionStatus
-	FromDate      *time.Time
-	ToDate        *time.Time
-	MinAmount     *decimal.Decimal
-	MaxAmount     *decimal.Decimal
+	BankAccountID    string
+	Status           TransactionStatus
+	ReconciliationID string
+	FromDate         *time.Time
+	ToDate           *time.Time
+	MinAmount        *decimal.Decimal
+	MaxAmount        *decimal.Decimal
 }
 
 // BankAccountFilter provides filtering options for bank accounts
 type BankAccountFilter struct {
 	IsActive *bool
 	Currency string
+}
+
+// BankMatchRuleFilter provides filtering options for auto-match rules.
+type BankMatchRuleFilter struct {
+	BankAccountID string
+	ActiveOnly    bool
+	IncludeGlobal bool
 }
 
 // NormalizeFollowUpStatus validates and normalizes a follow-up status value.
@@ -212,5 +332,19 @@ func NormalizeFollowUpStatus(value string) (FollowUpStatus, error) {
 		return normalized, nil
 	default:
 		return "", fmt.Errorf("invalid follow-up status")
+	}
+}
+
+// NormalizeBankMatchField validates and normalizes a bank match field.
+func NormalizeBankMatchField(value string) (BankMatchField, error) {
+	normalized := BankMatchField(strings.ToUpper(strings.TrimSpace(value)))
+	if normalized == "" {
+		return BankMatchFieldDescription, nil
+	}
+	switch normalized {
+	case BankMatchFieldDescription, BankMatchFieldReference, BankMatchFieldCounterpartyName, BankMatchFieldCounterpartyAccount:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("invalid bank match field")
 	}
 }

@@ -41,6 +41,7 @@ make lint
 
 ### TypeScript/Svelte
 - Follow existing code patterns
+- Run `bun run lint` in the frontend directory
 - Run `bun run check` in the frontend directory
 - Use TypeScript for type safety
 
@@ -65,8 +66,10 @@ go test -race -cover ./...
 # Backend integration tests (requires DATABASE_URL)
 go test -tags=integration -race -cover ./...
 
-# Frontend tests
-cd frontend && bun test
+# Frontend lint, type checks, and tests
+cd frontend && bun run lint
+cd frontend && bun run check
+cd frontend && bun run test
 
 # Frontend with coverage
 cd frontend && bun run test:coverage
@@ -101,6 +104,10 @@ Pull requests must pass:
 - `go test` - Unit tests
 - `go test -tags=integration` - Integration tests
 - `golangci-lint run` - Linting
+- `cd frontend && bun run lint` - Frontend linting
+- `cd frontend && bun run check` - Svelte/TypeScript checks
+- `cd frontend && bun run test` - Frontend unit tests
+- `cd frontend && bun run build` - Frontend production build
 - Codecov patch coverage threshold
 
 ## Pull Request Process

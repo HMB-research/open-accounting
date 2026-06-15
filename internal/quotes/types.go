@@ -7,6 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 )
 
 // QuoteStatus represents the status of a quote
@@ -165,6 +166,30 @@ type CreateQuoteLineRequest struct {
 	ProductID       *string         `json:"product_id,omitempty"`
 }
 
+// ImportQuotesRequest contains CSV payload for quote migration.
+type ImportQuotesRequest struct {
+	CSVContent string `json:"csv_content"`
+	FileName   string `json:"file_name,omitempty"`
+	UserID     string `json:"-"`
+}
+
+// ImportQuotesResult summarizes a quote CSV import.
+type ImportQuotesResult struct {
+	FileName      string                 `json:"file_name,omitempty"`
+	RowsProcessed int                    `json:"rows_processed"`
+	QuotesCreated int                    `json:"quotes_created"`
+	LinesImported int                    `json:"lines_imported"`
+	RowsSkipped   int                    `json:"rows_skipped"`
+	Errors        []ImportQuotesRowError `json:"errors,omitempty"`
+}
+
+// ImportQuotesRowError describes a row-level quote import failure.
+type ImportQuotesRowError struct {
+	Row         int    `json:"row"`
+	QuoteNumber string `json:"quote_number,omitempty"`
+	Message     string `json:"message"`
+}
+
 // UpdateQuoteRequest is the request to update a quote
 type UpdateQuoteRequest struct {
 	ContactID    string                   `json:"contact_id"`
@@ -174,6 +199,20 @@ type UpdateQuoteRequest struct {
 	ExchangeRate decimal.Decimal          `json:"exchange_rate,omitempty"`
 	Notes        string                   `json:"notes,omitempty"`
 	Lines        []CreateQuoteLineRequest `json:"lines"`
+}
+
+// ConvertQuoteToInvoiceRequest requests conversion of an accepted quote into a sales invoice.
+type ConvertQuoteToInvoiceRequest struct {
+	IssueDate time.Time `json:"issue_date,omitempty"`
+	DueDate   time.Time `json:"due_date,omitempty"`
+	Notes     string    `json:"notes,omitempty"`
+	UserID    string    `json:"-"`
+}
+
+// QuoteInvoiceConversionResult returns the converted quote and created invoice.
+type QuoteInvoiceConversionResult struct {
+	Quote   *Quote             `json:"quote"`
+	Invoice *invoicing.Invoice `json:"invoice"`
 }
 
 // QuoteFilter provides filtering options

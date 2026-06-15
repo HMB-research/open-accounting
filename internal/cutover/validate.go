@@ -1,0 +1,8424 @@
+package cutover
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/HMB-research/open-accounting/internal/invoicing/mappers/einvoice"
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+)
+
+type fileSpec struct {
+	aliases        map[string]string
+	requiredGroups [][]string
+}
+
+type parsedFile struct {
+	kind     FileKind
+	fileName string
+	headers  []string
+	rows     []parsedRow
+}
+
+type parsedRow struct {
+	number int
+	values map[string]string
+}
+
+type bundleIndexes struct {
+	files              map[FileKind]bool
+	accountCodes       map[string]bool
+	accountIDs         map[string]bool
+	bankAccounts       map[string]string
+	contactIDs         map[string]bool
+	contactCodes       map[string]bool
+	contactRegCodes    map[string]bool
+	contactVATNumbers  map[string]bool
+	contactEmails      map[string]bool
+	contactNames       map[string]bool
+	contacts           map[string]bool
+	employeeIDs        map[string]bool
+	employees          map[string]bool
+	invoices           map[string]bool
+	quotes             map[string]bool
+	quoteNumbers       map[string]bool
+	costCenterCodes    map[string]bool
+	productCategoryIDs map[string]bool
+	productCategories  map[string]bool
+	productCodes       map[string]bool
+	warehouseCodes     map[string]bool
+	journalLineIDs     map[string]bool
+}
+
+type duplicateIdentifierSpec struct {
+	field     string
+	normalize func(string) string
+}
+
+type duplicateIdentifierValue struct {
+	row int
+}
+
+type duplicateCompositeValue struct {
+	row int
+}
+
+type groupedDocumentPreservedIDValue struct {
+	row          int
+	groupKey     string
+	groupDisplay string
+}
+
+type groupedDocumentSpec struct {
+	keyLabel string
+	key      []groupedFieldSpec
+	fields   []groupedFieldSpec
+}
+
+type groupedFieldSpec struct {
+	field        string
+	optional     bool
+	defaultValue string
+	defaultFrom  string
+	normalize    func(string) string
+}
+
+type groupedComparableValue struct {
+	normalized string
+	display    string
+}
+
+type groupedSeenValue struct {
+	normalized string
+}
+
+type payrollHistoryPreflightGroup struct {
+	status      string
+	paymentDate string
+	notes       string
+}
+
+type tsdHistoryPreflightGroup struct {
+	status        string
+	submittedAt   string
+	emtaReference string
+}
+
+type kmdHistoryPreflightGroup struct {
+	status            string
+	submittedAt       string
+	submittedAtSet    bool
+	totalOutputVAT    string
+	totalOutputVATSet bool
+	totalInputVAT     string
+	totalInputVATSet  bool
+}
+
+type kmdHistoryVATReconciliationGroup struct {
+	period string
+
+	declaredOutput    *kmdHistoryVATReconciliationValue
+	declaredInput     *kmdHistoryVATReconciliationValue
+	declaredOutputBad bool
+	declaredInputBad  bool
+
+	outputSupport    decimal.Decimal
+	outputSupportSet bool
+	inputSupport     decimal.Decimal
+	inputSupportSet  bool
+
+	outputTotalRow *kmdHistoryVATReconciliationValue
+	inputTotalRow  *kmdHistoryVATReconciliationValue
+}
+
+type kmdHistoryVATReconciliationValue struct {
+	amount   decimal.Decimal
+	fileName string
+	row      int
+	field    string
+	value    string
+}
+
+var fileSpecs = map[FileKind]fileSpec{
+	KindAccounts: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"account_code":   "code",
+			"number":         "code",
+			"account_name":   "name",
+			"account_type":   "account_type",
+			"type":           "account_type",
+			"category":       "account_type",
+			"parent_code":    "parent_code",
+			"parent":         "parent_code",
+			"parent_account": "parent_code",
+		}),
+		requiredGroups: [][]string{{"code"}, {"name"}, {"account_type"}},
+	},
+	KindContacts: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"contact_id":         "id",
+			"contact_name":       "name",
+			"company":            "name",
+			"company_name":       "name",
+			"contact_code":       "code",
+			"customer_code":      "code",
+			"supplier_code":      "code",
+			"contact_type":       "contact_type",
+			"type":               "contact_type",
+			"role":               "contact_type",
+			"reg_code":           "reg_code",
+			"registration_code":  "reg_code",
+			"registry_code":      "reg_code",
+			"vat_number":         "vat_number",
+			"vat":                "vat_number",
+			"vat_no":             "vat_number",
+			"vat_reg_number":     "vat_number",
+			"contact_vat_number": "vat_number",
+			"contact_email":      "email",
+			"e_mail":             "email",
+			"telephone":          "phone",
+			"address":            "address_line1",
+			"address_line_1":     "address_line1",
+			"street":             "address_line1",
+			"street_address":     "address_line1",
+			"address_line_2":     "address_line2",
+			"postcode":           "postal_code",
+			"zip":                "postal_code",
+			"zip_code":           "postal_code",
+			"country":            "country_code",
+			"payment_days":       "payment_terms_days",
+			"terms_days":         "payment_terms_days",
+		}),
+		requiredGroups: [][]string{{"name"}},
+	},
+	KindEmployees: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"employee_number":        "employee_number",
+			"number":                 "employee_number",
+			"employee_no":            "employee_number",
+			"employee_code":          "employee_number",
+			"employee_id":            "employee_number",
+			"first_name":             "first_name",
+			"firstname":              "first_name",
+			"given_name":             "first_name",
+			"last_name":              "last_name",
+			"lastname":               "last_name",
+			"surname":                "last_name",
+			"family_name":            "last_name",
+			"personal_code":          "personal_code",
+			"isikukood":              "personal_code",
+			"e_mail":                 "email",
+			"phone":                  "phone",
+			"telephone":              "phone",
+			"address":                "address",
+			"bank_account":           "bank_account",
+			"iban":                   "bank_account",
+			"start_date":             "start_date",
+			"employment_start":       "start_date",
+			"end_date":               "end_date",
+			"employment_end":         "end_date",
+			"position":               "position",
+			"title":                  "position",
+			"department":             "department",
+			"team":                   "department",
+			"employment_type":        "employment_type",
+			"type":                   "employment_type",
+			"apply_basic_exemption":  "apply_basic_exemption",
+			"basic_exemption":        "apply_basic_exemption",
+			"basic_exemption_amount": "basic_exemption_amount",
+			"funded_pension_rate":    "funded_pension_rate",
+			"pension_rate":           "funded_pension_rate",
+			"base_salary":            "base_salary",
+			"salary":                 "base_salary",
+			"gross_salary":           "base_salary",
+			"salary_effective_from":  "salary_effective_from",
+			"effective_from":         "salary_effective_from",
+			"is_active":              "is_active",
+			"active":                 "is_active",
+		}),
+		requiredGroups: [][]string{{"first_name"}, {"last_name"}, {"start_date"}},
+	},
+	KindExpenses: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"expense_number":       "expense_number",
+			"expense_no":           "expense_number",
+			"number":               "expense_number",
+			"date":                 "expense_date",
+			"expense_date":         "expense_date",
+			"supplier":             "merchant",
+			"vendor":               "merchant",
+			"merchant":             "merchant",
+			"notes":                "description",
+			"employee_id":          "employee_id",
+			"contact_id":           "contact_id",
+			"customer_id":          "contact_id",
+			"supplier_id":          "contact_id",
+			"contact_code":         "contact_code",
+			"customer_code":        "contact_code",
+			"supplier_code":        "contact_code",
+			"contact_reg_code":     "contact_reg_code",
+			"contact_vat_number":   "contact_vat_number",
+			"vat_number":           "contact_vat_number",
+			"contact_email":        "contact_email",
+			"email":                "contact_email",
+			"contact_name":         "contact_name",
+			"customer_name":        "contact_name",
+			"supplier_name":        "contact_name",
+			"expense_account_id":   "expense_account_id",
+			"expense_account":      "expense_account_id",
+			"expense_account_code": "expense_account_code",
+			"payment_account_id":   "payment_account_id",
+			"payment_account":      "payment_account_id",
+			"payment_account_code": "payment_account_code",
+			"requires_receipt":     "requires_receipt",
+			"receipt_required":     "requires_receipt",
+		}),
+		requiredGroups: [][]string{
+			{"expense_date"},
+			{"merchant"},
+			{"expense_account_id", "expense_account_code"},
+			{"payment_account_id", "payment_account_code"},
+			{"amount"},
+		},
+	},
+	KindInvoices: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"invoice_id":         "id",
+			"invoice_number":     "invoice_number",
+			"number":             "invoice_number",
+			"invoice_no":         "invoice_number",
+			"invoice_type":       "invoice_type",
+			"type":               "invoice_type",
+			"contact_code":       "contact_code",
+			"customer_code":      "contact_code",
+			"supplier_code":      "contact_code",
+			"contact_reg_code":   "contact_reg_code",
+			"contact_vat_number": "contact_vat_number",
+			"vat_number":         "contact_vat_number",
+			"contact_email":      "contact_email",
+			"email":              "contact_email",
+			"contact_name":       "contact_name",
+			"customer_name":      "contact_name",
+			"supplier_name":      "contact_name",
+			"issue_date":         "issue_date",
+			"invoice_date":       "issue_date",
+			"line_description":   "line_description",
+			"description":        "line_description",
+			"qty":                "quantity",
+			"price":              "unit_price",
+			"vat":                "vat_rate",
+			"product":            "product_code",
+			"product_code":       "product_code",
+			"sku":                "product_code",
+			"item_code":          "product_code",
+			"product_id":         "product_id",
+		}),
+		requiredGroups: [][]string{
+			{"invoice_number"},
+			{"invoice_type"},
+			{"issue_date"},
+			{"due_date"},
+			{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"},
+			{"line_description"},
+			{"quantity"},
+			{"unit_price"},
+			{"vat_rate"},
+		},
+	},
+	KindPayments: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"payment_number":     "payment_number",
+			"payment_no":         "payment_number",
+			"number":             "payment_number",
+			"type":               "payment_type",
+			"payment_type":       "payment_type",
+			"date":               "payment_date",
+			"payment_date":       "payment_date",
+			"contact_id":         "contact_id",
+			"customer_id":        "contact_id",
+			"supplier_id":        "contact_id",
+			"contact_code":       "contact_code",
+			"customer_code":      "contact_code",
+			"supplier_code":      "contact_code",
+			"contact_reg_code":   "contact_reg_code",
+			"contact_vat_number": "contact_vat_number",
+			"vat_number":         "contact_vat_number",
+			"contact_email":      "contact_email",
+			"email":              "contact_email",
+			"contact_name":       "contact_name",
+			"customer_name":      "contact_name",
+			"supplier_name":      "contact_name",
+			"exchange_rate":      "exchange_rate",
+			"method":             "payment_method",
+			"payment_method":     "payment_method",
+			"bank_account":       "bank_account",
+			"reference":          "reference",
+			"notes":              "notes",
+			"description":        "notes",
+			"invoice_id":         "invoice_id",
+			"invoice_number":     "invoice_number",
+			"invoice_no":         "invoice_number",
+			"allocation_amount":  "allocation_amount",
+			"allocated_amount":   "allocation_amount",
+		}),
+		requiredGroups: [][]string{{"payment_type"}, {"payment_date"}, {"amount"}},
+	},
+	KindBankAccounts: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"account_name":        "name",
+			"bank_account_name":   "name",
+			"account_number":      "account_number",
+			"iban":                "account_number",
+			"bank_account":        "account_number",
+			"account_no":          "account_number",
+			"account":             "account_number",
+			"bank":                "bank_name",
+			"bank_name":           "bank_name",
+			"bic":                 "swift_code",
+			"swift":               "swift_code",
+			"swift_code":          "swift_code",
+			"gl_account_id":       "gl_account_id",
+			"ledger_account_id":   "gl_account_id",
+			"gl_account_code":     "gl_account_code",
+			"ledger_account_code": "gl_account_code",
+			"cash_account_code":   "gl_account_code",
+			"default":             "is_default",
+			"is_default":          "is_default",
+			"active":              "is_active",
+			"is_active":           "is_active",
+		}),
+		requiredGroups: [][]string{{"name"}, {"account_number"}},
+	},
+	KindBankTransactions: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"date":                 "date",
+			"transaction_date":     "date",
+			"booking_date":         "date",
+			"value_date":           "value_date",
+			"amount":               "amount",
+			"sum":                  "amount",
+			"source_account":       "source_account",
+			"client_account":       "source_account",
+			"account_number":       "source_account",
+			"bank_account":         "source_account",
+			"description":          "description",
+			"details":              "description",
+			"selgitus":             "description",
+			"reference":            "reference",
+			"payment_reference":    "reference",
+			"counterparty_name":    "counterparty_name",
+			"counterparty":         "counterparty_name",
+			"counterparty_account": "counterparty_account",
+			"counterparty_iban":    "counterparty_account",
+			"external_id":          "external_id",
+			"entry_reference":      "external_id",
+		}),
+		requiredGroups: [][]string{{"date"}, {"amount"}, {"description"}},
+	},
+	KindPayrollHistory: {
+		aliases: mergeAliases(employeeReferenceAliases(), map[string]string{
+			"period_year":                     "period_year",
+			"year":                            "period_year",
+			"payroll_year":                    "period_year",
+			"period_month":                    "period_month",
+			"month":                           "period_month",
+			"payroll_month":                   "period_month",
+			"status":                          "status",
+			"run_status":                      "status",
+			"payment_date":                    "payment_date",
+			"pay_date":                        "payment_date",
+			"notes":                           "notes",
+			"gross_salary":                    "gross_salary",
+			"gross":                           "gross_salary",
+			"taxable_income":                  "taxable_income",
+			"income_tax":                      "income_tax",
+			"unemployment_insurance_employee": "unemployment_insurance_employee",
+			"unemployment_employee":           "unemployment_insurance_employee",
+			"unemployment_insurance_ee":       "unemployment_insurance_employee",
+			"funded_pension":                  "funded_pension",
+			"pension":                         "funded_pension",
+			"other_deductions":                "other_deductions",
+			"net_salary":                      "net_salary",
+			"net":                             "net_salary",
+			"social_tax":                      "social_tax",
+			"unemployment_insurance_employer": "unemployment_insurance_employer",
+			"unemployment_employer":           "unemployment_insurance_employer",
+			"unemployment_insurance_er":       "unemployment_insurance_employer",
+			"total_employer_cost":             "total_employer_cost",
+			"employer_cost":                   "total_employer_cost",
+			"basic_exemption_applied":         "basic_exemption_applied",
+			"payment_status":                  "payment_status",
+			"paid_at":                         "paid_at",
+		}),
+		requiredGroups: payrollHistoryRequiredGroups(),
+	},
+	KindLeaveBalances: {
+		aliases: mergeAliases(employeeReferenceAliases(), map[string]string{
+			"year":                 "year",
+			"period_year":          "year",
+			"absence_type_id":      "absence_type_id",
+			"absence_type":         "absence_type",
+			"absence_type_name":    "absence_type",
+			"leave_type":           "absence_type",
+			"leave_type_name":      "absence_type",
+			"type":                 "absence_type",
+			"absence_type_code":    "absence_type_code",
+			"absence_code":         "absence_type_code",
+			"leave_type_code":      "absence_type_code",
+			"type_code":            "absence_type_code",
+			"entitled":             "entitled_days",
+			"entitlement":          "entitled_days",
+			"entitled_days":        "entitled_days",
+			"annual_entitlement":   "entitled_days",
+			"carryover_days":       "carryover_days",
+			"carry_over_days":      "carryover_days",
+			"carried_forward_days": "carryover_days",
+			"used_days":            "used_days",
+			"taken_days":           "used_days",
+			"pending_days":         "pending_days",
+			"reserved_days":        "pending_days",
+		}),
+		requiredGroups: leaveBalanceRequiredGroups(),
+	},
+	KindTSDHistory: {
+		aliases: mergeAliases(employeeReferenceAliases(), map[string]string{
+			"period_year":                     "period_year",
+			"declaration_year":                "period_year",
+			"tsd_year":                        "period_year",
+			"year":                            "period_year",
+			"period_month":                    "period_month",
+			"declaration_month":               "period_month",
+			"tsd_month":                       "period_month",
+			"month":                           "period_month",
+			"declaration_status":              "status",
+			"submitted_at":                    "submitted_at",
+			"submitted_date":                  "submitted_at",
+			"submission_date":                 "submitted_at",
+			"emta_reference":                  "emta_reference",
+			"emta_ref":                        "emta_reference",
+			"submission_reference":            "emta_reference",
+			"payment_type":                    "payment_type",
+			"payment_code":                    "payment_type",
+			"tsd_payment_type":                "payment_type",
+			"gross":                           "gross_payment",
+			"gross_salary":                    "gross_payment",
+			"gross_payment":                   "gross_payment",
+			"basic_exemption":                 "basic_exemption",
+			"basic_exemption_applied":         "basic_exemption",
+			"taxable_amount":                  "taxable_amount",
+			"taxable_income":                  "taxable_amount",
+			"income_tax":                      "income_tax",
+			"social_tax":                      "social_tax",
+			"unemployment_insurance_employee": "unemployment_insurance_employee",
+			"unemployment_employee":           "unemployment_insurance_employee",
+			"unemployment_insurance_ee":       "unemployment_insurance_employee",
+			"unemployment_insurance_employer": "unemployment_insurance_employer",
+			"unemployment_employer":           "unemployment_insurance_employer",
+			"unemployment_insurance_er":       "unemployment_insurance_employer",
+			"pension":                         "funded_pension",
+		}),
+		requiredGroups: tsdHistoryRequiredGroups(),
+	},
+	KindKMDHistory: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"period_year":        "year",
+			"declaration_year":   "year",
+			"kmd_year":           "year",
+			"period_month":       "month",
+			"declaration_month":  "month",
+			"kmd_month":          "month",
+			"declaration_status": "status",
+			"submitted_at":       "submitted_at",
+			"submitted_date":     "submitted_at",
+			"submission_date":    "submitted_at",
+			"row_code":           "row_code",
+			"code":               "row_code",
+			"kmd_row":            "row_code",
+			"kmd_code":           "row_code",
+			"row_description":    "description",
+			"tax_base":           "tax_base",
+			"base":               "tax_base",
+			"taxable_amount":     "tax_base",
+			"tax_amount":         "tax_amount",
+			"vat_amount":         "tax_amount",
+			"amount":             "tax_amount",
+			"total_output_vat":   "total_output_vat",
+			"output_vat":         "total_output_vat",
+			"total_input_vat":    "total_input_vat",
+			"input_vat":          "total_input_vat",
+		}),
+		requiredGroups: [][]string{{"year"}, {"month"}, {"row_code"}},
+	},
+	KindQuotes: {
+		aliases: mergeAliases(commercialDocumentAliases(), map[string]string{
+			"quote_id":         "id",
+			"quote_number":     "quote_number",
+			"quotation_number": "quote_number",
+			"offer_number":     "quote_number",
+			"number":           "quote_number",
+			"quote_no":         "quote_number",
+			"quote_date":       "quote_date",
+			"date":             "quote_date",
+			"valid_until":      "valid_until",
+			"valid_to":         "valid_until",
+			"expiry_date":      "valid_until",
+			"expires_at":       "valid_until",
+		}),
+		requiredGroups: commercialDocumentRequiredGroups("quote_number", "quote_date"),
+	},
+	KindOrders: {
+		aliases: mergeAliases(commercialDocumentAliases(), map[string]string{
+			"order_number":      "order_number",
+			"sales_order":       "order_number",
+			"sales_order_no":    "order_number",
+			"number":            "order_number",
+			"order_no":          "order_number",
+			"order_date":        "order_date",
+			"date":              "order_date",
+			"expected_delivery": "expected_delivery",
+			"delivery_date":     "expected_delivery",
+			"quote_id":          "quote_id",
+			"quote_number":      "quote_number",
+			"quotation_number":  "quote_number",
+			"offer_number":      "quote_number",
+			"quote_no":          "quote_number",
+		}),
+		requiredGroups: commercialDocumentRequiredGroups("order_number", "order_date"),
+	},
+	KindRecurringInvoices: {
+		aliases: mergeAliases(commercialDocumentAliases(), map[string]string{
+			"template":                 "name",
+			"template_name":            "name",
+			"recurring_name":           "name",
+			"frequency":                "frequency",
+			"start_date":               "start_date",
+			"end_date":                 "end_date",
+			"next_generation_date":     "next_generation_date",
+			"next_date":                "next_generation_date",
+			"payment_terms_days":       "payment_terms_days",
+			"payment_terms":            "payment_terms_days",
+			"send_email_on_generation": "send_email_on_generation",
+			"send_email":               "send_email_on_generation",
+			"email_template_type":      "email_template_type",
+			"recipient_email_override": "recipient_email_override",
+			"recipient_email":          "recipient_email_override",
+			"attach_pdf_to_email":      "attach_pdf_to_email",
+			"attach_pdf":               "attach_pdf_to_email",
+			"email_subject_override":   "email_subject_override",
+			"email_subject":            "email_subject_override",
+			"email_message":            "email_message",
+			"account_id":               "account_id",
+		}),
+		requiredGroups: append(commercialDocumentRequiredGroups("name", "start_date"), []string{"frequency"}),
+	},
+	KindCostCenters: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"cost_center_code":        "code",
+			"cc_code":                 "code",
+			"cost_center_name":        "name",
+			"cc_name":                 "name",
+			"parent_id":               "parent_id",
+			"parent_code":             "parent_code",
+			"parent":                  "parent_code",
+			"parent_cost_center_code": "parent_code",
+			"budget_amount":           "budget_amount",
+			"budget":                  "budget_amount",
+			"budget_period":           "budget_period",
+			"is_active":               "is_active",
+			"active":                  "is_active",
+		}),
+		requiredGroups: [][]string{{"code"}, {"name"}},
+	},
+	KindCostAllocations: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"cost_center_id":        "cost_center_id",
+			"cost_center":           "cost_center_code",
+			"cost_center_code":      "cost_center_code",
+			"cc_code":               "cost_center_code",
+			"journal_entry_line_id": "journal_entry_line_id",
+			"journal_line_id":       "journal_entry_line_id",
+			"line_id":               "journal_entry_line_id",
+			"allocation_amount":     "amount",
+			"allocation_percentage": "allocation_percentage",
+			"percentage":            "allocation_percentage",
+			"allocation_percent":    "allocation_percentage",
+			"allocation_date":       "allocation_date",
+			"date":                  "allocation_date",
+			"notes":                 "notes",
+			"note":                  "notes",
+			"memo":                  "notes",
+			"description":           "notes",
+		}),
+		requiredGroups: [][]string{{"cost_center_id", "cost_center_code"}, {"journal_entry_line_id"}, {"amount"}, {"allocation_date"}},
+	},
+	KindProductCategories: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"category_id":         "id",
+			"product_category_id": "id",
+			"category":            "name",
+			"category_name":       "name",
+			"product_category":    "name",
+			"parent_id":           "parent_id",
+			"parent_category_id":  "parent_id",
+			"parent":              "parent_name",
+			"parent_name":         "parent_name",
+			"parent_category":     "parent_name",
+		}),
+		requiredGroups: [][]string{{"name"}},
+	},
+	KindWarehouses: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"warehouse_code": "code",
+			"location_code":  "code",
+			"storage_code":   "code",
+			"warehouse_name": "name",
+			"location_name":  "name",
+			"storage_name":   "name",
+			"address":        "address",
+			"is_default":     "is_default",
+			"default":        "is_default",
+			"is_active":      "is_active",
+			"active":         "is_active",
+		}),
+		requiredGroups: [][]string{{"code"}, {"name"}},
+	},
+	KindProducts: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"product_code":           "code",
+			"sku":                    "code",
+			"item_code":              "code",
+			"product_name":           "name",
+			"item_name":              "name",
+			"product_type":           "product_type",
+			"type":                   "product_type",
+			"category_id":            "category_id",
+			"category":               "category_name",
+			"category_name":          "category_name",
+			"unit":                   "unit",
+			"unit_of_measure":        "unit",
+			"purchase_price":         "purchase_price",
+			"cost_price":             "purchase_price",
+			"cost":                   "purchase_price",
+			"sales_price":            "sales_price",
+			"sale_price":             "sales_price",
+			"selling_price":          "sales_price",
+			"price":                  "sales_price",
+			"vat_rate":               "vat_rate",
+			"vat":                    "vat_rate",
+			"min_stock_level":        "min_stock_level",
+			"minimum_stock":          "min_stock_level",
+			"reorder_point":          "reorder_point",
+			"sale_account_id":        "sale_account_id",
+			"sales_account_id":       "sale_account_id",
+			"sale_account_code":      "sale_account_code",
+			"sales_account_code":     "sale_account_code",
+			"purchase_account_id":    "purchase_account_id",
+			"purchase_account_code":  "purchase_account_code",
+			"inventory_account_id":   "inventory_account_id",
+			"inventory_account_code": "inventory_account_code",
+			"track_inventory":        "track_inventory",
+			"track_stock":            "track_inventory",
+			"is_active":              "is_active",
+			"active":                 "is_active",
+			"barcode":                "barcode",
+			"supplier_id":            "supplier_id",
+			"supplier_code":          "supplier_code",
+			"vendor_code":            "supplier_code",
+			"supplier_name":          "supplier_name",
+			"vendor_name":            "supplier_name",
+			"supplier_reg_code":      "supplier_reg_code",
+			"supplier_registration":  "supplier_reg_code",
+			"supplier_registry_code": "supplier_reg_code",
+			"vendor_reg_code":        "supplier_reg_code",
+			"supplier_vat_number":    "supplier_vat_number",
+			"supplier_vat":           "supplier_vat_number",
+			"supplier_vat_no":        "supplier_vat_number",
+			"vendor_vat_number":      "supplier_vat_number",
+			"supplier_email":         "supplier_email",
+			"vendor_email":           "supplier_email",
+			"lead_time_days":         "lead_time_days",
+		}),
+		requiredGroups: [][]string{{"name"}, {"sales_price"}},
+	},
+	KindStockAdjustments: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"product":         "product_code",
+			"product_code":    "product_code",
+			"sku":             "product_code",
+			"item_code":       "product_code",
+			"product_id":      "product_id",
+			"warehouse":       "warehouse_code",
+			"warehouse_code":  "warehouse_code",
+			"location_code":   "warehouse_code",
+			"warehouse_id":    "warehouse_id",
+			"quantity":        "quantity",
+			"qty":             "quantity",
+			"opening_qty":     "quantity",
+			"opening_stock":   "quantity",
+			"unit_cost":       "unit_cost",
+			"cost":            "unit_cost",
+			"lot":             "lot_number",
+			"lot_number":      "lot_number",
+			"batch":           "lot_number",
+			"batch_number":    "lot_number",
+			"serial":          "serial_number",
+			"serial_number":   "serial_number",
+			"expiry":          "expiry_date",
+			"expiry_date":     "expiry_date",
+			"expiration":      "expiry_date",
+			"expiration_date": "expiry_date",
+			"expires_at":      "expiry_date",
+			"reason":          "reason",
+			"notes":           "reason",
+			"description":     "reason",
+		}),
+		requiredGroups: [][]string{{"product_id", "product_code"}, {"warehouse_id", "warehouse_code"}, {"quantity"}},
+	},
+	KindFixedAssets: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"asset_number":                          "asset_number",
+			"asset_no":                              "asset_number",
+			"asset_code":                            "asset_number",
+			"code":                                  "asset_number",
+			"number":                                "asset_number",
+			"fixed_asset_number":                    "asset_number",
+			"asset_name":                            "name",
+			"category_id":                           "category_id",
+			"category":                              "category_name",
+			"category_name":                         "category_name",
+			"location":                              "location",
+			"purchase_date":                         "purchase_date",
+			"acquisition_date":                      "purchase_date",
+			"date":                                  "purchase_date",
+			"purchase_cost":                         "purchase_cost",
+			"acquisition_cost":                      "purchase_cost",
+			"cost":                                  "purchase_cost",
+			"price":                                 "purchase_cost",
+			"supplier_id":                           "supplier_id",
+			"supplier_code":                         "supplier_code",
+			"vendor_code":                           "supplier_code",
+			"supplier_name":                         "supplier_name",
+			"vendor_name":                           "supplier_name",
+			"supplier_reg_code":                     "supplier_reg_code",
+			"supplier_registration":                 "supplier_reg_code",
+			"supplier_registry_code":                "supplier_reg_code",
+			"vendor_reg_code":                       "supplier_reg_code",
+			"supplier_vat_number":                   "supplier_vat_number",
+			"supplier_vat":                          "supplier_vat_number",
+			"supplier_vat_no":                       "supplier_vat_number",
+			"vendor_vat_number":                     "supplier_vat_number",
+			"supplier_email":                        "supplier_email",
+			"vendor_email":                          "supplier_email",
+			"invoice_id":                            "invoice_id",
+			"invoice_number":                        "invoice_number",
+			"invoice_no":                            "invoice_number",
+			"serial_number":                         "serial_number",
+			"serial_no":                             "serial_number",
+			"depreciation_method":                   "depreciation_method",
+			"useful_life_months":                    "useful_life_months",
+			"life_months":                           "useful_life_months",
+			"residual_value":                        "residual_value",
+			"depreciation_start_date":               "depreciation_start_date",
+			"accumulated_depreciation":              "accumulated_depreciation",
+			"book_value":                            "book_value",
+			"carrying_value":                        "book_value",
+			"last_depreciation_date":                "last_depreciation_date",
+			"disposal_date":                         "disposal_date",
+			"disposal_method":                       "disposal_method",
+			"disposal_proceeds":                     "disposal_proceeds",
+			"disposal_notes":                        "disposal_notes",
+			"asset_account_id":                      "asset_account_id",
+			"asset_account_code":                    "asset_account_code",
+			"depreciation_expense_account_id":       "depreciation_expense_account_id",
+			"depreciation_expense_account_code":     "depreciation_expense_account_code",
+			"accumulated_depreciation_account_id":   "accumulated_depreciation_account_id",
+			"accumulated_depreciation_acct_id":      "accumulated_depreciation_account_id",
+			"accumulated_depreciation_account":      "accumulated_depreciation_account_id",
+			"accumulated_depreciation_account_uuid": "accumulated_depreciation_account_id",
+			"accumulated_depreciation_account_code": "accumulated_depreciation_account_code",
+			"accumulated_depreciation_acct_code":    "accumulated_depreciation_account_code",
+		}),
+		requiredGroups: [][]string{{"name"}, {"purchase_date"}, {"purchase_cost"}},
+	},
+	KindOpeningBalances: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"account_code":     "account_code",
+			"code":             "account_code",
+			"account":          "account_code",
+			"description":      "description",
+			"line_description": "description",
+			"debit_amount":     "debit",
+			"credit_amount":    "credit",
+		}),
+		requiredGroups: [][]string{{"account_code"}, {"debit"}, {"credit"}},
+	},
+	KindJournalEntries: {
+		aliases: mergeAliases(commonAliases(), map[string]string{
+			"entry_reference":       "entry_reference",
+			"reference":             "entry_reference",
+			"document_number":       "entry_reference",
+			"voucher_number":        "entry_reference",
+			"journal_number":        "entry_reference",
+			"entry_date":            "entry_date",
+			"date":                  "entry_date",
+			"posting_date":          "entry_date",
+			"account_code":          "account_code",
+			"code":                  "account_code",
+			"account":               "account_code",
+			"entry_description":     "entry_description",
+			"journal_description":   "entry_description",
+			"entry_memo":            "entry_description",
+			"line_description":      "line_description",
+			"description":           "line_description",
+			"memo":                  "line_description",
+			"line_id":               "line_id",
+			"journal_line_id":       "line_id",
+			"journal_entry_line_id": "line_id",
+			"debit_amount":          "debit",
+			"credit_amount":         "credit",
+			"exchange_rate":         "exchange_rate",
+			"source_type":           "source_type",
+			"source_id":             "source_id",
+		}),
+		requiredGroups: [][]string{{"entry_reference"}, {"entry_date"}, {"account_code"}, {"debit"}, {"credit"}},
+	},
+}
+
+var duplicateIdentifierPreflightSpecs = map[FileKind][]duplicateIdentifierSpec{
+	KindAccounts: {
+		{field: "id"},
+		{field: "code"},
+	},
+	KindContacts: {
+		{field: "id"},
+		{field: "code"},
+		{field: "reg_code"},
+		{field: "vat_number"},
+		{field: "email"},
+	},
+	KindEmployees: {
+		{field: "employee_number"},
+		{field: "personal_code"},
+		{field: "email"},
+	},
+	KindExpenses: {
+		{field: "expense_number"},
+	},
+	KindEInvoices: {
+		{field: "invoice_id"},
+		{field: "invoice_number"},
+	},
+	KindPayments: {
+		{field: "payment_number"},
+	},
+	KindBankAccounts: {
+		{field: "account_number", normalize: bankAccountIndexKey},
+	},
+	KindBankTransactions: {
+		{field: "external_id"},
+	},
+	KindCostCenters: {
+		{field: "code"},
+	},
+	KindProductCategories: {
+		{field: "id"},
+		{field: "name"},
+	},
+	KindWarehouses: {
+		{field: "code"},
+	},
+	KindProducts: {
+		{field: "code"},
+	},
+	KindFixedAssets: {
+		{field: "id"},
+		{field: "asset_number"},
+	},
+	KindJournalEntries: {
+		{field: "line_id"},
+	},
+}
+
+var cutoverAccountTypeAliases = map[string]string{
+	"asset":       "ASSET",
+	"assets":      "ASSET",
+	"vara":        "ASSET",
+	"liability":   "LIABILITY",
+	"liabilities": "LIABILITY",
+	"kohustus":    "LIABILITY",
+	"equity":      "EQUITY",
+	"omakapital":  "EQUITY",
+	"revenue":     "REVENUE",
+	"income":      "REVENUE",
+	"tulu":        "REVENUE",
+	"expense":     "EXPENSE",
+	"expenses":    "EXPENSE",
+	"kulu":        "EXPENSE",
+}
+
+var cutoverContactTypeAliases = map[string]string{
+	"":         "CUSTOMER",
+	"customer": "CUSTOMER",
+	"client":   "CUSTOMER",
+	"klient":   "CUSTOMER",
+	"supplier": "SUPPLIER",
+	"vendor":   "SUPPLIER",
+	"tarnija":  "SUPPLIER",
+	"both":     "BOTH",
+	"molemad":  "BOTH",
+}
+
+var cutoverEmployeeEmploymentTypeAliases = map[string]string{
+	"":               "FULL_TIME",
+	"full_time":      "FULL_TIME",
+	"full time":      "FULL_TIME",
+	"tais":           "FULL_TIME",
+	"part_time":      "PART_TIME",
+	"part time":      "PART_TIME",
+	"osaline":        "PART_TIME",
+	"contract":       "CONTRACT",
+	"contractor":     "CONTRACT",
+	"work_order":     "CONTRACT",
+	"too_vott":       "CONTRACT",
+	"too_votuleping": "CONTRACT",
+}
+
+var cutoverEmployeeBoolAliases = map[string]bool{
+	"1":     true,
+	"0":     false,
+	"true":  true,
+	"false": false,
+	"yes":   true,
+	"no":    false,
+	"y":     true,
+	"n":     false,
+	"ja":    true,
+	"ei":    false,
+}
+
+var cutoverPayrollHistoryStatusAliases = map[string]string{
+	"approved": "APPROVED",
+	"paid":     "PAID",
+	"declared": "DECLARED",
+}
+
+var cutoverPayrollHistoryPaymentStatusAliases = map[string]string{
+	"pending":   "PENDING",
+	"paid":      "PAID",
+	"cancelled": "CANCELLED", //nolint:misspell // External payment status values use existing API/database spelling.
+	"canceled":  "CANCELLED", //nolint:misspell // External payment status values use existing API/database spelling.
+}
+
+var cutoverTSDHistoryStatusAliases = map[string]string{
+	"":          "DRAFT",
+	"draft":     "DRAFT",
+	"submitted": "SUBMITTED",
+	"filed":     "SUBMITTED",
+	"accepted":  "ACCEPTED",
+	"approved":  "ACCEPTED",
+	"confirmed": "ACCEPTED",
+	"rejected":  "REJECTED",
+}
+
+var cutoverKMDHistoryStatusAliases = map[string]string{
+	"":          "ACCEPTED",
+	"draft":     "DRAFT",
+	"submitted": "SUBMITTED",
+	"filed":     "SUBMITTED",
+	"accepted":  "ACCEPTED",
+	"approved":  "ACCEPTED",
+	"confirmed": "ACCEPTED",
+}
+
+var groupedDocumentPreflightSpecs = map[FileKind]groupedDocumentSpec{
+	KindInvoices: {
+		keyLabel: "invoice_number/invoice_type",
+		key: []groupedFieldSpec{
+			{field: "invoice_number"},
+			{field: "invoice_type", normalize: normalizeCutoverInvoiceType},
+		},
+		fields: []groupedFieldSpec{
+			{field: "id", optional: true},
+			{field: "issue_date", normalize: normalizeCutoverDate},
+			{field: "due_date", optional: true, normalize: normalizeCutoverDate},
+			{field: "currency", defaultValue: "EUR", normalize: normalizeCutoverUpper},
+			{field: "exchange_rate", defaultValue: "1", normalize: normalizeCutoverDecimalComparable},
+			{field: "contact_code", optional: true},
+			{field: "contact_reg_code", optional: true},
+			{field: "contact_vat_number", optional: true},
+			{field: "contact_email", optional: true},
+			{field: "contact_name", optional: true},
+			{field: "reference", optional: true},
+			{field: "notes", optional: true},
+			{field: "status", optional: true, normalize: normalizeCutoverInvoiceStatus},
+			{field: "amount_paid", optional: true, normalize: normalizeCutoverDecimalComparable},
+		},
+	},
+	KindQuotes: {
+		keyLabel: "quote_number",
+		key:      []groupedFieldSpec{{field: "quote_number"}},
+		fields: []groupedFieldSpec{
+			{field: "id", optional: true},
+			{field: "quote_date", normalize: normalizeCutoverDate},
+			{field: "valid_until", optional: true, normalize: normalizeCutoverDate},
+			{field: "currency", defaultValue: "EUR", normalize: normalizeCutoverUpper},
+			{field: "exchange_rate", defaultValue: "1", normalize: normalizeCutoverDecimalComparable},
+			{field: "contact_id", optional: true},
+			{field: "contact_code", optional: true},
+			{field: "contact_reg_code", optional: true},
+			{field: "contact_vat_number", optional: true},
+			{field: "contact_email", optional: true},
+			{field: "contact_name", optional: true},
+			{field: "notes", optional: true},
+			{field: "status", optional: true, normalize: normalizeCutoverQuoteStatus},
+		},
+	},
+	KindOrders: {
+		keyLabel: "order_number",
+		key:      []groupedFieldSpec{{field: "order_number"}},
+		fields: []groupedFieldSpec{
+			{field: "order_date", normalize: normalizeCutoverDate},
+			{field: "expected_delivery", optional: true, normalize: normalizeCutoverDate},
+			{field: "currency", defaultValue: "EUR", normalize: normalizeCutoverUpper},
+			{field: "exchange_rate", defaultValue: "1", normalize: normalizeCutoverDecimalComparable},
+			{field: "contact_id", optional: true},
+			{field: "contact_code", optional: true},
+			{field: "contact_reg_code", optional: true},
+			{field: "contact_vat_number", optional: true},
+			{field: "contact_email", optional: true},
+			{field: "contact_name", optional: true},
+			{field: "notes", optional: true},
+			{field: "quote_id", optional: true},
+			{field: "quote_number", optional: true},
+			{field: "status", optional: true, normalize: normalizeCutoverOrderStatus},
+		},
+	},
+	KindRecurringInvoices: {
+		keyLabel: "template",
+		key:      []groupedFieldSpec{{field: "name"}},
+		fields: []groupedFieldSpec{
+			{field: "contact_id", optional: true},
+			{field: "contact_code", optional: true},
+			{field: "contact_reg_code", optional: true},
+			{field: "contact_vat_number", optional: true},
+			{field: "contact_email", optional: true},
+			{field: "contact_name", optional: true},
+			{field: "invoice_type", defaultValue: "SALES", normalize: normalizeCutoverUpper},
+			{field: "currency", defaultValue: "EUR", normalize: normalizeCutoverUpper},
+			{field: "frequency", normalize: normalizeCutoverUpper},
+			{field: "start_date", normalize: normalizeCutoverDate},
+			{field: "end_date", optional: true, normalize: normalizeCutoverDate},
+			{field: "next_generation_date", defaultFrom: "start_date", normalize: normalizeCutoverDate},
+			{field: "payment_terms_days", defaultValue: "14", normalize: normalizeCutoverIntComparable},
+			{field: "reference", optional: true},
+			{field: "notes", optional: true},
+			{field: "is_active", defaultValue: "true", normalize: normalizeCutoverBoolComparable},
+			{field: "last_generated_at", optional: true, normalize: normalizeCutoverDate},
+			{field: "generated_count", defaultValue: "0", normalize: normalizeCutoverIntComparable},
+			{field: "send_email_on_generation", defaultValue: "false", normalize: normalizeCutoverBoolComparable},
+			{field: "email_template_type", defaultValue: "INVOICE_SEND", normalize: normalizeCutoverUpper},
+			{field: "recipient_email_override", optional: true},
+			{field: "attach_pdf_to_email", defaultValue: "true", normalize: normalizeCutoverBoolComparable},
+			{field: "email_subject_override", optional: true},
+			{field: "email_message", optional: true},
+		},
+	},
+}
+
+var cutoverInvoiceTypeAliases = map[string]string{
+	"sales":            "SALES",
+	"sale":             "SALES",
+	"salesinvoice":     "SALES",
+	"sales_invoice":    "SALES",
+	"sales invoice":    "SALES",
+	"myygiarve":        "SALES",
+	"purchase":         "PURCHASE",
+	"purchaseinvoice":  "PURCHASE",
+	"purchase_invoice": "PURCHASE",
+	"purchase invoice": "PURCHASE",
+	"bill":             "PURCHASE",
+	"ostuarve":         "PURCHASE",
+	"credit_note":      "CREDIT_NOTE",
+	"creditnote":       "CREDIT_NOTE",
+	"credit note":      "CREDIT_NOTE",
+	"kreeditarve":      "CREDIT_NOTE",
+}
+
+var cutoverInvoiceStatusAliases = map[string]string{
+	"draft":            "DRAFT",
+	"mustand":          "DRAFT",
+	"sent":             "SENT",
+	"issued":           "SENT",
+	"open":             "SENT",
+	"saadetud":         "SENT",
+	"partially_paid":   "PARTIALLY_PAID",
+	"partial":          "PARTIALLY_PAID",
+	"osaline":          "PARTIALLY_PAID",
+	"paid":             "PAID",
+	"makstud":          "PAID",
+	"overdue":          "OVERDUE",
+	"tahtaja_uletanud": "OVERDUE",
+	"voided":           "VOIDED",
+	"void":             "VOIDED",
+	"tuhistatud":       "VOIDED",
+}
+
+var cutoverQuoteStatusAliases = map[string]string{
+	"draft":       "DRAFT",
+	"mustand":     "DRAFT",
+	"sent":        "SENT",
+	"issued":      "SENT",
+	"saadetud":    "SENT",
+	"accepted":    "ACCEPTED",
+	"approved":    "ACCEPTED",
+	"rejected":    "REJECTED",
+	"declined":    "REJECTED",
+	"expired":     "EXPIRED",
+	"converted":   "CONVERTED",
+	"convertedto": "CONVERTED",
+}
+
+var cutoverOrderStatusAliases = map[string]string{
+	"pending":    "PENDING",
+	"open":       "PENDING",
+	"confirmed":  "CONFIRMED",
+	"processing": "PROCESSING",
+	"shipped":    "SHIPPED",
+	"delivered":  "DELIVERED",
+	"canceled":   "CANCELED",
+}
+
+func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error) {
+	if req == nil || len(req.Files) == 0 {
+		return nil, fmt.Errorf("at least one migration file is required")
+	}
+	eInvoiceContactMode, err := normalizeEInvoiceContactMode(req.EInvoiceContactMode)
+	if err != nil {
+		return nil, err
+	}
+	eInvoiceInvoiceType, err := normalizeCutoverOptionalInvoiceType(req.EInvoiceInvoiceType)
+	if err != nil {
+		return nil, err
+	}
+	providerPreset, err := normalizeMigrationProviderPreset(req.ProviderPreset)
+	if err != nil {
+		return nil, err
+	}
+
+	report := &BundleValidationReport{}
+	parsed := make([]parsedFile, 0, len(req.Files))
+	for _, file := range req.Files {
+		if !isSupportedBundleKind(file.Kind) {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.Kind,
+				FileName: displayFileName(file),
+				Message:  fmt.Sprintf("unsupported migration file kind %q", file.Kind),
+			})
+			continue
+		}
+
+		parsedFile, validation, err := parseBundleFileByKind(file, providerPreset, eInvoiceInvoiceType)
+		report.Files = append(report.Files, validation)
+		if err != nil {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.Kind,
+				FileName: validation.FileName,
+				Message:  err.Error(),
+			})
+			continue
+		}
+
+		for _, missing := range validation.MissingColumns {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.Kind,
+				FileName: validation.FileName,
+				Message:  "missing required column group: " + missing,
+			})
+		}
+		report.Summary.RowsValidated += len(parsedFile.rows)
+		parsed = append(parsed, parsedFile)
+	}
+
+	report.Summary.FilesValidated = len(report.Files)
+	indexes := buildIndexes(parsed)
+	for _, file := range parsed {
+		validateReferences(report, indexes, file, eInvoiceContactMode)
+		validateDuplicateIdentifierPreflight(report, file)
+		validateCompositeDuplicatePreflight(report, file)
+		validateGroupedDocumentPreflight(report, file)
+		validateAccountingPreflight(report, file)
+	}
+	validateCrossFileConsistency(report, parsed, eInvoiceContactMode)
+
+	sort.SliceStable(report.Issues, func(i, j int) bool {
+		if report.Issues[i].Severity != report.Issues[j].Severity {
+			return report.Issues[i].Severity < report.Issues[j].Severity
+		}
+		if report.Issues[i].FileName != report.Issues[j].FileName {
+			return report.Issues[i].FileName < report.Issues[j].FileName
+		}
+		return report.Issues[i].Row < report.Issues[j].Row
+	})
+
+	report.Summary.Ready = report.Summary.ErrorCount == 0
+	report.RemediationActions = BuildMigrationRemediationActions(report)
+	return report, nil
+}
+
+func BuildMigrationRemediationActions(report *BundleValidationReport) []MigrationRemediationAction {
+	if report == nil {
+		return nil
+	}
+	if len(report.Issues) == 0 {
+		if report.Summary.Ready {
+			return []MigrationRemediationAction{{
+				Code:           "ready_to_import",
+				Severity:       "ACTION",
+				Scope:          "migration",
+				OwnerRole:      "accountant",
+				WorkspaceQueue: "migration_cutover",
+				AssignmentKey:  migrationAssignmentKey("ready_to_import", "", "", "", ""),
+				Priority:       "low",
+				Message:        "Migration bundle passed preflight validation.",
+				Action:         "Run the relevant import commands in the planned cutover order.",
+				IssueCount:     0,
+				UIPath:         "/migration",
+				CLICommand:     "oa migration plan --provider-preset generic --json",
+			}}
+		}
+		return nil
+	}
+
+	type actionKey struct {
+		code       string
+		severity   string
+		kind       FileKind
+		fileName   string
+		field      string
+		targetKind FileKind
+	}
+	actionsByKey := make(map[actionKey]*MigrationRemediationAction)
+	keys := make([]actionKey, 0)
+
+	for _, issue := range report.Issues {
+		code, action := classifyMigrationIssue(issue)
+		key := actionKey{
+			code:       code,
+			severity:   migrationActionSeverity(issue.Severity),
+			kind:       issue.Kind,
+			fileName:   issue.FileName,
+			field:      issue.Field,
+			targetKind: issue.TargetKind,
+		}
+		remediation, ok := actionsByKey[key]
+		if !ok {
+			priority, dueInDays := migrationAssignmentPriority(key.severity)
+			remediation = &MigrationRemediationAction{
+				Code:           key.code,
+				Severity:       key.severity,
+				Scope:          "migration",
+				OwnerRole:      "accountant",
+				WorkspaceQueue: "migration_cutover",
+				AssignmentKey:  migrationAssignmentKey(key.code, key.kind, key.fileName, key.field, key.targetKind),
+				Priority:       priority,
+				DueInDays:      dueInDays,
+				Message:        migrationActionMessage(issue, code),
+				Action:         action,
+				Kind:           key.kind,
+				FileName:       key.fileName,
+				Field:          key.field,
+				TargetKind:     key.targetKind,
+				CLICommand:     migrationValidationCommand(issue.Kind),
+				UIPath:         "/migration",
+			}
+			actionsByKey[key] = remediation
+			keys = append(keys, key)
+		}
+		remediation.IssueCount++
+	}
+
+	sort.SliceStable(keys, func(i, j int) bool {
+		left := keys[i]
+		right := keys[j]
+		if left.severity != right.severity {
+			return left.severity < right.severity
+		}
+		if left.fileName != right.fileName {
+			return left.fileName < right.fileName
+		}
+		if left.kind != right.kind {
+			return left.kind < right.kind
+		}
+		if left.code != right.code {
+			return left.code < right.code
+		}
+		if left.field != right.field {
+			return left.field < right.field
+		}
+		return left.targetKind < right.targetKind
+	})
+
+	actions := make([]MigrationRemediationAction, 0, len(keys))
+	for _, key := range keys {
+		actions = append(actions, *actionsByKey[key])
+	}
+	return actions
+}
+
+func migrationAssignmentPriority(severity string) (string, int) {
+	switch severity {
+	case "BLOCKER":
+		return "high", 1
+	case "WARNING":
+		return "normal", 3
+	default:
+		return "low", 0
+	}
+}
+
+func migrationAssignmentKey(code string, kind FileKind, fileName, field string, targetKind FileKind) string {
+	parts := []string{
+		"migration",
+		normalizeAssignmentKeyPart(code),
+		normalizeAssignmentKeyPart(string(kind)),
+		normalizeAssignmentKeyPart(fileName),
+		normalizeAssignmentKeyPart(field),
+		normalizeAssignmentKeyPart(string(targetKind)),
+	}
+	return strings.Join(parts, ":")
+}
+
+func normalizeAssignmentKeyPart(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "-"
+	}
+
+	var b strings.Builder
+	lastWasSeparator := false
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastWasSeparator = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastWasSeparator = false
+		default:
+			if !lastWasSeparator {
+				b.WriteByte('-')
+				lastWasSeparator = true
+			}
+		}
+	}
+	normalized := strings.Trim(b.String(), "-")
+	if normalized == "" {
+		return "-"
+	}
+	return normalized
+}
+
+func classifyMigrationIssue(issue ValidationIssue) (string, string) {
+	if issue.Severity == SeverityWarning {
+		return "warning_review", "Review the warning with the migration owner, document the accepted risk, or correct the row before import."
+	}
+
+	message := strings.ToLower(strings.TrimSpace(issue.Message))
+	switch {
+	case strings.Contains(message, "unsupported migration file kind"):
+		return "unsupported_file_kind", "Remove unsupported migration files or map them to a supported kind before rerunning validation."
+	case strings.Contains(message, "missing required column group"):
+		return "missing_required_columns", "Add one accepted column from each missing required group or rerun with the correct provider preset."
+	case issue.TargetKind != "" || strings.Contains(message, "reference") || strings.Contains(message, "was not found"):
+		return "missing_reference", "Add the referenced target file or correct the source row reference before import."
+	case strings.Contains(message, "duplicates row") || strings.Contains(message, "duplicate"):
+		return "duplicate_identifier", "Deduplicate business identifiers or preserved IDs so each imported record has one authoritative row."
+	case strings.Contains(message, "must be consistent"):
+		return "grouped_consistency", "Normalize grouped header or period values across all rows that belong to the same imported document or declaration."
+	case strings.Contains(message, "valid uuid"):
+		return "invalid_identifier", "Replace malformed preserved IDs with valid UUIDs or use supported code/name references."
+	default:
+		return "invalid_row_value", "Correct the row value to match the documented importer validation rule, then rerun migration validation."
+	}
+}
+
+func migrationActionSeverity(severity IssueSeverity) string {
+	if severity == SeverityWarning {
+		return "WARNING"
+	}
+	return "BLOCKER"
+}
+
+func migrationActionMessage(issue ValidationIssue, code string) string {
+	fileName := strings.TrimSpace(issue.FileName)
+	if fileName == "" {
+		fileName = string(issue.Kind)
+	}
+	field := strings.TrimSpace(issue.Field)
+	switch code {
+	case "missing_required_columns":
+		return fmt.Sprintf("Required migration columns are missing in %s.", fileName)
+	case "missing_reference":
+		if issue.TargetKind != "" {
+			return fmt.Sprintf("%s has unresolved references to %s.", fileName, issue.TargetKind)
+		}
+		return fmt.Sprintf("%s has unresolved migration references.", fileName)
+	case "duplicate_identifier":
+		if field != "" {
+			return fmt.Sprintf("%s has duplicate values in %s.", fileName, field)
+		}
+		return fmt.Sprintf("%s has duplicate migration identifiers.", fileName)
+	case "grouped_consistency":
+		return fmt.Sprintf("%s has inconsistent grouped migration values.", fileName)
+	case "invalid_identifier":
+		if field != "" {
+			return fmt.Sprintf("%s has malformed IDs in %s.", fileName, field)
+		}
+		return fmt.Sprintf("%s has malformed migration IDs.", fileName)
+	case "unsupported_file_kind":
+		return fmt.Sprintf("%s uses an unsupported migration file kind.", fileName)
+	case "warning_review":
+		if field != "" {
+			return fmt.Sprintf("%s has migration warnings in %s.", fileName, field)
+		}
+		return fmt.Sprintf("%s has migration warnings.", fileName)
+	default:
+		if field != "" {
+			return fmt.Sprintf("%s has invalid row values in %s.", fileName, field)
+		}
+		return fmt.Sprintf("%s has invalid migration row values.", fileName)
+	}
+}
+
+func migrationValidationCommand(kind FileKind) string {
+	flag := migrationKindCLIFlag(kind)
+	if flag == "" {
+		return "oa migration validate --provider-preset generic --json"
+	}
+	return fmt.Sprintf("oa migration validate --%s <file> --provider-preset generic --json", flag)
+}
+
+func migrationKindCLIFlag(kind FileKind) string {
+	switch kind {
+	case KindAccounts:
+		return "accounts"
+	case KindContacts:
+		return "contacts"
+	case KindEmployees:
+		return "employees"
+	case KindExpenses:
+		return "expenses"
+	case KindInvoices:
+		return "invoices"
+	case KindEInvoices:
+		return "e-invoices"
+	case KindPayments:
+		return "payments"
+	case KindBankAccounts:
+		return "bank-accounts"
+	case KindBankTransactions:
+		return "bank-transactions"
+	case KindPayrollHistory:
+		return "payroll-history"
+	case KindLeaveBalances:
+		return "leave-balances"
+	case KindTSDHistory:
+		return "tsd-history"
+	case KindKMDHistory:
+		return "kmd-history"
+	case KindQuotes:
+		return "quotes"
+	case KindOrders:
+		return "orders"
+	case KindRecurringInvoices:
+		return "recurring-invoices"
+	case KindCostCenters:
+		return "cost-centers"
+	case KindCostAllocations:
+		return "cost-allocations"
+	case KindProductCategories:
+		return "product-categories"
+	case KindWarehouses:
+		return "warehouses"
+	case KindProducts:
+		return "products"
+	case KindStockAdjustments:
+		return "stock"
+	case KindFixedAssets:
+		return "fixed-assets"
+	case KindOpeningBalances:
+		return "opening-balances"
+	case KindJournalEntries:
+		return "journal"
+	default:
+		return ""
+	}
+}
+
+func normalizeEInvoiceContactMode(mode EInvoiceContactMode) (EInvoiceContactMode, error) {
+	switch normalized := EInvoiceContactMode(strings.ToLower(strings.TrimSpace(string(mode)))); normalized {
+	case "":
+		return EInvoiceContactModeSupplier, nil
+	case EInvoiceContactModeSupplier, EInvoiceContactModeCustomer, EInvoiceContactModeBoth:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported e_invoice_contact_mode %q (expected supplier, customer, or both)", mode)
+	}
+}
+
+func parseBundleFileByKind(file BundleFile, providerPreset MigrationProviderPreset, eInvoiceInvoiceType string) (parsedFile, FileValidation, error) {
+	if file.Kind == KindEInvoices {
+		return parseEInvoiceBundleFile(file, eInvoiceInvoiceType)
+	}
+
+	return parseBundleFile(file, fileSpecForProviderPreset(file.Kind, providerPreset))
+}
+
+func isSupportedBundleKind(kind FileKind) bool {
+	if kind == KindEInvoices {
+		return true
+	}
+	_, ok := fileSpecs[kind]
+	return ok
+}
+
+func parseBundleFile(file BundleFile, spec fileSpec) (parsedFile, FileValidation, error) {
+	fileName := displayFileName(file)
+	validation := FileValidation{
+		Kind:     file.Kind,
+		FileName: fileName,
+	}
+
+	trimmed := strings.TrimPrefix(strings.TrimSpace(file.CSVContent), "\ufeff")
+	if trimmed == "" {
+		return parsedFile{}, validation, fmt.Errorf("csv_content is required")
+	}
+
+	reader := csv.NewReader(strings.NewReader(trimmed))
+	reader.Comma = detectDelimiter(trimmed)
+	reader.FieldsPerRecord = -1
+	reader.TrimLeadingSpace = true
+
+	headers, err := reader.Read()
+	if err != nil {
+		if err == io.EOF {
+			return parsedFile{}, validation, fmt.Errorf("csv file is empty")
+		}
+		return parsedFile{}, validation, fmt.Errorf("parse csv header: %w", err)
+	}
+
+	canonicalHeaders := make([]string, len(headers))
+	headerSet := map[string]bool{}
+	for i, header := range headers {
+		canonical := canonicalHeader(spec.aliases, header)
+		canonicalHeaders[i] = canonical
+		if canonical != "" {
+			headerSet[canonical] = true
+			validation.Headers = append(validation.Headers, canonical)
+		}
+	}
+	validation.Headers = applyDerivedMigrationHeaders(file.Kind, headerSet, validation.Headers)
+	validation.MissingColumns = missingRequiredGroups(spec.requiredGroups, headerSet)
+
+	rows := []parsedRow{}
+	rowNumber := 1
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return parsedFile{}, validation, fmt.Errorf("parse csv row %d: %w", rowNumber+1, err)
+		}
+		rowNumber++
+
+		values := make(map[string]string, len(canonicalHeaders))
+		blank := true
+		for i, header := range canonicalHeaders {
+			if header == "" {
+				continue
+			}
+			value := ""
+			if i < len(record) {
+				value = strings.TrimSpace(record[i])
+			}
+			if value != "" {
+				blank = false
+			}
+			values[header] = value
+		}
+		if blank {
+			continue
+		}
+		applyDerivedMigrationValues(file.Kind, values)
+		rows = append(rows, parsedRow{number: rowNumber, values: values})
+	}
+
+	validation.Rows = len(rows)
+	return parsedFile{kind: file.Kind, fileName: fileName, headers: validation.Headers, rows: rows}, validation, nil
+}
+
+func parseEInvoiceBundleFile(file BundleFile, eInvoiceInvoiceType string) (parsedFile, FileValidation, error) {
+	fileName := displayFileName(file)
+	validation := FileValidation{
+		Kind:     file.Kind,
+		FileName: fileName,
+		Headers:  eInvoiceValidationHeaders(),
+	}
+
+	invoices, err := einvoice.Parse(file.XMLContent)
+	if err != nil {
+		return parsedFile{}, validation, err
+	}
+
+	rows := make([]parsedRow, 0, len(invoices))
+	for index, invoice := range invoices {
+		invoiceTotal, hasInvoiceTotal := cutoverEInvoiceTotal(invoice)
+		values := map[string]string{
+			"invoice_id":          invoice.ID,
+			"invoice_number":      invoice.Number,
+			"invoice_type":        cutoverEInvoiceInvoiceType(invoice.Type, eInvoiceInvoiceType),
+			"issue_date":          invoice.IssueDate.Format("2006-01-02"),
+			"due_date":            invoice.DueDate.Format("2006-01-02"),
+			"currency":            invoice.Currency,
+			"contact_reg_code":    invoice.Seller.RegNumber,
+			"contact_vat_number":  invoice.Seller.VATRegNumber,
+			"contact_email":       invoice.Seller.Email,
+			"contact_name":        invoice.Seller.Name,
+			"buyer_reg_code":      invoice.Buyer.RegNumber,
+			"buyer_vat_number":    invoice.Buyer.VATRegNumber,
+			"buyer_contact_email": invoice.Buyer.Email,
+			"buyer_contact_name":  invoice.Buyer.Name,
+		}
+		if hasInvoiceTotal {
+			values["invoice_total"] = invoiceTotal.String()
+		}
+		rows = append(rows, parsedRow{
+			number: index + 1,
+			values: values,
+		})
+	}
+
+	validation.Rows = len(rows)
+	return parsedFile{kind: file.Kind, fileName: fileName, headers: validation.Headers, rows: rows}, validation, nil
+}
+
+func applyDerivedMigrationHeaders(kind FileKind, headerSet map[string]bool, headers []string) []string {
+	addHeader := func(header string) {
+		if headerSet[header] {
+			return
+		}
+		headerSet[header] = true
+		headers = append(headers, header)
+	}
+
+	switch kind {
+	case KindPayrollHistory, KindTSDHistory:
+		if hasAnyHeader(headerSet, "period_code", "month6", "period", "accounting_period") {
+			addHeader("period_year")
+			addHeader("period_month")
+		}
+	case KindKMDHistory:
+		if hasAnyHeader(headerSet, "period_code", "month6", "period", "accounting_period") {
+			addHeader("year")
+			addHeader("month")
+		}
+	case KindLeaveBalances:
+		if hasAnyHeader(headerSet, "balance_date") {
+			addHeader("year")
+		}
+	case KindBankTransactions:
+		if bankTransactionHasLHVHeaderSet(headerSet) {
+			addHeader("description")
+		}
+	}
+
+	return headers
+}
+
+func applyDerivedMigrationValues(kind FileKind, values map[string]string) {
+	switch kind {
+	case KindPayrollHistory, KindTSDHistory:
+		if year, month, ok := migrationPeriodYearMonth(values); ok {
+			setDerivedValue(values, "period_year", year)
+			setDerivedValue(values, "period_month", month)
+		}
+	case KindKMDHistory:
+		if year, month, ok := migrationPeriodYearMonth(values); ok {
+			setDerivedValue(values, "year", year)
+			setDerivedValue(values, "month", month)
+		}
+	case KindLeaveBalances:
+		if year, ok := migrationYearFromBalanceDate(values); ok {
+			setDerivedValue(values, "year", year)
+		}
+	}
+}
+
+func hasAnyHeader(headerSet map[string]bool, headers ...string) bool {
+	for _, header := range headers {
+		if headerSet[header] {
+			return true
+		}
+	}
+	return false
+}
+
+func migrationPeriodYearMonth(values map[string]string) (string, string, bool) {
+	value := firstMigrationValue(values, "period_code", "month6", "period", "accounting_period")
+	if value == "" {
+		return "", "", false
+	}
+	if parsed, ok := parseEmployeeCutoverDate(value); ok {
+		return strconv.Itoa(parsed.Year()), fmt.Sprintf("%02d", int(parsed.Month())), true
+	}
+
+	var digits strings.Builder
+	for _, r := range value {
+		if unicode.IsDigit(r) {
+			digits.WriteRune(r)
+		}
+	}
+	compact := digits.String()
+	if len(compact) < 6 {
+		return "", "", false
+	}
+	return compact[:4], compact[4:6], true
+}
+
+func migrationYearFromBalanceDate(values map[string]string) (string, bool) {
+	value := firstMigrationValue(values, "balance_date")
+	if value == "" {
+		return "", false
+	}
+	if parsed, ok := parseEmployeeCutoverDate(value); ok {
+		return strconv.Itoa(parsed.Year()), true
+	}
+	if len(value) == 4 {
+		if _, err := strconv.Atoi(value); err == nil {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func firstMigrationValue(values map[string]string, fields ...string) string {
+	for _, field := range fields {
+		if value := strings.TrimSpace(values[field]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func setDerivedValue(values map[string]string, field, value string) {
+	if strings.TrimSpace(values[field]) == "" {
+		values[field] = value
+	}
+}
+
+func eInvoiceValidationHeaders() []string {
+	return []string{
+		"invoice_id",
+		"invoice_number",
+		"invoice_type",
+		"issue_date",
+		"due_date",
+		"invoice_total",
+		"currency",
+		"contact_reg_code",
+		"contact_vat_number",
+		"contact_email",
+		"contact_name",
+		"buyer_reg_code",
+		"buyer_vat_number",
+		"buyer_contact_email",
+		"buyer_contact_name",
+	}
+}
+
+func buildIndexes(files []parsedFile) bundleIndexes {
+	indexes := bundleIndexes{
+		files:              map[FileKind]bool{},
+		accountCodes:       map[string]bool{},
+		accountIDs:         map[string]bool{},
+		bankAccounts:       map[string]string{},
+		contactIDs:         map[string]bool{},
+		contactCodes:       map[string]bool{},
+		contactRegCodes:    map[string]bool{},
+		contactVATNumbers:  map[string]bool{},
+		contactEmails:      map[string]bool{},
+		contactNames:       map[string]bool{},
+		contacts:           map[string]bool{},
+		employeeIDs:        map[string]bool{},
+		employees:          map[string]bool{},
+		invoices:           map[string]bool{},
+		quotes:             map[string]bool{},
+		quoteNumbers:       map[string]bool{},
+		costCenterCodes:    map[string]bool{},
+		productCategoryIDs: map[string]bool{},
+		productCategories:  map[string]bool{},
+		productCodes:       map[string]bool{},
+		warehouseCodes:     map[string]bool{},
+		journalLineIDs:     map[string]bool{},
+	}
+	for _, file := range files {
+		indexes.files[file.kind] = true
+		for _, row := range file.rows {
+			switch file.kind {
+			case KindAccounts:
+				addIndexValue(indexes.accountCodes, row.values["code"])
+				addIndexValue(indexes.accountIDs, row.values["id"])
+			case KindBankAccounts:
+				addBankAccountIndexValue(indexes.bankAccounts, row.values["account_number"], row.values["currency"])
+			case KindContacts:
+				addIndexValue(indexes.contactIDs, row.values["id"])
+				addIndexValue(indexes.contactCodes, row.values["code"])
+				addIndexValue(indexes.contactRegCodes, row.values["reg_code"])
+				addIndexValue(indexes.contactVATNumbers, row.values["vat_number"])
+				addIndexValue(indexes.contactEmails, row.values["email"])
+				addIndexValue(indexes.contactNames, row.values["name"])
+				addIndexValue(indexes.contacts, row.values["code"])
+				addIndexValue(indexes.contacts, row.values["reg_code"])
+				addIndexValue(indexes.contacts, row.values["vat_number"])
+				addIndexValue(indexes.contacts, row.values["email"])
+				addIndexValue(indexes.contacts, row.values["name"])
+			case KindEmployees:
+				addIndexValue(indexes.employeeIDs, row.values["id"])
+				addEmployeeIndexValues(indexes.employees, row.values)
+			case KindInvoices, KindEInvoices:
+				addIndexValue(indexes.invoices, row.values["invoice_number"])
+				addIndexValue(indexes.invoices, row.values["invoice_id"])
+				addIndexValue(indexes.invoices, row.values["id"])
+			case KindQuotes:
+				addIndexValue(indexes.quotes, row.values["id"])
+				addIndexValue(indexes.quoteNumbers, row.values["quote_number"])
+			case KindCostCenters:
+				addIndexValue(indexes.costCenterCodes, row.values["code"])
+			case KindProductCategories:
+				addIndexValue(indexes.productCategories, row.values["name"])
+				addIndexValue(indexes.productCategoryIDs, row.values["id"])
+			case KindProducts:
+				addIndexValue(indexes.productCodes, row.values["code"])
+			case KindWarehouses:
+				addIndexValue(indexes.warehouseCodes, row.values["code"])
+			case KindJournalEntries:
+				addIndexValue(indexes.journalLineIDs, row.values["line_id"])
+			}
+		}
+	}
+	return indexes
+}
+
+func validateReferences(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, eInvoiceContactMode EInvoiceContactMode) {
+	for _, row := range file.rows {
+		switch file.kind {
+		case KindAccounts:
+			checkOptionalUUID(report, file, row, "id")
+			checkSelfReference(report, file, row, "parent_code", "code")
+			checkTargetReference(report, indexes.files[KindAccounts], indexes.accountCodes, file, row, KindAccounts,
+				[]string{"parent_code"})
+		case KindContacts:
+			checkOptionalUUID(report, file, row, "id")
+		case KindExpenses:
+			checkAccountReference(report, indexes, file, row, "expense_account_id", "expense_account_code")
+			checkAccountReference(report, indexes, file, row, "payment_account_id", "payment_account_code")
+			checkContactReference(report, indexes, file, row)
+			checkExpenseEmployeeIDReference(report, indexes, file, row)
+		case KindEmployees:
+			checkOptionalUUID(report, file, row, "id")
+		case KindInvoices:
+			checkOptionalUUID(report, file, row, "id")
+			checkCommercialDocumentContactReference(report, indexes, file, row)
+			checkProductReference(report, indexes, file, row)
+		case KindEInvoices:
+			checkEInvoiceContactReferences(report, indexes, file, row, eInvoiceContactMode)
+		case KindQuotes:
+			checkOptionalUUID(report, file, row, "id")
+			checkCommercialDocumentContactReference(report, indexes, file, row)
+			checkProductReference(report, indexes, file, row)
+		case KindRecurringInvoices:
+			checkAccountReference(report, indexes, file, row, "account_id", "")
+			checkCommercialDocumentContactReference(report, indexes, file, row)
+			checkProductReference(report, indexes, file, row)
+		case KindOrders:
+			checkCommercialDocumentContactReference(report, indexes, file, row)
+			checkProductReference(report, indexes, file, row)
+			hasQuoteID := strings.TrimSpace(row.values["quote_id"]) != ""
+			if checkOptionalUUID(report, file, row, "quote_id") && hasQuoteID {
+				checkTargetReference(report, indexes.files[KindQuotes], indexes.quotes, file, row, KindQuotes,
+					[]string{"quote_id"})
+			}
+			if !hasQuoteID {
+				checkTargetReference(report, indexes.files[KindQuotes], indexes.quoteNumbers, file, row, KindQuotes,
+					[]string{"quote_number"})
+			}
+		case KindPayments:
+			checkContactReference(report, indexes, file, row)
+			if checkOptionalUUID(report, file, row, "invoice_id") {
+				checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
+					[]string{"invoice_id", "invoice_number"})
+			}
+			checkPaymentBankAccountReference(report, indexes, file, row)
+		case KindBankAccounts:
+			checkAccountReference(report, indexes, file, row, "gl_account_id", "gl_account_code")
+		case KindBankTransactions:
+			checkBankTransactionSourceAccount(report, indexes, file, row)
+		case KindPayrollHistory, KindLeaveBalances, KindTSDHistory:
+			checkEmployeeReference(report, indexes, file, row)
+		case KindOpeningBalances, KindJournalEntries:
+			checkTargetReference(report, indexes.files[KindAccounts], indexes.accountCodes, file, row, KindAccounts,
+				[]string{"account_code"})
+		case KindCostCenters:
+			checkOptionalUUID(report, file, row, "parent_id")
+			checkSelfReference(report, file, row, "parent_code", "code")
+			checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenterCodes, file, row, KindCostCenters,
+				[]string{"parent_code"})
+		case KindCostAllocations:
+			checkCostAllocationReference(report, indexes, file, row)
+		case KindProductCategories:
+			checkOptionalUUID(report, file, row, "id")
+			checkOptionalUUID(report, file, row, "parent_id")
+			checkSelfReference(report, file, row, "parent_id", "id")
+			checkSelfReference(report, file, row, "parent_name", "name")
+			checkProductCategoryReference(report, indexes, file, row, "parent_id", "parent_name")
+		case KindProducts:
+			checkProductCategoryReference(report, indexes, file, row, "category_id", "category_name")
+			checkAccountReference(report, indexes, file, row, "sale_account_id", "sale_account_code")
+			checkAccountReference(report, indexes, file, row, "purchase_account_id", "purchase_account_code")
+			checkAccountReference(report, indexes, file, row, "inventory_account_id", "inventory_account_code")
+			checkSupplierReference(report, indexes, file, row)
+		case KindStockAdjustments:
+			checkStockAdjustmentProductReference(report, indexes, file, row)
+			checkStockAdjustmentWarehouseReference(report, indexes, file, row)
+		case KindFixedAssets:
+			checkOptionalUUID(report, file, row, "category_id")
+			checkAccountReference(report, indexes, file, row, "asset_account_id", "asset_account_code")
+			checkAccountReference(report, indexes, file, row, "depreciation_expense_account_id", "depreciation_expense_account_code")
+			checkAccountReference(report, indexes, file, row, "accumulated_depreciation_account_id", "accumulated_depreciation_account_code")
+			checkSupplierReference(report, indexes, file, row)
+			if checkOptionalUUID(report, file, row, "invoice_id") {
+				checkFixedAssetSourceInvoiceReference(report, indexes, file, row)
+			}
+		}
+	}
+}
+
+type cutoverAmountIssue struct {
+	field   string
+	value   string
+	message string
+}
+
+type journalValidationGroup struct {
+	firstRow  int
+	reference string
+	rows      []parsedRow
+}
+
+type cutoverInvoiceAllocationTarget struct {
+	key                 string
+	display             string
+	total               decimal.Decimal
+	importedAmountPaid  decimal.Decimal
+	amountPaidSpecified bool
+	currency            string
+	invoiceType         string
+	status              string
+	issueDate           time.Time
+	issueDateSpecified  bool
+	contactReferences   cutoverContactReferences
+	targetKind          FileKind
+	invoiceCount        int
+}
+
+type cutoverQuoteReferenceTarget struct {
+	display           string
+	contactReferences cutoverContactReferences
+}
+
+type cutoverQuoteReferenceTargets struct {
+	byID     map[string]cutoverQuoteReferenceTarget
+	byNumber map[string]cutoverQuoteReferenceTarget
+}
+
+type cutoverContactReference struct {
+	display    string
+	normalized string
+}
+
+type cutoverContactReferences map[string]cutoverContactReference
+
+var cutoverContactReferenceFields = []string{
+	"contact_id",
+	"contact_code",
+	"contact_reg_code",
+	"contact_vat_number",
+	"contact_email",
+	"contact_name",
+}
+
+func validateDuplicateIdentifierPreflight(report *BundleValidationReport, file parsedFile) {
+	specs := duplicateIdentifierPreflightSpecs[file.kind]
+	if len(specs) == 0 {
+		return
+	}
+
+	for _, spec := range specs {
+		seen := map[string]duplicateIdentifierValue{}
+		for _, row := range file.rows {
+			value := strings.TrimSpace(row.values[spec.field])
+			if value == "" {
+				continue
+			}
+			key := normalizedDuplicateIdentifierValue(spec, value)
+			if key == "" {
+				continue
+			}
+			first, ok := seen[key]
+			if !ok {
+				seen[key] = duplicateIdentifierValue{row: row.number}
+				continue
+			}
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    spec.field,
+				Value:    value,
+				Message:  fmt.Sprintf("%s %q duplicates row %d in %s file", spec.field, value, first.row, file.kind),
+			})
+		}
+	}
+}
+
+func normalizedDuplicateIdentifierValue(spec duplicateIdentifierSpec, value string) string {
+	if spec.normalize != nil {
+		return spec.normalize(value)
+	}
+	return normalizedValue(value)
+}
+
+func validateCompositeDuplicatePreflight(report *BundleValidationReport, file parsedFile) {
+	switch file.kind {
+	case KindInvoices, KindQuotes:
+		validateGroupedDocumentPreservedIDs(report, file)
+	case KindPayrollHistory:
+		validatePayrollHistoryDuplicateEmployees(report, file)
+	case KindLeaveBalances:
+		validateLeaveBalanceDuplicates(report, file)
+	case KindTSDHistory:
+		validateTSDHistoryDuplicateEmployees(report, file)
+	case KindKMDHistory:
+		validateKMDHistoryDuplicateRows(report, file)
+	case KindStockAdjustments:
+		validateStockAdjustmentDuplicateSerials(report, file)
+	}
+}
+
+func validateGroupedDocumentPreservedIDs(report *BundleValidationReport, file parsedFile) {
+	spec, ok := groupedDocumentPreflightSpecs[file.kind]
+	if !ok {
+		return
+	}
+
+	seen := map[string]groupedDocumentPreservedIDValue{}
+	for _, row := range file.rows {
+		value := strings.TrimSpace(row.values["id"])
+		if value == "" {
+			continue
+		}
+		groupKey, groupDisplay, ok := groupedDocumentKey(row, spec)
+		if !ok {
+			continue
+		}
+		key := normalizedValue(value)
+		first, exists := seen[key]
+		if !exists {
+			seen[key] = groupedDocumentPreservedIDValue{
+				row:          row.number,
+				groupKey:     groupKey,
+				groupDisplay: groupDisplay,
+			}
+			continue
+		}
+		if first.groupKey == groupKey {
+			continue
+		}
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "id",
+			Value:    value,
+			Message: fmt.Sprintf(
+				"id %q duplicates row %d across %s groups %q and %q",
+				value,
+				first.row,
+				spec.keyLabel,
+				first.groupDisplay,
+				groupDisplay,
+			),
+		})
+	}
+}
+
+func validatePayrollHistoryDuplicateEmployees(report *BundleValidationReport, file parsedFile) {
+	seen := map[string]duplicateCompositeValue{}
+	for _, row := range file.rows {
+		periodKey, periodDisplay, ok := duplicatePeriodKey(row.values, "period_year", "period_month")
+		if !ok {
+			continue
+		}
+		employeeKey, employeeDisplay, ok := duplicateEmployeeKey(row.values)
+		if !ok {
+			continue
+		}
+
+		key := strings.Join([]string{periodKey, employeeKey}, "\x00")
+		if first, exists := seen[key]; exists {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "period_year/period_month/employee",
+				Value:    periodDisplay + "/" + employeeDisplay,
+				Message:  fmt.Sprintf("employee %q duplicates row %d in payroll period %s", employeeDisplay, first.row, periodDisplay),
+			})
+			continue
+		}
+		seen[key] = duplicateCompositeValue{row: row.number}
+	}
+}
+
+func validateLeaveBalanceDuplicates(report *BundleValidationReport, file parsedFile) {
+	seen := map[string]duplicateCompositeValue{}
+	for _, row := range file.rows {
+		yearKey, yearDisplay, ok := duplicateYearKey(row.values, "year")
+		if !ok {
+			continue
+		}
+		employeeKey, employeeDisplay, ok := duplicateEmployeeKey(row.values)
+		if !ok {
+			continue
+		}
+		absenceTypeKey, absenceTypeDisplay, ok := duplicateAbsenceTypeKey(row.values)
+		if !ok {
+			continue
+		}
+
+		key := strings.Join([]string{yearKey, employeeKey, absenceTypeKey}, "\x00")
+		if first, exists := seen[key]; exists {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "year/employee/absence_type",
+				Value:    yearDisplay + "/" + employeeDisplay + "/" + absenceTypeDisplay,
+				Message: fmt.Sprintf(
+					"employee %q absence type %q duplicates row %d in leave-balance year %s",
+					employeeDisplay,
+					absenceTypeDisplay,
+					first.row,
+					yearDisplay,
+				),
+			})
+			continue
+		}
+		seen[key] = duplicateCompositeValue{row: row.number}
+	}
+}
+
+func validateTSDHistoryDuplicateEmployees(report *BundleValidationReport, file parsedFile) {
+	seen := map[string]duplicateCompositeValue{}
+	for _, row := range file.rows {
+		periodKey, periodDisplay, ok := duplicatePeriodKey(row.values, "period_year", "period_month")
+		if !ok {
+			continue
+		}
+		employeeKey, employeeDisplay, ok := duplicateEmployeeKey(row.values)
+		if !ok {
+			continue
+		}
+
+		key := strings.Join([]string{periodKey, employeeKey}, "\x00")
+		if first, exists := seen[key]; exists {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "period_year/period_month/employee",
+				Value:    periodDisplay + "/" + employeeDisplay,
+				Message:  fmt.Sprintf("employee %q duplicates row %d in TSD period %s", employeeDisplay, first.row, periodDisplay),
+			})
+			continue
+		}
+		seen[key] = duplicateCompositeValue{row: row.number}
+	}
+}
+
+func validateKMDHistoryDuplicateRows(report *BundleValidationReport, file parsedFile) {
+	seen := map[string]duplicateCompositeValue{}
+	for _, row := range file.rows {
+		periodKey, periodDisplay, ok := duplicatePeriodKey(row.values, "year", "month")
+		if !ok {
+			continue
+		}
+		rowCode := normalizeKMDHistoryRowCode(row.values["row_code"])
+		if rowCode == "" {
+			continue
+		}
+
+		key := strings.Join([]string{periodKey, rowCode}, "\x00")
+		if first, exists := seen[key]; exists {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "year/month/row_code",
+				Value:    periodDisplay + "/" + rowCode,
+				Message:  fmt.Sprintf("row_code %q duplicates row %d in KMD period %s", rowCode, first.row, periodDisplay),
+			})
+			continue
+		}
+		seen[key] = duplicateCompositeValue{row: row.number}
+	}
+}
+
+func validateStockAdjustmentDuplicateSerials(report *BundleValidationReport, file parsedFile) {
+	seen := map[string]duplicateCompositeValue{}
+	for _, row := range file.rows {
+		productKey, productDisplay, ok := stockAdjustmentProductReferenceKey(row.values)
+		if !ok {
+			continue
+		}
+		serialDisplay := strings.TrimSpace(row.values["serial_number"])
+		if serialDisplay == "" {
+			continue
+		}
+
+		key := strings.Join([]string{productKey, normalizedValue(serialDisplay)}, "\x00")
+		if first, exists := seen[key]; exists {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "product/serial_number",
+				Value:    productDisplay + "/" + serialDisplay,
+				Message:  fmt.Sprintf("serial_number %q duplicates row %d for product %q", serialDisplay, first.row, productDisplay),
+			})
+			continue
+		}
+		seen[key] = duplicateCompositeValue{row: row.number}
+	}
+}
+
+func stockAdjustmentProductReferenceKey(values map[string]string) (string, string, bool) {
+	for _, field := range []string{"product_id", "product_code"} {
+		value := strings.TrimSpace(values[field])
+		if value == "" {
+			continue
+		}
+		return normalizedValue(value), value, true
+	}
+	return "", "", false
+}
+
+func duplicatePeriodKey(values map[string]string, yearField, monthField string) (string, string, bool) {
+	yearKey, yearDisplay, ok := duplicateYearKey(values, yearField)
+	if !ok {
+		return "", "", false
+	}
+	monthValue := strings.TrimSpace(values[monthField])
+	if monthValue == "" {
+		return "", "", false
+	}
+	monthKey := normalizedCutoverIntegerPart(monthValue)
+	return yearKey + "-" + monthKey, yearDisplay + "-" + monthKey, true
+}
+
+func duplicateYearKey(values map[string]string, field string) (string, string, bool) {
+	value := strings.TrimSpace(values[field])
+	if value == "" {
+		return "", "", false
+	}
+	key := normalizedCutoverIntegerPart(value)
+	return key, key, true
+}
+
+func normalizedCutoverIntegerPart(value string) string {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return normalizedValue(value)
+	}
+	return strconv.Itoa(parsed)
+}
+
+func duplicateEmployeeKey(values map[string]string) (string, string, bool) {
+	for _, field := range []string{"employee_number", "personal_code", "email", "name"} {
+		value := strings.TrimSpace(values[field])
+		if value == "" {
+			continue
+		}
+		return field + ":" + normalizedValue(value), value, true
+	}
+	if name := employeeName(values); strings.TrimSpace(name) != "" {
+		return "name:" + normalizedValue(name), strings.TrimSpace(name), true
+	}
+	return "", "", false
+}
+
+func duplicateAbsenceTypeKey(values map[string]string) (string, string, bool) {
+	for _, field := range []string{"absence_type_id", "absence_type_code", "absence_type"} {
+		value := strings.TrimSpace(values[field])
+		if value == "" {
+			continue
+		}
+		return field + ":" + normalizedValue(value), value, true
+	}
+	return "", "", false
+}
+
+func validateGroupedDocumentPreflight(report *BundleValidationReport, file parsedFile) {
+	spec, ok := groupedDocumentPreflightSpecs[file.kind]
+	if !ok {
+		return
+	}
+
+	groups := map[string]map[string]groupedSeenValue{}
+	groupDisplays := map[string]string{}
+	for _, row := range file.rows {
+		key, displayKey, ok := groupedDocumentKey(row, spec)
+		if !ok {
+			continue
+		}
+		fieldValues, ok := groups[key]
+		if !ok {
+			fieldValues = map[string]groupedSeenValue{}
+			groups[key] = fieldValues
+			groupDisplays[key] = displayKey
+		}
+		for _, field := range spec.fields {
+			value, ok := groupedComparableFieldValue(row, field)
+			if !ok {
+				continue
+			}
+			seen, exists := fieldValues[field.field]
+			if !exists {
+				fieldValues[field.field] = groupedSeenValue{
+					normalized: value.normalized,
+				}
+				continue
+			}
+			if seen.normalized == value.normalized {
+				continue
+			}
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    field.field,
+				Value:    value.display,
+				Message:  fmt.Sprintf("%s must be consistent for each %s %q", field.field, spec.keyLabel, groupDisplays[key]),
+			})
+		}
+	}
+}
+
+func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile, eInvoiceContactMode EInvoiceContactMode) {
+	validateImportedInvoiceAmountPaidConsistency(report, files)
+	validatePayrollTSDHistoryConsistency(report, files)
+	validateKMDHistoryVATReconciliation(report, files)
+	accountTypeTargets := buildCutoverAccountTypeTargets(files)
+	validateExpenseAccountTypeConsistency(report, files, accountTypeTargets)
+	validateProductAccountTypeConsistency(report, files, accountTypeTargets)
+	validateFixedAssetAccountTypeConsistency(report, files, accountTypeTargets)
+	validateBankAccountAccountTypeConsistency(report, files, accountTypeTargets)
+	validateRecurringInvoiceAccountTypeConsistency(report, files, accountTypeTargets)
+	validateStockAdjustmentProductStockability(report, files)
+	validateCostAllocationJournalLineTotals(report, files)
+	validateCostAllocationJournalLinePercentages(report, files)
+	validateCostAllocationAmountPercentageConsistency(report, files)
+	validateOrderQuoteConsistency(report, files)
+
+	invoiceTargets := buildCutoverInvoiceAllocationTargets(files, eInvoiceContactMode)
+	validateFixedAssetInvoiceConsistency(report, files, invoiceTargets)
+	if len(invoiceTargets) == 0 {
+		return
+	}
+
+	allocationTotals := map[string]decimal.Decimal{}
+	for _, file := range files {
+		if file.kind != KindPayments {
+			continue
+		}
+		for _, row := range file.rows {
+			target, ok := cutoverPaymentAllocationTarget(invoiceTargets, row)
+			if !ok {
+				continue
+			}
+			allocationAmount, ok := cutoverPaymentAllocationAmount(row)
+			if !ok {
+				continue
+			}
+			if target.invoiceCount > 1 {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindPayments,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "invoice_number",
+					Value:      target.display,
+					TargetKind: target.targetKind,
+					Message:    fmt.Sprintf("invoice_number %q matched multiple imported invoices; use invoice_id for payment allocation", target.display),
+				})
+				continue
+			}
+			if hasPaymentInvoiceCurrencyMismatch(report, file, row, target) {
+				continue
+			}
+			if hasPaymentInvoiceTypeMismatch(report, file, row, target) {
+				continue
+			}
+			if hasPaymentInvoiceContactMismatch(report, file, row, target) {
+				continue
+			}
+			if hasPaymentBeforeInvoiceIssueDate(report, file, row, target) {
+				continue
+			}
+			if hasPaymentInvoiceStatusMismatch(report, file, row, target) {
+				continue
+			}
+
+			nextAllocationTotal := allocationTotals[target.key].Add(allocationAmount)
+			allocationTotals[target.key] = nextAllocationTotal
+			if nextAllocationTotal.GreaterThan(target.total) {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindPayments,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "allocation_amount",
+					Value:      allocationAmount.String(),
+					TargetKind: target.targetKind,
+					Message: fmt.Sprintf(
+						"payment allocations for invoice %q exceed imported invoice total: allocations=%s invoice_total=%s",
+						target.display,
+						nextAllocationTotal.String(),
+						target.total.String(),
+					),
+				})
+				continue
+			}
+			if target.amountPaidSpecified && !target.importedAmountPaid.GreaterThan(target.total) {
+				combinedPaid := target.importedAmountPaid.Add(nextAllocationTotal)
+				if combinedPaid.GreaterThan(target.total) {
+					report.addIssue(ValidationIssue{
+						Severity:   SeverityError,
+						Kind:       KindPayments,
+						FileName:   file.fileName,
+						Row:        row.number,
+						Field:      "allocation_amount",
+						Value:      allocationAmount.String(),
+						TargetKind: target.targetKind,
+						Message: fmt.Sprintf(
+							"imported invoice paid amount plus payment allocations for invoice %q exceed imported invoice total: amount_paid=%s allocations=%s combined_paid=%s invoice_total=%s",
+							target.display,
+							target.importedAmountPaid.String(),
+							nextAllocationTotal.String(),
+							combinedPaid.String(),
+							target.total.String(),
+						),
+					})
+				}
+			}
+		}
+	}
+}
+
+func validateOrderQuoteConsistency(report *BundleValidationReport, files []parsedFile) {
+	quoteTargets := buildCutoverQuoteReferenceTargets(files)
+	if len(quoteTargets.byID) == 0 && len(quoteTargets.byNumber) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindOrders {
+			continue
+		}
+		for _, row := range file.rows {
+			quoteID := strings.TrimSpace(row.values["quote_id"])
+			if quoteID == "" {
+				quoteNumber := strings.TrimSpace(row.values["quote_number"])
+				if quoteNumber == "" {
+					continue
+				}
+				target, ok := quoteTargets.byNumber[normalizedValue(quoteNumber)]
+				if !ok {
+					continue
+				}
+				hasOrderQuoteContactMismatch(report, file, row, target)
+				continue
+			}
+			if _, err := uuid.Parse(quoteID); err != nil {
+				continue
+			}
+			target, ok := quoteTargets.byID[normalizedValue(quoteID)]
+			if !ok {
+				continue
+			}
+			hasOrderQuoteContactMismatch(report, file, row, target)
+		}
+	}
+}
+
+func buildCutoverQuoteReferenceTargets(files []parsedFile) cutoverQuoteReferenceTargets {
+	targets := cutoverQuoteReferenceTargets{
+		byID:     map[string]cutoverQuoteReferenceTarget{},
+		byNumber: map[string]cutoverQuoteReferenceTarget{},
+	}
+	for _, file := range files {
+		if file.kind != KindQuotes {
+			continue
+		}
+		for _, row := range file.rows {
+			target := cutoverQuoteReferenceTarget{
+				display:           cutoverQuoteReferenceDisplay(row),
+				contactReferences: cutoverContactReferencesFromRow(row),
+			}
+			id := strings.TrimSpace(row.values["id"])
+			if id != "" {
+				if _, err := uuid.Parse(id); err == nil {
+					if _, exists := targets.byID[normalizedValue(id)]; !exists {
+						targets.byID[normalizedValue(id)] = target
+					}
+				}
+			}
+			quoteNumber := strings.TrimSpace(row.values["quote_number"])
+			if quoteNumber != "" {
+				if _, exists := targets.byNumber[normalizedValue(quoteNumber)]; !exists {
+					targets.byNumber[normalizedValue(quoteNumber)] = target
+				}
+			}
+		}
+	}
+	return targets
+}
+
+func cutoverQuoteReferenceDisplay(row parsedRow) string {
+	if quoteNumber := strings.TrimSpace(row.values["quote_number"]); quoteNumber != "" {
+		return quoteNumber
+	}
+	return strings.TrimSpace(row.values["id"])
+}
+
+func hasOrderQuoteContactMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverQuoteReferenceTarget,
+) bool {
+	if len(target.contactReferences) == 0 {
+		return false
+	}
+	orderReferences := cutoverContactReferencesFromRow(row)
+	if len(orderReferences) == 0 {
+		return false
+	}
+	for _, field := range cutoverContactReferenceFields {
+		orderReference, orderHasField := orderReferences[field]
+		targetReference, targetHasField := target.contactReferences[field]
+		if !orderHasField || !targetHasField {
+			continue
+		}
+		if orderReference.normalized == targetReference.normalized {
+			continue
+		}
+		report.addIssue(ValidationIssue{
+			Severity:   SeverityError,
+			Kind:       KindOrders,
+			FileName:   file.fileName,
+			Row:        row.number,
+			Field:      field,
+			Value:      orderReference.display,
+			TargetKind: KindQuotes,
+			Message: fmt.Sprintf(
+				"order %s %q does not match imported quote %q %s %q",
+				field,
+				orderReference.display,
+				target.display,
+				field,
+				targetReference.display,
+			),
+		})
+		return true
+	}
+	return false
+}
+
+func validateKMDHistoryVATReconciliation(report *BundleValidationReport, files []parsedFile) {
+	groups := map[string]*kmdHistoryVATReconciliationGroup{}
+	for _, file := range files {
+		if file.kind != KindKMDHistory {
+			continue
+		}
+		for _, row := range file.rows {
+			if !cutoverKMDHistoryRowEligibleForVATReconciliation(row.values) {
+				continue
+			}
+			period, ok := cutoverKMDHistoryPeriod(row.values)
+			if !ok {
+				continue
+			}
+			group := groups[period]
+			if group == nil {
+				group = &kmdHistoryVATReconciliationGroup{period: period}
+				groups[period] = group
+			}
+
+			if amount, set, ok := cutoverKMDHistoryOptionalDecimal(row.values["total_output_vat"]); set && ok {
+				group.addDeclaredVAT(file, row, "total_output_vat", amount)
+			}
+			if amount, set, ok := cutoverKMDHistoryOptionalDecimal(row.values["total_input_vat"]); set && ok {
+				group.addDeclaredVAT(file, row, "total_input_vat", amount)
+			}
+			taxAmount, taxAmountSet, taxAmountOK := cutoverKMDHistoryOptionalDecimal(row.values["tax_amount"])
+			if !taxAmountSet || !taxAmountOK {
+				continue
+			}
+			switch normalizeKMDHistoryRowCode(row.values["row_code"]) {
+			case "1", "2", "21", "3", "31":
+				group.outputSupport = group.outputSupport.Add(taxAmount)
+				group.outputSupportSet = true
+			case "4", "5", "6", "7":
+				group.inputSupport = group.inputSupport.Add(taxAmount)
+				group.inputSupportSet = true
+			case "8":
+				group.outputTotalRow = cutoverKMDHistoryVATValue(file, row, "tax_amount", taxAmount)
+			case "9":
+				group.inputTotalRow = cutoverKMDHistoryVATValue(file, row, "tax_amount", taxAmount)
+			}
+		}
+	}
+
+	periods := make([]string, 0, len(groups))
+	for period := range groups {
+		periods = append(periods, period)
+	}
+	sort.Strings(periods)
+	for _, period := range periods {
+		group := groups[period]
+		group.validateVAT(report, "output", "total_output_vat", group.declaredOutput, group.declaredOutputBad, group.outputSupport, group.outputSupportSet, group.outputTotalRow)
+		group.validateVAT(report, "input", "total_input_vat", group.declaredInput, group.declaredInputBad, group.inputSupport, group.inputSupportSet, group.inputTotalRow)
+	}
+}
+
+func cutoverKMDHistoryRowEligibleForVATReconciliation(values map[string]string) bool {
+	if _, ok := cutoverKMDHistoryPeriod(values); !ok {
+		return false
+	}
+	if normalizeKMDHistoryRowCode(values["row_code"]) == "" {
+		return false
+	}
+	statusKey := strings.ReplaceAll(normalizedValue(values["status"]), "-", "_")
+	if _, ok := cutoverKMDHistoryStatusAliases[statusKey]; !ok {
+		return false
+	}
+	if submittedAt := strings.TrimSpace(values["submitted_at"]); submittedAt != "" {
+		if _, ok := parseEmployeeCutoverDate(submittedAt); !ok {
+			return false
+		}
+	}
+	for _, field := range []string{"tax_base", "tax_amount", "total_output_vat", "total_input_vat"} {
+		if _, set, ok := cutoverKMDHistoryOptionalDecimal(values[field]); set && !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func (g *kmdHistoryVATReconciliationGroup) addDeclaredVAT(
+	file parsedFile,
+	row parsedRow,
+	field string,
+	amount decimal.Decimal,
+) {
+	value := cutoverKMDHistoryVATValue(file, row, field, amount)
+	var current **kmdHistoryVATReconciliationValue
+	var inconsistent *bool
+	switch field {
+	case "total_output_vat":
+		current = &g.declaredOutput
+		inconsistent = &g.declaredOutputBad
+	case "total_input_vat":
+		current = &g.declaredInput
+		inconsistent = &g.declaredInputBad
+	default:
+		return
+	}
+	if *current == nil {
+		*current = value
+		return
+	}
+	if (*current).amount.Equal(amount) {
+		return
+	}
+	*inconsistent = true
+}
+
+func (g *kmdHistoryVATReconciliationGroup) validateVAT(
+	report *BundleValidationReport,
+	label string,
+	field string,
+	declared *kmdHistoryVATReconciliationValue,
+	declaredInconsistent bool,
+	support decimal.Decimal,
+	supportSet bool,
+	totalRow *kmdHistoryVATReconciliationValue,
+) {
+	if supportSet && totalRow != nil && !totalRow.amount.Equal(support) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     KindKMDHistory,
+			FileName: totalRow.fileName,
+			Row:      totalRow.row,
+			Field:    totalRow.field,
+			Value:    totalRow.value,
+			Message: fmt.Sprintf(
+				"KMD row %s tax_amount %s does not match supporting KMD %s VAT rows for %s: supporting total %s",
+				kmdHistoryTotalRowCode(label),
+				totalRow.amount.String(),
+				label,
+				g.period,
+				support.String(),
+			),
+		})
+	}
+	if declared == nil || declaredInconsistent {
+		return
+	}
+	if supportSet {
+		if declared.amount.Equal(support) {
+			return
+		}
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     KindKMDHistory,
+			FileName: declared.fileName,
+			Row:      declared.row,
+			Field:    field,
+			Value:    declared.value,
+			Message: fmt.Sprintf(
+				"%s %s does not match supporting KMD %s VAT rows for %s: supporting total %s",
+				field,
+				declared.amount.String(),
+				label,
+				g.period,
+				support.String(),
+			),
+		})
+		return
+	}
+	if totalRow == nil || declared.amount.Equal(totalRow.amount) {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     KindKMDHistory,
+		FileName: declared.fileName,
+		Row:      declared.row,
+		Field:    field,
+		Value:    declared.value,
+		Message: fmt.Sprintf(
+			"%s %s does not match KMD row %s tax_amount for %s: row total %s",
+			field,
+			declared.amount.String(),
+			kmdHistoryTotalRowCode(label),
+			g.period,
+			totalRow.amount.String(),
+		),
+	})
+}
+
+func cutoverKMDHistoryPeriod(values map[string]string) (string, bool) {
+	year, err := strconv.Atoi(strings.TrimSpace(values["year"]))
+	if err != nil || year < 1900 || year > 2200 {
+		return "", false
+	}
+	month, err := strconv.Atoi(strings.TrimSpace(values["month"]))
+	if err != nil || month < 1 || month > 12 {
+		return "", false
+	}
+	return fmt.Sprintf("%04d-%02d", year, month), true
+}
+
+func cutoverKMDHistoryOptionalDecimal(value string) (decimal.Decimal, bool, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, false, true
+	}
+	amount, err := decimal.NewFromString(normalizeCutoverImportDecimal(trimmed))
+	if err != nil {
+		return decimal.Zero, true, false
+	}
+	return amount, true, true
+}
+
+func cutoverKMDHistoryVATValue(file parsedFile, row parsedRow, field string, amount decimal.Decimal) *kmdHistoryVATReconciliationValue {
+	return &kmdHistoryVATReconciliationValue{
+		amount:   amount,
+		fileName: file.fileName,
+		row:      row.number,
+		field:    field,
+		value:    strings.TrimSpace(row.values[field]),
+	}
+}
+
+func kmdHistoryTotalRowCode(label string) string {
+	if label == "input" {
+		return "9"
+	}
+	return "8"
+}
+
+type cutoverAccountTypeTarget struct {
+	display     string
+	accountType string
+}
+
+func validateExpenseAccountTypeConsistency(report *BundleValidationReport, files []parsedFile, targets map[string]cutoverAccountTypeTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindExpenses {
+			continue
+		}
+		for _, row := range file.rows {
+			checkCutoverAccountType(report, file, row, targets,
+				"expense_account_id", "expense_account_code",
+				map[string]bool{"EXPENSE": true},
+				"expense account", "EXPENSE")
+			checkCutoverAccountType(report, file, row, targets,
+				"payment_account_id", "payment_account_code",
+				map[string]bool{"ASSET": true, "LIABILITY": true},
+				"payment account", "ASSET or LIABILITY")
+		}
+	}
+}
+
+func validateProductAccountTypeConsistency(report *BundleValidationReport, files []parsedFile, targets map[string]cutoverAccountTypeTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindProducts {
+			continue
+		}
+		for _, row := range file.rows {
+			checkCutoverAccountType(report, file, row, targets,
+				"sale_account_id", "sale_account_code",
+				map[string]bool{"REVENUE": true},
+				"sale account", "REVENUE")
+			checkCutoverAccountType(report, file, row, targets,
+				"purchase_account_id", "purchase_account_code",
+				map[string]bool{"EXPENSE": true},
+				"purchase account", "EXPENSE")
+			checkCutoverAccountType(report, file, row, targets,
+				"inventory_account_id", "inventory_account_code",
+				map[string]bool{"ASSET": true},
+				"inventory account", "ASSET")
+		}
+	}
+}
+
+func validateFixedAssetAccountTypeConsistency(report *BundleValidationReport, files []parsedFile, targets map[string]cutoverAccountTypeTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindFixedAssets {
+			continue
+		}
+		for _, row := range file.rows {
+			checkCutoverAccountType(report, file, row, targets,
+				"asset_account_id", "asset_account_code",
+				map[string]bool{"ASSET": true},
+				"asset account", "ASSET")
+			checkCutoverAccountType(report, file, row, targets,
+				"depreciation_expense_account_id", "depreciation_expense_account_code",
+				map[string]bool{"EXPENSE": true},
+				"depreciation expense account", "EXPENSE")
+			checkCutoverAccountType(report, file, row, targets,
+				"accumulated_depreciation_account_id", "accumulated_depreciation_account_code",
+				map[string]bool{"ASSET": true},
+				"accumulated depreciation account", "ASSET")
+		}
+	}
+}
+
+func validateBankAccountAccountTypeConsistency(report *BundleValidationReport, files []parsedFile, targets map[string]cutoverAccountTypeTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindBankAccounts {
+			continue
+		}
+		for _, row := range file.rows {
+			checkCutoverAccountType(report, file, row, targets,
+				"gl_account_id", "gl_account_code",
+				map[string]bool{"ASSET": true},
+				"bank account GL account", "ASSET")
+		}
+	}
+}
+
+func validateRecurringInvoiceAccountTypeConsistency(report *BundleValidationReport, files []parsedFile, targets map[string]cutoverAccountTypeTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindRecurringInvoices {
+			continue
+		}
+		for _, row := range file.rows {
+			checkCutoverAccountType(report, file, row, targets,
+				"account_id", "",
+				map[string]bool{"REVENUE": true},
+				"recurring invoice line account", "REVENUE")
+		}
+	}
+}
+
+func checkCutoverAccountType(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	targets map[string]cutoverAccountTypeTarget,
+	idField string,
+	codeField string,
+	allowed map[string]bool,
+	label string,
+	expected string,
+) {
+	field := codeField
+	value := strings.TrimSpace(row.values[codeField])
+	keyPrefix := "code"
+	if accountID := strings.TrimSpace(row.values[idField]); accountID != "" {
+		field = idField
+		value = accountID
+		keyPrefix = "id"
+	}
+	if value == "" {
+		return
+	}
+	target, ok := targets[cutoverAccountTypeTargetKey(keyPrefix, value)]
+	if !ok || allowed[target.accountType] {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       file.kind,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      field,
+		Value:      fmt.Sprintf("%s/%s", value, target.accountType),
+		TargetKind: KindAccounts,
+		Message:    fmt.Sprintf("%s %q is %s; expected %s account", label, target.display, target.accountType, expected),
+	})
+}
+
+func buildCutoverAccountTypeTargets(files []parsedFile) map[string]cutoverAccountTypeTarget {
+	targets := map[string]cutoverAccountTypeTarget{}
+	for _, file := range files {
+		if file.kind != KindAccounts || !fileHasHeaders(file, "account_type") {
+			continue
+		}
+		for _, row := range file.rows {
+			accountType, ok := cutoverNormalizedAccountType(row.values["account_type"])
+			if !ok {
+				continue
+			}
+			code := strings.TrimSpace(row.values["code"])
+			if code != "" {
+				targets[cutoverAccountTypeTargetKey("code", code)] = cutoverAccountTypeTarget{
+					display:     code,
+					accountType: accountType,
+				}
+			}
+			accountID := strings.TrimSpace(row.values["id"])
+			if accountID == "" {
+				continue
+			}
+			if _, err := uuid.Parse(accountID); err != nil {
+				continue
+			}
+			targets[cutoverAccountTypeTargetKey("id", accountID)] = cutoverAccountTypeTarget{
+				display:     accountID,
+				accountType: accountType,
+			}
+		}
+	}
+	return targets
+}
+
+func cutoverAccountTypeTargetKey(prefix, value string) string {
+	return prefix + ":" + normalizedValue(value)
+}
+
+type cutoverJournalLineAmountTarget struct {
+	display string
+	amount  decimal.Decimal
+}
+
+func validateCostAllocationJournalLineTotals(report *BundleValidationReport, files []parsedFile) {
+	targets := buildCutoverJournalLineAmountTargets(files)
+	if len(targets) == 0 {
+		return
+	}
+	allocationTotals := map[string]decimal.Decimal{}
+	for _, file := range files {
+		if file.kind != KindCostAllocations {
+			continue
+		}
+		for _, row := range file.rows {
+			journalLineID := strings.TrimSpace(row.values["journal_entry_line_id"])
+			if journalLineID == "" {
+				continue
+			}
+			targetKey := normalizedValue(journalLineID)
+			target, ok := targets[targetKey]
+			if !ok {
+				continue
+			}
+			amount, ok := cutoverCostAllocationAmount(row)
+			if !ok {
+				continue
+			}
+			nextTotal := allocationTotals[targetKey].Add(amount)
+			allocationTotals[targetKey] = nextTotal
+			if nextTotal.GreaterThan(target.amount) {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindCostAllocations,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "amount",
+					Value:      amount.String(),
+					TargetKind: KindJournalEntries,
+					Message: fmt.Sprintf(
+						"cost allocations for journal line %q exceed imported journal line amount: allocations=%s line_amount=%s",
+						target.display,
+						nextTotal.String(),
+						target.amount.String(),
+					),
+				})
+			}
+		}
+	}
+}
+
+func validateCostAllocationJournalLinePercentages(report *BundleValidationReport, files []parsedFile) {
+	percentageTotals := map[string]decimal.Decimal{}
+	displays := map[string]string{}
+	for _, file := range files {
+		if file.kind != KindCostAllocations || !fileHasHeaders(file, "allocation_percentage") {
+			continue
+		}
+		for _, row := range file.rows {
+			journalLineID := strings.TrimSpace(row.values["journal_entry_line_id"])
+			if journalLineID == "" {
+				continue
+			}
+			if _, err := uuid.Parse(journalLineID); err != nil {
+				continue
+			}
+			percentage, ok := cutoverCostAllocationPercentage(row)
+			if !ok {
+				continue
+			}
+			targetKey := normalizedValue(journalLineID)
+			displays[targetKey] = journalLineID
+			nextTotal := percentageTotals[targetKey].Add(percentage)
+			percentageTotals[targetKey] = nextTotal
+			if nextTotal.GreaterThan(decimal.NewFromInt(100)) {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindCostAllocations,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "allocation_percentage",
+					Value:      percentage.String(),
+					TargetKind: KindJournalEntries,
+					Message: fmt.Sprintf(
+						"cost allocation percentages for journal line %q exceed 100: percentages=%s limit=100",
+						displays[targetKey],
+						nextTotal.String(),
+					),
+				})
+			}
+		}
+	}
+}
+
+func validateCostAllocationAmountPercentageConsistency(report *BundleValidationReport, files []parsedFile) {
+	targets := buildCutoverJournalLineAmountTargets(files)
+	if len(targets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindCostAllocations || !fileHasHeaders(file, "allocation_percentage") {
+			continue
+		}
+		for _, row := range file.rows {
+			journalLineID := strings.TrimSpace(row.values["journal_entry_line_id"])
+			if journalLineID == "" {
+				continue
+			}
+			target, ok := targets[normalizedValue(journalLineID)]
+			if !ok {
+				continue
+			}
+			amount, ok := cutoverCostAllocationAmount(row)
+			if !ok {
+				continue
+			}
+			percentage, ok := cutoverCostAllocationPercentage(row)
+			if !ok {
+				continue
+			}
+			expectedAmount := target.amount.Mul(percentage).Div(decimal.NewFromInt(100)).Round(2)
+			if amount.Round(2).Equal(expectedAmount) {
+				continue
+			}
+			report.addIssue(ValidationIssue{
+				Severity:   SeverityError,
+				Kind:       KindCostAllocations,
+				FileName:   file.fileName,
+				Row:        row.number,
+				Field:      "amount/allocation_percentage",
+				Value:      fmt.Sprintf("amount=%s percentage=%s", amount.String(), percentage.String()),
+				TargetKind: KindJournalEntries,
+				Message: fmt.Sprintf(
+					"cost allocation amount and percentage for journal line %q disagree: amount=%s percentage=%s expected_amount=%s line_amount=%s",
+					target.display,
+					amount.String(),
+					percentage.String(),
+					expectedAmount.String(),
+					target.amount.String(),
+				),
+			})
+		}
+	}
+}
+
+func buildCutoverJournalLineAmountTargets(files []parsedFile) map[string]cutoverJournalLineAmountTarget {
+	targets := map[string]cutoverJournalLineAmountTarget{}
+	for _, file := range files {
+		if file.kind != KindJournalEntries || !fileHasHeaders(file, "line_id", "debit", "credit") {
+			continue
+		}
+		for _, row := range file.rows {
+			lineID := strings.TrimSpace(row.values["line_id"])
+			if lineID == "" {
+				continue
+			}
+			if _, err := uuid.Parse(lineID); err != nil {
+				continue
+			}
+			debit, credit, amountIssue := parseCutoverDebitCredit(row)
+			if amountIssue != nil {
+				continue
+			}
+			amount := debit
+			if amount.IsZero() {
+				amount = credit
+			}
+			if amount.LessThanOrEqual(decimal.Zero) {
+				continue
+			}
+			targets[normalizedValue(lineID)] = cutoverJournalLineAmountTarget{
+				display: lineID,
+				amount:  amount,
+			}
+		}
+	}
+	return targets
+}
+
+func cutoverCostAllocationAmount(row parsedRow) (decimal.Decimal, bool) {
+	amount, issue := parseCutoverRequiredDecimal(row.values["amount"], "amount")
+	if issue != nil || amount.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, false
+	}
+	return amount, true
+}
+
+func cutoverCostAllocationPercentage(row parsedRow) (decimal.Decimal, bool) {
+	if strings.TrimSpace(row.values["allocation_percentage"]) == "" {
+		return decimal.Zero, false
+	}
+	percentage, issue := parseCutoverRequiredDecimal(row.values["allocation_percentage"], "allocation_percentage")
+	if issue != nil || percentage.LessThan(decimal.Zero) || percentage.GreaterThan(decimal.NewFromInt(100)) {
+		return decimal.Zero, false
+	}
+	return percentage, true
+}
+
+type cutoverProductStockability struct {
+	productType    string
+	trackInventory bool
+}
+
+func validateStockAdjustmentProductStockability(report *BundleValidationReport, files []parsedFile) {
+	products := buildCutoverProductStockabilityTargets(files)
+	if len(products) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindStockAdjustments {
+			continue
+		}
+		for _, row := range file.rows {
+			productCode := strings.TrimSpace(row.values["product_code"])
+			if productCode == "" {
+				continue
+			}
+			product, ok := products[normalizedValue(productCode)]
+			if !ok {
+				continue
+			}
+			if product.productType != "GOODS" {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindStockAdjustments,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "product_code",
+					Value:      productCode,
+					TargetKind: KindProducts,
+					Message:    fmt.Sprintf("stock adjustment product_code %q references %s product; stock adjustments require tracked GOODS products", productCode, product.productType),
+				})
+				continue
+			}
+			if !product.trackInventory {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindStockAdjustments,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "product_code",
+					Value:      productCode,
+					TargetKind: KindProducts,
+					Message:    fmt.Sprintf("stock adjustment product_code %q references product with track_inventory=false; stock adjustments require tracked GOODS products", productCode),
+				})
+			}
+		}
+	}
+}
+
+func buildCutoverProductStockabilityTargets(files []parsedFile) map[string]cutoverProductStockability {
+	products := map[string]cutoverProductStockability{}
+	for _, file := range files {
+		if file.kind != KindProducts {
+			continue
+		}
+		for _, row := range file.rows {
+			code := strings.TrimSpace(row.values["code"])
+			if code == "" {
+				continue
+			}
+			productType := strings.ToUpper(strings.TrimSpace(row.values["product_type"]))
+			if productType == "" {
+				productType = "GOODS"
+			}
+			if productType != "GOODS" && productType != "SERVICE" {
+				continue
+			}
+			trackInventory, ok := cutoverProductTrackInventory(row, productType)
+			if !ok {
+				continue
+			}
+			products[normalizedValue(code)] = cutoverProductStockability{
+				productType:    productType,
+				trackInventory: trackInventory,
+			}
+		}
+	}
+	return products
+}
+
+func cutoverProductTrackInventory(row parsedRow, productType string) (bool, bool) {
+	value := strings.TrimSpace(row.values["track_inventory"])
+	if value == "" {
+		return productType == "GOODS", true
+	}
+	switch normalizeCutoverBoolComparable(value) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func validateFixedAssetInvoiceConsistency(
+	report *BundleValidationReport,
+	files []parsedFile,
+	invoiceTargets map[string]cutoverInvoiceAllocationTarget,
+) {
+	if len(invoiceTargets) == 0 {
+		return
+	}
+	purchaseCostTotals := map[string]decimal.Decimal{}
+	for _, file := range files {
+		if file.kind != KindFixedAssets {
+			continue
+		}
+		for _, row := range file.rows {
+			target, sourceField, sourceValue, ok := cutoverFixedAssetInvoiceTarget(invoiceTargets, row)
+			if !ok {
+				continue
+			}
+			if sourceField == "invoice_number" && target.invoiceCount > 1 {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindFixedAssets,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      sourceField,
+					Value:      sourceValue,
+					TargetKind: target.targetKind,
+					Message:    fmt.Sprintf("invoice_number %q matched multiple imported invoices; use invoice_id for fixed asset source invoice", sourceValue),
+				})
+				continue
+			}
+			if hasFixedAssetInvoiceTypeMismatch(report, file, row, target, sourceField, sourceValue) {
+				continue
+			}
+			if hasFixedAssetInvoiceSupplierMismatch(report, file, row, target) {
+				continue
+			}
+			if hasFixedAssetBeforeInvoiceIssueDate(report, file, row, target) {
+				continue
+			}
+			purchaseCost, ok := cutoverFixedAssetPurchaseCost(row)
+			if !ok {
+				continue
+			}
+			nextTotal := purchaseCostTotals[target.key].Add(purchaseCost)
+			purchaseCostTotals[target.key] = nextTotal
+			if nextTotal.GreaterThan(target.total) {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindFixedAssets,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      "purchase_cost",
+					Value:      purchaseCost.String(),
+					TargetKind: target.targetKind,
+					Message: fmt.Sprintf(
+						"fixed asset purchase costs for source invoice %q exceed imported invoice total: purchase_costs=%s invoice_total=%s",
+						target.display,
+						nextTotal.String(),
+						target.total.String(),
+					),
+				})
+			}
+		}
+	}
+}
+
+func cutoverFixedAssetInvoiceTarget(
+	targets map[string]cutoverInvoiceAllocationTarget,
+	row parsedRow,
+) (cutoverInvoiceAllocationTarget, string, string, bool) {
+	if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
+		target, ok := targets[cutoverInvoiceAllocationTargetKey("invoice_id", id)]
+		return target, "invoice_id", id, ok
+	}
+	if number := strings.TrimSpace(row.values["invoice_number"]); number != "" {
+		target, ok := targets[cutoverInvoiceAllocationTargetKey("invoice_number", number)]
+		return target, "invoice_number", number, ok
+	}
+	return cutoverInvoiceAllocationTarget{}, "", "", false
+}
+
+func hasFixedAssetInvoiceTypeMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+	sourceField string,
+	sourceValue string,
+) bool {
+	invoiceType := strings.ToUpper(strings.TrimSpace(target.invoiceType))
+	if invoiceType == "" || invoiceType == "PURCHASE" {
+		return false
+	}
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindFixedAssets,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      sourceField,
+		Value:      sourceValue,
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"fixed asset source invoice %q is %s; expected PURCHASE invoice",
+			target.display,
+			invoiceType,
+		),
+	})
+	return true
+}
+
+func hasFixedAssetInvoiceSupplierMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	if len(target.contactReferences) == 0 {
+		return false
+	}
+	supplierReferences := cutoverSupplierContactReferencesFromRow(row)
+	if len(supplierReferences) == 0 {
+		return false
+	}
+
+	for _, field := range cutoverContactReferenceFields {
+		supplierReference, supplierHasField := supplierReferences[field]
+		targetReference, targetHasField := target.contactReferences[field]
+		if !supplierHasField || !targetHasField {
+			continue
+		}
+		if supplierReference.normalized == targetReference.normalized {
+			continue
+		}
+		sourceField := cutoverSupplierContactSourceField(field)
+		report.addIssue(ValidationIssue{
+			Severity:   SeverityError,
+			Kind:       KindFixedAssets,
+			FileName:   file.fileName,
+			Row:        row.number,
+			Field:      sourceField,
+			Value:      supplierReference.display,
+			TargetKind: target.targetKind,
+			Message: fmt.Sprintf(
+				"fixed asset %s %q does not match imported invoice %q %s %q",
+				sourceField,
+				supplierReference.display,
+				target.display,
+				field,
+				targetReference.display,
+			),
+		})
+		return true
+	}
+	return false
+}
+
+func hasFixedAssetBeforeInvoiceIssueDate(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	if !target.issueDateSpecified {
+		return false
+	}
+	purchaseDate, ok := parseCutoverDateOrRFC3339(row.values["purchase_date"])
+	if !ok || purchaseDate.IsZero() {
+		return false
+	}
+	if !purchaseDate.Before(target.issueDate) {
+		return false
+	}
+	value := strings.TrimSpace(row.values["purchase_date"])
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindFixedAssets,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "purchase_date",
+		Value:      value,
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"fixed asset purchase_date %q cannot be before imported source invoice %q issue_date %q",
+			value,
+			target.display,
+			target.issueDate.Format("2006-01-02"),
+		),
+	})
+	return true
+}
+
+func cutoverFixedAssetPurchaseCost(row parsedRow) (decimal.Decimal, bool) {
+	purchaseCost, issue := parseCutoverRequiredDecimal(row.values["purchase_cost"], "purchase_cost")
+	if issue != nil || purchaseCost.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, false
+	}
+	return purchaseCost, true
+}
+
+type payrollTSDHistoryComparableRow struct {
+	fileName string
+	row      int
+	values   map[string]decimal.Decimal
+	raw      map[string]string
+}
+
+type payrollTSDHistoryAmountField struct {
+	payrollField string
+	tsdField     string
+}
+
+var payrollTSDHistoryAmountFields = []payrollTSDHistoryAmountField{
+	{payrollField: "gross_salary", tsdField: "gross_payment"},
+	{payrollField: "taxable_income", tsdField: "taxable_amount"},
+	{payrollField: "income_tax", tsdField: "income_tax"},
+	{payrollField: "social_tax", tsdField: "social_tax"},
+	{payrollField: "unemployment_insurance_employee", tsdField: "unemployment_insurance_employee"},
+	{payrollField: "unemployment_insurance_employer", tsdField: "unemployment_insurance_employer"},
+	{payrollField: "funded_pension", tsdField: "funded_pension"},
+}
+
+func validatePayrollTSDHistoryConsistency(report *BundleValidationReport, files []parsedFile) {
+	payrollRows := map[string]payrollTSDHistoryComparableRow{}
+	duplicatePayrollKeys := map[string]bool{}
+	for _, file := range files {
+		if file.kind != KindPayrollHistory {
+			continue
+		}
+		for _, row := range file.rows {
+			key, _, ok := payrollTSDHistoryCrossFileKey(row)
+			if !ok {
+				continue
+			}
+			values, raw := payrollTSDHistoryAmounts(row, true)
+			if len(values) == 0 {
+				continue
+			}
+			if _, exists := payrollRows[key]; exists {
+				duplicatePayrollKeys[key] = true
+				continue
+			}
+			payrollRows[key] = payrollTSDHistoryComparableRow{
+				fileName: file.fileName,
+				row:      row.number,
+				values:   values,
+				raw:      raw,
+			}
+		}
+	}
+	if len(payrollRows) == 0 {
+		return
+	}
+	duplicateTSDKeys := payrollTSDHistoryDuplicateKeys(files, KindTSDHistory)
+
+	for _, file := range files {
+		if file.kind != KindTSDHistory {
+			continue
+		}
+		for _, row := range file.rows {
+			key, display, ok := payrollTSDHistoryCrossFileKey(row)
+			if !ok {
+				continue
+			}
+			if duplicatePayrollKeys[key] || duplicateTSDKeys[key] {
+				continue
+			}
+			payrollRow, ok := payrollRows[key]
+			if !ok {
+				continue
+			}
+			tsdValues, tsdRaw := payrollTSDHistoryAmounts(row, false)
+			for _, field := range payrollTSDHistoryAmountFields {
+				payrollValue, payrollOK := payrollRow.values[field.payrollField]
+				tsdValue, tsdOK := tsdValues[field.tsdField]
+				if !payrollOK || !tsdOK || payrollValue.Equal(tsdValue) {
+					continue
+				}
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindTSDHistory,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      field.tsdField,
+					Value:      tsdRaw[field.tsdField],
+					TargetKind: KindPayrollHistory,
+					Message: fmt.Sprintf(
+						"%s must match payroll_history %s for %s; TSD has %s and payroll row %d in %s has %s",
+						field.tsdField,
+						field.payrollField,
+						display,
+						tsdRaw[field.tsdField],
+						payrollRow.row,
+						payrollRow.fileName,
+						payrollRow.raw[field.payrollField],
+					),
+				})
+			}
+		}
+	}
+}
+
+func payrollTSDHistoryDuplicateKeys(files []parsedFile, kind FileKind) map[string]bool {
+	seen := map[string]struct{}{}
+	duplicates := map[string]bool{}
+	for _, file := range files {
+		if file.kind != kind {
+			continue
+		}
+		for _, row := range file.rows {
+			key, _, ok := payrollTSDHistoryCrossFileKey(row)
+			if !ok {
+				continue
+			}
+			if _, exists := seen[key]; exists {
+				duplicates[key] = true
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+	}
+	return duplicates
+}
+
+func payrollTSDHistoryCrossFileKey(row parsedRow) (string, string, bool) {
+	periodKey, _, ok := duplicatePeriodKey(row.values, "period_year", "period_month")
+	if !ok {
+		return "", "", false
+	}
+	employeeKey, employeeDisplay, ok := duplicateEmployeeKey(row.values)
+	if !ok {
+		return "", "", false
+	}
+	periodDisplay := payrollTSDHistoryPeriodDisplay(row.values, periodKey)
+	return strings.Join([]string{periodKey, employeeKey}, "\x00"), fmt.Sprintf("employee %s in period %s", employeeDisplay, periodDisplay), true
+}
+
+func payrollTSDHistoryPeriodDisplay(values map[string]string, fallback string) string {
+	month, err := strconv.Atoi(strings.TrimSpace(values["period_month"]))
+	if err != nil {
+		return fallback
+	}
+	return fmt.Sprintf("%s-%02d", normalizedCutoverIntegerPart(values["period_year"]), month)
+}
+
+func payrollTSDHistoryAmounts(row parsedRow, payroll bool) (map[string]decimal.Decimal, map[string]string) {
+	values := map[string]decimal.Decimal{}
+	raw := map[string]string{}
+	for _, field := range payrollTSDHistoryAmountFields {
+		name := field.tsdField
+		if payroll {
+			name = field.payrollField
+		}
+		amount, display, ok := payrollTSDHistoryAmount(row, name)
+		if !ok {
+			continue
+		}
+		values[name] = amount
+		raw[name] = display
+	}
+	return values, raw
+}
+
+func payrollTSDHistoryAmount(row parsedRow, field string) (decimal.Decimal, string, bool) {
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return decimal.Zero, "", false
+	}
+	amount, issue := parseCutoverRequiredImportDecimal(value, field)
+	if issue != nil {
+		return decimal.Zero, "", false
+	}
+	return amount, value, true
+}
+
+func validateImportedInvoiceAmountPaidConsistency(report *BundleValidationReport, files []parsedFile) {
+	for _, file := range files {
+		if file.kind != KindInvoices || !fileHasHeaders(file, "amount_paid") {
+			continue
+		}
+		for _, group := range cutoverInvoiceGroups(file) {
+			total, ok := cutoverInvoiceGroupTotal(group.rows)
+			if !ok {
+				continue
+			}
+			amountPaid, amountPaidRow, amountPaidSpecified := cutoverInvoiceGroupAmountPaid(group)
+			if amountPaidSpecified && amountPaid.GreaterThan(total) {
+				report.addIssue(ValidationIssue{
+					Severity: SeverityError,
+					Kind:     KindInvoices,
+					FileName: file.fileName,
+					Row:      amountPaidRow.number,
+					Field:    "amount_paid",
+					Value:    amountPaid.String(),
+					Message: fmt.Sprintf(
+						"amount_paid for invoice %q exceeds imported invoice total: amount_paid=%s invoice_total=%s",
+						group.display,
+						amountPaid.String(),
+						total.String(),
+					),
+				})
+				continue
+			}
+			status, statusRow, statusSpecified := cutoverInvoiceGroupStatus(group)
+			if !statusSpecified {
+				continue
+			}
+			validateImportedInvoiceAmountPaidStatus(report, file, group, total, amountPaid, amountPaidRow, amountPaidSpecified, status, statusRow)
+		}
+	}
+}
+
+func validateImportedInvoiceAmountPaidStatus(
+	report *BundleValidationReport,
+	file parsedFile,
+	group cutoverInvoiceGroup,
+	total decimal.Decimal,
+	amountPaid decimal.Decimal,
+	amountPaidRow parsedRow,
+	amountPaidSpecified bool,
+	status string,
+	statusRow parsedRow,
+) {
+	row := statusRow
+	value := ""
+	if amountPaidSpecified {
+		row = amountPaidRow
+		value = amountPaid.String()
+	}
+
+	switch status {
+	case "DRAFT", "SENT", "OVERDUE", "VOIDED":
+		if amountPaid.IsZero() {
+			return
+		}
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     KindInvoices,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "amount_paid",
+			Value:    value,
+			Message:  fmt.Sprintf("amount_paid must be zero when status is %s", status),
+		})
+	case "PARTIALLY_PAID":
+		if amountPaidSpecified && amountPaid.GreaterThan(decimal.Zero) && amountPaid.LessThan(total) {
+			return
+		}
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     KindInvoices,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "amount_paid",
+			Value:    value,
+			Message: fmt.Sprintf(
+				"amount_paid for invoice %q must be greater than zero and less than imported invoice total when status is PARTIALLY_PAID",
+				group.display,
+			),
+		})
+	case "PAID":
+		if !amountPaidSpecified || amountPaid.Equal(total) {
+			return
+		}
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     KindInvoices,
+			FileName: file.fileName,
+			Row:      amountPaidRow.number,
+			Field:    "amount_paid",
+			Value:    amountPaid.String(),
+			Message: fmt.Sprintf(
+				"amount_paid for invoice %q must equal imported invoice total when status is PAID: amount_paid=%s invoice_total=%s",
+				group.display,
+				amountPaid.String(),
+				total.String(),
+			),
+		})
+	}
+}
+
+func buildCutoverInvoiceAllocationTargets(files []parsedFile, eInvoiceContactMode EInvoiceContactMode) map[string]cutoverInvoiceAllocationTarget {
+	targets := map[string]cutoverInvoiceAllocationTarget{}
+	for _, file := range files {
+		if file.kind != KindInvoices {
+			if file.kind == KindEInvoices {
+				for _, row := range file.rows {
+					total, ok := cutoverEInvoiceRowTotal(row)
+					if !ok {
+						continue
+					}
+					contactReferences := cutoverEInvoicePaymentContactReferences(row, eInvoiceContactMode)
+					issueDate, issueDateSpecified := cutoverInvoiceIssueDateFromRow(row)
+					addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_number", row.values["invoice_number"], total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], "", issueDate, issueDateSpecified, contactReferences)
+					if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
+						addCutoverInvoiceAllocationTarget(targets, KindEInvoices, "invoice_id", id, total, decimal.Zero, false, row.values["currency"], row.values["invoice_type"], "", issueDate, issueDateSpecified, contactReferences)
+					}
+				}
+			}
+			continue
+		}
+		for _, group := range cutoverInvoiceGroups(file) {
+			total, ok := cutoverInvoiceGroupTotal(group.rows)
+			if !ok {
+				continue
+			}
+			amountPaid, _, amountPaidSpecified := cutoverInvoiceGroupAmountPaid(group)
+			status, _, statusSpecified := cutoverInvoiceGroupStatus(group)
+			if !statusSpecified {
+				status = ""
+			}
+			addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_number", group.number, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, status, group.issueDate, group.issueDateSpecified, group.contactReferences)
+			if id := strings.TrimSpace(group.id); id != "" {
+				addCutoverInvoiceAllocationTarget(targets, KindInvoices, "invoice_id", id, total, amountPaid, amountPaidSpecified, group.currency, group.invoiceType, status, group.issueDate, group.issueDateSpecified, group.contactReferences)
+			}
+		}
+	}
+	return targets
+}
+
+func cutoverEInvoiceRowTotal(row parsedRow) (decimal.Decimal, bool) {
+	total, issue := parseCutoverRequiredImportDecimal(row.values["invoice_total"], "invoice_total")
+	if issue != nil || total.IsZero() || total.IsNegative() {
+		return decimal.Zero, false
+	}
+	return total, true
+}
+
+func cutoverEInvoiceTotal(invoice einvoice.Invoice) (decimal.Decimal, bool) {
+	total := decimal.Zero
+	for _, line := range invoice.Lines {
+		if line.Quantity.LessThanOrEqual(decimal.Zero) ||
+			line.UnitPrice.IsNegative() ||
+			line.DiscountPercent.IsNegative() ||
+			line.DiscountPercent.GreaterThan(decimal.NewFromInt(100)) ||
+			line.VATRate.IsNegative() {
+			return decimal.Zero, false
+		}
+
+		lineSubtotal := line.Quantity.Mul(line.UnitPrice)
+		discountAmount := lineSubtotal.Mul(line.DiscountPercent).Div(decimal.NewFromInt(100))
+		lineSubtotal = lineSubtotal.Sub(discountAmount).Round(2)
+		lineVAT := lineSubtotal.Mul(line.VATRate).Div(decimal.NewFromInt(100)).Round(2)
+		total = total.Add(lineSubtotal).Add(lineVAT)
+	}
+	if total.IsZero() {
+		return decimal.Zero, false
+	}
+	return total, true
+}
+
+type cutoverInvoiceGroup struct {
+	id                 string
+	number             string
+	currency           string
+	invoiceType        string
+	issueDate          time.Time
+	issueDateSpecified bool
+	contactReferences  cutoverContactReferences
+	display            string
+	rows               []parsedRow
+}
+
+func cutoverInvoiceGroups(file parsedFile) []cutoverInvoiceGroup {
+	groups := map[string]*cutoverInvoiceGroup{}
+	groupOrder := []string{}
+	spec := groupedDocumentPreflightSpecs[KindInvoices]
+	for _, row := range file.rows {
+		key, display, ok := groupedDocumentKey(row, spec)
+		if !ok {
+			continue
+		}
+		group, exists := groups[key]
+		if !exists {
+			issueDate, issueDateSpecified := cutoverInvoiceIssueDateFromRow(row)
+			group = &cutoverInvoiceGroup{
+				id:                 strings.TrimSpace(row.values["id"]),
+				number:             strings.TrimSpace(row.values["invoice_number"]),
+				currency:           cutoverInvoiceRowCurrency(row),
+				invoiceType:        normalizeCutoverInvoiceType(row.values["invoice_type"]),
+				issueDate:          issueDate,
+				issueDateSpecified: issueDateSpecified,
+				contactReferences:  cutoverContactReferencesFromRow(row),
+				display:            display,
+			}
+			groups[key] = group
+			groupOrder = append(groupOrder, key)
+		}
+		group.rows = append(group.rows, row)
+	}
+
+	result := make([]cutoverInvoiceGroup, 0, len(groupOrder))
+	for _, key := range groupOrder {
+		result = append(result, *groups[key])
+	}
+	return result
+}
+
+func cutoverInvoiceGroupAmountPaid(group cutoverInvoiceGroup) (decimal.Decimal, parsedRow, bool) {
+	for _, row := range group.rows {
+		value := strings.TrimSpace(row.values["amount_paid"])
+		if value == "" {
+			continue
+		}
+		amount, issue := parseCutoverRequiredImportDecimal(value, "amount_paid")
+		if issue != nil || amount.IsNegative() {
+			return decimal.Zero, parsedRow{}, false
+		}
+		return amount, row, true
+	}
+	return decimal.Zero, parsedRow{}, false
+}
+
+func cutoverInvoiceGroupStatus(group cutoverInvoiceGroup) (string, parsedRow, bool) {
+	for _, row := range group.rows {
+		status := cutoverInvoiceRowStatus(row)
+		if status != "" {
+			return status, row, true
+		}
+		if strings.TrimSpace(row.values["status"]) != "" {
+			return "", parsedRow{}, false
+		}
+	}
+	return "", parsedRow{}, false
+}
+
+func cutoverInvoiceRowStatus(row parsedRow) string {
+	value := strings.TrimSpace(row.values["status"])
+	if value == "" {
+		return ""
+	}
+	status := normalizeCutoverInvoiceStatus(value)
+	switch status {
+	case "DRAFT", "SENT", "PARTIALLY_PAID", "PAID", "OVERDUE", "VOIDED":
+		return status
+	default:
+		return ""
+	}
+}
+
+func cutoverInvoiceGroupTotal(rows []parsedRow) (decimal.Decimal, bool) {
+	total := decimal.Zero
+	for _, row := range rows {
+		lineTotal, ok := cutoverInvoiceLineTotal(row)
+		if !ok {
+			return decimal.Zero, false
+		}
+		total = total.Add(lineTotal)
+	}
+	if total.IsZero() {
+		return decimal.Zero, false
+	}
+	return total, true
+}
+
+func cutoverInvoiceLineTotal(row parsedRow) (decimal.Decimal, bool) {
+	quantity, issue := parseCutoverRequiredImportDecimal(row.values["quantity"], "quantity")
+	if issue != nil || quantity.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, false
+	}
+	unitPrice, issue := parseCutoverRequiredImportDecimal(row.values["unit_price"], "unit_price")
+	if issue != nil || unitPrice.IsNegative() {
+		return decimal.Zero, false
+	}
+	discountPercent := decimal.Zero
+	if strings.TrimSpace(row.values["discount_percent"]) != "" {
+		parsed, issue := parseCutoverRequiredImportDecimal(row.values["discount_percent"], "discount_percent")
+		if issue != nil || parsed.IsNegative() || parsed.GreaterThan(decimal.NewFromInt(100)) {
+			return decimal.Zero, false
+		}
+		discountPercent = parsed
+	}
+	vatRate, issue := parseCutoverRequiredImportDecimal(row.values["vat_rate"], "vat_rate")
+	if issue != nil || vatRate.IsNegative() {
+		return decimal.Zero, false
+	}
+
+	lineSubtotal := quantity.Mul(unitPrice)
+	discountAmount := lineSubtotal.Mul(discountPercent).Div(decimal.NewFromInt(100))
+	lineSubtotal = lineSubtotal.Sub(discountAmount).Round(2)
+	if cutoverInvoiceLineReverseCharge(row) {
+		return lineSubtotal, true
+	}
+	lineVAT := lineSubtotal.Mul(vatRate).Div(decimal.NewFromInt(100)).Round(2)
+	return lineSubtotal.Add(lineVAT), true
+}
+
+func cutoverInvoiceLineReverseCharge(row parsedRow) bool {
+	if strings.TrimSpace(row.values["reverse_charge"]) != "" {
+		return normalizeCutoverBoolComparable(row.values["reverse_charge"]) == "true"
+	}
+	switch normalizedValue(row.values["vat_treatment"]) {
+	case "reverse_charge", "reversecharge", "reverse charge", "rc":
+		return true
+	default:
+		return false
+	}
+}
+
+func cutoverInvoiceRowCurrency(row parsedRow) string {
+	value, ok := groupedComparableFieldValue(row, groupedFieldSpec{
+		field:        "currency",
+		defaultValue: "EUR",
+		normalize:    normalizeCutoverUpper,
+	})
+	if !ok {
+		return ""
+	}
+	return value.normalized
+}
+
+func hasPaymentInvoiceCurrencyMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	targetCurrency := strings.ToUpper(strings.TrimSpace(target.currency))
+	if targetCurrency == "" {
+		return false
+	}
+	paymentCurrency := strings.ToUpper(strings.TrimSpace(row.values["currency"]))
+	if paymentCurrency == "" {
+		paymentCurrency = "EUR"
+	}
+	if paymentCurrency == targetCurrency {
+		return false
+	}
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindPayments,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "currency",
+		Value:      paymentCurrency,
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"payment currency %q does not match imported invoice %q currency %q",
+			paymentCurrency,
+			target.display,
+			targetCurrency,
+		),
+	})
+	return true
+}
+
+func hasPaymentInvoiceTypeMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	invoiceType := strings.ToUpper(strings.TrimSpace(target.invoiceType))
+	expectedPaymentType := ""
+	switch invoiceType {
+	case "SALES":
+		expectedPaymentType = "RECEIVED"
+	case "PURCHASE":
+		expectedPaymentType = "MADE"
+	default:
+		return false
+	}
+
+	paymentType := strings.ToUpper(strings.TrimSpace(row.values["payment_type"]))
+	switch paymentType {
+	case "", expectedPaymentType:
+		return false
+	case "RECEIVED", "MADE":
+	default:
+		return false
+	}
+
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindPayments,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "payment_type",
+		Value:      paymentType,
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"payment_type %q does not match imported %s invoice %q; expected %s",
+			paymentType,
+			strings.ToLower(invoiceType),
+			target.display,
+			expectedPaymentType,
+		),
+	})
+	return true
+}
+
+func hasPaymentInvoiceContactMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	if len(target.contactReferences) == 0 {
+		return false
+	}
+	paymentReferences := cutoverContactReferencesFromRow(row)
+	if len(paymentReferences) == 0 {
+		return false
+	}
+
+	for _, field := range cutoverContactReferenceFields {
+		paymentReference, paymentHasField := paymentReferences[field]
+		targetReference, targetHasField := target.contactReferences[field]
+		if !paymentHasField || !targetHasField {
+			continue
+		}
+		if paymentReference.normalized == targetReference.normalized {
+			continue
+		}
+		report.addIssue(ValidationIssue{
+			Severity:   SeverityError,
+			Kind:       KindPayments,
+			FileName:   file.fileName,
+			Row:        row.number,
+			Field:      field,
+			Value:      paymentReference.display,
+			TargetKind: target.targetKind,
+			Message: fmt.Sprintf(
+				"payment %s %q does not match imported invoice %q %s %q",
+				field,
+				paymentReference.display,
+				target.display,
+				field,
+				targetReference.display,
+			),
+		})
+		return true
+	}
+	return false
+}
+
+func hasPaymentBeforeInvoiceIssueDate(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	if !target.issueDateSpecified {
+		return false
+	}
+	paymentDate, ok := parseCutoverDateOrRFC3339(row.values["payment_date"])
+	if !ok || paymentDate.IsZero() {
+		return false
+	}
+	if !paymentDate.Before(target.issueDate) {
+		return false
+	}
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindPayments,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "payment_date",
+		Value:      strings.TrimSpace(row.values["payment_date"]),
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"payment_date %q cannot be before imported invoice %q issue_date %q",
+			strings.TrimSpace(row.values["payment_date"]),
+			target.display,
+			target.issueDate.Format("2006-01-02"),
+		),
+	})
+	return true
+}
+
+func hasPaymentInvoiceStatusMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverInvoiceAllocationTarget,
+) bool {
+	status := strings.ToUpper(strings.TrimSpace(target.status))
+	if status != "DRAFT" && status != "VOIDED" {
+		return false
+	}
+	field := "invoice_number"
+	value := strings.TrimSpace(row.values[field])
+	if invoiceID := strings.TrimSpace(row.values["invoice_id"]); invoiceID != "" {
+		field = "invoice_id"
+		value = invoiceID
+	}
+	if value == "" {
+		value = target.display
+	}
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       KindPayments,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      field,
+		Value:      value,
+		TargetKind: target.targetKind,
+		Message: fmt.Sprintf(
+			"payment allocation references imported invoice %q with status %s; payments cannot be allocated to draft or voided invoices",
+			target.display,
+			status,
+		),
+	})
+	return true
+}
+
+func cutoverContactReferencesFromRow(row parsedRow) cutoverContactReferences {
+	references := cutoverContactReferences{}
+	for _, field := range cutoverContactReferenceFields {
+		display := strings.TrimSpace(row.values[field])
+		if display == "" {
+			continue
+		}
+		references[field] = cutoverContactReference{
+			display:    display,
+			normalized: normalizedValue(display),
+		}
+	}
+	return references
+}
+
+func cutoverEInvoicePaymentContactReferences(row parsedRow, mode EInvoiceContactMode) cutoverContactReferences {
+	switch normalizeCutoverInvoiceType(row.values["invoice_type"]) {
+	case "SALES":
+		return cutoverEInvoiceBuyerContactReferencesFromRow(row)
+	case "PURCHASE":
+		return cutoverContactReferencesFromRow(row)
+	default:
+		if mode == EInvoiceContactModeCustomer {
+			return cutoverEInvoiceBuyerContactReferencesFromRow(row)
+		}
+		return cutoverContactReferencesFromRow(row)
+	}
+}
+
+func cutoverEInvoiceBuyerContactReferencesFromRow(row parsedRow) cutoverContactReferences {
+	fieldMap := map[string]string{
+		"buyer_reg_code":      "contact_reg_code",
+		"buyer_vat_number":    "contact_vat_number",
+		"buyer_contact_email": "contact_email",
+		"buyer_contact_name":  "contact_name",
+	}
+	references := cutoverContactReferences{}
+	for sourceField, contactField := range fieldMap {
+		display := strings.TrimSpace(row.values[sourceField])
+		if display == "" {
+			continue
+		}
+		references[contactField] = cutoverContactReference{
+			display:    display,
+			normalized: normalizedValue(display),
+		}
+	}
+	return references
+}
+
+func cutoverSupplierContactReferencesFromRow(row parsedRow) cutoverContactReferences {
+	fieldMap := []struct {
+		source string
+		target string
+	}{
+		{source: "supplier_id", target: "contact_id"},
+		{source: "supplier_code", target: "contact_code"},
+		{source: "supplier_reg_code", target: "contact_reg_code"},
+		{source: "supplier_vat_number", target: "contact_vat_number"},
+		{source: "supplier_email", target: "contact_email"},
+		{source: "supplier_name", target: "contact_name"},
+	}
+	references := cutoverContactReferences{}
+	for _, field := range fieldMap {
+		display := strings.TrimSpace(row.values[field.source])
+		if display == "" {
+			continue
+		}
+		references[field.target] = cutoverContactReference{
+			display:    display,
+			normalized: normalizedValue(display),
+		}
+	}
+	return references
+}
+
+func cutoverSupplierContactSourceField(contactField string) string {
+	switch contactField {
+	case "contact_id":
+		return "supplier_id"
+	case "contact_code":
+		return "supplier_code"
+	case "contact_reg_code":
+		return "supplier_reg_code"
+	case "contact_vat_number":
+		return "supplier_vat_number"
+	case "contact_email":
+		return "supplier_email"
+	case "contact_name":
+		return "supplier_name"
+	default:
+		return contactField
+	}
+}
+
+func copyCutoverContactReferences(references cutoverContactReferences) cutoverContactReferences {
+	if len(references) == 0 {
+		return nil
+	}
+	copied := make(cutoverContactReferences, len(references))
+	for field, reference := range references {
+		copied[field] = reference
+	}
+	return copied
+}
+
+func addCutoverInvoiceAllocationTarget(
+	targets map[string]cutoverInvoiceAllocationTarget,
+	targetKind FileKind,
+	field string,
+	value string,
+	total decimal.Decimal,
+	importedAmountPaid decimal.Decimal,
+	amountPaidSpecified bool,
+	currency string,
+	invoiceType string,
+	status string,
+	issueDate time.Time,
+	issueDateSpecified bool,
+	contactReferences cutoverContactReferences,
+) {
+	display := strings.TrimSpace(value)
+	if display == "" {
+		return
+	}
+	key := cutoverInvoiceAllocationTargetKey(field, display)
+	target := targets[key]
+	if target.key == "" {
+		target.key = key
+		target.display = display
+		target.total = total
+		target.importedAmountPaid = importedAmountPaid
+		target.amountPaidSpecified = amountPaidSpecified
+		target.currency = strings.ToUpper(strings.TrimSpace(currency))
+		target.invoiceType = strings.ToUpper(strings.TrimSpace(invoiceType))
+		target.status = strings.ToUpper(strings.TrimSpace(status))
+		target.issueDate = issueDate
+		target.issueDateSpecified = issueDateSpecified
+		target.contactReferences = copyCutoverContactReferences(contactReferences)
+		target.targetKind = targetKind
+	}
+	target.invoiceCount++
+	targets[key] = target
+}
+
+func cutoverPaymentAllocationTarget(
+	targets map[string]cutoverInvoiceAllocationTarget,
+	row parsedRow,
+) (cutoverInvoiceAllocationTarget, bool) {
+	if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
+		target, ok := targets[cutoverInvoiceAllocationTargetKey("invoice_id", id)]
+		return target, ok
+	}
+	if number := strings.TrimSpace(row.values["invoice_number"]); number != "" {
+		target, ok := targets[cutoverInvoiceAllocationTargetKey("invoice_number", number)]
+		return target, ok
+	}
+	return cutoverInvoiceAllocationTarget{}, false
+}
+
+func cutoverPaymentAllocationAmount(row parsedRow) (decimal.Decimal, bool) {
+	if allocationValue := strings.TrimSpace(row.values["allocation_amount"]); allocationValue != "" {
+		amount, issue := parseCutoverPositiveDecimal(allocationValue, "allocation_amount")
+		return amount, issue == nil
+	}
+	amount, issue := parseCutoverPositiveDecimal(row.values["amount"], "amount")
+	return amount, issue == nil
+}
+
+func cutoverInvoiceAllocationTargetKey(field, value string) string {
+	return field + ":" + normalizedValue(value)
+}
+
+func cutoverInvoiceIssueDateFromRow(row parsedRow) (time.Time, bool) {
+	value := strings.TrimSpace(row.values["issue_date"])
+	if value == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return normalizeCutoverDateOnly(parsed), true
+}
+
+func groupedDocumentKey(row parsedRow, spec groupedDocumentSpec) (string, string, bool) {
+	keyParts := make([]string, 0, len(spec.key))
+	displayParts := make([]string, 0, len(spec.key))
+	for _, field := range spec.key {
+		value, ok := groupedComparableFieldValue(row, field)
+		if !ok || value.normalized == "" {
+			return "", "", false
+		}
+		keyParts = append(keyParts, normalizedValue(value.normalized))
+		displayParts = append(displayParts, value.display)
+	}
+	return strings.Join(keyParts, "\x00"), strings.Join(displayParts, "/"), true
+}
+
+func groupedComparableFieldValue(row parsedRow, field groupedFieldSpec) (groupedComparableValue, bool) {
+	display := strings.TrimSpace(row.values[field.field])
+	value := display
+	if value == "" && field.defaultFrom != "" {
+		value = strings.TrimSpace(row.values[field.defaultFrom])
+		display = value
+	}
+	if value == "" && field.defaultValue != "" {
+		value = field.defaultValue
+		display = field.defaultValue
+	}
+	if value == "" && field.optional {
+		return groupedComparableValue{}, false
+	}
+
+	normalize := field.normalize
+	if normalize == nil {
+		normalize = strings.TrimSpace
+	}
+	return groupedComparableValue{
+		normalized: normalize(value),
+		display:    display,
+	}, true
+}
+
+func normalizeCutoverInvoiceType(value string) string {
+	normalized := normalizedValue(value)
+	if canonical, ok := cutoverInvoiceTypeAliases[normalized]; ok {
+		return canonical
+	}
+	return normalizeCutoverUpper(value)
+}
+
+func normalizeCutoverOptionalInvoiceType(value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	normalized := normalizeCutoverInvoiceType(value)
+	switch normalized {
+	case "SALES", "PURCHASE", "CREDIT_NOTE":
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("invalid e_invoice_invoice_type %q", value)
+	}
+}
+
+func cutoverEInvoiceInvoiceType(rawType, requestedType string) string {
+	if requestedType != "" {
+		return requestedType
+	}
+	switch normalizedValue(rawType) {
+	case "cre", "credit", "credit_note", "creditnote":
+		return "CREDIT_NOTE"
+	default:
+		return "PURCHASE"
+	}
+}
+
+func normalizeCutoverInvoiceStatus(value string) string {
+	normalized := normalizedValue(value)
+	if canonical, ok := cutoverInvoiceStatusAliases[normalized]; ok {
+		return canonical
+	}
+	return normalizeCutoverUpper(value)
+}
+
+func normalizeCutoverQuoteStatus(value string) string {
+	normalized := normalizedValue(value)
+	if canonical, ok := cutoverQuoteStatusAliases[normalized]; ok {
+		return canonical
+	}
+	return normalizeCutoverUpper(value)
+}
+
+func normalizeCutoverOrderStatus(value string) string {
+	normalized := normalizedValue(value)
+	if canonical, ok := cutoverOrderStatusAliases[normalized]; ok {
+		return canonical
+	}
+	return normalizeCutoverUpper(value)
+}
+
+func normalizeCutoverUpper(value string) string {
+	return strings.ToUpper(strings.TrimSpace(value))
+}
+
+func normalizeCutoverDate(value string) string {
+	trimmed := strings.TrimSpace(value)
+	parsed, err := time.Parse("2006-01-02", trimmed)
+	if err != nil {
+		return trimmed
+	}
+	return parsed.Format("2006-01-02")
+}
+
+func normalizeCutoverDecimalComparable(value string) string {
+	trimmed := strings.TrimSpace(value)
+	parsed, err := parseCutoverDecimal(trimmed, "amount")
+	if err != nil {
+		return trimmed
+	}
+	return parsed.String()
+}
+
+func normalizeCutoverIntComparable(value string) string {
+	trimmed := strings.TrimSpace(value)
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return trimmed
+	}
+	return strconv.Itoa(parsed)
+}
+
+func normalizeCutoverBoolComparable(value string) string {
+	switch normalizedValue(value) {
+	case "true", "t", "yes", "y", "1":
+		return "true"
+	case "false", "f", "no", "n", "0":
+		return "false"
+	default:
+		return strings.TrimSpace(value)
+	}
+}
+
+func validateAccountingPreflight(report *BundleValidationReport, file parsedFile) {
+	switch file.kind {
+	case KindAccounts:
+		checkAccountRows(report, file)
+	case KindContacts:
+		checkContactRows(report, file)
+	case KindEmployees:
+		checkEmployeeRows(report, file)
+	case KindPayrollHistory:
+		checkPayrollHistoryRows(report, file)
+	case KindLeaveBalances:
+		checkLeaveBalanceRows(report, file)
+	case KindTSDHistory:
+		checkTSDHistoryRows(report, file)
+	case KindKMDHistory:
+		checkKMDHistoryRows(report, file)
+	case KindInvoices, KindQuotes, KindOrders, KindRecurringInvoices:
+		checkCommercialDocumentRows(report, file)
+	case KindExpenses:
+		checkExpenseRows(report, file)
+	case KindPayments:
+		checkPaymentRows(report, file)
+	case KindBankAccounts:
+		checkBankAccountRows(report, file)
+	case KindBankTransactions:
+		checkBankTransactionRows(report, file)
+	case KindProductCategories:
+		checkProductCategoryRows(report, file)
+	case KindProducts:
+		checkProductRows(report, file)
+	case KindWarehouses:
+		checkWarehouseRows(report, file)
+	case KindStockAdjustments:
+		checkStockAdjustmentRows(report, file)
+	case KindFixedAssets:
+		checkFixedAssetRows(report, file)
+	case KindCostCenters:
+		checkCostCenterRows(report, file)
+	case KindCostAllocations:
+		checkCostAllocationRows(report, file)
+	case KindOpeningBalances:
+		checkOpeningBalanceRows(report, file)
+	case KindJournalEntries:
+		checkJournalEntryRows(report, file)
+	}
+}
+
+func checkContactRows(report *BundleValidationReport, file parsedFile) {
+	hasName := fileHasHeaders(file, "name")
+	for _, row := range file.rows {
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		checkContactType(report, file, row)
+		checkContactPaymentTerms(report, file, row)
+		checkContactCountryCode(report, file, row)
+		checkContactCreditLimit(report, file, row)
+	}
+}
+
+func checkContactType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "contact_type") {
+		return
+	}
+	value := strings.TrimSpace(row.values["contact_type"])
+	if _, ok := cutoverContactTypeAliases[normalizedValue(value)]; ok {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "contact_type",
+		Value:    value,
+		Message:  fmt.Sprintf("invalid contact_type %q", value),
+	})
+}
+
+func checkContactPaymentTerms(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "payment_terms_days") || strings.TrimSpace(row.values["payment_terms_days"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["payment_terms_days"])
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "payment_terms_days",
+			Value:    value,
+			Message:  "payment_terms_days must be a non-negative integer",
+		})
+	}
+}
+
+func checkContactCountryCode(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "country_code") {
+		return
+	}
+	value := strings.TrimSpace(row.values["country_code"])
+	if value == "" || len(value) == 2 {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "country_code",
+		Value:    value,
+		Message:  "country_code must be a 2-letter code",
+	})
+}
+
+func checkContactCreditLimit(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "credit_limit") {
+		return
+	}
+	value := strings.TrimSpace(row.values["credit_limit"])
+	if value == "" {
+		return
+	}
+	if _, err := decimal.NewFromString(normalizeCutoverDecimal(value)); err == nil {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "credit_limit",
+		Value:    value,
+		Message:  "credit_limit must be a decimal",
+	})
+}
+
+func checkEmployeeRows(report *BundleValidationReport, file parsedFile) {
+	hasFirstName := fileHasHeaders(file, "first_name")
+	hasLastName := fileHasHeaders(file, "last_name")
+	hasStartDate := fileHasHeaders(file, "start_date")
+	for _, row := range file.rows {
+		if hasFirstName {
+			checkRequiredCutoverField(report, file, row, "first_name")
+		}
+		if hasLastName {
+			checkRequiredCutoverField(report, file, row, "last_name")
+		}
+
+		var startDate time.Time
+		startOK := false
+		if hasStartDate {
+			startDate, startOK = checkEmployeeRequiredDate(report, file, row, "start_date")
+		}
+		endDate, endOK := checkEmployeeOptionalDate(report, file, row, "end_date")
+		if startOK && endOK && endDate.Before(startDate) {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "end_date",
+				Value:    strings.TrimSpace(row.values["end_date"]),
+				Message:  "end_date cannot be before start_date",
+			})
+		}
+
+		checkEmployeeEmploymentType(report, file, row)
+		checkEmployeeBool(report, file, row, "apply_basic_exemption")
+		checkEmployeeBool(report, file, row, "is_active")
+		checkEmployeeBasicExemptionAmount(report, file, row)
+		checkEmployeeFundedPensionRate(report, file, row)
+		baseSalaryProvided := checkEmployeeBaseSalary(report, file, row)
+		checkEmployeeSalaryEffectiveFrom(report, file, row, baseSalaryProvided)
+	}
+}
+
+func checkEmployeeEmploymentType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "employment_type") {
+		return
+	}
+	value := strings.TrimSpace(row.values["employment_type"])
+	key := strings.ReplaceAll(normalizedValue(value), "-", "_")
+	if _, ok := cutoverEmployeeEmploymentTypeAliases[key]; ok {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "employment_type",
+		Value:    value,
+		Message:  fmt.Sprintf("invalid employment_type %q", value),
+	})
+}
+
+func checkEmployeeBool(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	if _, ok := cutoverEmployeeBoolAliases[normalizedValue(value)]; ok {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    value,
+		Message:  fmt.Sprintf("%s must be true or false", field),
+	})
+}
+
+func checkEmployeeBasicExemptionAmount(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	amount, provided, ok := checkEmployeeOptionalDecimal(report, file, row, "basic_exemption_amount")
+	if !provided || !ok {
+		return
+	}
+	if amount.IsNegative() {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "basic_exemption_amount",
+			Value:    strings.TrimSpace(row.values["basic_exemption_amount"]),
+			Message:  "basic_exemption_amount must be zero or greater",
+		})
+	}
+}
+
+func checkEmployeeFundedPensionRate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	rate, provided, ok := checkEmployeeOptionalDecimal(report, file, row, "funded_pension_rate")
+	if !provided || !ok {
+		return
+	}
+	if rate.IsNegative() || rate.GreaterThan(decimal.NewFromInt(1)) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "funded_pension_rate",
+			Value:    strings.TrimSpace(row.values["funded_pension_rate"]),
+			Message:  "funded_pension_rate must be between 0 and 1",
+		})
+	}
+}
+
+func checkEmployeeBaseSalary(report *BundleValidationReport, file parsedFile, row parsedRow) bool {
+	baseSalary, provided, ok := checkEmployeeOptionalDecimal(report, file, row, "base_salary")
+	if !provided || !ok {
+		return provided
+	}
+	if !baseSalary.GreaterThan(decimal.Zero) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "base_salary",
+			Value:    strings.TrimSpace(row.values["base_salary"]),
+			Message:  "base_salary must be greater than zero",
+		})
+	}
+	return true
+}
+
+func checkEmployeeSalaryEffectiveFrom(report *BundleValidationReport, file parsedFile, row parsedRow, baseSalaryProvided bool) {
+	if !fileHasHeaders(file, "salary_effective_from") || strings.TrimSpace(row.values["salary_effective_from"]) == "" {
+		return
+	}
+	if !baseSalaryProvided {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "salary_effective_from",
+			Value:    strings.TrimSpace(row.values["salary_effective_from"]),
+			Message:  "salary_effective_from requires base_salary",
+		})
+	}
+	checkEmployeeOptionalDate(report, file, row, "salary_effective_from")
+}
+
+func checkEmployeeOptionalDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (decimal.Decimal, bool, bool) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return decimal.Zero, false, true
+	}
+	amount, issue := parseCutoverRequiredImportDecimal(row.values[field], field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return decimal.Zero, true, false
+	}
+	return amount, true, true
+}
+
+func checkEmployeeRequiredDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (time.Time, bool) {
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Message:  fmt.Sprintf("%s is required", field),
+		})
+		return time.Time{}, false
+	}
+	return checkEmployeeDateValue(report, file, row, field, value)
+}
+
+func checkEmployeeOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (time.Time, bool) {
+	if !fileHasHeaders(file, field) {
+		return time.Time{}, false
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return time.Time{}, false
+	}
+	return checkEmployeeDateValue(report, file, row, field, value)
+}
+
+func checkEmployeeDateValue(report *BundleValidationReport, file parsedFile, row parsedRow, field, value string) (time.Time, bool) {
+	if parsed, ok := parseEmployeeCutoverDate(value); ok {
+		return parsed, true
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    value,
+		Message:  fmt.Sprintf("%s must be in YYYY-MM-DD format", field),
+	})
+	return time.Time{}, false
+}
+
+func parseEmployeeCutoverDate(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	for _, layout := range []string{"2006-01-02", time.RFC3339, "02.01.2006"} {
+		parsed, err := time.Parse(layout, trimmed)
+		if err == nil {
+			return normalizeCutoverDateOnly(parsed), true
+		}
+	}
+	return time.Time{}, false
+}
+
+func checkPayrollHistoryRows(report *BundleValidationReport, file parsedFile) {
+	groups := map[string]payrollHistoryPreflightGroup{}
+	for _, row := range file.rows {
+		periodYear, yearOK := checkPayrollHistoryPeriodYear(report, file, row)
+		periodMonth, monthOK := checkPayrollHistoryPeriodMonth(report, file, row)
+		status, statusOK := checkPayrollHistoryStatus(report, file, row)
+		paymentDate, paymentDateOK := checkPayrollHistoryOptionalDate(report, file, row, "payment_date")
+		checkPayrollHistoryRequiredPositiveDecimal(report, file, row, "gross_salary")
+		checkPayrollHistoryOptionalAmountFields(report, file, row)
+		checkPayrollHistoryPaymentStatus(report, file, row)
+		checkPayrollHistoryOptionalDate(report, file, row, "paid_at")
+		if yearOK && monthOK && statusOK && paymentDateOK {
+			checkPayrollHistoryGroupConsistency(report, file, row, groups, periodYear, periodMonth, status, paymentDate)
+		}
+	}
+}
+
+func checkLeaveBalanceRows(report *BundleValidationReport, file parsedFile) {
+	for _, row := range file.rows {
+		checkLeaveBalanceYear(report, file, row)
+		if fileHasHeaders(file, "absence_type_id") {
+			checkOptionalUUID(report, file, row, "absence_type_id")
+		}
+		for _, field := range []string{"entitled_days", "carryover_days", "used_days", "pending_days"} {
+			if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+				continue
+			}
+			checkPayrollHistoryNonNegativeDecimal(report, file, row, field)
+		}
+	}
+}
+
+func checkLeaveBalanceYear(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "year") {
+		return
+	}
+	value := strings.TrimSpace(row.values["year"])
+	year, err := strconv.Atoi(value)
+	if err != nil || year < 2020 || year > 2100 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "year",
+			Value:    value,
+			Message:  "year must be between 2020 and 2100",
+		})
+	}
+}
+
+func checkTSDHistoryRows(report *BundleValidationReport, file parsedFile) {
+	groups := map[string]tsdHistoryPreflightGroup{}
+	for _, row := range file.rows {
+		periodYear, yearOK := checkPayrollHistoryPeriodYear(report, file, row)
+		periodMonth, monthOK := checkPayrollHistoryPeriodMonth(report, file, row)
+		status, statusOK := checkTSDHistoryStatus(report, file, row)
+		submittedAt, submittedAtOK := checkTSDHistorySubmittedAt(report, file, row, status)
+		checkPayrollHistoryRequiredPositiveDecimal(report, file, row, "gross_payment")
+		checkTSDHistoryOptionalAmountFields(report, file, row)
+		if yearOK && monthOK && statusOK && submittedAtOK {
+			checkTSDHistoryGroupConsistency(report, file, row, groups, periodYear, periodMonth, status, submittedAt)
+		}
+	}
+}
+
+func checkTSDHistoryStatus(report *BundleValidationReport, file parsedFile, row parsedRow) (string, bool) {
+	if !fileHasHeaders(file, "status") {
+		return "DRAFT", true
+	}
+	value := strings.TrimSpace(row.values["status"])
+	if status, ok := cutoverTSDHistoryStatusAliases[normalizedValue(value)]; ok {
+		return status, true
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "status",
+		Value:    value,
+		Message:  "status must be DRAFT, SUBMITTED, ACCEPTED, or REJECTED",
+	})
+	return "", false
+}
+
+func checkTSDHistorySubmittedAt(report *BundleValidationReport, file parsedFile, row parsedRow, status string) (string, bool) {
+	if !fileHasHeaders(file, "submitted_at") {
+		if status == "SUBMITTED" || status == "ACCEPTED" {
+			return "__default_submitted_at__", true
+		}
+		return "", true
+	}
+	value := strings.TrimSpace(row.values["submitted_at"])
+	if value == "" {
+		if status == "SUBMITTED" || status == "ACCEPTED" {
+			return "__default_submitted_at__", true
+		}
+		return "", true
+	}
+	parsed, ok := parseEmployeeCutoverDate(value)
+	if !ok {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "submitted_at",
+			Value:    value,
+			Message:  "submitted_at must be in YYYY-MM-DD format",
+		})
+		return "", false
+	}
+	return parsed.Format("2006-01-02"), true
+}
+
+func checkTSDHistoryOptionalAmountFields(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	for _, field := range []string{
+		"basic_exemption",
+		"taxable_amount",
+		"income_tax",
+		"social_tax",
+		"unemployment_insurance_employer",
+		"unemployment_insurance_employee",
+		"funded_pension",
+	} {
+		if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+			continue
+		}
+		checkPayrollHistoryNonNegativeDecimal(report, file, row, field)
+	}
+}
+
+func checkTSDHistoryGroupConsistency(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	groups map[string]tsdHistoryPreflightGroup,
+	periodYear int,
+	periodMonth int,
+	status string,
+	submittedAt string,
+) {
+	key := fmt.Sprintf("%04d-%02d", periodYear, periodMonth)
+	current := tsdHistoryPreflightGroup{
+		status:        status,
+		submittedAt:   submittedAt,
+		emtaReference: strings.TrimSpace(row.values["emta_reference"]),
+	}
+	group, exists := groups[key]
+	if !exists {
+		groups[key] = current
+		return
+	}
+	if group.status != current.status {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    strings.TrimSpace(row.values["status"]),
+			Message:  "status must be consistent for each TSD period",
+		})
+	}
+	if group.submittedAt != current.submittedAt {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "submitted_at",
+			Value:    strings.TrimSpace(row.values["submitted_at"]),
+			Message:  "submitted_at must be consistent for each TSD period",
+		})
+	}
+	if group.emtaReference != current.emtaReference {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "emta_reference",
+			Value:    strings.TrimSpace(row.values["emta_reference"]),
+			Message:  "emta_reference must be consistent for each TSD period",
+		})
+	}
+}
+
+func checkKMDHistoryRows(report *BundleValidationReport, file parsedFile) {
+	groups := map[string]kmdHistoryPreflightGroup{}
+	for _, row := range file.rows {
+		year, yearOK := checkKMDHistoryYear(report, file, row)
+		month, monthOK := checkKMDHistoryMonth(report, file, row)
+		status, statusOK := checkKMDHistoryStatus(report, file, row)
+		submittedAt, submittedAtSet, submittedAtOK := checkKMDHistorySubmittedAt(report, file, row)
+		checkKMDHistoryRowCode(report, file, row)
+		checkKMDHistoryAmounts(report, file, row)
+		totalOutputVAT, totalOutputVATSet, totalOutputVATOK := checkKMDHistoryOptionalDecimal(report, file, row, "total_output_vat")
+		totalInputVAT, totalInputVATSet, totalInputVATOK := checkKMDHistoryOptionalDecimal(report, file, row, "total_input_vat")
+		if yearOK && monthOK && statusOK && submittedAtOK && totalOutputVATOK && totalInputVATOK {
+			checkKMDHistoryGroupConsistency(
+				report,
+				file,
+				row,
+				groups,
+				year,
+				month,
+				status,
+				submittedAt,
+				submittedAtSet,
+				totalOutputVAT,
+				totalOutputVATSet,
+				totalInputVAT,
+				totalInputVATSet,
+			)
+		}
+	}
+}
+
+func checkKMDHistoryYear(report *BundleValidationReport, file parsedFile, row parsedRow) (int, bool) {
+	if !fileHasHeaders(file, "year") {
+		return 0, false
+	}
+	value := strings.TrimSpace(row.values["year"])
+	year, err := strconv.Atoi(value)
+	if err != nil || year < 1900 || year > 2200 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "year",
+			Value:    value,
+			Message:  "year must be between 1900 and 2200",
+		})
+		return 0, false
+	}
+	return year, true
+}
+
+func checkKMDHistoryMonth(report *BundleValidationReport, file parsedFile, row parsedRow) (int, bool) {
+	if !fileHasHeaders(file, "month") {
+		return 0, false
+	}
+	value := strings.TrimSpace(row.values["month"])
+	month, err := strconv.Atoi(value)
+	if err != nil || month < 1 || month > 12 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "month",
+			Value:    value,
+			Message:  "month must be between 1 and 12",
+		})
+		return 0, false
+	}
+	return month, true
+}
+
+func checkKMDHistoryStatus(report *BundleValidationReport, file parsedFile, row parsedRow) (string, bool) {
+	if !fileHasHeaders(file, "status") {
+		return "ACCEPTED", true
+	}
+	value := strings.TrimSpace(row.values["status"])
+	key := strings.ReplaceAll(normalizedValue(value), "-", "_")
+	if status, ok := cutoverKMDHistoryStatusAliases[key]; ok {
+		return status, true
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "status",
+		Value:    value,
+		Message:  "status must be DRAFT, SUBMITTED, or ACCEPTED",
+	})
+	return "", false
+}
+
+func checkKMDHistorySubmittedAt(report *BundleValidationReport, file parsedFile, row parsedRow) (string, bool, bool) {
+	if !fileHasHeaders(file, "submitted_at") {
+		return "", false, true
+	}
+	value := strings.TrimSpace(row.values["submitted_at"])
+	if value == "" {
+		return "", false, true
+	}
+	parsed, ok := parseEmployeeCutoverDate(value)
+	if !ok {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "submitted_at",
+			Value:    value,
+			Message:  "submitted_at must be in YYYY-MM-DD format",
+		})
+		return "", true, false
+	}
+	return parsed.Format("2006-01-02"), true, true
+}
+
+func checkKMDHistoryRowCode(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "row_code") {
+		return
+	}
+	if normalizeKMDHistoryRowCode(row.values["row_code"]) != "" {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "row_code",
+		Value:    strings.TrimSpace(row.values["row_code"]),
+		Message:  "row_code is required",
+	})
+}
+
+func checkKMDHistoryAmounts(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	_, taxBaseSet, taxBaseOK := checkKMDHistoryOptionalDecimal(report, file, row, "tax_base")
+	_, taxAmountSet, taxAmountOK := checkKMDHistoryOptionalDecimal(report, file, row, "tax_amount")
+	if !taxBaseOK || !taxAmountOK {
+		return
+	}
+	if taxBaseSet || taxAmountSet {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "tax_base",
+		Message:  "tax_base or tax_amount is required",
+	})
+}
+
+func checkKMDHistoryOptionalDecimal(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	field string,
+) (string, bool, bool) {
+	if !fileHasHeaders(file, field) {
+		return "", false, true
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return "", false, true
+	}
+	amount, issue := parseCutoverRequiredImportDecimal(value, field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return "", true, false
+	}
+	return amount.String(), true, true
+}
+
+func checkKMDHistoryGroupConsistency(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	groups map[string]kmdHistoryPreflightGroup,
+	year int,
+	month int,
+	status string,
+	submittedAt string,
+	submittedAtSet bool,
+	totalOutputVAT string,
+	totalOutputVATSet bool,
+	totalInputVAT string,
+	totalInputVATSet bool,
+) {
+	key := fmt.Sprintf("%04d-%02d", year, month)
+	current := kmdHistoryPreflightGroup{
+		status:            status,
+		submittedAt:       submittedAt,
+		submittedAtSet:    submittedAtSet,
+		totalOutputVAT:    totalOutputVAT,
+		totalOutputVATSet: totalOutputVATSet,
+		totalInputVAT:     totalInputVAT,
+		totalInputVATSet:  totalInputVATSet,
+	}
+	group, exists := groups[key]
+	if !exists {
+		groups[key] = current
+		return
+	}
+	if group.status != current.status {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    strings.TrimSpace(row.values["status"]),
+			Message:  "status must be consistent for each KMD period",
+		})
+	}
+	checkKMDHistoryOptionalGroupValue(report, file, row, "submitted_at", group.submittedAt, group.submittedAtSet, current.submittedAt, current.submittedAtSet)
+	checkKMDHistoryOptionalGroupValue(report, file, row, "total_output_vat", group.totalOutputVAT, group.totalOutputVATSet, current.totalOutputVAT, current.totalOutputVATSet)
+	checkKMDHistoryOptionalGroupValue(report, file, row, "total_input_vat", group.totalInputVAT, group.totalInputVATSet, current.totalInputVAT, current.totalInputVATSet)
+	if !group.submittedAtSet && current.submittedAtSet {
+		group.submittedAt = current.submittedAt
+		group.submittedAtSet = true
+	}
+	if !group.totalOutputVATSet && current.totalOutputVATSet {
+		group.totalOutputVAT = current.totalOutputVAT
+		group.totalOutputVATSet = true
+	}
+	if !group.totalInputVATSet && current.totalInputVATSet {
+		group.totalInputVAT = current.totalInputVAT
+		group.totalInputVATSet = true
+	}
+	groups[key] = group
+}
+
+func checkKMDHistoryOptionalGroupValue(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	field string,
+	groupValue string,
+	groupValueSet bool,
+	currentValue string,
+	currentValueSet bool,
+) {
+	if !groupValueSet || !currentValueSet || groupValue == currentValue {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    strings.TrimSpace(row.values[field]),
+		Message:  fmt.Sprintf("%s must be consistent for each KMD period", field),
+	})
+}
+
+func normalizeKMDHistoryRowCode(value string) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.ToLower(value), "row_"))
+}
+
+func checkPayrollHistoryPeriodYear(report *BundleValidationReport, file parsedFile, row parsedRow) (int, bool) {
+	if !fileHasHeaders(file, "period_year") {
+		return 0, false
+	}
+	value := strings.TrimSpace(row.values["period_year"])
+	year, err := strconv.Atoi(value)
+	if err != nil || year < 2020 || year > 2100 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "period_year",
+			Value:    value,
+			Message:  "period_year must be between 2020 and 2100",
+		})
+		return 0, false
+	}
+	return year, true
+}
+
+func checkPayrollHistoryPeriodMonth(report *BundleValidationReport, file parsedFile, row parsedRow) (int, bool) {
+	if !fileHasHeaders(file, "period_month") {
+		return 0, false
+	}
+	value := strings.TrimSpace(row.values["period_month"])
+	month, err := strconv.Atoi(value)
+	if err != nil || month < 1 || month > 12 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "period_month",
+			Value:    value,
+			Message:  "period_month must be between 1 and 12",
+		})
+		return 0, false
+	}
+	return month, true
+}
+
+func checkPayrollHistoryStatus(report *BundleValidationReport, file parsedFile, row parsedRow) (string, bool) {
+	if !fileHasHeaders(file, "status") {
+		return "PAID", true
+	}
+	value := strings.TrimSpace(row.values["status"])
+	if value == "" {
+		return "PAID", true
+	}
+	if status, ok := cutoverPayrollHistoryStatusAliases[normalizedValue(value)]; ok {
+		return status, true
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "status",
+		Value:    value,
+		Message:  "status must be APPROVED, PAID, or DECLARED",
+	})
+	return "", false
+}
+
+func checkPayrollHistoryPaymentStatus(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "payment_status") || strings.TrimSpace(row.values["payment_status"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["payment_status"])
+	if _, ok := cutoverPayrollHistoryPaymentStatusAliases[normalizedValue(value)]; ok {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "payment_status",
+		Value:    value,
+		Message:  "payment_status must be PENDING, PAID, or CANCELLED", //nolint:misspell // Existing API/database spelling.
+	})
+}
+
+func checkPayrollHistoryOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (string, bool) {
+	if !fileHasHeaders(file, field) {
+		return "", true
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return "", true
+	}
+	parsed, ok := parseEmployeeCutoverDate(value)
+	if !ok {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be in YYYY-MM-DD format", field),
+		})
+		return "", false
+	}
+	return parsed.Format("2006-01-02"), true
+}
+
+func checkPayrollHistoryRequiredPositiveDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Message:  fmt.Sprintf("%s is required", field),
+		})
+		return
+	}
+	amount, ok := checkPayrollHistoryNonNegativeDecimal(report, file, row, field)
+	if !ok {
+		return
+	}
+	if !amount.GreaterThan(decimal.Zero) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be greater than zero", field),
+		})
+	}
+}
+
+func checkPayrollHistoryOptionalAmountFields(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	for _, field := range []string{
+		"basic_exemption_applied",
+		"taxable_income",
+		"income_tax",
+		"unemployment_insurance_employee",
+		"funded_pension",
+		"other_deductions",
+		"net_salary",
+		"social_tax",
+		"unemployment_insurance_employer",
+		"total_employer_cost",
+	} {
+		if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+			continue
+		}
+		checkPayrollHistoryNonNegativeDecimal(report, file, row, field)
+	}
+}
+
+func checkPayrollHistoryNonNegativeDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (decimal.Decimal, bool) {
+	amount, issue := parseCutoverRequiredImportDecimal(row.values[field], field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return decimal.Zero, false
+	}
+	if amount.IsNegative() {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    strings.TrimSpace(row.values[field]),
+			Message:  fmt.Sprintf("%s must be zero or greater", field),
+		})
+		return decimal.Zero, false
+	}
+	return amount, true
+}
+
+func checkPayrollHistoryGroupConsistency(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	groups map[string]payrollHistoryPreflightGroup,
+	periodYear int,
+	periodMonth int,
+	status string,
+	paymentDate string,
+) {
+	key := fmt.Sprintf("%04d-%02d", periodYear, periodMonth)
+	current := payrollHistoryPreflightGroup{
+		status:      status,
+		paymentDate: paymentDate,
+		notes:       strings.TrimSpace(row.values["notes"]),
+	}
+	group, exists := groups[key]
+	if !exists {
+		groups[key] = current
+		return
+	}
+	if group.status != current.status {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    strings.TrimSpace(row.values["status"]),
+			Message:  "status must be consistent for each payroll period",
+		})
+	}
+	if group.paymentDate != current.paymentDate {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "payment_date",
+			Value:    strings.TrimSpace(row.values["payment_date"]),
+			Message:  "payment_date must be consistent for each payroll period",
+		})
+	}
+	if group.notes != current.notes {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "notes",
+			Value:    strings.TrimSpace(row.values["notes"]),
+			Message:  "notes must be consistent for each payroll period",
+		})
+	}
+}
+
+func checkAccountRows(report *BundleValidationReport, file parsedFile) {
+	hasCode := fileHasHeaders(file, "code")
+	hasName := fileHasHeaders(file, "name")
+	hasAccountType := fileHasHeaders(file, "account_type")
+	for _, row := range file.rows {
+		if hasCode {
+			checkRequiredCutoverField(report, file, row, "code")
+		}
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		if hasAccountType {
+			checkAccountType(report, file, row)
+		}
+	}
+}
+
+func checkAccountType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["account_type"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "account_type",
+			Message:  "account_type is required",
+		})
+		return
+	}
+
+	if _, ok := cutoverNormalizedAccountType(value); ok {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "account_type",
+		Value:    value,
+		Message:  fmt.Sprintf("invalid account_type %q", value),
+	})
+}
+
+func cutoverNormalizedAccountType(value string) (string, bool) {
+	if accountType, ok := cutoverAccountTypeAliases[normalizedValue(value)]; ok {
+		return accountType, true
+	}
+	switch upper := normalizeCutoverUpper(value); upper {
+	case "ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE":
+		return upper, true
+	default:
+		return "", false
+	}
+}
+
+func checkCommercialDocumentRows(report *BundleValidationReport, file parsedFile) {
+	hasLineDescription := fileHasHeaders(file, "line_description")
+	hasQuantity := fileHasHeaders(file, "quantity")
+	hasUnitPrice := fileHasHeaders(file, "unit_price")
+	hasDiscountPercent := fileHasHeaders(file, "discount_percent")
+	hasVATRate := fileHasHeaders(file, "vat_rate")
+	hasExchangeRate := fileHasHeaders(file, "exchange_rate")
+	for _, row := range file.rows {
+		if hasLineDescription {
+			checkRequiredCutoverField(report, file, row, "line_description")
+		}
+		if hasQuantity {
+			checkCommercialQuantity(report, file, row)
+		}
+		if hasUnitPrice {
+			checkCommercialNonNegativeDecimal(report, file, row, "unit_price")
+		}
+		if hasDiscountPercent {
+			checkCommercialDiscountPercent(report, file, row)
+		}
+		if hasVATRate {
+			checkCommercialNonNegativeDecimal(report, file, row, "vat_rate")
+		}
+		if hasExchangeRate {
+			checkCommercialOptionalPositiveDecimal(report, file, row, "exchange_rate")
+		}
+
+		switch file.kind {
+		case KindInvoices:
+			checkInvoiceDocumentRow(report, file, row)
+		case KindQuotes:
+			checkQuoteDocumentRow(report, file, row)
+		case KindOrders:
+			checkOrderDocumentRow(report, file, row)
+		case KindRecurringInvoices:
+			checkRecurringDocumentRow(report, file, row)
+		}
+	}
+}
+
+func checkInvoiceDocumentRow(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "invoice_number") {
+		checkRequiredCutoverField(report, file, row, "invoice_number")
+	}
+	if fileHasHeaders(file, "invoice_type") {
+		checkInvoiceDocumentType(report, file, row)
+	}
+	checkRequiredCutoverFieldGroup(report, file, row, "contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name")
+	issueDate, issueOK := checkCommercialRequiredDate(report, file, row, "issue_date")
+	dueDate, dueOK := checkCommercialRequiredDate(report, file, row, "due_date")
+	if issueOK && dueOK && dueDate.Before(issueDate) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "due_date",
+			Value:    strings.TrimSpace(row.values["due_date"]),
+			Message:  "due_date cannot be before issue_date",
+		})
+	}
+	checkCommercialStatus(report, file, row, "status", normalizeCutoverInvoiceStatus,
+		"DRAFT", "SENT", "PARTIALLY_PAID", "PAID", "OVERDUE", "VOIDED")
+	checkCommercialNonNegativeOptionalDecimal(report, file, row, "amount_paid")
+	checkInvoiceVATTreatment(report, file, row)
+}
+
+func checkQuoteDocumentRow(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "quote_number") {
+		checkRequiredCutoverField(report, file, row, "quote_number")
+	}
+	checkRequiredCutoverFieldGroup(report, file, row, commercialDocumentContactReferenceFields()...)
+	quoteDate, quoteOK := checkCommercialRequiredDate(report, file, row, "quote_date")
+	validUntil, validOK := checkCommercialOptionalDate(report, file, row, "valid_until")
+	if quoteOK && validOK && validUntil.Before(quoteDate) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "valid_until",
+			Value:    strings.TrimSpace(row.values["valid_until"]),
+			Message:  "valid_until cannot be before quote_date",
+		})
+	}
+	checkCommercialStatus(report, file, row, "status", normalizeCutoverQuoteStatus,
+		"DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CONVERTED")
+}
+
+func checkOrderDocumentRow(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "order_number") {
+		checkRequiredCutoverField(report, file, row, "order_number")
+	}
+	checkRequiredCutoverFieldGroup(report, file, row, commercialDocumentContactReferenceFields()...)
+	checkCommercialRequiredDate(report, file, row, "order_date")
+	checkCommercialOptionalDate(report, file, row, "expected_delivery")
+	checkCommercialStatus(report, file, row, "status", normalizeCutoverOrderStatus,
+		"PENDING", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELED")
+}
+
+func checkRecurringDocumentRow(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "name") {
+		checkRequiredCutoverField(report, file, row, "name")
+	}
+	checkRequiredCutoverFieldGroup(report, file, row, commercialDocumentContactReferenceFields()...)
+	checkRecurringFrequency(report, file, row)
+	startDate, startOK := checkCommercialRequiredDate(report, file, row, "start_date")
+	endDate, endOK := checkCommercialOptionalDate(report, file, row, "end_date")
+	if startOK && endOK && endDate.Before(startDate) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "end_date",
+			Value:    strings.TrimSpace(row.values["end_date"]),
+			Message:  "end_date cannot be before start_date",
+		})
+	}
+	checkCommercialOptionalDate(report, file, row, "next_generation_date")
+	checkCommercialOptionalDate(report, file, row, "last_generated_at")
+	checkCommercialNonNegativeInt(report, file, row, "payment_terms_days")
+	checkCommercialNonNegativeInt(report, file, row, "generated_count")
+	checkCommercialBool(report, file, row, "is_active")
+	checkCommercialBool(report, file, row, "send_email_on_generation")
+	checkCommercialBool(report, file, row, "attach_pdf_to_email")
+}
+
+func checkInvoiceDocumentType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["invoice_type"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "invoice_type",
+			Message:  "invoice_type is required",
+		})
+		return
+	}
+	switch normalizeCutoverInvoiceType(value) {
+	case "SALES", "PURCHASE", "CREDIT_NOTE":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "invoice_type",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid invoice_type %q", value),
+		})
+	}
+}
+
+func checkCommercialRequiredDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (time.Time, bool) {
+	if !fileHasHeaders(file, field) {
+		return time.Time{}, false
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Message:  fmt.Sprintf("%s is required", field),
+		})
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must use YYYY-MM-DD", field),
+		})
+		return time.Time{}, false
+	}
+	return normalizeCutoverDateOnly(parsed), true
+}
+
+func checkCommercialOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (time.Time, bool) {
+	if !fileHasHeaders(file, field) {
+		return time.Time{}, false
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must use YYYY-MM-DD", field),
+		})
+		return time.Time{}, false
+	}
+	return normalizeCutoverDateOnly(parsed), true
+}
+
+func checkCommercialStatus(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	field string,
+	normalize func(string) string,
+	allowed ...string,
+) {
+	if !fileHasHeaders(file, field) {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return
+	}
+	normalized := normalize(value)
+	for _, candidate := range allowed {
+		if normalized == candidate {
+			return
+		}
+	}
+	if len(allowed) == 0 && normalized != "" {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    value,
+		Message:  fmt.Sprintf("invalid %s %q", field, value),
+	})
+}
+
+func checkRecurringFrequency(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "frequency") {
+		return
+	}
+	value := strings.TrimSpace(row.values["frequency"])
+	switch normalizeCutoverUpper(value) {
+	case "WEEKLY", "BIWEEKLY", "MONTHLY", "QUARTERLY", "YEARLY":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "frequency",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid frequency %q", value),
+		})
+	}
+}
+
+func checkCommercialQuantity(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	quantity, issue := parseCutoverRequiredImportDecimal(row.values["quantity"], "quantity")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if quantity.LessThanOrEqual(decimal.Zero) {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   "quantity",
+			value:   strings.TrimSpace(row.values["quantity"]),
+			message: "quantity must be positive",
+		}))
+	}
+}
+
+func checkCommercialNonNegativeDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	value, issue := parseCutoverRequiredImportDecimal(row.values[field], field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if value.IsNegative() {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   field,
+			value:   strings.TrimSpace(row.values[field]),
+			message: fmt.Sprintf("%s cannot be negative", field),
+		}))
+	}
+}
+
+func checkCommercialNonNegativeOptionalDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	checkCommercialNonNegativeDecimal(report, file, row, field)
+}
+
+func checkCommercialOptionalPositiveDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value, issue := parseCutoverRequiredImportDecimal(row.values[field], field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if value.LessThanOrEqual(decimal.Zero) {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   field,
+			value:   strings.TrimSpace(row.values[field]),
+			message: fmt.Sprintf("%s must be positive", field),
+		}))
+	}
+}
+
+func checkCommercialDiscountPercent(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["discount_percent"]) == "" {
+		return
+	}
+	discountPercent, issue := parseCutoverRequiredImportDecimal(row.values["discount_percent"], "discount_percent")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if discountPercent.IsNegative() || discountPercent.GreaterThan(decimal.NewFromInt(100)) {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   "discount_percent",
+			value:   strings.TrimSpace(row.values["discount_percent"]),
+			message: "discount_percent must be between 0 and 100",
+		}))
+	}
+}
+
+func checkInvoiceVATTreatment(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "reverse_charge") && strings.TrimSpace(row.values["reverse_charge"]) != "" {
+		switch normalizeCutoverBoolComparable(row.values["reverse_charge"]) {
+		case "true":
+			checkInvoiceReverseChargeRate(report, file, row)
+			return
+		case "false":
+			return
+		default:
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "reverse_charge",
+				Value:    strings.TrimSpace(row.values["reverse_charge"]),
+				Message:  "invalid reverse_charge",
+			})
+			return
+		}
+	}
+
+	if !fileHasHeaders(file, "vat_treatment") || strings.TrimSpace(row.values["vat_treatment"]) == "" {
+		return
+	}
+	switch normalizedValue(row.values["vat_treatment"]) {
+	case "standard", "normal":
+		return
+	case "reverse_charge", "reversecharge", "reverse charge", "rc":
+		checkInvoiceReverseChargeRate(report, file, row)
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "vat_treatment",
+			Value:    strings.TrimSpace(row.values["vat_treatment"]),
+			Message:  fmt.Sprintf("invalid vat_treatment %q", strings.TrimSpace(row.values["vat_treatment"])),
+		})
+	}
+}
+
+func checkInvoiceReverseChargeRate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "vat_rate") {
+		return
+	}
+	vatRate, issue := parseCutoverRequiredImportDecimal(row.values["vat_rate"], "vat_rate")
+	if issue != nil {
+		return
+	}
+	if vatRate.LessThanOrEqual(decimal.Zero) {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   "vat_rate",
+			value:   strings.TrimSpace(row.values["vat_rate"]),
+			message: "reverse charge VAT rate must be positive",
+		}))
+	}
+}
+
+func checkCommercialNonNegativeInt(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be a non-negative integer", field),
+		})
+	}
+}
+
+func checkCommercialBool(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	switch normalizeCutoverBoolComparable(row.values[field]) {
+	case "true", "false":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    strings.TrimSpace(row.values[field]),
+			Message:  fmt.Sprintf("%s must be true or false", field),
+		})
+	}
+}
+
+func checkProductCategoryRows(report *BundleValidationReport, file parsedFile) {
+	allNames := map[string]bool{}
+	for _, row := range file.rows {
+		addIndexValue(allNames, row.values["name"])
+	}
+
+	seenNames := map[string]bool{}
+	for _, row := range file.rows {
+		checkProductCategoryName(report, file, row)
+		checkProductCategoryParentNameOrder(report, file, row, allNames, seenNames)
+		addIndexValue(seenNames, row.values["name"])
+	}
+}
+
+func checkProductCategoryName(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "name") || strings.TrimSpace(row.values["name"]) != "" {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "name",
+		Message:  "name is required",
+	})
+}
+
+func checkProductCategoryParentNameOrder(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	allNames map[string]bool,
+	seenNames map[string]bool,
+) {
+	if !fileHasHeaders(file, "parent_name") {
+		return
+	}
+	parentName := strings.TrimSpace(row.values["parent_name"])
+	if parentName == "" {
+		return
+	}
+	parentKey := normalizedValue(parentName)
+	if parentKey == "" || parentKey == normalizedValue(row.values["name"]) || !allNames[parentKey] || seenNames[parentKey] {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "parent_name",
+		Value:    parentName,
+		Message:  "parent_name must reference an earlier product category row",
+	})
+}
+
+func checkProductRows(report *BundleValidationReport, file parsedFile) {
+	hasName := fileHasHeaders(file, "name")
+	hasSalesPrice := fileHasHeaders(file, "sales_price")
+	for _, row := range file.rows {
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		if fileHasHeaders(file, "product_type") {
+			checkProductType(report, file, row)
+		}
+		if hasSalesPrice {
+			checkInventoryNonNegativeDecimal(report, file, row, "sales_price", true)
+		}
+		checkInventoryNonNegativeDecimal(report, file, row, "purchase_price", false)
+		checkInventoryNonNegativeDecimal(report, file, row, "vat_rate", false)
+		checkInventoryNonNegativeDecimal(report, file, row, "min_stock_level", false)
+		checkInventoryNonNegativeDecimal(report, file, row, "reorder_point", false)
+		checkOptionalUUID(report, file, row, "category_id")
+		checkCutoverBoolField(report, file, row, "track_inventory")
+		checkCutoverStatusOrActive(report, file, row)
+		checkCutoverNonNegativeIntField(report, file, row, "lead_time_days")
+	}
+}
+
+func checkProductType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["product_type"])
+	if value == "" {
+		return
+	}
+	switch normalizeCutoverUpper(value) {
+	case "GOODS", "SERVICE":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "product_type",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid product_type %q", value),
+		})
+	}
+}
+
+func checkWarehouseRows(report *BundleValidationReport, file parsedFile) {
+	hasCode := fileHasHeaders(file, "code")
+	hasName := fileHasHeaders(file, "name")
+	for _, row := range file.rows {
+		if hasCode {
+			checkRequiredCutoverField(report, file, row, "code")
+		}
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		checkCutoverBoolField(report, file, row, "is_default")
+		checkCutoverStatusOrActive(report, file, row)
+	}
+}
+
+func checkStockAdjustmentRows(report *BundleValidationReport, file parsedFile) {
+	hasQuantity := fileHasHeaders(file, "quantity")
+	for _, row := range file.rows {
+		checkRequiredCutoverFieldGroup(report, file, row, "product_id", "product_code")
+		checkRequiredCutoverFieldGroup(report, file, row, "warehouse_id", "warehouse_code")
+		if hasQuantity {
+			checkStockAdjustmentQuantity(report, file, row)
+		}
+		checkInventoryNonNegativeDecimal(report, file, row, "unit_cost", false)
+		checkCutoverOptionalDate(report, file, row, "expiry_date")
+	}
+}
+
+func checkStockAdjustmentQuantity(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	quantity, issue := parseCutoverRequiredDecimal(row.values["quantity"], "quantity")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if quantity.IsZero() {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   "quantity",
+			value:   strings.TrimSpace(row.values["quantity"]),
+			message: "quantity must not be zero",
+		}))
+	}
+	if strings.TrimSpace(row.values["serial_number"]) != "" && !quantity.Abs().Equal(decimal.NewFromInt(1)) {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   "serial_number",
+			value:   strings.TrimSpace(row.values["serial_number"]),
+			message: "serial_number requires quantity 1 or -1",
+		}))
+	}
+}
+
+func checkInventoryNonNegativeDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string, required bool) {
+	if !fileHasHeaders(file, field) {
+		return
+	}
+	trimmed := strings.TrimSpace(row.values[field])
+	if trimmed == "" && !required {
+		return
+	}
+	value, issue := parseCutoverRequiredDecimal(trimmed, field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if value.IsNegative() {
+		report.addIssue(cutoverAmountValidationIssue(file, row, cutoverAmountIssue{
+			field:   field,
+			value:   trimmed,
+			message: fmt.Sprintf("%s cannot be negative", field),
+		}))
+	}
+}
+
+func checkCutoverStatusOrActive(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if fileHasHeaders(file, "status") {
+		status := strings.TrimSpace(row.values["status"])
+		if status != "" {
+			switch normalizeCutoverUpper(status) {
+			case "ACTIVE", "INACTIVE":
+				return
+			default:
+				report.addIssue(ValidationIssue{
+					Severity: SeverityError,
+					Kind:     file.kind,
+					FileName: file.fileName,
+					Row:      row.number,
+					Field:    "status",
+					Value:    status,
+					Message:  fmt.Sprintf("invalid status %q", status),
+				})
+				return
+			}
+		}
+	}
+	checkCutoverBoolField(report, file, row, "is_active")
+}
+
+func checkCutoverBoolField(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	switch normalizeCutoverBoolComparable(row.values[field]) {
+	case "true", "false":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    strings.TrimSpace(row.values[field]),
+			Message:  fmt.Sprintf("%s must be true or false", field),
+		})
+	}
+}
+
+func checkCutoverNonNegativeIntField(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be an integer", field),
+		})
+		return
+	}
+	if parsed < 0 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s cannot be negative", field),
+		})
+	}
+}
+
+func checkCutoverOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	if _, err := time.Parse("2006-01-02", value); err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must use YYYY-MM-DD", field),
+		})
+	}
+}
+
+func checkFixedAssetRows(report *BundleValidationReport, file parsedFile) {
+	hasName := fileHasHeaders(file, "name")
+	hasPurchaseDate := fileHasHeaders(file, "purchase_date")
+	hasPurchaseCost := fileHasHeaders(file, "purchase_cost")
+	for _, row := range file.rows {
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		if hasPurchaseDate {
+			checkFixedAssetRequiredDate(report, file, row, "purchase_date")
+		}
+
+		purchaseCost := decimal.Zero
+		purchaseCostOK := false
+		if hasPurchaseCost {
+			purchaseCost, purchaseCostOK = checkFixedAssetPurchaseCost(report, file, row)
+		}
+
+		checkFixedAssetStatus(report, file, row)
+		checkFixedAssetDepreciationMethod(report, file, row)
+		checkFixedAssetUsefulLifeMonths(report, file, row)
+
+		residualValue, _, residualOK := checkFixedAssetOptionalDecimal(report, file, row, "residual_value")
+		if residualOK && residualValue.IsNegative() {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "residual_value",
+				Value:    strings.TrimSpace(row.values["residual_value"]),
+				Message:  "residual value cannot be negative",
+			})
+			residualOK = false
+		}
+		if residualOK && purchaseCostOK && residualValue.GreaterThan(purchaseCost) {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "residual_value",
+				Value:    strings.TrimSpace(row.values["residual_value"]),
+				Message:  "residual value cannot exceed purchase cost",
+			})
+			residualOK = false
+		}
+
+		accumulatedDepreciation, _, accumulatedOK := checkFixedAssetOptionalDecimal(report, file, row, "accumulated_depreciation")
+		if accumulatedOK && accumulatedDepreciation.IsNegative() {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "accumulated_depreciation",
+				Value:    strings.TrimSpace(row.values["accumulated_depreciation"]),
+				Message:  "accumulated_depreciation cannot be negative",
+			})
+			accumulatedOK = false
+		}
+
+		bookValue, bookValueProvided, bookValueOK := checkFixedAssetOptionalDecimal(report, file, row, "book_value")
+		if bookValueOK && bookValue.IsNegative() {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "book_value",
+				Value:    strings.TrimSpace(row.values["book_value"]),
+				Message:  "book_value cannot be negative",
+			})
+			bookValueOK = false
+		}
+		if bookValueProvided && bookValueOK && purchaseCostOK && accumulatedOK {
+			expectedBookValue := purchaseCost.Sub(accumulatedDepreciation)
+			if !bookValue.Equal(expectedBookValue) {
+				report.addIssue(ValidationIssue{
+					Severity: SeverityError,
+					Kind:     file.kind,
+					FileName: file.fileName,
+					Row:      row.number,
+					Field:    "book_value",
+					Value:    strings.TrimSpace(row.values["book_value"]),
+					Message:  "book_value must equal purchase_cost minus accumulated_depreciation",
+				})
+			}
+		}
+		if purchaseCostOK && residualOK && accumulatedOK && accumulatedDepreciation.GreaterThan(purchaseCost.Sub(residualValue)) {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "accumulated_depreciation",
+				Value:    strings.TrimSpace(row.values["accumulated_depreciation"]),
+				Message:  "accumulated_depreciation cannot exceed depreciable amount",
+			})
+		}
+
+		checkFixedAssetOptionalDate(report, file, row, "depreciation_start_date")
+		checkFixedAssetOptionalDate(report, file, row, "last_depreciation_date")
+		checkFixedAssetOptionalDate(report, file, row, "disposal_date")
+		checkFixedAssetDisposalMethod(report, file, row)
+		checkFixedAssetDisposalProceeds(report, file, row)
+	}
+}
+
+func checkFixedAssetPurchaseCost(report *BundleValidationReport, file parsedFile, row parsedRow) (decimal.Decimal, bool) {
+	purchaseCost, issue := parseCutoverRequiredDecimal(row.values["purchase_cost"], "purchase_cost")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return decimal.Zero, false
+	}
+	if purchaseCost.LessThanOrEqual(decimal.Zero) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "purchase_cost",
+			Value:    strings.TrimSpace(row.values["purchase_cost"]),
+			Message:  "purchase cost must be positive",
+		})
+		return decimal.Zero, false
+	}
+	return purchaseCost, true
+}
+
+func checkFixedAssetOptionalDecimal(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (decimal.Decimal, bool, bool) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return decimal.Zero, false, true
+	}
+	parsed, issue := parseCutoverRequiredDecimal(row.values[field], field)
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return decimal.Zero, true, false
+	}
+	return parsed, true, true
+}
+
+func checkFixedAssetStatus(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "status") || strings.TrimSpace(row.values["status"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["status"])
+	switch normalizeCutoverUpper(value) {
+	case "DRAFT", "ACTIVE", "DISPOSED", "SOLD":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid status %q", value),
+		})
+	}
+}
+
+func checkFixedAssetDepreciationMethod(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "depreciation_method") || strings.TrimSpace(row.values["depreciation_method"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["depreciation_method"])
+	switch normalizeFixedAssetDepreciationMethod(value) {
+	case "STRAIGHT_LINE", "DECLINING_BALANCE", "UNITS_OF_PRODUCTION":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "depreciation_method",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid depreciation_method %q", value),
+		})
+	}
+}
+
+func normalizeFixedAssetDepreciationMethod(value string) string {
+	normalized := normalizeCutoverUpper(value)
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	return strings.ReplaceAll(normalized, " ", "_")
+}
+
+func checkFixedAssetUsefulLifeMonths(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "useful_life_months") || strings.TrimSpace(row.values["useful_life_months"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["useful_life_months"])
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "useful_life_months",
+			Value:    value,
+			Message:  "useful_life_months must be an integer",
+		})
+		return
+	}
+	if parsed <= 0 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "useful_life_months",
+			Value:    value,
+			Message:  "useful_life_months must be positive",
+		})
+	}
+}
+
+func checkFixedAssetRequiredDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Message:  fmt.Sprintf("%s is required", field),
+		})
+		return
+	}
+	if !isFixedAssetCutoverDate(value) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be a date in YYYY-MM-DD or RFC3339 format", field),
+		})
+	}
+}
+
+func checkFixedAssetOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if !fileHasHeaders(file, field) || strings.TrimSpace(row.values[field]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values[field])
+	if !isFixedAssetCutoverDate(value) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    field,
+			Value:    value,
+			Message:  fmt.Sprintf("%s must be a date in YYYY-MM-DD or RFC3339 format", field),
+		})
+	}
+}
+
+func isFixedAssetCutoverDate(value string) bool {
+	for _, layout := range []string{"2006-01-02", time.RFC3339, "2006-01-02 15:04:05"} {
+		if _, err := time.Parse(layout, value); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func checkFixedAssetDisposalMethod(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "disposal_method") || strings.TrimSpace(row.values["disposal_method"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["disposal_method"])
+	switch normalizeCutoverUpper(value) {
+	case "SOLD", "SCRAPPED", "DONATED", "LOST":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "disposal_method",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid disposal_method %q", value),
+		})
+	}
+}
+
+func checkFixedAssetDisposalProceeds(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	disposalProceeds, provided, ok := checkFixedAssetOptionalDecimal(report, file, row, "disposal_proceeds")
+	if !provided || !ok || !disposalProceeds.IsNegative() {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "disposal_proceeds",
+		Value:    strings.TrimSpace(row.values["disposal_proceeds"]),
+		Message:  "disposal_proceeds cannot be negative",
+	})
+}
+
+func checkCostCenterRows(report *BundleValidationReport, file parsedFile) {
+	hasCode := fileHasHeaders(file, "code")
+	hasName := fileHasHeaders(file, "name")
+	for _, row := range file.rows {
+		if hasCode {
+			checkRequiredCutoverField(report, file, row, "code")
+		}
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		checkCostCenterBudgetAmount(report, file, row)
+		checkCostCenterBudgetPeriod(report, file, row)
+		checkCutoverStatusOrActive(report, file, row)
+	}
+}
+
+func checkCostCenterBudgetAmount(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "budget_amount") || strings.TrimSpace(row.values["budget_amount"]) == "" {
+		return
+	}
+	value, issue := parseCutoverRequiredDecimal(row.values["budget_amount"], "budget_amount")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if value.IsNegative() {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "budget_amount",
+			Value:    strings.TrimSpace(row.values["budget_amount"]),
+			Message:  "budget_amount cannot be negative",
+		})
+	}
+}
+
+func checkCostCenterBudgetPeriod(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "budget_period") || strings.TrimSpace(row.values["budget_period"]) == "" {
+		return
+	}
+	value := strings.TrimSpace(row.values["budget_period"])
+	switch normalizeCutoverUpper(value) {
+	case "MONTHLY", "QUARTERLY", "ANNUAL":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "budget_period",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid budget_period %q", value),
+		})
+	}
+}
+
+func checkCostAllocationRows(report *BundleValidationReport, file parsedFile) {
+	hasJournalLine := fileHasHeaders(file, "journal_entry_line_id")
+	hasAmount := fileHasHeaders(file, "amount")
+	hasAllocationDate := fileHasHeaders(file, "allocation_date")
+	for _, row := range file.rows {
+		checkRequiredCutoverFieldGroup(report, file, row, "cost_center_id", "cost_center_code")
+		if hasJournalLine {
+			checkRequiredCutoverField(report, file, row, "journal_entry_line_id")
+			checkOptionalUUID(report, file, row, "journal_entry_line_id")
+		}
+		if hasAmount {
+			checkCostAllocationAmount(report, file, row)
+		}
+		checkCostAllocationPercentage(report, file, row)
+		if hasAllocationDate {
+			checkCostAllocationDate(report, file, row)
+		}
+	}
+}
+
+func checkCostAllocationAmount(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	amount, issue := parseCutoverRequiredDecimal(row.values["amount"], "amount")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if !amount.GreaterThan(decimal.Zero) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "amount",
+			Value:    strings.TrimSpace(row.values["amount"]),
+			Message:  "amount must be greater than zero",
+		})
+	}
+}
+
+func checkCostAllocationPercentage(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "allocation_percentage") || strings.TrimSpace(row.values["allocation_percentage"]) == "" {
+		return
+	}
+	percentage, issue := parseCutoverRequiredDecimal(row.values["allocation_percentage"], "allocation_percentage")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if percentage.LessThan(decimal.Zero) || percentage.GreaterThan(decimal.NewFromInt(100)) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "allocation_percentage",
+			Value:    strings.TrimSpace(row.values["allocation_percentage"]),
+			Message:  "allocation_percentage must be between 0 and 100",
+		})
+	}
+}
+
+func checkCostAllocationDate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["allocation_date"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "allocation_date",
+			Message:  "allocation_date is required",
+		})
+		return
+	}
+	if _, err := time.Parse("2006-01-02", value); err != nil {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "allocation_date",
+			Value:    value,
+			Message:  "allocation_date must use YYYY-MM-DD",
+		})
+	}
+}
+
+func checkExpenseRows(report *BundleValidationReport, file parsedFile) {
+	hasExpenseDate := fileHasHeaders(file, "expense_date")
+	hasMerchant := fileHasHeaders(file, "merchant")
+	hasAmount := fileHasHeaders(file, "amount")
+	for _, row := range file.rows {
+		if hasExpenseDate {
+			checkExpenseDate(report, file, row)
+		}
+		if hasMerchant {
+			checkRequiredCutoverField(report, file, row, "merchant")
+		}
+		checkRequiredCutoverFieldGroup(report, file, row, "expense_account_id", "expense_account_code")
+		checkRequiredCutoverFieldGroup(report, file, row, "payment_account_id", "payment_account_code")
+		if hasAmount {
+			checkExpenseAmount(report, file, row)
+		}
+		checkCutoverOptionalCurrency(report, file, row)
+		checkExpenseExchangeRate(report, file, row)
+		checkOptionalUUID(report, file, row, "employee_id")
+		checkExpenseRequiresReceipt(report, file, row)
+		status, statusOK := checkExpenseStatus(report, file, row)
+		if statusOK {
+			checkExpenseStatusMetadata(report, file, row, status)
+		}
+	}
+}
+
+func checkExpenseDate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["expense_date"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "expense_date",
+			Message:  "expense_date is required",
+		})
+		return
+	}
+	if isCutoverDateOrRFC3339(value) {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "expense_date",
+		Value:    value,
+		Message:  "expense_date must be YYYY-MM-DD or RFC3339",
+	})
+}
+
+func checkExpenseAmount(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if _, issue := parseCutoverPositiveNormalizedDecimal(row.values["amount"], "amount"); issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+	}
+}
+
+func checkExpenseExchangeRate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["exchange_rate"]) == "" {
+		return
+	}
+	if _, issue := parseCutoverPositiveNormalizedDecimal(row.values["exchange_rate"], "exchange_rate"); issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+	}
+}
+
+func checkExpenseRequiresReceipt(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["requires_receipt"])
+	if value == "" {
+		return
+	}
+	switch normalizeCutoverBoolComparable(value) {
+	case "true", "false":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "requires_receipt",
+			Value:    value,
+			Message:  "invalid requires_receipt",
+		})
+	}
+}
+
+func checkExpenseStatus(report *BundleValidationReport, file parsedFile, row parsedRow) (string, bool) {
+	value := strings.TrimSpace(row.values["status"])
+	switch normalizedCutoverStatus(value) {
+	case "", "draft":
+		return "draft", true
+	case "submitted":
+		return "submitted", true
+	case "approved":
+		return "approved", true
+	case "rejected":
+		return "rejected", true
+	case "posted":
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    value,
+			Message:  "posted expenses must be imported as approved and posted through the expense workflow",
+		})
+		return "", false
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "status",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid status %q", value),
+		})
+		return "", false
+	}
+}
+
+func checkExpenseStatusMetadata(report *BundleValidationReport, file parsedFile, row parsedRow, status string) {
+	switch status {
+	case "submitted":
+		checkExpenseOptionalTimestamp(report, file, row, "submitted_at")
+	case "approved":
+		checkExpenseOptionalTimestamp(report, file, row, "submitted_at")
+		checkExpenseOptionalTimestamp(report, file, row, "approved_at")
+	case "rejected":
+		checkRequiredCutoverField(report, file, row, "rejection_reason")
+		checkExpenseOptionalTimestamp(report, file, row, "submitted_at")
+		checkExpenseOptionalTimestamp(report, file, row, "rejected_at")
+	}
+}
+
+func checkExpenseOptionalTimestamp(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return
+	}
+	if isCutoverDateOrRFC3339(value) {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    value,
+		Message:  fmt.Sprintf("%s must be YYYY-MM-DD or RFC3339", field),
+	})
+}
+
+func checkRequiredCutoverField(report *BundleValidationReport, file parsedFile, row parsedRow, field string) {
+	if strings.TrimSpace(row.values[field]) != "" {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Message:  fmt.Sprintf("%s is required", field),
+	})
+}
+
+func checkRequiredCutoverFieldGroup(report *BundleValidationReport, file parsedFile, row parsedRow, fields ...string) {
+	hasHeader := false
+	for _, field := range fields {
+		if fileHasHeaders(file, field) {
+			hasHeader = true
+		}
+		if strings.TrimSpace(row.values[field]) != "" {
+			return
+		}
+	}
+	if !hasHeader {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    strings.Join(fields, "/"),
+		Message:  strings.Join(fields, " or ") + " is required",
+	})
+}
+
+func checkPaymentRows(report *BundleValidationReport, file parsedFile) {
+	hasPaymentType := fileHasHeaders(file, "payment_type")
+	hasPaymentDate := fileHasHeaders(file, "payment_date")
+	hasAmount := fileHasHeaders(file, "amount")
+	for _, row := range file.rows {
+		if hasPaymentType {
+			checkPaymentType(report, file, row)
+		}
+		if hasPaymentDate {
+			checkPaymentDate(report, file, row)
+		}
+		amount, amountOK := decimal.Zero, false
+		if hasAmount {
+			parsedAmount, amountIssue := parseCutoverPositiveDecimal(row.values["amount"], "amount")
+			if amountIssue != nil {
+				report.addIssue(cutoverAmountValidationIssue(file, row, *amountIssue))
+			} else {
+				amount = parsedAmount
+				amountOK = true
+			}
+		}
+		checkCutoverOptionalCurrency(report, file, row)
+		checkPaymentExchangeRate(report, file, row)
+		checkPaymentAllocation(report, file, row, amount, amountOK)
+	}
+}
+
+func checkPaymentType(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["payment_type"])
+	switch strings.ToUpper(value) {
+	case "RECEIVED", "MADE":
+		return
+	default:
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "payment_type",
+			Value:    value,
+			Message:  fmt.Sprintf("invalid payment_type %q", value),
+		})
+	}
+}
+
+func checkPaymentDate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["payment_date"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "payment_date",
+			Message:  "payment_date is required",
+		})
+		return
+	}
+	if _, ok := parseCutoverDateOrRFC3339(value); ok {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "payment_date",
+		Value:    value,
+		Message:  "payment_date must be YYYY-MM-DD or RFC3339",
+	})
+}
+
+func parseCutoverDateOrRFC3339(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	if parsed, err := time.Parse("2006-01-02", trimmed); err == nil {
+		return normalizeCutoverDateOnly(parsed), true
+	}
+	if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return normalizeCutoverDateOnly(parsed), true
+	}
+	return time.Time{}, false
+}
+
+func checkPaymentExchangeRate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "exchange_rate") || strings.TrimSpace(row.values["exchange_rate"]) == "" {
+		return
+	}
+	if _, issue := parseCutoverPositiveDecimal(row.values["exchange_rate"], "exchange_rate"); issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+	}
+}
+
+func checkPaymentAllocation(report *BundleValidationReport, file parsedFile, row parsedRow, paymentAmount decimal.Decimal, amountOK bool) {
+	allocationValue := strings.TrimSpace(row.values["allocation_amount"])
+	if allocationValue == "" {
+		return
+	}
+	if strings.TrimSpace(row.values["invoice_id"]) == "" && strings.TrimSpace(row.values["invoice_number"]) == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "allocation_amount",
+			Value:    allocationValue,
+			Message:  "invoice_id or invoice_number is required when allocation_amount is provided",
+		})
+	}
+	allocationAmount, issue := parseCutoverPositiveDecimal(allocationValue, "allocation_amount")
+	if issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+		return
+	}
+	if amountOK && allocationAmount.GreaterThan(paymentAmount) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "allocation_amount",
+			Value:    allocationValue,
+			Message:  "allocation_amount exceeds payment amount",
+		})
+	}
+}
+
+func checkBankAccountRows(report *BundleValidationReport, file parsedFile) {
+	hasName := fileHasHeaders(file, "name")
+	hasAccountNumber := fileHasHeaders(file, "account_number")
+	for _, row := range file.rows {
+		if hasName {
+			checkRequiredCutoverField(report, file, row, "name")
+		}
+		if hasAccountNumber {
+			checkRequiredCutoverField(report, file, row, "account_number")
+		}
+		checkBankAccountCurrency(report, file, row)
+		checkCutoverBoolField(report, file, row, "is_default")
+		checkCutoverBoolField(report, file, row, "is_active")
+	}
+}
+
+func checkBankAccountCurrency(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	checkCutoverOptionalCurrency(report, file, row)
+}
+
+func checkCutoverOptionalCurrency(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if !fileHasHeaders(file, "currency") {
+		return
+	}
+	value := strings.TrimSpace(row.values["currency"])
+	if value == "" {
+		return
+	}
+	if len(value) == 3 {
+		for _, r := range value {
+			if !unicode.IsLetter(r) {
+				report.addIssue(ValidationIssue{
+					Severity: SeverityError,
+					Kind:     file.kind,
+					FileName: file.fileName,
+					Row:      row.number,
+					Field:    "currency",
+					Value:    value,
+					Message:  "currency must be a 3-letter ISO code",
+				})
+				return
+			}
+		}
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "currency",
+		Value:    value,
+		Message:  "currency must be a 3-letter ISO code",
+	})
+}
+
+func checkBankTransactionRows(report *BundleValidationReport, file parsedFile) {
+	hasDate := fileHasHeaders(file, "date")
+	hasAmount := fileHasHeaders(file, "amount")
+	hasDescription := fileHasHeaders(file, "description")
+	requiresDescriptionValue := !bankTransactionHasLHVHeaders(file)
+	for _, row := range file.rows {
+		if hasDate {
+			checkBankTransactionDate(report, file, row)
+		}
+		if hasAmount {
+			checkBankTransactionAmount(report, file, row)
+		}
+		if hasDescription && requiresDescriptionValue {
+			checkRequiredCutoverField(report, file, row, "description")
+		}
+	}
+}
+
+func bankTransactionHasLHVHeaders(file parsedFile) bool {
+	headerSet := make(map[string]bool, len(file.headers))
+	for _, header := range file.headers {
+		headerSet[header] = true
+	}
+	return bankTransactionHasLHVHeaderSet(headerSet)
+}
+
+func bankTransactionHasLHVHeaderSet(headerSet map[string]bool) bool {
+	return hasAnyHeader(headerSet, "source_account", "kliendi_konto") &&
+		hasAnyHeader(headerSet, "document_number", "dokumendi_number") &&
+		hasAnyHeader(headerSet, "debit_credit_d_c", "deebet_kreedit_d_c", "d_c") &&
+		hasAnyHeader(headerSet, "account_service_provider_s_reference", "konto_teenusepakkuja_viide")
+}
+
+func checkBankTransactionDate(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	value := strings.TrimSpace(row.values["date"])
+	if value == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      row.number,
+			Field:    "date",
+			Message:  "date is required",
+		})
+		return
+	}
+	if _, err := time.Parse("2006-01-02", value); err == nil {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    "date",
+		Value:    value,
+		Message:  "date must be YYYY-MM-DD",
+	})
+}
+
+func checkBankTransactionAmount(report *BundleValidationReport, file parsedFile, row parsedRow) {
+	if _, issue := parseCutoverRequiredDecimal(row.values["amount"], "amount"); issue != nil {
+		report.addIssue(cutoverAmountValidationIssue(file, row, *issue))
+	}
+}
+
+func checkOpeningBalanceRows(report *BundleValidationReport, file parsedFile) {
+	if fileHasHeaders(file, "account_code") {
+		for _, row := range file.rows {
+			checkRequiredCutoverField(report, file, row, "account_code")
+		}
+	}
+	checkOpeningBalanceTotals(report, file)
+}
+
+func checkOpeningBalanceTotals(report *BundleValidationReport, file parsedFile) {
+	if !fileHasHeaders(file, "debit", "credit") {
+		return
+	}
+
+	totalDebit := decimal.Zero
+	totalCredit := decimal.Zero
+	for _, row := range file.rows {
+		debit, credit, amountIssue := parseCutoverDebitCredit(row)
+		if amountIssue != nil {
+			report.addIssue(cutoverAmountValidationIssue(file, row, *amountIssue))
+			return
+		}
+		totalDebit = totalDebit.Add(debit)
+		totalCredit = totalCredit.Add(credit)
+	}
+
+	if len(file.rows) == 0 {
+		return
+	}
+	if totalDebit.IsZero() || totalCredit.IsZero() {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Field:    "debit/credit",
+			Value:    debitCreditTotalsValue(totalDebit, totalCredit),
+			Message:  "opening balances must include both debit and credit totals",
+		})
+		return
+	}
+	if !totalDebit.Equal(totalCredit) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Field:    "debit/credit",
+			Value:    debitCreditTotalsValue(totalDebit, totalCredit),
+			Message:  fmt.Sprintf("opening balances do not balance: debits=%s credits=%s", totalDebit.String(), totalCredit.String()),
+		})
+	}
+}
+
+func checkJournalEntryRows(report *BundleValidationReport, file parsedFile) {
+	if fileHasHeaders(file, "account_code") {
+		for _, row := range file.rows {
+			checkRequiredCutoverField(report, file, row, "account_code")
+		}
+	}
+	if fileHasHeaders(file, "source_id") {
+		for _, row := range file.rows {
+			checkOptionalUUID(report, file, row, "source_id")
+		}
+	}
+	if fileHasHeaders(file, "line_id") {
+		for _, row := range file.rows {
+			checkOptionalUUID(report, file, row, "line_id")
+		}
+	}
+	checkJournalEntryGroups(report, file)
+}
+
+func checkJournalEntryGroups(report *BundleValidationReport, file parsedFile) {
+	if !fileHasHeaders(file, "entry_reference", "entry_date", "debit", "credit") {
+		return
+	}
+
+	for _, group := range groupJournalRows(file.rows) {
+		checkJournalEntryGroup(report, file, group)
+	}
+}
+
+func groupJournalRows(rows []parsedRow) []*journalValidationGroup {
+	groupByReference := make(map[string]*journalValidationGroup)
+	groups := make([]*journalValidationGroup, 0)
+	for _, row := range rows {
+		reference := strings.TrimSpace(row.values["entry_reference"])
+		key := normalizedValue(reference)
+		if key == "" {
+			key = fmt.Sprintf("row-%d", row.number)
+		}
+		group, ok := groupByReference[key]
+		if !ok {
+			group = &journalValidationGroup{
+				firstRow:  row.number,
+				reference: reference,
+			}
+			groupByReference[key] = group
+			groups = append(groups, group)
+		}
+		group.rows = append(group.rows, row)
+	}
+	return groups
+}
+
+func checkJournalEntryGroup(report *BundleValidationReport, file parsedFile, group *journalValidationGroup) {
+	if strings.TrimSpace(group.reference) == "" {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      group.firstRow,
+			Field:    "entry_reference",
+			Message:  "entry_reference is required",
+		})
+		return
+	}
+
+	groupDate := ""
+	hasIssue := false
+	totalDebit := decimal.Zero
+	totalCredit := decimal.Zero
+	for _, row := range group.rows {
+		rowDate, dateIssue := parseCutoverEntryDate(row.values["entry_date"])
+		if dateIssue != nil {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "entry_date",
+				Value:    strings.TrimSpace(row.values["entry_date"]),
+				Message:  dateIssue.message,
+			})
+			hasIssue = true
+			continue
+		}
+		if groupDate == "" {
+			groupDate = rowDate
+		} else if rowDate != groupDate {
+			report.addIssue(ValidationIssue{
+				Severity: SeverityError,
+				Kind:     file.kind,
+				FileName: file.fileName,
+				Row:      row.number,
+				Field:    "entry_date",
+				Value:    rowDate,
+				Message:  fmt.Sprintf("entry_date must match the group date %s", groupDate),
+			})
+			hasIssue = true
+		}
+
+		debit, credit, amountIssue := parseCutoverDebitCredit(row)
+		if amountIssue != nil {
+			report.addIssue(cutoverAmountValidationIssue(file, row, *amountIssue))
+			hasIssue = true
+			continue
+		}
+		exchangeRate, exchangeIssue := parseCutoverExchangeRate(row.values["exchange_rate"])
+		if exchangeIssue != nil {
+			report.addIssue(cutoverAmountValidationIssue(file, row, *exchangeIssue))
+			hasIssue = true
+			continue
+		}
+		totalDebit = totalDebit.Add(debit.Mul(exchangeRate))
+		totalCredit = totalCredit.Add(credit.Mul(exchangeRate))
+	}
+	if hasIssue {
+		return
+	}
+
+	if len(group.rows) < 2 {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      group.firstRow,
+			Field:    "entry_reference",
+			Value:    group.reference,
+			Message:  fmt.Sprintf("journal entry %q must have at least two lines", group.reference),
+		})
+		return
+	}
+	if totalDebit.IsZero() {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      group.firstRow,
+			Field:    "entry_reference/debit/credit",
+			Value:    group.reference,
+			Message:  fmt.Sprintf("journal entry %q cannot have zero amounts", group.reference),
+		})
+		return
+	}
+	if !totalDebit.Equal(totalCredit) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     file.kind,
+			FileName: file.fileName,
+			Row:      group.firstRow,
+			Field:    "entry_reference/debit/credit",
+			Value:    group.reference,
+			Message:  fmt.Sprintf("journal entry %q does not balance: debits=%s credits=%s", group.reference, totalDebit.String(), totalCredit.String()),
+		})
+	}
+}
+
+func parseCutoverDebitCredit(row parsedRow) (decimal.Decimal, decimal.Decimal, *cutoverAmountIssue) {
+	debit, err := parseCutoverDecimal(row.values["debit"], "debit")
+	if err != nil {
+		return decimal.Zero, decimal.Zero, &cutoverAmountIssue{field: "debit", value: strings.TrimSpace(row.values["debit"]), message: err.Error()}
+	}
+	credit, err := parseCutoverDecimal(row.values["credit"], "credit")
+	if err != nil {
+		return decimal.Zero, decimal.Zero, &cutoverAmountIssue{field: "credit", value: strings.TrimSpace(row.values["credit"]), message: err.Error()}
+	}
+	if debit.LessThan(decimal.Zero) || credit.LessThan(decimal.Zero) {
+		return decimal.Zero, decimal.Zero, &cutoverAmountIssue{field: "debit/credit", value: debitCreditRowValue(row), message: "amounts cannot be negative"}
+	}
+	if debit.IsZero() && credit.IsZero() {
+		return decimal.Zero, decimal.Zero, &cutoverAmountIssue{field: "debit/credit", value: debitCreditRowValue(row), message: "either debit or credit is required"}
+	}
+	if debit.GreaterThan(decimal.Zero) && credit.GreaterThan(decimal.Zero) {
+		return decimal.Zero, decimal.Zero, &cutoverAmountIssue{field: "debit/credit", value: debitCreditRowValue(row), message: "row cannot contain both debit and credit amounts"}
+	}
+	return debit, credit, nil
+}
+
+func parseCutoverExchangeRate(value string) (decimal.Decimal, *cutoverAmountIssue) {
+	exchangeRate, err := parseCutoverDecimal(value, "exchange_rate")
+	if err != nil {
+		return decimal.Zero, &cutoverAmountIssue{field: "exchange_rate", value: strings.TrimSpace(value), message: err.Error()}
+	}
+	if exchangeRate.IsZero() {
+		return decimal.NewFromInt(1), nil
+	}
+	if exchangeRate.LessThan(decimal.Zero) {
+		return decimal.Zero, &cutoverAmountIssue{field: "exchange_rate", value: strings.TrimSpace(value), message: "exchange_rate cannot be negative"}
+	}
+	return exchangeRate, nil
+}
+
+func parseCutoverDecimal(value, fieldName string) (decimal.Decimal, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, nil
+	}
+	parsed, err := decimal.NewFromString(normalizeCutoverDecimal(trimmed))
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("invalid %s", fieldName)
+	}
+	return parsed, nil
+}
+
+func parseCutoverPositiveDecimal(value, fieldName string) (decimal.Decimal, *cutoverAmountIssue) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, message: fmt.Sprintf("%s is required", fieldName)}
+	}
+	parsed, err := decimal.NewFromString(trimmed)
+	if err != nil {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be a decimal", fieldName)}
+	}
+	if parsed.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be positive", fieldName)}
+	}
+	return parsed, nil
+}
+
+func parseCutoverRequiredDecimal(value, fieldName string) (decimal.Decimal, *cutoverAmountIssue) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, message: fmt.Sprintf("%s is required", fieldName)}
+	}
+	parsed, err := decimal.NewFromString(trimmed)
+	if err != nil {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be a decimal", fieldName)}
+	}
+	return parsed, nil
+}
+
+func parseCutoverRequiredImportDecimal(value, fieldName string) (decimal.Decimal, *cutoverAmountIssue) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, message: fmt.Sprintf("%s is required", fieldName)}
+	}
+	parsed, err := decimal.NewFromString(normalizeCutoverImportDecimal(trimmed))
+	if err != nil {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be a decimal", fieldName)}
+	}
+	return parsed, nil
+}
+
+func parseCutoverPositiveNormalizedDecimal(value, fieldName string) (decimal.Decimal, *cutoverAmountIssue) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, message: fmt.Sprintf("%s is required", fieldName)}
+	}
+	parsed, err := decimal.NewFromString(strings.ReplaceAll(trimmed, ",", "."))
+	if err != nil {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be a decimal", fieldName)}
+	}
+	if parsed.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, &cutoverAmountIssue{field: fieldName, value: trimmed, message: fmt.Sprintf("%s must be positive", fieldName)}
+	}
+	return parsed, nil
+}
+
+func normalizeCutoverDateOnly(value time.Time) time.Time {
+	utcValue := value.UTC()
+	return time.Date(utcValue.Year(), utcValue.Month(), utcValue.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func parseCutoverEntryDate(value string) (string, *cutoverAmountIssue) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", &cutoverAmountIssue{field: "entry_date", message: "entry_date is required"}
+	}
+	parsed, err := time.Parse("2006-01-02", trimmed)
+	if err != nil {
+		return "", &cutoverAmountIssue{field: "entry_date", value: trimmed, message: "entry_date must be in YYYY-MM-DD format"}
+	}
+	return parsed.Format("2006-01-02"), nil
+}
+
+func cutoverAmountValidationIssue(file parsedFile, row parsedRow, amountIssue cutoverAmountIssue) ValidationIssue {
+	return ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    amountIssue.field,
+		Value:    amountIssue.value,
+		Message:  amountIssue.message,
+	}
+}
+
+func fileHasHeaders(file parsedFile, headers ...string) bool {
+	present := make(map[string]bool, len(file.headers))
+	for _, header := range file.headers {
+		present[header] = true
+	}
+	for _, header := range headers {
+		if !present[header] {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeCutoverDecimal(value string) string {
+	if strings.Contains(value, ",") && !strings.Contains(value, ".") {
+		return strings.ReplaceAll(value, ",", ".")
+	}
+	return strings.ReplaceAll(value, ",", "")
+}
+
+func normalizeCutoverImportDecimal(value string) string {
+	normalized := strings.TrimSpace(value)
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	normalized = strings.ReplaceAll(normalized, ",", ".")
+	return normalized
+}
+
+func isCutoverDateOrRFC3339(value string) bool {
+	if _, err := time.Parse("2006-01-02", value); err == nil {
+		return true
+	}
+	if _, err := time.Parse(time.RFC3339, value); err == nil {
+		return true
+	}
+	return false
+}
+
+func normalizedCutoverStatus(value string) string {
+	return strings.ReplaceAll(normalizedValue(value), " ", "_")
+}
+
+func debitCreditRowValue(row parsedRow) string {
+	return fmt.Sprintf("debit=%s credit=%s", strings.TrimSpace(row.values["debit"]), strings.TrimSpace(row.values["credit"]))
+}
+
+func debitCreditTotalsValue(totalDebit, totalCredit decimal.Decimal) string {
+	return fmt.Sprintf("debits=%s credits=%s", totalDebit.String(), totalCredit.String())
+}
+
+func checkEInvoiceContactReferences(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, mode EInvoiceContactMode) {
+	switch mode {
+	case EInvoiceContactModeCustomer:
+		checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts, eInvoiceBuyerContactReferenceFields())
+	case EInvoiceContactModeBoth:
+		checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts, eInvoiceSellerContactReferenceFields())
+		checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts, eInvoiceBuyerContactReferenceFields())
+	default:
+		checkTargetReference(report, indexes.files[KindContacts], indexes.contacts, file, row, KindContacts, eInvoiceSellerContactReferenceFields())
+	}
+}
+
+func eInvoiceSellerContactReferenceFields() []string {
+	return []string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
+}
+
+func eInvoiceBuyerContactReferenceFields() []string {
+	return []string{"buyer_reg_code", "buyer_vat_number", "buyer_contact_email", "buyer_contact_name"}
+}
+
+func checkBankTransactionSourceAccount(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if !indexes.files[KindBankAccounts] {
+		return
+	}
+
+	sourceAccount := strings.TrimSpace(row.values["source_account"])
+	if sourceAccount == "" {
+		return
+	}
+
+	accountCurrency, ok := indexes.bankAccounts[bankAccountIndexKey(sourceAccount)]
+	if !ok {
+		report.addIssue(ValidationIssue{
+			Severity:   SeverityError,
+			Kind:       file.kind,
+			FileName:   file.fileName,
+			Row:        row.number,
+			Field:      "source_account",
+			Value:      sourceAccount,
+			TargetKind: KindBankAccounts,
+			Message:    fmt.Sprintf("source_account reference %q was not found in %s file", sourceAccount, KindBankAccounts),
+		})
+		return
+	}
+
+	rowCurrency := strings.ToUpper(strings.TrimSpace(row.values["currency"]))
+	if rowCurrency == "" || accountCurrency == "" || rowCurrency == accountCurrency {
+		return
+	}
+
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       file.kind,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "source_account/currency",
+		Value:      sourceAccount + "/" + rowCurrency,
+		TargetKind: KindBankAccounts,
+		Message:    fmt.Sprintf("source_account %q uses currency %q but %s file has currency %q", sourceAccount, rowCurrency, KindBankAccounts, accountCurrency),
+	})
+}
+
+func checkPaymentBankAccountReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if !indexes.files[KindBankAccounts] {
+		return
+	}
+
+	bankAccount := strings.TrimSpace(row.values["bank_account"])
+	if bankAccount == "" {
+		return
+	}
+
+	accountCurrency, ok := indexes.bankAccounts[bankAccountIndexKey(bankAccount)]
+	if !ok {
+		report.addIssue(ValidationIssue{
+			Severity:   SeverityError,
+			Kind:       file.kind,
+			FileName:   file.fileName,
+			Row:        row.number,
+			Field:      "bank_account",
+			Value:      bankAccount,
+			TargetKind: KindBankAccounts,
+			Message:    fmt.Sprintf("bank_account reference %q was not found in %s file", bankAccount, KindBankAccounts),
+		})
+		return
+	}
+
+	paymentCurrency := strings.ToUpper(strings.TrimSpace(row.values["currency"]))
+	if paymentCurrency == "" {
+		paymentCurrency = "EUR"
+	}
+	if accountCurrency == "" || paymentCurrency == accountCurrency {
+		return
+	}
+
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       file.kind,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      "bank_account/currency",
+		Value:      bankAccount + "/" + paymentCurrency,
+		TargetKind: KindBankAccounts,
+		Message:    fmt.Sprintf("bank_account %q uses currency %q but %s file has currency %q", bankAccount, paymentCurrency, KindBankAccounts, accountCurrency),
+	})
+}
+
+func checkEmployeeReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if !indexes.files[KindEmployees] {
+		return
+	}
+	values := []string{
+		row.values["employee_number"],
+		row.values["personal_code"],
+		row.values["email"],
+		employeeName(row.values),
+	}
+	checkReferenceValues(report, indexes.employees, file, row, KindEmployees, "employee", values)
+}
+
+func checkExpenseEmployeeIDReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	employeeID := strings.TrimSpace(row.values["employee_id"])
+	if employeeID == "" || !indexes.files[KindEmployees] {
+		return
+	}
+	parsedID, err := uuid.Parse(employeeID)
+	if err != nil {
+		return
+	}
+	checkReferenceValues(report, indexes.employeeIDs, file, row, KindEmployees, "employee_id", []string{parsedID.String()})
+}
+
+func checkAccountReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, idField, codeField string) {
+	accountID := strings.TrimSpace(row.values[idField])
+	if accountID != "" {
+		if !checkOptionalUUID(report, file, row, idField) || !indexes.files[KindAccounts] {
+			return
+		}
+		checkReferenceValues(report, indexes.accountIDs, file, row, KindAccounts, idField, []string{accountID})
+		return
+	}
+	if codeField == "" || !indexes.files[KindAccounts] {
+		return
+	}
+	checkReferenceValues(report, indexes.accountCodes, file, row, KindAccounts, codeField, []string{row.values[codeField]})
+}
+
+func checkContactIDReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, idField string) {
+	contactID := strings.TrimSpace(row.values[idField])
+	if contactID == "" {
+		return
+	}
+	if !checkOptionalUUID(report, file, row, idField) || !indexes.files[KindContacts] {
+		return
+	}
+	checkReferenceValues(report, indexes.contactIDs, file, row, KindContacts, idField, []string{contactID})
+}
+
+func checkContactReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["contact_id"]) != "" {
+		checkContactIDReference(report, indexes, file, row, "contact_id")
+		return
+	}
+	if !indexes.files[KindContacts] {
+		return
+	}
+	for _, field := range contactLookupFields() {
+		value := strings.TrimSpace(row.values[field])
+		if value == "" {
+			continue
+		}
+		checkReferenceValues(report, contactReferenceIndex(indexes, field), file, row, KindContacts, field, []string{value})
+		return
+	}
+}
+
+func contactReferenceIndex(indexes bundleIndexes, field string) map[string]bool {
+	switch field {
+	case "contact_code":
+		return indexes.contactCodes
+	case "contact_reg_code":
+		return indexes.contactRegCodes
+	case "contact_vat_number":
+		return indexes.contactVATNumbers
+	case "contact_email":
+		return indexes.contactEmails
+	case "contact_name":
+		return indexes.contactNames
+	default:
+		return indexes.contacts
+	}
+}
+
+func checkSupplierReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["supplier_id"]) != "" {
+		checkContactIDReference(report, indexes, file, row, "supplier_id")
+		return
+	}
+	checkSupplierContactReference(report, indexes, file, row)
+}
+
+func checkSupplierContactReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if !indexes.files[KindContacts] {
+		return
+	}
+	for _, field := range supplierContactLookupFields() {
+		value := strings.TrimSpace(row.values[field])
+		if value == "" {
+			continue
+		}
+		checkReferenceValues(report, supplierContactIndex(indexes, field), file, row, KindContacts, field, []string{value})
+		return
+	}
+}
+
+func supplierContactIndex(indexes bundleIndexes, field string) map[string]bool {
+	switch field {
+	case "supplier_code":
+		return indexes.contactCodes
+	case "supplier_reg_code":
+		return indexes.contactRegCodes
+	case "supplier_vat_number":
+		return indexes.contactVATNumbers
+	case "supplier_email":
+		return indexes.contactEmails
+	case "supplier_name":
+		return indexes.contactNames
+	default:
+		return indexes.contacts
+	}
+}
+
+func checkCommercialDocumentContactReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["contact_id"]) != "" {
+		checkContactIDReference(report, indexes, file, row, "contact_id")
+		return
+	}
+	if !indexes.files[KindContacts] {
+		return
+	}
+	for _, field := range commercialDocumentContactLookupFields() {
+		value := strings.TrimSpace(row.values[field])
+		if value == "" {
+			continue
+		}
+		checkReferenceValues(report, contactReferenceIndex(indexes, field), file, row, KindContacts, field, []string{value})
+		return
+	}
+}
+
+func checkCostAllocationReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	costCenterID := strings.TrimSpace(row.values["cost_center_id"])
+	if costCenterID != "" {
+		checkOptionalUUID(report, file, row, "cost_center_id")
+	} else {
+		checkTargetReference(report, indexes.files[KindCostCenters], indexes.costCenterCodes, file, row, KindCostCenters,
+			[]string{"cost_center_code"})
+	}
+	if len(indexes.journalLineIDs) == 0 {
+		return
+	}
+	checkReferenceValues(report, indexes.journalLineIDs, file, row, KindJournalEntries, "journal_entry_line_id", []string{row.values["journal_entry_line_id"]})
+}
+
+func checkProductCategoryReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, idField, nameField string) {
+	categoryID := strings.TrimSpace(row.values[idField])
+	if categoryID != "" {
+		if _, err := uuid.Parse(categoryID); err != nil || !indexes.files[KindProductCategories] {
+			return
+		}
+		checkReferenceValues(report, indexes.productCategoryIDs, file, row, KindProductCategories, idField, []string{categoryID})
+		return
+	}
+	if nameField == "" || !indexes.files[KindProductCategories] {
+		return
+	}
+	checkReferenceValues(report, indexes.productCategories, file, row, KindProductCategories, nameField, []string{row.values[nameField]})
+}
+
+func checkProductReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	productID := strings.TrimSpace(row.values["product_id"])
+	if productID != "" {
+		if !checkOptionalUUID(report, file, row, "product_id") {
+			return
+		}
+		if indexes.files[KindProducts] {
+			report.addIssue(ValidationIssue{
+				Severity:   SeverityError,
+				Kind:       file.kind,
+				FileName:   file.fileName,
+				Row:        row.number,
+				Field:      "product_id",
+				Value:      productID,
+				TargetKind: KindProducts,
+				Message:    "product_id cannot reference products imported in the same bundle because product import IDs are generated; use product_code for same-bundle document rows",
+			})
+		}
+		return
+	}
+	checkTargetReference(report, indexes.files[KindProducts], indexes.productCodes, file, row, KindProducts,
+		[]string{"product_code"})
+}
+
+func checkStockAdjustmentProductReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	productID := strings.TrimSpace(row.values["product_id"])
+	if productID != "" {
+		if !checkOptionalUUID(report, file, row, "product_id") {
+			return
+		}
+		if indexes.files[KindProducts] {
+			report.addIssue(ValidationIssue{
+				Severity:   SeverityError,
+				Kind:       file.kind,
+				FileName:   file.fileName,
+				Row:        row.number,
+				Field:      "product_id",
+				Value:      productID,
+				TargetKind: KindProducts,
+				Message:    "product_id cannot reference products imported in the same bundle because product import IDs are generated; use product_code for same-bundle stock adjustments",
+			})
+		}
+		return
+	}
+	checkTargetReference(report, indexes.files[KindProducts], indexes.productCodes, file, row, KindProducts,
+		[]string{"product_code"})
+}
+
+func checkStockAdjustmentWarehouseReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	warehouseID := strings.TrimSpace(row.values["warehouse_id"])
+	if warehouseID != "" {
+		if !checkOptionalUUID(report, file, row, "warehouse_id") {
+			return
+		}
+		if indexes.files[KindWarehouses] {
+			report.addIssue(ValidationIssue{
+				Severity:   SeverityError,
+				Kind:       file.kind,
+				FileName:   file.fileName,
+				Row:        row.number,
+				Field:      "warehouse_id",
+				Value:      warehouseID,
+				TargetKind: KindWarehouses,
+				Message:    "warehouse_id cannot reference warehouses imported in the same bundle because warehouse import IDs are generated; use warehouse_code for same-bundle stock adjustments",
+			})
+		}
+		return
+	}
+	checkTargetReference(report, indexes.files[KindWarehouses], indexes.warehouseCodes, file, row, KindWarehouses,
+		[]string{"warehouse_code"})
+}
+
+func checkSelfReference(report *BundleValidationReport, file parsedFile, row parsedRow, field, identityField string) {
+	value := strings.TrimSpace(row.values[field])
+	identity := strings.TrimSpace(row.values[identityField])
+	if value == "" || identity == "" || normalizedValue(value) != normalizedValue(identity) {
+		return
+	}
+
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       file.kind,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      field,
+		Value:      value,
+		TargetKind: file.kind,
+		Message:    fmt.Sprintf("%s cannot reference the same row's %s", field, identityField),
+	})
+}
+
+func checkOptionalUUID(report *BundleValidationReport, file parsedFile, row parsedRow, field string) bool {
+	value := strings.TrimSpace(row.values[field])
+	if value == "" {
+		return true
+	}
+	if _, err := uuid.Parse(value); err == nil {
+		return true
+	}
+
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     file.kind,
+		FileName: file.fileName,
+		Row:      row.number,
+		Field:    field,
+		Value:    value,
+		Message:  fmt.Sprintf("%s must be a valid UUID", field),
+	})
+	return false
+}
+
+func checkFixedAssetSourceInvoiceReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["invoice_id"]) != "" {
+		checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
+			[]string{"invoice_id"})
+		return
+	}
+	if strings.TrimSpace(row.values["invoice_number"]) != "" {
+		checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
+			[]string{"invoice_number"})
+	}
+}
+
+func checkTargetReference(
+	report *BundleValidationReport,
+	targetPresent bool,
+	targetIndex map[string]bool,
+	file parsedFile,
+	row parsedRow,
+	targetKind FileKind,
+	fields []string,
+) {
+	if !targetPresent {
+		return
+	}
+	values := make([]string, 0, len(fields))
+	for _, field := range fields {
+		values = append(values, row.values[field])
+	}
+	checkReferenceValues(report, targetIndex, file, row, targetKind, strings.Join(fields, "/"), values)
+}
+
+func checkReferenceValues(
+	report *BundleValidationReport,
+	targetIndex map[string]bool,
+	file parsedFile,
+	row parsedRow,
+	targetKind FileKind,
+	field string,
+	values []string,
+) {
+	var firstValue string
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if firstValue == "" {
+			firstValue = trimmed
+		}
+		if targetIndex[normalizedValue(trimmed)] {
+			return
+		}
+	}
+	if firstValue == "" {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity:   SeverityError,
+		Kind:       file.kind,
+		FileName:   file.fileName,
+		Row:        row.number,
+		Field:      field,
+		Value:      firstValue,
+		TargetKind: targetKind,
+		Message:    fmt.Sprintf("%s reference %q was not found in %s file", field, firstValue, targetKind),
+	})
+}
+
+func (r *BundleValidationReport) addIssue(issue ValidationIssue) {
+	r.Issues = append(r.Issues, issue)
+	switch issue.Severity {
+	case SeverityWarning:
+		r.Summary.WarningCount++
+	default:
+		r.Summary.ErrorCount++
+	}
+}
+
+func missingRequiredGroups(groups [][]string, headerSet map[string]bool) []string {
+	var missing []string
+	for _, group := range groups {
+		found := false
+		for _, column := range group {
+			if headerSet[column] {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, strings.Join(group, "|"))
+		}
+	}
+	return missing
+}
+
+func addEmployeeIndexValues(index map[string]bool, values map[string]string) {
+	addIndexValue(index, values["employee_number"])
+	addIndexValue(index, values["personal_code"])
+	addIndexValue(index, values["email"])
+	addIndexValue(index, employeeName(values))
+}
+
+func addBankAccountIndexValue(index map[string]string, accountNumber, currency string) {
+	key := bankAccountIndexKey(accountNumber)
+	if key == "" {
+		return
+	}
+	normalizedCurrency := strings.ToUpper(strings.TrimSpace(currency))
+	if normalizedCurrency == "" {
+		normalizedCurrency = "EUR"
+	}
+	index[key] = normalizedCurrency
+}
+
+func addIndexValue(index map[string]bool, value string) {
+	key := normalizedValue(value)
+	if key != "" {
+		index[key] = true
+	}
+}
+
+func employeeName(values map[string]string) string {
+	if name := strings.TrimSpace(values["name"]); name != "" {
+		return name
+	}
+	return strings.TrimSpace(strings.Join([]string{values["first_name"], values["last_name"]}, " "))
+}
+
+func displayFileName(file BundleFile) string {
+	if strings.TrimSpace(file.FileName) != "" {
+		return strings.TrimSpace(file.FileName)
+	}
+	if file.Kind == KindEInvoices {
+		return string(file.Kind) + ".xml"
+	}
+	return string(file.Kind) + ".csv"
+}
+
+func canonicalHeader(aliases map[string]string, value string) string {
+	normalized := normalizedHeader(value)
+	if canonical, ok := aliases[normalized]; ok {
+		return canonical
+	}
+	return normalized
+}
+
+func normalizedHeader(value string) string {
+	value = strings.TrimPrefix(strings.TrimSpace(strings.ToLower(value)), "\ufeff")
+	var builder strings.Builder
+	lastUnderscore := false
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			builder.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			builder.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	return strings.Trim(builder.String(), "_")
+}
+
+func normalizedValue(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func bankAccountIndexKey(value string) string {
+	return strings.ReplaceAll(normalizedValue(value), " ", "")
+}
+
+func detectDelimiter(content string) rune {
+	firstLine := content
+	if idx := strings.IndexAny(content, "\r\n"); idx >= 0 {
+		firstLine = content[:idx]
+	}
+	candidates := []rune{',', ';', '\t'}
+	best := ','
+	bestCount := -1
+	for _, candidate := range candidates {
+		count := strings.Count(firstLine, string(candidate))
+		if count > bestCount {
+			best = candidate
+			bestCount = count
+		}
+	}
+	return best
+}
+
+func commonAliases() map[string]string {
+	return map[string]string{
+		"id":          "id",
+		"code":        "code",
+		"name":        "name",
+		"email":       "email",
+		"amount":      "amount",
+		"debit":       "debit",
+		"credit":      "credit",
+		"currency":    "currency",
+		"status":      "status",
+		"description": "description",
+	}
+}
+
+func commercialDocumentAliases() map[string]string {
+	return mergeAliases(commonAliases(), map[string]string{
+		"number":             "number",
+		"contact_id":         "contact_id",
+		"customer_id":        "contact_id",
+		"contact_code":       "contact_code",
+		"customer_code":      "contact_code",
+		"contact_reg_code":   "contact_reg_code",
+		"contact_vat_number": "contact_vat_number",
+		"vat_number":         "contact_vat_number",
+		"contact_email":      "contact_email",
+		"email":              "contact_email",
+		"contact_name":       "contact_name",
+		"customer_name":      "contact_name",
+		"currency":           "currency",
+		"exchange_rate":      "exchange_rate",
+		"notes":              "notes",
+		"line_description":   "line_description",
+		"description":        "line_description",
+		"quantity":           "quantity",
+		"qty":                "quantity",
+		"unit":               "unit",
+		"unit_price":         "unit_price",
+		"price":              "unit_price",
+		"discount_percent":   "discount_percent",
+		"discount":           "discount_percent",
+		"vat_rate":           "vat_rate",
+		"vat":                "vat_rate",
+		"product":            "product_code",
+		"product_code":       "product_code",
+		"sku":                "product_code",
+		"item_code":          "product_code",
+		"product_id":         "product_id",
+		"invoice_type":       "invoice_type",
+		"type":               "invoice_type",
+		"is_active":          "is_active",
+		"active":             "is_active",
+	})
+}
+
+func commercialDocumentRequiredGroups(numberColumn, dateColumn string) [][]string {
+	return [][]string{
+		{numberColumn},
+		{dateColumn},
+		{"contact_id", "contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"},
+		{"line_description"},
+		{"quantity"},
+		{"unit_price"},
+		{"vat_rate"},
+	}
+}
+
+func commercialDocumentContactReferenceFields() []string {
+	return []string{"contact_id", "contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
+}
+
+func commercialDocumentContactLookupFields() []string {
+	return []string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
+}
+
+func contactLookupFields() []string {
+	return []string{"contact_code", "contact_reg_code", "contact_vat_number", "contact_email", "contact_name"}
+}
+
+func supplierContactLookupFields() []string {
+	return []string{"supplier_code", "supplier_reg_code", "supplier_vat_number", "supplier_email", "supplier_name"}
+}
+
+func employeeReferenceRequiredGroups() [][]string {
+	return [][]string{
+		{"employee_number", "personal_code", "email", "name", "first_name"},
+		{"employee_number", "personal_code", "email", "name", "last_name"},
+	}
+}
+
+func payrollHistoryRequiredGroups() [][]string {
+	groups := [][]string{{"period_year"}, {"period_month"}}
+	groups = append(groups, employeeReferenceRequiredGroups()...)
+	return append(groups, []string{"gross_salary"})
+}
+
+func leaveBalanceRequiredGroups() [][]string {
+	groups := [][]string{{"year"}}
+	groups = append(groups, employeeReferenceRequiredGroups()...)
+	return append(groups, []string{"absence_type_code", "absence_type", "absence_type_id"})
+}
+
+func tsdHistoryRequiredGroups() [][]string {
+	groups := [][]string{{"period_year"}, {"period_month"}}
+	groups = append(groups, employeeReferenceRequiredGroups()...)
+	return append(groups, []string{"gross_payment"})
+}
+
+func employeeReferenceAliases() map[string]string {
+	return mergeAliases(commonAliases(), map[string]string{
+		"employee_number": "employee_number",
+		"employee_no":     "employee_number",
+		"employee_code":   "employee_number",
+		"employee_id":     "employee_number",
+		"personal_code":   "personal_code",
+		"isikukood":       "personal_code",
+		"e_mail":          "email",
+		"first_name":      "first_name",
+		"last_name":       "last_name",
+	})
+}
+
+func mergeAliases(base map[string]string, extra map[string]string) map[string]string {
+	merged := make(map[string]string, len(base)+len(extra))
+	for key, value := range base {
+		merged[normalizedHeader(key)] = value
+	}
+	for key, value := range extra {
+		merged[normalizedHeader(key)] = value
+	}
+	return merged
+}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -47,6 +48,7 @@ var leaveBalanceImportHeaderAliases = map[string]string{
 	"personal_code":        "personal_code",
 	"isikukood":            "personal_code",
 	"email":                "email",
+	"name":                 "name",
 	"first_name":           "first_name",
 	"last_name":            "last_name",
 	"absence_type_id":      "absence_type_id",
@@ -332,6 +334,11 @@ func findLeaveBalanceAbsenceType(values map[string]string, indexes *leaveBalance
 	candidates := make(map[string]*AbsenceType)
 
 	if typeID := strings.TrimSpace(values["absence_type_id"]); typeID != "" {
+		parsedID, err := uuid.Parse(typeID)
+		if err != nil {
+			return nil, fmt.Errorf("absence_type_id must be a valid UUID")
+		}
+		typeID = parsedID.String()
 		match, ok := indexes.ids[normalizeEmployeeImportValue(typeID)]
 		if !ok {
 			return nil, fmt.Errorf("absence_type_id %q not found", typeID)
@@ -347,6 +354,7 @@ func findLeaveBalanceAbsenceType(values map[string]string, indexes *leaveBalance
 	}
 	if name := strings.TrimSpace(values["absence_type"]); name != "" {
 		matches := indexes.names[normalizeEmployeeImportValue(name)]
+		matches = uniqueLeaveBalanceAbsenceTypeMatches(matches)
 		if len(matches) == 0 {
 			return nil, fmt.Errorf("absence_type %q not found", name)
 		}
@@ -355,17 +363,8 @@ func findLeaveBalanceAbsenceType(values map[string]string, indexes *leaveBalance
 		}
 		if len(matches) == 1 {
 			candidates[matches[0].ID] = matches[0]
-		} else {
-			matchedCandidate := false
-			for _, match := range matches {
-				if _, ok := candidates[match.ID]; ok {
-					matchedCandidate = true
-					break
-				}
-			}
-			if !matchedCandidate {
-				return nil, fmt.Errorf("absence type identifiers do not match the same type")
-			}
+		} else if !leaveBalanceAbsenceTypeMatchesCandidate(candidates, matches) {
+			return nil, fmt.Errorf("absence type identifiers do not match the same type")
 		}
 	}
 
@@ -383,12 +382,37 @@ func findLeaveBalanceAbsenceType(values map[string]string, indexes *leaveBalance
 	return nil, fmt.Errorf("absence type not found")
 }
 
+func uniqueLeaveBalanceAbsenceTypeMatches(matches []*AbsenceType) []*AbsenceType {
+	seen := make(map[string]struct{}, len(matches))
+	unique := make([]*AbsenceType, 0, len(matches))
+	for _, match := range matches {
+		if match == nil {
+			continue
+		}
+		if _, ok := seen[match.ID]; ok {
+			continue
+		}
+		seen[match.ID] = struct{}{}
+		unique = append(unique, match)
+	}
+	return unique
+}
+
+func leaveBalanceAbsenceTypeMatchesCandidate(candidates map[string]*AbsenceType, matches []*AbsenceType) bool {
+	for _, match := range matches {
+		if _, ok := candidates[match.ID]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func appendLeaveBalanceRowError(result *ImportLeaveBalancesResult, row leaveBalanceImportRow, record *leaveBalanceImportRecord, message string) {
 	result.RowsSkipped++
 	rowError := ImportLeaveBalanceRowError{
 		Row:             row.rowNumber,
 		Year:            parseOptionalInt(row.values["year"]),
-		EmployeeName:    employeeImportDisplayName(row.values["first_name"], row.values["last_name"]),
+		EmployeeName:    payrollHistoryImportEmployeeName(row.values),
 		EmployeeNumber:  strings.TrimSpace(row.values["employee_number"]),
 		AbsenceTypeCode: strings.TrimSpace(row.values["absence_type_code"]),
 		Message:         message,

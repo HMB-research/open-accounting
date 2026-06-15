@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -256,6 +257,13 @@ func setupRecurringTestHandlers() (*Handlers, *mockTenantRepository, *mockRecurr
 	}, tenantRepo, recurringRepo, invoicingSvc
 }
 
+func setupRecurringImportTestHandlers() (*Handlers, *mockTenantRepository, *mockRecurringRepository, *mockContactsRepository) {
+	h, tenantRepo, recurringRepo, _ := setupRecurringTestHandlers()
+	contactsRepo := newMockContactsRepository()
+	h.contactsService = contacts.NewServiceWithRepository(contactsRepo)
+	return h, tenantRepo, recurringRepo, contactsRepo
+}
+
 func seedRecurringInvoice(repo *mockRecurringRepository, tenantID, recurringID string) *recurring.RecurringInvoice {
 	startDate := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	nextDate := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
@@ -446,6 +454,57 @@ func TestRecurringHandlers(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 	_, exists := recurringRepo.invoices["rec-1"]
 	assert.False(t, exists)
+}
+
+func TestImportRecurringInvoices(t *testing.T) {
+	h, tenantRepo, recurringRepo, contactsRepo := setupRecurringImportTestHandlers()
+	tenantRepo.addTestTenant("tenant-1", "Recurring Tenant", "recurring-tenant")
+	contact := contactsRepo.addTestContact("contact-1", "tenant-1", "Acme", contacts.ContactTypeCustomer, true)
+	contact.Code = "CUST-1"
+
+	csvContent := `name,contact_code,frequency,start_date,next_generation_date,line_description,quantity,unit_price,vat_rate
+Monthly Legacy,CUST-1,MONTHLY,2026-03-15,2026-04-15,Consulting,1,100,22
+`
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/recurring-invoices/import", map[string]any{
+		"file_name":   "recurring.csv",
+		"csv_content": csvContent,
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+
+	w := httptest.NewRecorder()
+	h.ImportRecurringInvoices(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+	var result recurring.ImportRecurringInvoicesResult
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, "recurring.csv", result.FileName)
+	assert.Equal(t, 1, result.RowsProcessed)
+	assert.Equal(t, 1, result.TemplatesCreated)
+	assert.Equal(t, 1, result.LinesImported)
+	assert.Zero(t, result.RowsSkipped)
+
+	require.Len(t, recurringRepo.invoices, 1)
+	var imported *recurring.RecurringInvoice
+	for _, template := range recurringRepo.invoices {
+		imported = template
+	}
+	require.NotNil(t, imported)
+	assert.Equal(t, "Monthly Legacy", imported.Name)
+	assert.Equal(t, "contact-1", imported.ContactID)
+	assert.Equal(t, recurring.FrequencyMonthly, imported.Frequency)
+	assert.Equal(t, "user-1", imported.CreatedBy)
+	require.Len(t, recurringRepo.lines[imported.ID], 1)
+	assert.Equal(t, "Consulting", recurringRepo.lines[imported.ID][0].Description)
+
+	missingReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/recurring-invoices/import", map[string]any{
+		"file_name": "recurring.csv",
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	missingReq = withURLParams(missingReq, map[string]string{"tenantID": "tenant-1"})
+	missingResp := httptest.NewRecorder()
+	h.ImportRecurringInvoices(missingResp, missingReq)
+
+	assert.Equal(t, http.StatusBadRequest, missingResp.Code)
+	assert.Contains(t, missingResp.Body.String(), "csv_content is required")
 }
 
 func TestRecurringHandlersErrorPaths(t *testing.T) {

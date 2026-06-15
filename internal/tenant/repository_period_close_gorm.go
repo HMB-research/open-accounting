@@ -1,5 +1,3 @@
-//go:build gorm
-
 package tenant
 
 import (
@@ -12,16 +10,17 @@ import (
 )
 
 type periodCloseEventModel struct {
-	ID             string     `gorm:"type:uuid;primaryKey"`
-	TenantID       string     `gorm:"column:tenant_id;type:uuid;not null;index"`
-	Action         string     `gorm:"size:20;not null"`
-	CloseKind      string     `gorm:"column:close_kind;size:20;not null"`
-	PeriodEndDate  time.Time  `gorm:"column:period_end_date;type:date;not null"`
-	LockDateBefore *time.Time `gorm:"column:lock_date_before;type:date"`
-	LockDateAfter  *time.Time `gorm:"column:lock_date_after;type:date"`
-	Note           string     `gorm:"type:text"`
-	PerformedBy    string     `gorm:"column:performed_by;type:uuid;not null"`
-	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:now()"`
+	ID              string     `gorm:"type:uuid;primaryKey"`
+	TenantID        string     `gorm:"column:tenant_id;type:uuid;not null;index"`
+	Action          string     `gorm:"size:20;not null"`
+	CloseKind       string     `gorm:"column:close_kind;size:20;not null"`
+	PeriodEndDate   time.Time  `gorm:"column:period_end_date;type:date;not null"`
+	LockDateBefore  *time.Time `gorm:"column:lock_date_before;type:date"`
+	LockDateAfter   *time.Time `gorm:"column:lock_date_after;type:date"`
+	Note            string     `gorm:"type:text"`
+	ReviewerSignOff bool       `gorm:"column:reviewer_sign_off;not null;default:false"`
+	PerformedBy     string     `gorm:"column:performed_by;type:uuid;not null"`
+	CreatedAt       time.Time  `gorm:"column:created_at;not null;default:now()"`
 }
 
 func (periodCloseEventModel) TableName() string {
@@ -121,29 +120,31 @@ func periodCloseEventToModel(event *PeriodCloseEvent) (*periodCloseEventModel, e
 	}
 
 	return &periodCloseEventModel{
-		ID:             event.ID,
-		TenantID:       event.TenantID,
-		Action:         event.Action,
-		CloseKind:      event.CloseKind,
-		PeriodEndDate:  periodEndDate,
-		LockDateBefore: lockDateBefore,
-		LockDateAfter:  lockDateAfter,
-		Note:           event.Note,
-		PerformedBy:    event.PerformedBy,
-		CreatedAt:      event.CreatedAt,
+		ID:              event.ID,
+		TenantID:        event.TenantID,
+		Action:          event.Action,
+		CloseKind:       event.CloseKind,
+		PeriodEndDate:   periodEndDate,
+		LockDateBefore:  lockDateBefore,
+		LockDateAfter:   lockDateAfter,
+		Note:            event.Note,
+		ReviewerSignOff: event.ReviewerSignOff,
+		PerformedBy:     event.PerformedBy,
+		CreatedAt:       event.CreatedAt,
 	}, nil
 }
 
 func periodCloseEventFromModel(model *periodCloseEventModel) *PeriodCloseEvent {
 	event := &PeriodCloseEvent{
-		ID:            model.ID,
-		TenantID:      model.TenantID,
-		Action:        model.Action,
-		CloseKind:     model.CloseKind,
-		PeriodEndDate: model.PeriodEndDate.Format(periodCloseDateLayout),
-		Note:          model.Note,
-		PerformedBy:   model.PerformedBy,
-		CreatedAt:     model.CreatedAt,
+		ID:              model.ID,
+		TenantID:        model.TenantID,
+		Action:          model.Action,
+		CloseKind:       model.CloseKind,
+		PeriodEndDate:   model.PeriodEndDate.Format(periodCloseDateLayout),
+		Note:            model.Note,
+		ReviewerSignOff: model.ReviewerSignOff,
+		PerformedBy:     model.PerformedBy,
+		CreatedAt:       model.CreatedAt,
 	}
 
 	if model.LockDateBefore != nil {

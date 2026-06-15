@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +23,50 @@ import (
 
 type mockReminderRuleRepository struct {
 	rules map[string]*invoicing.ReminderRule
+}
+
+type mockInterestManager struct {
+	history          map[string][]invoicing.InvoiceInterest
+	result           *invoicing.InterestCalculationResult
+	overdue          []invoicing.InterestCalculationResult
+	err              error
+	lastSchema       string
+	lastTenantID     string
+	lastInvoiceID    string
+	lastInterestRate float64
+}
+
+func (m *mockInterestManager) CalculateInterest(ctx context.Context, schemaName, tenantID, invoiceID string, interestRate float64, asOfDate time.Time) (*invoicing.InterestCalculationResult, error) {
+	m.lastSchema = schemaName
+	m.lastTenantID = tenantID
+	m.lastInvoiceID = invoiceID
+	m.lastInterestRate = interestRate
+	if m.err != nil {
+		return nil, m.err
+	}
+	if m.result != nil {
+		return m.result, nil
+	}
+	return &invoicing.InterestCalculationResult{InvoiceID: invoiceID, CalculatedAt: asOfDate}, nil
+}
+
+func (m *mockInterestManager) ListInterestHistory(ctx context.Context, schemaName, invoiceID string) ([]invoicing.InvoiceInterest, error) {
+	m.lastSchema = schemaName
+	m.lastInvoiceID = invoiceID
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.history[invoiceID], nil
+}
+
+func (m *mockInterestManager) CalculateInterestForOverdueInvoices(ctx context.Context, schemaName, tenantID string, interestRate float64) ([]invoicing.InterestCalculationResult, error) {
+	m.lastSchema = schemaName
+	m.lastTenantID = tenantID
+	m.lastInterestRate = interestRate
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.overdue, nil
 }
 
 func newMockReminderRuleRepository() *mockReminderRuleRepository {
@@ -120,6 +165,14 @@ func TestExtendedReportHandlers(t *testing.T) {
 				{AccountCode: "4000", AccountType: "REVENUE", Credit: decimal.NewFromInt(500)},
 			},
 		},
+		{
+			ID:        "custom-capex",
+			EntryDate: time.Date(2026, 1, 16, 0, 0, 0, 0, time.UTC),
+			Lines: []reports.JournalLine{
+				{AccountCode: "CAPEX-1", AccountType: "ASSET", AccountName: "Long-term platform", Debit: decimal.NewFromInt(50)},
+				{AccountCode: "1000", AccountType: "ASSET", AccountName: "Cash", Credit: decimal.NewFromInt(50)},
+			},
+		},
 	}
 	reportsRepo.CashBalance = decimal.NewFromInt(1000)
 	reportsRepo.ContactBalances = []reports.ContactBalance{{
@@ -141,21 +194,172 @@ func TestExtendedReportHandlers(t *testing.T) {
 		Currency:          "EUR",
 		DaysOverdue:       10,
 	}}
+	reportsRepo.ContactStatementOpening = decimal.NewFromInt(100)
+	reportsRepo.ContactStatementEntries = []reports.ContactStatementEntry{
+		{
+			Date:            "2026-01-05",
+			DocumentType:    "INVOICE",
+			DocumentID:      "inv-1",
+			DocumentNumber:  "INV-001",
+			DueDate:         "2026-01-15",
+			Currency:        "EUR",
+			DocumentAmount:  decimal.NewFromInt(250),
+			StatementAmount: decimal.NewFromInt(250),
+		},
+		{
+			Date:            "2026-01-20",
+			DocumentType:    "PAYMENT",
+			DocumentID:      "pay-1",
+			DocumentNumber:  "PMT-001",
+			Currency:        "EUR",
+			DocumentAmount:  decimal.NewFromInt(50),
+			StatementAmount: decimal.NewFromInt(-50),
+		},
+	}
+	reportsRepo.SalesMarginLines = []reports.SalesMarginLine{{
+		InvoiceID:     "inv-1",
+		InvoiceNumber: "INV-001",
+		InvoiceDate:   "2026-01-05",
+		ContactID:     "contact-1",
+		ContactName:   "Example Customer",
+		ProductID:     "prod-1",
+		ProductCode:   "SKU-1",
+		ProductName:   "Widget",
+		Description:   "Widget sale",
+		Quantity:      decimal.NewFromInt(2),
+		Revenue:       decimal.NewFromInt(250),
+		UnitCost:      decimal.NewFromInt(70),
+		Cost:          decimal.NewFromInt(140),
+	}}
 
 	req := withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr := httptest.NewRecorder()
 	h.GetCashFlowStatement(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+	var cashFlow reports.CashFlowStatement
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&cashFlow))
+	assert.Equal(t, reports.CashFlowMethodDirect, cashFlow.Method)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&method=indirect", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	cashFlow = reports.CashFlowStatement{}
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&cashFlow))
+	assert.Equal(t, reports.CashFlowMethodIndirect, cashFlow.Method)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&investing_accounts=CAPEX-1", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	cashFlow = reports.CashFlowStatement{}
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&cashFlow))
+	if assert.NotNil(t, cashFlow.MappingOverrides) {
+		assert.Equal(t, []string{"CAPEX-1"}, cashFlow.MappingOverrides.InvestingAccountCodes)
+	}
+	assert.Equal(t, "-50", cashFlow.TotalInvesting.String())
+
+	reportsRepo.CashFlowMapping = reports.CashFlowMappingOverrides{InvestingAccountCodes: []string{"capex-1"}}
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	cashFlow = reports.CashFlowStatement{}
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&cashFlow))
+	if assert.NotNil(t, cashFlow.MappingOverrides) {
+		assert.Equal(t, []string{"CAPEX-1"}, cashFlow.MappingOverrides.InvestingAccountCodes)
+	}
+	assert.Equal(t, "-50", cashFlow.TotalInvesting.String())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow/mapping", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowMapping(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var mapping reports.CashFlowMappingOverrides
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&mapping))
+	assert.Equal(t, []string{"CAPEX-1"}, mapping.InvestingAccountCodes)
+
+	body := strings.NewReader(`{"operating_account_codes":["prepay"],"investing_account_codes":["capex-2"],"financing_account_codes":["founders"]}`)
+	req = withURLParams(httptest.NewRequest(http.MethodPut, "/tenants/tenant-1/reports/cash-flow/mapping", body), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.UpdateCashFlowMapping(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	mapping = reports.CashFlowMappingOverrides{}
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&mapping))
+	assert.Equal(t, []string{"PREPAY"}, mapping.OperatingAccountCodes)
+	assert.Equal(t, []string{"CAPEX-2"}, mapping.InvestingAccountCodes)
+	assert.Equal(t, []string{"FOUNDERS"}, mapping.FinancingAccountCodes)
+
+	body = strings.NewReader(`{"operating_account_codes":["prepay"],"investing_account_codes":["PREPAY"]}`)
+	req = withURLParams(httptest.NewRequest(http.MethodPut, "/tenants/tenant-1/reports/cash-flow/mapping", body), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.UpdateCashFlowMapping(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Body.String(), "section,code,description")
+	assert.Contains(t, rr.Body.String(), "closing_cash")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", rr.Header().Get("Content-Type"))
+	requireXLSXContains(t, rr.Body.Bytes(), "closing_cash")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=bad&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetCashFlowStatement(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "end_date must be on or after start_date")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&method=bad", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCashFlowStatement(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "cash flow method")
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations?type=RECEIVABLE&as_of_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetBalanceConfirmationSummary(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations?type=RECEIVABLE&as_of_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceConfirmationSummary(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Body.String(), "row_type,type,as_of_date")
+	assert.Contains(t, rr.Body.String(), "contact-1")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations?type=RECEIVABLE&as_of_date=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceConfirmationSummary(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "contact-1")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations?type=RECEIVABLE&as_of_date=2026-01-31&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBalanceConfirmationSummary(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations?type=OTHER&as_of_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
@@ -170,12 +374,161 @@ func TestExtendedReportHandlers(t *testing.T) {
 	h.GetBalanceConfirmation(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations/contact-1?type=RECEIVABLE&as_of_date=2026-01-31&format=csv", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetBalanceConfirmation(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "invoice_id,invoice_number")
+	assert.Contains(t, rr.Body.String(), "inv-1")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations/contact-1?type=RECEIVABLE&as_of_date=2026-01-31&format=xlsx", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetBalanceConfirmation(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "INV-001")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations/contact-1?type=RECEIVABLE&as_of_date=2026-01-31&format=pdf", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetBalanceConfirmation(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/balance-confirmations/contact-1?type=RECEIVABLE&as_of_date=invalid", nil), map[string]string{
 		"tenantID":  "tenant-1",
 		"contactID": "contact-1",
 	})
 	rr = httptest.NewRecorder()
 	h.GetBalanceConfirmation(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/contact-statements/contact-1?type=RECEIVABLE&start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetContactStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var statement reports.ContactStatement
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&statement))
+	assert.True(t, statement.ClosingBalance.Equal(decimal.NewFromInt(300)))
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/contact-statements/contact-1?type=RECEIVABLE&start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetContactStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "row_type,type,start_date")
+	assert.Contains(t, rr.Body.String(), "PMT-001")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/contact-statements/contact-1?type=RECEIVABLE&start_date=2026-01-01&end_date=2026-01-31&format=xlsx", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetContactStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "PMT-001")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/contact-statements/contact-1?type=RECEIVABLE&start_date=2026-01-01&end_date=2026-01-31&format=pdf", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetContactStatement(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/contact-statements/contact-1?type=RECEIVABLE&start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{
+		"tenantID":  "tenant-1",
+		"contactID": "contact-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetContactStatement(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetSalesMarginReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var marginReport reports.SalesMarginReport
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&marginReport))
+	assert.True(t, marginReport.TotalMargin.Equal(decimal.NewFromInt(110)))
+	if assert.Len(t, marginReport.ByContact, 1) {
+		assert.Equal(t, "Example Customer", marginReport.ByContact[0].ContactName)
+	}
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetSalesMarginReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "row_type,start_date,end_date")
+	assert.Contains(t, rr.Body.String(), "Widget")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-01-01&end_date=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetSalesMarginReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "Widget")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-01-01&end_date=2026-01-31&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetSalesMarginReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/customer-profitability?start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCustomerProfitabilityReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var profitabilityReport reports.SalesMarginReport
+	assert.NoError(t, json.NewDecoder(rr.Body).Decode(&profitabilityReport))
+	assert.True(t, profitabilityReport.TotalMargin.Equal(decimal.NewFromInt(110)))
+	if assert.Len(t, profitabilityReport.ByContact, 1) {
+		assert.Equal(t, "Example Customer", profitabilityReport.ByContact[0].ContactName)
+	}
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/customer-profitability?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCustomerProfitabilityReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "row_type,start_date,end_date")
+	assert.Contains(t, rr.Body.String(), "Example Customer")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/customer-profitability?start_date=2026-01-01&end_date=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCustomerProfitabilityReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	requireXLSXContains(t, rr.Body.Bytes(), "Example Customer")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/customer-profitability?start_date=2026-01-01&end_date=2026-01-31&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCustomerProfitabilityReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	requirePDF(t, rr.Body.Bytes())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/customer-profitability?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCustomerProfitabilityReport(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/sales-margin?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetSalesMarginReport(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
@@ -212,8 +565,11 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	budget := decimal.NewFromInt(1000)
-	costCenterRepo.CostCenters["cc-1"] = &accounting.CostCenter{
-		ID:           "cc-1",
+	costCenterID := "11111111-1111-4111-8111-111111111111"
+	missingCostCenterID := "33333333-3333-4333-8333-333333333333"
+	journalEntryLineID := "22222222-2222-4222-8222-222222222222"
+	costCenterRepo.CostCenters[costCenterID] = &accounting.CostCenter{
+		ID:           costCenterID,
 		TenantID:     "tenant-1",
 		Code:         "ADMIN",
 		Name:         "Administration",
@@ -221,10 +577,10 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 		BudgetAmount: &budget,
 		BudgetPeriod: accounting.BudgetPeriodAnnual,
 	}
-	costCenterRepo.Allocations["cc-1"] = []accounting.CostAllocation{{
+	costCenterRepo.Allocations[costCenterID] = []accounting.CostAllocation{{
 		ID:             "alloc-1",
 		TenantID:       "tenant-1",
-		CostCenterID:   "cc-1",
+		CostCenterID:   costCenterID,
 		Amount:         decimal.NewFromInt(300),
 		AllocationDate: time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
 	}}
@@ -234,13 +590,24 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	h.ListCostCenters(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/cc-1", nil), map[string]string{
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/"+costCenterID, nil), map[string]string{
 		"tenantID":     "tenant-1",
-		"costCenterID": "cc-1",
+		"costCenterID": costCenterID,
 	})
 	rr = httptest.NewRecorder()
 	h.GetCostCenter(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers", map[string]interface{}{
+		"code":      "BAD-PARENT",
+		"name":      "Invalid Parent",
+		"parent_id": "legacy-parent",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateCostCenter(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "parent_id must be a valid UUID")
 
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers", map[string]interface{}{
 		"code": "OPS",
@@ -251,11 +618,95 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	h.CreateCostCenter(rr, req)
 	assert.Equal(t, http.StatusCreated, rr.Code)
 
-	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/cc-1", map[string]interface{}{
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/import", map[string]interface{}{
+		"file_name":   "cost-centers.csv",
+		"csv_content": "code,name,budget_amount,budget_period\nOPS-2,Operations 2,500.00,MONTHLY\n",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ImportCostCenters(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/allocations?cost_center_id="+costCenterID+"&start_date=2026-01-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ListCostAllocations(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "alloc-1")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/allocations?cost_center_id=legacy-cc", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ListCostAllocations(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "cost_center_id must be a valid UUID")
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations", map[string]interface{}{
+		"cost_center_id":        costCenterID,
+		"journal_entry_line_id": journalEntryLineID,
+		"amount":                "125.50",
+		"allocation_percentage": "50.00",
+		"allocation_date":       "2026-01-20T00:00:00Z",
+		"notes":                 "Shared office expense",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateCostAllocation(rr, req)
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Shared office expense")
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations/import", map[string]interface{}{
+		"file_name":   "cost-allocations.csv",
+		"csv_content": "cost_center_code,journal_entry_line_id,amount,allocation_percentage,allocation_date,notes\nADMIN,44444444-4444-4444-8444-444444444444,42.00,100,2026-01-22,Imported allocation\n",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ImportCostAllocations(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), `"allocations_imported":1`)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/allocations?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.ListCostAllocations(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations", map[string]interface{}{
+		"cost_center_id":        "legacy-cc",
+		"journal_entry_line_id": journalEntryLineID,
+		"amount":                "10.00",
+		"allocation_date":       "2026-01-20T00:00:00Z",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateCostAllocation(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "cost_center_id must be a valid UUID")
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/cost-centers/allocations", map[string]interface{}{
+		"cost_center_id":        missingCostCenterID,
+		"journal_entry_line_id": journalEntryLineID,
+		"amount":                "10.00",
+		"allocation_date":       "2026-01-20T00:00:00Z",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.CreateCostAllocation(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/"+costCenterID, map[string]interface{}{
+		"code":      "ADMIN",
+		"name":      "Admin Updated",
+		"parent_id": "legacy-parent",
+	}, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": costCenterID})
+	rr = httptest.NewRecorder()
+	h.UpdateCostCenter(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "parent_id must be a valid UUID")
+
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1/cost-centers/"+costCenterID, map[string]interface{}{
 		"code": "ADMIN",
 		"name": "Admin Updated",
 	}, nil)
-	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": "cc-1"})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": costCenterID})
 	rr = httptest.NewRecorder()
 	h.UpdateCostCenter(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
@@ -265,13 +716,72 @@ func TestReminderAndCostCenterHandlers(t *testing.T) {
 	h.GetCostCenterReport(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/report?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCostCenterReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Body.String(), "cost_center")
+	assert.Contains(t, rr.Body.String(), "OPS-2")
+	assert.Contains(t, rr.Body.String(), "total")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/report?start_date=2026-01-01&end_date=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCostCenterReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "cost-center-report-2026-01-01-2026-01-31.xlsx")
+	requireXLSXContains(t, rr.Body.Bytes(), "cost_center", "OPS-2", "total")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/report?start_date=2026-01-01&end_date=2026-01-31&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCostCenterReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "cost-center-report-2026-01-01-2026-01-31.pdf")
+	requirePDF(t, rr.Body.Bytes())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/budget-vs-actual?start_date=2026-01-01&end_date=2026-01-31&format=csv", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBudgetVsActualReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/csv")
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "budget-vs-actual-2026-01-01-2026-01-31.csv")
+	assert.Contains(t, rr.Body.String(), "cost_center")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/budget-vs-actual?start_date=2026-01-01&end_date=2026-01-31&format=xlsx", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBudgetVsActualReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "budget-vs-actual-2026-01-01-2026-01-31.xlsx")
+	requireXLSXContains(t, rr.Body.Bytes(), "cost_center", "OPS-2", "total")
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/budget-vs-actual?start_date=2026-01-01&end_date=2026-01-31&format=pdf", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBudgetVsActualReport(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/pdf", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "budget-vs-actual-2026-01-01-2026-01-31.pdf")
+	requirePDF(t, rr.Body.Bytes())
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/report?format=xml", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetCostCenterReport(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/cost-centers/report?start_date=bad-date", nil), map[string]string{"tenantID": "tenant-1"})
 	rr = httptest.NewRecorder()
 	h.GetCostCenterReport(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
-	req = makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/cost-centers/cc-1", nil, nil)
-	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": "cc-1"})
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/reports/budget-vs-actual?start_date=2026-02-01&end_date=2026-01-31", nil), map[string]string{"tenantID": "tenant-1"})
+	rr = httptest.NewRecorder()
+	h.GetBudgetVsActualReport(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodDelete, "/tenants/tenant-1/cost-centers/"+costCenterID, nil, nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "costCenterID": costCenterID})
 	rr = httptest.NewRecorder()
 	h.DeleteCostCenter(rr, req)
 	assert.Equal(t, http.StatusNoContent, rr.Code)
@@ -362,18 +872,77 @@ func TestInterestAndPluginValidationHandlers(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.GetInterestSettings(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+	var settings invoicing.InterestSettings
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&settings)) {
+		assert.False(t, settings.IsEnabled)
+		assert.Equal(t, 0.0, settings.Rate)
+		assert.Equal(t, "Interest calculation disabled", settings.Description)
+	}
 
 	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/"+tenantRecord.ID+"/settings/interest", map[string]interface{}{"rate": 0.001}, claims)
 	req = withURLParams(req, map[string]string{"tenantID": tenantRecord.ID})
 	rr = httptest.NewRecorder()
 	h.UpdateInterestSettings(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&settings)) {
+		assert.True(t, settings.IsEnabled)
+		assert.Equal(t, 0.001, settings.Rate)
+		assert.Equal(t, 0.365, settings.AnnualRate)
+		assert.Equal(t, "0.100% daily (36.5% annually)", settings.Description)
+	}
+	assert.Equal(t, 0.001, tenantRepo.tenants[tenantRecord.ID].Settings.LatePaymentInterestRate)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/settings/interest", nil), map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.GetInterestSettings(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&settings)) {
+		assert.True(t, settings.IsEnabled)
+		assert.Equal(t, 0.001, settings.Rate)
+	}
+
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/"+tenantRecord.ID+"/settings/interest", map[string]interface{}{"rate": 0}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.UpdateInterestSettings(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&settings)) {
+		assert.False(t, settings.IsEnabled)
+		assert.Equal(t, 0.0, settings.Rate)
+		assert.Equal(t, "Interest calculation disabled", settings.Description)
+	}
+	assert.Equal(t, 0.0, tenantRepo.tenants[tenantRecord.ID].Settings.LatePaymentInterestRate)
 
 	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/"+tenantRecord.ID+"/settings/interest", map[string]interface{}{"rate": -1}, claims)
 	req = withURLParams(req, map[string]string{"tenantID": tenantRecord.ID})
 	rr = httptest.NewRecorder()
 	h.UpdateInterestSettings(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = httptest.NewRequest(http.MethodPut, "/tenants/"+tenantRecord.ID+"/settings/interest", strings.NewReader("{"))
+	req = withURLParams(req, map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.UpdateInterestSettings(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/missing/settings/interest", nil), map[string]string{"tenantID": "missing"})
+	rr = httptest.NewRecorder()
+	h.GetInterestSettings(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/missing/settings/interest", map[string]interface{}{"rate": 0.001}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "missing"})
+	rr = httptest.NewRecorder()
+	h.UpdateInterestSettings(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	tenantRepo.updateTenantErr = errors.New("settings store unavailable")
+	req = makeAuthenticatedRequest(http.MethodPut, "/tenants/"+tenantRecord.ID+"/settings/interest", map[string]interface{}{"rate": 0.0005}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.UpdateInterestSettings(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	tenantRepo.updateTenantErr = nil
 
 	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/missing/invoices/inv-1/interest", nil), map[string]string{
 		"tenantID":  "missing",
@@ -467,6 +1036,179 @@ func TestInterestAndPluginValidationHandlers(t *testing.T) {
 	rr = httptest.NewRecorder()
 	h.UpdateTenantPluginSettings(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestGetInvoiceInterestHistory(t *testing.T) {
+	tenantRepo := newMockTenantRepository()
+	tenantRecord := tenantRepo.addTestTenant("de305d54-75b4-431b-adb2-eb6b9e546014", "Test Tenant", "test-tenant")
+	interestSvc := &mockInterestManager{
+		history: map[string][]invoicing.InvoiceInterest{
+			"inv-1": {
+				{
+					ID:                "interest-2",
+					InvoiceID:         "inv-1",
+					CalculatedAt:      time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
+					DaysOverdue:       20,
+					PrincipalAmount:   decimal.NewFromInt(1000),
+					InterestRate:      decimal.NewFromFloat(0.0005),
+					InterestAmount:    decimal.NewFromInt(10),
+					TotalWithInterest: decimal.NewFromInt(1010),
+					CreatedAt:         time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
+				},
+				{
+					ID:                "interest-1",
+					InvoiceID:         "inv-1",
+					CalculatedAt:      time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC),
+					DaysOverdue:       10,
+					PrincipalAmount:   decimal.NewFromInt(1000),
+					InterestRate:      decimal.NewFromFloat(0.0005),
+					InterestAmount:    decimal.NewFromInt(5),
+					TotalWithInterest: decimal.NewFromInt(1005),
+					CreatedAt:         time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC),
+				},
+			},
+		},
+	}
+	h := &Handlers{
+		tenantService:   tenant.NewServiceWithRepository(tenantRepo),
+		interestService: interestSvc,
+	}
+
+	req := withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/inv-1/interest/history", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "inv-1",
+	})
+	rr := httptest.NewRecorder()
+	h.GetInvoiceInterestHistory(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, tenantRecord.SchemaName, interestSvc.lastSchema)
+	assert.Equal(t, "inv-1", interestSvc.lastInvoiceID)
+
+	var history []invoicing.InvoiceInterest
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&history)) && assert.Len(t, history, 2) {
+		assert.Equal(t, "interest-2", history[0].ID)
+		assert.True(t, history[0].InterestAmount.Equal(decimal.NewFromInt(10)))
+		assert.Equal(t, "interest-1", history[1].ID)
+	}
+
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/inv-empty/interest/history", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "inv-empty",
+	})
+	rr = httptest.NewRecorder()
+	h.GetInvoiceInterestHistory(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, "[]", rr.Body.String())
+
+	interestSvc.err = errors.New("repository unavailable")
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/inv-1/interest/history", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "inv-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetInvoiceInterestHistory(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Failed to get interest history")
+}
+
+func TestInvoiceInterestCalculationHandlers(t *testing.T) {
+	tenantRepo := newMockTenantRepository()
+	tenantRecord := tenantRepo.addTestTenant("de305d54-75b4-431b-adb2-eb6b9e546014", "Test Tenant", "test-tenant")
+	interestSvc := &mockInterestManager{
+		result: &invoicing.InterestCalculationResult{
+			InvoiceID:         "inv-1",
+			InvoiceNumber:     "INV-001",
+			DueDate:           time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC),
+			DaysOverdue:       10,
+			OutstandingAmount: decimal.NewFromInt(1000),
+			InterestRate:      decimal.NewFromFloat(0.0005),
+			DailyInterest:     decimal.NewFromFloat(0.50),
+			TotalInterest:     decimal.NewFromInt(5),
+			TotalWithInterest: decimal.NewFromInt(1005),
+			CalculatedAt:      time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC),
+			Currency:          "EUR",
+		},
+	}
+	h := &Handlers{
+		tenantService:   tenant.NewServiceWithRepository(tenantRepo),
+		interestService: interestSvc,
+	}
+
+	req := withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/inv-1/interest", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "inv-1",
+	})
+	rr := httptest.NewRecorder()
+	h.GetInvoiceInterest(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, tenantRecord.SchemaName, interestSvc.lastSchema)
+	assert.Equal(t, tenantRecord.ID, interestSvc.lastTenantID)
+	assert.Equal(t, "inv-1", interestSvc.lastInvoiceID)
+	assert.Equal(t, 0.0005, interestSvc.lastInterestRate)
+
+	var current invoicing.InterestCalculationResult
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&current)) {
+		assert.Equal(t, "INV-001", current.InvoiceNumber)
+		assert.True(t, current.TotalInterest.Equal(decimal.NewFromInt(5)))
+	}
+
+	interestSvc.err = &invoicing.NotFoundError{Entity: "invoice"}
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/missing/interest", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "missing",
+	})
+	rr = httptest.NewRecorder()
+	h.GetInvoiceInterest(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Invoice not found")
+
+	interestSvc.err = errors.New("calculator unavailable")
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/inv-1/interest", nil), map[string]string{
+		"tenantID":  tenantRecord.ID,
+		"invoiceID": "inv-1",
+	})
+	rr = httptest.NewRecorder()
+	h.GetInvoiceInterest(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Failed to calculate interest")
+
+	interestSvc.err = nil
+	interestSvc.overdue = nil
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/overdue-with-interest", nil), map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.GetOverdueInvoicesWithInterest(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, "[]", rr.Body.String())
+
+	tenantRecord.Settings.LatePaymentInterestRate = 0.001
+	interestSvc.overdue = []invoicing.InterestCalculationResult{{
+		InvoiceID:         "inv-overdue",
+		InvoiceNumber:     "INV-OVERDUE",
+		DaysOverdue:       14,
+		OutstandingAmount: decimal.NewFromInt(500),
+		InterestRate:      decimal.NewFromFloat(0.001),
+		TotalInterest:     decimal.NewFromInt(7),
+		TotalWithInterest: decimal.NewFromInt(507),
+		Currency:          "EUR",
+	}}
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/overdue-with-interest", nil), map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.GetOverdueInvoicesWithInterest(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, 0.001, interestSvc.lastInterestRate)
+
+	var overdue []invoicing.InterestCalculationResult
+	if assert.NoError(t, json.NewDecoder(rr.Body).Decode(&overdue)) && assert.Len(t, overdue, 1) {
+		assert.Equal(t, "INV-OVERDUE", overdue[0].InvoiceNumber)
+		assert.True(t, overdue[0].TotalWithInterest.Equal(decimal.NewFromInt(507)))
+	}
+
+	interestSvc.err = errors.New("overdue query failed")
+	req = withURLParams(httptest.NewRequest(http.MethodGet, "/tenants/"+tenantRecord.ID+"/invoices/overdue-with-interest", nil), map[string]string{"tenantID": tenantRecord.ID})
+	rr = httptest.NewRecorder()
+	h.GetOverdueInvoicesWithInterest(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Failed to calculate interest")
 }
 
 func TestPluginTenantAdminValidation(t *testing.T) {

@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/wneessen/go-mail"
+
+	"github.com/HMB-research/open-accounting/internal/database"
 )
 
 // MailSender is an interface for sending mail (for testing)
@@ -54,16 +56,21 @@ func (d *DefaultMailSender) SendMail(config *SMTPConfig, m *mail.Msg) error {
 
 // Service handles email operations
 type Service struct {
-	db     *pgxpool.Pool
 	repo   Repository
 	mailer MailSender
 }
 
 // NewService creates a new email service
 func NewService(db *pgxpool.Pool) *Service {
+	if db == nil {
+		return &Service{mailer: &DefaultMailSender{}}
+	}
+	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	if err != nil {
+		panic(fmt.Errorf("create email GORM repository: %w", err))
+	}
 	return &Service{
-		db:     db,
-		repo:   NewPostgresRepository(db),
+		repo:   NewGORMRepository(gormDB),
 		mailer: &DefaultMailSender{},
 	}
 }
@@ -74,11 +81,6 @@ func NewServiceWithRepository(repo Repository, mailer MailSender) *Service {
 		repo:   repo,
 		mailer: mailer,
 	}
-}
-
-// EnsureSchema creates email tables if they don't exist
-func (s *Service) EnsureSchema(ctx context.Context, schemaName string) error {
-	return s.repo.EnsureSchema(ctx, schemaName)
 }
 
 // GetSMTPConfig retrieves SMTP configuration for a tenant
@@ -162,11 +164,6 @@ func (s *Service) GetTemplate(ctx context.Context, schemaName string, tenantID s
 
 // ListTemplates lists all email templates for a tenant
 func (s *Service) ListTemplates(ctx context.Context, schemaName string, tenantID string) ([]EmailTemplate, error) {
-	// First ensure schema exists
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
-		return nil, err
-	}
-
 	templates, err := s.repo.ListTemplates(ctx, schemaName, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list templates: %w", err)
@@ -191,11 +188,6 @@ func (s *Service) ListTemplates(ctx context.Context, schemaName string, tenantID
 
 // UpdateTemplate updates an email template
 func (s *Service) UpdateTemplate(ctx context.Context, schemaName string, tenantID string, templateType TemplateType, req *UpdateTemplateRequest) (*EmailTemplate, error) {
-	// Ensure schema exists
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
-		return nil, err
-	}
-
 	tmpl := &EmailTemplate{
 		ID:           uuid.New().String(),
 		TenantID:     tenantID,
@@ -223,11 +215,6 @@ func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID str
 
 	if !config.IsConfigured() {
 		return nil, fmt.Errorf("SMTP is not configured for this organization")
-	}
-
-	// Ensure schema exists
-	if err := s.EnsureSchema(ctx, schemaName); err != nil {
-		return nil, err
 	}
 
 	// Create email log entry

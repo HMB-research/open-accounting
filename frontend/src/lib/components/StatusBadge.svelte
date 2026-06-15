@@ -150,6 +150,17 @@
 		color: #1e40af;
 	}
 
+	/* Payment types */
+	:global(.badge-received) {
+		background: #dcfce7;
+		color: #166534;
+	}
+
+	:global(.badge-made) {
+		background: #fee2e2;
+		color: #991b1b;
+	}
+
 	/* Banking statuses */
 	:global(.badge-unmatched) {
 		background: #fef3c7;

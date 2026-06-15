@@ -1,176 +1,82 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 test.describe('Authentication - Login Page', () => {
-	// Clear storageState - this test suite tests unauthenticated scenarios
+	// Clear storageState because this suite verifies unauthenticated login/register behavior.
 	test.use({ storageState: { cookies: [], origins: [] } });
 
-	test.beforeEach(async ({ page }) => {
+	const openLoginPage = async (page: Page) => {
 		await page.goto('/login');
-	});
-
-	test('should display login page elements', async ({ page }) => {
-		// Check for login form elements - heading is "Welcome Back"
-		await expect(page.getByRole('heading', { name: /welcome|login|sign in/i })).toBeVisible();
-		await expect(page.getByLabel(/email/i)).toBeVisible();
-		await expect(page.locator('#password')).toBeVisible();
-		await expect(page.getByRole('button', { name: /sign in|login/i })).toBeVisible();
-	});
-
-	test('should show error state for invalid credentials', async ({ page }) => {
-		await page.getByLabel(/email/i).fill('invalid@example.com');
-		await page.locator('#password').fill('wrongpassword');
-		await page.getByRole('button', { name: /sign in|login/i }).click();
-
-		// Wait for response - should either show error message or stay on login page
-		// Error message could be "Invalid credentials", network error, or other API error
-		const errorMessage = page.locator('.alert-error, [role="alert"]');
-		const hasError = await errorMessage.isVisible({ timeout: 10000 }).catch(() => false);
-
-		if (hasError) {
-			// Verify we have some error text
-			await expect(errorMessage).toContainText(/.+/);
-		} else {
-			// If no error shown, should still be on login page (form didn't navigate away)
-			await expect(page).toHaveURL(/login/i);
-			await expect(page.getByLabel(/email/i)).toBeVisible();
-		}
-	});
-
-	test('should have working form inputs', async ({ page }) => {
-		// Test that inputs accept values
-		const emailInput = page.getByLabel(/email/i);
-		const passwordInput = page.locator('#password');
-
-		await emailInput.fill('test@example.com');
-		await passwordInput.fill('password123');
-
-		await expect(emailInput).toHaveValue('test@example.com');
-		await expect(passwordInput).toHaveValue('password123');
-	});
-
-	test('should show register toggle option', async ({ page }) => {
-		// Should have option to switch to register mode
-		const registerToggle = page.getByRole('button', { name: /register|sign up|create account/i });
-		const hasRegisterToggle = await registerToggle.isVisible().catch(() => false);
-
-		// Just verify the toggle exists - clicking may or may not show name field depending on timing
-		if (hasRegisterToggle) {
-			await registerToggle.click();
-			// Wait a moment for state change
-			await page.waitForTimeout(500);
-			// Name field might appear, but don't fail if it doesn't (timing issues in CI)
-			const nameField = page.getByLabel(/name/i);
-			const hasNameField = await nameField.isVisible().catch(() => false);
-			// Test passes if either toggle worked or toggle exists
-			expect(hasNameField || hasRegisterToggle).toBeTruthy();
-		} else {
-			// No register toggle is also acceptable (feature might be disabled)
-			expect(true).toBeTruthy();
-		}
-	});
-});
-
-test.describe('Authentication - Login Flow', () => {
-	// These tests require the test user from auth.setup to exist
-	test.use({ storageState: { cookies: [], origins: [] } });
-
-	test('should attempt login with test credentials', async ({ page }) => {
-		await page.goto('/login');
-
-		// Fill credentials matching auth.setup.ts
-		await page.getByLabel(/email/i).fill('test@example.com');
-		await page.locator('#password').fill('testpassword123');
-		await page.getByRole('button', { name: /sign in|login/i }).click();
-
-		// Wait for navigation or error - either is acceptable
-		// Success: redirects to dashboard
-		// Failure: shows error on login page
-		await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-
-		const currentUrl = page.url();
-		const isOnDashboard = /dashboard|home/i.test(currentUrl);
-		const isOnLogin = /login/i.test(currentUrl);
-
-		// Test passes if we navigated somewhere (login worked or error shown)
-		expect(isOnDashboard || isOnLogin).toBeTruthy();
-	});
-});
-
-test.describe('Authentication - Demo Credentials', () => {
-	test.use({ storageState: { cookies: [], origins: [] } });
-
-	test('should allow passwords for login (demo: demo12345)', async ({ page }) => {
-		await page.goto('/login');
-
-		// Demo password is 9 characters
-		const passwordInput = page.locator('#password');
-		await page.getByLabel(/email/i).fill('demo1@example.com');
-		await passwordInput.fill('demo12345');
-
-		// Password input should NOT have minlength validation in login mode
-		const minlength = await passwordInput.getAttribute('minlength');
-		expect(minlength).toBeNull();
-
-		// Form should be submittable (button not disabled by validation)
-		const submitButton = page.getByRole('button', { name: /sign in|login/i });
-		await expect(submitButton).toBeEnabled();
-	});
-
-	test('should require 8 character minimum for registration', async ({ page }) => {
-		await page.goto('/login');
-
-		// Wait for page to fully load
-		await page.waitForLoadState('networkidle');
-
-		// Click the "Create Account" button via JavaScript (Svelte 5 event handlers)
-		await page.evaluate(() => {
-			const buttons = document.querySelectorAll('button.link-btn');
-			for (const btn of buttons) {
-				if (btn.textContent?.toLowerCase().includes('create account')) {
-					(btn as HTMLButtonElement).click();
-					break;
-				}
-			}
+		await page.waitForLoadState('networkidle').catch(() => {
+			// Vite and background requests can keep the page busy in local runs.
 		});
+		await expect(page.getByRole('heading', { name: /welcome|login|sign in|tere tulemast|logi/i })).toBeVisible();
+	};
 
-		// Wait for the Name field to appear (only visible in register mode)
-		try {
-			await page.waitForSelector('input#name', { timeout: 3000 });
-		} catch {
-			// If name field doesn't appear, the toggle didn't work
-			// Take a screenshot for debugging
-			const heading = await page.locator('h2').first().textContent();
-			throw new Error(`Mode toggle failed. Current heading: "${heading}"`);
-		}
+	const emailInput = (page: Page) => page.getByLabel(/email|e-post/i);
+	const passwordInput = (page: Page) => page.locator('#password');
+	const nameInput = (page: Page) => page.getByLabel(/name|nimi/i);
+	const submitButton = (page: Page) => page.locator('form button[type="submit"]');
+	const registerToggleButton = (page: Page) =>
+		page.locator('.toggle-mode').getByRole('button', { name: /create account|register|loo konto/i });
+	const loginToggleButton = (page: Page) =>
+		page.locator('.toggle-mode').getByRole('button', { name: /login|sign in|logi/i });
 
-		const passwordInput = page.locator('#password');
+	test('validates login controls, invalid credentials, and demo password constraints', async ({ page }) => {
+		await openLoginPage(page);
 
-		// Password input SHOULD have minlength validation in register mode
-		const minlength = await passwordInput.getAttribute('minlength');
-		expect(minlength).toBe('8');
-	});
+		await expect(emailInput(page)).toBeVisible();
+		await expect(passwordInput(page)).toBeVisible();
+		await expect(submitButton(page)).toBeVisible();
 
-	test('should attempt demo login without validation error', async ({ page }) => {
-		await page.goto('/login');
+		await emailInput(page).fill('test@example.com');
+		await passwordInput(page).fill('password123');
 
-		// Fill demo credentials
-		await page.getByLabel(/email/i).fill('demo1@example.com');
-		await page.locator('#password').fill('demo12345');
+		await expect(emailInput(page)).toHaveValue('test@example.com');
+		await expect(passwordInput(page)).toHaveValue('password123');
+		await expect(passwordInput(page)).not.toHaveAttribute('minlength', /.+/);
+		await expect(submitButton(page)).toBeEnabled();
 
-		// Click login - should not show browser validation error
-		await page.getByRole('button', { name: /sign in|login/i }).click();
+		await registerToggleButton(page).click();
 
-		// Wait for API response
-		await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+		await expect(nameInput(page)).toBeVisible();
+		await expect(passwordInput(page)).toHaveAttribute('minlength', '8');
+		await expect(submitButton(page)).toContainText(/create account|register|loo konto/i);
 
-		// If still on login page, password field should be valid (no browser validation error)
-		if (page.url().includes('/login')) {
-			const validationMsg = await page.evaluate(() => {
-				const input = document.querySelector('input[type="password"]') as HTMLInputElement;
-				return input?.validationMessage || '';
-			});
-			// Should NOT have "minimum length" validation message
-			expect(validationMsg).not.toMatch(/minimum|too short|at least/i);
-		}
+		await loginToggleButton(page).click();
+		await expect(nameInput(page)).toBeHidden();
+		await expect(passwordInput(page)).not.toHaveAttribute('minlength', /.+/);
+		await expect(submitButton(page)).toContainText(/login|sign in|logi/i);
+
+		await emailInput(page).fill('invalid@example.com');
+		await passwordInput(page).fill('wrongpassword');
+		await expect(emailInput(page)).toHaveValue('invalid@example.com');
+		await expect(passwordInput(page)).toHaveValue('wrongpassword');
+		await expect(submitButton(page)).toBeEnabled();
+
+		const [response] = await Promise.all([
+			page.waitForResponse(
+				(loginResponse) =>
+					new URL(loginResponse.url()).pathname.endsWith('/api/v1/auth/login') &&
+					loginResponse.request().method() === 'POST'
+			),
+			submitButton(page).click()
+		]);
+		expect(response.status()).toBe(401);
+
+		await expect(page.locator('.alert-error, [role="alert"]')).toContainText(/.+/);
+		await expect(page).toHaveURL(/login/i);
+
+		await emailInput(page).fill('demo1@example.com');
+		await passwordInput(page).fill('demo12345');
+
+		await expect(passwordInput(page)).not.toHaveAttribute('minlength', /.+/);
+		await expect(submitButton(page)).toBeEnabled();
+
+		const passwordValidity = await passwordInput(page).evaluate((input: HTMLInputElement) => ({
+			valid: input.checkValidity(),
+			validationMessage: input.validationMessage
+		}));
+
+		expect(passwordValidity).toEqual({ valid: true, validationMessage: '' });
 	});
 });

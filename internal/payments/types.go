@@ -10,6 +10,12 @@ import (
 // ErrPaymentNotFound is returned when a payment is not found
 var ErrPaymentNotFound = errors.New("payment not found")
 
+// ErrPaymentAlreadyReversed is returned when a payment already has a reversal.
+var ErrPaymentAlreadyReversed = errors.New("payment already reversed")
+
+// ErrPaymentReversalNotAllowed is returned when a payment cannot be reversed.
+var ErrPaymentReversalNotAllowed = errors.New("payment reversal not allowed")
+
 // PaymentType represents the type of payment
 type PaymentType string
 
@@ -20,24 +26,29 @@ const (
 
 // Payment represents a payment received or made
 type Payment struct {
-	ID             string              `json:"id"`
-	TenantID       string              `json:"tenant_id"`
-	PaymentNumber  string              `json:"payment_number"`
-	PaymentType    PaymentType         `json:"payment_type"`
-	ContactID      *string             `json:"contact_id,omitempty"`
-	PaymentDate    time.Time           `json:"payment_date"`
-	Amount         decimal.Decimal     `json:"amount"`
-	Currency       string              `json:"currency"`
-	ExchangeRate   decimal.Decimal     `json:"exchange_rate"`
-	BaseAmount     decimal.Decimal     `json:"base_amount"`
-	PaymentMethod  string              `json:"payment_method,omitempty"`
-	BankAccount    string              `json:"bank_account,omitempty"`
-	Reference      string              `json:"reference,omitempty"`
-	Notes          string              `json:"notes,omitempty"`
-	Allocations    []PaymentAllocation `json:"allocations,omitempty"`
-	JournalEntryID *string             `json:"journal_entry_id,omitempty"`
-	CreatedAt      time.Time           `json:"created_at"`
-	CreatedBy      string              `json:"created_by"`
+	ID                  string              `json:"id"`
+	TenantID            string              `json:"tenant_id"`
+	PaymentNumber       string              `json:"payment_number"`
+	PaymentType         PaymentType         `json:"payment_type"`
+	ContactID           *string             `json:"contact_id,omitempty"`
+	PaymentDate         time.Time           `json:"payment_date"`
+	Amount              decimal.Decimal     `json:"amount"`
+	Currency            string              `json:"currency"`
+	ExchangeRate        decimal.Decimal     `json:"exchange_rate"`
+	BaseAmount          decimal.Decimal     `json:"base_amount"`
+	PaymentMethod       string              `json:"payment_method,omitempty"`
+	BankAccount         string              `json:"bank_account,omitempty"`
+	Reference           string              `json:"reference,omitempty"`
+	Notes               string              `json:"notes,omitempty"`
+	Allocations         []PaymentAllocation `json:"allocations,omitempty"`
+	JournalEntryID      *string             `json:"journal_entry_id,omitempty"`
+	ReversalOfPaymentID *string             `json:"reversal_of_payment_id,omitempty"`
+	ReversedByPaymentID *string             `json:"reversed_by_payment_id,omitempty"`
+	ReversedAt          *time.Time          `json:"reversed_at,omitempty"`
+	ReversedBy          *string             `json:"reversed_by,omitempty"`
+	ReversalReason      string              `json:"reversal_reason,omitempty"`
+	CreatedAt           time.Time           `json:"created_at"`
+	CreatedBy           string              `json:"created_by"`
 }
 
 // PaymentAllocation represents how a payment is allocated to invoices
@@ -78,6 +89,46 @@ type CreatePaymentRequest struct {
 	Notes         string              `json:"notes,omitempty"`
 	Allocations   []AllocationRequest `json:"allocations,omitempty"`
 	UserID        string              `json:"-"`
+}
+
+// ReversePaymentRequest creates an auditable payment reversal.
+type ReversePaymentRequest struct {
+	PaymentDate time.Time `json:"payment_date,omitempty"`
+	Reason      string    `json:"reason,omitempty"`
+	Reference   string    `json:"reference,omitempty"`
+	Notes       string    `json:"notes,omitempty"`
+	UserID      string    `json:"-"`
+}
+
+// PaymentReversalResult returns the original and offsetting reversal payment.
+type PaymentReversalResult struct {
+	OriginalPayment *Payment `json:"original_payment"`
+	ReversalPayment *Payment `json:"reversal_payment"`
+}
+
+// ImportPaymentsRequest contains CSV payload for payment history migration.
+type ImportPaymentsRequest struct {
+	CSVContent string     `json:"csv_content"`
+	FileName   string     `json:"file_name,omitempty"`
+	UserID     string     `json:"-"`
+	LockDate   *time.Time `json:"-"`
+}
+
+// ImportPaymentsResult summarizes a payment CSV import.
+type ImportPaymentsResult struct {
+	FileName        string                   `json:"file_name,omitempty"`
+	RowsProcessed   int                      `json:"rows_processed"`
+	PaymentsCreated int                      `json:"payments_created"`
+	RowsSkipped     int                      `json:"rows_skipped"`
+	Errors          []ImportPaymentsRowError `json:"errors,omitempty"`
+}
+
+// ImportPaymentsRowError describes a row-level payment import failure.
+type ImportPaymentsRowError struct {
+	Row           int    `json:"row"`
+	PaymentNumber string `json:"payment_number,omitempty"`
+	Reference     string `json:"reference,omitempty"`
+	Message       string `json:"message"`
 }
 
 // AllocationRequest represents a payment allocation in a request

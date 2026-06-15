@@ -32,7 +32,6 @@ type ReminderRepository interface {
 
 // ReminderService provides payment reminder operations
 type ReminderService struct {
-	db           *pgxpool.Pool
 	repo         ReminderRepository
 	emailService *email.Service
 }
@@ -40,8 +39,7 @@ type ReminderService struct {
 // NewReminderService creates a new reminder service
 func NewReminderService(db *pgxpool.Pool, emailService *email.Service) *ReminderService {
 	return &ReminderService{
-		db:           db,
-		repo:         NewReminderPostgresRepository(db),
+		repo:         NewReminderRepository(db),
 		emailService: emailService,
 	}
 }

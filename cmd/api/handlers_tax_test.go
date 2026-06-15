@@ -1,0 +1,584 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/require"
+
+	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/tax"
+	"github.com/HMB-research/open-accounting/internal/tenant"
+)
+
+type taxHandlerRepository struct {
+	vatRows      []tax.VATAggregateRow
+	vatErr       error
+	infRows      []tax.KMDINFReportRow
+	infErr       error
+	ossRows      []tax.EUVATOSSReportRow
+	ossErr       error
+	saveErr      error
+	getDecl      *tax.KMDDeclaration
+	getDeclErr   error
+	listDecls    []tax.KMDDeclaration
+	listDeclsErr error
+	savedDecls   []*tax.KMDDeclaration
+	submittedIDs []string
+	statuses     map[string]string
+	statusErr    error
+}
+
+func (r *taxHandlerRepository) QueryVATData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]tax.VATAggregateRow, error) {
+	if r.vatErr != nil {
+		return nil, r.vatErr
+	}
+	return r.vatRows, nil
+}
+
+func (r *taxHandlerRepository) QueryKMDINFData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, threshold decimal.Decimal) ([]tax.KMDINFReportRow, error) {
+	if r.infErr != nil {
+		return nil, r.infErr
+	}
+	return r.infRows, nil
+}
+
+func (r *taxHandlerRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time, includeB2B bool) ([]tax.EUVATOSSReportRow, error) {
+	if r.ossErr != nil {
+		return nil, r.ossErr
+	}
+	return r.ossRows, nil
+}
+
+func (r *taxHandlerRepository) SaveDeclaration(ctx context.Context, schemaName string, decl *tax.KMDDeclaration) error {
+	if r.saveErr != nil {
+		return r.saveErr
+	}
+	r.savedDecls = append(r.savedDecls, decl)
+	return nil
+}
+
+func (r *taxHandlerRepository) GetDeclaration(ctx context.Context, schemaName, tenantID string, year, month int) (*tax.KMDDeclaration, error) {
+	if r.getDeclErr != nil {
+		return nil, r.getDeclErr
+	}
+	if r.getDecl != nil && r.getDecl.TenantID == tenantID && r.getDecl.Year == year && r.getDecl.Month == month {
+		return r.getDecl, nil
+	}
+	return nil, nil
+}
+
+func (r *taxHandlerRepository) ListDeclarations(ctx context.Context, schemaName, tenantID string) ([]tax.KMDDeclaration, error) {
+	if r.listDeclsErr != nil {
+		return nil, r.listDeclsErr
+	}
+	return r.listDecls, nil
+}
+
+func (r *taxHandlerRepository) MarkKMDSubmitted(ctx context.Context, schemaName, tenantID, declarationID string, submittedAt time.Time) error {
+	if r.statusErr != nil {
+		return r.statusErr
+	}
+	r.submittedIDs = append(r.submittedIDs, declarationID)
+	return nil
+}
+
+func (r *taxHandlerRepository) UpdateKMDStatus(ctx context.Context, schemaName, tenantID, declarationID, status string, updatedAt time.Time) error {
+	if r.statusErr != nil {
+		return r.statusErr
+	}
+	if r.statuses == nil {
+		r.statuses = make(map[string]string)
+	}
+	r.statuses[declarationID] = status
+	return nil
+}
+
+func setupTaxHandlerTest(t *testing.T) (*Handlers, *mockTenantRepository, *taxHandlerRepository) {
+	t.Helper()
+
+	h, tenantRepo := setupTenantTestHandlers()
+	taxRepo := &taxHandlerRepository{}
+	h.taxService = tax.NewServiceWithRepository(taxRepo)
+
+	return h, tenantRepo, taxRepo
+}
+
+func TestTaxHandlersKMDWorkflow(t *testing.T) {
+	h, tenantRepo, taxRepo := setupTaxHandlerTest(t)
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")
+	tenantRecord.Settings.RegCode = "12345678"
+
+	taxRepo.vatRows = []tax.VATAggregateRow{
+		{VATRate: decimal.NewFromInt(22), IsOutput: true, TaxBase: decimal.NewFromInt(1000), TaxAmount: decimal.NewFromInt(220)},
+		{VATRate: decimal.NewFromInt(22), IsOutput: false, TaxBase: decimal.NewFromInt(300), TaxAmount: decimal.NewFromInt(66)},
+	}
+	generated := invokeTaxHandlerJSON[tax.KMDDeclaration](t, http.StatusOK, h.HandleGenerateKMD, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd",
+		tax.CreateKMDRequest{Year: 2026, Month: 2},
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, 2026, generated.Year)
+	require.Equal(t, 2, generated.Month)
+	require.True(t, generated.TotalOutputVAT.Equal(decimal.NewFromInt(220)))
+	require.True(t, generated.TotalInputVAT.Equal(decimal.NewFromInt(66)))
+	require.NotEmpty(t, generated.RemediationActions)
+	require.Contains(t, kmdRemediationCodes(generated.RemediationActions), "kmd_payable_review")
+	require.Len(t, taxRepo.savedDecls, 1)
+
+	now := time.Now().UTC()
+	taxRepo.listDecls = []tax.KMDDeclaration{{
+		ID:             "decl-1",
+		TenantID:       tenantRecord.ID,
+		Year:           2026,
+		Month:          2,
+		Status:         "DRAFT",
+		TotalOutputVAT: decimal.NewFromInt(220),
+		TotalInputVAT:  decimal.NewFromInt(66),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}}
+	declarations := invokeTaxHandlerJSON[[]tax.KMDDeclaration](t, http.StatusOK, h.HandleListKMD, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/kmd",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Len(t, declarations, 1)
+	require.Equal(t, "decl-1", declarations[0].ID)
+	require.NotEmpty(t, declarations[0].RemediationActions)
+
+	taxRepo.infRows = []tax.KMDINFReportRow{{
+		Part:                       tax.KMDINFPartSales,
+		ContactID:                  "contact-1",
+		ContactName:                "Alpha OU",
+		ContactRegCode:             "12345678",
+		InvoiceID:                  "invoice-1",
+		InvoiceNumber:              "INV-1",
+		InvoiceDate:                time.Date(2026, 2, 5, 0, 0, 0, 0, time.UTC),
+		InvoiceType:                "SALES",
+		TaxableAmount:              decimal.NewFromInt(1200),
+		VATAmount:                  decimal.NewFromInt(264),
+		TotalAmount:                decimal.NewFromInt(1464),
+		PartnerPeriodTaxableAmount: decimal.NewFromInt(1200),
+	}}
+	infReport := invokeTaxHandlerJSON[tax.KMDINFReport](t, http.StatusOK, h.HandleGenerateKMDINF, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/kmd/2026/2/inf?threshold=1000",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Len(t, infReport.Rows, 1)
+	require.Equal(t, tax.KMDINFPartSales, infReport.Rows[0].Part)
+	require.True(t, infReport.Threshold.Equal(decimal.NewFromInt(1000)))
+	require.Contains(t, taxReportRemediationCodes(infReport.RemediationActions), "kmd_inf_review_required")
+	require.Equal(t, "tax_reports", infReport.RemediationActions[0].WorkspaceQueue)
+
+	taxRepo.ossRows = []tax.EUVATOSSReportRow{{
+		CountryCode:   "DE",
+		VATRate:       decimal.NewFromInt(19),
+		InvoiceCount:  1,
+		LineCount:     1,
+		TaxableAmount: decimal.NewFromInt(100),
+		VATAmount:     decimal.NewFromInt(19),
+		TotalAmount:   decimal.NewFromInt(119),
+	}}
+	ossReport := invokeTaxHandlerJSON[tax.EUVATOSSReport](t, http.StatusOK, h.HandleGenerateEUVATOSS, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/eu-vat/oss?year=2026&quarter=1&include_b2b=true",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Len(t, ossReport.Rows, 1)
+	require.Equal(t, "DE", ossReport.Rows[0].CountryCode)
+	require.Equal(t, "Germany", ossReport.Rows[0].CountryName)
+	require.True(t, ossReport.IncludeB2B)
+	require.Contains(t, taxReportRemediationCodes(ossReport.RemediationActions), "eu_vat_oss_review_required")
+	require.Equal(t, "tax_reports", ossReport.RemediationActions[0].WorkspaceQueue)
+
+	taxRepo.getDecl = &tax.KMDDeclaration{
+		ID:             "decl-export",
+		TenantID:       tenantRecord.ID,
+		Year:           2026,
+		Month:          2,
+		Status:         "DRAFT",
+		TotalOutputVAT: decimal.NewFromInt(220),
+		TotalInputVAT:  decimal.NewFromInt(66),
+		Rows: []tax.KMDRow{
+			{Code: tax.KMDRow1, Description: "Taxable sales", TaxBase: decimal.NewFromInt(1000), TaxAmount: decimal.NewFromInt(220)},
+			{Code: tax.KMDRow4, Description: "Input VAT", TaxBase: decimal.NewFromInt(300), TaxAmount: decimal.NewFromInt(66)},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-kmd-approved",
+		EntityType:   documents.EntityTypeKMD,
+		EntityID:     "decl-export",
+		DocumentType: documents.DocumentTypeTaxSupport,
+	})
+	xmlResp := invokeTaxHandlerRaw(t, http.StatusOK, h.HandleExportKMD, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/kmd/2026/2/xml",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Equal(t, "application/xml", xmlResp.Header().Get("Content-Type"))
+	require.Contains(t, xmlResp.Header().Get("Content-Disposition"), "KMD_2026_2.xml")
+	require.Contains(t, xmlResp.Body.String(), "<regNr>12345678</regNr>")
+	require.Contains(t, xmlResp.Body.String(), "<periood>2026-02</periood>")
+
+	submitted := invokeTaxHandlerJSON[map[string]string](t, http.StatusOK, h.HandleMarkKMDSubmitted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/2/submit",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Equal(t, "submitted", submitted["status"])
+	require.Equal(t, []string{"decl-export"}, taxRepo.submittedIDs)
+
+	accepted := invokeTaxHandlerJSON[map[string]string](t, http.StatusOK, h.HandleMarkKMDAccepted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/2/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Equal(t, "accepted", accepted["status"])
+	require.Equal(t, tax.KMDStatusAccepted, taxRepo.statuses["decl-export"])
+}
+
+func kmdRemediationCodes(actions []tax.KMDRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
+}
+
+func taxReportRemediationCodes(actions []tax.TaxReportRemediationAction) []string {
+	codes := make([]string, 0, len(actions))
+	for _, action := range actions {
+		codes = append(codes, action.Code)
+	}
+	return codes
+}
+
+func TestMarkKMDSubmittedRequiresApprovedTaxEvidence(t *testing.T) {
+	h, tenantRepo, taxRepo := setupTaxHandlerTest(t)
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+	taxRepo.getDecl = &tax.KMDDeclaration{
+		ID:             "kmd-2026-03",
+		TenantID:       tenantRecord.ID,
+		Year:           2026,
+		Month:          3,
+		Status:         tax.KMDStatusDraft,
+		TotalOutputVAT: decimal.NewFromInt(220),
+		TotalInputVAT:  decimal.NewFromInt(66),
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+	}
+
+	errorBody := invokeTaxHandlerJSON[map[string]string](t, http.StatusConflict, h.HandleMarkKMDSubmitted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/submit",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved KMD submission evidence is required")
+	require.Empty(t, taxRepo.submittedIDs)
+
+	now := time.Now().UTC()
+	docRepo.docs["kmd-tax-support"] = &documents.Document{
+		ID:           "kmd-tax-support",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeKMD,
+		EntityID:     "kmd-2026-03",
+		DocumentType: documents.DocumentTypeTaxSupport,
+		FileName:     "kmd-submission.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+	errorBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusConflict, h.HandleMarkKMDSubmitted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/submit",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved KMD submission evidence is required")
+	require.Empty(t, taxRepo.submittedIDs)
+
+	docRepo.docs["kmd-tax-support"].ReviewStatus = documents.ReviewStatusApproved
+	submitted := invokeTaxHandlerJSON[map[string]string](t, http.StatusOK, h.HandleMarkKMDSubmitted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/submit",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Equal(t, "submitted", submitted["status"])
+	require.Equal(t, []string{"kmd-2026-03"}, taxRepo.submittedIDs)
+}
+
+func TestMarkKMDAcceptedRequiresApprovedTaxEvidence(t *testing.T) {
+	h, tenantRepo, taxRepo := setupTaxHandlerTest(t)
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+	taxRepo.getDecl = &tax.KMDDeclaration{
+		ID:             "kmd-2026-03",
+		TenantID:       tenantRecord.ID,
+		Year:           2026,
+		Month:          3,
+		Status:         tax.KMDStatusSubmitted,
+		TotalOutputVAT: decimal.NewFromInt(220),
+		TotalInputVAT:  decimal.NewFromInt(66),
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+	}
+
+	errorBody := invokeTaxHandlerJSON[map[string]string](t, http.StatusConflict, h.HandleMarkKMDAccepted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved KMD acceptance evidence is required")
+	require.Empty(t, taxRepo.statuses)
+
+	now := time.Now().UTC()
+	docRepo.docs["kmd-acceptance-support"] = &documents.Document{
+		ID:           "kmd-acceptance-support",
+		TenantID:     "tenant-1",
+		EntityType:   documents.EntityTypeKMD,
+		EntityID:     "kmd-2026-03",
+		DocumentType: documents.DocumentTypeSupportingDocument,
+		FileName:     "kmd-acceptance.pdf",
+		ReviewStatus: documents.ReviewStatusPending,
+		UploadedBy:   "user-1",
+		CreatedAt:    now,
+	}
+	errorBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusConflict, h.HandleMarkKMDAccepted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Contains(t, errorBody["error"], "approved KMD acceptance evidence is required")
+	require.Empty(t, taxRepo.statuses)
+
+	docRepo.docs["kmd-acceptance-support"].ReviewStatus = documents.ReviewStatusApproved
+	accepted := invokeTaxHandlerJSON[map[string]string](t, http.StatusOK, h.HandleMarkKMDAccepted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/3/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "3"},
+	))
+	require.Equal(t, "accepted", accepted["status"])
+	require.Equal(t, tax.KMDStatusAccepted, taxRepo.statuses["kmd-2026-03"])
+}
+
+func TestTaxHandlersKMDImportHistory(t *testing.T) {
+	h, tenantRepo, taxRepo := setupTaxHandlerTest(t)
+	tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")
+
+	result := invokeTaxHandlerJSON[tax.ImportKMDHistoryResult](t, http.StatusOK, h.HandleImportKMDHistory, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/import-history",
+		map[string]any{
+			"csv_content": "year,month,row_code,tax_base,tax_amount\n2025,12,1,1000.00,220.00\n",
+		},
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "kmd-history.csv", result.FileName)
+	require.Equal(t, 1, result.RowsProcessed)
+	require.Equal(t, 1, result.DeclarationsCreated)
+	require.Equal(t, 1, result.RowsImported)
+	require.Len(t, taxRepo.savedDecls, 1)
+	require.Equal(t, 2025, taxRepo.savedDecls[0].Year)
+
+	errBody := invokeTaxHandlerJSON[map[string]string](t, http.StatusBadRequest, h.HandleImportKMDHistory, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/import-history",
+		map[string]string{"csv_content": "  "},
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "csv_content is required", errBody["error"])
+}
+
+func TestTaxHandlersValidationAndErrorPaths(t *testing.T) {
+	h, tenantRepo, taxRepo := setupTaxHandlerTest(t)
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Tax Tenant", "tax-tenant")
+	tenantRecord.Settings.RegCode = "12345678"
+
+	errBody := invokeTaxHandlerJSON[map[string]string](t, http.StatusBadRequest, h.HandleGenerateKMD, taxHandlerRequestWithBody(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd",
+		strings.NewReader("{"),
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "Invalid request body", errBody["error"])
+
+	taxRepo.vatErr = errors.New("vat data unavailable")
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusInternalServerError, h.HandleGenerateKMD, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd",
+		tax.CreateKMDRequest{Year: 2026, Month: 2},
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Contains(t, errBody["error"], "vat data unavailable")
+	taxRepo.vatErr = nil
+
+	taxRepo.listDeclsErr = errors.New("list failed")
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusInternalServerError, h.HandleListKMD, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/kmd",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "list failed", errBody["error"])
+	taxRepo.listDeclsErr = nil
+
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusBadRequest, h.HandleGenerateKMDINF, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/kmd/2026/2/inf?threshold=bad",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Equal(t, "Invalid threshold", errBody["error"])
+
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusBadRequest, h.HandleGenerateKMDINF, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/kmd/2026/2/inf?threshold=0",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Equal(t, "threshold must be positive", errBody["error"])
+
+	taxRepo.infErr = errors.New("inf query failed")
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusInternalServerError, h.HandleGenerateKMDINF, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/kmd/2026/2/inf",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Contains(t, errBody["error"], "inf query failed")
+	taxRepo.infErr = nil
+
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusBadRequest, h.HandleGenerateEUVATOSS, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/eu-vat/oss?year=bad&quarter=1",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "Invalid year", errBody["error"])
+
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusBadRequest, h.HandleGenerateEUVATOSS, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/eu-vat/oss?year=2026&quarter=5",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "Invalid quarter", errBody["error"])
+
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusBadRequest, h.HandleGenerateEUVATOSS, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/eu-vat/oss?year=2026&quarter=1&include_b2b=maybe",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Equal(t, "Invalid include_b2b", errBody["error"])
+
+	taxRepo.ossErr = errors.New("oss query failed")
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusInternalServerError, h.HandleGenerateEUVATOSS, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/eu-vat/oss?year=2026&quarter=1",
+		nil,
+		map[string]string{"tenantID": "tenant-1"},
+	))
+	require.Contains(t, errBody["error"], "oss query failed")
+	taxRepo.ossErr = nil
+
+	tenantRepo.getTenantErr = tenant.ErrTenantNotFound
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusNotFound, h.HandleExportKMD, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/kmd/2026/2/xml",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Equal(t, "Tenant not found", errBody["error"])
+	tenantRepo.getTenantErr = nil
+
+	taxRepo.getDeclErr = errors.New("declaration missing")
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusNotFound, h.HandleExportKMD, taxHandlerRequest(
+		http.MethodGet,
+		"/tenants/tenant-1/tax/kmd/2026/2/xml",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Equal(t, "Declaration not found", errBody["error"])
+
+	taxRepo.getDeclErr = nil
+	taxRepo.getDecl = nil
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusNotFound, h.HandleMarkKMDAccepted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/2/accept",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Equal(t, "Declaration not found", errBody["error"])
+
+	taxRepo.getDecl = &tax.KMDDeclaration{ID: "decl-error", TenantID: tenantRecord.ID, Year: 2026, Month: 2}
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		ID:           "doc-kmd-error-approved",
+		EntityType:   documents.EntityTypeKMD,
+		EntityID:     "decl-error",
+		DocumentType: documents.DocumentTypeTaxSupport,
+	})
+	taxRepo.statusErr = errors.New("status update failed")
+	errBody = invokeTaxHandlerJSON[map[string]string](t, http.StatusInternalServerError, h.HandleMarkKMDSubmitted, taxHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/tax/kmd/2026/2/submit",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "year": "2026", "month": "2"},
+	))
+	require.Contains(t, errBody["error"], "status update failed")
+}
+
+func taxHandlerRequest(method, path string, body any, params map[string]string) *http.Request {
+	req := makeAuthenticatedRequest(method, path, body, createTestClaims("user-1", "user@example.com", "tenant-1", "owner"))
+	return withURLParams(req, params)
+}
+
+func taxHandlerRequestWithBody(method, path string, body *strings.Reader, params map[string]string) *http.Request {
+	req := httptest.NewRequest(method, path, body)
+	return withURLParams(req, params)
+}
+
+func invokeTaxHandlerJSON[T any](t *testing.T, wantStatus int, handler func(http.ResponseWriter, *http.Request), req *http.Request) T {
+	t.Helper()
+
+	rec := invokeTaxHandlerRaw(t, wantStatus, handler, req)
+	var result T
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
+	return result
+}
+
+func invokeTaxHandlerRaw(t *testing.T, wantStatus int, handler func(http.ResponseWriter, *http.Request), req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	require.Equal(t, wantStatus, rec.Code, fmt.Sprintf("body=%s", rec.Body.String()))
+	return rec
+}

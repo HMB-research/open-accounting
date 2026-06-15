@@ -3,9 +3,12 @@ package banking
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/shopspring/decimal"
 )
 
@@ -15,6 +18,7 @@ type MockRepository struct {
 	transactions    map[string]*BankTransaction
 	reconciliations map[string]*BankReconciliation
 	imports         map[string]*BankStatementImport
+	matchRules      map[string]*BankMatchRule
 
 	// Function overrides for custom behavior
 	CreateBankAccountFn              func(ctx context.Context, schemaName string, account *BankAccount) error
@@ -25,16 +29,24 @@ type MockRepository struct {
 	UnsetDefaultAccountsFn           func(ctx context.Context, schemaName, tenantID string) error
 	CountTransactionsForAccountFn    func(ctx context.Context, schemaName, accountID string) (int, error)
 	CalculateAccountBalanceFn        func(ctx context.Context, schemaName, accountID string) (decimal.Decimal, error)
+	CreateBankMatchRuleFn            func(ctx context.Context, schemaName string, rule *BankMatchRule) error
+	GetBankMatchRuleFn               func(ctx context.Context, schemaName, tenantID, ruleID string) (*BankMatchRule, error)
+	ListBankMatchRulesFn             func(ctx context.Context, schemaName, tenantID string, filter *BankMatchRuleFilter) ([]BankMatchRule, error)
+	UpdateBankMatchRuleFn            func(ctx context.Context, schemaName string, rule *BankMatchRule) error
+	DeleteBankMatchRuleFn            func(ctx context.Context, schemaName, tenantID, ruleID string) error
 	ListTransactionsFn               func(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error)
 	GetTransactionFn                 func(ctx context.Context, schemaName, tenantID, transactionID string) (*BankTransaction, error)
+	ListPaymentMatchCandidatesFn     func(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]PaymentForMatching, error)
 	MatchTransactionFn               func(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error
 	UnmatchTransactionFn             func(ctx context.Context, schemaName, tenantID, transactionID string) error
 	UpdateTransactionReviewFn        func(ctx context.Context, schemaName, tenantID, transactionID string, update TransactionReviewUpdate) (*BankTransaction, error)
+	CreatePaymentFromTransactionFn   func(ctx context.Context, schemaName, tenantID, userID string, transaction *BankTransaction) (string, error)
 	CreateReconciliationFn           func(ctx context.Context, schemaName string, r *BankReconciliation) error
 	GetReconciliationFn              func(ctx context.Context, schemaName, tenantID, reconciliationID string) (*BankReconciliation, error)
 	ListReconciliationsFn            func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankReconciliation, error)
 	CompleteReconciliationFn         func(ctx context.Context, schemaName, tenantID, reconciliationID string) error
 	AddTransactionToReconciliationFn func(ctx context.Context, schemaName, tenantID, transactionID, reconciliationID string) error
+	IncrementLatestImportMatchedFn   func(ctx context.Context, schemaName, tenantID, bankAccountID string, matchedCount int) error
 	GetImportHistoryFn               func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error)
 }
 
@@ -44,7 +56,16 @@ func NewMockRepository() *MockRepository {
 		transactions:    make(map[string]*BankTransaction),
 		reconciliations: make(map[string]*BankReconciliation),
 		imports:         make(map[string]*BankStatementImport),
+		matchRules:      make(map[string]*BankMatchRule),
 	}
+}
+
+type fakeBankingAccountLister struct {
+	accounts []accounting.Account
+}
+
+func (f fakeBankingAccountLister) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	return f.accounts, nil
 }
 
 func (m *MockRepository) CreateBankAccount(ctx context.Context, schemaName string, account *BankAccount) error {
@@ -144,6 +165,76 @@ func (m *MockRepository) CalculateAccountBalance(ctx context.Context, schemaName
 	return balance, nil
 }
 
+func (m *MockRepository) CreateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error {
+	if m.CreateBankMatchRuleFn != nil {
+		return m.CreateBankMatchRuleFn(ctx, schemaName, rule)
+	}
+	m.matchRules[rule.ID] = rule
+	return nil
+}
+
+func (m *MockRepository) GetBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) (*BankMatchRule, error) {
+	if m.GetBankMatchRuleFn != nil {
+		return m.GetBankMatchRuleFn(ctx, schemaName, tenantID, ruleID)
+	}
+	rule, ok := m.matchRules[ruleID]
+	if !ok || rule.TenantID != tenantID {
+		return nil, ErrBankMatchRuleNotFound
+	}
+	return rule, nil
+}
+
+func (m *MockRepository) ListBankMatchRules(ctx context.Context, schemaName, tenantID string, filter *BankMatchRuleFilter) ([]BankMatchRule, error) {
+	if m.ListBankMatchRulesFn != nil {
+		return m.ListBankMatchRulesFn(ctx, schemaName, tenantID, filter)
+	}
+	var rules []BankMatchRule
+	for _, rule := range m.matchRules {
+		if rule.TenantID != tenantID {
+			continue
+		}
+		if filter != nil {
+			if filter.ActiveOnly && !rule.IsActive {
+				continue
+			}
+			if filter.BankAccountID != "" {
+				if rule.BankAccountID == nil {
+					if !filter.IncludeGlobal {
+						continue
+					}
+				} else if *rule.BankAccountID != filter.BankAccountID {
+					continue
+				}
+			}
+		}
+		rules = append(rules, *rule)
+	}
+	return rules, nil
+}
+
+func (m *MockRepository) UpdateBankMatchRule(ctx context.Context, schemaName string, rule *BankMatchRule) error {
+	if m.UpdateBankMatchRuleFn != nil {
+		return m.UpdateBankMatchRuleFn(ctx, schemaName, rule)
+	}
+	if _, ok := m.matchRules[rule.ID]; !ok {
+		return ErrBankMatchRuleNotFound
+	}
+	m.matchRules[rule.ID] = rule
+	return nil
+}
+
+func (m *MockRepository) DeleteBankMatchRule(ctx context.Context, schemaName, tenantID, ruleID string) error {
+	if m.DeleteBankMatchRuleFn != nil {
+		return m.DeleteBankMatchRuleFn(ctx, schemaName, tenantID, ruleID)
+	}
+	rule, ok := m.matchRules[ruleID]
+	if !ok || rule.TenantID != tenantID {
+		return ErrBankMatchRuleNotFound
+	}
+	delete(m.matchRules, ruleID)
+	return nil
+}
+
 func (m *MockRepository) ListTransactions(ctx context.Context, schemaName, tenantID string, filter *TransactionFilter) ([]BankTransaction, error) {
 	if m.ListTransactionsFn != nil {
 		return m.ListTransactionsFn(ctx, schemaName, tenantID, filter)
@@ -174,6 +265,13 @@ func (m *MockRepository) GetTransaction(ctx context.Context, schemaName, tenantI
 		return nil, ErrTransactionNotFound
 	}
 	return t, nil
+}
+
+func (m *MockRepository) ListPaymentMatchCandidates(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]PaymentForMatching, error) {
+	if m.ListPaymentMatchCandidatesFn != nil {
+		return m.ListPaymentMatchCandidatesFn(ctx, schemaName, tenantID, paymentType, amount, limit)
+	}
+	return nil, nil
 }
 
 func (m *MockRepository) MatchTransaction(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error {
@@ -225,6 +323,26 @@ func (m *MockRepository) UpdateTransactionReview(ctx context.Context, schemaName
 func (m *MockRepository) CreateTransaction(ctx context.Context, schemaName string, t *BankTransaction) error {
 	m.transactions[t.ID] = t
 	return nil
+}
+
+func (m *MockRepository) CreatePaymentFromTransaction(ctx context.Context, schemaName, tenantID, userID string, transaction *BankTransaction) (string, error) {
+	if m.CreatePaymentFromTransactionFn != nil {
+		return m.CreatePaymentFromTransactionFn(ctx, schemaName, tenantID, userID, transaction)
+	}
+	if transaction == nil || transaction.TenantID != tenantID {
+		return "", ErrTransactionNotFound
+	}
+	if transaction.Status != StatusUnmatched {
+		return "", ErrTransactionAlreadyMatched
+	}
+	paymentID := "payment-" + transaction.ID
+	transaction.MatchedPaymentID = &paymentID
+	transaction.Status = StatusMatched
+	if stored, ok := m.transactions[transaction.ID]; ok {
+		stored.MatchedPaymentID = &paymentID
+		stored.Status = StatusMatched
+	}
+	return paymentID, nil
 }
 
 func (m *MockRepository) IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error) {
@@ -302,6 +420,25 @@ func (m *MockRepository) CreateImportRecord(ctx context.Context, schemaName stri
 	return nil
 }
 
+func (m *MockRepository) IncrementLatestImportMatchedCount(ctx context.Context, schemaName, tenantID, bankAccountID string, matchedCount int) error {
+	if m.IncrementLatestImportMatchedFn != nil {
+		return m.IncrementLatestImportMatchedFn(ctx, schemaName, tenantID, bankAccountID, matchedCount)
+	}
+	var latest *BankStatementImport
+	for _, imp := range m.imports {
+		if imp.TenantID != tenantID || imp.BankAccountID != bankAccountID {
+			continue
+		}
+		if latest == nil || imp.CreatedAt.After(latest.CreatedAt) {
+			latest = imp
+		}
+	}
+	if latest != nil {
+		latest.TransactionsMatched += matchedCount
+	}
+	return nil
+}
+
 func (m *MockRepository) GetImportHistory(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error) {
 	if m.GetImportHistoryFn != nil {
 		return m.GetImportHistoryFn(ctx, schemaName, tenantID, bankAccountID)
@@ -317,9 +454,15 @@ func (m *MockRepository) GetImportHistory(ctx context.Context, schemaName, tenan
 
 // Test helpers
 const (
-	testTenantID   = "tenant-123"
-	testSchemaName = "test_schema"
+	testTenantID    = "tenant-123"
+	testSchemaName  = "test_schema"
+	testGLAccountID = "11111111-1111-1111-1111-111111111111"
+	testBankID      = "44444444-4444-4444-4444-444444444444"
 )
+
+func stringPtr(value string) *string {
+	return &value
+}
 
 func TestNewServiceWithRepository(t *testing.T) {
 	repo := NewMockRepository()
@@ -330,6 +473,72 @@ func TestNewServiceWithRepository(t *testing.T) {
 	}
 	if service.repo == nil {
 		t.Error("Service should have a repository")
+	}
+}
+
+func TestService_ImportTransactionsRejectsMismatchedStatementAccountOrCurrency(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+	repo.accounts["acc-1"] = &BankAccount{
+		ID:            "acc-1",
+		TenantID:      testTenantID,
+		AccountNumber: "EE457700771000676899",
+		Currency:      "EUR",
+	}
+
+	result, err := service.ImportTransactions(ctx, testSchemaName, testTenantID, "acc-1", &ImportCSVRequest{
+		FileName:       "lhv.xml",
+		SkipDuplicates: true,
+		Transactions: []CSVTransactionRow{
+			{
+				Date:          "2026-03-15",
+				Amount:        "100.00",
+				Currency:      "EUR",
+				SourceAccount: "EE45 7700 7710 0067 6899",
+				Description:   "Client payment",
+				ExternalID:    "match-1",
+			},
+			{
+				Date:          "2026-03-16",
+				Amount:        "25.00",
+				Currency:      "EUR",
+				SourceAccount: "EE111",
+				Description:   "Wrong account",
+				ExternalID:    "wrong-account",
+			},
+			{
+				Date:          "2026-03-17",
+				Amount:        "10.00",
+				Currency:      "GBP",
+				SourceAccount: "EE457700771000676899",
+				Description:   "Wrong currency",
+				ExternalID:    "wrong-currency",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportTransactions() error = %v", err)
+	}
+	if result.TransactionsImported != 1 {
+		t.Fatalf("expected 1 imported transaction, got %d", result.TransactionsImported)
+	}
+	if len(result.Errors) != 2 {
+		t.Fatalf("expected 2 row errors, got %#v", result.Errors)
+	}
+	if !strings.Contains(result.Errors[0], "source account") {
+		t.Fatalf("expected source account error, got %q", result.Errors[0])
+	}
+	if !strings.Contains(result.Errors[1], "currency") {
+		t.Fatalf("expected currency error, got %q", result.Errors[1])
+	}
+	if len(repo.transactions) != 1 {
+		t.Fatalf("expected one persisted transaction, got %d", len(repo.transactions))
+	}
+	for _, tx := range repo.transactions {
+		if tx.Currency != "EUR" || tx.Description != "Client payment" {
+			t.Fatalf("unexpected persisted transaction: %#v", tx)
+		}
 	}
 }
 
@@ -392,6 +601,15 @@ func TestService_CreateBankAccount(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "invalid gl account id",
+			req: &CreateBankAccountRequest{
+				Name:          "Bad GL Account",
+				AccountNumber: "EE123",
+				GLAccountID:   stringPtr("legacy-account"),
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -426,6 +644,190 @@ func TestService_CreateBankAccount_RepositoryError(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("expected error from repository")
+	}
+}
+
+func TestService_ImportBankAccounts(t *testing.T) {
+	repo := NewMockRepository()
+	repo.accounts["existing"] = &BankAccount{
+		ID:            "existing",
+		TenantID:      testTenantID,
+		Name:          "Existing bank",
+		AccountNumber: "EE000",
+		Currency:      "EUR",
+		IsDefault:     true,
+		IsActive:      true,
+	}
+	service := NewServiceWithRepositoryAndAccounting(repo, fakeBankingAccountLister{accounts: []accounting.Account{
+		{ID: testGLAccountID, Code: "1000", AccountType: accounting.AccountTypeAsset},
+	}})
+
+	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
+		FileName:       "bank-accounts.csv",
+		SkipDuplicates: true,
+		Rows: []CSVBankAccountRow{
+			{
+				Name:          "Main bank",
+				AccountNumber: "EE471000001020145685",
+				BankName:      "LHV",
+				SwiftCode:     "lhvbee22",
+				Currency:      "eur",
+				GLAccountCode: "1000",
+				IsDefault:     "yes",
+			},
+			{
+				Name:          "Closed bank",
+				AccountNumber: "EE222",
+				Currency:      "usd",
+				IsActive:      "false",
+			},
+			{
+				Name:          "Duplicate existing",
+				AccountNumber: "EE000",
+			},
+			{
+				AccountNumber: "EE333",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportBankAccounts() error = %v", err)
+	}
+	if result.RowsProcessed != 4 {
+		t.Errorf("expected 4 processed rows, got %d", result.RowsProcessed)
+	}
+	if result.AccountsImported != 2 {
+		t.Errorf("expected 2 imported accounts, got %d", result.AccountsImported)
+	}
+	if result.RowsSkipped != 2 {
+		t.Errorf("expected 2 skipped rows, got %d", result.RowsSkipped)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "name is required") {
+		t.Fatalf("expected one missing-name error, got %#v", result.Errors)
+	}
+
+	var main *BankAccount
+	var closed *BankAccount
+	for _, account := range repo.accounts {
+		switch account.AccountNumber {
+		case "EE471000001020145685":
+			main = account
+		case "EE222":
+			closed = account
+		}
+	}
+	if main == nil {
+		t.Fatal("expected imported main bank account")
+	}
+	if main.Currency != "EUR" {
+		t.Errorf("expected uppercase currency EUR, got %q", main.Currency)
+	}
+	if main.SwiftCode != "LHVBEE22" {
+		t.Errorf("expected uppercase swift code, got %q", main.SwiftCode)
+	}
+	if main.GLAccountID == nil || *main.GLAccountID != testGLAccountID {
+		t.Errorf("expected GL account id %s, got %v", testGLAccountID, main.GLAccountID)
+	}
+	if !main.IsDefault {
+		t.Error("expected imported main account to become default")
+	}
+	if repo.accounts["existing"].IsDefault {
+		t.Error("expected previous default account to be unset")
+	}
+	if closed == nil {
+		t.Fatal("expected imported closed bank account")
+	}
+	if closed.IsActive {
+		t.Error("expected closed bank account to import inactive")
+	}
+	if closed.Currency != "USD" {
+		t.Errorf("expected uppercase currency USD, got %q", closed.Currency)
+	}
+}
+
+func TestService_ImportBankAccountsReportsMissingAccountCode(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepositoryAndAccounting(repo, fakeBankingAccountLister{accounts: []accounting.Account{
+		{ID: testGLAccountID, Code: "1000", AccountType: accounting.AccountTypeAsset},
+	}})
+
+	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
+		Rows: []CSVBankAccountRow{
+			{
+				Name:          "Main bank",
+				AccountNumber: "EE471000001020145685",
+				GLAccountCode: "9999",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportBankAccounts() error = %v", err)
+	}
+	if result.RowsProcessed != 1 {
+		t.Errorf("expected 1 processed row, got %d", result.RowsProcessed)
+	}
+	if result.AccountsImported != 0 {
+		t.Errorf("expected 0 imported accounts, got %d", result.AccountsImported)
+	}
+	if result.RowsSkipped != 1 {
+		t.Errorf("expected 1 skipped row, got %d", result.RowsSkipped)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], `account code "9999" was not found for gl_account_code`) {
+		t.Fatalf("expected missing account code error, got %#v", result.Errors)
+	}
+}
+
+func TestService_ImportBankAccountsRejectsInvalidGLAccountID(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+
+	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
+		Rows: []CSVBankAccountRow{
+			{
+				Name:          "Main bank",
+				AccountNumber: "EE471000001020145685",
+				GLAccountID:   "legacy-account",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportBankAccounts() error = %v", err)
+	}
+	if result.RowsProcessed != 1 {
+		t.Errorf("expected 1 processed row, got %d", result.RowsProcessed)
+	}
+	if result.AccountsImported != 0 {
+		t.Errorf("expected 0 imported accounts, got %d", result.AccountsImported)
+	}
+	if result.RowsSkipped != 1 {
+		t.Errorf("expected 1 skipped row, got %d", result.RowsSkipped)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "gl_account_id must be a valid UUID") {
+		t.Fatalf("expected invalid gl_account_id error, got %#v", result.Errors)
+	}
+}
+
+func TestService_ImportBankAccountsRejectsDuplicateWhenNotSkipping(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+
+	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
+		Rows: []CSVBankAccountRow{
+			{Name: "Main bank", AccountNumber: "EE471000001020145685"},
+			{Name: "Duplicate main", AccountNumber: "EE471000001020145685"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportBankAccounts() error = %v", err)
+	}
+	if result.AccountsImported != 1 {
+		t.Errorf("expected 1 imported account, got %d", result.AccountsImported)
+	}
+	if result.RowsSkipped != 1 {
+		t.Errorf("expected 1 skipped row, got %d", result.RowsSkipped)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "duplicate account_number") {
+		t.Fatalf("expected duplicate account number error, got %#v", result.Errors)
 	}
 }
 
@@ -544,7 +946,7 @@ func TestService_UpdateBankAccount(t *testing.T) {
 	// Update the account
 	isDefault := true
 	isActive := false
-	glID := "gl-123"
+	glID := testGLAccountID
 	result, err := service.UpdateBankAccount(ctx, testSchemaName, testTenantID, "acc-123", &UpdateBankAccountRequest{
 		Name:        "Updated Name",
 		BankName:    "Updated Bank",
@@ -571,6 +973,30 @@ func TestService_UpdateBankAccount(t *testing.T) {
 	}
 }
 
+func TestService_UpdateBankAccount_InvalidGLAccountID(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+
+	repo.accounts["acc-123"] = &BankAccount{
+		ID:       "acc-123",
+		TenantID: testTenantID,
+		Name:     "Original Name",
+		IsActive: true,
+	}
+
+	glID := "legacy-account"
+	_, err := service.UpdateBankAccount(ctx, testSchemaName, testTenantID, "acc-123", &UpdateBankAccountRequest{
+		GLAccountID: &glID,
+	})
+	if err == nil {
+		t.Fatal("expected invalid gl_account_id error")
+	}
+	if !strings.Contains(err.Error(), "gl_account_id must be a valid UUID") {
+		t.Fatalf("expected invalid gl_account_id error, got %v", err)
+	}
+}
+
 func TestService_UpdateBankAccount_NotFound(t *testing.T) {
 	repo := NewMockRepository()
 	service := NewServiceWithRepository(repo)
@@ -579,6 +1005,181 @@ func TestService_UpdateBankAccount_NotFound(t *testing.T) {
 	_, err := service.UpdateBankAccount(ctx, testSchemaName, testTenantID, "nonexistent", &UpdateBankAccountRequest{Name: "Test"})
 	if err == nil {
 		t.Error("expected error for non-existent account")
+	}
+}
+
+func TestService_BankMatchRuleLifecycle(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+	account := &BankAccount{
+		ID:       testBankID,
+		TenantID: testTenantID,
+		Name:     "Main bank",
+	}
+	repo.accounts[account.ID] = account
+
+	rule, err := service.CreateBankMatchRule(ctx, testSchemaName, testTenantID, &CreateBankMatchRuleRequest{
+		BankAccountID:      &account.ID,
+		Name:               "Stripe receipts",
+		Priority:           10,
+		MatchField:         BankMatchFieldDescription,
+		Pattern:            "stripe",
+		MinConfidence:      0.85,
+		MaxDateDiffDays:    3,
+		RequireExactAmount: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateBankMatchRule failed: %v", err)
+	}
+	if rule.ID == "" {
+		t.Fatal("expected rule id")
+	}
+	if rule.BankAccountID == nil || *rule.BankAccountID != account.ID {
+		t.Fatalf("expected bank account id %s, got %#v", account.ID, rule.BankAccountID)
+	}
+	if !rule.IsActive {
+		t.Fatal("expected active rule by default")
+	}
+
+	listed, err := service.ListBankMatchRules(ctx, testSchemaName, testTenantID, &BankMatchRuleFilter{
+		BankAccountID: account.ID,
+		ActiveOnly:    true,
+	})
+	if err != nil {
+		t.Fatalf("ListBankMatchRules failed: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != rule.ID {
+		t.Fatalf("expected created rule in filtered list, got %#v", listed)
+	}
+
+	newName := "Stripe exact receipts"
+	active := false
+	updated, err := service.UpdateBankMatchRule(ctx, testSchemaName, testTenantID, rule.ID, &UpdateBankMatchRuleRequest{
+		ClearBankAccount: true,
+		Name:             &newName,
+		IsActive:         &active,
+	})
+	if err != nil {
+		t.Fatalf("UpdateBankMatchRule failed: %v", err)
+	}
+	if updated.BankAccountID != nil {
+		t.Fatalf("expected tenant-wide rule after clearing account, got %#v", updated.BankAccountID)
+	}
+	if updated.Name != newName || updated.IsActive {
+		t.Fatalf("unexpected updated rule: %#v", updated)
+	}
+
+	got, err := service.GetBankMatchRule(ctx, testSchemaName, testTenantID, rule.ID)
+	if err != nil {
+		t.Fatalf("GetBankMatchRule failed: %v", err)
+	}
+	if got.Name != newName {
+		t.Fatalf("expected name %q, got %q", newName, got.Name)
+	}
+
+	if err := service.DeleteBankMatchRule(ctx, testSchemaName, testTenantID, rule.ID); err != nil {
+		t.Fatalf("DeleteBankMatchRule failed: %v", err)
+	}
+	if _, err := service.GetBankMatchRule(ctx, testSchemaName, testTenantID, rule.ID); !errors.Is(err, ErrBankMatchRuleNotFound) {
+		t.Fatalf("expected ErrBankMatchRuleNotFound after delete, got %v", err)
+	}
+}
+
+func TestService_CreateBankMatchRuleValidation(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		req       *CreateBankMatchRuleRequest
+		wantError string
+	}{
+		{
+			name:      "nil request",
+			req:       nil,
+			wantError: "bank match rule request is required",
+		},
+		{
+			name: "missing name",
+			req: &CreateBankMatchRuleRequest{
+				Pattern: "stripe",
+			},
+			wantError: "name is required",
+		},
+		{
+			name: "missing pattern",
+			req: &CreateBankMatchRuleRequest{
+				Name: "Stripe",
+			},
+			wantError: "pattern is required",
+		},
+		{
+			name: "invalid confidence",
+			req: &CreateBankMatchRuleRequest{
+				Name:          "Stripe",
+				Pattern:       "stripe",
+				MinConfidence: 1.5,
+			},
+			wantError: "min confidence",
+		},
+		{
+			name: "invalid field",
+			req: &CreateBankMatchRuleRequest{
+				Name:       "Stripe",
+				Pattern:    "stripe",
+				MatchField: "BAD_FIELD",
+			},
+			wantError: "invalid bank match field",
+		},
+		{
+			name: "invalid bank account id",
+			req: &CreateBankMatchRuleRequest{
+				BankAccountID: stringPtr("legacy-account"),
+				Name:          "Stripe",
+				Pattern:       "stripe",
+			},
+			wantError: "bank_account_id must be a valid UUID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule, err := service.CreateBankMatchRule(ctx, testSchemaName, testTenantID, tt.req)
+			if err == nil {
+				t.Fatalf("expected error, got rule %#v", rule)
+			}
+			if !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+func TestService_UpdateBankMatchRule_InvalidBankAccountID(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+
+	repo.matchRules["rule-1"] = &BankMatchRule{
+		ID:            "rule-1",
+		TenantID:      testTenantID,
+		Name:          "Stripe",
+		MatchField:    BankMatchFieldDescription,
+		Pattern:       "stripe",
+		MinConfidence: 0.8,
+	}
+
+	bankAccountID := "legacy-account"
+	_, err := service.UpdateBankMatchRule(ctx, testSchemaName, testTenantID, "rule-1", &UpdateBankMatchRuleRequest{
+		BankAccountID: &bankAccountID,
+	})
+	if err == nil {
+		t.Fatal("expected invalid bank_account_id error")
+	}
+	if !strings.Contains(err.Error(), "bank_account_id must be a valid UUID") {
+		t.Fatalf("expected invalid bank_account_id error, got %v", err)
 	}
 }
 
@@ -813,6 +1414,9 @@ func TestService_UpdateTransactionReview(t *testing.T) {
 	if result.ReviewedAt == nil {
 		t.Fatal("expected reviewed_at to be set")
 	}
+	if !bankRemediationActionCodes(result.RemediationActions)["bank_evidence_required"] {
+		t.Fatalf("expected evidence remediation action, got %#v", result.RemediationActions)
+	}
 }
 
 func TestService_UpdateTransactionReview_RejectsInvalidRequest(t *testing.T) {
@@ -855,6 +1459,124 @@ func TestService_ListTransactions_NormalizesEmptyFollowUpStatus(t *testing.T) {
 	if transactions[0].FollowUpStatus != FollowUpNone {
 		t.Fatalf("expected normalized follow-up status %q, got %q", FollowUpNone, transactions[0].FollowUpStatus)
 	}
+	if !bankRemediationActionCodes(transactions[0].RemediationActions)["bank_transaction_unmatched"] {
+		t.Fatalf("expected unmatched remediation action, got %#v", transactions[0].RemediationActions)
+	}
+}
+
+func TestBuildBankRemediationActions(t *testing.T) {
+	paymentID := "payment-1"
+	reconciliationID := "rec-1"
+
+	tests := []struct {
+		name  string
+		tx    *BankTransaction
+		codes []string
+	}{
+		{
+			name: "unmatched without follow-up",
+			tx: &BankTransaction{
+				ID:            "tx-unmatched",
+				BankAccountID: "bank-1",
+				Status:        StatusUnmatched,
+			},
+			codes: []string{"bank_transaction_unmatched"},
+		},
+		{
+			name: "evidence required and unmatched",
+			tx: &BankTransaction{
+				ID:             "tx-evidence",
+				BankAccountID:  "bank-1",
+				Status:         StatusUnmatched,
+				FollowUpStatus: FollowUpEvidenceRequired,
+			},
+			codes: []string{"bank_evidence_required", "bank_transaction_unmatched"},
+		},
+		{
+			name: "ready to match",
+			tx: &BankTransaction{
+				ID:             "tx-ready",
+				BankAccountID:  "bank-1",
+				Status:         StatusUnmatched,
+				FollowUpStatus: FollowUpReadyToMatch,
+			},
+			codes: []string{"bank_ready_to_match"},
+		},
+		{
+			name: "matched without reconciliation",
+			tx: &BankTransaction{
+				ID:               "tx-matched",
+				BankAccountID:    "bank-1",
+				Status:           StatusMatched,
+				FollowUpStatus:   FollowUpNone,
+				MatchedPaymentID: &paymentID,
+			},
+			codes: []string{"bank_transaction_reconciliation_pending"},
+		},
+		{
+			name: "reconciled archive",
+			tx: &BankTransaction{
+				ID:               "tx-reconciled",
+				BankAccountID:    "bank-1",
+				Status:           StatusReconciled,
+				FollowUpStatus:   FollowUpNone,
+				MatchedPaymentID: &paymentID,
+				ReconciliationID: &reconciliationID,
+			},
+			codes: []string{"bank_transaction_reconciled_archive"},
+		},
+		{
+			name: "unsupported status and follow-up",
+			tx: &BankTransaction{
+				ID:             "tx-review",
+				BankAccountID:  "bank-1",
+				Status:         TransactionStatus("HELD"),
+				FollowUpStatus: FollowUpStatus("ESCALATED"),
+			},
+			codes: []string{"bank_follow_up_status_review", "bank_transaction_status_review"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actions := BuildBankRemediationActions(tt.tx)
+			got := bankRemediationActionCodes(actions)
+			for _, code := range tt.codes {
+				if !got[code] {
+					t.Fatalf("expected action code %q in %#v", code, actions)
+				}
+			}
+			for _, action := range actions {
+				if action.Scope != "banking" || action.OwnerRole != "accountant" {
+					t.Fatalf("expected accountant banking scope, got %#v", action)
+				}
+				if action.EntityType != "bank_transaction" || action.EntityID != tt.tx.ID {
+					t.Fatalf("expected bank transaction entity context, got %#v", action)
+				}
+				if strings.TrimSpace(action.CLICommand) == "" || strings.TrimSpace(action.UIPath) == "" {
+					t.Fatalf("expected runnable command and UI path, got %#v", action)
+				}
+				if action.WorkspaceQueue != "banking_followup" || action.AssignmentKey == "" || action.Priority == "" {
+					t.Fatalf("expected assignment metadata, got %#v", action)
+				}
+				if action.Severity == "ACTION" && (action.Priority != "high" || action.DueInDays != 1) {
+					t.Fatalf("expected high-priority action due in 1 day, got %#v", action)
+				}
+			}
+		})
+	}
+
+	if BuildBankRemediationActions(nil) != nil {
+		t.Fatal("expected nil actions for nil transaction")
+	}
+}
+
+func bankRemediationActionCodes(actions []BankRemediationAction) map[string]bool {
+	codes := make(map[string]bool, len(actions))
+	for _, action := range actions {
+		codes[action.Code] = true
+	}
+	return codes
 }
 
 func TestService_CreateReconciliation(t *testing.T) {

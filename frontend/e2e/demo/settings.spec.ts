@@ -1,32 +1,252 @@
-import { test, expect } from '@playwright/test';
-import { ensureAuthenticated, navigateTo, ensureDemoTenant } from './utils';
+import {
+  test,
+  expect,
+  type Page,
+  type Response,
+  type TestInfo,
+} from "@playwright/test";
+import {
+  ensureAuthenticated,
+  navigateTo,
+  ensureDemoTenant,
+  waitForRouteReady,
+  getDemoCredentials,
+} from "./utils";
 
-test.describe('Demo Settings - Page Structure Verification', () => {
-	test.beforeEach(async ({ page }, testInfo) => {
-		await ensureAuthenticated(page, testInfo);
-		await ensureDemoTenant(page, testInfo);
-		await navigateTo(page, '/settings', testInfo);
-		await page.waitForLoadState('networkidle');
-	});
+const routeLoadTimeout = 30_000;
+const apiResponseTimeout = 30_000;
 
-	test('displays settings page heading or cards', async ({ page }) => {
-		// Wait for heading (level 1) to be visible
-		await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 10000 });
-	});
+interface TenantResponse {
+  id: string;
+  name: string;
+  settings?: {
+    reg_code?: string;
+    vat_number?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    bank_details?: string;
+    invoice_terms?: string;
+    pdf_footer_text?: string;
+    timezone?: string;
+    date_format?: string;
+    fiscal_year_start_month?: number;
+  };
+}
 
-	test('shows settings navigation options', async ({ page }) => {
-		const hasCompany = await page.getByText(/company/i).first().isVisible().catch(() => false);
-		const hasEmail = await page.getByText(/email/i).first().isVisible().catch(() => false);
-		const hasLinks = await page.getByRole('link').count() > 0;
-		expect(hasCompany || hasEmail || hasLinks).toBeTruthy();
-	});
+function responsePath(responseUrl: string): string {
+  return new URL(responseUrl).pathname;
+}
 
-	test('can navigate to company settings', async ({ page }, testInfo) => {
-		await navigateTo(page, '/settings/company', testInfo);
-		await page.waitForTimeout(2000);
-		const hasContent = await page.locator('input').first().isVisible().catch(() => false);
-		const hasForm = await page.getByRole('form').isVisible().catch(() => false);
-		const hasText = await page.getByText(/name|company|registration/i).first().isVisible().catch(() => false);
-		expect(hasContent || hasForm || hasText).toBeTruthy();
-	});
+function tenantResponse(tenantId: string) {
+  return (response: Response): boolean =>
+    response.request().method() === "GET" &&
+    response.status() === 200 &&
+    responsePath(response.url()).endsWith(`/tenants/${tenantId}`);
+}
+
+function periodCloseEventsResponse(tenantId: string) {
+  return (response: Response): boolean =>
+    response.request().method() === "GET" &&
+    response.status() === 200 &&
+    responsePath(response.url()).endsWith(
+      `/tenants/${tenantId}/period-close-events`,
+    );
+}
+
+function updateTenantResponse(tenantId: string) {
+  return (response: Response): boolean =>
+    response.request().method() === "PUT" &&
+    response.status() === 200 &&
+    responsePath(response.url()).endsWith(`/tenants/${tenantId}`);
+}
+
+async function openSettingsOverview(page: Page, testInfo: TestInfo) {
+  await navigateTo(page, "/settings", testInfo, {
+    waitForNetworkIdle: false,
+  });
+  await waitForRouteReady(page, ".settings-grid");
+}
+
+async function openCompanySettingsFromOverview(
+  page: Page,
+  testInfo: TestInfo,
+): Promise<TenantResponse> {
+  const { tenantId } = getDemoCredentials(testInfo);
+  const tenantLoaded = page.waitForResponse(tenantResponse(tenantId), {
+    timeout: apiResponseTimeout,
+  });
+  const historyLoaded = page.waitForResponse(
+    periodCloseEventsResponse(tenantId),
+    { timeout: apiResponseTimeout },
+  );
+
+  await page
+    .locator(`a.settings-card[href="/settings/company?tenant=${tenantId}"]`)
+    .click();
+
+  const tenantResult = await tenantLoaded;
+  await historyLoaded;
+  await waitForRouteReady(page, "#company-settings-form", routeLoadTimeout);
+
+  return (await tenantResult.json()) as TenantResponse;
+}
+
+test.describe("Demo Settings", () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await ensureAuthenticated(page, testInfo);
+    await ensureDemoTenant(page, testInfo);
+  });
+
+  test("verifies settings destinations and saves company settings", async ({
+    page,
+  }, testInfo) => {
+    const { tenantId } = getDemoCredentials(testInfo);
+    await openSettingsOverview(page, testInfo);
+
+    await expect(
+      page.getByRole("heading", { name: /settings|seaded/i, level: 1 }),
+    ).toBeVisible();
+
+    const expectedCardTargets = [
+      "/settings/company",
+      "/settings/email",
+      "/settings/plugins",
+      "/settings/interest",
+      "/settings/audit",
+      "/documents",
+      "/settings/users",
+    ];
+
+    await expect(page.locator("a.settings-card")).toHaveCount(
+      expectedCardTargets.length,
+    );
+    for (const target of expectedCardTargets) {
+      await expect(
+        page.locator(`a.settings-card[href="${target}?tenant=${tenantId}"]`),
+      ).toBeVisible();
+    }
+
+    const loadedTenant = await openCompanySettingsFromOverview(page, testInfo);
+    await expect(page).toHaveURL(
+      new RegExp(`/settings/company\\?tenant=${tenantId}`),
+    );
+    await expect(page.locator("#companyName")).toHaveValue(loadedTenant.name);
+    await expect(page.locator("#currency")).toBeDisabled();
+    await expect(page.locator("#timezone")).toHaveValue(
+      loadedTenant.settings?.timezone || "Europe/Tallinn",
+    );
+    await expect(page.locator("#regCode")).toBeVisible();
+    await expect(page.locator("#vatNumber")).toBeVisible();
+    await expect(page.locator("#email")).toBeVisible();
+    await expect(page.locator("#phone")).toBeVisible();
+    await expect(page.locator("#bankDetails")).toBeVisible();
+    await expect(page.locator("#invoiceTerms")).toBeVisible();
+    await expect(page.locator("#period-history")).toBeVisible();
+
+    const suffix = `${testInfo.parallelIndex}${testInfo.repeatEachIndex}${Date.now()
+      .toString()
+      .slice(-4)}`;
+    const regCode = `9${suffix}`.slice(0, 8);
+    const vatNumber = `EE${regCode}`;
+    const email = `settings-${suffix}@example.com`;
+    const phone = `+372 55${suffix.slice(-6)}`;
+    const address = `E2E Settings Street ${suffix}, Tallinn`;
+    const bankDetails = `E2E settings bank reference ${suffix}`;
+    const invoiceTerms = `Payment terms updated by demo E2E ${suffix}`;
+    const pdfFooterText = `Footer ${suffix}`;
+    const dateFormat = "YYYY-MM-DD";
+    const fiscalYearStartMonth = 4;
+
+    await page.locator("#regCode").fill(regCode);
+    await page.locator("#vatNumber").fill(vatNumber);
+    await page.locator("#email").fill(email);
+    await page.locator("#phone").fill(phone);
+    await page.locator("#address").fill(address);
+    await page.locator("#bankDetails").fill(bankDetails);
+    await page.locator("#invoiceTerms").fill(invoiceTerms);
+    await page.locator("#pdfFooterText").fill(pdfFooterText);
+    await page.locator("#dateFormat").selectOption(dateFormat);
+    await page
+      .locator("#fiscalYearStart")
+      .selectOption(String(fiscalYearStartMonth));
+
+    const updateResponsePromise = page.waitForResponse(
+      updateTenantResponse(tenantId),
+      { timeout: apiResponseTimeout },
+    );
+    await page
+      .locator("form#company-settings-form button[type='submit']")
+      .click();
+    const updateResponse = await updateResponsePromise;
+    const updatePayload = updateResponse.request().postDataJSON() as {
+      settings?: Record<string, unknown>;
+    };
+    const updatedTenant = (await updateResponse.json()) as TenantResponse;
+
+    expect(updatePayload.settings?.reg_code).toBe(regCode);
+    expect(updatePayload.settings?.vat_number).toBe(vatNumber);
+    expect(updatePayload.settings?.email).toBe(email);
+    expect(updatePayload.settings?.phone).toBe(phone);
+    expect(updatePayload.settings?.address).toBe(address);
+    expect(updatePayload.settings?.bank_details).toBe(bankDetails);
+    expect(updatePayload.settings?.invoice_terms).toBe(invoiceTerms);
+    expect(updatePayload.settings?.pdf_footer_text).toBe(pdfFooterText);
+    expect(updatePayload.settings?.date_format).toBe(dateFormat);
+    expect(updatePayload.settings?.fiscal_year_start_month).toBe(
+      fiscalYearStartMonth,
+    );
+    expect(updatedTenant.settings?.reg_code).toBe(regCode);
+    expect(updatedTenant.settings?.vat_number).toBe(vatNumber);
+    expect(updatedTenant.settings?.email).toBe(email);
+    expect(updatedTenant.settings?.phone).toBe(phone);
+    expect(updatedTenant.settings?.address).toBe(address);
+    expect(updatedTenant.settings?.bank_details).toBe(bankDetails);
+    expect(updatedTenant.settings?.invoice_terms).toBe(invoiceTerms);
+    expect(updatedTenant.settings?.pdf_footer_text).toBe(pdfFooterText);
+    expect(updatedTenant.settings?.date_format).toBe(dateFormat);
+    expect(updatedTenant.settings?.fiscal_year_start_month).toBe(
+      fiscalYearStartMonth,
+    );
+    await expect(page.locator(".alert-success")).toContainText(
+      /settings saved|seaded salvestatud/i,
+    );
+    await expect(page.locator("#regCode")).toHaveValue(regCode);
+
+    const reloadResponsePromise = page.waitForResponse(
+      tenantResponse(tenantId),
+      {
+        timeout: apiResponseTimeout,
+      },
+    );
+    await page.reload();
+    const reloadResponse = await reloadResponsePromise;
+    const reloadedTenant = (await reloadResponse.json()) as TenantResponse;
+    await waitForRouteReady(page, "#company-settings-form", routeLoadTimeout);
+
+    expect(reloadedTenant.settings?.reg_code).toBe(regCode);
+    expect(reloadedTenant.settings?.vat_number).toBe(vatNumber);
+    expect(reloadedTenant.settings?.email).toBe(email);
+    expect(reloadedTenant.settings?.phone).toBe(phone);
+    expect(reloadedTenant.settings?.address).toBe(address);
+    expect(reloadedTenant.settings?.bank_details).toBe(bankDetails);
+    expect(reloadedTenant.settings?.invoice_terms).toBe(invoiceTerms);
+    expect(reloadedTenant.settings?.pdf_footer_text).toBe(pdfFooterText);
+    expect(reloadedTenant.settings?.date_format).toBe(dateFormat);
+    expect(reloadedTenant.settings?.fiscal_year_start_month).toBe(
+      fiscalYearStartMonth,
+    );
+    await expect(page.locator("#regCode")).toHaveValue(regCode);
+    await expect(page.locator("#vatNumber")).toHaveValue(vatNumber);
+    await expect(page.locator("#email")).toHaveValue(email);
+    await expect(page.locator("#phone")).toHaveValue(phone);
+    await expect(page.locator("#address")).toHaveValue(address);
+    await expect(page.locator("#bankDetails")).toHaveValue(bankDetails);
+    await expect(page.locator("#invoiceTerms")).toHaveValue(invoiceTerms);
+    await expect(page.locator("#pdfFooterText")).toHaveValue(pdfFooterText);
+    await expect(page.locator("#dateFormat")).toHaveValue(dateFormat);
+    await expect(page.locator("#fiscalYearStart")).toHaveValue(
+      String(fiscalYearStartMonth),
+    );
+  });
 });
