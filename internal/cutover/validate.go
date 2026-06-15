@@ -136,6 +136,11 @@ type kmdHistoryVATReconciliationGroup struct {
 
 	outputTotalRow *kmdHistoryVATReconciliationValue
 	inputTotalRow  *kmdHistoryVATReconciliationValue
+
+	externalOutputSupport    decimal.Decimal
+	externalOutputSupportSet bool
+	externalInputSupport     decimal.Decimal
+	externalInputSupportSet  bool
 }
 
 type kmdHistoryVATReconciliationValue struct {
@@ -884,6 +889,14 @@ var fileSpecs = map[FileKind]fileSpec{
 			"debit_amount":          "debit",
 			"credit_amount":         "credit",
 			"exchange_rate":         "exchange_rate",
+			"vat_rate":              "vat_rate",
+			"vat":                   "vat_rate",
+			"tax_rate":              "vat_rate",
+			"käibemaks":             "vat_rate",
+			"kaibemaks":             "vat_rate",
+			"is_vat_inclusive":      "is_vat_inclusive",
+			"vat_inclusive":         "is_vat_inclusive",
+			"tax_inclusive":         "is_vat_inclusive",
 			"source_type":           "source_type",
 			"source_id":             "source_id",
 		}),
@@ -1684,6 +1697,7 @@ func parseEInvoiceBundleFile(file BundleFile, eInvoiceInvoiceType string) (parse
 	rows := make([]parsedRow, 0, len(invoices))
 	for index, invoice := range invoices {
 		invoiceTotal, hasInvoiceTotal := cutoverEInvoiceTotal(invoice)
+		invoiceVAT, hasInvoiceVAT := cutoverEInvoiceVAT(invoice)
 		values := map[string]string{
 			"invoice_id":          invoice.ID,
 			"invoice_number":      invoice.Number,
@@ -1702,6 +1716,9 @@ func parseEInvoiceBundleFile(file BundleFile, eInvoiceInvoiceType string) (parse
 		}
 		if hasInvoiceTotal {
 			values["invoice_total"] = invoiceTotal.String()
+		}
+		if hasInvoiceVAT {
+			values["vat_amount"] = invoiceVAT.String()
 		}
 		rows = append(rows, parsedRow{
 			number: index + 1,
@@ -1835,6 +1852,7 @@ func eInvoiceValidationHeaders() []string {
 		"issue_date",
 		"due_date",
 		"invoice_total",
+		"vat_amount",
 		"currency",
 		"contact_reg_code",
 		"contact_vat_number",
@@ -2446,8 +2464,8 @@ func validateGroupedDocumentPreflight(report *BundleValidationReport, file parse
 func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile, eInvoiceContactMode EInvoiceContactMode) {
 	validateImportedInvoiceAmountPaidConsistency(report, files)
 	validatePayrollTSDHistoryConsistency(report, files)
-	validateKMDHistoryVATReconciliation(report, files)
 	accountTypeTargets := buildCutoverAccountTypeTargets(files)
+	validateKMDHistoryVATReconciliation(report, files, accountTypeTargets)
 	validateExpenseAccountTypeConsistency(report, files, accountTypeTargets)
 	validateProductAccountTypeConsistency(report, files, accountTypeTargets)
 	validateFixedAssetAccountTypeConsistency(report, files, accountTypeTargets)
@@ -2673,7 +2691,7 @@ func hasOrderQuoteContactMismatch(
 	return false
 }
 
-func validateKMDHistoryVATReconciliation(report *BundleValidationReport, files []parsedFile) {
+func validateKMDHistoryVATReconciliation(report *BundleValidationReport, files []parsedFile, accountTypeTargets map[string]cutoverAccountTypeTarget) {
 	groups := map[string]*kmdHistoryVATReconciliationGroup{}
 	for _, file := range files {
 		if file.kind != KindKMDHistory {
@@ -2717,6 +2735,7 @@ func validateKMDHistoryVATReconciliation(report *BundleValidationReport, files [
 			}
 		}
 	}
+	addKMDHistoryExternalVATSupport(groups, files, accountTypeTargets)
 
 	periods := make([]string, 0, len(groups))
 	for period := range groups {
@@ -2727,6 +2746,128 @@ func validateKMDHistoryVATReconciliation(report *BundleValidationReport, files [
 		group := groups[period]
 		group.validateVAT(report, "output", "total_output_vat", group.declaredOutput, group.declaredOutputBad, group.outputSupport, group.outputSupportSet, group.outputTotalRow)
 		group.validateVAT(report, "input", "total_input_vat", group.declaredInput, group.declaredInputBad, group.inputSupport, group.inputSupportSet, group.inputTotalRow)
+		group.validateExternalVAT(report, "output")
+		group.validateExternalVAT(report, "input")
+	}
+}
+
+func addKMDHistoryExternalVATSupport(groups map[string]*kmdHistoryVATReconciliationGroup, files []parsedFile, accountTypeTargets map[string]cutoverAccountTypeTarget) {
+	if len(groups) == 0 {
+		return
+	}
+	for _, file := range files {
+		switch file.kind {
+		case KindInvoices:
+			addKMDHistoryInvoiceVATSupport(groups, file)
+		case KindEInvoices:
+			addKMDHistoryEInvoiceVATSupport(groups, file)
+		case KindJournalEntries:
+			addKMDHistoryJournalVATSupport(groups, file, accountTypeTargets)
+		}
+	}
+}
+
+func addKMDHistoryInvoiceVATSupport(groups map[string]*kmdHistoryVATReconciliationGroup, file parsedFile) {
+	for _, invoiceGroup := range cutoverInvoiceGroups(file) {
+		period, ok := cutoverVATSupportPeriodFromDate(invoiceGroup.issueDate, invoiceGroup.issueDateSpecified)
+		if !ok {
+			continue
+		}
+		group := groups[period]
+		if group == nil {
+			continue
+		}
+		for _, row := range invoiceGroup.rows {
+			vatAmount, reverseCharge, ok := cutoverInvoiceLineVAT(row)
+			if !ok || vatAmount.IsZero() {
+				continue
+			}
+			switch invoiceGroup.invoiceType {
+			case "SALES":
+				group.addExternalVAT("output", vatAmount)
+			case "PURCHASE":
+				if reverseCharge {
+					group.addExternalVAT("output", vatAmount)
+				}
+				group.addExternalVAT("input", vatAmount)
+			}
+		}
+	}
+}
+
+func addKMDHistoryEInvoiceVATSupport(groups map[string]*kmdHistoryVATReconciliationGroup, file parsedFile) {
+	for _, row := range file.rows {
+		period, ok := cutoverVATSupportPeriodFromRowDate(row.values["issue_date"])
+		if !ok {
+			continue
+		}
+		group := groups[period]
+		if group == nil {
+			continue
+		}
+		vatAmount, ok := cutoverVATSupportDecimal(row.values["vat_amount"], false)
+		if !ok || vatAmount.IsZero() {
+			continue
+		}
+		switch normalizeCutoverInvoiceType(row.values["invoice_type"]) {
+		case "SALES":
+			group.addExternalVAT("output", vatAmount)
+		case "PURCHASE":
+			group.addExternalVAT("input", vatAmount)
+		}
+	}
+}
+
+func addKMDHistoryJournalVATSupport(groups map[string]*kmdHistoryVATReconciliationGroup, file parsedFile, accountTypeTargets map[string]cutoverAccountTypeTarget) {
+	if len(accountTypeTargets) == 0 {
+		return
+	}
+	for _, row := range file.rows {
+		period, ok := cutoverVATSupportPeriodFromRowDate(row.values["entry_date"])
+		if !ok {
+			continue
+		}
+		group := groups[period]
+		if group == nil {
+			continue
+		}
+		vatRate, ok := cutoverVATSupportDecimal(row.values["vat_rate"], true)
+		if !ok || vatRate.IsZero() {
+			continue
+		}
+		debit, credit, issue := parseCutoverDebitCredit(row)
+		if issue != nil {
+			continue
+		}
+		exchangeRate, exchangeIssue := parseCutoverExchangeRate(row.values["exchange_rate"])
+		if exchangeIssue != nil {
+			continue
+		}
+		target, ok := accountTypeTargets[cutoverAccountTypeTargetKey("code", row.values["account_code"])]
+		if !ok {
+			continue
+		}
+		taxBase := credit.Sub(debit).Mul(exchangeRate)
+		taxAmount := taxBase.Mul(vatRate).Div(decimal.NewFromInt(100)).Abs().Round(2)
+		if taxAmount.IsZero() {
+			continue
+		}
+		if target.accountType == "REVENUE" {
+			group.addExternalVAT("output", taxAmount)
+			continue
+		}
+		group.addExternalVAT("input", taxAmount)
+	}
+}
+
+func (g *kmdHistoryVATReconciliationGroup) addExternalVAT(label string, amount decimal.Decimal) {
+	switch label {
+	case "output":
+		g.externalOutputSupport = g.externalOutputSupport.Add(amount)
+		g.externalOutputSupportSet = true
+	case "input":
+		g.externalInputSupport = g.externalInputSupport.Add(amount)
+		g.externalInputSupportSet = true
 	}
 }
 
@@ -2857,6 +2998,64 @@ func (g *kmdHistoryVATReconciliationGroup) validateVAT(
 	})
 }
 
+func (g *kmdHistoryVATReconciliationGroup) validateExternalVAT(report *BundleValidationReport, label string) {
+	declared, ok := g.externalComparisonTotal(label)
+	if !ok {
+		return
+	}
+	var support decimal.Decimal
+	supportSet := false
+	switch label {
+	case "output":
+		support = g.externalOutputSupport
+		supportSet = g.externalOutputSupportSet
+	case "input":
+		support = g.externalInputSupport
+		supportSet = g.externalInputSupportSet
+	default:
+		return
+	}
+	if !supportSet || declared.amount.Equal(support) {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     KindKMDHistory,
+		FileName: declared.fileName,
+		Row:      declared.row,
+		Field:    declared.field,
+		Value:    declared.value,
+		Message: fmt.Sprintf(
+			"%s %s does not match same-bundle invoice/e-invoice/journal %s VAT support for %s: supporting total %s",
+			declared.field,
+			declared.amount.String(),
+			label,
+			g.period,
+			support.String(),
+		),
+	})
+}
+
+func (g *kmdHistoryVATReconciliationGroup) externalComparisonTotal(label string) (*kmdHistoryVATReconciliationValue, bool) {
+	switch label {
+	case "output":
+		if g.declaredOutput != nil && !g.declaredOutputBad {
+			return g.declaredOutput, true
+		}
+		if g.outputTotalRow != nil {
+			return g.outputTotalRow, true
+		}
+	case "input":
+		if g.declaredInput != nil && !g.declaredInputBad {
+			return g.declaredInput, true
+		}
+		if g.inputTotalRow != nil {
+			return g.inputTotalRow, true
+		}
+	}
+	return nil, false
+}
+
 func cutoverKMDHistoryPeriod(values map[string]string) (string, bool) {
 	year, err := strconv.Atoi(strings.TrimSpace(values["year"]))
 	if err != nil || year < 1900 || year > 2200 {
@@ -2867,6 +3066,36 @@ func cutoverKMDHistoryPeriod(values map[string]string) (string, bool) {
 		return "", false
 	}
 	return fmt.Sprintf("%04d-%02d", year, month), true
+}
+
+func cutoverVATSupportPeriodFromRowDate(value string) (string, bool) {
+	parsed, ok := parseEmployeeCutoverDate(strings.TrimSpace(value))
+	if !ok {
+		return "", false
+	}
+	return cutoverVATSupportPeriodFromDate(parsed, true)
+}
+
+func cutoverVATSupportPeriodFromDate(value time.Time, specified bool) (string, bool) {
+	if !specified || value.IsZero() {
+		return "", false
+	}
+	return fmt.Sprintf("%04d-%02d", value.Year(), int(value.Month())), true
+}
+
+func cutoverVATSupportDecimal(value string, allowZero bool) (decimal.Decimal, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, false
+	}
+	amount, issue := parseCutoverRequiredImportDecimal(trimmed, "vat_amount")
+	if issue != nil || amount.IsNegative() {
+		return decimal.Zero, false
+	}
+	if amount.IsZero() && !allowZero {
+		return decimal.Zero, false
+	}
+	return amount, true
 }
 
 func cutoverKMDHistoryOptionalDecimal(value string) (decimal.Decimal, bool, bool) {
@@ -3932,6 +4161,36 @@ func cutoverEInvoiceTotal(invoice einvoice.Invoice) (decimal.Decimal, bool) {
 	return total, true
 }
 
+func cutoverEInvoiceVAT(invoice einvoice.Invoice) (decimal.Decimal, bool) {
+	vatAmount := decimal.Zero
+	for _, line := range invoice.Lines {
+		lineVAT, ok := cutoverEInvoiceLineVAT(line)
+		if !ok {
+			return decimal.Zero, false
+		}
+		vatAmount = vatAmount.Add(lineVAT)
+	}
+	if vatAmount.IsZero() {
+		return decimal.Zero, false
+	}
+	return vatAmount, true
+}
+
+func cutoverEInvoiceLineVAT(line einvoice.Line) (decimal.Decimal, bool) {
+	if line.Quantity.LessThanOrEqual(decimal.Zero) ||
+		line.UnitPrice.IsNegative() ||
+		line.DiscountPercent.IsNegative() ||
+		line.DiscountPercent.GreaterThan(decimal.NewFromInt(100)) ||
+		line.VATRate.IsNegative() {
+		return decimal.Zero, false
+	}
+
+	lineSubtotal := line.Quantity.Mul(line.UnitPrice)
+	discountAmount := lineSubtotal.Mul(line.DiscountPercent).Div(decimal.NewFromInt(100))
+	lineSubtotal = lineSubtotal.Sub(discountAmount).Round(2)
+	return lineSubtotal.Mul(line.VATRate).Div(decimal.NewFromInt(100)).Round(2), true
+}
+
 type cutoverInvoiceGroup struct {
 	id                 string
 	number             string
@@ -4066,6 +4325,39 @@ func cutoverInvoiceLineTotal(row parsedRow) (decimal.Decimal, bool) {
 	}
 	lineVAT := lineSubtotal.Mul(vatRate).Div(decimal.NewFromInt(100)).Round(2)
 	return lineSubtotal.Add(lineVAT), true
+}
+
+func cutoverInvoiceLineVAT(row parsedRow) (decimal.Decimal, bool, bool) {
+	quantity, issue := parseCutoverRequiredImportDecimal(row.values["quantity"], "quantity")
+	if issue != nil || quantity.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, false, false
+	}
+	unitPrice, issue := parseCutoverRequiredImportDecimal(row.values["unit_price"], "unit_price")
+	if issue != nil || unitPrice.IsNegative() {
+		return decimal.Zero, false, false
+	}
+	discountPercent := decimal.Zero
+	if strings.TrimSpace(row.values["discount_percent"]) != "" {
+		parsed, issue := parseCutoverRequiredImportDecimal(row.values["discount_percent"], "discount_percent")
+		if issue != nil || parsed.IsNegative() || parsed.GreaterThan(decimal.NewFromInt(100)) {
+			return decimal.Zero, false, false
+		}
+		discountPercent = parsed
+	}
+	vatRate, issue := parseCutoverRequiredImportDecimal(row.values["vat_rate"], "vat_rate")
+	if issue != nil || vatRate.IsNegative() {
+		return decimal.Zero, false, false
+	}
+	exchangeRate, exchangeIssue := parseCutoverExchangeRate(row.values["exchange_rate"])
+	if exchangeIssue != nil {
+		return decimal.Zero, false, false
+	}
+
+	lineSubtotal := quantity.Mul(unitPrice)
+	discountAmount := lineSubtotal.Mul(discountPercent).Div(decimal.NewFromInt(100))
+	lineSubtotal = lineSubtotal.Sub(discountAmount).Round(2)
+	lineVAT := lineSubtotal.Mul(vatRate).Div(decimal.NewFromInt(100)).Round(2)
+	return lineVAT.Mul(exchangeRate).Round(2), cutoverInvoiceLineReverseCharge(row), true
 }
 
 func cutoverInvoiceLineReverseCharge(row parsedRow) bool {
@@ -7389,6 +7681,16 @@ func checkJournalEntryRows(report *BundleValidationReport, file parsedFile) {
 	if fileHasHeaders(file, "line_id") {
 		for _, row := range file.rows {
 			checkOptionalUUID(report, file, row, "line_id")
+		}
+	}
+	if fileHasHeaders(file, "vat_rate") {
+		for _, row := range file.rows {
+			checkCommercialNonNegativeOptionalDecimal(report, file, row, "vat_rate")
+		}
+	}
+	if fileHasHeaders(file, "is_vat_inclusive") {
+		for _, row := range file.rows {
+			checkCommercialBool(report, file, row, "is_vat_inclusive")
 		}
 	}
 	checkJournalEntryGroups(report, file)
