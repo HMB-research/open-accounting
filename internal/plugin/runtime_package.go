@@ -46,6 +46,7 @@ type packageRuntimeProcess struct {
 	pluginName string
 	cmd        *exec.Cmd
 	output     *runtimeProcessLogBuffer
+	backoff    time.Duration
 
 	exited  chan struct{}
 	exitMu  sync.RWMutex
@@ -70,8 +71,10 @@ type packageRuntimeProcess struct {
 }
 
 type packageRuntimeStats struct {
-	RestartCount int
-	CrashCount   int
+	RestartCount  int
+	CrashCount    int
+	LastExitError string
+	LastError     string
 }
 
 func (s *Service) startPackageBackendRuntimeWithStats(plugin *Plugin, manifest *Manifest, stats packageRuntimeStats) (*packageRuntimeProcess, error) {
@@ -126,14 +129,17 @@ func (s *Service) startPackageBackendRuntimeWithStats(plugin *Plugin, manifest *
 			baseURL: baseURL,
 			client:  &http.Client{Timeout: 10 * time.Second},
 		},
-		pluginID:     plugin.ID,
-		pluginName:   plugin.Name,
-		cmd:          cmd,
-		output:       output,
-		exited:       make(chan struct{}),
-		startedAt:    time.Now().UTC(),
-		restartCount: stats.RestartCount,
-		crashCount:   stats.CrashCount,
+		pluginID:      plugin.ID,
+		pluginName:    plugin.Name,
+		cmd:           cmd,
+		output:        output,
+		backoff:       s.packageRuntimeCrashBackoff(),
+		exited:        make(chan struct{}),
+		startedAt:     time.Now().UTC(),
+		restartCount:  stats.RestartCount,
+		crashCount:    stats.CrashCount,
+		lastExitError: stats.LastExitError,
+		lastError:     stats.LastError,
 	}
 	go runtime.wait()
 
@@ -411,7 +417,7 @@ func (r *packageRuntimeProcess) markExited(err error) {
 	}
 	if !r.intentionalStop {
 		r.crashCount++
-		backoffUntil := now.Add(packageRuntimeCrashBackoff)
+		backoffUntil := now.Add(r.backoff)
 		r.backoffUntil = &backoffUntil
 		if r.lastExitError != "" {
 			r.lastError = r.lastExitError

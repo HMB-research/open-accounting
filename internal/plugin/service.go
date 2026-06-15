@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/google/uuid"
@@ -28,6 +29,9 @@ type Service struct {
 
 	// Plugin directory for installed plugins
 	pluginDir string
+
+	// Package runtime restart policy.
+	runtimeRestartBackoff time.Duration
 }
 
 // LoadedPlugin represents a plugin loaded into memory
@@ -41,10 +45,11 @@ type LoadedPlugin struct {
 func NewService(pool *pgxpool.Pool, pluginDir string) *Service {
 	if pool == nil {
 		return &Service{
-			hooks:           NewHookRegistry(),
-			plugins:         make(map[string]*LoadedPlugin),
-			runtimeFailures: make(map[uuid.UUID]PluginRuntimeStatus),
-			pluginDir:       pluginDir,
+			hooks:                 NewHookRegistry(),
+			plugins:               make(map[string]*LoadedPlugin),
+			runtimeFailures:       make(map[uuid.UUID]PluginRuntimeStatus),
+			pluginDir:             pluginDir,
+			runtimeRestartBackoff: packageRuntimeCrashBackoff,
 		}
 	}
 	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
@@ -52,11 +57,12 @@ func NewService(pool *pgxpool.Pool, pluginDir string) *Service {
 		panic(fmt.Errorf("create plugin GORM repository: %w", err))
 	}
 	return &Service{
-		repo:            NewGORMRepository(gormDB),
-		hooks:           NewHookRegistry(),
-		plugins:         make(map[string]*LoadedPlugin),
-		runtimeFailures: make(map[uuid.UUID]PluginRuntimeStatus),
-		pluginDir:       pluginDir,
+		repo:                  NewGORMRepository(gormDB),
+		hooks:                 NewHookRegistry(),
+		plugins:               make(map[string]*LoadedPlugin),
+		runtimeFailures:       make(map[uuid.UUID]PluginRuntimeStatus),
+		pluginDir:             pluginDir,
+		runtimeRestartBackoff: packageRuntimeCrashBackoff,
 	}
 }
 
@@ -66,11 +72,12 @@ func NewServiceWithRepository(repo Repository, hooks *HookRegistry, pluginDir st
 		hooks = NewHookRegistry()
 	}
 	return &Service{
-		repo:            repo,
-		hooks:           hooks,
-		plugins:         make(map[string]*LoadedPlugin),
-		runtimeFailures: make(map[uuid.UUID]PluginRuntimeStatus),
-		pluginDir:       pluginDir,
+		repo:                  repo,
+		hooks:                 hooks,
+		plugins:               make(map[string]*LoadedPlugin),
+		runtimeFailures:       make(map[uuid.UUID]PluginRuntimeStatus),
+		pluginDir:             pluginDir,
+		runtimeRestartBackoff: packageRuntimeCrashBackoff,
 	}
 }
 
@@ -417,8 +424,10 @@ func (s *Service) RestartPluginRuntime(ctx context.Context, pluginID uuid.UUID) 
 
 	current := s.runtimeStatusForPlugin(plugin, manifest)
 	stats := packageRuntimeStats{
-		RestartCount: current.RestartCount + 1,
-		CrashCount:   current.CrashCount,
+		RestartCount:  current.RestartCount + 1,
+		CrashCount:    current.CrashCount,
+		LastExitError: current.LastExitError,
+		LastError:     current.LastError,
 	}
 	if err := s.loadPluginWithRuntimeStats(plugin, manifest, stats); err != nil {
 		return nil, err
@@ -449,6 +458,10 @@ func (s *Service) loadPluginWithRuntimeStats(plugin *Plugin, manifest *Manifest,
 	delete(s.runtimeFailures, plugin.ID)
 	s.mu.Unlock()
 
+	if packageRuntime, ok := runtime.(*packageRuntimeProcess); ok {
+		s.supervisePackageRuntime(plugin, manifest, packageRuntime)
+	}
+
 	if previous != nil {
 		s.hooks.unregisterPluginHooks(previous.Plugin.ID)
 		if previous.Runtime != nil {
@@ -475,6 +488,53 @@ func (s *Service) loadPluginWithRuntimeStats(plugin *Plugin, manifest *Manifest,
 	}
 
 	return nil
+}
+
+func (s *Service) supervisePackageRuntime(plugin *Plugin, manifest *Manifest, runtime *packageRuntimeProcess) {
+	if plugin == nil || manifest == nil || runtime == nil {
+		return
+	}
+	pluginSnapshot := *plugin
+	manifestSnapshot := *manifest
+
+	go func() {
+		<-runtime.exited
+		status := runtime.status()
+		if status.State == RuntimeStateStopped {
+			return
+		}
+
+		backoff := s.packageRuntimeCrashBackoff()
+		if backoff > 0 {
+			timer := time.NewTimer(backoff)
+			<-timer.C
+		}
+
+		s.mu.RLock()
+		loaded := s.plugins[pluginSnapshot.Name]
+		stillCurrent := loaded != nil && loaded.Runtime == runtime
+		s.mu.RUnlock()
+		if !stillCurrent {
+			return
+		}
+
+		stats := packageRuntimeStats{
+			RestartCount:  status.RestartCount + 1,
+			CrashCount:    status.CrashCount,
+			LastExitError: status.LastExitError,
+			LastError:     status.LastError,
+		}
+		if err := s.loadPluginWithRuntimeStats(&pluginSnapshot, &manifestSnapshot, stats); err != nil {
+			log.Error().Err(err).Str("plugin", pluginSnapshot.Name).Msg("Failed to automatically restart plugin runtime")
+		}
+	}()
+}
+
+func (s *Service) packageRuntimeCrashBackoff() time.Duration {
+	if s == nil || s.runtimeRestartBackoff <= 0 {
+		return packageRuntimeCrashBackoff
+	}
+	return s.runtimeRestartBackoff
 }
 
 func (s *Service) backendRuntimeForPlugin(plugin *Plugin, manifest *Manifest) (pluginBackendRuntime, error) {
@@ -602,7 +662,11 @@ func (s *Service) runtimeStatusForPlugin(plugin *Plugin, manifest *Manifest) Plu
 		failure, hasFailure := s.runtimeFailures[plugin.ID]
 		s.mu.RUnlock()
 		if loaded != nil && loaded.Runtime != nil {
-			return decorateRuntimeStatus(plugin, manifest, loaded.Runtime.status())
+			status := decorateRuntimeStatus(plugin, manifest, loaded.Runtime.status())
+			if hasFailure && status.State != RuntimeStateRunning && status.State != RuntimeStateStarting {
+				return decorateRuntimeStatus(plugin, manifest, failure)
+			}
+			return status
 		}
 		if hasFailure {
 			return decorateRuntimeStatus(plugin, manifest, failure)
