@@ -45,22 +45,23 @@ func TestBuildMigrationExecutionPlanOrdersReadyStepsAndMarksMissingContext(t *te
 	assert.Equal(t, 0, plan.Summary.BlockedStepCount)
 	require.Len(t, plan.Steps, 4)
 	assert.Equal(t, KindAccounts, plan.Steps[0].Kind)
-	assert.Equal(t, KindBankAccounts, plan.Steps[1].Kind)
-	assert.Equal(t, KindBankTransactions, plan.Steps[2].Kind)
-	assert.Equal(t, KindOpeningBalances, plan.Steps[3].Kind)
+	assert.Equal(t, KindOpeningBalances, plan.Steps[1].Kind)
+	assert.Equal(t, KindBankAccounts, plan.Steps[2].Kind)
+	assert.Equal(t, KindBankTransactions, plan.Steps[3].Kind)
 
-	bankStep := plan.Steps[2]
+	openingStep := plan.Steps[1]
+	assert.Equal(t, MigrationExecutionStepReady, openingStep.Status)
+	assert.Equal(t, []FileKind{KindAccounts}, openingStep.DependsOn)
+	assert.Contains(t, openingStep.CLICommand, "oa journal import-opening-balances --entry-date 2026-01-01")
+	assert.Empty(t, openingStep.ContextFields)
+
+	bankStep := plan.Steps[3]
 	assert.Equal(t, MigrationExecutionStepNeedsContext, bankStep.Status)
 	assert.Equal(t, []string{"bank_transaction_account_id"}, bankStep.ContextFields)
 	assert.Equal(t, "/api/v1/tenants/{tenantID}/bank-accounts/<bank-account-id>/import", bankStep.APIPath)
 	assert.Contains(t, bankStep.CLICommand, "oa banking transactions import --account-id <bank-account-id>")
 	assert.Contains(t, bankStep.CLICommand, "--format lhv")
 	assert.Equal(t, []FileKind{KindBankAccounts}, bankStep.DependsOn)
-
-	openingStep := plan.Steps[3]
-	assert.Equal(t, MigrationExecutionStepReady, openingStep.Status)
-	assert.Contains(t, openingStep.CLICommand, "oa journal import-opening-balances --entry-date 2026-01-01")
-	assert.Empty(t, openingStep.ContextFields)
 }
 
 func TestBuildMigrationExecutionPlanBlocksStepsWhenValidationFails(t *testing.T) {
