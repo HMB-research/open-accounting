@@ -1267,7 +1267,7 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 			{
 				Kind:       KindFixedAssets,
 				FileName:   "directo-fixed-assets.csv",
-				CSVContent: "inventar,nimetus,soetuskuupaev,soetusmaksumus,eluiga_kuud,akumuleeritud_kulum,jaakmaksumus,hankija_registrikood\nFA-1,Laptop,2026-01-01,1200,36,200,1000,12345678\n",
+				CSVContent: "pohivara_nr,nimetus,soetuskuupaev,soetusmaksumus,eluiga_kuud,akumuleeritud_kulum,jaakmaksumus,hankija_registrikood\nFA-1,Laptop,2026-01-01,1200,36,200,1000,12345678\n",
 			},
 			{
 				Kind:     KindKMDHistory,
@@ -1293,6 +1293,7 @@ func TestValidateBundleAcceptsDirectoPayrollInventoryAndTaxProviderPresetAliases
 	assert.Contains(t, report.Files[7].Headers, "category_name")
 	assert.Contains(t, report.Files[7].Headers, "supplier_name")
 	assert.Contains(t, report.Files[8].Headers, "serial_number")
+	assert.Contains(t, report.Files[9].Headers, "asset_number")
 	assert.Contains(t, report.Files[9].Headers, "purchase_cost")
 	assert.Contains(t, report.Files[9].Headers, "supplier_reg_code")
 	assert.Contains(t, report.Files[10].Headers, "total_output_vat")
@@ -1786,7 +1787,7 @@ func TestCanonicalizeBundleFileCSVUsesProviderPresetAliases(t *testing.T) {
 			name:       "directo fixed asset number alias",
 			preset:     MigrationProviderPresetDirecto,
 			kind:       KindFixedAssets,
-			content:    "põhivara;nimetus;soetusaeg;soetushind\nFA-2;Printer;2026-02-10;800\n",
+			content:    "põhivara_nr;nimetus;soetusaeg;soetushind\nFA-2;Printer;2026-02-10;800\n",
 			wantHeader: "asset_number,name,purchase_date,purchase_cost",
 		},
 		{
