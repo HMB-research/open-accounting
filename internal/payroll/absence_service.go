@@ -15,6 +15,27 @@ type leaveEvidenceEvaluator interface {
 	EvaluateEvidencePolicy(ctx context.Context, schemaName, tenantID string, req *documents.EvidencePolicyRequest) ([]documents.EvidencePolicyResult, error)
 }
 
+// LeaveEvidencePolicyConflictError preserves failed evidence-policy results for
+// handlers that can return structured remediation actions.
+type LeaveEvidencePolicyConflictError struct {
+	Err     error
+	Results []documents.EvidencePolicyResult
+}
+
+func (e *LeaveEvidencePolicyConflictError) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *LeaveEvidencePolicyConflictError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 // AbsenceService handles leave/absence management business logic
 type AbsenceService struct {
 	repo     AbsenceRepository
@@ -285,7 +306,10 @@ func (s *AbsenceService) requireApprovedLeaveDocument(ctx context.Context, schem
 		return fmt.Errorf("evaluate leave record evidence: %w", err)
 	}
 	if len(results) == 0 || !results[0].Compliant {
-		return fmt.Errorf("%w before approving leave record %s", ErrApprovedLeaveDocumentRequired, record.ID)
+		return &LeaveEvidencePolicyConflictError{
+			Err:     fmt.Errorf("%w before approving leave record %s", ErrApprovedLeaveDocumentRequired, record.ID),
+			Results: results,
+		}
 	}
 
 	return nil

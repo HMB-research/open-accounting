@@ -615,6 +615,10 @@ func TestApproveLeaveRecord_RequiresApprovedDocument(t *testing.T) {
 	_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
 
 	require.ErrorIs(t, err, ErrApprovedLeaveDocumentRequired)
+	var conflict *LeaveEvidencePolicyConflictError
+	require.ErrorAs(t, err, &conflict)
+	require.Len(t, conflict.Results, 1)
+	assert.Equal(t, "rec-1", conflict.Results[0].EntityID)
 	require.NotNil(t, evidence.request)
 	assert.Equal(t, documents.EntityTypeLeaveRecord, evidence.request.EntityType)
 	assert.Equal(t, []string{"rec-1"}, evidence.request.EntityIDs)
@@ -743,6 +747,9 @@ func TestApproveLeaveRecord_ErrorBranches(t *testing.T) {
 		_, err := service.ApproveLeaveRecord(ctx, "test_schema", "tenant-1", "rec-1", "approver-1")
 
 		require.ErrorIs(t, err, ErrApprovedLeaveDocumentRequired)
+		var conflict *LeaveEvidencePolicyConflictError
+		require.ErrorAs(t, err, &conflict)
+		assert.Empty(t, conflict.Results)
 		assert.Contains(t, err.Error(), "before approving leave record rec-1")
 	})
 

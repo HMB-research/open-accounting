@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/documents"
@@ -805,6 +806,60 @@ func TestLeaveBusinessHandlersBalanceAndRecordWorkflow(t *testing.T) {
 	require.Equal(t, "user-1", rejected.RejectedBy)
 	require.Equal(t, "Coverage conflict", rejected.RejectionReason)
 	require.True(t, absenceRepo.LeaveBalances["tenant-1-emp-700-type-annual-2026"].PendingDays.IsZero())
+}
+
+func TestApproveLeaveRecordRequiresApprovedDocumentReturnsRemediation(t *testing.T) {
+	h, _, absenceRepo := setupPayrollImportHandlerTest(t)
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+	h.absenceService = payroll.NewAbsenceServiceWithEvidence(absenceRepo, &payrollImportHandlerIDGenerator{prefix: "leave"}, h.documentsService)
+
+	employee := payrollImportEmployee("emp-701", "EMP-701")
+	absenceRepo.Employees[employee.ID] = employee
+	absenceRepo.AbsenceTypes["type-sick"] = &payroll.AbsenceType{
+		ID:               "type-sick",
+		TenantID:         "tenant-1",
+		Code:             "SICK_LEAVE",
+		Name:             "Sick leave",
+		RequiresDocument: true,
+		IsActive:         true,
+	}
+	absenceRepo.LeaveRecords["leave-required-doc"] = &payroll.LeaveRecord{
+		ID:            "leave-required-doc",
+		TenantID:      "tenant-1",
+		EmployeeID:    employee.ID,
+		AbsenceTypeID: "type-sick",
+		StartDate:     time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC),
+		EndDate:       time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC),
+		TotalDays:     decimal.NewFromInt(1),
+		WorkingDays:   decimal.NewFromInt(1),
+		Status:        payroll.LeavePending,
+	}
+
+	rec := invokePayrollImportRaw(t, http.StatusConflict, h.ApproveLeaveRecord, payrollHandlerRequest(
+		http.MethodPost,
+		"/tenants/tenant-1/leave-records/leave-required-doc/approve",
+		nil,
+		map[string]string{"tenantID": "tenant-1", "recordID": "leave-required-doc"},
+	))
+
+	var resp struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Contains(t, resp.Error, "approved leave document is required")
+	require.Len(t, resp.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeLeaveRecord, resp.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, "leave-required-doc", resp.EvidencePolicyResults[0].EntityID)
+	assert.False(t, resp.EvidencePolicyResults[0].Compliant)
+	require.Len(t, resp.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", resp.RemediationActions[0].Code)
+	assert.Equal(t, documents.EntityTypeLeaveRecord, resp.RemediationActions[0].EntityType)
+	assert.Equal(t, "leave-required-doc", resp.RemediationActions[0].EntityID)
+	assert.Contains(t, resp.RemediationActions[0].CLICommand, "oa documents upload --entity-type leave_record --entity-id leave-required-doc")
+	assert.Equal(t, payroll.LeavePending, absenceRepo.LeaveRecords["leave-required-doc"].Status)
 }
 
 func setupPayrollImportHandlerTest(t *testing.T) (*Handlers, *payrollImportHandlerRepository, *payroll.MockAbsenceRepository) {
