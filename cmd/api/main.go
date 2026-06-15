@@ -549,6 +549,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/documents/review-queue", h.GetDocumentReviewQueue)
 				r.Post("/documents/evidence-policy", h.EvaluateDocumentEvidencePolicy)
 				r.Get("/documents/retention", h.GetDocumentRetentionReview)
+				r.Post("/documents/purge", h.PurgeExpiredDocuments)
 				r.Post("/documents", h.UploadDocument)
 				r.Get("/documents/{documentID}/download", h.DownloadDocument)
 				r.Patch("/documents/{documentID}/retention", h.UpdateDocumentRetention)

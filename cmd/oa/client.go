@@ -3513,6 +3513,20 @@ func (c *apiClient) getDocumentRetentionReview(ctx context.Context, tenantID, as
 	return &resp, nil
 }
 
+type documentPurgeRequest struct {
+	AsOf   string `json:"as_of,omitempty"`
+	DryRun bool   `json:"dry_run"`
+	Limit  int    `json:"limit,omitempty"`
+}
+
+func (c *apiClient) purgeExpiredDocuments(ctx context.Context, tenantID string, req documentPurgeRequest) (*documents.DocumentPurgeResult, error) {
+	var resp documents.DocumentPurgeResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "documents", "purge"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) uploadDocument(ctx context.Context, tenantID string, req *documents.UploadDocumentRequest, fileContent []byte) (*documents.Document, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)

@@ -625,6 +625,8 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"POST": "documents evidence-policy"})
 	case "/documents/retention":
 		return commandForMethod(method, map[string]string{"GET": "documents retention"})
+	case "/documents/purge":
+		return commandForMethod(method, map[string]string{"POST": "documents purge"})
 	case "/documents/{documentID}/download":
 		return commandForMethod(method, map[string]string{"GET": "documents download"})
 	case "/documents/{documentID}/retention":

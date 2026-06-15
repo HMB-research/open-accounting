@@ -849,6 +849,124 @@ func TestService_EvidencePolicyIgnoresSupersededAndDisposedDocuments(t *testing.
 	}
 }
 
+func TestService_PurgeExpiredDocumentsRequiresDisposedAndNoLegalHold(t *testing.T) {
+	t.Parallel()
+
+	expired := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	future := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	repo := newMockRepository()
+	store := &mockStore{}
+	svc := NewService(repo, store)
+	repo.docs["doc-purge"] = &Document{
+		ID:              "doc-purge",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypeExpense,
+		EntityID:        "expense-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "old-receipt.pdf",
+		StorageKey:      "tenant-1/doc-purge.pdf",
+		RetentionUntil:  &expired,
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusDisposed,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	repo.docs["doc-held"] = &Document{
+		ID:              "doc-held",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypeExpense,
+		EntityID:        "expense-2",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "held-receipt.pdf",
+		StorageKey:      "tenant-1/doc-held.pdf",
+		RetentionUntil:  &expired,
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusDisposed,
+		LegalHold:       true,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	repo.docs["doc-active"] = &Document{
+		ID:              "doc-active",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypeExpense,
+		EntityID:        "expense-3",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "active-receipt.pdf",
+		StorageKey:      "tenant-1/doc-active.pdf",
+		RetentionUntil:  &expired,
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	repo.docs["doc-future"] = &Document{
+		ID:              "doc-future",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypeExpense,
+		EntityID:        "expense-4",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "future-receipt.pdf",
+		StorageKey:      "tenant-1/doc-future.pdf",
+		RetentionUntil:  &future,
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusDisposed,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+
+	dryRun, err := svc.PurgeExpiredDocuments(context.Background(), "tenant_demo", "tenant-1", DocumentPurgeRequest{
+		AsOfDate: time.Date(2026, 3, 15, 8, 0, 0, 0, time.UTC),
+		DryRun:   true,
+	})
+	if err != nil {
+		t.Fatalf("PurgeExpiredDocuments dry-run failed: %v", err)
+	}
+	if dryRun.AsOfDate != "2026-03-15" || !dryRun.DryRun || dryRun.Limit != defaultPurgeLimit {
+		t.Fatalf("unexpected dry-run metadata: %#v", dryRun)
+	}
+	if dryRun.CandidateCount != 3 || dryRun.EligibleCount != 1 || dryRun.PurgedCount != 0 || dryRun.SkippedCount != 2 {
+		t.Fatalf("unexpected dry-run counts: %#v", dryRun)
+	}
+	if len(store.deleted) != 0 || repo.docs["doc-purge"] == nil {
+		t.Fatalf("dry-run should not delete files or rows, deleted=%#v docs=%#v", store.deleted, repo.docs)
+	}
+	skipReasons := map[string]bool{}
+	for _, candidate := range dryRun.Candidates {
+		if candidate.SkipReason != "" {
+			skipReasons[candidate.SkipReason] = true
+		}
+	}
+	if !skipReasons["legal_hold"] || !skipReasons["not_disposed"] {
+		t.Fatalf("expected legal_hold and not_disposed skip reasons: %#v", dryRun.Candidates)
+	}
+
+	executed, err := svc.PurgeExpiredDocuments(context.Background(), "tenant_demo", "tenant-1", DocumentPurgeRequest{
+		AsOfDate: time.Date(2026, 3, 15, 8, 0, 0, 0, time.UTC),
+		DryRun:   false,
+		Limit:    10,
+	})
+	if err != nil {
+		t.Fatalf("PurgeExpiredDocuments execute failed: %v", err)
+	}
+	if executed.DryRun || executed.CandidateCount != 3 || executed.EligibleCount != 1 || executed.PurgedCount != 1 || executed.SkippedCount != 2 {
+		t.Fatalf("unexpected execute counts: %#v", executed)
+	}
+	if _, ok := repo.docs["doc-purge"]; ok {
+		t.Fatalf("expected eligible disposed document to be purged")
+	}
+	if repo.docs["doc-held"] == nil || repo.docs["doc-active"] == nil || repo.docs["doc-future"] == nil {
+		t.Fatalf("expected held, active, and future documents to remain: %#v", repo.docs)
+	}
+	if len(store.deleted) != 1 || store.deleted[0] != "tenant-1/doc-purge.pdf" {
+		t.Fatalf("expected eligible storage key to be deleted, got %#v", store.deleted)
+	}
+
+	if _, err := svc.PurgeExpiredDocuments(context.Background(), "tenant_demo", "tenant-1", DocumentPurgeRequest{Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be zero or greater") {
+		t.Fatalf("expected negative limit to fail, got %v", err)
+	}
+}
+
 func TestService_ReviewDocumentValidationAndIdempotency(t *testing.T) {
 	t.Parallel()
 

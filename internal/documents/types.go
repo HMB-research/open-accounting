@@ -193,6 +193,37 @@ type RetentionReview struct {
 	Documents             []Document                  `json:"documents"`
 }
 
+type DocumentPurgeRequest struct {
+	AsOfDate time.Time `json:"-"`
+	DryRun   bool      `json:"dry_run"`
+	Limit    int       `json:"limit,omitempty"`
+}
+
+type DocumentPurgeCandidate struct {
+	DocumentID      string     `json:"document_id"`
+	EntityType      string     `json:"entity_type"`
+	EntityID        string     `json:"entity_id"`
+	DocumentType    string     `json:"document_type"`
+	FileName        string     `json:"file_name"`
+	RetentionUntil  *time.Time `json:"retention_until,omitempty"`
+	LifecycleStatus string     `json:"lifecycle_status"`
+	LegalHold       bool       `json:"legal_hold"`
+	Eligible        bool       `json:"eligible"`
+	SkipReason      string     `json:"skip_reason,omitempty"`
+	Purged          bool       `json:"purged"`
+}
+
+type DocumentPurgeResult struct {
+	AsOfDate       string                   `json:"as_of_date"`
+	DryRun         bool                     `json:"dry_run"`
+	Limit          int                      `json:"limit"`
+	CandidateCount int                      `json:"candidate_count"`
+	EligibleCount  int                      `json:"eligible_count"`
+	PurgedCount    int                      `json:"purged_count"`
+	SkippedCount   int                      `json:"skipped_count"`
+	Candidates     []DocumentPurgeCandidate `json:"candidates"`
+}
+
 type RetentionReminderAction struct {
 	DocumentID         string     `json:"document_id"`
 	EntityType         string     `json:"entity_type"`

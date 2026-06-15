@@ -704,6 +704,22 @@ Authorization: Bearer <token>
 
 Returns tenant-wide retention administration data for documents with `retention_until` on or before the cutoff date. `include_missing=true` also includes documents without retention metadata. The response includes expired, due-soon, missing-retention, pending-review, rejected, and total counts plus the matching documents. It also includes `reminder_actions`, an automation-friendly queue with one action per expired retention date, due-soon retention date, missing retention date, pending review, or rejected document. `remediation_actions` exposes the same retention and review follow-up as accountant-assigned actions with codes such as `document_retention_expired`, `document_retention_due_soon`, `document_retention_missing`, `document_review_pending`, and `document_review_rejected`, including severity, owner role, workspace queue, stable assignment key, priority, due window, UI path, and CLI command fields.
 
+#### Purge Expired Disposed Documents
+
+```http
+POST /tenants/{tenantId}/documents/purge
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "as_of": "2027-03-01",
+  "dry_run": true,
+  "limit": 100
+}
+```
+
+Runs the retention purge planner. `dry_run` defaults to `true` when omitted. Only documents whose `retention_until` is on or before `as_of`, whose lifecycle is `DISPOSED`, and which are not under legal hold are eligible. Dry-run responses list eligible and skipped candidates without deleting files. Executed purges remove the stored file and document row through the same delete path as single-document deletion; documents under legal hold or not yet disposed are reported with `skip_reason` values such as `legal_hold` and `not_disposed`.
+
 #### Update Retention Metadata
 
 ```http
