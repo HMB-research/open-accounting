@@ -4,6 +4,14 @@ Date: 2026-06-15
 Branch: `feat/payroll-history-import`
 PR: #62
 
+> Historical snapshot: this plan was used to coordinate PR #62 follow-up
+> slices. Several items in the original batch have since landed, including
+> API-token tenant-creation boundaries and structured leave-record evidence
+> remediation. Use
+> [Current Product Limits](../CURRENT_PRODUCT_LIMITS.md) and
+> [Development Status](../DEVELOPMENT_STATUS.md) for current caps and verified
+> remaining gaps.
+
 This plan turns the broad goal of fully tested accounting software with 100% CLI
 coverage and current documentation into parallel work slices that subagents can
 implement without contending on the same files.
@@ -64,9 +72,11 @@ Current local invariants:
    These need external partnerships, certification, credentials, or
    infrastructure and should not be assigned as ordinary local PR tasks.
 
-## Current `/goal` Batch
+## Historical `/goal` Batch
 
-Use these concrete slices before waiting on another full CI cycle:
+These slices were useful at the time this plan was written. Re-check
+`CURRENT_PRODUCT_LIMITS.md` before assigning new work because several items have
+since moved from planned to implemented.
 
 1. Evidence-policy structured conflicts.
    Main-thread slice: return `evidence_policy_results` plus flattened
