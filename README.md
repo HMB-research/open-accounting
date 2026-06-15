@@ -443,7 +443,7 @@ open-accounting/
 - [x] Optional approved evidence blockers for quote send and order confirmation
 - [x] Purchase-invoice send/email and fixed-asset activation/disposal evidence enforcement with structured evidence-policy remediation in 409 responses
 - [x] Reconciliation completion blocks bank transactions marked as requiring evidence until approved evidence is attached
-- [x] Backup creation, offsite sync, health-check, restore-drill, offline host preflight, and systemd schedule template scripts for self-hosted operations
+- [x] Backup creation, offsite sync, health-check, restore-drill, CLI offsite/restore preflight parity, offline host preflight, and systemd schedule template scripts for self-hosted operations
 
 ### Still missing for reliable production use
 

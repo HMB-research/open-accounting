@@ -52,7 +52,9 @@ These local operator commands wrap the backup scripts in `scripts/`. Run them fr
 go run ./cmd/oa ops backup create --backup-dir ./backups --retention-days 30 --dry-run
 go run ./cmd/oa ops backup create --backup-dir ./backups --no-retention --dry-run
 go run ./cmd/oa ops backup health --backup-dir ./backups --max-age-hours 26 --min-size-bytes 1024 --allow-missing-checksum --status-file /var/lib/node_exporter/textfile_collector/openaccounting_backup.prom
+go run ./cmd/oa ops backup offsite-sync --backup-dir ./backups --s3-uri s3://company-backups/open-accounting/prod --preflight
 go run ./cmd/oa ops backup offsite-sync --backup-dir ./backups --s3-uri s3://company-backups/open-accounting/prod --dry-run
+go run ./cmd/oa ops backup restore-drill --backup ./backups/openaccounting_20260528T120000Z.dump --restore-url postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable --source-url postgres://user:pass@prod:5432/openaccounting?sslmode=require --preflight
 go run ./cmd/oa ops backup restore-drill --backup ./backups/openaccounting_20260528T120000Z.dump --restore-url postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable --status-file /var/lib/node_exporter/textfile_collector/openaccounting_restore_drill.prom --allow-non-empty --skip-checksum --dry-run
 go run ./cmd/oa ops backup schedule-systemd --output-dir ./deploy/systemd --scripts-dir /opt/open-accounting/scripts --backup-dir /backups --status-dir /var/lib/node_exporter/textfile_collector --env-file /etc/open-accounting/backup.env --offsite-provider s3 --systemd-unit-dir /etc/systemd/system --backup-calendar "*-*-* 01:00:00" --offsite-calendar "*-*-* 01:20:00" --health-calendar "*-*-* 01:30:00" --restore-calendar "Sun *-*-* 03:00:00" --dry-run
 ```

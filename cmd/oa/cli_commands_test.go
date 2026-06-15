@@ -755,10 +755,11 @@ func TestCLIOpsBackupCommands(t *testing.T) {
 		"--backup", "/backups/a.dump",
 		"--backup", "/backups/b.dump",
 		"--s3-uri", "s3://bucket/open-accounting",
+		"--preflight",
 		"--dry-run",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "db-backup-offsite-sync.sh --backup /backups/a.dump --backup /backups/b.dump --s3-uri s3://bucket/open-accounting --dry-run")
+	assert.Contains(t, stdout.String(), "db-backup-offsite-sync.sh --backup /backups/a.dump --backup /backups/b.dump --s3-uri s3://bucket/open-accounting --preflight --dry-run")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
@@ -769,10 +770,11 @@ func TestCLIOpsBackupCommands(t *testing.T) {
 		"--status-file", "/tmp/openaccounting_restore_drill.prom",
 		"--allow-non-empty",
 		"--skip-checksum",
+		"--preflight",
 		"--dry-run",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, stdout.String(), "db-restore-drill.sh --backup /backups/openaccounting.dump --restore-url postgres://drill --source-url postgres://prod --status-file /tmp/openaccounting_restore_drill.prom --allow-non-empty --skip-checksum --dry-run")
+	assert.Contains(t, stdout.String(), "db-restore-drill.sh --backup /backups/openaccounting.dump --restore-url postgres://drill --source-url postgres://prod --status-file /tmp/openaccounting_restore_drill.prom --allow-non-empty --skip-checksum --preflight --dry-run")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
