@@ -54,7 +54,7 @@
 		{ kind: 'journal_entries', label: 'Historical journals' }
 	];
 
-	const statusFilters = ['', 'planned', 'running', 'blocked', 'failed', 'succeeded'];
+	const statusFilters = ['', 'needs_confirmation', 'running', 'blocked', 'failed', 'succeeded'];
 	const fallbackProviderPresets: MigrationProviderPresetInfo[] = [
 		{
 			preset: 'generic',

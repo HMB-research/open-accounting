@@ -385,6 +385,36 @@ describe("MigrationWorkbench", () => {
     ).toBeInTheDocument();
   });
 
+  it("filters saved execution runs by confirmation-ready status", async () => {
+    render(MigrationWorkbench, { tenantId: "tenant-1" });
+
+    await waitFor(() =>
+      expect(apiMock.listMigrationExecutionRuns).toHaveBeenCalledWith(
+        "tenant-1",
+        {
+          status: undefined,
+          limit: 10,
+        },
+      ),
+    );
+    apiMock.listMigrationExecutionRuns.mockClear();
+
+    await fireEvent.change(screen.getByLabelText("Status"), {
+      target: { value: "needs_confirmation" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() =>
+      expect(apiMock.listMigrationExecutionRuns).toHaveBeenCalledWith(
+        "tenant-1",
+        {
+          status: "needs_confirmation",
+          limit: 10,
+        },
+      ),
+    );
+  });
+
   it("streams opened saved execution run telemetry into the dashboard", async () => {
     const monitoringRun = runningExecutionRun();
     const completedRun = completedStreamingRun();

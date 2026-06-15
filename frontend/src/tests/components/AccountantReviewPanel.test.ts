@@ -1425,6 +1425,58 @@ describe('AccountantReviewPanel', () => {
 					blocked_step_count: 0
 				},
 				remediation_actions: []
+			},
+			{
+				id: 'run-running',
+				tenant_id: 'tenant-1',
+				summary: {
+					status: 'running',
+					confirmed: true,
+					resumed: false,
+					plan_ready: true,
+					validation_ready: true,
+					step_count: 3,
+					running_step_count: 1,
+					succeeded_step_count: 1,
+					failed_step_count: 0,
+					skipped_step_count: 0,
+					planned_step_count: 1,
+					resumed_step_count: 0,
+					completed_step_count: 1,
+					remaining_step_count: 2,
+					progress_percent: 33,
+					needs_context_count: 0,
+					blocked_step_count: 0,
+					active_step_number: 2,
+					active_step_kind: 'invoices',
+					active_step_file_name: 'invoices.csv',
+					active_step_status: 'RUNNING'
+				},
+				remediation_actions: []
+			},
+			{
+				id: 'run-blocked',
+				tenant_id: 'tenant-1',
+				summary: {
+					status: 'blocked',
+					confirmed: false,
+					resumed: false,
+					plan_ready: false,
+					validation_ready: false,
+					step_count: 2,
+					running_step_count: 0,
+					succeeded_step_count: 0,
+					failed_step_count: 0,
+					skipped_step_count: 0,
+					planned_step_count: 0,
+					resumed_step_count: 0,
+					completed_step_count: 0,
+					remaining_step_count: 2,
+					progress_percent: 0,
+					needs_context_count: 1,
+					blocked_step_count: 1
+				},
+				remediation_actions: []
 			}
 		]);
 
@@ -1436,7 +1488,8 @@ describe('AccountantReviewPanel', () => {
 		expect(
 			await screen.findByText('Migration run run-failed failed at step 2 FAILED contacts contacts.csv.')
 		).toBeInTheDocument();
-		expect(screen.getAllByText('Migration · migration_cutover · ACTION')).toHaveLength(2);
+		expect(screen.getAllByText('Migration · migration_cutover · ACTION')).toHaveLength(3);
+		expect(screen.getByText('Migration · migration_cutover · BLOCKER')).toBeInTheDocument();
 		expect(
 			screen.getByText('CLI: oa migration runs get --run-id run-failed --json')
 		).toBeInTheDocument();
@@ -1446,6 +1499,14 @@ describe('AccountantReviewPanel', () => {
 		expect(
 			screen.getByText('CLI: oa migration execute --resume-run-id run-ready --confirm --json')
 		).toBeInTheDocument();
+		expect(
+			screen.getByText('Migration run run-running is running at step 2 RUNNING invoices invoices.csv.')
+		).toBeInTheDocument();
+		expect(
+			screen.getByText('CLI: oa migration runs get --run-id run-running --json')
+		).toBeInTheDocument();
+		expect(screen.getByText('Migration run run-blocked is blocked before execution.')).toBeInTheDocument();
+		expect(screen.getByText('CLI: oa migration runs get --run-id run-blocked --json')).toBeInTheDocument();
 		const actionLinks = screen.getAllByRole('link', { name: 'Open action' });
 		expect(
 			actionLinks.some(
@@ -1457,6 +1518,17 @@ describe('AccountantReviewPanel', () => {
 				(link) => link.getAttribute('href') === '/migration?run_id=run-ready&tenant=tenant-1'
 			)
 		).toBe(true);
+		expect(
+			actionLinks.some(
+				(link) => link.getAttribute('href') === '/migration?run_id=run-running&tenant=tenant-1'
+			)
+		).toBe(true);
+		expect(
+			actionLinks.some(
+				(link) => link.getAttribute('href') === '/migration?run_id=run-blocked&tenant=tenant-1'
+			)
+		).toBe(true);
+		expect(screen.getAllByRole('button', { name: 'Execute migration' })).toHaveLength(1);
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Execute migration' }));
 

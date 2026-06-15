@@ -243,4 +243,127 @@ describe('review workspace helpers', () => {
 			])
 		);
 	});
+
+	it('surfaces running and blocked migration saved-run assignments with deep links', async () => {
+		apiMock.listMigrationExecutionRuns.mockResolvedValue([
+			{
+				id: 'run-running',
+				tenant_id: 'tenant-1',
+				summary: {
+					status: 'running',
+					confirmed: true,
+					resumed: false,
+					plan_ready: true,
+					validation_ready: true,
+					step_count: 3,
+					running_step_count: 1,
+					succeeded_step_count: 1,
+					failed_step_count: 0,
+					skipped_step_count: 0,
+					planned_step_count: 1,
+					resumed_step_count: 0,
+					completed_step_count: 1,
+					remaining_step_count: 2,
+					progress_percent: 33,
+					needs_context_count: 0,
+					blocked_step_count: 0,
+					active_step_number: 2,
+					active_step_kind: 'invoices',
+					active_step_file_name: 'invoices.csv',
+					active_step_status: 'RUNNING'
+				},
+				remediation_actions: []
+			},
+			{
+				id: 'run-blocked',
+				tenant_id: 'tenant-1',
+				summary: {
+					status: 'blocked',
+					confirmed: false,
+					resumed: false,
+					plan_ready: false,
+					validation_ready: false,
+					step_count: 2,
+					running_step_count: 0,
+					succeeded_step_count: 0,
+					failed_step_count: 0,
+					skipped_step_count: 0,
+					planned_step_count: 0,
+					resumed_step_count: 0,
+					completed_step_count: 0,
+					remaining_step_count: 2,
+					progress_percent: 0,
+					needs_context_count: 1,
+					blocked_step_count: 1
+				},
+				remediation_actions: []
+			},
+			{
+				id: 'run-succeeded',
+				tenant_id: 'tenant-1',
+				summary: {
+					status: 'succeeded',
+					confirmed: true,
+					resumed: false,
+					plan_ready: true,
+					validation_ready: true,
+					step_count: 1,
+					running_step_count: 0,
+					succeeded_step_count: 1,
+					failed_step_count: 0,
+					skipped_step_count: 0,
+					planned_step_count: 0,
+					resumed_step_count: 0,
+					completed_step_count: 1,
+					remaining_step_count: 0,
+					progress_percent: 100,
+					needs_context_count: 0,
+					blocked_step_count: 0
+				},
+				remediation_actions: []
+			}
+		]);
+
+		const snapshot = await loadTenantReviewSnapshot({
+			id: 'tenant-1',
+			settings: { fiscal_year_start_month: 1 }
+		} as never);
+
+		expect(apiMock.listMigrationExecutionRuns).toHaveBeenCalledWith('tenant-1', { limit: 25 });
+		expect(snapshot.assignmentActions).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					source: 'migration',
+					code: 'migration_execution_running',
+					assignmentKey: 'migration:execution-running:run-running',
+					priority: 'normal',
+					severity: 'ACTION',
+					entityType: 'migration_execution_run',
+					entityId: 'run-running',
+					uiPath: '/migration?run_id=run-running',
+					cliCommand: 'oa migration runs get --run-id run-running --json',
+					message: 'Migration run run-running is running at step 2 RUNNING invoices invoices.csv.'
+				}),
+				expect.objectContaining({
+					source: 'migration',
+					code: 'migration_execution_blocked',
+					assignmentKey: 'migration:execution-blocked:run-blocked',
+					priority: 'high',
+					severity: 'BLOCKER',
+					entityType: 'migration_execution_run',
+					entityId: 'run-blocked',
+					uiPath: '/migration?run_id=run-blocked',
+					cliCommand: 'oa migration runs get --run-id run-blocked --json',
+					message: 'Migration run run-blocked is blocked before execution.'
+				})
+			])
+		);
+		expect(snapshot.assignmentActions).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					entityId: 'run-succeeded'
+				})
+			])
+		);
+	});
 });
