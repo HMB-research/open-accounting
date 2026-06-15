@@ -1560,7 +1560,7 @@ func (h *Handlers) EmailInvoice(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} email.EmailSentResponse
 // @Failure 400 {object} object{error=string}
 // @Failure 404 {object} object{error=string}
-// @Failure 409 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/quotes/{quoteID}/email [post]
 func (h *Handlers) EmailQuote(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -1584,6 +1584,11 @@ func (h *Handlers) EmailQuote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.requireApprovedCommercialEvidence(r.Context(), schemaName, tenantID, documents.EntityTypeQuote, quoteID, req.RequireApprovedEvidence, errApprovedQuoteEvidenceRequired, "emailing quote"); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		status := http.StatusInternalServerError
 		if errors.Is(err, errApprovedQuoteEvidenceRequired) {
 			status = http.StatusConflict
@@ -1667,7 +1672,7 @@ func (h *Handlers) EmailQuote(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} email.EmailSentResponse
 // @Failure 400 {object} object{error=string}
 // @Failure 404 {object} object{error=string}
-// @Failure 409 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/orders/{orderID}/email [post]
 func (h *Handlers) EmailOrder(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -1691,6 +1696,11 @@ func (h *Handlers) EmailOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.requireApprovedCommercialEvidence(r.Context(), schemaName, tenantID, documents.EntityTypeOrder, orderID, req.RequireApprovedEvidence, errApprovedOrderEvidenceRequired, "emailing order"); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		status := http.StatusInternalServerError
 		if errors.Is(err, errApprovedOrderEvidenceRequired) {
 			status = http.StatusConflict
@@ -4776,7 +4786,7 @@ func (h *Handlers) DeleteQuote(w http.ResponseWriter, r *http.Request) {
 // @Param request body object{require_approved_evidence=bool} false "Evidence requirement options"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
-// @Failure 409 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/quotes/{quoteID}/send [post]
 func (h *Handlers) SendQuote(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -4794,6 +4804,11 @@ func (h *Handlers) SendQuote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.requireApprovedCommercialEvidence(r.Context(), schemaName, tenantID, documents.EntityTypeQuote, quoteID, req.RequireApprovedEvidence, errApprovedQuoteEvidenceRequired, "sending quote"); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		status := http.StatusInternalServerError
 		if errors.Is(err, errApprovedQuoteEvidenceRequired) {
 			status = http.StatusConflict
@@ -4833,8 +4848,16 @@ func (h *Handlers) requireApprovedCommercialEvidence(ctx context.Context, schema
 	if err != nil {
 		return fmt.Errorf("evaluate %s evidence: %w", entityType, err)
 	}
-	if len(results) == 0 || !results[0].Compliant {
+	if len(results) == 0 {
 		return fmt.Errorf("%w before %s %s", requiredErr, action, entityID)
+	}
+	for _, result := range results {
+		if !result.Compliant {
+			return &evidencePolicyConflictError{
+				Err:     fmt.Errorf("%w before %s %s", requiredErr, action, entityID),
+				Results: results,
+			}
+		}
 	}
 
 	return nil
@@ -5797,7 +5820,7 @@ func (h *Handlers) DeleteOrder(w http.ResponseWriter, r *http.Request) {
 // @Param request body object{require_approved_evidence=bool} false "Evidence requirement options"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
-// @Failure 409 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/orders/{orderID}/confirm [post]
 func (h *Handlers) ConfirmOrder(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -5815,6 +5838,11 @@ func (h *Handlers) ConfirmOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.requireApprovedCommercialEvidence(r.Context(), schemaName, tenantID, documents.EntityTypeOrder, orderID, req.RequireApprovedEvidence, errApprovedOrderEvidenceRequired, "confirming order"); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		status := http.StatusInternalServerError
 		if errors.Is(err, errApprovedOrderEvidenceRequired) {
 			status = http.StatusConflict
