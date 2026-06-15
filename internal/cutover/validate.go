@@ -44,6 +44,7 @@ type bundleIndexes struct {
 	contactEmails      map[string]bool
 	contactNames       map[string]bool
 	contacts           map[string]bool
+	employeeIDs        map[string]bool
 	employees          map[string]bool
 	invoices           map[string]bool
 	quotes             map[string]bool
@@ -117,6 +118,31 @@ type kmdHistoryPreflightGroup struct {
 	totalOutputVATSet bool
 	totalInputVAT     string
 	totalInputVATSet  bool
+}
+
+type kmdHistoryVATReconciliationGroup struct {
+	period string
+
+	declaredOutput    *kmdHistoryVATReconciliationValue
+	declaredInput     *kmdHistoryVATReconciliationValue
+	declaredOutputBad bool
+	declaredInputBad  bool
+
+	outputSupport    decimal.Decimal
+	outputSupportSet bool
+	inputSupport     decimal.Decimal
+	inputSupportSet  bool
+
+	outputTotalRow *kmdHistoryVATReconciliationValue
+	inputTotalRow  *kmdHistoryVATReconciliationValue
+}
+
+type kmdHistoryVATReconciliationValue struct {
+	amount   decimal.Decimal
+	fileName string
+	row      int
+	field    string
+	value    string
 }
 
 var fileSpecs = map[FileKind]fileSpec{
@@ -1826,6 +1852,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 		contactEmails:      map[string]bool{},
 		contactNames:       map[string]bool{},
 		contacts:           map[string]bool{},
+		employeeIDs:        map[string]bool{},
 		employees:          map[string]bool{},
 		invoices:           map[string]bool{},
 		quotes:             map[string]bool{},
@@ -1858,6 +1885,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 				addIndexValue(indexes.contacts, row.values["email"])
 				addIndexValue(indexes.contacts, row.values["name"])
 			case KindEmployees:
+				addIndexValue(indexes.employeeIDs, row.values["id"])
 				addEmployeeIndexValues(indexes.employees, row.values)
 			case KindInvoices, KindEInvoices:
 				addIndexValue(indexes.invoices, row.values["invoice_number"])
@@ -1896,6 +1924,9 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkAccountReference(report, indexes, file, row, "expense_account_id", "expense_account_code")
 			checkAccountReference(report, indexes, file, row, "payment_account_id", "payment_account_code")
 			checkContactReference(report, indexes, file, row)
+			checkExpenseEmployeeIDReference(report, indexes, file, row)
+		case KindEmployees:
+			checkOptionalUUID(report, file, row, "id")
 		case KindInvoices:
 			checkOptionalUUID(report, file, row, "id")
 			checkCommercialDocumentContactReference(report, indexes, file, row)
@@ -2391,6 +2422,7 @@ func validateGroupedDocumentPreflight(report *BundleValidationReport, file parse
 func validateCrossFileConsistency(report *BundleValidationReport, files []parsedFile, eInvoiceContactMode EInvoiceContactMode) {
 	validateImportedInvoiceAmountPaidConsistency(report, files)
 	validatePayrollTSDHistoryConsistency(report, files)
+	validateKMDHistoryVATReconciliation(report, files)
 	accountTypeTargets := buildCutoverAccountTypeTargets(files)
 	validateExpenseAccountTypeConsistency(report, files, accountTypeTargets)
 	validateProductAccountTypeConsistency(report, files, accountTypeTargets)
@@ -2495,6 +2527,231 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 			}
 		}
 	}
+}
+
+func validateKMDHistoryVATReconciliation(report *BundleValidationReport, files []parsedFile) {
+	groups := map[string]*kmdHistoryVATReconciliationGroup{}
+	for _, file := range files {
+		if file.kind != KindKMDHistory {
+			continue
+		}
+		for _, row := range file.rows {
+			if !cutoverKMDHistoryRowEligibleForVATReconciliation(row.values) {
+				continue
+			}
+			period, ok := cutoverKMDHistoryPeriod(row.values)
+			if !ok {
+				continue
+			}
+			group := groups[period]
+			if group == nil {
+				group = &kmdHistoryVATReconciliationGroup{period: period}
+				groups[period] = group
+			}
+
+			if amount, set, ok := cutoverKMDHistoryOptionalDecimal(row.values["total_output_vat"]); set && ok {
+				group.addDeclaredVAT(file, row, "total_output_vat", amount)
+			}
+			if amount, set, ok := cutoverKMDHistoryOptionalDecimal(row.values["total_input_vat"]); set && ok {
+				group.addDeclaredVAT(file, row, "total_input_vat", amount)
+			}
+			taxAmount, taxAmountSet, taxAmountOK := cutoverKMDHistoryOptionalDecimal(row.values["tax_amount"])
+			if !taxAmountSet || !taxAmountOK {
+				continue
+			}
+			switch normalizeKMDHistoryRowCode(row.values["row_code"]) {
+			case "1", "2", "21", "3", "31":
+				group.outputSupport = group.outputSupport.Add(taxAmount)
+				group.outputSupportSet = true
+			case "4", "5", "6", "7":
+				group.inputSupport = group.inputSupport.Add(taxAmount)
+				group.inputSupportSet = true
+			case "8":
+				group.outputTotalRow = cutoverKMDHistoryVATValue(file, row, "tax_amount", taxAmount)
+			case "9":
+				group.inputTotalRow = cutoverKMDHistoryVATValue(file, row, "tax_amount", taxAmount)
+			}
+		}
+	}
+
+	periods := make([]string, 0, len(groups))
+	for period := range groups {
+		periods = append(periods, period)
+	}
+	sort.Strings(periods)
+	for _, period := range periods {
+		group := groups[period]
+		group.validateVAT(report, "output", "total_output_vat", group.declaredOutput, group.declaredOutputBad, group.outputSupport, group.outputSupportSet, group.outputTotalRow)
+		group.validateVAT(report, "input", "total_input_vat", group.declaredInput, group.declaredInputBad, group.inputSupport, group.inputSupportSet, group.inputTotalRow)
+	}
+}
+
+func cutoverKMDHistoryRowEligibleForVATReconciliation(values map[string]string) bool {
+	if _, ok := cutoverKMDHistoryPeriod(values); !ok {
+		return false
+	}
+	if normalizeKMDHistoryRowCode(values["row_code"]) == "" {
+		return false
+	}
+	statusKey := strings.ReplaceAll(normalizedValue(values["status"]), "-", "_")
+	if _, ok := cutoverKMDHistoryStatusAliases[statusKey]; !ok {
+		return false
+	}
+	if submittedAt := strings.TrimSpace(values["submitted_at"]); submittedAt != "" {
+		if _, ok := parseEmployeeCutoverDate(submittedAt); !ok {
+			return false
+		}
+	}
+	for _, field := range []string{"tax_base", "tax_amount", "total_output_vat", "total_input_vat"} {
+		if _, set, ok := cutoverKMDHistoryOptionalDecimal(values[field]); set && !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func (g *kmdHistoryVATReconciliationGroup) addDeclaredVAT(
+	file parsedFile,
+	row parsedRow,
+	field string,
+	amount decimal.Decimal,
+) {
+	value := cutoverKMDHistoryVATValue(file, row, field, amount)
+	var current **kmdHistoryVATReconciliationValue
+	var inconsistent *bool
+	switch field {
+	case "total_output_vat":
+		current = &g.declaredOutput
+		inconsistent = &g.declaredOutputBad
+	case "total_input_vat":
+		current = &g.declaredInput
+		inconsistent = &g.declaredInputBad
+	default:
+		return
+	}
+	if *current == nil {
+		*current = value
+		return
+	}
+	if (*current).amount.Equal(amount) {
+		return
+	}
+	*inconsistent = true
+}
+
+func (g *kmdHistoryVATReconciliationGroup) validateVAT(
+	report *BundleValidationReport,
+	label string,
+	field string,
+	declared *kmdHistoryVATReconciliationValue,
+	declaredInconsistent bool,
+	support decimal.Decimal,
+	supportSet bool,
+	totalRow *kmdHistoryVATReconciliationValue,
+) {
+	if supportSet && totalRow != nil && !totalRow.amount.Equal(support) {
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     KindKMDHistory,
+			FileName: totalRow.fileName,
+			Row:      totalRow.row,
+			Field:    totalRow.field,
+			Value:    totalRow.value,
+			Message: fmt.Sprintf(
+				"KMD row %s tax_amount %s does not match supporting KMD %s VAT rows for %s: supporting total %s",
+				kmdHistoryTotalRowCode(label),
+				totalRow.amount.String(),
+				label,
+				g.period,
+				support.String(),
+			),
+		})
+	}
+	if declared == nil || declaredInconsistent {
+		return
+	}
+	if supportSet {
+		if declared.amount.Equal(support) {
+			return
+		}
+		report.addIssue(ValidationIssue{
+			Severity: SeverityError,
+			Kind:     KindKMDHistory,
+			FileName: declared.fileName,
+			Row:      declared.row,
+			Field:    field,
+			Value:    declared.value,
+			Message: fmt.Sprintf(
+				"%s %s does not match supporting KMD %s VAT rows for %s: supporting total %s",
+				field,
+				declared.amount.String(),
+				label,
+				g.period,
+				support.String(),
+			),
+		})
+		return
+	}
+	if totalRow == nil || declared.amount.Equal(totalRow.amount) {
+		return
+	}
+	report.addIssue(ValidationIssue{
+		Severity: SeverityError,
+		Kind:     KindKMDHistory,
+		FileName: declared.fileName,
+		Row:      declared.row,
+		Field:    field,
+		Value:    declared.value,
+		Message: fmt.Sprintf(
+			"%s %s does not match KMD row %s tax_amount for %s: row total %s",
+			field,
+			declared.amount.String(),
+			kmdHistoryTotalRowCode(label),
+			g.period,
+			totalRow.amount.String(),
+		),
+	})
+}
+
+func cutoverKMDHistoryPeriod(values map[string]string) (string, bool) {
+	year, err := strconv.Atoi(strings.TrimSpace(values["year"]))
+	if err != nil || year < 1900 || year > 2200 {
+		return "", false
+	}
+	month, err := strconv.Atoi(strings.TrimSpace(values["month"]))
+	if err != nil || month < 1 || month > 12 {
+		return "", false
+	}
+	return fmt.Sprintf("%04d-%02d", year, month), true
+}
+
+func cutoverKMDHistoryOptionalDecimal(value string) (decimal.Decimal, bool, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return decimal.Zero, false, true
+	}
+	amount, err := decimal.NewFromString(normalizeCutoverImportDecimal(trimmed))
+	if err != nil {
+		return decimal.Zero, true, false
+	}
+	return amount, true, true
+}
+
+func cutoverKMDHistoryVATValue(file parsedFile, row parsedRow, field string, amount decimal.Decimal) *kmdHistoryVATReconciliationValue {
+	return &kmdHistoryVATReconciliationValue{
+		amount:   amount,
+		fileName: file.fileName,
+		row:      row.number,
+		field:    field,
+		value:    strings.TrimSpace(row.values[field]),
+	}
+}
+
+func kmdHistoryTotalRowCode(label string) string {
+	if label == "input" {
+		return "9"
+	}
+	return "8"
 }
 
 type cutoverAccountTypeTarget struct {
@@ -7400,6 +7657,18 @@ func checkEmployeeReference(report *BundleValidationReport, indexes bundleIndexe
 		employeeName(row.values),
 	}
 	checkReferenceValues(report, indexes.employees, file, row, KindEmployees, "employee", values)
+}
+
+func checkExpenseEmployeeIDReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	employeeID := strings.TrimSpace(row.values["employee_id"])
+	if employeeID == "" || !indexes.files[KindEmployees] {
+		return
+	}
+	parsedID, err := uuid.Parse(employeeID)
+	if err != nil {
+		return
+	}
+	checkReferenceValues(report, indexes.employeeIDs, file, row, KindEmployees, "employee_id", []string{parsedID.String()})
 }
 
 func checkAccountReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow, idField, codeField string) {

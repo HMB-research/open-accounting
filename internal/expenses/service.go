@@ -9,6 +9,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/accounting"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -29,17 +30,25 @@ type contactLister interface {
 	List(ctx context.Context, tenantID, schemaName string, filter *contacts.ContactFilter) ([]contacts.Contact, error)
 }
 
+type employeeLister interface {
+	ListEmployees(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]payroll.Employee, error)
+}
+
 type Service struct {
 	repo       Repository
 	accounting accountingPoster
 	evidence   evidenceEvaluator
 	contacts   contactLister
+	employees  employeeLister
 	now        func() time.Time
 }
 
 func NewService(db *pgxpool.Pool, evidence evidenceEvaluator) *Service {
 	service := NewServiceWithRepository(NewRepository(db), accounting.NewService(db), evidence)
 	service.contacts = contacts.NewService(db)
+	if db != nil {
+		service.employees = payroll.NewService(db)
+	}
 	return service
 }
 
