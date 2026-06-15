@@ -518,4 +518,29 @@ describe("MigrationWorkbench", () => {
       await screen.findByText("Migration execution run completed."),
     ).toBeInTheDocument();
   });
+
+  it("resumes a confirmed saved cutover without requiring a fresh bundle upload", async () => {
+    apiMock.listMigrationExecutionRuns.mockResolvedValue([executionRun()]);
+    render(MigrationWorkbench, { tenantId: "tenant-1" });
+
+    expect(await screen.findByText("run-1")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    expect(screen.getByLabelText("Resume run ID")).toHaveValue("run-1");
+    await fireEvent.click(screen.getByLabelText("Confirm execution"));
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Execute confirmed cutover" }),
+    );
+
+    await waitFor(() =>
+      expect(apiMock.executeMigration).toHaveBeenCalledTimes(1),
+    );
+    expect(apiMock.executeMigration).toHaveBeenCalledWith(
+      "tenant-1",
+      expect.objectContaining({
+        confirm: true,
+        resume_from_run_id: "run-1",
+        files: [],
+      }),
+    );
+  });
 });

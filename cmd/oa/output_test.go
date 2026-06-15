@@ -1150,6 +1150,18 @@ func TestPrintTables(t *testing.T) {
 			EntityID:     "pay-1",
 			DocumentType: documents.DocumentTypeReceipt,
 			CLICommand:   "oa documents upload --entity-type payment --entity-id pay-1 --document-type receipt --file <file>",
+		}, {
+			Code:         "document_review_rejected",
+			Severity:     "ACTION",
+			Scope:        "documents",
+			OwnerRole:    "accountant",
+			Message:      "Document rejected-receipt.pdf was rejected and needs replacement or correction.",
+			Action:       "Upload corrected evidence.",
+			EntityType:   documents.EntityTypePayment,
+			EntityID:     "pay-1",
+			DocumentID:   "doc-rejected-receipt",
+			DocumentType: documents.DocumentTypeReceipt,
+			CLICommand:   "oa documents upload --entity-type payment --entity-id pay-1 --document-type receipt --file <replacement-file> --replaces-document-id doc-rejected-receipt --replacement-note \"Corrected evidence uploaded from remediation action\"",
 		}},
 	}})
 	assert.Contains(t, policyBuf.String(), "COMPLIANT")
@@ -1157,6 +1169,7 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, policyBuf.String(), "requires at least 1 approved documents for receipt")
 	assert.Contains(t, policyBuf.String(), "Document remediation actions")
 	assert.Contains(t, policyBuf.String(), "document_evidence_missing")
+	assert.Contains(t, policyBuf.String(), "--replaces-document-id doc-rejected-receipt")
 
 	var retentionBuf bytes.Buffer
 	retentionUntil := now.AddDate(1, 0, 0)

@@ -1060,7 +1060,8 @@ describe('AccountantReviewPanel', () => {
 					document_type: 'receipt',
 					file_name: 'rejected-receipt.pdf',
 					ui_path: '/documents?entity_type=expense&entity_id=expense-1&document_id=doc-rejected-1',
-					cli_command: 'oa documents upload --entity-type expense --entity-id expense-1 --document-type receipt --file <replacement-file>'
+					cli_command:
+						'oa documents upload --entity-type expense --entity-id expense-1 --document-type receipt --file <replacement-file> --replaces-document-id doc-rejected-1 --replacement-note "Corrected evidence uploaded from remediation action"'
 				},
 				{
 					code: 'document_evidence_missing',

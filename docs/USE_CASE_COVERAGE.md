@@ -221,8 +221,16 @@ evidence-policy results plus flattened upload/review remediation actions in the
 409 response so API clients and the CLI can surface the next executable
 follow-up.
 Rejected matching evidence-policy documents now create replacement-upload
-remediation instead of direct approval guidance, and document CLI entity-type
-help lists TSD/KMD declaration attachment targets.
+remediation instead of direct approval guidance, and rejected-document
+remediation CLI commands include `--replaces-document-id` plus
+`--replacement-note` so corrected evidence preserves supersession audit
+metadata, and document CLI entity-type help lists TSD/KMD declaration attachment targets.
+Migration Workbench confirmed execution now accepts a selected saved
+`resume_from_run_id` without requiring a fresh bundle upload, matching the
+server-side saved-run resume path.
+CLI coverage discovery now scans split `cmd/oa` source files for implemented
+flagsets and the CLI guide documents mutating payroll-history, leave-balance,
+and TSD-history migration execution.
 Product supplier VAT-number preflight now validates `supplier_vat_number` values
 against same-bundle contact VAT numbers before product imports run.
 Payment contact VAT-number preflight now validates `contact_vat_number` values
