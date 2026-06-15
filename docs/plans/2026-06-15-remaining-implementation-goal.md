@@ -26,6 +26,8 @@ work lands.
 
 Current local invariants:
 - `cmd/oa` CLI statement coverage must remain 100.0%.
+- API-backed CLI command coverage must include command-path, documentation,
+  usage, functional `app.run`, and mocked HTTP method/path contract checks.
 - `go test -timeout=3m ./docs -count=1` must pass after doc/status changes.
 - `golangci-lint run` must pass after Go changes.
 - Run focused backend/frontend gates before broad CI.
