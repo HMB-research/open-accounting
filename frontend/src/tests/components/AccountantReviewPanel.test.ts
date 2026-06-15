@@ -1080,16 +1080,16 @@ describe('AccountantReviewPanel', () => {
 					cli_command: 'oa documents upload --entity-type tsd_declaration --entity-id tsd-1 --document-type tax_support --file <file>'
 				},
 				{
-					code: 'document_evidence_missing',
+					code: 'document_evidence_policy_violation',
 					severity: 'ACTION',
 					scope: 'documents',
 					owner_role: 'accountant',
 					workspace_queue: 'document_evidence',
-					assignment_key: 'document-evidence:document-evidence-missing:kmd-declaration:kmd-1:tax-support',
+					assignment_key: 'document-evidence:document-evidence-policy-violation:kmd-declaration:kmd-1:tax-support',
 					priority: 'high',
 					due_in_days: 0,
-					message: 'KMD declaration kmd-1 is missing required tax support evidence.',
-					action: 'Upload required tax/support evidence before submitting or accepting the declaration.',
+					message: 'KMD declaration kmd-1 needs one more approved tax support document.',
+					action: 'Upload another matching tax/support document before accepting the declaration.',
 					entity_type: 'kmd_declaration',
 					entity_id: 'kmd-1',
 					document_type: 'tax_support',
@@ -1151,7 +1151,9 @@ describe('AccountantReviewPanel', () => {
 				screen.getByText('Document rejected-receipt.pdf was rejected and needs replacement or correction.')
 			).toBeInTheDocument();
 			expect(screen.getByText('TSD declaration tsd-1 is missing required tax support evidence.')).toBeInTheDocument();
-			expect(screen.getByText('KMD declaration kmd-1 is missing required tax support evidence.')).toBeInTheDocument();
+			expect(
+				screen.getByText('KMD declaration kmd-1 needs one more approved tax support document.')
+			).toBeInTheDocument();
 			expect(
 				screen.getByText('Payment pay-2 has matching evidence, but not enough approved documents.')
 			).toBeInTheDocument();
@@ -1219,7 +1221,7 @@ describe('AccountantReviewPanel', () => {
 
 		const kmdEvidenceFile = new File(['kmd'], 'kmd-tax-support.pdf', { type: 'application/pdf' });
 		await uploadFromAssignmentRow(
-			'KMD declaration kmd-1 is missing required tax support evidence.',
+			'KMD declaration kmd-1 needs one more approved tax support document.',
 			'Upload evidence',
 			kmdEvidenceFile
 		);
