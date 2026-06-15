@@ -232,9 +232,11 @@ func TestPlanMigrationExecutionHandler(t *testing.T) {
 	assert.Equal(t, 1, plan.Summary.NeedsContextCount)
 	require.Len(t, plan.Steps, 4)
 	assert.Equal(t, cutover.KindAccounts, plan.Steps[0].Kind)
-	assert.Equal(t, cutover.MigrationExecutionStepNeedsContext, plan.Steps[2].Status)
-	assert.Equal(t, []string{"bank_transaction_account_id"}, plan.Steps[2].ContextFields)
-	assert.Contains(t, plan.Steps[3].CLICommand, "oa journal import-opening-balances --entry-date 2026-01-01")
+	assert.Equal(t, cutover.KindOpeningBalances, plan.Steps[1].Kind)
+	assert.Contains(t, plan.Steps[1].CLICommand, "oa journal import-opening-balances --entry-date 2026-01-01")
+	assert.Equal(t, cutover.KindBankTransactions, plan.Steps[3].Kind)
+	assert.Equal(t, cutover.MigrationExecutionStepNeedsContext, plan.Steps[3].Status)
+	assert.Equal(t, []string{"bank_transaction_account_id"}, plan.Steps[3].ContextFields)
 	assert.Contains(t, migrationRemediationCodes(plan.RemediationActions), "ready_to_import")
 }
 
