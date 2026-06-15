@@ -20,6 +20,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/pdf"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -199,11 +200,13 @@ func setupOrdersTestHandlers() (*Handlers, *mockOrdersRepository, *mockTenantRep
 	return h, ordersRepo, tenantRepo
 }
 
-func setupOrdersImportTestHandlers() (*Handlers, *mockOrdersRepository, *mockTenantRepository, *mockContactsRepository) {
+func setupOrdersImportTestHandlers() (*Handlers, *mockOrdersRepository, *mockTenantRepository, *mockContactsRepository, *mockQuotesRepository) {
 	h, ordersRepo, tenantRepo := setupOrdersTestHandlers()
 	contactsRepo := newMockContactsRepository()
 	h.contactsService = contacts.NewServiceWithRepository(contactsRepo)
-	return h, ordersRepo, tenantRepo, contactsRepo
+	quotesRepo := newMockQuotesRepository()
+	h.quotesService = quotes.NewServiceWithRepository(quotesRepo)
+	return h, ordersRepo, tenantRepo, contactsRepo, quotesRepo
 }
 
 func TestListOrders(t *testing.T) {
@@ -381,13 +384,20 @@ func TestCreateOrder(t *testing.T) {
 }
 
 func TestImportOrders(t *testing.T) {
-	h, repo, tenantRepo, contactsRepo := setupOrdersImportTestHandlers()
+	h, repo, tenantRepo, contactsRepo, quotesRepo := setupOrdersImportTestHandlers()
 	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
 	contact := contactsRepo.addTestContact("contact-1", "tenant-1", "Acme", contacts.ContactTypeCustomer, true)
 	contact.Code = "CUST-1"
+	quotesRepo.quotes["quote-1"] = &quotes.Quote{
+		ID:          "quote-1",
+		TenantID:    "tenant-1",
+		QuoteNumber: "QT-100",
+		ContactID:   "contact-1",
+		Status:      quotes.QuoteStatusAccepted,
+	}
 
-	csvContent := `order_number,contact_code,order_date,expected_delivery,status,line_description,quantity,unit_price,vat_rate
-ORD-100,CUST-1,2026-03-15,2026-03-22,confirmed,Consulting,2,100,22
+	csvContent := `order_number,contact_code,order_date,expected_delivery,status,quote_number,line_description,quantity,unit_price,vat_rate
+ORD-100,CUST-1,2026-03-15,2026-03-22,confirmed,QT-100,Consulting,2,100,22
 `
 	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/import", map[string]interface{}{
 		"file_name":   "orders.csv",
@@ -412,6 +422,8 @@ ORD-100,CUST-1,2026-03-15,2026-03-22,confirmed,Consulting,2,100,22
 		assert.Equal(t, "ORD-100", order.OrderNumber)
 		assert.Equal(t, "contact-1", order.ContactID)
 		assert.Equal(t, orders.OrderStatusConfirmed, order.Status)
+		require.NotNil(t, order.QuoteID)
+		assert.Equal(t, "quote-1", *order.QuoteID)
 		assert.Equal(t, "user-1", order.CreatedBy)
 	}
 

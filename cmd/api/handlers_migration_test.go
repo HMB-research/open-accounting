@@ -9,7 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/cutover"
+	"github.com/HMB-research/open-accounting/internal/orders"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,6 +34,54 @@ func (f *fakeMigrationStepExecutor) ExecuteMigrationStep(_ context.Context, tena
 		"schema_name": schemaName,
 		"user_id":     userID,
 	}, nil
+}
+
+func TestHandlerMigrationStepExecutorImportsOrdersWithQuoteNumberReferences(t *testing.T) {
+	contactsRepo := newMockContactsRepository()
+	contact := contactsRepo.addTestContact("contact-1", "tenant-1", "Customer One", contacts.ContactTypeCustomer, true)
+	contact.Code = "CUST-1"
+
+	quotesRepo := newMockQuotesRepository()
+	quotesRepo.quotes["11111111-1111-4111-8111-111111111111"] = &quotes.Quote{
+		ID:          "11111111-1111-4111-8111-111111111111",
+		TenantID:    "tenant-1",
+		QuoteNumber: "Q-1",
+		ContactID:   "contact-1",
+		Status:      quotes.QuoteStatusAccepted,
+	}
+
+	ordersRepo := newMockOrdersRepository()
+	h := &Handlers{
+		contactsService: contacts.NewServiceWithRepository(contactsRepo),
+		quotesService:   quotes.NewServiceWithRepository(quotesRepo),
+		ordersService:   orders.NewServiceWithRepository(ordersRepo),
+	}
+	executor := &handlerMigrationStepExecutor{h: h}
+
+	result, err := executor.ExecuteMigrationStep(
+		context.Background(),
+		"tenant-1",
+		"tenant_test",
+		"user-1",
+		cutover.MigrationExecutionStep{Kind: cutover.KindOrders},
+		cutover.BundleFile{
+			Kind:       cutover.KindOrders,
+			FileName:   "orders.csv",
+			CSVContent: "order_number,order_date,contact_code,quote_number,line_description,quantity,unit_price,vat_rate\nSO-1,2026-05-31,CUST-1,Q-1,Work,1,100,22\n",
+		},
+		&cutover.ExecuteMigrationRequest{},
+	)
+
+	require.NoError(t, err)
+	importResult, ok := result.(*orders.ImportOrdersResult)
+	require.True(t, ok)
+	assert.Equal(t, 1, importResult.OrdersCreated)
+	require.Len(t, ordersRepo.orders, 1)
+	for _, order := range ordersRepo.orders {
+		require.NotNil(t, order.QuoteID)
+		assert.Equal(t, "11111111-1111-4111-8111-111111111111", *order.QuoteID)
+		assert.Equal(t, "user-1", order.CreatedBy)
+	}
 }
 
 type fakeMigrationRunStore struct {

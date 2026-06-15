@@ -536,7 +536,11 @@ func (e *handlerMigrationStepExecutor) ExecuteMigrationStep(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
-		return h.ordersService.ImportCSV(ctx, tenantID, schemaName, contactsList, productsList, &orders.ImportOrdersRequest{CSVContent: file.CSVContent, FileName: file.FileName, UserID: userID})
+		quoteReferences, err := h.importOrderQuoteReferences(ctx, tenantID, schemaName)
+		if err != nil {
+			return nil, fmt.Errorf("load quotes: %w", err)
+		}
+		return h.ordersService.ImportCSVWithQuoteReferences(ctx, tenantID, schemaName, contactsList, productsList, quoteReferences, &orders.ImportOrdersRequest{CSVContent: file.CSVContent, FileName: file.FileName, UserID: userID})
 	case cutover.KindRecurringInvoices:
 		contactsList, productsList, err := h.migrationImportReferences(ctx, tenantID, schemaName)
 		if err != nil {
@@ -584,6 +588,24 @@ func (h *Handlers) migrationImportReferences(ctx context.Context, tenantID, sche
 		return nil, nil, fmt.Errorf("load products: %w", err)
 	}
 	return contactsList, productsList, nil
+}
+
+func (h *Handlers) importOrderQuoteReferences(ctx context.Context, tenantID, schemaName string) ([]orders.ImportQuoteReference, error) {
+	if h.quotesService == nil {
+		return nil, nil
+	}
+	quoteList, err := h.quotesService.List(ctx, tenantID, schemaName, nil)
+	if err != nil {
+		return nil, err
+	}
+	references := make([]orders.ImportQuoteReference, 0, len(quoteList))
+	for _, quote := range quoteList {
+		references = append(references, orders.ImportQuoteReference{
+			ID:          quote.ID,
+			QuoteNumber: quote.QuoteNumber,
+		})
+	}
+	return references, nil
 }
 
 func (h *Handlers) migrationPeriodLockDate(ctx context.Context, tenantID string) (*time.Time, error) {

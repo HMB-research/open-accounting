@@ -230,7 +230,7 @@ Fixed-asset migration preflight also rejects same-bundle account references wher
 Bank-account migration preflight also rejects same-bundle GL account references where linked cash/ledger accounts are not `ASSET`.
 Recurring-invoice migration preflight also rejects same-bundle line account references where linked revenue accounts are not `REVENUE`.
 Commercial-document imports now resolve invoice, quote, order, and recurring-invoice `contact_vat_number`/`vat_number` columns against contact VAT numbers rather than registry codes.
-Order quote-contact consistency preflight now rejects same-bundle order rows whose `quote_id` references an imported quote but supplies a different same-field contact identity.
+Order quote-contact consistency preflight now rejects same-bundle order rows whose `quote_id` or `quote_number` references an imported quote but supplies a different same-field contact identity, and order migration execution resolves `quote_number` after earlier quote import steps when `quote_id` is omitted.
 KMD history execution plans now order historical journals before KMD history and mark KMD imports as dependent on invoice, e-invoice, and journal VAT history.
 Accountant workspace evidence-policy violation rows with supported entity and document metadata now expose the same evidence upload action as missing-evidence rows.
 Reconciliation evidence conflicts now return document evidence-policy results and upload/review remediation actions, including CLI follow-up commands, in the 409 response.

@@ -48,6 +48,7 @@ type bundleIndexes struct {
 	employees          map[string]bool
 	invoices           map[string]bool
 	quotes             map[string]bool
+	quoteNumbers       map[string]bool
 	costCenterCodes    map[string]bool
 	productCategoryIDs map[string]bool
 	productCategories  map[string]bool
@@ -584,6 +585,10 @@ var fileSpecs = map[FileKind]fileSpec{
 			"expected_delivery": "expected_delivery",
 			"delivery_date":     "expected_delivery",
 			"quote_id":          "quote_id",
+			"quote_number":      "quote_number",
+			"quotation_number":  "quote_number",
+			"offer_number":      "quote_number",
+			"quote_no":          "quote_number",
 		}),
 		requiredGroups: commercialDocumentRequiredGroups("order_number", "order_date"),
 	},
@@ -1091,6 +1096,7 @@ var groupedDocumentPreflightSpecs = map[FileKind]groupedDocumentSpec{
 			{field: "contact_name", optional: true},
 			{field: "notes", optional: true},
 			{field: "quote_id", optional: true},
+			{field: "quote_number", optional: true},
 			{field: "status", optional: true, normalize: normalizeCutoverOrderStatus},
 		},
 	},
@@ -1858,6 +1864,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 		employees:          map[string]bool{},
 		invoices:           map[string]bool{},
 		quotes:             map[string]bool{},
+		quoteNumbers:       map[string]bool{},
 		costCenterCodes:    map[string]bool{},
 		productCategoryIDs: map[string]bool{},
 		productCategories:  map[string]bool{},
@@ -1895,6 +1902,7 @@ func buildIndexes(files []parsedFile) bundleIndexes {
 				addIndexValue(indexes.invoices, row.values["id"])
 			case KindQuotes:
 				addIndexValue(indexes.quotes, row.values["id"])
+				addIndexValue(indexes.quoteNumbers, row.values["quote_number"])
 			case KindCostCenters:
 				addIndexValue(indexes.costCenterCodes, row.values["code"])
 			case KindProductCategories:
@@ -1946,9 +1954,14 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 		case KindOrders:
 			checkCommercialDocumentContactReference(report, indexes, file, row)
 			checkProductReference(report, indexes, file, row)
-			if checkOptionalUUID(report, file, row, "quote_id") {
+			hasQuoteID := strings.TrimSpace(row.values["quote_id"]) != ""
+			if checkOptionalUUID(report, file, row, "quote_id") && hasQuoteID {
 				checkTargetReference(report, indexes.files[KindQuotes], indexes.quotes, file, row, KindQuotes,
 					[]string{"quote_id"})
+			}
+			if !hasQuoteID {
+				checkTargetReference(report, indexes.files[KindQuotes], indexes.quoteNumbers, file, row, KindQuotes,
+					[]string{"quote_number"})
 			}
 		case KindPayments:
 			checkContactReference(report, indexes, file, row)
@@ -2032,6 +2045,11 @@ type cutoverInvoiceAllocationTarget struct {
 type cutoverQuoteReferenceTarget struct {
 	display           string
 	contactReferences cutoverContactReferences
+}
+
+type cutoverQuoteReferenceTargets struct {
+	byID     map[string]cutoverQuoteReferenceTarget
+	byNumber map[string]cutoverQuoteReferenceTarget
 }
 
 type cutoverContactReference struct {
@@ -2538,7 +2556,7 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 
 func validateOrderQuoteConsistency(report *BundleValidationReport, files []parsedFile) {
 	quoteTargets := buildCutoverQuoteReferenceTargets(files)
-	if len(quoteTargets) == 0 {
+	if len(quoteTargets.byID) == 0 && len(quoteTargets.byNumber) == 0 {
 		return
 	}
 	for _, file := range files {
@@ -2548,12 +2566,21 @@ func validateOrderQuoteConsistency(report *BundleValidationReport, files []parse
 		for _, row := range file.rows {
 			quoteID := strings.TrimSpace(row.values["quote_id"])
 			if quoteID == "" {
+				quoteNumber := strings.TrimSpace(row.values["quote_number"])
+				if quoteNumber == "" {
+					continue
+				}
+				target, ok := quoteTargets.byNumber[normalizedValue(quoteNumber)]
+				if !ok {
+					continue
+				}
+				hasOrderQuoteContactMismatch(report, file, row, target)
 				continue
 			}
 			if _, err := uuid.Parse(quoteID); err != nil {
 				continue
 			}
-			target, ok := quoteTargets[normalizedValue(quoteID)]
+			target, ok := quoteTargets.byID[normalizedValue(quoteID)]
 			if !ok {
 				continue
 			}
@@ -2562,26 +2589,33 @@ func validateOrderQuoteConsistency(report *BundleValidationReport, files []parse
 	}
 }
 
-func buildCutoverQuoteReferenceTargets(files []parsedFile) map[string]cutoverQuoteReferenceTarget {
-	targets := map[string]cutoverQuoteReferenceTarget{}
+func buildCutoverQuoteReferenceTargets(files []parsedFile) cutoverQuoteReferenceTargets {
+	targets := cutoverQuoteReferenceTargets{
+		byID:     map[string]cutoverQuoteReferenceTarget{},
+		byNumber: map[string]cutoverQuoteReferenceTarget{},
+	}
 	for _, file := range files {
 		if file.kind != KindQuotes {
 			continue
 		}
 		for _, row := range file.rows {
-			id := strings.TrimSpace(row.values["id"])
-			if id == "" {
-				continue
-			}
-			if _, err := uuid.Parse(id); err != nil {
-				continue
-			}
-			if _, exists := targets[normalizedValue(id)]; exists {
-				continue
-			}
-			targets[normalizedValue(id)] = cutoverQuoteReferenceTarget{
+			target := cutoverQuoteReferenceTarget{
 				display:           cutoverQuoteReferenceDisplay(row),
 				contactReferences: cutoverContactReferencesFromRow(row),
+			}
+			id := strings.TrimSpace(row.values["id"])
+			if id != "" {
+				if _, err := uuid.Parse(id); err == nil {
+					if _, exists := targets.byID[normalizedValue(id)]; !exists {
+						targets.byID[normalizedValue(id)] = target
+					}
+				}
+			}
+			quoteNumber := strings.TrimSpace(row.values["quote_number"])
+			if quoteNumber != "" {
+				if _, exists := targets.byNumber[normalizedValue(quoteNumber)]; !exists {
+					targets.byNumber[normalizedValue(quoteNumber)] = target
+				}
 			}
 		}
 	}

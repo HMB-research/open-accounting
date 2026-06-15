@@ -59,6 +59,8 @@ var providerPresetAliases = map[MigrationProviderPreset]map[FileKind]map[string]
 			"tellimusenr":       "order_number",
 			"tellimuse_kuupäev": "order_date",
 			"tellimuse_kuupaev": "order_date",
+			"pakkumise_nr":      "quote_number",
+			"pakkumisenr":       "quote_number",
 		}),
 		KindRecurringInvoices: meritCommercialDocumentAliases("name", "start_date"),
 		KindExpenses: {
@@ -1050,6 +1052,9 @@ func directoProviderPresetAliases() map[FileKind]map[string]string {
 			"tellimuse_kuupäev": "order_date",
 			"tellimuse_kuupaev": "order_date",
 			"kliendi_tellimus":  "customer_order_number",
+			"pakkumine":         "quote_number",
+			"pakkumise_nr":      "quote_number",
+			"pakkumisenr":       "quote_number",
 		}),
 		KindRecurringInvoices: mergeAliases(directoCommercialDocumentAliases("name", "start_date"), map[string]string{
 			"leping":       "name",
