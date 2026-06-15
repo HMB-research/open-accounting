@@ -25,6 +25,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"docs/USE_CASE_COVERAGE.md":                           read("USE_CASE_COVERAGE.md"),
 		"docs/demo-e2e-testing.md":                            read("demo-e2e-testing.md"),
 		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md":         read("FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md"),
+		"scripts/README.md":                                   read(filepath.Join("..", "scripts", "README.md")),
 		".agents/skills/open-accounting-development/SKILL.md": read(filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md")),
 	}
 

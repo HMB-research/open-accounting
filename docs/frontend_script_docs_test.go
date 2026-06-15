@@ -18,9 +18,6 @@ func TestDocumentedFrontendScriptsExist(t *testing.T) {
 		filepath.Join("..", "CONTRIBUTING.md"),
 		"DEVELOPMENT_STATUS.md",
 		"demo-e2e-testing.md",
-		"RALPH_HOOK_SETUP.md",
-		"ralph-wiggum-loop.md",
-		filepath.Join("..", "scripts", "ralph-loop-views.sh"),
 		filepath.Join("..", "scripts", "test-demo-loop.sh"),
 		filepath.Join("..", "scripts", "test-loop.sh"),
 	}
