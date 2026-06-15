@@ -74,10 +74,6 @@ type packageRuntimeStats struct {
 	CrashCount   int
 }
 
-func (s *Service) startPackageBackendRuntime(plugin *Plugin, manifest *Manifest) (*packageRuntimeProcess, error) {
-	return s.startPackageBackendRuntimeWithStats(plugin, manifest, packageRuntimeStats{})
-}
-
 func (s *Service) startPackageBackendRuntimeWithStats(plugin *Plugin, manifest *Manifest, stats packageRuntimeStats) (*packageRuntimeProcess, error) {
 	if plugin == nil {
 		return nil, fmt.Errorf("%w: package runtime plugin is nil", ErrPluginRuntimeUnavailable)
