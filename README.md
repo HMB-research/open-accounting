@@ -419,7 +419,7 @@ open-accounting/
 - [x] Revocable, single-use refresh token sessions
 - [x] CLI/API refresh-session listing and revocation
 - [x] One-time password reset flow with expiring tokens, request throttling, and refresh-session revocation
-- [x] Auth security audit events for login, logout, password, session, API-token, and tenant-access actions
+- [x] Auth security audit events for login success/failure, logout, password, session, API-token, and tenant-access actions with credential-aware failed-login throttling
 - [x] Tenant audit events for organization settings changes
 - [x] Tenant admin controls for member refresh-session inspection and revocation
 - [x] Tenant admin controls for member API-token inspection and revocation
@@ -446,7 +446,7 @@ open-accounting/
 - [ ] Remaining mutating migration cutover orchestration beyond the guarded CLI/server-side execution, resume-snapshot, saved-run list/get/event-stream paths, provider preset catalog discovery for Merit, SmartAccounts, and Directo, dashboard workbench live streaming, saved-run progress/duration telemetry, accountant-workspace launch handoff, saved-bundle workspace execution, and KMD VAT-history execution dependency, especially further provider-specific cutover depth, cross-file validation outside payroll/TSD history, and deeper dashboard-side cutover controls
 - [ ] Remaining payroll/document/evidence-policy edges and deeper accountant-workspace execution beyond the current assignment queue, direct bank follow-up, reminder actions, pending-document assignment approval, document-retention date setting, evidence/missing-document upload and replacement including evidence-policy violation upload, unapproved-evidence approval, payroll-run calculation/recalculation, payment-date setting and approval, payroll TSD assignment generation, payroll paid-run TSD follow-up generation, declared payroll archive XML export, TSD declaration XML export and acceptance marking, KMD assignment regeneration/export/acceptance marking, KMD INF/EU VAT OSS report generation, expense submit/approve/post assignment completion, fiscal-year close/carry-forward assignment completion, and migration saved-run handoff, especially remaining document evidence-policy follow-up
 - [ ] Automated document policy enforcement in remaining workflow blockers
-- [ ] Remaining auth hardening beyond the current API/CLI/settings controls for tenant member status, sessions, API tokens, and audit visibility
+- [ ] Remaining auth hardening beyond the current API/CLI/settings controls for tenant member status, sessions, API tokens, audit visibility, failed-login audit, and credential-aware failed-login throttling
 - [ ] Broader plugin production hardening beyond the current loopback HTTP runtime, supervised package runtime startup/proxy/shutdown/status/manual restart/automatic crash restart, and safe operator-bundled frontend component registry, especially OS-level sandboxing and broader resource isolation
 - [ ] Direct e-invoice operator send/receive, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 

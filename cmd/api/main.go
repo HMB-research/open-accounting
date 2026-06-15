@@ -218,6 +218,7 @@ func main() {
 		passwordResetBaseURL:     cfg.PasswordReset.BaseURL,
 		passwordResetSMTPConfig:  cfg.PasswordReset.SMTPConfig,
 		passwordResetMailer:      &email.DefaultMailSender{},
+		loginAttemptLimiter:      auth.DefaultLoginAttemptLimiter(),
 		securityAuditService:     securityAuditService,
 		apiTokenService:          apiTokenService,
 		tenantService:            tenantService,

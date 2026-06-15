@@ -16,6 +16,7 @@ import (
 
 const (
 	SecurityAuditActionLogin                  = "login"
+	SecurityAuditActionLoginFailed            = "login_failed"
 	SecurityAuditActionLogout                 = "logout"
 	SecurityAuditActionPasswordChanged        = "password_changed"
 	SecurityAuditActionPasswordResetRequested = "password_reset_requested"
