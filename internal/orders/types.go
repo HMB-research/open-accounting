@@ -162,6 +162,12 @@ type ImportOrdersRequest struct {
 	UserID     string `json:"-"`
 }
 
+// ImportQuoteReference describes a quote that imported orders can reference.
+type ImportQuoteReference struct {
+	ID          string
+	QuoteNumber string
+}
+
 // ImportOrdersResult summarizes an order CSV import.
 type ImportOrdersResult struct {
 	FileName      string                 `json:"file_name,omitempty"`

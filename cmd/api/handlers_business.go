@@ -5109,7 +5109,13 @@ func (h *Handlers) ImportOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.ordersService.ImportCSV(r.Context(), tenantID, schemaName, contactsList, productsList, &req)
+	quoteReferences, err := h.importOrderQuoteReferences(r.Context(), tenantID, schemaName)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load quotes")
+		return
+	}
+
+	result, err := h.ordersService.ImportCSVWithQuoteReferences(r.Context(), tenantID, schemaName, contactsList, productsList, quoteReferences, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return

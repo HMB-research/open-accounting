@@ -415,6 +415,59 @@ ORD-VAT-1,EE123456789,2026-03-15,Consulting,1,100,22
 		}
 	})
 
+	t.Run("resolves quote by quote number", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `order_number,contact_code,order_date,quote_number,line_description,quantity,unit_price,vat_rate
+ORD-QUOTE-1,CUST-1,2026-03-15,QT-LEGACY-1,Consulting,1,100,22
+`
+
+		result, err := svc.ImportCSVWithQuoteReferences(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:       "contact-1",
+			TenantID: "tenant-1",
+			Code:     "CUST-1",
+			Name:     "Acme",
+		}}, nil, []ImportQuoteReference{{
+			ID:          "11111111-1111-4111-8111-111111111111",
+			QuoteNumber: "QT-LEGACY-1",
+		}}, &ImportOrdersRequest{CSVContent: csvContent})
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.RowsProcessed)
+		assert.Equal(t, 1, result.OrdersCreated)
+		assert.Zero(t, result.RowsSkipped)
+		require.Len(t, repo.Orders, 1)
+		for _, order := range repo.Orders {
+			require.NotNil(t, order.QuoteID)
+			assert.Equal(t, "11111111-1111-4111-8111-111111111111", *order.QuoteID)
+		}
+	})
+
+	t.Run("quote id takes precedence over quote number", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `order_number,contact_code,order_date,quote_id,quote_number,line_description,quantity,unit_price,vat_rate
+ORD-QUOTE-2,CUST-1,2026-03-15,22222222-2222-4222-8222-222222222222,QT-MISSING,Consulting,1,100,22
+`
+
+		result, err := svc.ImportCSVWithQuoteReferences(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:       "contact-1",
+			TenantID: "tenant-1",
+			Code:     "CUST-1",
+			Name:     "Acme",
+		}}, nil, nil, &ImportOrdersRequest{CSVContent: csvContent})
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.OrdersCreated)
+		require.Len(t, repo.Orders, 1)
+		for _, order := range repo.Orders {
+			require.NotNil(t, order.QuoteID)
+			assert.Equal(t, "22222222-2222-4222-8222-222222222222", *order.QuoteID)
+		}
+	})
+
 	t.Run("skips duplicate and invalid groups", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.Orders["existing"] = &Order{
@@ -475,6 +528,28 @@ ORD-BAD-PRODUCT,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,,Bad product,1,1
 		assert.Contains(t, result.Errors[0].Message, "contact_id must be a valid UUID")
 		assert.Contains(t, result.Errors[1].Message, "quote_id must be a valid UUID")
 		assert.Contains(t, result.Errors[2].Message, "product_id must be a valid UUID")
+	})
+
+	t.Run("skips unknown quote number", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `order_number,contact_code,order_date,quote_number,line_description,quantity,unit_price,vat_rate
+ORD-UNKNOWN-QUOTE,CUST-1,2026-03-15,QT-MISSING,Consulting,1,100,22
+`
+
+		result, err := svc.ImportCSVWithQuoteReferences(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:       "contact-1",
+			TenantID: "tenant-1",
+			Code:     "CUST-1",
+			Name:     "Acme",
+		}}, nil, nil, &ImportOrdersRequest{CSVContent: csvContent})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.OrdersCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, `quote_number "QT-MISSING" was not found`)
 	})
 }
 

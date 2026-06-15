@@ -49,6 +49,7 @@ type orderImportHeader struct {
 	exchangeRate     decimal.Decimal
 	notes            string
 	quoteID          *string
+	quoteNumber      string
 	explicitStatus   OrderStatus
 }
 
@@ -73,6 +74,11 @@ type orderImportContactLookup struct {
 	byVATNumber map[string]contacts.Contact
 	byEmail     map[string]contacts.Contact
 	byName      map[string]contacts.Contact
+}
+
+type orderImportQuoteLookup struct {
+	byNumber         map[string]string
+	duplicateNumbers map[string]bool
 }
 
 var orderImportHeaderAliases = map[string]string{
@@ -101,6 +107,10 @@ var orderImportHeaderAliases = map[string]string{
 	"exchange_rate":      "exchange_rate",
 	"notes":              "notes",
 	"quote_id":           "quote_id",
+	"quote_number":       "quote_number",
+	"quotation_number":   "quote_number",
+	"offer_number":       "quote_number",
+	"quote_no":           "quote_number",
 	"status":             "status",
 	"line_description":   "line_description",
 	"description":        "line_description",
@@ -137,6 +147,18 @@ func (s *Service) ImportCSV(
 	existingProducts []inventory.Product,
 	req *ImportOrdersRequest,
 ) (*ImportOrdersResult, error) {
+	return s.ImportCSVWithQuoteReferences(ctx, tenantID, schemaName, existingContacts, existingProducts, nil, req)
+}
+
+// ImportCSVWithQuoteReferences imports historical orders and resolves quote_number values against known quotes.
+func (s *Service) ImportCSVWithQuoteReferences(
+	ctx context.Context,
+	tenantID, schemaName string,
+	existingContacts []contacts.Contact,
+	existingProducts []inventory.Product,
+	existingQuotes []ImportQuoteReference,
+	req *ImportOrdersRequest,
+) (*ImportOrdersResult, error) {
 	if req == nil || strings.TrimSpace(req.CSVContent) == "" {
 		return nil, fmt.Errorf("csv_content is required")
 	}
@@ -167,6 +189,7 @@ func (s *Service) ImportCSV(
 	}
 	contactLookup := buildOrderImportContactLookup(existingContacts)
 	productLookup := importrefs.NewProductLookup(existingProducts)
+	quoteLookup := buildOrderImportQuoteLookup(existingQuotes)
 	groupOrder := make([]string, 0)
 	groups := make(map[string]*orderImportGroup)
 
@@ -225,6 +248,16 @@ func (s *Service) ImportCSV(
 
 		contact, err := contactLookup.find(group.header.contactRef)
 		if err != nil {
+			result.RowsSkipped += group.rowCount
+			result.Errors = append(result.Errors, ImportOrdersRowError{
+				Row:         group.firstRow,
+				OrderNumber: group.header.orderNumber,
+				Message:     err.Error(),
+			})
+			continue
+		}
+
+		if err := quoteLookup.resolve(&group.header); err != nil {
 			result.RowsSkipped += group.rowCount
 			result.Errors = append(result.Errors, ImportOrdersRowError{
 				Row:         group.firstRow,
@@ -425,6 +458,7 @@ func parseOrderImportDataRow(row orderImportRow, productLookup importrefs.Produc
 		canonicalID := parsedID.String()
 		quoteID = &canonicalID
 	}
+	quoteNumber := strings.TrimSpace(row.values["quote_number"])
 
 	description := strings.TrimSpace(row.values["line_description"])
 	if description == "" {
@@ -481,6 +515,7 @@ func parseOrderImportDataRow(row orderImportRow, productLookup importrefs.Produc
 			exchangeRate:     exchangeRate,
 			notes:            strings.TrimSpace(row.values["notes"]),
 			quoteID:          quoteID,
+			quoteNumber:      quoteNumber,
 			explicitStatus:   explicitStatus,
 		},
 		line: orderImportLine{
@@ -515,6 +550,9 @@ func mergeOrderImportGroup(group *orderImportGroup, next orderImportHeader, rowN
 		return conflict
 	}
 	if conflict := mergeOrderImportOptionalStringPtr(&group.header.quoteID, next.quoteID, "quote_id"); conflict != "" {
+		return conflict
+	}
+	if conflict := mergeOrderImportOptionalString(&group.header.quoteNumber, next.quoteNumber, "quote_number"); conflict != "" {
 		return conflict
 	}
 	if next.explicitStatus != "" {
@@ -673,6 +711,43 @@ func buildOrderImportContactLookup(existingContacts []contacts.Contact) *orderIm
 		}
 	}
 	return lookup
+}
+
+func buildOrderImportQuoteLookup(existingQuotes []ImportQuoteReference) orderImportQuoteLookup {
+	lookup := orderImportQuoteLookup{
+		byNumber:         make(map[string]string),
+		duplicateNumbers: make(map[string]bool),
+	}
+	for _, quote := range existingQuotes {
+		id := strings.TrimSpace(quote.ID)
+		if id == "" {
+			continue
+		}
+		if key := normalizedOrderImportKey(quote.QuoteNumber); key != "" {
+			if _, exists := lookup.byNumber[key]; exists {
+				lookup.duplicateNumbers[key] = true
+				continue
+			}
+			lookup.byNumber[key] = id
+		}
+	}
+	return lookup
+}
+
+func (l orderImportQuoteLookup) resolve(header *orderImportHeader) error {
+	if header.quoteID != nil || strings.TrimSpace(header.quoteNumber) == "" {
+		return nil
+	}
+	key := normalizedOrderImportKey(header.quoteNumber)
+	if l.duplicateNumbers[key] {
+		return fmt.Errorf("quote_number %q is ambiguous", header.quoteNumber)
+	}
+	quoteID, ok := l.byNumber[key]
+	if !ok {
+		return fmt.Errorf("quote_number %q was not found", header.quoteNumber)
+	}
+	header.quoteID = &quoteID
+	return nil
 }
 
 func (l *orderImportContactLookup) find(ref orderImportContactRef) (*contacts.Contact, error) {
