@@ -63,6 +63,7 @@ Status values:
 - The follow-up reconciliation evidence remediation and Directo fixed-asset alias batch was locally revalidated with focused banking API tests, cutover provider-alias tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
 - The follow-up journal/payment evidence, document CLI entity help, and fixed-asset invoice-number batch was locally revalidated with focused API/document/CLI/cutover tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
 - The follow-up quote/order commercial evidence conflict stage was locally revalidated with focused quote/order API evidence tests and Swagger regeneration.
+- The follow-up document lifecycle integrity constraints stage was locally revalidated with focused document service/repository tests plus the migration integration gate.
 - The follow-up payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation amount decimal validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up e-invoice payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
@@ -232,6 +233,7 @@ remediation instead of direct approval guidance, and rejected-document
 remediation CLI commands include `--replaces-document-id` plus
 `--replacement-note` so corrected evidence preserves supersession audit
 metadata, and document CLI entity-type help lists TSD/KMD declaration attachment targets.
+Document lifecycle integrity constraints now block dangling supersession links and unknown lifecycle/legal-hold actors at the tenant DB layer, and service deletion guards replacement evidence before storage deletion.
 Migration Workbench confirmed execution now accepts a selected saved
 `resume_from_run_id` without requiring a fresh bundle upload, matching the
 server-side saved-run resume path.

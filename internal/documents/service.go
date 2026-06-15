@@ -640,6 +640,13 @@ func (s *Service) DeleteDocument(ctx context.Context, schemaName, tenantID, docu
 	if doc.LegalHold {
 		return fmt.Errorf("document is under legal hold and cannot be deleted")
 	}
+	hasDependents, err := s.repo.DocumentHasSupersededDependents(ctx, schemaName, tenantID, doc.ID)
+	if err != nil {
+		return err
+	}
+	if hasDependents {
+		return fmt.Errorf("document is linked as replacement evidence and cannot be deleted")
+	}
 
 	if err := s.store.Delete(ctx, doc.StorageKey); err != nil {
 		return err

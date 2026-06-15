@@ -141,6 +141,18 @@ func (m *mockDocumentRepository) GetDocumentByID(ctx context.Context, schemaName
 	return doc, nil
 }
 
+func (m *mockDocumentRepository) DocumentHasSupersededDependents(ctx context.Context, schemaName, tenantID, documentID string) (bool, error) {
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID || doc.SupersededBy == nil {
+			continue
+		}
+		if *doc.SupersededBy == documentID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (m *mockDocumentRepository) UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error {
 	doc, ok := m.docs[documentID]
 	if !ok || doc.TenantID != tenantID {

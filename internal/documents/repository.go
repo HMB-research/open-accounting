@@ -22,6 +22,7 @@ type Repository interface {
 	ListRetentionReviewDocuments(ctx context.Context, schemaName, tenantID string, cutoff time.Time, includeMissing bool) ([]Document, error)
 	ListReviewSummaries(ctx context.Context, schemaName, tenantID, entityType string, entityIDs []string) (map[string]ReviewSummary, error)
 	GetDocumentByID(ctx context.Context, schemaName, tenantID, documentID string) (*Document, error)
+	DocumentHasSupersededDependents(ctx context.Context, schemaName, tenantID, documentID string) (bool, error)
 	UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error
 	UpdateDocumentLifecycle(ctx context.Context, schemaName, tenantID, documentID, lifecycleStatus, lifecycleNote, lifecycleBy string, lifecycleAt time.Time, supersededBy *string) error
 	UpdateDocumentLegalHold(ctx context.Context, schemaName, tenantID, documentID string, legalHold bool, note, actionedBy string, actionedAt time.Time) error
@@ -226,6 +227,22 @@ func (r *GORMRepository) GetDocumentByID(ctx context.Context, schemaName, tenant
 		return nil, fmt.Errorf("get document: %w", err)
 	}
 	return modelToDocument(&docModel), nil
+}
+
+func (r *GORMRepository) DocumentHasSupersededDependents(ctx context.Context, schemaName, tenantID, documentID string) (bool, error) {
+	db, err := r.documentsTable(ctx, schemaName)
+	if err != nil {
+		return false, fmt.Errorf("qualify documents table: %w", err)
+	}
+
+	var count int64
+	if err := db.
+		Where("tenant_id = ? AND superseded_by_document_id = ?", tenantID, documentID).
+		Limit(1).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check document supersession dependents: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (r *GORMRepository) UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error {
