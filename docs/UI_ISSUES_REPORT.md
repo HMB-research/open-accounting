@@ -5,6 +5,7 @@
 > Current capability source of truth: [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md)
 >
 > This report is retained as a UI snapshot. Entries below are only corrected where current repository evidence clearly supersedes an obsolete "not implemented" note.
+> Historical Railway/demo observations can mention old credentials or deployment state; use [DEPLOYMENT.md](./DEPLOYMENT.md) and the README for current demo credentials.
 
 ## Summary
 
@@ -62,7 +63,7 @@ Each view is tested for:
 
 - Hero section with clear value proposition
 - Estonian business targeting
-- Demo credentials displayed (demo@example.com / demo123)
+- Demo credentials were displayed in the original Railway sweep; current demo credentials are documented in [DEPLOYMENT.md](./DEPLOYMENT.md)
 - MIT License and self-hosting info
 
 **Overall:** ✅ Working
