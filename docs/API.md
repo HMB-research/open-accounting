@@ -539,7 +539,7 @@ Content-Type: application/json
 }
 ```
 
-Returns the same validation report plus a deterministic `steps` array for executing validated cutover imports in dependency order. Each step includes `status`, `kind`, `file_name`, optional `depends_on`, optional `context_fields`, `api_method`, `api_path`, and `cli_command`. `READY` steps can be imported directly through the listed route or command, `NEEDS_CONTEXT` steps require extra request data such as `bank_transaction_account_id` or `opening_balance_entry_date`, and `BLOCKED` steps require fixing validation remediation actions before import. The top-level `summary` reports validation readiness, full plan readiness, ready step count, missing-context count, and blocked step count.
+Returns the same validation report plus a deterministic `steps` array for executing validated cutover imports in dependency order. Each step includes `status`, `kind`, `file_name`, optional `depends_on`, optional `context_fields`, `api_method`, `api_path`, and `cli_command`. `READY` steps can be imported directly through the listed route or command, `NEEDS_CONTEXT` steps require extra request data such as `bank_transaction_account_id` or `opening_balance_entry_date`, and `BLOCKED` steps require fixing validation remediation actions before import. Opening-balance execution dates must use `YYYY-MM-DD`; blank or malformed `opening_balance_entry_date` values leave the opening-balance step in `NEEDS_CONTEXT`. The top-level `summary` reports validation readiness, full plan readiness, ready step count, missing-context count, and blocked step count.
 
 ### Execute Migration
 
