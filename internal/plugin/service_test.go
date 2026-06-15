@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1782,6 +1783,153 @@ func TestService_UnloadPlugin_StopsPackageRuntime(t *testing.T) {
 	}
 }
 
+func TestService_PackageRuntimeAutomaticallyRestartsAfterCrash(t *testing.T) {
+	ctx := context.Background()
+	tenantID := uuid.New()
+	pluginID := uuid.New()
+	pluginDir, manifest := createPackageRuntimePluginFixture(t, "package-auto-restart-plugin", []RouteConfig{
+		{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"},
+		{Method: http.MethodPost, Path: "/crash", Handler: "/routes/crash"},
+	}, nil)
+	manifestJSON, err := manifest.ToJSON()
+	if err != nil {
+		t.Fatalf("serialize manifest: %v", err)
+	}
+
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:                 pluginID,
+		Name:               manifest.Name,
+		DisplayName:        manifest.DisplayName,
+		Version:            manifest.Version,
+		State:              StateEnabled,
+		GrantedPermissions: []string{"routes:register"},
+		Manifest:           manifestJSON,
+	}
+	now := time.Now()
+	repo.tenantPlugins[fmt.Sprintf("%s:%s", tenantID, pluginID)] = &TenantPlugin{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		PluginID:  pluginID,
+		IsEnabled: true,
+		EnabledAt: &now,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	service := NewServiceWithRepository(repo, nil, pluginDir)
+	service.runtimeRestartBackoff = 10 * time.Millisecond
+	if err := service.loadPlugin(repo.plugins[pluginID], manifest); err != nil {
+		t.Fatalf("load package runtime plugin: %v", err)
+	}
+	t.Cleanup(func() {
+		service.unloadPlugin(manifest.Name)
+	})
+
+	initialStatus, err := service.GetPluginRuntimeStatus(ctx, pluginID)
+	if err != nil {
+		t.Fatalf("get initial runtime status: %v", err)
+	}
+	if initialStatus.PID == nil {
+		t.Fatal("expected package runtime pid")
+	}
+	initialPID := *initialStatus.PID
+
+	_, err = service.InvokeTenantPluginRoute(ctx, tenantID, pluginID, http.MethodPost, "/crash", "", nil, nil)
+	if err == nil {
+		t.Fatal("expected crashing runtime route to fail")
+	}
+
+	restarted := waitForRuntimeStatus(t, service, pluginID, time.Second, func(status PluginRuntimeStatus) bool {
+		return status.State == RuntimeStateRunning &&
+			status.RestartCount == 1 &&
+			status.CrashCount == 1 &&
+			status.PID != nil &&
+			*status.PID != initialPID
+	})
+	if restarted.LastExitError == "" {
+		t.Fatal("expected last exit error to remain visible after automatic restart")
+	}
+
+	resp, err := service.InvokeTenantPluginRoute(ctx, tenantID, pluginID, http.MethodGet, "/status", "", nil, nil)
+	if err != nil {
+		t.Fatalf("InvokeTenantPluginRoute after automatic restart failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("status code = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+}
+
+func TestService_RuntimeStatusPrefersRestartFailureOverCrashedLoadedRuntime(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	manifest := &Manifest{
+		Name:        "package-restart-failure-plugin",
+		DisplayName: "Package Restart Failure Plugin",
+		Version:     "1.0.0",
+		Backend: &BackendConfig{
+			Runtime:    BackendRuntimePackage,
+			Package:    "backend",
+			Executable: "bin/runtime",
+			Routes: []RouteConfig{
+				{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"},
+			},
+		},
+		Permissions: []string{"routes:register"},
+	}
+	manifestJSON, err := manifest.ToJSON()
+	if err != nil {
+		t.Fatalf("serialize manifest: %v", err)
+	}
+
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:                 pluginID,
+		Name:               manifest.Name,
+		DisplayName:        manifest.DisplayName,
+		Version:            manifest.Version,
+		State:              StateEnabled,
+		GrantedPermissions: []string{"routes:register"},
+		Manifest:           manifestJSON,
+	}
+	service := NewServiceWithRepository(repo, nil, t.TempDir())
+	service.plugins[manifest.Name] = &LoadedPlugin{
+		Plugin:   repo.plugins[pluginID],
+		Manifest: manifest,
+		Runtime: &stubBackendRuntime{statusValue: PluginRuntimeStatus{
+			PluginID:     pluginID,
+			PluginName:   manifest.Name,
+			Runtime:      BackendRuntimePackage,
+			State:        RuntimeStateBackoff,
+			Health:       RuntimeHealthUnhealthy,
+			Message:      "crashed; restart backoff active",
+			RestartCount: 1,
+			CrashCount:   1,
+		}},
+	}
+	service.runtimeFailures[pluginID] = PluginRuntimeStatus{
+		PluginID:     pluginID,
+		PluginName:   manifest.Name,
+		Runtime:      BackendRuntimePackage,
+		State:        RuntimeStateFailed,
+		Health:       RuntimeHealthUnhealthy,
+		Message:      "runtime failed to start",
+		RestartCount: 2,
+		CrashCount:   1,
+		LastError:    "restart executable missing",
+	}
+
+	status, err := service.GetPluginRuntimeStatus(ctx, pluginID)
+	if err != nil {
+		t.Fatalf("get runtime status: %v", err)
+	}
+	if status.State != RuntimeStateFailed {
+		t.Fatalf("state = %s, want %s", status.State, RuntimeStateFailed)
+	}
+	if status.LastError != "restart executable missing" {
+		t.Fatalf("last error = %q, want restart failure", status.LastError)
+	}
+}
+
 func TestService_InvokeTenantPluginRoute_RequiresEnabledTenantPlugin(t *testing.T) {
 	repo := NewMockRepository()
 	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
@@ -2876,6 +3024,50 @@ func waitForFile(t *testing.T, path string, timeout time.Duration) {
 	}
 }
 
+func waitForRuntimeStatus(t *testing.T, service *Service, pluginID uuid.UUID, timeout time.Duration, match func(PluginRuntimeStatus) bool) PluginRuntimeStatus {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var lastStatus PluginRuntimeStatus
+	var lastErr error
+	for time.Now().Before(deadline) {
+		status, err := service.GetPluginRuntimeStatus(context.Background(), pluginID)
+		if err != nil {
+			lastErr = err
+		} else if status != nil {
+			lastStatus = *status
+			if match(lastStatus) {
+				return lastStatus
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if lastErr != nil {
+		t.Fatalf("timed out waiting for runtime status after last error: %v", lastErr)
+	}
+	t.Fatalf("timed out waiting for runtime status, last status: %+v", lastStatus)
+	return PluginRuntimeStatus{}
+}
+
+type stubBackendRuntime struct {
+	statusValue PluginRuntimeStatus
+}
+
+func (r *stubBackendRuntime) invokeHook(context.Context, uuid.UUID, string, HookConfig, Event) error {
+	return nil
+}
+
+func (r *stubBackendRuntime) invokeRoute(context.Context, uuid.UUID, uuid.UUID, RouteConfig, string, string, string, http.Header, io.Reader) (*RuntimeRouteResponse, error) {
+	return nil, nil
+}
+
+func (r *stubBackendRuntime) close(context.Context) error {
+	return nil
+}
+
+func (r *stubBackendRuntime) status() PluginRuntimeStatus {
+	return r.statusValue
+}
+
 const packageRuntimeFixtureSource = `package main
 
 import (
@@ -2925,6 +3117,10 @@ func main() {
 			"route_path": r.Header.Get("X-Open-Accounting-Route-Path"),
 			"tenant_id":  r.Header.Get("X-Open-Accounting-Tenant-ID"),
 		})
+	})
+	mux.HandleFunc("/routes/crash", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(os.Stderr, "fixture forced crash")
+		os.Exit(24)
 	})
 	mux.HandleFunc("/hooks/invoice", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
