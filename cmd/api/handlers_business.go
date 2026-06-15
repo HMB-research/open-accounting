@@ -1753,6 +1753,7 @@ func (h *Handlers) EmailOrder(w http.ResponseWriter, r *http.Request) {
 // @Param request body email.SendPaymentReceiptRequest true "Email details"
 // @Success 200 {object} email.EmailSentResponse
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/payments/{paymentID}/email-receipt [post]
 func (h *Handlers) EmailPaymentReceipt(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -1778,6 +1779,11 @@ func (h *Handlers) EmailPaymentReceipt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.requireApprovedPaymentReceiptEvidence(r.Context(), schemaName, tenantID, paymentID, req.RequireApprovedEvidence); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		if errors.Is(err, errApprovedPaymentReceiptEvidenceRequired) {
 			respondError(w, http.StatusConflict, err.Error())
 			return
@@ -1860,7 +1866,10 @@ func (h *Handlers) requireApprovedPaymentReceiptEvidence(ctx context.Context, sc
 	}
 	for _, result := range results {
 		if !result.Compliant {
-			return fmt.Errorf("%w before sending payment receipt %s", errApprovedPaymentReceiptEvidenceRequired, paymentID)
+			return &evidencePolicyConflictError{
+				Err:     fmt.Errorf("%w before sending payment receipt %s", errApprovedPaymentReceiptEvidenceRequired, paymentID),
+				Results: results,
+			}
 		}
 	}
 	return nil

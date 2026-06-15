@@ -332,6 +332,8 @@ var providerPresetAliases = map[MigrationProviderPreset]map[FileKind]map[string]
 			"hankija_kmkr_nr":                 "supplier_vat_number",
 			"hankija_epost":                   "supplier_email",
 			"hankija_e_post":                  "supplier_email",
+			"arve_nr":                         "invoice_number",
+			"ostuarve_nr":                     "invoice_number",
 		},
 		KindOpeningBalances: {
 			"konto":            "account_code",
@@ -732,6 +734,8 @@ var providerPresetAliases = map[MigrationProviderPreset]map[FileKind]map[string]
 			"vendor_vat_no":                       "supplier_vat_number",
 			"supplier_email":                      "supplier_email",
 			"vendor_email":                        "supplier_email",
+			"purchase_invoice_no":                 "invoice_number",
+			"document_no":                         "invoice_number",
 		},
 		KindOpeningBalances: {
 			"account_no":      "account_code",
@@ -1353,6 +1357,8 @@ func directoProviderPresetAliases() map[FileKind]map[string]string {
 			"hankija_kmkr_nr":            "supplier_vat_number",
 			"hankija_epost":              "supplier_email",
 			"hankija_e_post":             "supplier_email",
+			"arve_nr":                    "invoice_number",
+			"ostuarve_nr":                "invoice_number",
 		},
 		KindOpeningBalances: {
 			"konto":            "account_code",

@@ -812,6 +812,8 @@ var fileSpecs = map[FileKind]fileSpec{
 			"supplier_email":                        "supplier_email",
 			"vendor_email":                          "supplier_email",
 			"invoice_id":                            "invoice_id",
+			"invoice_number":                        "invoice_number",
+			"invoice_no":                            "invoice_number",
 			"serial_number":                         "serial_number",
 			"serial_no":                             "serial_number",
 			"depreciation_method":                   "depreciation_method",
@@ -1993,8 +1995,7 @@ func validateReferences(report *BundleValidationReport, indexes bundleIndexes, f
 			checkAccountReference(report, indexes, file, row, "accumulated_depreciation_account_id", "accumulated_depreciation_account_code")
 			checkSupplierReference(report, indexes, file, row)
 			if checkOptionalUUID(report, file, row, "invoice_id") {
-				checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
-					[]string{"invoice_id"})
+				checkFixedAssetSourceInvoiceReference(report, indexes, file, row)
 			}
 		}
 	}
@@ -3360,15 +3361,24 @@ func validateFixedAssetInvoiceConsistency(
 			continue
 		}
 		for _, row := range file.rows {
-			invoiceID := strings.TrimSpace(row.values["invoice_id"])
-			if invoiceID == "" {
-				continue
-			}
-			target, ok := invoiceTargets[cutoverInvoiceAllocationTargetKey("invoice_id", invoiceID)]
+			target, sourceField, sourceValue, ok := cutoverFixedAssetInvoiceTarget(invoiceTargets, row)
 			if !ok {
 				continue
 			}
-			if hasFixedAssetInvoiceTypeMismatch(report, file, row, target) {
+			if sourceField == "invoice_number" && target.invoiceCount > 1 {
+				report.addIssue(ValidationIssue{
+					Severity:   SeverityError,
+					Kind:       KindFixedAssets,
+					FileName:   file.fileName,
+					Row:        row.number,
+					Field:      sourceField,
+					Value:      sourceValue,
+					TargetKind: target.targetKind,
+					Message:    fmt.Sprintf("invoice_number %q matched multiple imported invoices; use invoice_id for fixed asset source invoice", sourceValue),
+				})
+				continue
+			}
+			if hasFixedAssetInvoiceTypeMismatch(report, file, row, target, sourceField, sourceValue) {
 				continue
 			}
 			if hasFixedAssetInvoiceSupplierMismatch(report, file, row, target) {
@@ -3404,11 +3414,28 @@ func validateFixedAssetInvoiceConsistency(
 	}
 }
 
+func cutoverFixedAssetInvoiceTarget(
+	targets map[string]cutoverInvoiceAllocationTarget,
+	row parsedRow,
+) (cutoverInvoiceAllocationTarget, string, string, bool) {
+	if id := strings.TrimSpace(row.values["invoice_id"]); id != "" {
+		target, ok := targets[cutoverInvoiceAllocationTargetKey("invoice_id", id)]
+		return target, "invoice_id", id, ok
+	}
+	if number := strings.TrimSpace(row.values["invoice_number"]); number != "" {
+		target, ok := targets[cutoverInvoiceAllocationTargetKey("invoice_number", number)]
+		return target, "invoice_number", number, ok
+	}
+	return cutoverInvoiceAllocationTarget{}, "", "", false
+}
+
 func hasFixedAssetInvoiceTypeMismatch(
 	report *BundleValidationReport,
 	file parsedFile,
 	row parsedRow,
 	target cutoverInvoiceAllocationTarget,
+	sourceField string,
+	sourceValue string,
 ) bool {
 	invoiceType := strings.ToUpper(strings.TrimSpace(target.invoiceType))
 	if invoiceType == "" || invoiceType == "PURCHASE" {
@@ -3419,8 +3446,8 @@ func hasFixedAssetInvoiceTypeMismatch(
 		Kind:       KindFixedAssets,
 		FileName:   file.fileName,
 		Row:        row.number,
-		Field:      "invoice_id",
-		Value:      strings.TrimSpace(row.values["invoice_id"]),
+		Field:      sourceField,
+		Value:      sourceValue,
 		TargetKind: target.targetKind,
 		Message: fmt.Sprintf(
 			"fixed asset source invoice %q is %s; expected PURCHASE invoice",
@@ -7985,6 +8012,18 @@ func checkOptionalUUID(report *BundleValidationReport, file parsedFile, row pars
 		Message:  fmt.Sprintf("%s must be a valid UUID", field),
 	})
 	return false
+}
+
+func checkFixedAssetSourceInvoiceReference(report *BundleValidationReport, indexes bundleIndexes, file parsedFile, row parsedRow) {
+	if strings.TrimSpace(row.values["invoice_id"]) != "" {
+		checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
+			[]string{"invoice_id"})
+		return
+	}
+	if strings.TrimSpace(row.values["invoice_number"]) != "" {
+		checkTargetReference(report, indexes.files[KindInvoices] || indexes.files[KindEInvoices], indexes.invoices, file, row, KindInvoices,
+			[]string{"invoice_number"})
+	}
 }
 
 func checkTargetReference(
