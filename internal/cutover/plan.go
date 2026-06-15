@@ -311,8 +311,8 @@ func migrationExecutionStepSpec(kind FileKind, fileName string, req *PlanMigrati
 		return migrationExecutionSpec{
 			apiPath:    tenantAPIPath("/inventory/stock-import"),
 			cliCommand: "oa inventory stock import --file " + fileRef,
-			dependsOn:  []FileKind{KindProducts, KindWarehouses, KindCostCenters},
-			message:    "Import stock balances after products, warehouses, and cost centers.",
+			dependsOn:  []FileKind{KindProducts, KindWarehouses},
+			message:    "Import stock balances after products and warehouses.",
 		}
 	case KindFixedAssets:
 		return migrationExecutionSpec{
