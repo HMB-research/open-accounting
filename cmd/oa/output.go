@@ -2379,6 +2379,47 @@ func printDocumentRetentionReview(w io.Writer, review *documents.RetentionReview
 	printDocumentRemediationActions(w, review.RemediationActions)
 }
 
+func printDocumentPurgeResult(w io.Writer, result *documents.DocumentPurgeResult) {
+	if result == nil {
+		return
+	}
+	mode := "dry-run"
+	if !result.DryRun {
+		mode = "executed"
+	}
+	_, _ = fmt.Fprintf(w, "Document purge %s as of %s, limit %d\n", mode, result.AsOfDate, result.Limit)
+	_, _ = fmt.Fprintf(w, "Candidates: %d, eligible: %d, purged: %d, skipped: %d\n",
+		result.CandidateCount,
+		result.EligibleCount,
+		result.PurgedCount,
+		result.SkippedCount,
+	)
+	if len(result.Candidates) == 0 {
+		return
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "DOCUMENT\tENTITY\tTYPE\tFILE\tRETENTION\tLIFECYCLE\tLEGAL HOLD\tELIGIBLE\tPURGED\tSKIP")
+	for _, candidate := range result.Candidates {
+		_, _ = fmt.Fprintf(
+			tw,
+			"%s\t%s:%s\t%s\t%s\t%s\t%s\t%t\t%t\t%t\t%s\n",
+			candidate.DocumentID,
+			candidate.EntityType,
+			candidate.EntityID,
+			candidate.DocumentType,
+			candidate.FileName,
+			formatDatePtr(candidate.RetentionUntil),
+			documentLifecycleLabel(candidate.LifecycleStatus),
+			candidate.LegalHold,
+			candidate.Eligible,
+			candidate.Purged,
+			candidate.SkipReason,
+		)
+	}
+	_ = tw.Flush()
+}
+
 func documentLifecycleLabel(status string) string {
 	trimmed := strings.TrimSpace(status)
 	if trimmed == "" {

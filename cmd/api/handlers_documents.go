@@ -213,6 +213,60 @@ func (h *Handlers) GetDocumentRetentionReview(w http.ResponseWriter, r *http.Req
 	respondJSON(w, http.StatusOK, result)
 }
 
+// PurgeExpiredDocuments purges expired, disposed documents that are not under legal hold.
+// @Summary Purge expired disposed documents
+// @Description Dry-run or execute retention purge for expired documents that have already been marked DISPOSED and are not under legal hold
+// @Tags Documents
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tenantID path string true "Tenant ID"
+// @Param request body object true "Purge request"
+// @Success 200 {object} documents.DocumentPurgeResult
+// @Failure 400 {object} object{error=string}
+// @Failure 500 {object} object{error=string}
+// @Router /tenants/{tenantID}/documents/purge [post]
+func (h *Handlers) PurgeExpiredDocuments(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	schemaName := h.getSchemaName(r.Context(), tenantID)
+
+	var req struct {
+		AsOfDate *string `json:"as_of,omitempty"`
+		DryRun   *bool   `json:"dry_run,omitempty"`
+		Limit    int     `json:"limit,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	asOfDate := time.Now().UTC()
+	if req.AsOfDate != nil && strings.TrimSpace(*req.AsOfDate) != "" {
+		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(*req.AsOfDate))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid as_of date, expected YYYY-MM-DD")
+			return
+		}
+		asOfDate = parsed
+	}
+	dryRun := true
+	if req.DryRun != nil {
+		dryRun = *req.DryRun
+	}
+
+	result, err := h.documentsService.PurgeExpiredDocuments(r.Context(), schemaName, tenantID, documents.DocumentPurgeRequest{
+		AsOfDate: asOfDate,
+		DryRun:   dryRun,
+		Limit:    req.Limit,
+	})
+	if err != nil {
+		respondDocumentError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // UpdateDocumentRetention updates document retention metadata.
 // @Summary Update document retention
 // @Description Set or clear the retention date for a document

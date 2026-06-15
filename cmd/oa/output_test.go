@@ -1196,6 +1196,51 @@ func TestPrintTables(t *testing.T) {
 	assert.Contains(t, retentionBuf.String(), "document_retention_due_soon")
 	assert.Contains(t, retentionBuf.String(), "document_retention_missing")
 	assert.Contains(t, retentionBuf.String(), "document_review")
+
+	var purgeBuf bytes.Buffer
+	printDocumentPurgeResult(&purgeBuf, &documents.DocumentPurgeResult{
+		AsOfDate:       "2027-03-01",
+		DryRun:         true,
+		Limit:          25,
+		CandidateCount: 2,
+		EligibleCount:  1,
+		SkippedCount:   1,
+		Candidates: []documents.DocumentPurgeCandidate{{
+			DocumentID:      "doc-disposed",
+			EntityType:      documents.EntityTypeExpense,
+			EntityID:        "exp-1",
+			DocumentType:    documents.DocumentTypeReceipt,
+			FileName:        "old-receipt.pdf",
+			RetentionUntil:  &retentionUntil,
+			LifecycleStatus: documents.LifecycleStatusDisposed,
+			Eligible:        true,
+		}, {
+			DocumentID:      "doc-held",
+			EntityType:      documents.EntityTypeExpense,
+			EntityID:        "exp-2",
+			DocumentType:    documents.DocumentTypeReceipt,
+			FileName:        "held-receipt.pdf",
+			RetentionUntil:  &retentionUntil,
+			LifecycleStatus: documents.LifecycleStatusDisposed,
+			LegalHold:       true,
+			SkipReason:      "legal_hold",
+		}},
+	})
+	assert.Contains(t, purgeBuf.String(), "Document purge dry-run as of 2027-03-01")
+	assert.Contains(t, purgeBuf.String(), "doc-disposed")
+	assert.Contains(t, purgeBuf.String(), "legal_hold")
+
+	var nilPurgeBuf bytes.Buffer
+	printDocumentPurgeResult(&nilPurgeBuf, nil)
+	assert.Empty(t, nilPurgeBuf.String())
+
+	var emptyExecutedPurgeBuf bytes.Buffer
+	printDocumentPurgeResult(&emptyExecutedPurgeBuf, &documents.DocumentPurgeResult{
+		AsOfDate: "2027-03-02",
+		DryRun:   false,
+		Limit:    10,
+	})
+	assert.Contains(t, emptyExecutedPurgeBuf.String(), "Document purge executed as of 2027-03-02")
 }
 
 func TestPrintPaymentOutputs(t *testing.T) {

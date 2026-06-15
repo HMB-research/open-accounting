@@ -18,6 +18,8 @@ var fileNameSanitizer = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 const (
 	defaultReviewQueueLimit = 50
 	maxReviewQueueLimit     = 200
+	defaultPurgeLimit       = 100
+	maxPurgeLimit           = 1000
 )
 
 type Service struct {
@@ -339,6 +341,78 @@ func (s *Service) GetRetentionReview(ctx context.Context, schemaName, tenantID s
 	review.RemediationActions = BuildRetentionReviewRemediationActions(review)
 
 	return review, nil
+}
+
+func (s *Service) PurgeExpiredDocuments(ctx context.Context, schemaName, tenantID string, req DocumentPurgeRequest) (*DocumentPurgeResult, error) {
+	asOf := dateOnlyUTC(req.AsOfDate)
+	if req.AsOfDate.IsZero() {
+		asOf = dateOnlyUTC(time.Now().UTC())
+	}
+	limit, err := normalizePurgeLimit(req.Limit)
+	if err != nil {
+		return nil, err
+	}
+
+	docs, err := s.repo.ListRetentionReviewDocuments(ctx, schemaName, tenantID, asOf, false)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &DocumentPurgeResult{
+		AsOfDate:       asOf.Format("2006-01-02"),
+		DryRun:         req.DryRun,
+		Limit:          limit,
+		CandidateCount: len(docs),
+		Candidates:     make([]DocumentPurgeCandidate, 0, len(docs)),
+	}
+	for _, doc := range docs {
+		candidate := documentPurgeCandidate(doc)
+		if candidate.Eligible {
+			if result.EligibleCount >= limit {
+				candidate.Eligible = false
+				candidate.SkipReason = "limit_reached"
+			} else {
+				result.EligibleCount++
+				if !req.DryRun {
+					if err := s.DeleteDocument(ctx, schemaName, tenantID, doc.ID); err != nil {
+						return result, fmt.Errorf("purge document %s: %w", doc.ID, err)
+					}
+					candidate.Purged = true
+					result.PurgedCount++
+				}
+			}
+		}
+		if !candidate.Eligible {
+			result.SkippedCount++
+		}
+		result.Candidates = append(result.Candidates, candidate)
+	}
+
+	return result, nil
+}
+
+func documentPurgeCandidate(doc Document) DocumentPurgeCandidate {
+	candidate := DocumentPurgeCandidate{
+		DocumentID:      doc.ID,
+		EntityType:      doc.EntityType,
+		EntityID:        doc.EntityID,
+		DocumentType:    doc.DocumentType,
+		FileName:        doc.FileName,
+		RetentionUntil:  doc.RetentionUntil,
+		LifecycleStatus: documentLifecycleStatus(&doc),
+		LegalHold:       doc.LegalHold,
+		Eligible:        true,
+	}
+	if doc.LegalHold {
+		candidate.Eligible = false
+		candidate.SkipReason = "legal_hold"
+		return candidate
+	}
+	if candidate.LifecycleStatus != LifecycleStatusDisposed {
+		candidate.Eligible = false
+		candidate.SkipReason = "not_disposed"
+	}
+	return candidate
 }
 
 func retentionReminderAction(doc Document, action, message string, asOf time.Time) RetentionReminderAction {
@@ -702,6 +776,19 @@ func normalizeReviewQueueLimit(value int) (int, error) {
 	}
 	if value > maxReviewQueueLimit {
 		return maxReviewQueueLimit, nil
+	}
+	return value, nil
+}
+
+func normalizePurgeLimit(value int) (int, error) {
+	if value < 0 {
+		return 0, fmt.Errorf("limit must be zero or greater")
+	}
+	if value == 0 {
+		return defaultPurgeLimit, nil
+	}
+	if value > maxPurgeLimit {
+		return 0, fmt.Errorf("limit cannot exceed %d", maxPurgeLimit)
 	}
 	return value, nil
 }

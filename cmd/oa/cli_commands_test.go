@@ -23842,6 +23842,45 @@ func TestCLIDocumentCommands(t *testing.T) {
 					"created_at":      "2026-03-12T00:00:00Z",
 				}},
 			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/purge":
+			var req documentPurgeRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "2027-03-01", req.AsOf)
+			assert.True(t, req.DryRun)
+			assert.Equal(t, 25, req.Limit)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"as_of_date":      "2027-03-01",
+				"dry_run":         true,
+				"limit":           25,
+				"candidate_count": 2,
+				"eligible_count":  1,
+				"purged_count":    0,
+				"skipped_count":   1,
+				"candidates": []map[string]any{{
+					"document_id":      "doc-disposed",
+					"entity_type":      "expense",
+					"entity_id":        "exp-1",
+					"document_type":    "receipt",
+					"file_name":        "old-receipt.pdf",
+					"retention_until":  "2027-02-01T00:00:00Z",
+					"lifecycle_status": documents.LifecycleStatusDisposed,
+					"legal_hold":       false,
+					"eligible":         true,
+					"purged":           false,
+				}, {
+					"document_id":      "doc-held",
+					"entity_type":      "expense",
+					"entity_id":        "exp-2",
+					"document_type":    "receipt",
+					"file_name":        "held-receipt.pdf",
+					"retention_until":  "2027-02-01T00:00:00Z",
+					"lifecycle_status": documents.LifecycleStatusDisposed,
+					"legal_hold":       true,
+					"eligible":         false,
+					"skip_reason":      "legal_hold",
+					"purged":           false,
+				}},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
 			require.NoError(t, r.ParseMultipartForm(2<<20))
 			assert.Equal(t, "bank_transaction", r.FormValue("entity_type"))
@@ -23989,6 +24028,13 @@ func TestCLIDocumentCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Document retention review as of 2027-03-01")
 	assert.Contains(t, stdout.String(), "receipt.pdf")
 	assert.Contains(t, stdout.String(), documents.RetentionReminderDueSoon)
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"documents", "purge", "--as-of", "2027-03-01", "--limit", "25"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Document purge dry-run as of 2027-03-01")
+	assert.Contains(t, stdout.String(), "doc-disposed")
+	assert.Contains(t, stdout.String(), "legal_hold")
 
 	stdout.Reset()
 	err = app.run(context.Background(), []string{
@@ -24282,6 +24328,8 @@ func TestCLIDocumentBranches(t *testing.T) {
 		{name: "evidence policy missing entity ids", args: []string{"evidence-policy", "--entity-type", "payment"}, want: "at least one entity-id is required"},
 		{name: "evidence policy invalid min count", args: []string{"evidence-policy", "--entity-type", "payment", "--entity-id", "pay-1", "--min-count", "0"}, want: "min-count must be one or greater"},
 		{name: "retention invalid horizon", args: []string{"retention", "--horizon-days", "-1"}, want: "horizon-days must be zero or greater"},
+		{name: "purge invalid limit", args: []string{"purge", "--limit", "-1"}, want: "limit must be zero or greater"},
+		{name: "purge invalid as of", args: []string{"purge", "--as-of", "bad-date"}, want: "parse as-of"},
 		{name: "retention set missing id", args: []string{"retention-set", "--retention-until", "2028-03-31"}, want: "id is required"},
 		{name: "retention set conflicting clear and date", args: []string{"retention-set", "--id", "doc-1", "--retention-until", "2028-03-31", "--clear"}, want: "retention-until cannot be combined with clear"},
 		{name: "retention set missing date", args: []string{"retention-set", "--id", "doc-1"}, want: "retention-until is required unless clear is set"},
@@ -24440,6 +24488,33 @@ func TestCLIDocumentBranches(t *testing.T) {
 					"cli_command":   "oa documents retention-set --id doc-json-retention --retention-until <YYYY-MM-DD>",
 				}},
 			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/purge":
+			var req documentPurgeRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Empty(t, req.AsOf)
+			assert.False(t, req.DryRun)
+			assert.Equal(t, 100, req.Limit)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"as_of_date":      "2027-03-01",
+				"dry_run":         false,
+				"limit":           100,
+				"candidate_count": 1,
+				"eligible_count":  1,
+				"purged_count":    1,
+				"skipped_count":   0,
+				"candidates": []map[string]any{{
+					"document_id":      "doc-json-purge",
+					"entity_type":      documents.EntityTypeExpense,
+					"entity_id":        "exp-json",
+					"document_type":    documents.DocumentTypeReceipt,
+					"file_name":        "old-receipt.pdf",
+					"retention_until":  "2027-02-01T00:00:00Z",
+					"lifecycle_status": documents.LifecycleStatusDisposed,
+					"legal_hold":       false,
+					"eligible":         true,
+					"purged":           true,
+				}},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents":
 			require.NoError(t, r.ParseMultipartForm(2<<20))
 			assert.Equal(t, documents.EntityTypeExpense, r.FormValue("entity_type"))
@@ -24497,6 +24572,7 @@ func TestCLIDocumentBranches(t *testing.T) {
 		{name: "review queue json", args: []string{"documents", "review-queue", "--json"}, want: `"id": "doc-json-queue"`},
 		{name: "evidence policy json", args: []string{"documents", "evidence-policy", "--entity-type", "expense", "--entity-id", "exp-json", "--required-document-type", "receipt", "--min-count", "2", "--json"}, want: `"document_evidence_missing"`},
 		{name: "retention json", args: []string{"documents", "retention", "--json"}, want: `"document_retention_due_soon"`},
+		{name: "purge json execute", args: []string{"documents", "purge", "--execute", "--json"}, want: `"purged_count": 1`},
 		{name: "upload json", args: []string{"documents", "upload", "--entity-type", "expense", "--entity-id", "exp-json", "--file", uploadPath, "--document-type", "receipt", "--notes", "JSON receipt", "--retention-until", "2027-03-31", "--json"}, want: `"id": "doc-json-upload"`},
 		{name: "retention set json clear", args: []string{"documents", "retention-set", "--id", "doc-json", "--clear", "--json"}, want: `"id": "doc-json"`},
 		{name: "mark reviewed json", args: []string{"documents", "mark-reviewed", "--id", "doc-json", "--json"}, want: `"review_status": "REVIEWED"`},
@@ -24547,6 +24623,7 @@ func TestCLIDocumentAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "review queue bad flag", args: []string{"documents", "review-queue", "--bad"}},
 		{name: "evidence policy bad flag", args: []string{"documents", "evidence-policy", "--bad"}},
 		{name: "retention bad flag", args: []string{"documents", "retention", "--bad"}},
+		{name: "purge bad flag", args: []string{"documents", "purge", "--bad"}},
 		{name: "retention set bad flag", args: []string{"documents", "retention-set", "--bad"}},
 		{name: "lifecycle set bad flag", args: []string{"documents", "lifecycle-set", "--bad"}},
 		{name: "legal hold set bad flag", args: []string{"documents", "legal-hold-set", "--bad"}},
@@ -24638,6 +24715,10 @@ func TestCLIDocumentAuthFlagsAndAPIErrorBranches(t *testing.T) {
 			require.Len(t, req.Rules, 1)
 			assert.Equal(t, []string{documents.DocumentTypeReceipt}, req.Rules[0].DocumentTypes)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/documents/retention":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/documents/purge":
+			var req documentPurgeRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.True(t, req.DryRun)
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/tenants/tenant-1/documents/doc-error/retention":
 			var req documentRetentionUpdateRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -24682,6 +24763,7 @@ func TestCLIDocumentAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "review queue API error", args: []string{"documents", "review-queue"}},
 		{name: "evidence policy API error", args: []string{"documents", "evidence-policy", "--entity-type", "expense", "--entity-id", "exp-1", "--document-type", "receipt"}},
 		{name: "retention API error", args: []string{"documents", "retention"}},
+		{name: "purge API error", args: []string{"documents", "purge"}},
 		{name: "retention set API error", args: []string{"documents", "retention-set", "--id", "doc-error", "--retention-until", "2028-03-31"}},
 		{name: "lifecycle set API error", args: []string{"documents", "lifecycle-set", "--id", "doc-error", "--status", "archived", "--note", "Archive failed"}},
 		{name: "legal hold set API error", args: []string{"documents", "legal-hold-set", "--id", "doc-error", "--note", "Hold failed"}},

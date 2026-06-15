@@ -313,9 +313,9 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"Blocking smoke E2E plus blocking local seeded demo shards",
 		},
 		"docs/USE_CASE_COVERAGE.md": {
-			"legal hold placement/release audit metadata with disposal, replacement, and hard-delete guards",
-			"focused document lifecycle/legal-hold service/API/CLI tests",
-			"purge automation beyond legal-hold guards",
+			"legal hold placement/release audit metadata with disposal, replacement, hard-delete, and purge guards",
+			"focused document lifecycle/legal-hold/purge service/API/CLI tests",
+			"dry-run and executable purge automation for expired disposed non-held files",
 		},
 		"docs/demo-e2e-testing.md": {
 			"The broader `e2e` job runs the full `demo-chromium` project across four shards and is blocking.",

@@ -6598,6 +6598,74 @@
                 }
             }
         },
+        "/tenants/{tenantID}/documents/purge": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Dry-run or execute retention purge for expired documents that have already been marked DISPOSED and are not under legal hold",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Documents"
+                ],
+                "summary": "Purge expired disposed documents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenantID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Purge request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentPurgeResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{tenantID}/documents/retention": {
             "get": {
                 "security": [
@@ -26732,6 +26800,76 @@
                 },
                 "superseded_by_document_id": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_documents.DocumentPurgeCandidate": {
+            "type": "object",
+            "properties": {
+                "document_id": {
+                    "type": "string"
+                },
+                "document_type": {
+                    "type": "string"
+                },
+                "eligible": {
+                    "type": "boolean"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "legal_hold": {
+                    "type": "boolean"
+                },
+                "lifecycle_status": {
+                    "type": "string"
+                },
+                "purged": {
+                    "type": "boolean"
+                },
+                "retention_until": {
+                    "type": "string"
+                },
+                "skip_reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_documents.DocumentPurgeResult": {
+            "type": "object",
+            "properties": {
+                "as_of_date": {
+                    "type": "string"
+                },
+                "candidate_count": {
+                    "type": "integer"
+                },
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentPurgeCandidate"
+                    }
+                },
+                "dry_run": {
+                    "type": "boolean"
+                },
+                "eligible_count": {
+                    "type": "integer"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "purged_count": {
+                    "type": "integer"
+                },
+                "skipped_count": {
+                    "type": "integer"
                 }
             }
         },

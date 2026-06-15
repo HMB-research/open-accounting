@@ -480,6 +480,85 @@ func TestUploadListDownloadAndDeleteDocument(t *testing.T) {
 	require.Empty(t, repo.docs)
 }
 
+func TestPurgeExpiredDocumentsDryRunAndExecute(t *testing.T) {
+	h, repo := setupDocumentHandlers(t)
+	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
+	expired := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	repo.docs["doc-purge"] = &documents.Document{
+		ID:              "doc-purge",
+		TenantID:        "tenant-1",
+		EntityType:      documents.EntityTypeExpense,
+		EntityID:        "expense-1",
+		DocumentType:    documents.DocumentTypeReceipt,
+		FileName:        "old-receipt.pdf",
+		StorageKey:      "missing/doc-purge.pdf",
+		RetentionUntil:  &expired,
+		ReviewStatus:    documents.ReviewStatusApproved,
+		LifecycleStatus: documents.LifecycleStatusDisposed,
+		UploadedBy:      "user-1",
+		CreatedAt:       expired,
+	}
+	repo.docs["doc-held"] = &documents.Document{
+		ID:              "doc-held",
+		TenantID:        "tenant-1",
+		EntityType:      documents.EntityTypeExpense,
+		EntityID:        "expense-2",
+		DocumentType:    documents.DocumentTypeReceipt,
+		FileName:        "held-receipt.pdf",
+		StorageKey:      "missing/doc-held.pdf",
+		RetentionUntil:  &expired,
+		ReviewStatus:    documents.ReviewStatusApproved,
+		LifecycleStatus: documents.LifecycleStatusDisposed,
+		LegalHold:       true,
+		UploadedBy:      "user-1",
+		CreatedAt:       expired,
+	}
+
+	dryRunReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/purge", map[string]any{
+		"as_of": "2026-03-15",
+		"limit": 10,
+	}, claims)
+	dryRunReq = withURLParams(dryRunReq, map[string]string{"tenantID": "tenant-1"})
+	dryRunResp := httptest.NewRecorder()
+	h.PurgeExpiredDocuments(dryRunResp, dryRunReq)
+	require.Equal(t, http.StatusOK, dryRunResp.Code)
+
+	var dryRun documents.DocumentPurgeResult
+	require.NoError(t, json.NewDecoder(dryRunResp.Body).Decode(&dryRun))
+	require.True(t, dryRun.DryRun)
+	require.Equal(t, "2026-03-15", dryRun.AsOfDate)
+	require.Equal(t, 2, dryRun.CandidateCount)
+	require.Equal(t, 1, dryRun.EligibleCount)
+	require.Equal(t, 0, dryRun.PurgedCount)
+	require.Equal(t, 1, dryRun.SkippedCount)
+	require.Contains(t, repo.docs, "doc-purge")
+
+	invalidDateReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/purge", map[string]any{
+		"as_of": "2026/03/15",
+	}, claims)
+	invalidDateReq = withURLParams(invalidDateReq, map[string]string{"tenantID": "tenant-1"})
+	invalidDateResp := httptest.NewRecorder()
+	h.PurgeExpiredDocuments(invalidDateResp, invalidDateReq)
+	require.Equal(t, http.StatusBadRequest, invalidDateResp.Code)
+
+	executeReq := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/documents/purge", map[string]any{
+		"as_of":   "2026-03-15",
+		"dry_run": false,
+		"limit":   10,
+	}, claims)
+	executeReq = withURLParams(executeReq, map[string]string{"tenantID": "tenant-1"})
+	executeResp := httptest.NewRecorder()
+	h.PurgeExpiredDocuments(executeResp, executeReq)
+	require.Equal(t, http.StatusOK, executeResp.Code)
+
+	var executed documents.DocumentPurgeResult
+	require.NoError(t, json.NewDecoder(executeResp.Body).Decode(&executed))
+	require.False(t, executed.DryRun)
+	require.Equal(t, 1, executed.PurgedCount)
+	require.NotContains(t, repo.docs, "doc-purge")
+	require.Contains(t, repo.docs, "doc-held")
+}
+
 func TestUploadDocumentRetentionYears(t *testing.T) {
 	h, _ := setupDocumentHandlers(t)
 	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")

@@ -499,6 +499,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  documents review-queue    List documents waiting for reviewer action")
 	_, _ = fmt.Fprintln(a.stdout, "  documents evidence-policy Evaluate required evidence policy")
 	_, _ = fmt.Fprintln(a.stdout, "  documents retention       List retention-due documents")
+	_, _ = fmt.Fprintln(a.stdout, "  documents purge           Dry-run or execute expired disposed document purge")
 	_, _ = fmt.Fprintln(a.stdout, "  documents retention-set   Set or clear document retention metadata")
 	_, _ = fmt.Fprintln(a.stdout, "  documents lifecycle-set   Mark a document active, superseded, archived, or disposed")
 	_, _ = fmt.Fprintln(a.stdout, "  documents legal-hold-set  Place or release document legal hold")
@@ -12310,6 +12311,39 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 			return printJSON(a.stdout, review)
 		}
 		printDocumentRetentionReview(a.stdout, review)
+		return nil
+
+	case "purge":
+		fs := flag.NewFlagSet("documents purge", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		asOf := fs.String("as-of", "", "As-of date in YYYY-MM-DD; defaults to today")
+		limit := fs.Int("limit", 100, "Maximum eligible documents to purge or report")
+		execute := fs.Bool("execute", false, "Execute the purge; default is dry-run")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *limit < 0 {
+			return errors.New("limit must be zero or greater")
+		}
+		if strings.TrimSpace(*asOf) != "" {
+			if _, err := time.Parse("2006-01-02", strings.TrimSpace(*asOf)); err != nil {
+				return fmt.Errorf("parse as-of: %w", err)
+			}
+		}
+
+		result, err := client.purgeExpiredDocuments(ctx, cfg.TenantID, documentPurgeRequest{
+			AsOf:   strings.TrimSpace(*asOf),
+			DryRun: !*execute,
+			Limit:  *limit,
+		})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, result)
+		}
+		printDocumentPurgeResult(a.stdout, result)
 		return nil
 
 	case "retention-set":
