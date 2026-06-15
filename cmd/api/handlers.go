@@ -1118,6 +1118,10 @@ func (h *Handlers) CreateTenant(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "Not authenticated")
 		return
 	}
+	if claims.TokenKind == auth.TokenKindAPIToken {
+		respondError(w, http.StatusForbidden, "API tokens cannot create tenants")
+		return
+	}
 
 	var req struct {
 		Name     string                 `json:"name"`

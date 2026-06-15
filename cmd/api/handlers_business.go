@@ -7836,6 +7836,7 @@ func (h *Handlers) GetLeaveRecord(w http.ResponseWriter, r *http.Request) {
 // @Param tenantID path string true "Tenant ID"
 // @Param recordID path string true "Leave Record ID"
 // @Success 200 {object} payroll.LeaveRecord
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/leave-records/{recordID}/approve [post]
 func (h *Handlers) ApproveLeaveRecord(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -7846,6 +7847,11 @@ func (h *Handlers) ApproveLeaveRecord(w http.ResponseWriter, r *http.Request) {
 
 	record, err := h.absenceService.ApproveLeaveRecord(r.Context(), schemaName, tenantID, recordID, claims.UserID)
 	if err != nil {
+		var leaveEvidenceConflict *payroll.LeaveEvidencePolicyConflictError
+		if errors.As(err, &leaveEvidenceConflict) {
+			respondEvidencePolicyConflict(w, leaveEvidenceConflict.Error(), leaveEvidenceConflict.Results)
+			return
+		}
 		status := http.StatusBadRequest
 		if errors.Is(err, payroll.ErrApprovedLeaveDocumentRequired) {
 			status = http.StatusConflict

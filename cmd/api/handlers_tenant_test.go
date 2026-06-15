@@ -338,6 +338,18 @@ func TestCreateTenant(t *testing.T) {
 			wantStatus:     http.StatusUnauthorized,
 			wantErrContain: "Not authenticated",
 		},
+		{
+			name: "api token cannot create tenants",
+			claims: &auth.Claims{
+				UserID:    "user-1",
+				Email:     "user@example.com",
+				TenantID:  "tenant-1",
+				TokenKind: auth.TokenKindAPIToken,
+			},
+			body:           map[string]interface{}{"name": "Automation Tenant", "slug": "automation-tenant"},
+			wantStatus:     http.StatusForbidden,
+			wantErrContain: "API tokens cannot create tenants",
+		},
 	}
 
 	for _, tt := range tests {

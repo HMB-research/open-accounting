@@ -1674,7 +1674,7 @@ Create a leave record:
 }
 ```
 
-If the absence type has `requires_document=true`, approving a leave record requires at least one approved `supporting_document` or `tax_support` document attached to the `leave_record` entity. Missing or pending evidence returns `409 Conflict`.
+If the absence type has `requires_document=true`, approving a leave record requires at least one approved `supporting_document` or `tax_support` document attached to the `leave_record` entity. Missing or pending evidence returns `409 Conflict` with `evidence_policy_results` plus flattened upload/review `remediation_actions`, including the runnable `oa documents upload --entity-type leave_record --entity-id <record-id> --document-type supporting_document --file <file>` follow-up.
 
 Reject a leave record:
 
