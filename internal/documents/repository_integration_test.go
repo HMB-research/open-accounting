@@ -16,6 +16,7 @@ import (
 func TestDocumentEntityConstraintAllowsWorkflowRecords(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "workflow-documents@example.com")
 
 	table, err := database.QualifiedTable(tenant.SchemaName, "documents")
 	if err != nil {
@@ -43,7 +44,7 @@ func TestDocumentEntityConstraintAllowsWorkflowRecords(t *testing.T) {
 			"application/pdf",
 			int64(12),
 			"test/"+entityType+"/"+uuid.New().String(),
-			uuid.New().String(),
+			userID,
 		)
 		if err != nil {
 			t.Fatalf("expected %s documents to satisfy entity type check: %v", entityType, err)
@@ -179,6 +180,34 @@ func TestRepositoryLifecycle(t *testing.T) {
 	}
 	if len(expiredDocs) != 1 || expiredDocs[0].ID != rejectedDoc.ID {
 		t.Fatalf("expected only expired retention document, got %#v", expiredDocs)
+	}
+
+	replacementDoc := repositoryTestDocument(tenant.ID, entityID, userID, "close-pack-v2.pdf", ReviewStatusApproved, baseTime.Add(5*time.Minute), nil)
+	if err := repo.CreateDocument(ctx, tenant.SchemaName, replacementDoc); err != nil {
+		t.Fatalf("CreateDocument replacement failed: %v", err)
+	}
+	if err := repo.UpdateDocumentLifecycle(ctx, tenant.SchemaName, tenant.ID, approvedDoc.ID, LifecycleStatusSuperseded, "Corrected close pack", userID, baseTime.Add(6*time.Minute), &replacementDoc.ID); err != nil {
+		t.Fatalf("UpdateDocumentLifecycle superseded failed: %v", err)
+	}
+	hasDependents, err := repo.DocumentHasSupersededDependents(ctx, tenant.SchemaName, tenant.ID, replacementDoc.ID)
+	if err != nil {
+		t.Fatalf("DocumentHasSupersededDependents failed: %v", err)
+	}
+	if !hasDependents {
+		t.Fatalf("expected replacement document %s to have superseded dependents", replacementDoc.ID)
+	}
+	if err := repo.DeleteDocument(ctx, tenant.SchemaName, tenant.ID, replacementDoc.ID); err == nil {
+		t.Fatalf("expected database FK to block deleting replacement evidence")
+	}
+	missingReplacementID := uuid.NewString()
+	if err := repo.UpdateDocumentLifecycle(ctx, tenant.SchemaName, tenant.ID, rejectedDoc.ID, LifecycleStatusSuperseded, "Missing replacement should fail", userID, baseTime.Add(7*time.Minute), &missingReplacementID); err == nil {
+		t.Fatalf("expected database FK to block missing replacement evidence link")
+	}
+	if err := repo.UpdateDocumentLifecycle(ctx, tenant.SchemaName, tenant.ID, rejectedDoc.ID, LifecycleStatusArchived, "Unknown actor should fail", uuid.NewString(), baseTime.Add(8*time.Minute), nil); err == nil {
+		t.Fatalf("expected database FK to block unknown lifecycle actor")
+	}
+	if err := repo.UpdateDocumentLegalHold(ctx, tenant.SchemaName, tenant.ID, rejectedDoc.ID, true, "Unknown actor should fail", uuid.NewString(), baseTime.Add(9*time.Minute)); err == nil {
+		t.Fatalf("expected database FK to block unknown legal-hold actor")
 	}
 
 	if err := repo.DeleteDocument(ctx, tenant.SchemaName, tenant.ID, pendingDoc.ID); err != nil {

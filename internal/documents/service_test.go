@@ -174,6 +174,18 @@ func (m *mockRepository) GetDocumentByID(ctx context.Context, schemaName, tenant
 	return doc, nil
 }
 
+func (m *mockRepository) DocumentHasSupersededDependents(ctx context.Context, schemaName, tenantID, documentID string) (bool, error) {
+	for _, doc := range m.docs {
+		if doc.TenantID != tenantID || doc.SupersededBy == nil {
+			continue
+		}
+		if *doc.SupersededBy == documentID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (m *mockRepository) UpdateDocumentRetention(ctx context.Context, schemaName, tenantID, documentID string, retentionUntil *time.Time) error {
 	if m.updateRetentionErr != nil {
 		return m.updateRetentionErr
@@ -768,6 +780,53 @@ func TestService_DocumentLegalHoldAuditAndGuards(t *testing.T) {
 	}
 	if released.LegalHold || released.LegalHoldNote != "Supplier dispute resolved" || released.LegalHoldBy == nil || *released.LegalHoldBy != "legal-2" {
 		t.Fatalf("expected released hold audit metadata: %#v", released)
+	}
+}
+
+func TestService_DeleteDocumentBlocksReplacementEvidenceLinksBeforeStorageDelete(t *testing.T) {
+	t.Parallel()
+
+	store := &mockStore{}
+	repo := newMockRepository()
+	svc := NewService(repo, store)
+	replacementID := "doc-replacement"
+	repo.docs["doc-superseded"] = &Document{
+		ID:              "doc-superseded",
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "old-receipt.pdf",
+		StorageKey:      "tenant-1/doc-superseded.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusSuperseded,
+		SupersededBy:    &replacementID,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+	repo.docs[replacementID] = &Document{
+		ID:              replacementID,
+		TenantID:        "tenant-1",
+		EntityType:      EntityTypePayment,
+		EntityID:        "pay-1",
+		DocumentType:    DocumentTypeReceipt,
+		FileName:        "receipt-v2.pdf",
+		StorageKey:      "tenant-1/doc-replacement.pdf",
+		ReviewStatus:    ReviewStatusApproved,
+		LifecycleStatus: LifecycleStatusActive,
+		UploadedBy:      "user-1",
+		CreatedAt:       time.Now().UTC(),
+	}
+
+	err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", replacementID)
+	if err == nil || !strings.Contains(err.Error(), "linked as replacement evidence") {
+		t.Fatalf("expected replacement-link delete guard, got %v", err)
+	}
+	if len(store.deleted) != 0 {
+		t.Fatalf("delete should not touch storage when replacement link guard fails: %#v", store.deleted)
+	}
+	if repo.docs[replacementID] == nil {
+		t.Fatalf("replacement document should remain after guarded delete")
 	}
 }
 
