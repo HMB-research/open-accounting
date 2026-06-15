@@ -40,6 +40,15 @@ type kmdHistoryImportGroup struct {
 	records        []*kmdHistoryImportRecord
 }
 
+type kmdHistoryVATSupport struct {
+	outputSupport    decimal.Decimal
+	outputSupportSet bool
+	inputSupport     decimal.Decimal
+	inputSupportSet  bool
+	outputTotalRow   *decimal.Decimal
+	inputTotalRow    *decimal.Decimal
+}
+
 var kmdHistoryImportHeaderAliases = map[string]string{
 	"year":               "year",
 	"period_year":        "year",
@@ -147,6 +156,10 @@ func (s *Service) ImportKMDHistoryCSV(
 	for _, key := range groupKeys {
 		group := groups[key]
 		if len(group.records) == 0 {
+			continue
+		}
+		if message := validateKMDHistoryVATReconciliation(group); message != "" {
+			appendKMDHistoryGroupError(result, group, message)
 			continue
 		}
 
@@ -390,21 +403,22 @@ func buildKMDHistoryDeclaration(tenantID string, group *kmdHistoryImportGroup) *
 	}
 
 	rows := make([]KMDRow, 0, len(rowMap))
-	totalOutput := decimal.Zero
-	totalInput := decimal.Zero
+	vatSupport := kmdHistoryGroupVATSupport(group.records)
+	totalOutput := vatSupport.outputSupport
+	totalInput := vatSupport.inputSupport
 	for _, row := range rowMap {
 		rows = append(rows, *row)
-		switch kmdHistoryTotalClass(row.Code) {
-		case "output":
-			totalOutput = totalOutput.Add(row.TaxAmount)
-		case "input":
-			totalInput = totalInput.Add(row.TaxAmount)
-		}
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		return kmdHistoryRowSortKey(rows[i].Code) < kmdHistoryRowSortKey(rows[j].Code)
 	})
 
+	if vatSupport.outputTotalRow != nil {
+		totalOutput = *vatSupport.outputTotalRow
+	}
+	if vatSupport.inputTotalRow != nil {
+		totalInput = *vatSupport.inputTotalRow
+	}
 	if group.totalOutputVAT != nil {
 		totalOutput = *group.totalOutputVAT
 	}
@@ -425,6 +439,89 @@ func buildKMDHistoryDeclaration(tenantID string, group *kmdHistoryImportGroup) *
 		SubmittedAt:    group.submittedAt,
 		CreatedAt:      now,
 		UpdatedAt:      now,
+	}
+}
+
+func validateKMDHistoryVATReconciliation(group *kmdHistoryImportGroup) string {
+	vatSupport := kmdHistoryGroupVATSupport(group.records)
+	period := kmdHistoryGroupKey(group.year, group.month)
+	if vatSupport.outputSupportSet {
+		if vatSupport.outputTotalRow != nil && !vatSupport.outputTotalRow.Equal(vatSupport.outputSupport) {
+			return fmt.Sprintf(
+				"KMD row 8 tax_amount %s does not match supporting KMD output VAT rows for %s: supporting total %s",
+				vatSupport.outputTotalRow.String(),
+				period,
+				vatSupport.outputSupport.String(),
+			)
+		}
+		if group.totalOutputVAT != nil && !group.totalOutputVAT.Equal(vatSupport.outputSupport) {
+			return fmt.Sprintf(
+				"total_output_vat %s does not match supporting KMD output VAT rows for %s: supporting total %s",
+				group.totalOutputVAT.String(),
+				period,
+				vatSupport.outputSupport.String(),
+			)
+		}
+	} else if group.totalOutputVAT != nil && vatSupport.outputTotalRow != nil && !group.totalOutputVAT.Equal(*vatSupport.outputTotalRow) {
+		return fmt.Sprintf(
+			"total_output_vat %s does not match KMD row 8 tax_amount for %s: row total %s",
+			group.totalOutputVAT.String(),
+			period,
+			vatSupport.outputTotalRow.String(),
+		)
+	}
+	if vatSupport.inputSupportSet {
+		if vatSupport.inputTotalRow != nil && !vatSupport.inputTotalRow.Equal(vatSupport.inputSupport) {
+			return fmt.Sprintf(
+				"KMD row 9 tax_amount %s does not match supporting KMD input VAT rows for %s: supporting total %s",
+				vatSupport.inputTotalRow.String(),
+				period,
+				vatSupport.inputSupport.String(),
+			)
+		}
+		if group.totalInputVAT != nil && !group.totalInputVAT.Equal(vatSupport.inputSupport) {
+			return fmt.Sprintf(
+				"total_input_vat %s does not match supporting KMD input VAT rows for %s: supporting total %s",
+				group.totalInputVAT.String(),
+				period,
+				vatSupport.inputSupport.String(),
+			)
+		}
+	} else if group.totalInputVAT != nil && vatSupport.inputTotalRow != nil && !group.totalInputVAT.Equal(*vatSupport.inputTotalRow) {
+		return fmt.Sprintf(
+			"total_input_vat %s does not match KMD row 9 tax_amount for %s: row total %s",
+			group.totalInputVAT.String(),
+			period,
+			vatSupport.inputTotalRow.String(),
+		)
+	}
+	return ""
+}
+
+func kmdHistoryGroupVATSupport(records []*kmdHistoryImportRecord) kmdHistoryVATSupport {
+	var support kmdHistoryVATSupport
+	for _, record := range records {
+		switch kmdHistoryVATSupportClass(record.row.Code) {
+		case "output":
+			support.outputSupport = support.outputSupport.Add(record.row.TaxAmount)
+			support.outputSupportSet = true
+		case "input":
+			support.inputSupport = support.inputSupport.Add(record.row.TaxAmount)
+			support.inputSupportSet = true
+		case "output_total":
+			total := record.row.TaxAmount
+			support.outputTotalRow = &total
+		case "input_total":
+			total := record.row.TaxAmount
+			support.inputTotalRow = &total
+		}
+	}
+	return support
+}
+
+func appendKMDHistoryGroupError(result *ImportKMDHistoryResult, group *kmdHistoryImportGroup, message string) {
+	for _, record := range group.records {
+		appendKMDHistoryRowError(result, kmdHistoryImportRow{rowNumber: record.rowNumber}, record, message)
 	}
 }
 
@@ -562,12 +659,16 @@ func kmdHistoryGroupKey(year, month int) string {
 	return fmt.Sprintf("%04d-%02d", year, month)
 }
 
-func kmdHistoryTotalClass(code string) string {
+func kmdHistoryVATSupportClass(code string) string {
 	switch code {
-	case KMDRow1, KMDRow2, KMDRow21, KMDRow3, KMDRow31, KMDRow8:
+	case KMDRow1, KMDRow2, KMDRow21, KMDRow3, KMDRow31:
 		return "output"
-	case KMDRow4, KMDRow5, KMDRow6, KMDRow7, KMDRow9:
+	case KMDRow4, KMDRow5, KMDRow6, KMDRow7:
 		return "input"
+	case KMDRow8:
+		return "output_total"
+	case KMDRow9:
+		return "input_total"
 	default:
 		return ""
 	}

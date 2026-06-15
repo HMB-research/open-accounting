@@ -2328,7 +2328,7 @@ func TestValidateBundleReportsKMDHistoryRowValueIssues(t *testing.T) {
 				"2026,12,ACCEPTED,2026-01-20,1,100,22,22,nope\n" +
 				"2026,4,ACCEPTED,2026-01-20,1,100,22,22,0\n" +
 				"2026,4,SUBMITTED,2026-01-21,4,50,11,23,1\n" +
-				"2026,3,filed,31.12.2026,row_4,\"1 000,50\",\"220,11\",\"220,11\",0\n",
+				"2026,3,filed,31.12.2026,row_4,\"1 000,50\",\"220,11\",\"220,11\",\"220,11\"\n",
 		},
 	}})
 
@@ -2359,8 +2359,8 @@ func TestValidateBundleAcceptsKMDHistoryOptionalGroupValuesAfterBlankFirstRow(t 
 			FileName: "kmd-history.csv",
 			CSVContent: "year,month,status,submitted_at,row_code,tax_base,tax_amount,total_output_vat,total_input_vat\n" +
 				"2026,5,ACCEPTED,,1,100,22,,\n" +
-				"2026,5,ACCEPTED,2026-01-20,2,50,11,22,5\n" +
-				"2026,5,ACCEPTED,2026-01-20,3,25,5.5,22,5\n",
+				"2026,5,ACCEPTED,2026-01-20,2,50,11,38.5,5\n" +
+				"2026,5,ACCEPTED,2026-01-20,3,25,5.5,38.5,5\n",
 		},
 	}})
 
@@ -2369,6 +2369,24 @@ func TestValidateBundleAcceptsKMDHistoryOptionalGroupValuesAfterBlankFirstRow(t 
 	assert.True(t, report.Summary.Ready)
 	assert.Equal(t, 0, report.Summary.ErrorCount)
 	assert.Empty(t, report.Issues)
+}
+
+func TestValidateBundleReportsKMDHistoryVATReconciliationIssues(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindKMDHistory,
+			FileName: "kmd-history.csv",
+			CSVContent: "year,month,status,submitted_at,row_code,tax_base,tax_amount,total_output_vat,total_input_vat\n" +
+				"2026,5,ACCEPTED,2026-01-20,1,100,22,30,5\n" +
+				"2026,5,ACCEPTED,2026-01-20,2,50,11,30,5\n" +
+				"2026,5,ACCEPTED,2026-01-20,4,25,5,30,5\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assertValidationIssue(t, report, KindKMDHistory, "total_output_vat", "does not match supporting KMD output VAT rows")
 }
 
 func TestValidateBundleReportsHistoryCompositeDuplicateIssues(t *testing.T) {

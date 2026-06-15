@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/payroll"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -144,6 +145,18 @@ func (f *fakeExpenseContactLister) List(_ context.Context, _, _ string, _ *conta
 	return f.contacts, nil
 }
 
+type fakeExpenseEmployeeLister struct {
+	employees []payroll.Employee
+	err       error
+}
+
+func (f *fakeExpenseEmployeeLister) ListEmployees(_ context.Context, _, _ string, _ bool) ([]payroll.Employee, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.employees, nil
+}
+
 func TestServiceImportExpensesCSVReportsInvalidUUIDReferences(t *testing.T) {
 	expenseAccountID := "99999999-9999-4999-8999-999999999999"
 	paymentAccountID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -169,6 +182,34 @@ func TestServiceImportExpensesCSVReportsInvalidUUIDReferences(t *testing.T) {
 	assert.Contains(t, result.Errors[1].Message, "contact_id must be a valid UUID")
 	assert.Contains(t, result.Errors[2].Message, "expense_account_id must be a valid UUID")
 	assert.Contains(t, result.Errors[3].Message, "payment_account_id must be a valid UUID")
+}
+
+func TestServiceImportExpensesCSVResolvesEmployeeIDs(t *testing.T) {
+	employeeID := "11111111-1111-4111-8111-111111111111"
+	unknownEmployeeID := "22222222-2222-4222-8222-222222222222"
+	expenseAccountID := "99999999-9999-4999-8999-999999999999"
+	paymentAccountID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	repo := newMemoryRepository()
+	service := NewServiceWithRepository(repo, newFakeAccountingPoster(), &fakeEvidenceEvaluator{compliant: true})
+	service.now = fixedExpenseNow
+	service.employees = &fakeExpenseEmployeeLister{employees: []payroll.Employee{{ID: employeeID}}}
+
+	result, err := service.ImportExpensesCSV(context.Background(), "tenant_acme", "tenant-1", &ImportExpensesRequest{
+		UserID: "user-1",
+		CSVContent: "expense_number,expense_date,merchant,employee_id,expense_account_id,payment_account_id,amount\n" +
+			"EXP-EMPLOYEE,2026-05-31,Employee," + employeeID + "," + expenseAccountID + "," + paymentAccountID + ",10\n" +
+			"EXP-UNKNOWN,2026-05-31,Unknown," + unknownEmployeeID + "," + expenseAccountID + "," + paymentAccountID + ",10\n",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.RowsProcessed)
+	assert.Equal(t, 1, result.ExpensesCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, `employee_id "`+unknownEmployeeID+`" was not found in employees`)
+	expense := repo.expensesByNumber(t, "EXP-EMPLOYEE")
+	require.NotNil(t, expense.EmployeeID)
+	assert.Equal(t, employeeID, *expense.EmployeeID)
 }
 
 func (r *memoryRepository) expensesByNumber(t *testing.T, expenseNumber string) *Expense {

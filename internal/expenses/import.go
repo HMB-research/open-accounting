@@ -93,11 +93,15 @@ func (s *Service) ImportExpensesCSV(ctx context.Context, schemaName, tenantID st
 	if err != nil {
 		return nil, err
 	}
+	employeeIDs, err := s.expenseImportEmployeeIDs(ctx, schemaName, tenantID, rows)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		expense, err := s.buildExpenseFromImportRow(ctx, schemaName, tenantID, userID, row, req.LockDate, usedNumbers, accountIDsByCode, contactLookup)
+		expense, err := s.buildExpenseFromImportRow(ctx, schemaName, tenantID, userID, row, req.LockDate, usedNumbers, accountIDsByCode, contactLookup, employeeIDs)
 		if err != nil {
 			appendExpenseImportRowError(result, row, err)
 			continue
@@ -125,6 +129,7 @@ func (s *Service) buildExpenseFromImportRow(
 	usedNumbers map[string]bool,
 	accountIDsByCode map[string]string,
 	contactLookup contactrefs.ContactLookup,
+	employeeIDs map[string]bool,
 ) (*Expense, error) {
 	expenseDate, err := parseExpenseImportDate(row.values["expense_date"], "expense_date")
 	if err != nil {
@@ -146,7 +151,7 @@ func (s *Service) buildExpenseFromImportRow(
 	if err != nil {
 		return nil, err
 	}
-	employeeID, err := parseOptionalExpenseImportUUID("employee_id", row.values["employee_id"])
+	employeeID, err := resolveOptionalExpenseImportEmployeeID(row.values["employee_id"], employeeIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -300,6 +305,39 @@ func (s *Service) expenseImportContactLookup(ctx context.Context, schemaName, te
 	return contactrefs.NewContactLookup(contacts), nil
 }
 
+func (s *Service) expenseImportEmployeeIDs(ctx context.Context, schemaName, tenantID string, rows []expenseImportRow) (map[string]bool, error) {
+	usesEmployeeIDs := false
+	for _, row := range rows {
+		if strings.TrimSpace(row.values["employee_id"]) != "" {
+			usesEmployeeIDs = true
+			break
+		}
+	}
+	if !usesEmployeeIDs {
+		return nil, nil
+	}
+	if s.employees == nil {
+		return nil, nil
+	}
+
+	employees, err := s.employees.ListEmployees(ctx, schemaName, tenantID, false)
+	if err != nil {
+		return nil, fmt.Errorf("list employees for expense import: %w", err)
+	}
+	employeeIDs := make(map[string]bool, len(employees))
+	for _, employee := range employees {
+		employeeID := strings.TrimSpace(employee.ID)
+		if employeeID == "" {
+			continue
+		}
+		if parsedID, err := uuid.Parse(employeeID); err == nil {
+			employeeID = parsedID.String()
+		}
+		employeeIDs[employeeID] = true
+	}
+	return employeeIDs, nil
+}
+
 func resolveOptionalExpenseImportContactID(row expenseImportRow, contactLookup contactrefs.ContactLookup) (*string, error) {
 	return contactLookup.ResolveID(row.values["contact_id"], expenseImportContactReferences(row)...)
 }
@@ -378,6 +416,17 @@ func parseOptionalExpenseImportUUID(field, value string) (*string, error) {
 		return nil, err
 	}
 	return &parsedID, nil
+}
+
+func resolveOptionalExpenseImportEmployeeID(value string, employeeIDs map[string]bool) (*string, error) {
+	employeeID, err := parseOptionalExpenseImportUUID("employee_id", value)
+	if err != nil || employeeID == nil {
+		return employeeID, err
+	}
+	if employeeIDs != nil && !employeeIDs[*employeeID] {
+		return nil, fmt.Errorf("employee_id %q was not found in employees", *employeeID)
+	}
+	return employeeID, nil
 }
 
 func parseExpenseImportUUID(field, value string) (string, error) {

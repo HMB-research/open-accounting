@@ -69,6 +69,52 @@ func TestImportKMDHistoryCSV_AggregatesDuplicateRowCodesAndUsesTotals(t *testing
 	assert.True(t, declaration.Rows[0].TaxAmount.Equal(decimal.RequireFromString("30.00")))
 }
 
+func TestImportKMDHistoryCSV_RejectsVATReconciliationMismatch(t *testing.T) {
+	tests := []struct {
+		name         string
+		csvContent   string
+		errorSnippet string
+	}{
+		{
+			name: "declared output total mismatch",
+			csvContent: `year,month,row_code,tax_base,tax_amount,total_output_vat,total_input_vat
+2024,11,1,100.00,22.00,30.00,0.00
+2024,11,2,50.00,11.00,30.00,0.00
+`,
+			errorSnippet: "total_output_vat 30 does not match supporting KMD output VAT rows",
+		},
+		{
+			name: "row 8 output total mismatch",
+			csvContent: `year,month,row_code,tax_base,tax_amount
+2024,11,1,100.00,22.00
+2024,11,2,50.00,11.00
+2024,11,8,0.00,30.00
+`,
+			errorSnippet: "KMD row 8 tax_amount 30 does not match supporting KMD output VAT rows",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &MockRepository{}
+			svc := NewServiceWithRepository(repo)
+
+			result, err := svc.ImportKMDHistoryCSV(context.Background(), "tenant_schema", "tenant-1", &ImportKMDHistoryRequest{
+				CSVContent: tt.csvContent,
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Zero(t, result.DeclarationsCreated)
+			assert.Zero(t, result.RowsImported)
+			assert.NotZero(t, result.RowsSkipped)
+			require.NotEmpty(t, result.Errors)
+			assert.Contains(t, result.Errors[0].Message, tt.errorSnippet)
+			assert.Empty(t, repo.savedDeclarations)
+		})
+	}
+}
+
 func TestImportKMDHistoryCSV_SkipsInvalidAndExistingRows(t *testing.T) {
 	repo := &MockRepository{
 		existingDeclarations: map[string]*KMDDeclaration{
