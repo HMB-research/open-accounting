@@ -633,16 +633,18 @@ func (a *cliApp) runOpsBackup(ctx context.Context, args []string) error {
 		fs.Var(&backups, "backup", "Exact backup file to sync; repeatable")
 		s3URI := fs.String("s3-uri", "", "Destination S3 URI")
 		rcloneRemote := fs.String("rclone-remote", "", "Destination rclone remote path")
+		preflight := fs.Bool("preflight", false, "Validate destination/auth configuration without scanning backups or calling providers")
 		dryRun := fs.Bool("dry-run", false, "Print planned uploads without calling aws or rclone")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 
-		scriptArgs := make([]string, 0, 10+len(backups)*2)
+		scriptArgs := make([]string, 0, 12+len(backups)*2)
 		scriptArgs = appendStringFlag(scriptArgs, "backup-dir", *backupDir)
 		scriptArgs = appendRepeatableStringFlag(scriptArgs, "backup", backups)
 		scriptArgs = appendStringFlag(scriptArgs, "s3-uri", *s3URI)
 		scriptArgs = appendStringFlag(scriptArgs, "rclone-remote", *rcloneRemote)
+		scriptArgs = appendBoolFlag(scriptArgs, "preflight", *preflight)
 		scriptArgs = appendBoolFlag(scriptArgs, "dry-run", *dryRun)
 		return a.runOperatorScript(ctx, "db-backup-offsite-sync.sh", scriptArgs)
 
@@ -655,18 +657,20 @@ func (a *cliApp) runOpsBackup(ctx context.Context, args []string) error {
 		statusFile := fs.String("status-file", "", "Prometheus textfile metrics output path")
 		allowNonEmpty := fs.Bool("allow-non-empty", false, "Allow restoring into a non-empty drill database")
 		skipChecksum := fs.Bool("skip-checksum", false, "Skip checksum verification when FILE.sha256 exists")
+		preflight := fs.Bool("preflight", false, "Validate restore drill configuration without PostgreSQL commands")
 		dryRun := fs.Bool("dry-run", false, "Validate and print the planned restore without pg_restore")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 
-		scriptArgs := make([]string, 0, 12)
+		scriptArgs := make([]string, 0, 14)
 		scriptArgs = appendStringFlag(scriptArgs, "backup", *backup)
 		scriptArgs = appendStringFlag(scriptArgs, "restore-url", *restoreURL)
 		scriptArgs = appendStringFlag(scriptArgs, "source-url", *sourceURL)
 		scriptArgs = appendStringFlag(scriptArgs, "status-file", *statusFile)
 		scriptArgs = appendBoolFlag(scriptArgs, "allow-non-empty", *allowNonEmpty)
 		scriptArgs = appendBoolFlag(scriptArgs, "skip-checksum", *skipChecksum)
+		scriptArgs = appendBoolFlag(scriptArgs, "preflight", *preflight)
 		scriptArgs = appendBoolFlag(scriptArgs, "dry-run", *dryRun)
 		return a.runOperatorScript(ctx, "db-restore-drill.sh", scriptArgs)
 

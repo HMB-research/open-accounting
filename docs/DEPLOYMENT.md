@@ -210,6 +210,22 @@ DATABASE_URL="postgres://user:pass@host:5432/openaccounting?sslmode=require" \
 
 Set `OA_SCRIPT_DIR=/opt/open-accounting/scripts` when the `oa` binary is installed separately from the repository checkout.
 
+The same CLI wrapper exposes offline preflight checks for offsite sync and restore drills without contacting object storage providers or running PostgreSQL restore commands:
+
+```bash
+AWS_PROFILE=open-accounting-backups \
+  oa ops backup offsite-sync \
+    --backup-dir /backups \
+    --s3-uri s3://company-backups/open-accounting/prod \
+    --preflight
+
+oa ops backup restore-drill \
+  --backup /backups/openaccounting_20260528T120000Z.dump \
+  --restore-url "postgres://user:pass@localhost:5432/openaccounting_restore_drill?sslmode=disable" \
+  --source-url "postgres://user:pass@host:5432/openaccounting?sslmode=require" \
+  --preflight
+```
+
 The script writes `openaccounting_<utc>.dump` plus a `.sha256` checksum file. The production Docker Compose file also runs the same pattern daily and keeps generated backups for `BACKUP_RETENTION_DAYS` days, defaulting to 30.
 Run backup and restore commands with PostgreSQL client tools from the same major version as the server, or use the production Compose backup service image.
 

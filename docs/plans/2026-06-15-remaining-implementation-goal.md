@@ -78,8 +78,10 @@ Use these concrete slices before waiting on another full CI cycle:
    API/CLI route coverage, while keeping live rollout proof out of scope.
 
 3. Backup/restore operations proof slice.
-   Subagent slice: identify one locally testable backup/restore or timer
-   preflight gap that does not require real provider credentials.
+   Main-thread slice: add `oa ops backup offsite-sync --preflight` and
+   `oa ops backup restore-drill --preflight` parity with the existing scripts,
+   plus CLI tests and operator docs. This remains offline proof; live provider
+   credentials and host timers stay deployment responsibilities.
 
 4. Plugin runtime hardening slice.
    Subagent slice: identify one locally testable plugin runtime isolation,
