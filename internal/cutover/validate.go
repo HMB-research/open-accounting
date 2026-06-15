@@ -2028,6 +2028,11 @@ type cutoverInvoiceAllocationTarget struct {
 	invoiceCount        int
 }
 
+type cutoverQuoteReferenceTarget struct {
+	display           string
+	contactReferences cutoverContactReferences
+}
+
 type cutoverContactReference struct {
 	display    string
 	normalized string
@@ -2433,6 +2438,7 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 	validateCostAllocationJournalLineTotals(report, files)
 	validateCostAllocationJournalLinePercentages(report, files)
 	validateCostAllocationAmountPercentageConsistency(report, files)
+	validateOrderQuoteConsistency(report, files)
 
 	invoiceTargets := buildCutoverInvoiceAllocationTargets(files, eInvoiceContactMode)
 	validateFixedAssetInvoiceConsistency(report, files, invoiceTargets)
@@ -2527,6 +2533,109 @@ func validateCrossFileConsistency(report *BundleValidationReport, files []parsed
 			}
 		}
 	}
+}
+
+func validateOrderQuoteConsistency(report *BundleValidationReport, files []parsedFile) {
+	quoteTargets := buildCutoverQuoteReferenceTargets(files)
+	if len(quoteTargets) == 0 {
+		return
+	}
+	for _, file := range files {
+		if file.kind != KindOrders {
+			continue
+		}
+		for _, row := range file.rows {
+			quoteID := strings.TrimSpace(row.values["quote_id"])
+			if quoteID == "" {
+				continue
+			}
+			if _, err := uuid.Parse(quoteID); err != nil {
+				continue
+			}
+			target, ok := quoteTargets[normalizedValue(quoteID)]
+			if !ok {
+				continue
+			}
+			hasOrderQuoteContactMismatch(report, file, row, target)
+		}
+	}
+}
+
+func buildCutoverQuoteReferenceTargets(files []parsedFile) map[string]cutoverQuoteReferenceTarget {
+	targets := map[string]cutoverQuoteReferenceTarget{}
+	for _, file := range files {
+		if file.kind != KindQuotes {
+			continue
+		}
+		for _, row := range file.rows {
+			id := strings.TrimSpace(row.values["id"])
+			if id == "" {
+				continue
+			}
+			if _, err := uuid.Parse(id); err != nil {
+				continue
+			}
+			if _, exists := targets[normalizedValue(id)]; exists {
+				continue
+			}
+			targets[normalizedValue(id)] = cutoverQuoteReferenceTarget{
+				display:           cutoverQuoteReferenceDisplay(row),
+				contactReferences: cutoverContactReferencesFromRow(row),
+			}
+		}
+	}
+	return targets
+}
+
+func cutoverQuoteReferenceDisplay(row parsedRow) string {
+	if quoteNumber := strings.TrimSpace(row.values["quote_number"]); quoteNumber != "" {
+		return quoteNumber
+	}
+	return strings.TrimSpace(row.values["id"])
+}
+
+func hasOrderQuoteContactMismatch(
+	report *BundleValidationReport,
+	file parsedFile,
+	row parsedRow,
+	target cutoverQuoteReferenceTarget,
+) bool {
+	if len(target.contactReferences) == 0 {
+		return false
+	}
+	orderReferences := cutoverContactReferencesFromRow(row)
+	if len(orderReferences) == 0 {
+		return false
+	}
+	for _, field := range cutoverContactReferenceFields {
+		orderReference, orderHasField := orderReferences[field]
+		targetReference, targetHasField := target.contactReferences[field]
+		if !orderHasField || !targetHasField {
+			continue
+		}
+		if orderReference.normalized == targetReference.normalized {
+			continue
+		}
+		report.addIssue(ValidationIssue{
+			Severity:   SeverityError,
+			Kind:       KindOrders,
+			FileName:   file.fileName,
+			Row:        row.number,
+			Field:      field,
+			Value:      orderReference.display,
+			TargetKind: KindQuotes,
+			Message: fmt.Sprintf(
+				"order %s %q does not match imported quote %q %s %q",
+				field,
+				orderReference.display,
+				target.display,
+				field,
+				targetReference.display,
+			),
+		})
+		return true
+	}
+	return false
 }
 
 func validateKMDHistoryVATReconciliation(report *BundleValidationReport, files []parsedFile) {

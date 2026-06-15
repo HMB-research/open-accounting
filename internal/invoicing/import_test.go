@@ -225,6 +225,99 @@ func TestService_ImportCSV(t *testing.T) {
 		assert.Contains(t, result.Errors[1].Message, "was not found")
 	})
 
+	t.Run("imports invoice contact by VAT number", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{
+			{
+				ID:               "contact-vat",
+				TenantID:         tenantID,
+				Name:             "VAT Customer",
+				VATNumber:        "EE123456789",
+				ContactType:      contacts.ContactTypeCustomer,
+				CountryCode:      "EE",
+				PaymentTermsDays: 14,
+				IsActive:         true,
+			},
+		}, nil, &ImportInvoicesRequest{
+			CSVContent: "invoice_number,invoice_type,contact_vat_number,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-VAT-001,SALES,EE123456789,2026-02-01,2026-02-15,Implementation work,1,100.00,22\n",
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.RowsProcessed)
+		assert.Equal(t, 1, result.InvoicesCreated)
+		assert.Zero(t, result.RowsSkipped)
+		assert.Empty(t, result.Errors)
+
+		require.Len(t, repo.invoices, 1)
+		for _, invoice := range repo.invoices {
+			assert.Equal(t, "contact-vat", invoice.ContactID)
+		}
+	})
+
+	t.Run("imports invoice contact by vat_number alias", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{
+			{
+				ID:               "contact-vat-alias",
+				TenantID:         tenantID,
+				Name:             "VAT Alias Customer",
+				VATNumber:        "EE987654321",
+				ContactType:      contacts.ContactTypeCustomer,
+				CountryCode:      "EE",
+				PaymentTermsDays: 14,
+				IsActive:         true,
+			},
+		}, nil, &ImportInvoicesRequest{
+			CSVContent: "invoice_number,invoice_type,vat_number,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-VAT-ALIAS-001,SALES,EE987654321,2026-02-01,2026-02-15,Implementation work,1,100.00,22\n",
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.RowsProcessed)
+		assert.Equal(t, 1, result.InvoicesCreated)
+		assert.Zero(t, result.RowsSkipped)
+		assert.Empty(t, result.Errors)
+
+		require.Len(t, repo.invoices, 1)
+		for _, invoice := range repo.invoices {
+			assert.Equal(t, "contact-vat-alias", invoice.ContactID)
+		}
+	})
+
+	t.Run("does not resolve registry code through VAT number", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{
+			{
+				ID:               "contact-vat",
+				TenantID:         tenantID,
+				Name:             "VAT Customer",
+				VATNumber:        "EE123456789",
+				ContactType:      contacts.ContactTypeCustomer,
+				CountryCode:      "EE",
+				PaymentTermsDays: 14,
+				IsActive:         true,
+			},
+		}, nil, &ImportInvoicesRequest{
+			CSVContent: "invoice_number,invoice_type,contact_reg_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-REG-001,SALES,EE123456789,2026-02-01,2026-02-15,Implementation work,1,100.00,22\n",
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.RowsProcessed)
+		assert.Zero(t, result.InvoicesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, `contact_reg_code "EE123456789" was not found`)
+		assert.Empty(t, repo.invoices)
+	})
+
 	t.Run("skips invalid imported invoice id", func(t *testing.T) {
 		repo := NewMockRepository()
 		service := NewServiceWithRepository(repo, nil)
