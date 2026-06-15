@@ -10108,6 +10108,14 @@ paths:
             properties:
               error:
                 type: string
+              evidence_policy_results:
+                items:
+                  $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult'
+                type: array
+              remediation_actions:
+                items:
+                  $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction'
+                type: array
             type: object
       security:
       - BearerAuth: []
@@ -10230,6 +10238,14 @@ paths:
             properties:
               error:
                 type: string
+              evidence_policy_results:
+                items:
+                  $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult'
+                type: array
+              remediation_actions:
+                items:
+                  $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction'
+                type: array
             type: object
       security:
       - BearerAuth: []
@@ -14192,6 +14208,21 @@ paths:
               error:
                 type: string
             type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+              evidence_policy_results:
+                items:
+                  $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult'
+                type: array
+              remediation_actions:
+                items:
+                  $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction'
+                type: array
+            type: object
       security:
       - BearerAuth: []
       summary: Email invoice
@@ -14303,6 +14334,21 @@ paths:
             properties:
               error:
                 type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            properties:
+              error:
+                type: string
+              evidence_policy_results:
+                items:
+                  $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult'
+                type: array
+              remediation_actions:
+                items:
+                  $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction'
+                type: array
             type: object
       security:
       - BearerAuth: []

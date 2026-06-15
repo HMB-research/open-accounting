@@ -441,7 +441,7 @@ open-accounting/
 - [x] TSD/KMD submission and acceptance evidence blockers requiring approved tax/support documents before declarations can be marked submitted or accepted
 - [x] Document evidence policy evaluation through API and CLI
 - [x] Optional approved evidence blockers for quote send and order confirmation
-- [x] Purchase-invoice evidence enforcement on send and email paths
+- [x] Purchase-invoice send/email and fixed-asset activation/disposal evidence enforcement with structured evidence-policy remediation in 409 responses
 - [x] Reconciliation completion blocks bank transactions marked as requiring evidence until approved evidence is attached
 - [x] Backup creation, offsite sync, health-check, restore-drill, offline host preflight, and systemd schedule template scripts for self-hosted operations
 

@@ -1032,7 +1032,7 @@ func TestSendPurchaseInvoiceRequiresApprovedEvidence(t *testing.T) {
 
 	h.SendInvoice(w, req)
 
-	assert.Equal(t, http.StatusConflict, w.Code, "response body: %s", w.Body.String())
+	assertPurchaseInvoiceEvidenceConflict(t, w, "bill-1")
 	assert.Equal(t, invoicing.StatusDraft, invoiceRepo.invoices["bill-1"].Status)
 
 	docRepo.docs["doc-1"] = &documents.Document{
@@ -1070,9 +1070,29 @@ func TestEmailPurchaseInvoiceRequiresApprovedEvidence(t *testing.T) {
 
 	h.EmailInvoice(w, req)
 
-	assert.Equal(t, http.StatusConflict, w.Code, "response body: %s", w.Body.String())
+	assertPurchaseInvoiceEvidenceConflict(t, w, "bill-1")
 	assert.Equal(t, invoicing.StatusDraft, invoiceRepo.invoices["bill-1"].Status)
-	assert.Contains(t, w.Body.String(), "approved purchase-invoice evidence is required")
+}
+
+func assertPurchaseInvoiceEvidenceConflict(t *testing.T, w *httptest.ResponseRecorder, invoiceID string) {
+	t.Helper()
+
+	assert.Equal(t, http.StatusConflict, w.Code, "response body: %s", w.Body.String())
+
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, "approved purchase-invoice evidence is required")
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeInvoice, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, invoiceID, conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
+	assert.Equal(t, "oa documents upload --entity-type invoice --entity-id "+invoiceID+" --document-type receipt --file <file>", conflict.RemediationActions[0].CLICommand)
 }
 
 // =============================================================================

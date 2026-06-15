@@ -62,6 +62,34 @@ Current local invariants:
    These need external partnerships, certification, credentials, or
    infrastructure and should not be assigned as ordinary local PR tasks.
 
+## Current `/goal` Batch
+
+Use these concrete slices before waiting on another full CI cycle:
+
+1. Evidence-policy structured conflicts.
+   Main-thread slice: return `evidence_policy_results` plus flattened
+   `remediation_actions` from purchase-invoice send/email and fixed-asset
+   activation/disposal `409` responses, with handler tests, API docs, status
+   docs, and generated Swagger.
+
+2. Auth hardening proof slice.
+   Subagent slice: clarify which auth guarantees are locally proven by
+   production startup validation, tenant-member/session/API-token controls, and
+   API/CLI route coverage, while keeping live rollout proof out of scope.
+
+3. Backup/restore operations proof slice.
+   Subagent slice: identify one locally testable backup/restore or timer
+   preflight gap that does not require real provider credentials.
+
+4. Plugin runtime hardening slice.
+   Subagent slice: identify one locally testable plugin runtime isolation,
+   supervision, or operator-control hardening gap.
+
+5. Migration/cutover validation slice.
+   Subagent slice: identify one provider-specific mapping or cross-file
+   validation gap that is safe to prove with local cutover validator/importer
+   tests.
+
 ## Subagent Slices
 
 ### Slice 1: Migration/Cutover Backend
