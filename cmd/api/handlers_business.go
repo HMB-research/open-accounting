@@ -2604,7 +2604,7 @@ func (h *Handlers) GetReconciliation(w http.ResponseWriter, r *http.Request) {
 // @Param reconciliationID path string true "Reconciliation ID"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
-// @Failure 409 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/reconciliations/{reconciliationID}/complete [post]
 func (h *Handlers) CompleteReconciliation(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -2612,6 +2612,11 @@ func (h *Handlers) CompleteReconciliation(w http.ResponseWriter, r *http.Request
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
 	if err := h.requireApprovedReconciliationEvidence(r.Context(), schemaName, tenantID, reconciliationID); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		status := http.StatusInternalServerError
 		if errors.Is(err, errApprovedReconciliationEvidenceRequired) {
 			status = http.StatusConflict
@@ -2671,10 +2676,52 @@ func (h *Handlers) requireApprovedReconciliationEvidence(ctx context.Context, sc
 		}
 	}
 	if len(failingIDs) > 0 {
-		return fmt.Errorf("%w before completing reconciliation for bank transactions: %s", errApprovedReconciliationEvidenceRequired, strings.Join(failingIDs, ", "))
+		return &evidencePolicyConflictError{
+			Err:     fmt.Errorf("%w before completing reconciliation for bank transactions: %s", errApprovedReconciliationEvidenceRequired, strings.Join(failingIDs, ", ")),
+			Results: results,
+		}
 	}
 
 	return nil
+}
+
+type evidencePolicyConflictError struct {
+	Err     error
+	Results []documents.EvidencePolicyResult
+}
+
+func (e *evidencePolicyConflictError) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *evidencePolicyConflictError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func respondEvidencePolicyConflict(w http.ResponseWriter, message string, results []documents.EvidencePolicyResult) {
+	respondJSON(w, http.StatusConflict, struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results,omitempty"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions,omitempty"`
+	}{
+		Error:                 message,
+		EvidencePolicyResults: results,
+		RemediationActions:    flattenEvidencePolicyRemediationActions(results),
+	})
+}
+
+func flattenEvidencePolicyRemediationActions(results []documents.EvidencePolicyResult) []documents.DocumentRemediationAction {
+	actions := make([]documents.DocumentRemediationAction, 0)
+	for _, result := range results {
+		actions = append(actions, result.RemediationActions...)
+	}
+	return actions
 }
 
 // AutoMatchTransactions attempts to auto-match unmatched transactions

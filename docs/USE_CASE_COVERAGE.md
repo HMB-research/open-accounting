@@ -59,6 +59,7 @@ Status values:
 - The follow-up commercial-document contact identity migration stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up commercial-document VAT contact import stage was locally revalidated with focused quote, order, and recurring-invoice importer tests.
 - The follow-up invoice VAT-contact import and order quote-contact consistency stage was locally revalidated with focused invoice importer and cutover validator tests, docs status tests, lint, and the CLI coverage gate.
+- The follow-up reconciliation evidence remediation and Directo fixed-asset alias batch was locally revalidated with focused banking API tests, cutover provider-alias tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation amount decimal validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up e-invoice payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
@@ -196,6 +197,10 @@ Provider-preset migration execution now rewrites CSV headers with the same
 provider-specific file-kind aliases used by preflight before CLI and server-side
 imports run, including inventory and fixed-asset aliases that conflict across
 Merit, SmartAccounts, and Directo exports.
+Historical migration coverage now includes Directo fixed-asset provider alias
+canonicalization for `põhivara_nr`, `pohivara_nr`, `põhivaranr`, and
+`pohivaranr` as executable `asset_number` headers in validation and
+provider-preset CSV execution.
 Merit and Directo commercial-document provider presets now canonicalize common
 Estonian contact registry number, VAT number, and email aliases before the
 same-bundle contact preflight runs.
@@ -315,6 +320,9 @@ mark KMD imports as dependent on invoice, e-invoice, and journal VAT history.
 Accountant workspace evidence-policy violation rows with supported entity and
 document metadata now expose the same evidence upload action as missing-evidence
 rows.
+Reconciliation evidence blocking now returns document evidence-policy results
+plus flattened upload/review remediation actions in the 409 response so API
+clients and the CLI can surface the next executable follow-up.
 
 ## Open Goal Work Items
 
