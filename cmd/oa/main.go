@@ -52,6 +52,21 @@ type cliApp struct {
 
 var exitProcess = os.Exit
 
+var documentEntityTypeHelp = "Entity type: " + strings.Join([]string{
+	documents.EntityTypeInvoice,
+	documents.EntityTypeJournalEntry,
+	documents.EntityTypePayment,
+	documents.EntityTypeBankTxn,
+	documents.EntityTypeAsset,
+	documents.EntityTypeExpense,
+	documents.EntityTypeQuote,
+	documents.EntityTypeOrder,
+	documents.EntityTypeYearEndClose,
+	documents.EntityTypeLeaveRecord,
+	documents.EntityTypeTSD,
+	documents.EntityTypeKMD,
+}, ", ")
+
 func main() {
 	app := &cliApp{
 		stdout: os.Stdout,
@@ -12224,7 +12239,7 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 	case "list":
 		fs := flag.NewFlagSet("documents list", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
-		entityType := fs.String("entity-type", "", "Entity type: invoice, journal_entry, payment, bank_transaction, asset, expense, quote, order, year_end_close, leave_record")
+		entityType := fs.String("entity-type", "", documentEntityTypeHelp)
 		entityID := fs.String("entity-id", "", "Entity id")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -12247,7 +12262,7 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 	case "review-summary":
 		fs := flag.NewFlagSet("documents review-summary", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
-		entityType := fs.String("entity-type", "", "Entity type: invoice, journal_entry, payment, bank_transaction, asset, expense, quote, order, year_end_close, leave_record")
+		entityType := fs.String("entity-type", "", documentEntityTypeHelp)
 		entityIDs := stringListFlags{}
 		fs.Var(&entityIDs, "entity-id", "Entity id; repeatable")
 		asJSON := fs.Bool("json", false, "Output JSON")
@@ -12307,7 +12322,7 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 	case "evidence-policy":
 		fs := flag.NewFlagSet("documents evidence-policy", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
-		entityType := fs.String("entity-type", "", "Entity type: invoice, journal_entry, payment, bank_transaction, asset, expense, quote, order, year_end_close, leave_record")
+		entityType := fs.String("entity-type", "", documentEntityTypeHelp)
 		entityIDs := stringListFlags{}
 		documentTypes := stringListFlags{}
 		fs.Var(&entityIDs, "entity-id", "Entity id; repeatable")
@@ -12514,7 +12529,7 @@ func (a *cliApp) runDocuments(ctx context.Context, args []string) error {
 	case "upload":
 		fs := flag.NewFlagSet("documents upload", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
-		entityType := fs.String("entity-type", "", "Entity type: invoice, journal_entry, payment, bank_transaction, asset, expense, quote, order, year_end_close, leave_record")
+		entityType := fs.String("entity-type", "", documentEntityTypeHelp)
 		entityID := fs.String("entity-id", "", "Entity id")
 		filePath := fs.String("file", "", "File path ('-' for stdin)")
 		documentType := fs.String("document-type", documents.DocumentTypeSupportingDocument, "Document type")

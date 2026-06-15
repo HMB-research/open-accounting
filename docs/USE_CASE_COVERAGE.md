@@ -60,6 +60,7 @@ Status values:
 - The follow-up commercial-document VAT contact import stage was locally revalidated with focused quote, order, and recurring-invoice importer tests.
 - The follow-up invoice VAT-contact import and order quote-contact consistency stage was locally revalidated with focused invoice importer and cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up reconciliation evidence remediation and Directo fixed-asset alias batch was locally revalidated with focused banking API tests, cutover provider-alias tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
+- The follow-up journal/payment evidence, document CLI entity help, and fixed-asset invoice-number batch was locally revalidated with focused API/document/CLI/cutover tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation amount decimal validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up e-invoice payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
@@ -211,6 +212,17 @@ Fixed-asset source-invoice supplier identity consistency now covers
 `supplier_id`, `supplier_reg_code`, `supplier_vat_number`, `supplier_email`,
 and `supplier_name` mismatches against the corresponding same-field imported
 invoice contact values.
+Fixed-asset source-invoice preflight now accepts `invoice_number` when
+`invoice_id` is absent, keeps the same purchase/supplier/date/amount checks for
+invoice-number references, and rejects ambiguous invoice numbers with a
+use-`invoice_id` instruction.
+Journal-entry and payment-receipt evidence blocking now returns document
+evidence-policy results plus flattened upload/review remediation actions in the
+409 response so API clients and the CLI can surface the next executable
+follow-up.
+Rejected matching evidence-policy documents now create replacement-upload
+remediation instead of direct approval guidance, and document CLI entity-type
+help lists TSD/KMD declaration attachment targets.
 Product supplier VAT-number preflight now validates `supplier_vat_number` values
 against same-bundle contact VAT numbers before product imports run.
 Payment contact VAT-number preflight now validates `contact_vat_number` values

@@ -219,6 +219,20 @@ func TestPaymentReceiptEvidenceRequirement(t *testing.T) {
 	h.EmailPaymentReceipt(rr, req)
 	assert.Equal(t, http.StatusConflict, rr.Code)
 	assert.Contains(t, rr.Body.String(), "approved payment receipt evidence is required")
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, "approved payment receipt evidence is required")
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypePayment, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, "pay-1", conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
+	assert.Equal(t, "oa documents upload --entity-type payment --entity-id pay-1 --document-type receipt --file <file>", conflict.RemediationActions[0].CLICommand)
 }
 
 func TestListPayments(t *testing.T) {

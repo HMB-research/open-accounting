@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -24226,6 +24227,51 @@ func TestCLIDocumentCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Deleted document doc-2")
 	assert.Equal(t, 2, retentionPatchCount)
+}
+
+func TestCLIDocumentEntityTypeHelpListsSupportedEntities(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:  "https://placeholder.example.com",
+		TenantID: "tenant-1",
+		APIToken: "oa_saved_token",
+	}))
+
+	commands := [][]string{
+		{"documents", "list", "--help"},
+		{"documents", "review-summary", "--help"},
+		{"documents", "evidence-policy", "--help"},
+		{"documents", "upload", "--help"},
+	}
+	expectedEntityTypes := []string{
+		documents.EntityTypeInvoice,
+		documents.EntityTypeJournalEntry,
+		documents.EntityTypePayment,
+		documents.EntityTypeBankTxn,
+		documents.EntityTypeAsset,
+		documents.EntityTypeExpense,
+		documents.EntityTypeQuote,
+		documents.EntityTypeOrder,
+		documents.EntityTypeYearEndClose,
+		documents.EntityTypeLeaveRecord,
+		documents.EntityTypeTSD,
+		documents.EntityTypeKMD,
+	}
+
+	for _, command := range commands {
+		t.Run(strings.Join(command[:2], " "), func(t *testing.T) {
+			app, _, stderr := newTestCLIApp()
+
+			err := app.run(context.Background(), command)
+
+			assert.ErrorIs(t, err, flag.ErrHelp)
+			help := stderr.String()
+			assert.Contains(t, help, "-entity-type")
+			for _, entityType := range expectedEntityTypes {
+				assert.Contains(t, help, entityType)
+			}
+		})
+	}
 }
 
 func TestCLIDocumentLifecycleAndReplacementCommands(t *testing.T) {

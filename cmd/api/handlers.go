@@ -1683,6 +1683,7 @@ func (h *Handlers) CreateJournalEntry(w http.ResponseWriter, r *http.Request) {
 // @Param entryID path string true "Journal Entry ID"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/journal-entries/{entryID}/post [post]
 func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
@@ -1701,6 +1702,11 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.requireApprovedJournalEntryEvidence(r.Context(), schemaName, tenantID, entry); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		status := http.StatusInternalServerError
 		if errors.Is(err, errApprovedJournalEntryEvidenceRequired) {
 			status = http.StatusConflict
@@ -1744,7 +1750,10 @@ func (h *Handlers) requireApprovedJournalEntryEvidence(ctx context.Context, sche
 		return fmt.Errorf("evaluate journal-entry evidence: %w", err)
 	}
 	if len(results) == 0 || !results[0].Compliant {
-		return fmt.Errorf("%w before posting journal entry %s", errApprovedJournalEntryEvidenceRequired, entry.ID)
+		return &evidencePolicyConflictError{
+			Err:     fmt.Errorf("%w before posting journal entry %s", errApprovedJournalEntryEvidenceRequired, entry.ID),
+			Results: results,
+		}
 	}
 
 	return nil

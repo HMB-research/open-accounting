@@ -403,6 +403,20 @@ func TestPostJournalEntryRequiresApprovedEvidence(t *testing.T) {
 
 	require.Equal(t, http.StatusConflict, rr.Code)
 	assert.Contains(t, rr.Body.String(), "approved journal-entry evidence is required")
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, "approved journal-entry evidence is required")
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeJournalEntry, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, entry.ID, conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
+	assert.Equal(t, "oa documents upload --entity-type journal_entry --entity-id je-evidence --document-type supporting_document --file <file>", conflict.RemediationActions[0].CLICommand)
 	assert.Equal(t, accounting.StatusDraft, accountingRepo.journalEntries[entry.ID].Status)
 
 	docRepo.docs["doc-1"] = &documents.Document{

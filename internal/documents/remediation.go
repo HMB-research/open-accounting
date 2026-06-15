@@ -84,7 +84,16 @@ func BuildEvidencePolicyRemediationActions(result *EvidencePolicyResult, docs ..
 		documentType := firstDocumentType(violation.DocumentTypes)
 		base := documentRemediationBase(result.EntityType, result.EntityID, "", documentType, "")
 
-		if violation.RequireApproved && violation.MatchingCount > violation.ApprovedMatchingCount {
+		if doc, ok := firstRejectedMatchingEvidenceDocument(docs, violation); ok {
+			base.Code = "document_review_rejected"
+			base.Severity = "ACTION"
+			base.Message = fmt.Sprintf("Document %s was rejected and needs replacement or correction.", doc.FileName)
+			base.Action = "Upload corrected evidence or approve the existing document after the rejection has been resolved."
+			base.DocumentID = doc.ID
+			base.FileName = doc.FileName
+			base.UIPath = documentRemediationUIPath(result.EntityType, result.EntityID, doc.ID)
+			base.CLICommand = fmt.Sprintf("oa documents upload --entity-type %s --entity-id %s --document-type %s --file <replacement-file>", result.EntityType, result.EntityID, documentType)
+		} else if violation.RequireApproved && violation.MatchingCount > violation.ApprovedMatchingCount {
 			base.Code = "document_evidence_unapproved"
 			base.Severity = "ACTION"
 			base.Message = fmt.Sprintf("%s %s has matching evidence, but not enough approved documents.", result.EntityType, result.EntityID)
@@ -118,6 +127,18 @@ func BuildEvidencePolicyRemediationActions(result *EvidencePolicyResult, docs ..
 	}
 
 	return actions
+}
+
+func firstRejectedMatchingEvidenceDocument(docs []Document, violation EvidencePolicyRuleResult) (Document, bool) {
+	for _, doc := range docs {
+		if doc.ReviewStatus != ReviewStatusRejected {
+			continue
+		}
+		if evidencePolicyDocumentTypeMatches(violation.DocumentTypes, doc.DocumentType) {
+			return doc, true
+		}
+	}
+	return Document{}, false
 }
 
 func documentRemediationBase(entityType, entityID, documentID, documentType, fileName string) DocumentRemediationAction {
