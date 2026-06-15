@@ -82,11 +82,11 @@ var migrationExecutionOrder = map[FileKind]int{
 	KindPayrollHistory:    160,
 	KindLeaveBalances:     170,
 	KindTSDHistory:        180,
+	KindJournalEntries:    185,
 	KindKMDHistory:        190,
 	KindFixedAssets:       200,
 	KindStockAdjustments:  210,
 	KindBankTransactions:  220,
-	KindJournalEntries:    240,
 	KindCostAllocations:   250,
 }
 
@@ -264,7 +264,8 @@ func migrationExecutionStepSpec(kind FileKind, fileName string, req *PlanMigrati
 		return migrationExecutionSpec{
 			apiPath:    tenantAPIPath("/tax/kmd/import-history"),
 			cliCommand: "oa tax kmd import-history --file " + fileRef,
-			message:    "Import historical KMD declarations after VAT history is validated.",
+			dependsOn:  []FileKind{KindInvoices, KindEInvoices, KindJournalEntries},
+			message:    "Import historical KMD declarations after invoice, e-invoice, and journal VAT history is validated.",
 		}
 	case KindQuotes:
 		return migrationExecutionSpec{

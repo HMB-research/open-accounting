@@ -304,6 +304,12 @@ cd frontend && bun run test:e2e
 For focused stages, run the smallest relevant subset first, then the shared
 gates that protect the changed surface.
 
+KMD history execution plans now order historical journals before KMD history and
+mark KMD imports as dependent on invoice, e-invoice, and journal VAT history.
+Accountant workspace evidence-policy violation rows with supported entity and
+document metadata now expose the same evidence upload action as missing-evidence
+rows.
+
 ## Open Goal Work Items
 
 The following items still prevent the project from honestly claiming fully

@@ -307,7 +307,9 @@
 
 		if (
 			action.source !== 'documents' ||
-			!['document_evidence_missing', 'document_review_rejected'].includes(action.code) ||
+			!['document_evidence_missing', 'document_evidence_policy_violation', 'document_review_rejected'].includes(
+				action.code
+			) ||
 			!action.entityId
 		) {
 			return null;

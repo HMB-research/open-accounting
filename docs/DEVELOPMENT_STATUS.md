@@ -44,6 +44,8 @@ Full local baseline last completed on 2026-06-08. On 2026-06-12, the current bra
 - `go test ./internal/cutover ./cmd/api ./cmd/oa -run 'Test(ListMigrationProviderPresets|CLIMigrationProviderPresets|CLIRouteCoverage)' -count=1`, `cd frontend && bun run test:prepared -- src/tests/components/MigrationWorkbench.test.ts src/tests/lib/api.test.ts`, and `cd frontend && bun run check:prepared` pass focused migration provider preset catalog coverage
 - `cd frontend && bun run test:prepared -- src/tests/components/AccountantReviewPanel.test.ts` and `cd frontend && bun run check:prepared` pass focused accountant workspace coverage for TSD declaration XML export and migration confirmation-ready saved-run handoff
 - `cd frontend && bun run test:prepared -- src/tests/components/AccountantReviewPanel.test.ts` and `cd frontend && bun run check:prepared` pass the focused payroll TSD follow-up/archive assignment execution stage, including payroll paid-run TSD follow-up generation and declared payroll archive XML export
+- `go test ./internal/cutover -run TestBuildMigrationExecutionPlanKMDHistoryDependsOnVATHistory -count=1` passes focused KMD VAT-history execution dependency coverage for invoice, e-invoice, and journal VAT sources
+- `cd frontend && bun run test:prepared -- src/tests/components/AccountantReviewPanel.test.ts` passes focused evidence-policy violation upload assignment coverage
 - `go test ./internal/accounting -run TestService_ImportOpeningBalancesCSV -count=1`, `go test ./internal/cutover -run 'TestValidateBundleAcceptsProviderOpeningBalanceAmountAliases|TestListMigrationProviderPresetsReturnsOperatorCatalog' -count=1`, `go test -timeout=3m ./docs -count=1`, `golangci-lint run`, and `make test-cli-coverage` pass focused provider opening-balance amount alias validation and import coverage
 - `go test ./internal/accounting -run TestService_ImportJournalEntriesCSV -count=1` passes focused provider historical-journal alias import coverage for Merit, SmartAccounts, and Directo-style CSV headers
 - `go test ./internal/accounting -run 'TestCostCenterService_ImportCostCentersCSVImportsProviderAliases|TestService_ImportCostAllocationsCSV' -count=1` passes focused provider cost-center and cost-allocation alias import coverage for Merit, SmartAccounts, and Directo-style CSV headers
@@ -219,6 +221,8 @@ Fixed-asset migration preflight also rejects same-bundle account references wher
 Bank-account migration preflight also rejects same-bundle GL account references where linked cash/ledger accounts are not `ASSET`.
 Recurring-invoice migration preflight also rejects same-bundle line account references where linked revenue accounts are not `REVENUE`.
 Commercial-document imports now resolve quote, order, and recurring-invoice `contact_vat_number`/`vat_number` columns against contact VAT numbers rather than registry codes.
+KMD history execution plans now order historical journals before KMD history and mark KMD imports as dependent on invoice, e-invoice, and journal VAT history.
+Accountant workspace evidence-policy violation rows with supported entity and document metadata now expose the same evidence upload action as missing-evidence rows.
 
 ## What The Project Can Honestly Claim Today
 
