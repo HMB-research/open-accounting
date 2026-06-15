@@ -66,6 +66,19 @@ func newRuntimeHTTPClient(backend *BackendConfig) (*runtimeHTTPClient, error) {
 	}, nil
 }
 
+func (c *runtimeHTTPClient) status() PluginRuntimeStatus {
+	status := PluginRuntimeStatus{
+		Runtime: BackendRuntimeHTTP,
+		State:   RuntimeStateExternal,
+		Health:  RuntimeHealthUnknown,
+		Message: "external HTTP runtime is operator-managed",
+	}
+	if c != nil && c.baseURL != nil {
+		status.BaseURL = c.baseURL.String()
+	}
+	return status
+}
+
 func parseLoopbackRuntimeBaseURL(rawURL string) (*url.URL, error) {
 	trimmed := strings.TrimSpace(rawURL)
 	if trimmed == "" {

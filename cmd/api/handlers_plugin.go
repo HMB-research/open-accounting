@@ -321,6 +321,70 @@ func (h *Handlers) GetPlugin(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, p)
 }
 
+// GetPluginRuntimeStatus returns the backend runtime lifecycle status for a plugin.
+// @Summary Get plugin runtime status
+// @Description Get operator-visible lifecycle, health, crash, and backoff state for a plugin backend runtime
+// @Tags Plugins
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Plugin ID"
+// @Success 200 {object} plugin.PluginRuntimeStatus
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Router /admin/plugins/{id}/runtime [get]
+func (h *Handlers) GetPluginRuntimeStatus(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid plugin ID")
+		return
+	}
+
+	status, err := h.pluginService.GetPluginRuntimeStatus(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, status)
+}
+
+// RestartPluginRuntime manually restarts a supervised package runtime.
+// @Summary Restart plugin runtime
+// @Description Restart a supervised package plugin runtime and return its updated lifecycle status
+// @Tags Plugins
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Plugin ID"
+// @Success 200 {object} plugin.PluginRuntimeStatus
+// @Failure 400 {object} object{error=string}
+// @Failure 404 {object} object{error=string}
+// @Failure 502 {object} object{error=string}
+// @Router /admin/plugins/{id}/runtime/restart [post]
+func (h *Handlers) RestartPluginRuntime(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid plugin ID")
+		return
+	}
+
+	status, err := h.pluginService.RestartPluginRuntime(r.Context(), id)
+	if err != nil {
+		switch {
+		case errors.Is(err, plugin.ErrPluginRuntimeUnavailable):
+			respondError(w, http.StatusBadGateway, err.Error())
+		case errors.Is(err, plugin.ErrPluginRuntimeUnsupported), errors.Is(err, plugin.ErrPluginNotEnabled):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			respondError(w, http.StatusNotFound, err.Error())
+		}
+		return
+	}
+
+	respondJSON(w, http.StatusOK, status)
+}
+
 // GetAllPermissions returns all available plugin permissions
 // @Summary List available permissions
 // @Description Get all available plugin permissions with descriptions

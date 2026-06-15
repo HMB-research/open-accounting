@@ -444,7 +444,7 @@ open-accounting/
 - [ ] Remaining payroll/document/evidence-policy edges and deeper accountant-workspace execution beyond the current assignment queue, direct bank follow-up, reminder actions, pending-document assignment approval, document-retention date setting, evidence/missing-document upload and replacement, unapproved-evidence approval, payroll-run calculation/recalculation, payment-date setting and approval, payroll TSD assignment generation, payroll paid-run TSD follow-up generation, declared payroll archive XML export, TSD declaration XML export and acceptance marking, KMD assignment regeneration/export/acceptance marking, KMD INF/EU VAT OSS report generation, expense submit/approve/post assignment completion, fiscal-year close/carry-forward assignment completion, and migration saved-run handoff, especially remaining document evidence-policy follow-up
 - [ ] Automated document policy enforcement in remaining workflow blockers
 - [ ] Remaining auth hardening beyond the current API/CLI/settings controls for tenant member status, sessions, API tokens, and audit visibility
-- [ ] Broader plugin production hardening beyond the current loopback HTTP runtime, supervised package runtime startup/proxy/shutdown, and safe operator-bundled frontend component registry, especially restart/backoff policy and OS-level sandboxing
+- [ ] Broader plugin production hardening beyond the current loopback HTTP runtime, supervised package runtime startup/proxy/shutdown/status/manual restart, and safe operator-bundled frontend component registry, especially automatic restart policy and OS-level sandboxing
 - [ ] Direct e-invoice operator send/receive, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---

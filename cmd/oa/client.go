@@ -516,6 +516,22 @@ func (c *apiClient) disableAdminPlugin(ctx context.Context, pluginID string) err
 	return c.request(ctx, http.MethodPost, path.Join("/api/v1/admin/plugins", pluginID, "disable"), nil, c.apiToken, nil)
 }
 
+func (c *apiClient) getAdminPluginRuntimeStatus(ctx context.Context, pluginID string) (*plugin.PluginRuntimeStatus, error) {
+	var resp plugin.PluginRuntimeStatus
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/admin/plugins", pluginID, "runtime"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) restartAdminPluginRuntime(ctx context.Context, pluginID string) (*plugin.PluginRuntimeStatus, error) {
+	var resp plugin.PluginRuntimeStatus
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/admin/plugins", pluginID, "runtime", "restart"), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *apiClient) uninstallAdminPlugin(ctx context.Context, pluginID string) error {
 	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/admin/plugins", pluginID), nil, c.apiToken, nil)
 }

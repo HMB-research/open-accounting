@@ -208,9 +208,11 @@ Package runtime process contract:
 - The executable must read `OPEN_ACCOUNTING_RUNTIME_ADDR` and listen on that loopback `host:port`.
 - The executable must return a 2xx response from `OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH` before hooks or routes are considered available.
 - `OPEN_ACCOUNTING_RUNTIME_BASE_URL`, `OPEN_ACCOUNTING_PLUGIN_ID`, and `OPEN_ACCOUNTING_PLUGIN_NAME` are also provided for diagnostics.
+- Operators can inspect lifecycle, health, crash/backoff, restart count, and last output through `GET /api/v1/admin/plugins/:id/runtime` or `oa admin plugins runtime status --id <plugin-id>`.
+- Operators can restart supervised package runtimes through `POST /api/v1/admin/plugins/:id/runtime/restart` or `oa admin plugins runtime restart --id <plugin-id>`.
 - On unload or disable, Open Accounting unregisters hooks, sends an interrupt to the process, and kills it if it does not stop within the shutdown timeout.
 
-Current limitation: package runtimes are supervised for startup, proxying, and shutdown, but there is no restart/backoff manager or operating-system sandbox/resource isolation yet.
+Current limitation: package runtimes are supervised for startup, proxying, shutdown, manual restart, and crash/backoff reporting, but there is no automatic restart loop or operating-system sandbox/resource isolation yet.
 
 ## Permission System
 
@@ -455,7 +457,7 @@ func listExpenses(w http.ResponseWriter, r *http.Request) {
 
 For `runtime: http`, run this process outside Open Accounting and point `backend.base_url` at its loopback address. Open Accounting forwards route requests with tenant and plugin headers and forwards hook payloads to the configured handler paths.
 
-For `runtime: package`, build a self-contained executable inside the plugin repository and declare the containing package directory plus the executable path. Open Accounting launches the executable directly, waits for `OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH`, and forwards requests over loopback. Restart policies and OS-level sandboxing remain outside the current supervisor.
+For `runtime: package`, build a self-contained executable inside the plugin repository and declare the containing package directory plus the executable path. Open Accounting launches the executable directly, waits for `OPEN_ACCOUNTING_RUNTIME_HEALTH_PATH`, forwards requests over loopback, reports lifecycle/crash/backoff state, and supports manual runtime restart. Automatic restart loops and OS-level sandboxing remain outside the current supervisor.
 
 ### Frontend Development
 
@@ -559,6 +561,8 @@ GET    /api/v1/admin/plugins/:id           # Get plugin details
 DELETE /api/v1/admin/plugins/:id           # Uninstall plugin
 POST   /api/v1/admin/plugins/:id/enable    # Enable with permissions
 POST   /api/v1/admin/plugins/:id/disable   # Disable plugin
+GET    /api/v1/admin/plugins/:id/runtime   # Inspect backend runtime status
+POST   /api/v1/admin/plugins/:id/runtime/restart # Restart package runtime
 ```
 
 ### Tenant Endpoints
@@ -614,7 +618,7 @@ Response:
 3. **Permission Review**: Admins must approve each permission
 4. **Risk Warnings**: High-risk permissions highlighted in UI
 5. **Tenant Isolation**: Plugin data scoped to tenant schemas
-6. **Runtime Boundaries**: HTTP runtimes must be loopback-only. Package runtimes must declare safe plugin-relative package and executable paths, expose the assigned loopback health endpoint before use, and are stopped on unload. Restart policies and OS-level sandboxing are not included yet.
+6. **Runtime Boundaries**: HTTP runtimes must be loopback-only. Package runtimes must declare safe plugin-relative package and executable paths, expose the assigned loopback health endpoint before use, report crash/backoff status, and are stopped on unload. OS-level sandboxing remains outside the built-in supervisor.
 
 ## Troubleshooting
 

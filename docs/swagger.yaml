@@ -6088,6 +6088,55 @@ definitions:
       version:
         type: string
     type: object
+  github_com_HMB-research_open-accounting_internal_plugin.PluginRuntimeStatus:
+    properties:
+      backoff_until:
+        type: string
+      base_url:
+        type: string
+      crash_count:
+        type: integer
+      display_name:
+        type: string
+      exit_code:
+        type: integer
+      exited_at:
+        type: string
+      health:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.RuntimeHealthState'
+      hook_count:
+        type: integer
+      last_error:
+        type: string
+      last_exit_error:
+        type: string
+      last_health_check_at:
+        type: string
+      last_health_error:
+        type: string
+      last_output:
+        type: string
+      message:
+        type: string
+      pid:
+        type: integer
+      plugin_id:
+        type: string
+      plugin_name:
+        type: string
+      ready_at:
+        type: string
+      restart_count:
+        type: integer
+      route_count:
+        type: integer
+      runtime:
+        type: string
+      started_at:
+        type: string
+      state:
+        $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.RuntimeLifecycleState'
+    type: object
   github_com_HMB-research_open-accounting_internal_plugin.PluginSearchResult:
     properties:
       plugin:
@@ -6136,6 +6185,40 @@ definitions:
     x-enum-varnames:
     - RepoGitHub
     - RepoGitLab
+  github_com_HMB-research_open-accounting_internal_plugin.RuntimeHealthState:
+    enum:
+    - not_applicable
+    - unknown
+    - healthy
+    - unhealthy
+    type: string
+    x-enum-varnames:
+    - RuntimeHealthNotApplicable
+    - RuntimeHealthUnknown
+    - RuntimeHealthHealthy
+    - RuntimeHealthUnhealthy
+  github_com_HMB-research_open-accounting_internal_plugin.RuntimeLifecycleState:
+    enum:
+    - not_configured
+    - external
+    - not_loaded
+    - starting
+    - running
+    - stopped
+    - exited
+    - backoff
+    - failed
+    type: string
+    x-enum-varnames:
+    - RuntimeStateNotConfigured
+    - RuntimeStateExternal
+    - RuntimeStateNotLoaded
+    - RuntimeStateStarting
+    - RuntimeStateRunning
+    - RuntimeStateStopped
+    - RuntimeStateExited
+    - RuntimeStateBackoff
+    - RuntimeStateFailed
   github_com_HMB-research_open-accounting_internal_plugin.TenantPlugin:
     properties:
       created_at:
@@ -7930,6 +8013,85 @@ paths:
       security:
       - BearerAuth: []
       summary: Enable plugin
+      tags:
+      - Plugins
+  /admin/plugins/{id}/runtime:
+    get:
+      description: Get operator-visible lifecycle, health, crash, and backoff state
+        for a plugin backend runtime
+      parameters:
+      - description: Plugin ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.PluginRuntimeStatus'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get plugin runtime status
+      tags:
+      - Plugins
+  /admin/plugins/{id}/runtime/restart:
+    post:
+      description: Restart a supervised package plugin runtime and return its updated
+        lifecycle status
+      parameters:
+      - description: Plugin ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_plugin.PluginRuntimeStatus'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Restart plugin runtime
       tags:
       - Plugins
   /admin/plugins/install:

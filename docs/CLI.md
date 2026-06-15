@@ -220,12 +220,14 @@ go run ./cmd/oa admin plugins install --repository-url https://github.com/exampl
 go run ./cmd/oa admin plugins get --id <plugin-id>
 go run ./cmd/oa admin plugins enable --id <plugin-id> --permission invoices:read
 go run ./cmd/oa admin plugins disable --id <plugin-id>
+go run ./cmd/oa admin plugins runtime status --id <plugin-id>
+go run ./cmd/oa admin plugins runtime restart --id <plugin-id>
 go run ./cmd/oa admin plugins uninstall --id <plugin-id>
 ```
 
 Tenant plugin `enable` and `settings update` accept exactly one settings source: `--settings-json` for inline JSON or `--settings-file` for a JSON object on disk.
 `plugins list --json` returns plugin manifests, including declarative frontend slot metadata for safe `card`, `link`, and `action` entries. Backend hook and route manifest entries are executable when they declare a supported `backend.runtime`: `http` proxies to an operator-managed loopback process with `backend.base_url`, while `package` starts a plugin-local executable and waits for its loopback health endpoint before proxying hooks and tenant runtime routes.
-Admin plugin commands use the saved API token from `auth init`; `admin registries` and `admin plugin-registries` are equivalent aliases. Use `--permission` repeatedly when enabling an instance-level plugin with multiple permissions.
+Admin plugin commands use the saved API token from `auth init`; `admin registries` and `admin plugin-registries` are equivalent aliases. Use `--permission` repeatedly when enabling an instance-level plugin with multiple permissions. `admin plugins runtime status` shows lifecycle, health, crash/backoff, and restart counters; `admin plugins runtime restart` is limited to supervised package runtimes.
 
 ## Webhooks
 

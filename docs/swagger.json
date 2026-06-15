@@ -535,6 +535,129 @@
                 }
             }
         },
+        "/admin/plugins/{id}/runtime": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get operator-visible lifecycle, health, crash, and backoff state for a plugin backend runtime",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plugins"
+                ],
+                "summary": "Get plugin runtime status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plugin ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_plugin.PluginRuntimeStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/plugins/{id}/runtime/restart": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Restart a supervised package plugin runtime and return its updated lifecycle status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plugins"
+                ],
+                "summary": "Restart plugin runtime",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plugin ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_plugin.PluginRuntimeStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/demo/reset": {
             "post": {
                 "description": "Reset the demo database to initial state (requires DEMO_RESET_SECRET)",
@@ -31952,6 +32075,80 @@
                 }
             }
         },
+        "github_com_HMB-research_open-accounting_internal_plugin.PluginRuntimeStatus": {
+            "type": "object",
+            "properties": {
+                "backoff_until": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string"
+                },
+                "crash_count": {
+                    "type": "integer"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "exit_code": {
+                    "type": "integer"
+                },
+                "exited_at": {
+                    "type": "string"
+                },
+                "health": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_plugin.RuntimeHealthState"
+                },
+                "hook_count": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_exit_error": {
+                    "type": "string"
+                },
+                "last_health_check_at": {
+                    "type": "string"
+                },
+                "last_health_error": {
+                    "type": "string"
+                },
+                "last_output": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "pid": {
+                    "type": "integer"
+                },
+                "plugin_id": {
+                    "type": "string"
+                },
+                "plugin_name": {
+                    "type": "string"
+                },
+                "ready_at": {
+                    "type": "string"
+                },
+                "restart_count": {
+                    "type": "integer"
+                },
+                "route_count": {
+                    "type": "integer"
+                },
+                "runtime": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_plugin.RuntimeLifecycleState"
+                }
+            }
+        },
         "github_com_HMB-research_open-accounting_internal_plugin.PluginSearchResult": {
             "type": "object",
             "properties": {
@@ -32019,6 +32216,46 @@
             "x-enum-varnames": [
                 "RepoGitHub",
                 "RepoGitLab"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_plugin.RuntimeHealthState": {
+            "type": "string",
+            "enum": [
+                "not_applicable",
+                "unknown",
+                "healthy",
+                "unhealthy"
+            ],
+            "x-enum-varnames": [
+                "RuntimeHealthNotApplicable",
+                "RuntimeHealthUnknown",
+                "RuntimeHealthHealthy",
+                "RuntimeHealthUnhealthy"
+            ]
+        },
+        "github_com_HMB-research_open-accounting_internal_plugin.RuntimeLifecycleState": {
+            "type": "string",
+            "enum": [
+                "not_configured",
+                "external",
+                "not_loaded",
+                "starting",
+                "running",
+                "stopped",
+                "exited",
+                "backoff",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "RuntimeStateNotConfigured",
+                "RuntimeStateExternal",
+                "RuntimeStateNotLoaded",
+                "RuntimeStateStarting",
+                "RuntimeStateRunning",
+                "RuntimeStateStopped",
+                "RuntimeStateExited",
+                "RuntimeStateBackoff",
+                "RuntimeStateFailed"
             ]
         },
         "github_com_HMB-research_open-accounting_internal_plugin.TenantPlugin": {

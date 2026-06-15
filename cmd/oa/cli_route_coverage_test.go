@@ -549,6 +549,10 @@ func adminCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"POST": "admin plugins enable"})
 	case "/plugins/{id}/disable":
 		return commandForMethod(method, map[string]string{"POST": "admin plugins disable"})
+	case "/plugins/{id}/runtime":
+		return commandForMethod(method, map[string]string{"GET": "admin plugins runtime status"})
+	case "/plugins/{id}/runtime/restart":
+		return commandForMethod(method, map[string]string{"POST": "admin plugins runtime restart"})
 	default:
 		return "", false
 	}

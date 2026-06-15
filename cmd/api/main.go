@@ -527,6 +527,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Delete("/plugins/{id}", h.UninstallPlugin)
 				r.Post("/plugins/{id}/enable", h.EnablePlugin)
 				r.Post("/plugins/{id}/disable", h.DisablePlugin)
+				r.Get("/plugins/{id}/runtime", h.GetPluginRuntimeStatus)
+				r.Post("/plugins/{id}/runtime/restart", h.RestartPluginRuntime)
 			})
 
 			// Tenant-scoped routes

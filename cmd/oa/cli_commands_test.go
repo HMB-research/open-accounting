@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -5608,6 +5609,30 @@ func TestCLIAdminPluginCommands(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "enabled"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/disable":
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "disabled"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/runtime":
+			_ = json.NewEncoder(w).Encode(plugin.PluginRuntimeStatus{
+				PluginID:     uuid.MustParse(pluginID),
+				PluginName:   "vat-tools",
+				DisplayName:  "VAT Tools",
+				Runtime:      plugin.BackendRuntimePackage,
+				State:        plugin.RuntimeStateRunning,
+				Health:       plugin.RuntimeHealthHealthy,
+				Message:      "runtime healthy",
+				RestartCount: 1,
+				CrashCount:   0,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/runtime/restart":
+			_ = json.NewEncoder(w).Encode(plugin.PluginRuntimeStatus{
+				PluginID:     uuid.MustParse(pluginID),
+				PluginName:   "vat-tools",
+				DisplayName:  "VAT Tools",
+				Runtime:      plugin.BackendRuntimePackage,
+				State:        plugin.RuntimeStateRunning,
+				Health:       plugin.RuntimeHealthHealthy,
+				Message:      "runtime healthy",
+				RestartCount: 2,
+				CrashCount:   0,
+			})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/admin/plugins/"+pluginID:
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -5675,6 +5700,18 @@ func TestCLIAdminPluginCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Disabled plugin")
 
 	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugins", "runtime", "status", "--id", pluginID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "runtime healthy")
+	assert.Contains(t, stdout.String(), "VAT Tools")
+
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"admin", "plugins", "runtime", "restart", "--id", pluginID})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "running")
+	assert.Contains(t, stdout.String(), "2")
+
+	stdout.Reset()
 	err = app.run(context.Background(), []string{"admin", "plugins", "uninstall", "--id", pluginID})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Uninstalled plugin")
@@ -5709,6 +5746,12 @@ func TestCLIAdminPluginBranches(t *testing.T) {
 		{name: "enable blank permission", args: []string{"enable", "--id", "plugin-1", "--permission", " "}, want: "value cannot be empty"},
 		{name: "disable invalid flag", args: []string{"disable", "--bogus"}, want: "flag provided but not defined"},
 		{name: "disable missing id", args: []string{"disable"}, want: "id is required"},
+		{name: "runtime missing subcommand", args: []string{"runtime"}, want: "admin plugins runtime subcommand required"},
+		{name: "runtime unknown subcommand", args: []string{"runtime", "archive"}, want: `unknown admin plugins runtime subcommand "archive"`},
+		{name: "runtime status invalid flag", args: []string{"runtime", "status", "--bogus"}, want: "flag provided but not defined"},
+		{name: "runtime status missing id", args: []string{"runtime", "status"}, want: "id is required"},
+		{name: "runtime restart invalid flag", args: []string{"runtime", "restart", "--bogus"}, want: "flag provided but not defined"},
+		{name: "runtime restart missing id", args: []string{"runtime", "restart"}, want: "id is required"},
 		{name: "uninstall invalid flag", args: []string{"uninstall", "--bogus"}, want: "flag provided but not defined"},
 		{name: "uninstall missing id", args: []string{"uninstall"}, want: "id is required"},
 	} {
@@ -5783,6 +5826,28 @@ func TestCLIAdminPluginBranches(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, []string{"contacts:read", "invoices:write"}, req.GrantedPermissions)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "enabled"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/runtime":
+			_ = json.NewEncoder(w).Encode(plugin.PluginRuntimeStatus{
+				PluginID:    uuid.MustParse(pluginID),
+				PluginName:  "json-tools",
+				DisplayName: "JSON Tools",
+				Runtime:     plugin.BackendRuntimePackage,
+				State:       plugin.RuntimeStateBackoff,
+				Health:      plugin.RuntimeHealthUnhealthy,
+				Message:     "crashed; restart backoff active",
+				LastError:   "exit status 1",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/runtime/restart":
+			_ = json.NewEncoder(w).Encode(plugin.PluginRuntimeStatus{
+				PluginID:     uuid.MustParse(pluginID),
+				PluginName:   "json-tools",
+				DisplayName:  "JSON Tools",
+				Runtime:      plugin.BackendRuntimePackage,
+				State:        plugin.RuntimeStateRunning,
+				Health:       plugin.RuntimeHealthHealthy,
+				Message:      "runtime healthy",
+				RestartCount: 3,
+			})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -5801,6 +5866,8 @@ func TestCLIAdminPluginBranches(t *testing.T) {
 		{name: "install json", args: []string{"admin", "plugins", "install", "--repository-url", " https://github.com/example/json-tools ", "--json"}, want: `"name": "json-tools"`},
 		{name: "get json", args: []string{"admin", "plugins", "get", "--id", " " + pluginID + " ", "--json"}, want: `"id": "` + pluginID + `"`},
 		{name: "enable repeated permissions", args: []string{"admin", "plugins", "enable", "--id", " " + pluginID + " ", "--permission", "contacts:read", "--permission", "invoices:write"}, want: "Enabled plugin " + pluginID},
+		{name: "runtime status json", args: []string{"admin", "plugins", "runtime", "status", "--id", " " + pluginID + " ", "--json"}, want: `"last_error": "exit status 1"`},
+		{name: "runtime restart json", args: []string{"admin", "plugins", "runtime", "restart", "--id", " " + pluginID + " ", "--json"}, want: `"restart_count": 3`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout.Reset()
@@ -5834,6 +5901,8 @@ func TestCLIAdminPluginAPIErrors(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, []string{"audit:read"}, req.GrantedPermissions)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/disable":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/runtime":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/plugins/"+pluginID+"/runtime/restart":
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/admin/plugins/"+pluginID:
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
@@ -5856,6 +5925,8 @@ func TestCLIAdminPluginAPIErrors(t *testing.T) {
 		{name: "get api error", args: []string{"get", "--id", pluginID}},
 		{name: "enable api error", args: []string{"enable", "--id", pluginID, "--permission", "audit:read"}},
 		{name: "disable api error", args: []string{"disable", "--id", pluginID}},
+		{name: "runtime status api error", args: []string{"runtime", "status", "--id", pluginID}},
+		{name: "runtime restart api error", args: []string{"runtime", "restart", "--id", pluginID}},
 		{name: "uninstall api error", args: []string{"uninstall", "--id", pluginID}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
