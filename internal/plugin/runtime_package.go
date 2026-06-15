@@ -24,6 +24,7 @@ const (
 	packageRuntimeProbeTimeout    = 200 * time.Millisecond
 	packageRuntimeProbeInterval   = 25 * time.Millisecond
 	packageRuntimeShutdownTimeout = 2 * time.Second
+	packageRuntimeCrashBackoff    = 30 * time.Second
 	packageRuntimeLogLimit        = 4096
 )
 
@@ -31,6 +32,7 @@ type pluginBackendRuntime interface {
 	invokeHook(ctx context.Context, pluginID uuid.UUID, pluginName string, hook HookConfig, event Event) error
 	invokeRoute(ctx context.Context, pluginID uuid.UUID, tenantID uuid.UUID, route RouteConfig, method string, requestPath string, rawQuery string, sourceHeader http.Header, body io.Reader) (*RuntimeRouteResponse, error)
 	close(ctx context.Context) error
+	status() PluginRuntimeStatus
 }
 
 func (c *runtimeHTTPClient) close(context.Context) error {
@@ -40,6 +42,7 @@ func (c *runtimeHTTPClient) close(context.Context) error {
 type packageRuntimeProcess struct {
 	*runtimeHTTPClient
 
+	pluginID   uuid.UUID
 	pluginName string
 	cmd        *exec.Cmd
 	output     *runtimeProcessLogBuffer
@@ -50,9 +53,32 @@ type packageRuntimeProcess struct {
 
 	stopOnce sync.Once
 	stopErr  error
+
+	statusMu          sync.RWMutex
+	startedAt         time.Time
+	readyAt           *time.Time
+	exitedAt          *time.Time
+	lastHealthCheckAt *time.Time
+	backoffUntil      *time.Time
+	exitCode          *int
+	restartCount      int
+	crashCount        int
+	intentionalStop   bool
+	lastExitError     string
+	lastHealthError   string
+	lastError         string
+}
+
+type packageRuntimeStats struct {
+	RestartCount int
+	CrashCount   int
 }
 
 func (s *Service) startPackageBackendRuntime(plugin *Plugin, manifest *Manifest) (*packageRuntimeProcess, error) {
+	return s.startPackageBackendRuntimeWithStats(plugin, manifest, packageRuntimeStats{})
+}
+
+func (s *Service) startPackageBackendRuntimeWithStats(plugin *Plugin, manifest *Manifest, stats packageRuntimeStats) (*packageRuntimeProcess, error) {
 	if plugin == nil {
 		return nil, fmt.Errorf("%w: package runtime plugin is nil", ErrPluginRuntimeUnavailable)
 	}
@@ -104,10 +130,14 @@ func (s *Service) startPackageBackendRuntime(plugin *Plugin, manifest *Manifest)
 			baseURL: baseURL,
 			client:  &http.Client{Timeout: 10 * time.Second},
 		},
-		pluginName: plugin.Name,
-		cmd:        cmd,
-		output:     output,
-		exited:     make(chan struct{}),
+		pluginID:     plugin.ID,
+		pluginName:   plugin.Name,
+		cmd:          cmd,
+		output:       output,
+		exited:       make(chan struct{}),
+		startedAt:    time.Now().UTC(),
+		restartCount: stats.RestartCount,
+		crashCount:   stats.CrashCount,
 	}
 	go runtime.wait()
 
@@ -119,6 +149,7 @@ func (s *Service) startPackageBackendRuntime(plugin *Plugin, manifest *Manifest)
 		stopCancel()
 		return nil, err
 	}
+	runtime.markReady()
 
 	return runtime, nil
 }
@@ -192,6 +223,7 @@ func (r *packageRuntimeProcess) wait() {
 	r.exitMu.Lock()
 	r.exitErr = err
 	r.exitMu.Unlock()
+	r.markExited(err)
 	close(r.exited)
 }
 
@@ -218,12 +250,14 @@ func (r *packageRuntimeProcess) waitForReady(ctx context.Context) error {
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxRuntimeBodySize))
 			_ = resp.Body.Close()
 			if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+				r.markHealthProbe(nil)
 				return nil
 			}
 			lastProbe = fmt.Errorf("health endpoint returned status %d", resp.StatusCode)
 		} else {
 			lastProbe = err
 		}
+		r.markHealthProbe(lastProbe)
 
 		timer := time.NewTimer(packageRuntimeProbeInterval)
 		select {
@@ -252,6 +286,7 @@ func (r *packageRuntimeProcess) stop(ctx context.Context) error {
 	default:
 	}
 
+	r.markIntentionalStop()
 	signaled := false
 	if r.cmd.Process != nil {
 		if err := r.cmd.Process.Signal(os.Interrupt); err == nil {
@@ -279,6 +314,45 @@ func (r *packageRuntimeProcess) stop(ctx context.Context) error {
 	}
 }
 
+func (r *packageRuntimeProcess) invokeHook(ctx context.Context, pluginID uuid.UUID, pluginName string, hook HookConfig, event Event) error {
+	if err := r.requireRunning(); err != nil {
+		return err
+	}
+	return r.runtimeHTTPClient.invokeHook(ctx, pluginID, pluginName, hook, event)
+}
+
+func (r *packageRuntimeProcess) invokeRoute(
+	ctx context.Context,
+	pluginID uuid.UUID,
+	tenantID uuid.UUID,
+	route RouteConfig,
+	method string,
+	requestPath string,
+	rawQuery string,
+	sourceHeader http.Header,
+	body io.Reader,
+) (*RuntimeRouteResponse, error) {
+	if err := r.requireRunning(); err != nil {
+		return nil, err
+	}
+	return r.runtimeHTTPClient.invokeRoute(ctx, pluginID, tenantID, route, method, requestPath, rawQuery, sourceHeader, body)
+}
+
+func (r *packageRuntimeProcess) requireRunning() error {
+	status := r.status()
+	if status.State == RuntimeStateRunning {
+		return nil
+	}
+	message := status.Message
+	if message == "" {
+		message = string(status.State)
+	}
+	if status.BackoffUntil != nil {
+		return fmt.Errorf("%w: package runtime for plugin %q is %s until %s", ErrPluginRuntimeUnavailable, r.pluginName, message, status.BackoffUntil.Format(time.RFC3339))
+	}
+	return fmt.Errorf("%w: package runtime for plugin %q is %s", ErrPluginRuntimeUnavailable, r.pluginName, message)
+}
+
 func (r *packageRuntimeProcess) getExitErr() error {
 	r.exitMu.RLock()
 	defer r.exitMu.RUnlock()
@@ -291,6 +365,158 @@ func (r *packageRuntimeProcess) outputSuffix() string {
 		return ""
 	}
 	return "; runtime output: " + output
+}
+
+func (r *packageRuntimeProcess) markReady() {
+	now := time.Now().UTC()
+	r.statusMu.Lock()
+	r.readyAt = &now
+	r.lastHealthCheckAt = &now
+	r.lastHealthError = ""
+	r.lastError = ""
+	r.statusMu.Unlock()
+}
+
+func (r *packageRuntimeProcess) markHealthProbe(err error) {
+	now := time.Now().UTC()
+	r.statusMu.Lock()
+	r.lastHealthCheckAt = &now
+	if err != nil {
+		r.lastHealthError = err.Error()
+	} else {
+		r.lastHealthError = ""
+	}
+	r.statusMu.Unlock()
+}
+
+func (r *packageRuntimeProcess) markIntentionalStop() {
+	r.statusMu.Lock()
+	if r.exitedAt == nil {
+		r.intentionalStop = true
+	}
+	r.statusMu.Unlock()
+}
+
+func (r *packageRuntimeProcess) markExited(err error) {
+	now := time.Now().UTC()
+	exitCode := 0
+	if r.cmd.ProcessState != nil {
+		exitCode = r.cmd.ProcessState.ExitCode()
+	}
+	exitCodePtr := exitCode
+
+	r.statusMu.Lock()
+	r.exitedAt = &now
+	r.exitCode = &exitCodePtr
+	if err != nil {
+		r.lastExitError = err.Error()
+	} else if !r.intentionalStop {
+		r.lastExitError = "process exited"
+	}
+	if !r.intentionalStop {
+		r.crashCount++
+		backoffUntil := now.Add(packageRuntimeCrashBackoff)
+		r.backoffUntil = &backoffUntil
+		if r.lastExitError != "" {
+			r.lastError = r.lastExitError
+		}
+	}
+	r.statusMu.Unlock()
+}
+
+func (r *packageRuntimeProcess) status() PluginRuntimeStatus {
+	r.statusMu.RLock()
+	startedAt := timePtr(r.startedAt)
+	readyAt := cloneTimePtr(r.readyAt)
+	exitedAt := cloneTimePtr(r.exitedAt)
+	lastHealthCheckAt := cloneTimePtr(r.lastHealthCheckAt)
+	backoffUntil := cloneTimePtr(r.backoffUntil)
+	exitCode := cloneIntPtr(r.exitCode)
+	restartCount := r.restartCount
+	crashCount := r.crashCount
+	intentionalStop := r.intentionalStop
+	lastExitError := r.lastExitError
+	lastHealthError := r.lastHealthError
+	lastError := r.lastError
+	pid := 0
+	if r.cmd != nil && r.cmd.Process != nil {
+		pid = r.cmd.Process.Pid
+	}
+	r.statusMu.RUnlock()
+
+	status := PluginRuntimeStatus{
+		PluginID:          r.pluginID,
+		PluginName:        r.pluginName,
+		Runtime:           BackendRuntimePackage,
+		State:             RuntimeStateRunning,
+		Health:            RuntimeHealthHealthy,
+		BaseURL:           r.baseURL.String(),
+		StartedAt:         startedAt,
+		ReadyAt:           readyAt,
+		ExitedAt:          exitedAt,
+		LastHealthCheckAt: lastHealthCheckAt,
+		BackoffUntil:      backoffUntil,
+		ExitCode:          exitCode,
+		RestartCount:      restartCount,
+		CrashCount:        crashCount,
+		LastExitError:     lastExitError,
+		LastHealthError:   lastHealthError,
+		LastError:         lastError,
+		LastOutput:        r.output.String(),
+	}
+	if pid > 0 && exitedAt == nil {
+		status.PID = &pid
+	}
+
+	switch {
+	case exitedAt != nil && intentionalStop:
+		status.State = RuntimeStateStopped
+		status.Health = RuntimeHealthNotApplicable
+		status.Message = "runtime stopped"
+	case exitedAt != nil:
+		status.Health = RuntimeHealthUnhealthy
+		if backoffUntil != nil && time.Now().UTC().Before(*backoffUntil) {
+			status.State = RuntimeStateBackoff
+			status.Message = "crashed; restart backoff active"
+		} else {
+			status.State = RuntimeStateExited
+			status.Message = "runtime process exited"
+		}
+	case readyAt == nil:
+		status.State = RuntimeStateStarting
+		status.Health = RuntimeHealthUnknown
+		status.Message = "runtime process is starting"
+	case lastHealthError != "":
+		status.Health = RuntimeHealthUnhealthy
+		status.Message = "last health probe failed"
+	default:
+		status.Message = "runtime healthy"
+	}
+	return status
+}
+
+func timePtr(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	copyValue := value
+	return &copyValue
+}
+
+func cloneTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
+}
+
+func cloneIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
 }
 
 type runtimeProcessLogBuffer struct {

@@ -3375,11 +3375,14 @@ POST /admin/plugins/install
 GET /admin/plugins/{id}
 POST /admin/plugins/{id}/enable
 POST /admin/plugins/{id}/disable
+GET /admin/plugins/{id}/runtime
+POST /admin/plugins/{id}/runtime/restart
 DELETE /admin/plugins/{id}
 Authorization: Bearer <token>
 ```
 
 Install requests accept `repository_url`. Enable requests accept `granted_permissions`.
+Runtime status returns lifecycle, health, crash/backoff, restart count, and last error/output fields. Runtime restart is only supported for supervised `backend.runtime: package` plugins.
 
 ### Tenant Plugins
 

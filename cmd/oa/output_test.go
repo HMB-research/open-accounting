@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -960,6 +961,51 @@ func TestPrintTables(t *testing.T) {
 		Plugin:    &plugin.Plugin{DisplayName: "VAT Tools"},
 	}})
 	assert.Contains(t, tenantPluginsBuf.String(), "VAT Tools")
+
+	var runtimeStatusBuf bytes.Buffer
+	printPluginRuntimeStatus(&runtimeStatusBuf, &plugin.PluginRuntimeStatus{
+		PluginName:   "vat-tools",
+		DisplayName:  "VAT Tools",
+		Runtime:      plugin.BackendRuntimePackage,
+		State:        plugin.RuntimeStateRunning,
+		Health:       plugin.RuntimeHealthHealthy,
+		Message:      "runtime healthy",
+		RestartCount: 2,
+		CrashCount:   1,
+	})
+	assert.Contains(t, runtimeStatusBuf.String(), "VAT Tools")
+	assert.Contains(t, runtimeStatusBuf.String(), "runtime healthy")
+
+	var nilRuntimeStatusBuf bytes.Buffer
+	printPluginRuntimeStatus(&nilRuntimeStatusBuf, nil)
+	assert.Contains(t, nilRuntimeStatusBuf.String(), "No plugin runtime status")
+
+	backoffUntil := now.Add(time.Minute)
+	var backoffRuntimeStatusBuf bytes.Buffer
+	printPluginRuntimeStatus(&backoffRuntimeStatusBuf, &plugin.PluginRuntimeStatus{
+		PluginName:   "fallback-plugin",
+		Runtime:      plugin.BackendRuntimePackage,
+		State:        plugin.RuntimeStateBackoff,
+		Health:       plugin.RuntimeHealthUnhealthy,
+		BackoffUntil: &backoffUntil,
+		LastError:    "exit status 1",
+	})
+	assert.Contains(t, backoffRuntimeStatusBuf.String(), "fallback-plugin")
+	assert.Contains(t, backoffRuntimeStatusBuf.String(), "Backoff until")
+	assert.Contains(t, backoffRuntimeStatusBuf.String(), "exit status 1")
+
+	pluginID := uuid.MustParse("22222222-2222-4222-8222-222222222222")
+	var idRuntimeStatusBuf bytes.Buffer
+	printPluginRuntimeStatus(&idRuntimeStatusBuf, &plugin.PluginRuntimeStatus{
+		PluginID: pluginID,
+		Runtime:  plugin.BackendRuntimePackage,
+		State:    plugin.RuntimeStateNotLoaded,
+		Health:   plugin.RuntimeHealthUnknown,
+	})
+	assert.Contains(t, idRuntimeStatusBuf.String(), pluginID.String())
+	assert.Contains(t, idRuntimeStatusBuf.String(), "-")
+	assert.Equal(t, "-", formatRuntimePluginName(nil))
+	assert.Equal(t, "-", formatRuntimePluginName(&plugin.PluginRuntimeStatus{}))
 
 	var accountBuf bytes.Buffer
 	account := accounting.Account{

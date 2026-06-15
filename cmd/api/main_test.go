@@ -195,6 +195,8 @@ func TestSetupRouterRegistersCoreRoutes(t *testing.T) {
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/expenses/{expenseID}/post")
 	assert.Contains(t, routes, "POST /api/v1/tenants/{tenantID}/plugins/{pluginID}/runtime/*")
 	assert.Contains(t, routes, "GET /api/v1/admin/plugins")
+	assert.Contains(t, routes, "GET /api/v1/admin/plugins/{id}/runtime")
+	assert.Contains(t, routes, "POST /api/v1/admin/plugins/{id}/runtime/restart")
 	assert.Contains(t, routes, "GET /swagger/*")
 
 	for _, tt := range []struct {

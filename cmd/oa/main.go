@@ -228,6 +228,8 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins permissions List plugin permission names")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins enable      Enable an installed plugin")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins disable     Disable an installed plugin")
+	_, _ = fmt.Fprintln(a.stdout, "  admin plugins runtime status  Show plugin runtime status")
+	_, _ = fmt.Fprintln(a.stdout, "  admin plugins runtime restart Restart plugin package runtime")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins uninstall   Uninstall a plugin")
 	_, _ = fmt.Fprintln(a.stdout, "  admin registries list     List plugin registries")
 	_, _ = fmt.Fprintln(a.stdout, "  admin registries create   Add a plugin registry")
@@ -2658,6 +2660,9 @@ func (a *cliApp) runAdminPlugins(ctx context.Context, client *apiClient, args []
 		_, _ = fmt.Fprintf(a.stdout, "Disabled plugin %s\n", strings.TrimSpace(*pluginID))
 		return nil
 
+	case "runtime":
+		return a.runAdminPluginRuntime(ctx, client, args[1:])
+
 	case "uninstall":
 		fs := flag.NewFlagSet("admin plugins uninstall", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -2676,6 +2681,59 @@ func (a *cliApp) runAdminPlugins(ctx context.Context, client *apiClient, args []
 
 	default:
 		return fmt.Errorf("unknown admin plugins subcommand %q", args[0])
+	}
+}
+
+func (a *cliApp) runAdminPluginRuntime(ctx context.Context, client *apiClient, args []string) error {
+	if len(args) == 0 {
+		return errors.New("admin plugins runtime subcommand required")
+	}
+
+	switch args[0] {
+	case "status":
+		fs := flag.NewFlagSet("admin plugins runtime status", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+		status, err := client.getAdminPluginRuntimeStatus(ctx, strings.TrimSpace(*pluginID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, status)
+		}
+		printPluginRuntimeStatus(a.stdout, status)
+		return nil
+
+	case "restart":
+		fs := flag.NewFlagSet("admin plugins runtime restart", flag.ContinueOnError)
+		fs.SetOutput(a.stderr)
+		pluginID := fs.String("id", "", "Plugin id")
+		asJSON := fs.Bool("json", false, "Output JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*pluginID) == "" {
+			return errors.New("id is required")
+		}
+		status, err := client.restartAdminPluginRuntime(ctx, strings.TrimSpace(*pluginID))
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(a.stdout, status)
+		}
+		printPluginRuntimeStatus(a.stdout, status)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown admin plugins runtime subcommand %q", args[0])
 	}
 }
 

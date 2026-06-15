@@ -35,6 +35,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 	"github.com/HMB-research/open-accounting/internal/webhooks"
+	"github.com/google/uuid"
 )
 
 func printJSON(w io.Writer, value any) error {
@@ -742,6 +743,57 @@ func printTenantPluginsTable(w io.Writer, plugins []plugin.TenantPlugin) {
 		)
 	}
 	_ = tw.Flush()
+}
+
+func printPluginRuntimeStatus(w io.Writer, status *plugin.PluginRuntimeStatus) {
+	if status == nil {
+		_, _ = fmt.Fprintln(w, "No plugin runtime status")
+		return
+	}
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PLUGIN\tRUNTIME\tSTATE\tHEALTH\tPID\tRESTARTS\tCRASHES\tMESSAGE")
+	_, _ = fmt.Fprintf(
+		tw,
+		"%s\t%s\t%s\t%s\t%s\t%d\t%d\t%s\n",
+		formatRuntimePluginName(status),
+		status.Runtime,
+		status.State,
+		status.Health,
+		formatIntPtr(status.PID),
+		status.RestartCount,
+		status.CrashCount,
+		emptyDash(status.Message),
+	)
+	_ = tw.Flush()
+	if status.BackoffUntil != nil {
+		_, _ = fmt.Fprintf(w, "Backoff until: %s\n", status.BackoffUntil.Format(time.RFC3339))
+	}
+	if status.LastError != "" {
+		_, _ = fmt.Fprintf(w, "Last error: %s\n", status.LastError)
+	}
+}
+
+func formatRuntimePluginName(status *plugin.PluginRuntimeStatus) string {
+	if status == nil {
+		return "-"
+	}
+	if strings.TrimSpace(status.DisplayName) != "" {
+		return status.DisplayName
+	}
+	if strings.TrimSpace(status.PluginName) != "" {
+		return status.PluginName
+	}
+	if status.PluginID != uuid.Nil {
+		return status.PluginID.String()
+	}
+	return "-"
+}
+
+func emptyDash(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
 }
 
 func printWebhookEndpointsTable(w io.Writer, endpoints []webhooks.Endpoint) {

@@ -652,3 +652,56 @@ func TestInvokeTenantPluginRouteProxiesDeclaredRuntimeRoute(t *testing.T) {
 	assert.Equal(t, pluginID.String(), runtimePluginHeader)
 	assert.Equal(t, "pong", runtimeBody["ping"])
 }
+
+func TestPluginRuntimeStatusHandlers(t *testing.T) {
+	h, repo := setupPluginTestHandlers(t)
+
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	pluginID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	repo.plugins[pluginID] = &plugin.Plugin{
+		ID:             pluginID,
+		Name:           "runtime-plugin",
+		DisplayName:    "Runtime Plugin",
+		Version:        "1.0.0",
+		RepositoryURL:  "https://github.com/HMB-research/open-accounting-runtime-plugin",
+		RepositoryType: plugin.RepoGitHub,
+		State:          plugin.StateEnabled,
+		Manifest: json.RawMessage(`{
+			"name":"runtime-plugin",
+			"display_name":"Runtime Plugin",
+			"version":"1.0.0",
+			"backend":{
+				"runtime":"http",
+				"base_url":"http://127.0.0.1:39999",
+				"routes":[{"method":"GET","path":"/status","handler":"/routes/status"}]
+			}
+		}`),
+		InstalledAt: now,
+		UpdatedAt:   now,
+	}
+
+	statusReq := withURLParams(
+		httptest.NewRequest(http.MethodGet, "/admin/plugins/"+pluginID.String()+"/runtime", nil),
+		map[string]string{"id": pluginID.String()},
+	)
+	statusResp := httptest.NewRecorder()
+	h.GetPluginRuntimeStatus(statusResp, statusReq)
+
+	require.Equal(t, http.StatusOK, statusResp.Code)
+	var status plugin.PluginRuntimeStatus
+	require.NoError(t, json.NewDecoder(statusResp.Body).Decode(&status))
+	assert.Equal(t, pluginID, status.PluginID)
+	assert.Equal(t, plugin.BackendRuntimeHTTP, status.Runtime)
+	assert.Equal(t, plugin.RuntimeStateExternal, status.State)
+	assert.Equal(t, "Runtime Plugin", status.DisplayName)
+
+	restartReq := withURLParams(
+		httptest.NewRequest(http.MethodPost, "/admin/plugins/"+pluginID.String()+"/runtime/restart", nil),
+		map[string]string{"id": pluginID.String()},
+	)
+	restartResp := httptest.NewRecorder()
+	h.RestartPluginRuntime(restartResp, restartReq)
+
+	require.Equal(t, http.StatusBadRequest, restartResp.Code)
+	assert.Contains(t, restartResp.Body.String(), "does not use a supervised package runtime")
+}

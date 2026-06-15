@@ -23,7 +23,8 @@ type Service struct {
 	mu    sync.RWMutex
 
 	// Loaded plugins (in-memory cache)
-	plugins map[string]*LoadedPlugin
+	plugins         map[string]*LoadedPlugin
+	runtimeFailures map[uuid.UUID]PluginRuntimeStatus
 
 	// Plugin directory for installed plugins
 	pluginDir string
@@ -40,9 +41,10 @@ type LoadedPlugin struct {
 func NewService(pool *pgxpool.Pool, pluginDir string) *Service {
 	if pool == nil {
 		return &Service{
-			hooks:     NewHookRegistry(),
-			plugins:   make(map[string]*LoadedPlugin),
-			pluginDir: pluginDir,
+			hooks:           NewHookRegistry(),
+			plugins:         make(map[string]*LoadedPlugin),
+			runtimeFailures: make(map[uuid.UUID]PluginRuntimeStatus),
+			pluginDir:       pluginDir,
 		}
 	}
 	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
@@ -50,10 +52,11 @@ func NewService(pool *pgxpool.Pool, pluginDir string) *Service {
 		panic(fmt.Errorf("create plugin GORM repository: %w", err))
 	}
 	return &Service{
-		repo:      NewGORMRepository(gormDB),
-		hooks:     NewHookRegistry(),
-		plugins:   make(map[string]*LoadedPlugin),
-		pluginDir: pluginDir,
+		repo:            NewGORMRepository(gormDB),
+		hooks:           NewHookRegistry(),
+		plugins:         make(map[string]*LoadedPlugin),
+		runtimeFailures: make(map[uuid.UUID]PluginRuntimeStatus),
+		pluginDir:       pluginDir,
 	}
 }
 
@@ -63,10 +66,11 @@ func NewServiceWithRepository(repo Repository, hooks *HookRegistry, pluginDir st
 		hooks = NewHookRegistry()
 	}
 	return &Service{
-		repo:      repo,
-		hooks:     hooks,
-		plugins:   make(map[string]*LoadedPlugin),
-		pluginDir: pluginDir,
+		repo:            repo,
+		hooks:           hooks,
+		plugins:         make(map[string]*LoadedPlugin),
+		runtimeFailures: make(map[uuid.UUID]PluginRuntimeStatus),
+		pluginDir:       pluginDir,
 	}
 }
 
@@ -292,6 +296,7 @@ func (s *Service) DisablePlugin(ctx context.Context, id uuid.UUID) error {
 
 	// Unload from memory
 	s.unloadPlugin(plugin.Name)
+	s.clearRuntimeFailure(plugin.ID)
 
 	// Update state via repository
 	if err := s.repo.UpdatePluginState(ctx, id, StateDisabled, nil); err != nil {
@@ -379,11 +384,58 @@ func (s *Service) IsPluginEnabledForTenant(ctx context.Context, tenantID, plugin
 	return s.repo.IsPluginEnabledForTenant(ctx, tenantID, pluginID)
 }
 
+// GetPluginRuntimeStatus returns the operator-visible backend runtime status for an installed plugin.
+func (s *Service) GetPluginRuntimeStatus(ctx context.Context, pluginID uuid.UUID) (*PluginRuntimeStatus, error) {
+	plugin, err := s.GetPlugin(ctx, pluginID)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := parsePluginManifest(plugin)
+	if err != nil {
+		return nil, err
+	}
+	status := s.runtimeStatusForPlugin(plugin, manifest)
+	return &status, nil
+}
+
+// RestartPluginRuntime manually restarts a supervised package runtime.
+func (s *Service) RestartPluginRuntime(ctx context.Context, pluginID uuid.UUID) (*PluginRuntimeStatus, error) {
+	plugin, err := s.GetPlugin(ctx, pluginID)
+	if err != nil {
+		return nil, err
+	}
+	if plugin.State != StateEnabled {
+		return nil, fmt.Errorf("%w: plugin %q is not enabled", ErrPluginNotEnabled, plugin.Name)
+	}
+	manifest, err := parsePluginManifest(plugin)
+	if err != nil {
+		return nil, err
+	}
+	if manifest.Backend == nil || normalizedBackendRuntime(manifest.Backend.Runtime) != BackendRuntimePackage {
+		return nil, fmt.Errorf("%w: plugin %q does not use a supervised package runtime", ErrPluginRuntimeUnsupported, plugin.Name)
+	}
+
+	current := s.runtimeStatusForPlugin(plugin, manifest)
+	stats := packageRuntimeStats{
+		RestartCount: current.RestartCount + 1,
+		CrashCount:   current.CrashCount,
+	}
+	if err := s.loadPluginWithRuntimeStats(plugin, manifest, stats); err != nil {
+		return nil, err
+	}
+	return s.GetPluginRuntimeStatus(ctx, pluginID)
+}
+
 // Internal methods
 
 func (s *Service) loadPlugin(plugin *Plugin, manifest *Manifest) error {
-	runtime, err := s.backendRuntimeForPlugin(plugin, manifest)
+	return s.loadPluginWithRuntimeStats(plugin, manifest, packageRuntimeStats{})
+}
+
+func (s *Service) loadPluginWithRuntimeStats(plugin *Plugin, manifest *Manifest, stats packageRuntimeStats) error {
+	runtime, err := s.backendRuntimeForPluginWithStats(plugin, manifest, stats)
 	if err != nil {
+		s.recordRuntimeFailure(plugin, manifest, err, stats)
 		return err
 	}
 
@@ -394,6 +446,7 @@ func (s *Service) loadPlugin(plugin *Plugin, manifest *Manifest) error {
 		Manifest: manifest,
 		Runtime:  runtime,
 	}
+	delete(s.runtimeFailures, plugin.ID)
 	s.mu.Unlock()
 
 	if previous != nil {
@@ -425,6 +478,10 @@ func (s *Service) loadPlugin(plugin *Plugin, manifest *Manifest) error {
 }
 
 func (s *Service) backendRuntimeForPlugin(plugin *Plugin, manifest *Manifest) (pluginBackendRuntime, error) {
+	return s.backendRuntimeForPluginWithStats(plugin, manifest, packageRuntimeStats{})
+}
+
+func (s *Service) backendRuntimeForPluginWithStats(plugin *Plugin, manifest *Manifest, stats packageRuntimeStats) (pluginBackendRuntime, error) {
 	if manifest.Backend == nil {
 		return nil, nil
 	}
@@ -436,7 +493,7 @@ func (s *Service) backendRuntimeForPlugin(plugin *Plugin, manifest *Manifest) (p
 	}
 
 	if strings.EqualFold(strings.TrimSpace(manifest.Backend.Runtime), BackendRuntimePackage) {
-		return s.startPackageBackendRuntime(plugin, manifest)
+		return s.startPackageBackendRuntimeWithStats(plugin, manifest, stats)
 	}
 
 	runtime, err := newRuntimeHTTPClient(manifest.Backend)
@@ -521,6 +578,160 @@ func (s *Service) runtimeForTenantPluginRoute(plugin *Plugin, manifest *Manifest
 	return s.backendRuntimeForPlugin(plugin, manifest)
 }
 
+func parsePluginManifest(plugin *Plugin) (*Manifest, error) {
+	if plugin == nil {
+		return nil, fmt.Errorf("plugin is nil")
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(plugin.Manifest, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to parse manifest: %w", err)
+	}
+	return &manifest, nil
+}
+
+func (s *Service) runtimeStatusForPlugin(plugin *Plugin, manifest *Manifest) PluginRuntimeStatus {
+	base := baseRuntimeStatus(plugin, manifest)
+	if plugin == nil || manifest == nil || manifest.Backend == nil || !manifestDeclaresRuntimeWork(manifest) {
+		return base
+	}
+
+	switch normalizedBackendRuntime(manifest.Backend.Runtime) {
+	case BackendRuntimePackage:
+		s.mu.RLock()
+		loaded := s.plugins[plugin.Name]
+		failure, hasFailure := s.runtimeFailures[plugin.ID]
+		s.mu.RUnlock()
+		if loaded != nil && loaded.Runtime != nil {
+			return decorateRuntimeStatus(plugin, manifest, loaded.Runtime.status())
+		}
+		if hasFailure {
+			return decorateRuntimeStatus(plugin, manifest, failure)
+		}
+		if plugin.State != StateEnabled {
+			base.State = RuntimeStateNotLoaded
+			base.Health = RuntimeHealthNotApplicable
+			base.Message = "plugin is not enabled"
+			if plugin.State == StateFailed {
+				base.State = RuntimeStateFailed
+				base.Health = RuntimeHealthUnhealthy
+				base.Message = "plugin failed to load"
+			}
+			return base
+		}
+		base.State = RuntimeStateNotLoaded
+		base.Health = RuntimeHealthUnknown
+		base.Message = "package runtime is not loaded"
+		return base
+	case BackendRuntimeHTTP:
+		s.mu.RLock()
+		loaded := s.plugins[plugin.Name]
+		s.mu.RUnlock()
+		if loaded != nil && loaded.Runtime != nil {
+			return decorateRuntimeStatus(plugin, manifest, loaded.Runtime.status())
+		}
+		base.State = RuntimeStateExternal
+		base.Health = RuntimeHealthUnknown
+		base.Message = "external HTTP runtime is operator-managed"
+		base.BaseURL = strings.TrimSpace(manifest.Backend.BaseURL)
+		return base
+	default:
+		base.State = RuntimeStateNotConfigured
+		base.Health = RuntimeHealthUnknown
+		base.Message = "backend hooks or routes require backend.runtime"
+		return base
+	}
+}
+
+func (s *Service) recordRuntimeFailure(plugin *Plugin, manifest *Manifest, err error, stats packageRuntimeStats) {
+	if plugin == nil || err == nil {
+		return
+	}
+	status := baseRuntimeStatus(plugin, manifest)
+	status.State = RuntimeStateFailed
+	status.Health = RuntimeHealthUnhealthy
+	status.Message = "runtime failed to start"
+	status.RestartCount = stats.RestartCount
+	status.CrashCount = stats.CrashCount
+	status.LastError = err.Error()
+
+	s.mu.Lock()
+	if s.runtimeFailures == nil {
+		s.runtimeFailures = make(map[uuid.UUID]PluginRuntimeStatus)
+	}
+	s.runtimeFailures[plugin.ID] = status
+	s.mu.Unlock()
+}
+
+func baseRuntimeStatus(plugin *Plugin, manifest *Manifest) PluginRuntimeStatus {
+	status := PluginRuntimeStatus{
+		State:   RuntimeStateNotConfigured,
+		Health:  RuntimeHealthNotApplicable,
+		Runtime: "none",
+		Message: "plugin does not declare backend runtime work",
+	}
+	if plugin != nil {
+		status.PluginID = plugin.ID
+		status.PluginName = plugin.Name
+		status.DisplayName = plugin.DisplayName
+	}
+	if manifest == nil || manifest.Backend == nil {
+		return status
+	}
+
+	status.HookCount = len(manifest.Backend.Hooks)
+	status.RouteCount = len(manifest.Backend.Routes)
+	runtime := normalizedBackendRuntime(manifest.Backend.Runtime)
+	if runtime == "" && manifestDeclaresRuntimeWork(manifest) {
+		runtime = "legacy"
+	}
+	if runtime != "" {
+		status.Runtime = runtime
+	}
+	if !manifestDeclaresRuntimeWork(manifest) {
+		return status
+	}
+
+	switch runtime {
+	case BackendRuntimePackage:
+		status.State = RuntimeStateNotLoaded
+		status.Health = RuntimeHealthUnknown
+		status.Message = "package runtime is not loaded"
+	case BackendRuntimeHTTP:
+		status.State = RuntimeStateExternal
+		status.Health = RuntimeHealthUnknown
+		status.Message = "external HTTP runtime is operator-managed"
+		status.BaseURL = strings.TrimSpace(manifest.Backend.BaseURL)
+	default:
+		status.State = RuntimeStateNotConfigured
+		status.Health = RuntimeHealthUnknown
+		status.Message = "backend hooks or routes require backend.runtime"
+	}
+	return status
+}
+
+func decorateRuntimeStatus(plugin *Plugin, manifest *Manifest, status PluginRuntimeStatus) PluginRuntimeStatus {
+	base := baseRuntimeStatus(plugin, manifest)
+	if status.PluginID == uuid.Nil {
+		status.PluginID = base.PluginID
+	}
+	if status.PluginName == "" {
+		status.PluginName = base.PluginName
+	}
+	status.DisplayName = base.DisplayName
+	if status.Runtime == "" || status.Runtime == "none" {
+		status.Runtime = base.Runtime
+	}
+	status.HookCount = base.HookCount
+	status.RouteCount = base.RouteCount
+	return status
+}
+
+func manifestDeclaresRuntimeWork(manifest *Manifest) bool {
+	return manifest != nil &&
+		manifest.Backend != nil &&
+		(len(manifest.Backend.Hooks) > 0 || len(manifest.Backend.Routes) > 0)
+}
+
 func findRuntimeRoute(manifest *Manifest, method string, path string) (RouteConfig, bool) {
 	if manifest.Backend == nil {
 		return RouteConfig{}, false
@@ -559,6 +770,7 @@ func (s *Service) unloadPlugin(name string) {
 
 	// Unregister hooks
 	s.hooks.unregisterPluginHooks(loaded.Plugin.ID)
+	s.clearRuntimeFailure(loaded.Plugin.ID)
 
 	if loaded.Runtime != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), packageRuntimeShutdownTimeout)
@@ -567,6 +779,14 @@ func (s *Service) unloadPlugin(name string) {
 		}
 		cancel()
 	}
+}
+
+func (s *Service) clearRuntimeFailure(pluginID uuid.UUID) {
+	s.mu.Lock()
+	if s.runtimeFailures != nil {
+		delete(s.runtimeFailures, pluginID)
+	}
+	s.mu.Unlock()
 }
 
 // GetLoadedPlugin returns a loaded plugin by name
