@@ -133,6 +133,24 @@ func TestKnownCLICommandPathsHaveFunctionalTests(t *testing.T) {
 	require.Empty(t, untested, "known CLI commands missing app.run coverage in cli_commands_test.go")
 }
 
+func TestAPIBoundCLICommandsHaveHTTPContractTests(t *testing.T) {
+	contracts := collectCLITestHTTPRouteContracts(t)
+	require.Greater(t, len(contracts), 100, "CLI command tests should exercise broad HTTP method/path contracts")
+
+	var missing []string
+	for _, route := range collectAPIRoutesFromSource(t) {
+		command, ok := cliCommandForRoute(route)
+		if !ok || command == "" {
+			continue
+		}
+		if !hasHTTPRouteContract(contracts, route) {
+			missing = append(missing, fmt.Sprintf("%s -> %s", route.String(), command))
+		}
+	}
+	sort.Strings(missing)
+	require.Empty(t, missing, "API-backed CLI commands missing HTTP method/path mock contracts in cli_commands_test.go")
+}
+
 func collectAPIRoutesFromSource(t *testing.T) []apiRoute {
 	t.Helper()
 
@@ -279,6 +297,277 @@ func collectFunctionallyTestedCLICommandPaths(t *testing.T, knownCommands map[st
 	})
 	require.Greater(t, len(tested), 100, "functional test parser should see broad CLI app.run coverage")
 	return tested
+}
+
+func collectCLITestHTTPRouteContracts(t *testing.T) []apiRoute {
+	t.Helper()
+
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, "cli_commands_test.go", nil, 0)
+	require.NoError(t, err)
+
+	seen := map[apiRoute]bool{}
+	var contracts []apiRoute
+	addContracts := func(methods []string, paths []string) {
+		for _, method := range methods {
+			for _, path := range paths {
+				route := apiRoute{Method: method, Path: path}
+				if seen[route] {
+					continue
+				}
+				seen[route] = true
+				contracts = append(contracts, route)
+			}
+		}
+	}
+
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.BlockStmt:
+			methods, paths := collectDirectHTTPAssertionConditions(t, typed.List)
+			addContracts(methods, paths)
+		case *ast.IfStmt:
+			methods, paths := extractHTTPContractConditions(t, typed.Cond)
+			bodyMethods, bodyPaths := collectDirectHTTPAssertionConditions(t, typed.Body.List)
+			addContracts(append(methods, bodyMethods...), append(paths, bodyPaths...))
+		case *ast.CaseClause:
+			var methods []string
+			var paths []string
+			for _, expr := range typed.List {
+				exprMethods, exprPaths := extractHTTPContractConditions(t, expr)
+				methods = append(methods, exprMethods...)
+				paths = append(paths, exprPaths...)
+				if path, ok := routePathValue(t, expr); ok {
+					paths = append(paths, path)
+				}
+			}
+			bodyMethods, bodyPaths := collectDirectHTTPAssertionConditions(t, typed.Body)
+			addContracts(append(methods, bodyMethods...), append(paths, bodyPaths...))
+		}
+		return true
+	})
+
+	sort.Slice(contracts, func(i, j int) bool {
+		return contracts[i].String() < contracts[j].String()
+	})
+	return contracts
+}
+
+func collectDirectHTTPAssertionConditions(t *testing.T, statements []ast.Stmt) ([]string, []string) {
+	t.Helper()
+
+	var methods []string
+	var paths []string
+	for _, stmt := range statements {
+		exprStmt, ok := stmt.(*ast.ExprStmt)
+		if !ok {
+			continue
+		}
+		call, ok := exprStmt.X.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		exprMethods, exprPaths := extractHTTPAssertionConditions(t, call)
+		methods = append(methods, exprMethods...)
+		paths = append(paths, exprPaths...)
+	}
+	return methods, paths
+}
+
+func extractHTTPAssertionConditions(t *testing.T, call *ast.CallExpr) ([]string, []string) {
+	t.Helper()
+
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return nil, nil
+	}
+	switch selector.Sel.Name {
+	case "Equal", "Equalf":
+	default:
+		return nil, nil
+	}
+	if len(call.Args) < 3 {
+		return nil, nil
+	}
+	expected := call.Args[1]
+	actual := call.Args[2]
+	if isHTTPRequestMethodExpr(actual) {
+		if method, ok := httpMethodValue(t, expected); ok {
+			return []string{method}, nil
+		}
+	}
+	if isHTTPRequestMethodExpr(expected) {
+		if method, ok := httpMethodValue(t, actual); ok {
+			return []string{method}, nil
+		}
+	}
+	if isHTTPRequestPathExpr(actual) {
+		if path, ok := routePathValue(t, expected); ok {
+			return nil, []string{path}
+		}
+	}
+	if isHTTPRequestPathExpr(expected) {
+		if path, ok := routePathValue(t, actual); ok {
+			return nil, []string{path}
+		}
+	}
+	return nil, nil
+}
+
+func extractHTTPContractConditions(t *testing.T, expr ast.Expr) ([]string, []string) {
+	t.Helper()
+
+	switch node := expr.(type) {
+	case *ast.BinaryExpr:
+		if node.Op == token.LAND {
+			leftMethods, leftPaths := extractHTTPContractConditions(t, node.X)
+			rightMethods, rightPaths := extractHTTPContractConditions(t, node.Y)
+			return append(leftMethods, rightMethods...), append(leftPaths, rightPaths...)
+		}
+		if node.Op != token.EQL {
+			return nil, nil
+		}
+		if isHTTPRequestMethodExpr(node.X) {
+			if method, ok := httpMethodValue(t, node.Y); ok {
+				return []string{method}, nil
+			}
+		}
+		if isHTTPRequestMethodExpr(node.Y) {
+			if method, ok := httpMethodValue(t, node.X); ok {
+				return []string{method}, nil
+			}
+		}
+		if isHTTPRequestPathExpr(node.X) {
+			if path, ok := routePathValue(t, node.Y); ok {
+				return nil, []string{path}
+			}
+		}
+		if isHTTPRequestPathExpr(node.Y) {
+			if path, ok := routePathValue(t, node.X); ok {
+				return nil, []string{path}
+			}
+		}
+	}
+	return nil, nil
+}
+
+func isHTTPRequestMethodExpr(expr ast.Expr) bool {
+	selector, ok := expr.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "Method"
+}
+
+func isHTTPRequestPathExpr(expr ast.Expr) bool {
+	pathSelector, ok := expr.(*ast.SelectorExpr)
+	if !ok || pathSelector.Sel.Name != "Path" {
+		return false
+	}
+	urlSelector, ok := pathSelector.X.(*ast.SelectorExpr)
+	return ok && urlSelector.Sel.Name == "URL"
+}
+
+func httpMethodValue(t *testing.T, expr ast.Expr) (string, bool) {
+	t.Helper()
+
+	switch value := expr.(type) {
+	case *ast.SelectorExpr:
+		method, ok := strings.CutPrefix(value.Sel.Name, "Method")
+		if !ok || method == "" {
+			return "", false
+		}
+		return strings.ToUpper(method), true
+	case *ast.BasicLit:
+		if value.Kind != token.STRING {
+			return "", false
+		}
+		method, err := strconv.Unquote(value.Value)
+		require.NoError(t, err)
+		method = strings.ToUpper(strings.TrimSpace(method))
+		return method, method != ""
+	default:
+		return "", false
+	}
+}
+
+func routePathValue(t *testing.T, expr ast.Expr) (string, bool) {
+	t.Helper()
+
+	path, ok := routePathExpressionValue(t, expr)
+	if !ok {
+		return "", false
+	}
+	path = strings.TrimSpace(path)
+	return path, strings.HasPrefix(path, "/")
+}
+
+func routePathExpressionValue(t *testing.T, expr ast.Expr) (string, bool) {
+	t.Helper()
+
+	switch value := expr.(type) {
+	case *ast.BasicLit:
+		if value.Kind != token.STRING {
+			return "", false
+		}
+		path, err := strconv.Unquote(value.Value)
+		require.NoError(t, err)
+		return path, true
+	case *ast.BinaryExpr:
+		if value.Op != token.ADD {
+			return "", false
+		}
+		left, leftOK := routePathExpressionValue(t, value.X)
+		right, rightOK := routePathExpressionValue(t, value.Y)
+		if !leftOK {
+			left = "*"
+		}
+		if !rightOK {
+			right = "*"
+		}
+		return left + right, true
+	default:
+		return "*", true
+	}
+}
+
+func hasHTTPRouteContract(contracts []apiRoute, route apiRoute) bool {
+	for _, contract := range contracts {
+		if contract.Method == route.Method && routePathPatternMatches(route.Path, contract.Path) {
+			return true
+		}
+	}
+	return false
+}
+
+func routePathPatternMatches(pattern, actual string) bool {
+	patternParts := strings.Split(strings.Trim(pattern, "/"), "/")
+	actualParts := strings.Split(strings.Trim(actual, "/"), "/")
+	if len(patternParts) == 1 && patternParts[0] == "" {
+		patternParts = nil
+	}
+	if len(actualParts) == 1 && actualParts[0] == "" {
+		actualParts = nil
+	}
+
+	for i, part := range patternParts {
+		if part == "*" {
+			return len(actualParts) >= i
+		}
+		if i >= len(actualParts) {
+			return false
+		}
+		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+			if actualParts[i] == "" {
+				return false
+			}
+			continue
+		}
+		if actualParts[i] == "*" {
+			continue
+		}
+		if part != actualParts[i] {
+			return false
+		}
+	}
+	return len(patternParts) == len(actualParts)
 }
 
 func mustStringArg(t *testing.T, expr ast.Expr) string {
