@@ -57,7 +57,7 @@ func BuildRetentionReviewRemediationActions(review *RetentionReview) []DocumentR
 			base.Severity = "ACTION"
 			base.Message = fmt.Sprintf("Document %s was rejected and needs replacement or correction.", reminder.FileName)
 			base.Action = "Upload corrected evidence or approve the existing document after the rejection has been resolved."
-			base.CLICommand = fmt.Sprintf("oa documents upload --entity-type %s --entity-id %s --document-type %s --file <replacement-file>", reminder.EntityType, reminder.EntityID, reminder.DocumentType)
+			base.CLICommand = replacementEvidenceCommand(reminder.EntityType, reminder.EntityID, reminder.DocumentType, reminder.DocumentID)
 		default:
 			base.Code = "document_retention_review"
 			base.Severity = "WARNING"
@@ -92,7 +92,7 @@ func BuildEvidencePolicyRemediationActions(result *EvidencePolicyResult, docs ..
 			base.DocumentID = doc.ID
 			base.FileName = doc.FileName
 			base.UIPath = documentRemediationUIPath(result.EntityType, result.EntityID, doc.ID)
-			base.CLICommand = fmt.Sprintf("oa documents upload --entity-type %s --entity-id %s --document-type %s --file <replacement-file>", result.EntityType, result.EntityID, documentType)
+			base.CLICommand = replacementEvidenceCommand(result.EntityType, result.EntityID, documentType, doc.ID)
 		} else if violation.RequireApproved && violation.MatchingCount > violation.ApprovedMatchingCount {
 			base.Code = "document_evidence_unapproved"
 			base.Severity = "ACTION"
@@ -234,6 +234,14 @@ func evidencePolicyDocumentTypeMatches(documentTypes []string, documentType stri
 
 func uploadEvidenceCommand(entityType, entityID, documentType string) string {
 	return fmt.Sprintf("oa documents upload --entity-type %s --entity-id %s --document-type %s --file <file>", entityType, entityID, firstDocumentType([]string{documentType}))
+}
+
+func replacementEvidenceCommand(entityType, entityID, documentType, documentID string) string {
+	command := fmt.Sprintf("oa documents upload --entity-type %s --entity-id %s --document-type %s --file <replacement-file>", entityType, entityID, firstDocumentType([]string{documentType}))
+	if trimmed := strings.TrimSpace(documentID); trimmed != "" {
+		command += fmt.Sprintf(" --replaces-document-id %s --replacement-note \"Corrected evidence uploaded from remediation action\"", trimmed)
+	}
+	return command
 }
 
 func reviewQueueCommand(entityType, documentType string) string {

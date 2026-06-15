@@ -453,12 +453,14 @@ func TestCLIGuideDocumentsPayrollMigrationSamples(t *testing.T) {
 		"period_year,period_month,status,submitted_at,emta_reference,employee_number,payment_type,gross_payment",
 		"TSD history accepts aliases such as `tsd_year`, `tsd_month`, `declaration_status`, `submitted_date`, `emta_ref`, `employee_no`, `isikukood`, `gross_salary`, `taxable_income`, `unemployment_insurance_er`, `unemployment_insurance_ee`, and `pension`.",
 		"Existing TSD declaration periods are skipped instead of overwritten.",
+		"go run ./cmd/oa migration execute \\\n  --employees ./employees.csv \\\n  --payroll-history ./payroll-history.csv \\\n  --leave-balances ./leave-balances.csv \\\n  --tsd-history ./tsd-history.csv",
 		"`tsd mark-submitted` and `tsd mark-accepted` require one approved `tax_support` or `supporting_document` uploaded to `--entity-type tsd_declaration`",
 		"--entity-type kmd_declaration",
 		"go run ./cmd/oa tax kmd mark-submitted --year 2026 --month 3",
 		"go run ./cmd/oa tax kmd mark-accepted --year 2026 --month 3",
 		"`tax kmd mark-submitted` and `tax kmd mark-accepted` require one approved `tax_support` or `supporting_document` uploaded to `--entity-type kmd_declaration`",
 		"`tax kmd mark-submitted` records the declaration as submitted with the current server timestamp.",
+		"go run ./cmd/oa documents review-summary --entity-type payment --entity-id <payment-id> --entity-id <second-payment-id>",
 		"Backend hook and route manifest entries are executable when they declare a supported `backend.runtime`: `http` proxies to an operator-managed loopback process with `backend.base_url`, while `package` starts a plugin-local executable and waits for its loopback health endpoint before proxying hooks and tenant runtime routes.",
 	} {
 		if !strings.Contains(guide, snippet) {

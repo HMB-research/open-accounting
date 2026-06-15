@@ -124,7 +124,8 @@
 	let loadedDeepLinkKey = '';
 
 	let canSubmitBundle = $derived(tenantId.trim().length > 0 && bundleFiles.length > 0 && !working);
-	let canExecute = $derived(canSubmitBundle && executionConfirmed);
+	let canResumeSavedRun = $derived(tenantId.trim().length > 0 && resumeRunId.trim().length > 0 && !working);
+	let canExecute = $derived((canSubmitBundle || canResumeSavedRun) && executionConfirmed);
 	let selectedProvider = $derived(
 		providerPresets.find((preset) => preset.preset === providerPreset) ?? fallbackProviderPresets[0]
 	);

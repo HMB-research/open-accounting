@@ -201,31 +201,40 @@ func collectImplementedCLIFlagSetCommands(t *testing.T) map[string]bool {
 	t.Helper()
 
 	fileSet := token.NewFileSet()
-	file, err := parser.ParseFile(fileSet, "main.go", nil, 0)
+	files, err := filepath.Glob("*.go")
 	require.NoError(t, err)
+	require.NotEmpty(t, files, "expected Go source files in cmd/oa")
 
 	commands := map[string]bool{}
-	ast.Inspect(file, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok || len(call.Args) == 0 {
-			return true
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
 		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || selector.Sel.Name != "NewFlagSet" {
-			return true
-		}
-		lit, ok := call.Args[0].(*ast.BasicLit)
-		if !ok {
-			return true
-		}
-		command, err := strconv.Unquote(lit.Value)
+		file, err := parser.ParseFile(fileSet, path, nil, 0)
 		require.NoError(t, err)
-		command = strings.TrimSpace(command)
-		if command != "" {
-			commands[command] = true
-		}
-		return true
-	})
+
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || len(call.Args) == 0 {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "NewFlagSet" {
+				return true
+			}
+			lit, ok := call.Args[0].(*ast.BasicLit)
+			if !ok {
+				return true
+			}
+			command, err := strconv.Unquote(lit.Value)
+			require.NoError(t, err)
+			command = strings.TrimSpace(command)
+			if command != "" {
+				commands[command] = true
+			}
+			return true
+		})
+	}
 	require.Greater(t, len(commands), 100, "implementation parser should see broad CLI flag set coverage")
 	return commands
 }
