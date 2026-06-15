@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1649,14 +1650,88 @@ func TestService_InvokeTenantPluginRoute_PackageRuntime(t *testing.T) {
 	}
 }
 
+func TestService_PackageRuntimeDoesNotInheritParentEnvironment(t *testing.T) {
+	ctx := context.Background()
+	tenantID := uuid.New()
+	pluginID := uuid.New()
+	t.Setenv("DATABASE_URL", "postgres://secret:secret@db/open-accounting")
+	t.Setenv("JWT_SECRET", "production-jwt-secret")
+	t.Setenv("SMTP_PASSWORD", "smtp-secret")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
+	t.Setenv("OPEN_ACCOUNTING_RUNTIME_ADDR", "127.0.0.1:1")
+
+	pluginDir, manifest := createPackageRuntimePluginFixture(t, "package-env-plugin", []RouteConfig{
+		{Method: http.MethodGet, Path: "/env", Handler: "/routes/env"},
+	}, nil)
+	manifestJSON, err := manifest.ToJSON()
+	if err != nil {
+		t.Fatalf("serialize manifest: %v", err)
+	}
+
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:                 pluginID,
+		Name:               manifest.Name,
+		DisplayName:        manifest.DisplayName,
+		Version:            manifest.Version,
+		State:              StateEnabled,
+		GrantedPermissions: []string{"routes:register"},
+		Manifest:           manifestJSON,
+	}
+	now := time.Now()
+	repo.tenantPlugins[fmt.Sprintf("%s:%s", tenantID, pluginID)] = &TenantPlugin{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		PluginID:  pluginID,
+		IsEnabled: true,
+		EnabledAt: &now,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	service := NewServiceWithRepository(repo, nil, pluginDir)
+	if err := service.loadPlugin(repo.plugins[pluginID], manifest); err != nil {
+		t.Fatalf("load package runtime plugin: %v", err)
+	}
+	t.Cleanup(func() {
+		service.unloadPlugin(manifest.Name)
+	})
+
+	resp, err := service.InvokeTenantPluginRoute(ctx, tenantID, pluginID, http.MethodGet, "/env", "", nil, nil)
+	if err != nil {
+		t.Fatalf("InvokeTenantPluginRoute failed: %v", err)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		t.Fatalf("decode runtime env response: %v", err)
+	}
+	for _, key := range []string{"database_url", "jwt_secret", "smtp_password", "aws_secret_access_key"} {
+		if body[key] != "" {
+			t.Fatalf("runtime inherited %s = %q", key, body[key])
+		}
+	}
+	if body["plugin_id"] != pluginID.String() {
+		t.Errorf("plugin_id = %q, want %s", body["plugin_id"], pluginID)
+	}
+	if body["plugin_name"] != manifest.Name {
+		t.Errorf("plugin_name = %q, want %s", body["plugin_name"], manifest.Name)
+	}
+	if body["runtime_addr"] == "" || body["runtime_addr"] == "127.0.0.1:1" {
+		t.Errorf("runtime_addr = %q, want generated loopback address", body["runtime_addr"])
+	}
+}
+
 func TestService_LoadPlugin_PackageRuntimeHook(t *testing.T) {
 	pluginID := uuid.New()
 	tenantID := uuid.New()
 	hookFile := filepath.Join(t.TempDir(), "hook.json")
-	t.Setenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_HOOK_FILE", hookFile)
-	pluginDir, manifest := createPackageRuntimePluginFixture(t, "package-hook-plugin", nil, []HookConfig{
-		{Event: EventInvoiceCreated, Handler: "/hooks/invoice"},
-	})
+	pluginDir, manifest := createPackageRuntimePluginFixtureWithOptions(
+		t,
+		"package-hook-plugin",
+		nil,
+		[]HookConfig{{Event: EventInvoiceCreated, Handler: "/hooks/invoice"}},
+		packageRuntimePluginFixtureOptions{HookFile: hookFile},
+	)
 
 	repo := NewMockRepository()
 	hooks := NewHookRegistry()
@@ -1704,10 +1779,13 @@ func TestService_LoadPlugin_PackageRuntimeHook(t *testing.T) {
 
 func TestService_LoadPlugin_PackageRuntimeStartupFailure(t *testing.T) {
 	pluginID := uuid.New()
-	t.Setenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_TEST_MODE", "exit")
-	pluginDir, manifest := createPackageRuntimePluginFixture(t, "package-fail-plugin", []RouteConfig{
-		{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"},
-	}, nil)
+	pluginDir, manifest := createPackageRuntimePluginFixtureWithOptions(
+		t,
+		"package-fail-plugin",
+		[]RouteConfig{{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"}},
+		nil,
+		packageRuntimePluginFixtureOptions{TestMode: "exit"},
+	)
 	repo := NewMockRepository()
 	service := NewServiceWithRepository(repo, nil, pluginDir)
 
@@ -1734,10 +1812,13 @@ func TestService_UnloadPlugin_StopsPackageRuntime(t *testing.T) {
 	tenantID := uuid.New()
 	pluginID := uuid.New()
 	stopFile := filepath.Join(t.TempDir(), "stopped")
-	t.Setenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_STOP_FILE", stopFile)
-	pluginDir, manifest := createPackageRuntimePluginFixture(t, "package-unload-plugin", []RouteConfig{
-		{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"},
-	}, nil)
+	pluginDir, manifest := createPackageRuntimePluginFixtureWithOptions(
+		t,
+		"package-unload-plugin",
+		[]RouteConfig{{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"}},
+		nil,
+		packageRuntimePluginFixtureOptions{StopFile: stopFile},
+	)
 	manifestJSON, err := manifest.ToJSON()
 	if err != nil {
 		t.Fatalf("serialize manifest: %v", err)
@@ -2956,7 +3037,18 @@ func TestMockRepository_Errors(t *testing.T) {
 	}
 }
 
+type packageRuntimePluginFixtureOptions struct {
+	TestMode string
+	PIDFile  string
+	HookFile string
+	StopFile string
+}
+
 func createPackageRuntimePluginFixture(t *testing.T, name string, routes []RouteConfig, hooks []HookConfig) (string, *Manifest) {
+	return createPackageRuntimePluginFixtureWithOptions(t, name, routes, hooks, packageRuntimePluginFixtureOptions{})
+}
+
+func createPackageRuntimePluginFixtureWithOptions(t *testing.T, name string, routes []RouteConfig, hooks []HookConfig, options packageRuntimePluginFixtureOptions) (string, *Manifest) {
 	t.Helper()
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go binary is required to build package runtime fixture")
@@ -2997,7 +3089,13 @@ func createPackageRuntimePluginFixture(t *testing.T, name string, routes []Route
 	}
 
 	sourcePath := filepath.Join(t.TempDir(), "runtime.go")
-	if err := os.WriteFile(sourcePath, []byte(packageRuntimeFixtureSource), 0600); err != nil {
+	source := strings.NewReplacer(
+		"__FIXTURE_TEST_MODE__", strconv.Quote(options.TestMode),
+		"__FIXTURE_PID_FILE__", strconv.Quote(options.PIDFile),
+		"__FIXTURE_HOOK_FILE__", strconv.Quote(options.HookFile),
+		"__FIXTURE_STOP_FILE__", strconv.Quote(options.StopFile),
+	).Replace(packageRuntimeFixtureSource)
+	if err := os.WriteFile(sourcePath, []byte(source), 0600); err != nil {
 		t.Fatalf("write package runtime fixture source: %v", err)
 	}
 	executablePath := filepath.Join(runtimeBinDir, "runtime")
@@ -3083,8 +3181,13 @@ import (
 	"time"
 )
 
+const fixtureTestMode = __FIXTURE_TEST_MODE__
+const fixturePIDFile = __FIXTURE_PID_FILE__
+const fixtureHookFile = __FIXTURE_HOOK_FILE__
+const fixtureStopFile = __FIXTURE_STOP_FILE__
+
 func main() {
-	if os.Getenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_TEST_MODE") == "exit" {
+	if fixtureTestMode == "exit" {
 		fmt.Fprintln(os.Stderr, "fixture forced exit")
 		os.Exit(42)
 	}
@@ -3098,8 +3201,8 @@ func main() {
 	if healthPath == "" {
 		healthPath = "/__open_accounting/health"
 	}
-	if pidFile := os.Getenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_PID_FILE"); pidFile != "" {
-		_ = os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0600)
+	if fixturePIDFile != "" {
+		_ = os.WriteFile(fixturePIDFile, []byte(strconv.Itoa(os.Getpid())), 0600)
 	}
 
 	mux := http.NewServeMux()
@@ -3122,10 +3225,22 @@ func main() {
 		fmt.Fprintln(os.Stderr, "fixture forced crash")
 		os.Exit(24)
 	})
+	mux.HandleFunc("/routes/env", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"aws_secret_access_key": os.Getenv("AWS_SECRET_ACCESS_KEY"),
+			"database_url":          os.Getenv("DATABASE_URL"),
+			"jwt_secret":            os.Getenv("JWT_SECRET"),
+			"plugin_id":             os.Getenv("OPEN_ACCOUNTING_PLUGIN_ID"),
+			"plugin_name":           os.Getenv("OPEN_ACCOUNTING_PLUGIN_NAME"),
+			"runtime_addr":          os.Getenv("OPEN_ACCOUNTING_RUNTIME_ADDR"),
+			"smtp_password":         os.Getenv("SMTP_PASSWORD"),
+		})
+	})
 	mux.HandleFunc("/hooks/invoice", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		if hookFile := os.Getenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_HOOK_FILE"); hookFile != "" {
-			_ = os.WriteFile(hookFile, body, 0600)
+		if fixtureHookFile != "" {
+			_ = os.WriteFile(fixtureHookFile, body, 0600)
 		}
 		w.WriteHeader(http.StatusAccepted)
 	})
@@ -3135,8 +3250,8 @@ func main() {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-signals
-		if stopFile := os.Getenv("OPEN_ACCOUNTING_PACKAGE_RUNTIME_STOP_FILE"); stopFile != "" {
-			_ = os.WriteFile(stopFile, []byte("stopped"), 0600)
+		if fixtureStopFile != "" {
+			_ = os.WriteFile(fixtureStopFile, []byte("stopped"), 0600)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
