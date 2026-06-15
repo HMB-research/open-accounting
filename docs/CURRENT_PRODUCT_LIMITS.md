@@ -4,7 +4,7 @@ Last reviewed: 2026-06-15
 
 This is the short current-state gap document for Open Accounting. It is the
 place to check what still prevents the repository from being described as fully
-featured, production-ready accounting software. Historical plans under `docs/plans/` are snapshots and may contain completed work, obsolete priorities, or older test evidence.
+featured, production-ready accounting software. Legacy development plans were removed from the active docs set because they contained completed work, obsolete priorities, and older test evidence.
 
 ## Current Verified Cap
 
@@ -45,8 +45,8 @@ cases and regression gates for the current branch.
 - Use [USE_CASE_COVERAGE.md](./USE_CASE_COVERAGE.md) for use-case-level test
   evidence and open goal work items.
 - Use this file for the concise product cap/gap summary.
-- Treat [docs/plans/](./plans/) as historical planning material unless a plan
-  explicitly says it is still active.
+- Keep new implementation plans outside the active documentation tree unless
+  they are promoted into current status, coverage, architecture, or API docs.
 
 ## Update Rule
 

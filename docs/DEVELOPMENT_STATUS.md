@@ -273,7 +273,6 @@ CLI coverage discovery now parses split `cmd/oa` source files for `flag.NewFlagS
 ## Related Docs
 
 - [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md)
-- [Reliability and Product Roadmap](./plans/2026-03-12-reliability-and-product-roadmap.md)
 - [Feature Mapping: Merit & SmartAccounts](./FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md)
 - [Use Case Coverage Matrix](./USE_CASE_COVERAGE.md)
 - [API Reference](./API.md)

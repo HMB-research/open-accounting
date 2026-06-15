@@ -178,16 +178,17 @@ After implementing a feature or fix, update relevant docs:
 | API change | `docs/API.md` |
 | Architecture change | `docs/ARCHITECTURE.md` |
 | Demo behavior change | `README.md` demo section |
-| New E2E test patterns | `docs/plans/` design doc |
+| New E2E test patterns | `docs/demo-e2e-testing.md` |
 | Translation keys added | Both `messages/en.json` and `messages/et.json` |
 
-### Plan Documents
+### Design Notes
 
-For non-trivial work, create a design doc before implementation:
+For non-trivial work, keep design notes in the task, PR description, or the current canonical docs instead of adding legacy plan files:
 
-- **Location**: `docs/plans/YYYY-MM-DD-{topic}-design.md`
-- **Purpose**: Capture decisions, trade-offs, implementation approach
-- **Example**: `docs/plans/2026-01-04-demo-data-reset-testing-design.md`
+- **Status and caps**: `docs/CURRENT_PRODUCT_LIMITS.md`
+- **Verification evidence**: `docs/DEVELOPMENT_STATUS.md` and `docs/USE_CASE_COVERAGE.md`
+- **Architecture decisions**: `docs/ARCHITECTURE.md`
+- **E2E changes**: `docs/demo-e2e-testing.md`
 
 ### Commit Message Format
 
