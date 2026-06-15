@@ -825,8 +825,7 @@ func TestActivateAssetRequiresApprovedAssetEvidence(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.ActivateAsset(rr, req)
 
-	require.Equal(t, http.StatusConflict, rr.Code)
-	assert.Contains(t, rr.Body.String(), "approved asset activation evidence is required")
+	assertAssetEvidenceConflict(t, rr, "asset-1", "approved asset activation evidence is required", "doc-1")
 	assert.Equal(t, assets.AssetStatusDraft, repo.assets["asset-1"].Status)
 
 	docRepo.docs["doc-1"].ReviewStatus = documents.ReviewStatusApproved
@@ -943,8 +942,7 @@ func TestDisposeAssetRequiresApprovedAssetEvidence(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.DisposeAsset(rr, newRequest())
 
-	require.Equal(t, http.StatusConflict, rr.Code)
-	assert.Contains(t, rr.Body.String(), "approved asset disposal evidence is required")
+	assertAssetEvidenceConflict(t, rr, "asset-1", "approved asset disposal evidence is required", "doc-1")
 	assert.Equal(t, assets.AssetStatusActive, repo.assets["asset-1"].Status)
 
 	docRepo.docs["doc-1"].ReviewStatus = documents.ReviewStatusApproved
@@ -957,6 +955,28 @@ func TestDisposeAssetRequiresApprovedAssetEvidence(t *testing.T) {
 	require.NotNil(t, repo.assets["asset-1"].DisposalDate)
 	assert.Equal(t, "2026-05-01", repo.assets["asset-1"].DisposalDate.Format("2006-01-02"))
 	require.NotNil(t, repo.assets["asset-1"].DisposalJournalEntryID)
+}
+
+func assertAssetEvidenceConflict(t *testing.T, rr *httptest.ResponseRecorder, assetID, message, documentID string) {
+	t.Helper()
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, message)
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeAsset, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, assetID, conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_unapproved", conflict.RemediationActions[0].Code)
+	assert.Equal(t, documentID, conflict.RemediationActions[0].DocumentID)
+	assert.Equal(t, "oa documents review --id "+documentID+" --status approved", conflict.RemediationActions[0].CLICommand)
 }
 
 func TestRecordDepreciation(t *testing.T) {

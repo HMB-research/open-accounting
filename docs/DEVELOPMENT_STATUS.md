@@ -234,7 +234,7 @@ Order quote-contact consistency preflight now rejects same-bundle order rows who
 KMD history execution plans now order historical journals before KMD history and mark KMD imports as dependent on invoice, e-invoice, and journal VAT history.
 Accountant workspace evidence-policy violation rows with supported entity and document metadata now expose the same evidence upload action as missing-evidence rows.
 Reconciliation evidence conflicts now return document evidence-policy results and upload/review remediation actions, including CLI follow-up commands, in the 409 response.
-Journal-entry and payment-receipt evidence conflicts now return document evidence-policy results and upload/review remediation actions, including CLI follow-up commands, in the 409 response.
+Journal-entry, purchase-invoice, fixed-asset activation/disposal, and payment-receipt evidence conflicts now return document evidence-policy results and upload/review remediation actions, including CLI follow-up commands, in the 409 response.
 Rejected matching evidence-policy documents now produce replacement-upload remediation rather than direct approval guidance, and rejected-document remediation CLI commands include replacement metadata that preserves supersession audit links.
 Document CLI entity-type help now includes TSD and KMD declaration attachment targets.
 Fixed-asset migration preflight now resolves source invoices by `invoice_number` when `invoice_id` is absent, rejects ambiguous source invoice numbers with a use-invoice-id instruction, and preserves purchase/supplier/date/amount checks for invoice-number references.

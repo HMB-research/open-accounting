@@ -1756,7 +1756,7 @@ POST /tenants/{tenantId}/invoices/{invoiceId}/send
 Authorization: Bearer <token>
 ```
 
-Draft purchase invoices require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the `invoice` entity before they can be sent or emailed. Missing or pending evidence returns `409 Conflict`.
+Draft purchase invoices require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the `invoice` entity before they can be sent or emailed. Missing or pending evidence returns `409 Conflict` with `evidence_policy_results` plus flattened upload/review `remediation_actions`, including the runnable `oa documents upload --entity-type invoice --entity-id <invoice-id> --document-type receipt --file <file>` follow-up.
 
 ### Void Invoice
 
@@ -2378,10 +2378,10 @@ POST /tenants/{tenantId}/assets/{assetId}/dispose
 Authorization: Bearer <token>
 ```
 
-Activating a draft asset requires at least one approved `asset_record`, `receipt`, or `contract` document attached to the `asset` entity. Missing or pending asset evidence returns `409 Conflict` so operators can upload and approve the acquisition record before the asset enters the depreciation workflow.
+Activating a draft asset requires at least one approved `asset_record`, `receipt`, or `contract` document attached to the `asset` entity. Missing or pending asset evidence returns `409 Conflict` with `evidence_policy_results` plus flattened upload/review `remediation_actions` so operators can upload or approve the acquisition record before the asset enters the depreciation workflow.
 
 Dispose payloads include `disposal_date`, `disposal_method`, optional `disposal_proceeds`, optional `disposal_notes`, optional `disposal_proceeds_account_id`, and optional `disposal_gain_loss_account_id`.
-Disposing or selling an active asset requires at least one approved `supporting_document` or `contract` document attached to the `asset` entity. Missing or pending disposal evidence returns `409 Conflict`; successful disposal persists the date, method, proceeds, notes, and `disposal_journal_entry_id`. Disposal requires asset and accumulated-depreciation account links, creates and posts a balanced `ASSET_DISPOSAL` journal entry that clears cost and accumulated depreciation, records proceeds to `disposal_proceeds_account_id`, and posts any gain or loss to `disposal_gain_loss_account_id`; gain accounts must be `REVENUE`, and loss accounts must be `EXPENSE`.
+Disposing or selling an active asset requires at least one approved `supporting_document` or `contract` document attached to the `asset` entity. Missing or pending disposal evidence returns `409 Conflict` with `evidence_policy_results` plus flattened upload/review `remediation_actions`; successful disposal persists the date, method, proceeds, notes, and `disposal_journal_entry_id`. Disposal requires asset and accumulated-depreciation account links, creates and posts a balanced `ASSET_DISPOSAL` journal entry that clears cost and accumulated depreciation, records proceeds to `disposal_proceeds_account_id`, and posts any gain or loss to `disposal_gain_loss_account_id`; gain accounts must be `REVENUE`, and loss accounts must be `EXPENSE`.
 
 ### Depreciation
 
@@ -3075,7 +3075,7 @@ Quote and order emails use the same recipient, subject, message, and `attach_pdf
 
 Payment receipt emails use the same recipient, subject, and message fields without `attach_pdf`. Add `"require_approved_evidence": true` to require at least one approved `receipt`, `supporting_document`, or `tax_support` document attached to the payment before sending; missing approved evidence returns `409 Conflict`.
 
-Draft purchase-invoice emails use the same approved invoice-evidence rule as `POST /tenants/{tenantId}/invoices/{invoiceId}/send`.
+Draft purchase-invoice emails use the same approved invoice-evidence rule and structured `409 Conflict` response as `POST /tenants/{tenantId}/invoices/{invoiceId}/send`.
 
 ---
 

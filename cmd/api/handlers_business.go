@@ -753,6 +753,7 @@ func (h *Handlers) GetInvoice(w http.ResponseWriter, r *http.Request) {
 // @Param invoiceID path string true "Invoice ID"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/invoices/{invoiceID}/send [post]
 func (h *Handlers) SendInvoice(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -760,6 +761,11 @@ func (h *Handlers) SendInvoice(w http.ResponseWriter, r *http.Request) {
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
 	if err := h.requireApprovedPurchaseInvoiceEvidence(r.Context(), schemaName, tenantID, invoiceID); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		status := http.StatusInternalServerError
 		switch {
 		case errors.Is(err, errApprovedPurchaseInvoiceEvidenceRequired):
@@ -808,8 +814,16 @@ func (h *Handlers) requireApprovedPurchaseInvoiceEvidence(ctx context.Context, s
 	if err != nil {
 		return fmt.Errorf("evaluate purchase invoice evidence: %w", err)
 	}
-	if len(results) == 0 || !results[0].Compliant {
+	if len(results) == 0 {
 		return fmt.Errorf("%w before sending purchase invoice %s", errApprovedPurchaseInvoiceEvidenceRequired, invoiceID)
+	}
+	for _, result := range results {
+		if !result.Compliant {
+			return &evidencePolicyConflictError{
+				Err:     fmt.Errorf("%w before sending purchase invoice %s", errApprovedPurchaseInvoiceEvidenceRequired, invoiceID),
+				Results: results,
+			}
+		}
 	}
 
 	return nil
@@ -1422,6 +1436,7 @@ func (h *Handlers) GetEmailLog(w http.ResponseWriter, r *http.Request) {
 // @Param request body email.SendInvoiceRequest true "Email details"
 // @Success 200 {object} email.EmailSentResponse
 // @Failure 400 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/invoices/{invoiceID}/email [post]
 func (h *Handlers) EmailInvoice(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -1447,6 +1462,11 @@ func (h *Handlers) EmailInvoice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.requireApprovedPurchaseInvoiceEvidence(r.Context(), schemaName, tenantID, invoiceID); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		status := http.StatusInternalServerError
 		switch {
 		case errors.Is(err, errApprovedPurchaseInvoiceEvidenceRequired):
@@ -6321,7 +6341,7 @@ func (h *Handlers) DeleteAsset(w http.ResponseWriter, r *http.Request) {
 // @Param assetID path string true "Asset ID"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
-// @Failure 409 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/assets/{assetID}/activate [post]
 func (h *Handlers) ActivateAsset(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
@@ -6329,6 +6349,11 @@ func (h *Handlers) ActivateAsset(w http.ResponseWriter, r *http.Request) {
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
 	if err := h.requireApprovedAssetActivationEvidence(r.Context(), schemaName, tenantID, assetID); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		status := http.StatusInternalServerError
 		switch {
 		case errors.Is(err, errApprovedAssetActivationEvidenceRequired):
@@ -6376,8 +6401,16 @@ func (h *Handlers) requireApprovedAssetActivationEvidence(ctx context.Context, s
 	if err != nil {
 		return fmt.Errorf("evaluate asset evidence: %w", err)
 	}
-	if len(results) == 0 || !results[0].Compliant {
+	if len(results) == 0 {
 		return fmt.Errorf("%w before activating fixed asset %s", errApprovedAssetActivationEvidenceRequired, assetID)
+	}
+	for _, result := range results {
+		if !result.Compliant {
+			return &evidencePolicyConflictError{
+				Err:     fmt.Errorf("%w before activating fixed asset %s", errApprovedAssetActivationEvidenceRequired, assetID),
+				Results: results,
+			}
+		}
 	}
 
 	return nil
@@ -6395,7 +6428,7 @@ func (h *Handlers) requireApprovedAssetActivationEvidence(ctx context.Context, s
 // @Param request body assets.DisposeAssetRequest true "Disposal details"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
-// @Failure 409 {object} object{error=string}
+// @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
 // @Router /tenants/{tenantID}/assets/{assetID}/dispose [post]
 func (h *Handlers) DisposeAsset(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetClaims(r.Context())
@@ -6412,6 +6445,11 @@ func (h *Handlers) DisposeAsset(w http.ResponseWriter, r *http.Request) {
 	req.UserID = claims.UserID
 
 	if err := h.requireApprovedAssetDisposalEvidence(r.Context(), schemaName, tenantID, assetID); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
 		status := http.StatusInternalServerError
 		switch {
 		case errors.Is(err, errApprovedAssetDisposalEvidenceRequired):
@@ -6458,8 +6496,16 @@ func (h *Handlers) requireApprovedAssetDisposalEvidence(ctx context.Context, sch
 	if err != nil {
 		return fmt.Errorf("evaluate asset disposal evidence: %w", err)
 	}
-	if len(results) == 0 || !results[0].Compliant {
+	if len(results) == 0 {
 		return fmt.Errorf("%w before disposing fixed asset %s", errApprovedAssetDisposalEvidenceRequired, assetID)
+	}
+	for _, result := range results {
+		if !result.Compliant {
+			return &evidencePolicyConflictError{
+				Err:     fmt.Errorf("%w before disposing fixed asset %s", errApprovedAssetDisposalEvidenceRequired, assetID),
+				Results: results,
+			}
+		}
 	}
 
 	return nil

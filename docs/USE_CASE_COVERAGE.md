@@ -218,7 +218,7 @@ Fixed-asset source-invoice preflight now accepts `invoice_number` when
 `invoice_id` is absent, keeps the same purchase/supplier/date/amount checks for
 invoice-number references, and rejects ambiguous invoice numbers with a
 use-`invoice_id` instruction.
-Journal-entry and payment-receipt evidence blocking now returns document
+Journal-entry, purchase-invoice, fixed-asset activation/disposal, and payment-receipt evidence blocking now returns document
 evidence-policy results plus flattened upload/review remediation actions in the
 409 response so API clients and the CLI can surface the next executable
 follow-up.
@@ -345,6 +345,14 @@ rows.
 Reconciliation evidence blocking now returns document evidence-policy results
 plus flattened upload/review remediation actions in the 409 response so API
 clients and the CLI can surface the next executable follow-up.
+Purchase-invoice send/email evidence blocking now returns document
+evidence-policy results plus flattened upload/review remediation actions in the
+409 response so API clients and the CLI can surface the next executable
+follow-up.
+Fixed-asset activation/disposal evidence blocking now returns document
+evidence-policy results plus flattened upload/review remediation actions in the
+409 response so API clients and the CLI can surface the next executable
+follow-up.
 
 ## Open Goal Work Items
 
