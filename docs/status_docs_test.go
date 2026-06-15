@@ -18,13 +18,16 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 	}
 
 	activeDocs := map[string]string{
-		"README.md":                                           read(filepath.Join("..", "README.md")),
-		"docs/DEVELOPMENT_STATUS.md":                          read("DEVELOPMENT_STATUS.md"),
-		"docs/ARCHITECTURE.md":                                read("ARCHITECTURE.md"),
-		"docs/USE_CASE_COVERAGE.md":                           read("USE_CASE_COVERAGE.md"),
-		"docs/demo-e2e-testing.md":                            read("demo-e2e-testing.md"),
-		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md":         read("FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md"),
-		".agents/skills/open-accounting-development/SKILL.md": read(filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md")),
+		"README.md":                                              read(filepath.Join("..", "README.md")),
+		"docs/DEVELOPMENT_STATUS.md":                             read("DEVELOPMENT_STATUS.md"),
+		"docs/ARCHITECTURE.md":                                   read("ARCHITECTURE.md"),
+		"docs/CURRENT_PRODUCT_LIMITS.md":                         read("CURRENT_PRODUCT_LIMITS.md"),
+		"docs/USE_CASE_COVERAGE.md":                              read("USE_CASE_COVERAGE.md"),
+		"docs/demo-e2e-testing.md":                               read("demo-e2e-testing.md"),
+		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md":            read("FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md"),
+		"docs/plans/README.md":                                   read(filepath.Join("plans", "README.md")),
+		"docs/plans/2026-06-15-remaining-implementation-goal.md": read(filepath.Join("plans", "2026-06-15-remaining-implementation-goal.md")),
+		".agents/skills/open-accounting-development/SKILL.md":    read(filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md")),
 	}
 
 	required := map[string][]string{
@@ -134,12 +137,16 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"32 files and 572 tests",
 			"all four seeded demo E2E shards",
 			"Broader plugin production hardening beyond the current loopback HTTP runtime, supervised package runtime startup/proxy/shutdown/status/manual restart/automatic crash restart, allowlisted package runtime process environment, and safe operator-bundled frontend component registry",
+			"Current product caps and gaps are summarized in [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md)",
+			"PR #62 is green at `2fc8e5e` in CI run `27526491911`",
 		},
 		"docs/DEVELOPMENT_STATUS.md": {
 			"Full local baseline last completed on 2026-06-08. On 2026-06-12, the current branch was revalidated locally",
+			"For the concise cap/gap summary before full product parity, see [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md).",
 			"On 2026-06-13, the payroll-history-import branch was revalidated locally",
 			"inventory subledger reconciliation stages",
 			"PR #62 CI run `27512752079` at commit `97e9d8b`",
+			"PR #62 CI revalidated on 2026-06-15 in run `27526491911` at commit `2fc8e5e`",
 			"frontend inventory subledger drill-down stage",
 			"close remediation actions stage",
 			"migration remediation actions stage",
@@ -353,7 +360,17 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"`INTEGRATION_SHARD` and `INTEGRATION_SHARDS`",
 			"Blocking smoke E2E plus blocking local seeded demo shards",
 		},
+		"docs/CURRENT_PRODUCT_LIMITS.md": {
+			"# Current Product Limits",
+			"PR #62 on `feat/payroll-history-import` at commit",
+			"green in CI run `27526491911`",
+			"KMD history preflight: declared KMD VAT totals are not yet reconciled",
+			"Historical plans under `docs/plans/` are snapshots",
+			"Do not move an item out of the gaps table until there is authoritative code, test, and documentation evidence",
+		},
 		"docs/USE_CASE_COVERAGE.md": {
+			"For a concise cap/gap summary before full product parity, see [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md).",
+			"PR #62 on `feat/payroll-history-import` was green at commit `2fc8e5e` in CI run `27526491911`.",
 			"legal hold placement/release audit metadata with disposal, replacement, hard-delete, and purge guards",
 			"focused document lifecycle/legal-hold/purge service/API/CLI tests",
 			"dry-run and executable purge automation for expired disposed non-held files",
@@ -370,7 +387,20 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		},
 		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md": {
 			"including the last full local baseline and current branch revalidation dates",
+			"For the concise current cap/gap summary before full product parity, use [CURRENT_PRODUCT_LIMITS.md](./CURRENT_PRODUCT_LIMITS.md).",
 			"Testing and coverage status changed materially after this comparison was first drafted.",
+		},
+		"docs/plans/README.md": {
+			"# Historical Development Plans",
+			"not the current source of truth for product status",
+			"[Current Product Limits](../CURRENT_PRODUCT_LIMITS.md)",
+			"Older plans can overstate future intent",
+		},
+		"docs/plans/2026-06-15-remaining-implementation-goal.md": {
+			"Historical snapshot: this plan was used to coordinate PR #62 follow-up",
+			"Use",
+			"[Current Product Limits](../CURRENT_PRODUCT_LIMITS.md)",
+			"Historical `/goal` Batch",
 		},
 		".agents/skills/open-accounting-development/SKILL.md": {
 			"demo1@example.com",

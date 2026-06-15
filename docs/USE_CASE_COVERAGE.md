@@ -5,7 +5,7 @@ Last reviewed: 2026-06-15
 This matrix tracks the active goal of testing every use case and keeping
 proper documentation available. It complements
 [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md), which remains the
-authoritative current-state status page.
+authoritative detailed current-state status page. For a concise cap/gap summary before full product parity, see [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md).
 
 Status values:
 
@@ -17,7 +17,7 @@ Status values:
 
 ## Current Evidence Baseline
 
-- PR #62 on `feat/payroll-history-import` was green at commit `97e9d8b` in CI run `27512752079`.
+- PR #62 on `feat/payroll-history-import` was green at commit `2fc8e5e` in CI run `27526491911`.
 - `make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.
 - `make test-backend-coverage` enforces the same CLI coverage from the backend coverage gate.
 - `go test -timeout=3m ./docs -count=1` keeps the documentation status and route coverage checks active.
@@ -373,6 +373,9 @@ follow-up.
 
 The following items still prevent the project from honestly claiming fully
 working, production-ready accounting software:
+
+The concise source of truth for these caps is
+[Current Product Limits](./CURRENT_PRODUCT_LIMITS.md).
 
 1. Extend remediation actions beyond year-end close, migration preflight, KMD tax/report review including status mutation and KMD INF/EU VAT OSS generation, TSD declarations including direct XML export and acceptance marking, payroll runs, banking transactions, expense claims, and document evidence/retention into remaining payroll/document/evidence-policy edges and accountant-workspace follow-up surfaces.
 2. Complete the remaining historical cutover mutating orchestration polish, further provider-specific mapping depth, cross-file validation outside payroll/TSD history, and deeper dashboard cutover controls.
