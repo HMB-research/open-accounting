@@ -118,6 +118,41 @@ func TestBuildMigrationExecutionPlanTSDHistoryDependsOnPayrollHistory(t *testing
 	assert.Contains(t, tsdStep.Message, "employees and payroll history")
 }
 
+func TestBuildMigrationExecutionPlanStockAdjustmentsDependOnlyOnInventoryMasters(t *testing.T) {
+	plan, err := BuildMigrationExecutionPlan(&PlanMigrationExecutionRequest{
+		Files: []BundleFile{
+			{
+				Kind:       KindStockAdjustments,
+				FileName:   "stock.csv",
+				CSVContent: "product_code,warehouse_code,quantity,description\nSKU-1,MAIN,5,Opening stock\n",
+			},
+			{
+				Kind:       KindWarehouses,
+				FileName:   "warehouses.csv",
+				CSVContent: "warehouse_code,warehouse_name\nMAIN,Main warehouse\n",
+			},
+			{
+				Kind:       KindProducts,
+				FileName:   "products.csv",
+				CSVContent: "product_code,name,sales_price\nSKU-1,Widget,10\n",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	assert.True(t, plan.Summary.Ready)
+	require.Len(t, plan.Steps, 3)
+	assert.Equal(t, KindWarehouses, plan.Steps[0].Kind)
+	assert.Equal(t, KindProducts, plan.Steps[1].Kind)
+	stockStep := plan.Steps[2]
+	assert.Equal(t, KindStockAdjustments, stockStep.Kind)
+	assert.Equal(t, MigrationExecutionStepReady, stockStep.Status)
+	assert.Equal(t, []FileKind{KindProducts, KindWarehouses}, stockStep.DependsOn)
+	assert.NotContains(t, stockStep.DependsOn, KindCostCenters)
+	assert.Contains(t, stockStep.Message, "products and warehouses")
+}
+
 func TestBuildMigrationExecutionPlanIncludesEInvoiceInvoiceTypeOverride(t *testing.T) {
 	plan, err := BuildMigrationExecutionPlan(&PlanMigrationExecutionRequest{
 		EInvoiceContactMode: EInvoiceContactModeBoth,
