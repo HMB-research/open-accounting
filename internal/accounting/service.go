@@ -325,6 +325,9 @@ func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID s
 		if err != nil {
 			return nil, fmt.Errorf("validation failed: line %d: %w", i+1, err)
 		}
+		if reqLine.VATRate.LessThan(decimal.Zero) {
+			return nil, fmt.Errorf("validation failed: line %d: vat_rate cannot be negative", i+1)
+		}
 		lineID, err := normalizeJournalLineID(reqLine.LineID)
 		if err != nil {
 			return nil, fmt.Errorf("validation failed: line %d: %w", i+1, err)
@@ -335,15 +338,17 @@ func (s *Service) CreateJournalEntry(ctx context.Context, schemaName, tenantID s
 		lineIDs[lineID] = struct{}{}
 
 		line := JournalEntryLine{
-			ID:           lineID,
-			AccountID:    reqLine.AccountID,
-			Description:  reqLine.Description,
-			DebitAmount:  reqLine.DebitAmount,
-			CreditAmount: reqLine.CreditAmount,
-			Currency:     currency,
-			ExchangeRate: exchangeRate,
-			BaseDebit:    reqLine.DebitAmount.Mul(exchangeRate),
-			BaseCredit:   reqLine.CreditAmount.Mul(exchangeRate),
+			ID:             lineID,
+			AccountID:      reqLine.AccountID,
+			Description:    reqLine.Description,
+			DebitAmount:    reqLine.DebitAmount,
+			CreditAmount:   reqLine.CreditAmount,
+			Currency:       currency,
+			ExchangeRate:   exchangeRate,
+			BaseDebit:      reqLine.DebitAmount.Mul(exchangeRate),
+			BaseCredit:     reqLine.CreditAmount.Mul(exchangeRate),
+			VATRate:        reqLine.VATRate,
+			IsVATInclusive: reqLine.IsVATInclusive,
 		}
 		entry.Lines = append(entry.Lines, line)
 	}

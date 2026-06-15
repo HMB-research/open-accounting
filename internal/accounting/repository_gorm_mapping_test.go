@@ -260,11 +260,15 @@ func TestGORMJournalEntryLineModelMappingRoundTrip(t *testing.T) {
 		ExchangeRate:   decimal.RequireFromString("0.9200000000"),
 		BaseDebit:      decimal.RequireFromString("1135.7952"),
 		BaseCredit:     decimal.Zero,
+		VATRate:        decimal.RequireFromString("22"),
+		IsVATInclusive: true,
 	}
 
 	model := journalEntryLineToModel(line)
 	assert.True(t, model.DebitAmount.Decimal.Equal(line.DebitAmount))
 	assert.True(t, model.ExchangeRate.Decimal.Equal(line.ExchangeRate))
+	assert.True(t, model.VATRate.Decimal.Equal(line.VATRate))
+	assert.True(t, model.IsVATInclusive)
 
 	roundTrip := modelToJournalEntryLine(model)
 	assert.Equal(t, line, roundTrip)
