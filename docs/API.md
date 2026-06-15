@@ -2598,7 +2598,7 @@ Content-Type: application/json
 }
 ```
 
-Stock CSV imports require `quantity`, a product identifier (`product_id` or `product_code`), and a warehouse identifier (`warehouse_id` or `warehouse_code`). Direct `product_id` and `warehouse_id` values must be valid UUIDs. Quantities are signed adjustments; use positive quantities for opening stock or inbound counts and negative quantities for reductions. Optional lot metadata columns are `lot_number`, `serial_number`, and `expiry_date`; serialized stock rows require quantity `1` or `-1`, and duplicate serial numbers for the same product are skipped as row errors. Aliases include `lot`, `batch`, `serial`, `expiration_date`, and `description` for `reason`.
+Stock CSV imports require `quantity`, a product identifier (`product_id` or `product_code`), and a warehouse identifier (`warehouse_id` or `warehouse_code`). Direct `product_id` and `warehouse_id` values must be valid UUIDs. When a migration bundle includes product or warehouse master files, stock rows must use `product_code` or `warehouse_code` for same-bundle references because product and warehouse import IDs are generated. Quantities are signed adjustments; use positive quantities for opening stock or inbound counts and negative quantities for reductions. Optional lot metadata columns are `lot_number`, `serial_number`, and `expiry_date`; serialized stock rows require quantity `1` or `-1`, and duplicate serial numbers for the same product are skipped as row errors. Aliases include `lot`, `batch`, `serial`, `expiration_date`, and `description` for `reason`.
 
 ```http
 POST /tenants/{tenantId}/inventory/issue
@@ -3364,6 +3364,7 @@ Authorization: Bearer <token>
 ```
 
 `POST /admin/plugin-registries` accepts `name`, `url`, and optional `description`.
+Admin registry and plugin endpoints require a tenant-scoped access token whose current tenant membership is `owner` or `admin`; the API rechecks current membership instead of trusting stale role claims.
 
 ### Admin Plugins
 

@@ -150,6 +150,36 @@ func decodeJSON(r *http.Request, v interface{}) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
+// RequireInstanceAdmin restricts instance-level administration to current tenant owners/admins.
+func (h *Handlers) RequireInstanceAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.GetClaims(r.Context())
+		if !ok {
+			respondError(w, http.StatusUnauthorized, "Authentication required")
+			return
+		}
+
+		tenantID := strings.TrimSpace(claims.TenantID)
+		if tenantID == "" || h.tenantService == nil {
+			respondError(w, http.StatusForbidden, "Tenant admin context required")
+			return
+		}
+
+		role, err := h.tenantService.GetUserRole(r.Context(), tenantID, claims.UserID)
+		if err != nil {
+			respondError(w, http.StatusForbidden, "Access denied")
+			return
+		}
+		if role != tenant.RoleOwner && role != tenant.RoleAdmin {
+			respondError(w, http.StatusForbidden, "Insufficient permissions")
+			return
+		}
+
+		claims.Role = role
+		next.ServeHTTP(w, r)
+	})
+}
+
 // TenantContext middleware ensures user has access to the tenant
 func (h *Handlers) TenantContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

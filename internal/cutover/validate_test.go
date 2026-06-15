@@ -4596,6 +4596,50 @@ func TestValidateBundleReportsProductAndWarehouseIDValuesThatMatchCodes(t *testi
 	assertValidationIssue(t, report, KindStockAdjustments, "warehouse_id", "warehouse_id must be a valid UUID")
 }
 
+func TestValidateBundleReportsStockAdjustmentGeneratedIDReferencesWhenMasterFilesPresent(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "product_code,name,sales_price\nSKU-1,Widget,10\n",
+		},
+		{
+			Kind:       KindWarehouses,
+			FileName:   "warehouses.csv",
+			CSVContent: "warehouse_code,warehouse_name\nMAIN,Main warehouse\n",
+		},
+		{
+			Kind:     KindStockAdjustments,
+			FileName: "stock.csv",
+			CSVContent: "product_id,warehouse_id,quantity\n" +
+				"11111111-1111-1111-1111-111111111111,22222222-2222-2222-2222-222222222222,5\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 2, report.Summary.ErrorCount)
+	assertValidationIssue(t, report, KindStockAdjustments, "product_id", "use product_code")
+	assertValidationIssue(t, report, KindStockAdjustments, "warehouse_id", "use warehouse_code")
+}
+
+func TestValidateBundleAcceptsStockAdjustmentUUIDReferencesWithoutMasterFiles(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindStockAdjustments,
+			FileName: "stock.csv",
+			CSVContent: "product_id,warehouse_id,quantity\n" +
+				"11111111-1111-1111-1111-111111111111,22222222-2222-2222-2222-222222222222,5\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Empty(t, report.Issues)
+}
+
 func TestValidateBundleCanonicalizesImporterDescriptionMemoAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
