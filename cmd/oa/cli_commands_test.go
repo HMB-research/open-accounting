@@ -4707,6 +4707,9 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 func TestExecuteMigrationImportStepCanonicalizesProviderPresetCSV(t *testing.T) {
 	var capturedCategoryCSV string
 	var capturedAssetCSV string
+	var capturedPayrollCSV string
+	var capturedLeaveCSV string
+	var capturedTSDCSV string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.Equal(t, http.MethodPost, r.Method)
@@ -4721,6 +4724,21 @@ func TestExecuteMigrationImportStepCanonicalizesProviderPresetCSV(t *testing.T) 
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			capturedAssetCSV = req.CSVContent
 			_ = json.NewEncoder(w).Encode(assets.ImportAssetsResult{FileName: req.FileName})
+		case "/api/v1/tenants/tenant-1/payroll-runs/import-history":
+			var req payroll.ImportPayrollHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			capturedPayrollCSV = req.CSVContent
+			_ = json.NewEncoder(w).Encode(payroll.ImportPayrollHistoryResult{FileName: req.FileName})
+		case "/api/v1/tenants/tenant-1/leave-balances/import":
+			var req payroll.ImportLeaveBalancesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			capturedLeaveCSV = req.CSVContent
+			_ = json.NewEncoder(w).Encode(payroll.ImportLeaveBalancesResult{FileName: req.FileName})
+		case "/api/v1/tenants/tenant-1/tsd/import-history":
+			var req payroll.ImportTSDHistoryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			capturedTSDCSV = req.CSVContent
+			_ = json.NewEncoder(w).Encode(payroll.ImportTSDHistoryResult{FileName: req.FileName})
 		default:
 			t.Fatalf("unexpected import request: %s %s", r.Method, r.URL.Path)
 		}
@@ -4750,10 +4768,49 @@ func TestExecuteMigrationImportStepCanonicalizesProviderPresetCSV(t *testing.T) 
 	}, migrationExecuteOptions{ProviderPreset: cutover.MigrationProviderPresetDirecto})
 	require.NoError(t, err)
 
+	_, err = executeMigrationImportStep(context.Background(), client, "tenant-1", cutover.MigrationExecutionStep{
+		Kind:     cutover.KindPayrollHistory,
+		FileName: "smartaccounts-payroll.csv",
+		Status:   cutover.MigrationExecutionStepReady,
+	}, cutover.BundleFile{
+		Kind:       cutover.KindPayrollHistory,
+		FileName:   "smartaccounts-payroll.csv",
+		CSVContent: "employee_no,payroll_year,payroll_month,gross_amount,income_tax_amount,social_tax_amount\nEMP-1,2026,1,1000,200,330\n",
+	}, migrationExecuteOptions{ProviderPreset: cutover.MigrationProviderPresetSmartAccounts})
+	require.NoError(t, err)
+
+	_, err = executeMigrationImportStep(context.Background(), client, "tenant-1", cutover.MigrationExecutionStep{
+		Kind:     cutover.KindLeaveBalances,
+		FileName: "smartaccounts-leave.csv",
+		Status:   cutover.MigrationExecutionStepReady,
+	}, cutover.BundleFile{
+		Kind:       cutover.KindLeaveBalances,
+		FileName:   "smartaccounts-leave.csv",
+		CSVContent: "employee_no,year,leave_type_code,entitlement_days,unused_days,used_days\nEMP-1,2026,ANNUAL,28,4,2\n",
+	}, migrationExecuteOptions{ProviderPreset: cutover.MigrationProviderPresetSmartAccounts})
+	require.NoError(t, err)
+
+	_, err = executeMigrationImportStep(context.Background(), client, "tenant-1", cutover.MigrationExecutionStep{
+		Kind:     cutover.KindTSDHistory,
+		FileName: "smartaccounts-tsd.csv",
+		Status:   cutover.MigrationExecutionStepReady,
+	}, cutover.BundleFile{
+		Kind:       cutover.KindTSDHistory,
+		FileName:   "smartaccounts-tsd.csv",
+		CSVContent: "employee_no,payroll_year,payroll_month,gross_amount,income_tax_amount,social_tax_amount\nEMP-1,2026,1,1000,200,330\n",
+	}, migrationExecuteOptions{ProviderPreset: cutover.MigrationProviderPresetSmartAccounts})
+	require.NoError(t, err)
+
 	categoryHeader, _, _ := strings.Cut(capturedCategoryCSV, "\n")
 	assert.Equal(t, "name,parent_name", categoryHeader)
 	assetHeader, _, _ := strings.Cut(capturedAssetCSV, "\n")
 	assert.Equal(t, "asset_number,name,purchase_date,purchase_cost", assetHeader)
+	payrollHeader, _, _ := strings.Cut(capturedPayrollCSV, "\n")
+	assert.Equal(t, "employee_number,period_year,period_month,gross_salary,income_tax,social_tax", payrollHeader)
+	leaveHeader, _, _ := strings.Cut(capturedLeaveCSV, "\n")
+	assert.Equal(t, "employee_number,year,absence_type_code,entitled_days,carryover_days,used_days", leaveHeader)
+	tsdHeader, _, _ := strings.Cut(capturedTSDCSV, "\n")
+	assert.Equal(t, "employee_number,period_year,period_month,gross_payment,income_tax,social_tax", tsdHeader)
 }
 
 func TestCLIMigrationExecuteResumesRunFile(t *testing.T) {

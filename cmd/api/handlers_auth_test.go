@@ -872,6 +872,99 @@ func TestLogin(t *testing.T) {
 	}
 }
 
+func TestLoginFailureRecordsSecurityAuditEvent(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	repo.addTestUser("user-1", "user@example.com", "Test User", "correctpassword123", true)
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/auth/login", map[string]string{
+		"email":    "user@example.com",
+		"password": "wrongpassword",
+	}, nil)
+	req.RemoteAddr = "192.0.2.10:12345"
+	req.Header.Set("User-Agent", "auth-test")
+	w := httptest.NewRecorder()
+
+	h.Login(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code, "response body: %s", w.Body.String())
+
+	auditEvents := h.securityAuditService.(*mockSecurityAuditService).events
+	require.Len(t, auditEvents, 1)
+	assert.Equal(t, auth.SecurityAuditActionLoginFailed, auditEvents[0].Action)
+	assert.Equal(t, "user-1", auditEvents[0].TargetUserID)
+	assert.Equal(t, "user@example.com", auditEvents[0].TargetEmail)
+	assert.Equal(t, "192.0.2.10:12345", auditEvents[0].RequestIP)
+	assert.Equal(t, "auth-test", auditEvents[0].UserAgent)
+	assert.Equal(t, "invalid_credentials", auditEvents[0].Metadata["reason"])
+}
+
+func TestLoginFailureRateLimitsCredentialAndIP(t *testing.T) {
+	h, repo := setupAuthTestHandlers()
+	h.loginAttemptLimiter = auth.NewLoginAttemptLimiter(2, time.Hour, time.Minute)
+	repo.addTestUser("user-1", "user@example.com", "Test User", "correctpassword123", true)
+
+	for i := 0; i < 2; i++ {
+		req := makeAuthenticatedRequest(http.MethodPost, "/auth/login", map[string]string{
+			"email":    "user@example.com",
+			"password": "wrongpassword",
+		}, nil)
+		req.RemoteAddr = "198.51.100.20:12345"
+		w := httptest.NewRecorder()
+
+		h.Login(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code, "attempt %d response body: %s", i+1, w.Body.String())
+	}
+
+	limitedReq := makeAuthenticatedRequest(http.MethodPost, "/auth/login", map[string]string{
+		"email":    " USER@example.com ",
+		"password": "wrongpassword",
+	}, nil)
+	limitedReq.RemoteAddr = "198.51.100.20:12345"
+	limitedW := httptest.NewRecorder()
+
+	h.Login(limitedW, limitedReq)
+
+	assert.Equal(t, http.StatusTooManyRequests, limitedW.Code, "response body: %s", limitedW.Body.String())
+	assert.NotEmpty(t, limitedW.Header().Get("Retry-After"))
+
+	blockedCorrectReq := makeAuthenticatedRequest(http.MethodPost, "/auth/login", map[string]string{
+		"email":    "user@example.com",
+		"password": "correctpassword123",
+	}, nil)
+	blockedCorrectReq.RemoteAddr = "198.51.100.20:12345"
+	blockedCorrectW := httptest.NewRecorder()
+
+	h.Login(blockedCorrectW, blockedCorrectReq)
+
+	assert.Equal(t, http.StatusTooManyRequests, blockedCorrectW.Code, "response body: %s", blockedCorrectW.Body.String())
+
+	otherCredentialReq := makeAuthenticatedRequest(http.MethodPost, "/auth/login", map[string]string{
+		"email":    "other@example.com",
+		"password": "wrongpassword",
+	}, nil)
+	otherCredentialReq.RemoteAddr = "198.51.100.20:12345"
+	otherCredentialW := httptest.NewRecorder()
+
+	h.Login(otherCredentialW, otherCredentialReq)
+
+	assert.Equal(t, http.StatusUnauthorized, otherCredentialW.Code, "response body: %s", otherCredentialW.Body.String())
+
+	auditEvents := h.securityAuditService.(*mockSecurityAuditService).events
+	require.GreaterOrEqual(t, len(auditEvents), 4)
+	var limitedEvent *auth.SecurityAuditEvent
+	for i := range auditEvents {
+		if auditEvents[i].Metadata["rate_limited"] == "true" {
+			limitedEvent = &auditEvents[i]
+			break
+		}
+	}
+	require.NotNil(t, limitedEvent)
+	assert.Equal(t, auth.SecurityAuditActionLoginFailed, limitedEvent.Action)
+	assert.Equal(t, "true", limitedEvent.Metadata["rate_limited"])
+	assert.NotEmpty(t, limitedEvent.Metadata["retry_after_seconds"])
+}
+
 func TestLoginInvalidJSON(t *testing.T) {
 	h, _ := setupAuthTestHandlers()
 

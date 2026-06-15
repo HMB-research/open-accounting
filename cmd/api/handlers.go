@@ -53,6 +53,7 @@ type Handlers struct {
 	passwordResetBaseURL     string
 	passwordResetSMTPConfig  *email.SMTPConfig
 	passwordResetMailer      email.MailSender
+	loginAttemptLimiter      *auth.LoginAttemptLimiter
 	securityAuditService     securityAuditManager
 	apiTokenService          *apitoken.Service
 	tenantService            *tenant.Service
@@ -254,19 +255,27 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.tenantService.GetUserByEmail(r.Context(), req.Email)
+	clientIP := auth.ClientIP(r)
+	email := strings.TrimSpace(req.Email)
+	if result := h.checkLoginAttemptLimit(email, clientIP); result.Limited {
+		h.recordLoginFailureAudit(r, email, nil, req.TenantID, "rate_limited", result)
+		h.respondLoginRateLimited(w, result)
+		return
+	}
+
+	user, err := h.tenantService.GetUserByEmail(r.Context(), email)
 	if err != nil {
-		respondError(w, http.StatusUnauthorized, "Invalid credentials")
+		h.handleLoginFailure(w, r, email, nil, req.TenantID, "invalid_credentials", http.StatusUnauthorized, "Invalid credentials", clientIP)
 		return
 	}
 
 	if !h.tenantService.ValidatePassword(user, req.Password) {
-		respondError(w, http.StatusUnauthorized, "Invalid credentials")
+		h.handleLoginFailure(w, r, email, user, req.TenantID, "invalid_credentials", http.StatusUnauthorized, "Invalid credentials", clientIP)
 		return
 	}
 
 	if !user.IsActive {
-		respondError(w, http.StatusForbidden, "Account is disabled")
+		h.handleLoginFailure(w, r, email, user, req.TenantID, "account_disabled", http.StatusForbidden, "Account is disabled", clientIP)
 		return
 	}
 
@@ -276,11 +285,11 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	if req.TenantID != "" {
 		membership, err := h.tenantService.GetTenantUser(r.Context(), req.TenantID, user.ID)
 		if err != nil {
-			respondError(w, http.StatusForbidden, "Access denied to tenant")
+			h.handleLoginFailure(w, r, email, user, req.TenantID, "tenant_access_denied", http.StatusForbidden, "Access denied to tenant", clientIP)
 			return
 		}
 		if !membership.IsActive {
-			respondError(w, http.StatusForbidden, "Tenant access is suspended")
+			h.handleLoginFailure(w, r, email, user, req.TenantID, "tenant_access_suspended", http.StatusForbidden, "Tenant access is suspended", clientIP)
 			return
 		}
 		tenantID = req.TenantID
@@ -305,6 +314,9 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	if err := h.refreshSessionService.CreateRefreshSession(r.Context(), user.ID, refreshClaims.ID, auth.HashRefreshToken(refreshToken), refreshClaims.ExpiresAt.Time); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to create refresh session")
 		return
+	}
+	if h.loginAttemptLimiter != nil {
+		h.loginAttemptLimiter.Reset(email, clientIP)
 	}
 	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
 		ActorUserID:  user.ID,
@@ -668,6 +680,65 @@ func (h *Handlers) recordSecurityAuditEvent(r *http.Request, event *auth.Securit
 	if err := h.securityAuditService.RecordEvent(r.Context(), event); err != nil {
 		log.Warn().Err(err).Str("action", event.Action).Msg("Failed to record security audit event")
 	}
+}
+
+func (h *Handlers) checkLoginAttemptLimit(email, clientIP string) auth.LoginAttemptResult {
+	if h.loginAttemptLimiter == nil {
+		return auth.LoginAttemptResult{}
+	}
+	return h.loginAttemptLimiter.Check(email, clientIP)
+}
+
+func (h *Handlers) handleLoginFailure(w http.ResponseWriter, r *http.Request, email string, user *tenant.User, tenantID, reason string, status int, message, clientIP string) {
+	result := auth.LoginAttemptResult{}
+	if h.loginAttemptLimiter != nil {
+		result = h.loginAttemptLimiter.RecordFailure(email, clientIP)
+	}
+	h.recordLoginFailureAudit(r, email, user, tenantID, reason, result)
+	if result.Limited {
+		h.respondLoginRateLimited(w, result)
+		return
+	}
+	respondError(w, status, message)
+}
+
+func (h *Handlers) recordLoginFailureAudit(r *http.Request, email string, user *tenant.User, tenantID, reason string, result auth.LoginAttemptResult) {
+	metadata := map[string]string{
+		"reason": reason,
+	}
+	if trimmedTenantID := strings.TrimSpace(tenantID); trimmedTenantID != "" {
+		metadata["tenant_id"] = trimmedTenantID
+	}
+	if result.Limited {
+		metadata["rate_limited"] = "true"
+		metadata["retry_after_seconds"] = strconv.Itoa(loginRetryAfterSeconds(result.RetryAfter))
+	}
+
+	targetEmail := strings.ToLower(strings.TrimSpace(email))
+	targetUserID := ""
+	if user != nil {
+		targetUserID = user.ID
+		targetEmail = user.Email
+	}
+	h.recordSecurityAuditEvent(r, &auth.SecurityAuditEvent{
+		Action:       auth.SecurityAuditActionLoginFailed,
+		TargetUserID: targetUserID,
+		TargetEmail:  targetEmail,
+		Metadata:     metadata,
+	})
+}
+
+func (h *Handlers) respondLoginRateLimited(w http.ResponseWriter, result auth.LoginAttemptResult) {
+	w.Header().Set("Retry-After", strconv.Itoa(loginRetryAfterSeconds(result.RetryAfter)))
+	respondError(w, http.StatusTooManyRequests, "Too many failed login attempts. Please try again later.")
+}
+
+func loginRetryAfterSeconds(retryAfter time.Duration) int {
+	seconds := int(retryAfter.Seconds())
+	if seconds < 1 {
+		seconds = 1
+	}
+	return seconds
 }
 
 func (h *Handlers) userEmailForAudit(ctx context.Context, userID string) string {
