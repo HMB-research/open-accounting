@@ -592,6 +592,39 @@ func TestEmailOrderConfirmsPending(t *testing.T) {
 	assert.Equal(t, email.StatusSent, emailRepo.logs[0].Status)
 }
 
+func TestEmailOrderRequiresApprovedEvidence(t *testing.T) {
+	h, repo, tenantRepo := setupOrdersTestHandlers()
+	store, err := documents.NewLocalStore(t.TempDir())
+	require.NoError(t, err)
+	documentRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(documentRepo, store)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+	repo.orders["order-1"] = &orders.Order{
+		ID:          "order-1",
+		TenantID:    "tenant-1",
+		OrderNumber: "ORD-001",
+		Status:      orders.OrderStatusPending,
+		Lines:       []orders.OrderLine{},
+	}
+
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/orders/order-1/email", map[string]any{
+		"recipient_email":           "customer@example.com",
+		"require_approved_evidence": true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "orderID": "order-1"})
+
+	rr := httptest.NewRecorder()
+	h.EmailOrder(rr, req)
+
+	assertOrderEvidenceConflict(t, rr, "order-1")
+	assert.Equal(t, orders.OrderStatusPending, repo.orders["order-1"].Status)
+}
+
 func TestCheckOrderStock(t *testing.T) {
 	h, repo, tenantRepo := setupOrdersTestHandlers()
 	inventoryRepo := newMockInventoryRepository()
@@ -1273,8 +1306,7 @@ func TestConfirmOrderRequiresApprovedEvidence(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.ConfirmOrder(rr, req)
 
-	assert.Equal(t, http.StatusConflict, rr.Code)
-	assert.Contains(t, rr.Body.String(), "approved order evidence is required")
+	assertOrderEvidenceConflict(t, rr, "order-1")
 
 	documentRepo.docs["doc-order"] = &documents.Document{
 		ID:           "doc-order",
@@ -1296,4 +1328,25 @@ func TestConfirmOrderRequiresApprovedEvidence(t *testing.T) {
 	h.ConfirmOrder(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func assertOrderEvidenceConflict(t *testing.T, rr *httptest.ResponseRecorder, orderID string) {
+	t.Helper()
+
+	assert.Equal(t, http.StatusConflict, rr.Code, "response body: %s", rr.Body.String())
+
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, "approved order evidence is required")
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeOrder, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, orderID, conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
+	assert.Equal(t, "oa documents upload --entity-type order --entity-id "+orderID+" --document-type contract --file <file>", conflict.RemediationActions[0].CLICommand)
 }

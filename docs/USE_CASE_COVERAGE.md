@@ -62,6 +62,7 @@ Status values:
 - The follow-up invoice VAT-contact import and order quote-contact consistency stage was locally revalidated with focused invoice importer and cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up reconciliation evidence remediation and Directo fixed-asset alias batch was locally revalidated with focused banking API tests, cutover provider-alias tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
 - The follow-up journal/payment evidence, document CLI entity help, and fixed-asset invoice-number batch was locally revalidated with focused API/document/CLI/cutover tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
+- The follow-up quote/order commercial evidence conflict stage was locally revalidated with focused quote/order API evidence tests and Swagger regeneration.
 - The follow-up payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up payment allocation amount decimal validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
 - The follow-up e-invoice payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
@@ -223,6 +224,9 @@ Journal-entry, purchase-invoice, fixed-asset activation/disposal, and payment-re
 evidence-policy results plus flattened upload/review remediation actions in the
 409 response so API clients and the CLI can surface the next executable
 follow-up.
+Quote/order commercial evidence conflicts now return document evidence-policy
+results plus flattened upload/review remediation actions in the 409 response
+for quote send/email and order email/confirmation blockers.
 Rejected matching evidence-policy documents now create replacement-upload
 remediation instead of direct approval guidance, and rejected-document
 remediation CLI commands include `--replaces-document-id` plus

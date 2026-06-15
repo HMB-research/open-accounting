@@ -498,6 +498,43 @@ func TestEmailQuoteMarksDraftSent(t *testing.T) {
 	assert.Equal(t, email.StatusSent, emailRepo.logs[0].Status)
 }
 
+func TestEmailQuoteRequiresApprovedEvidence(t *testing.T) {
+	h, repo, tenantRepo := setupQuotesTestHandlers()
+	store, err := documents.NewLocalStore(t.TempDir())
+	require.NoError(t, err)
+	documentRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(documentRepo, store)
+
+	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
+		ID:         "tenant-1",
+		SchemaName: "tenant_test",
+	}
+	repo.quotes["quote-1"] = &quotes.Quote{
+		ID:          "quote-1",
+		TenantID:    "tenant-1",
+		QuoteNumber: "QT-001",
+		ContactID:   "contact-1",
+		QuoteDate:   time.Now(),
+		Status:      quotes.QuoteStatusDraft,
+		Lines: []quotes.QuoteLine{
+			{ID: "line-1", Description: "Test Item", Quantity: decimal.NewFromInt(1), UnitPrice: decimal.NewFromInt(100)},
+		},
+	}
+
+	claims := createTestClaims("user-1", "test@example.com", "tenant-1", "owner")
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/quotes/quote-1/email", map[string]any{
+		"recipient_email":           "customer@example.com",
+		"require_approved_evidence": true,
+	}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "quoteID": "quote-1"})
+
+	rr := httptest.NewRecorder()
+	h.EmailQuote(rr, req)
+
+	assertQuoteEvidenceConflict(t, rr, "quote-1")
+	assert.Equal(t, quotes.QuoteStatusDraft, repo.quotes["quote-1"].Status)
+}
+
 func TestUpdateQuote(t *testing.T) {
 	h, repo, tenantRepo := setupQuotesTestHandlers()
 
@@ -660,8 +697,7 @@ func TestSendQuoteRequiresApprovedEvidence(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.SendQuote(rr, req)
 
-	assert.Equal(t, http.StatusConflict, rr.Code)
-	assert.Contains(t, rr.Body.String(), "approved quote evidence is required")
+	assertQuoteEvidenceConflict(t, rr, "quote-1")
 
 	documentRepo.docs["doc-quote"] = &documents.Document{
 		ID:           "doc-quote",
@@ -683,6 +719,27 @@ func TestSendQuoteRequiresApprovedEvidence(t *testing.T) {
 	h.SendQuote(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func assertQuoteEvidenceConflict(t *testing.T, rr *httptest.ResponseRecorder, quoteID string) {
+	t.Helper()
+
+	assert.Equal(t, http.StatusConflict, rr.Code, "response body: %s", rr.Body.String())
+
+	var conflict struct {
+		Error                 string                                `json:"error"`
+		EvidencePolicyResults []documents.EvidencePolicyResult      `json:"evidence_policy_results"`
+		RemediationActions    []documents.DocumentRemediationAction `json:"remediation_actions"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&conflict))
+	assert.Contains(t, conflict.Error, "approved quote evidence is required")
+	require.Len(t, conflict.EvidencePolicyResults, 1)
+	assert.Equal(t, documents.EntityTypeQuote, conflict.EvidencePolicyResults[0].EntityType)
+	assert.Equal(t, quoteID, conflict.EvidencePolicyResults[0].EntityID)
+	assert.False(t, conflict.EvidencePolicyResults[0].Compliant)
+	require.Len(t, conflict.RemediationActions, 1)
+	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
+	assert.Equal(t, "oa documents upload --entity-type quote --entity-id "+quoteID+" --document-type contract --file <file>", conflict.RemediationActions[0].CLICommand)
 }
 
 func TestAcceptQuote(t *testing.T) {

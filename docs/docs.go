@@ -12827,6 +12827,18 @@ const docTemplate = `{
                             "properties": {
                                 "error": {
                                     "type": "string"
+                                },
+                                "evidence_policy_results": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult"
+                                    }
+                                },
+                                "remediation_actions": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction"
+                                    }
                                 }
                             }
                         }
@@ -13067,6 +13079,18 @@ const docTemplate = `{
                             "properties": {
                                 "error": {
                                     "type": "string"
+                                },
+                                "evidence_policy_results": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult"
+                                    }
+                                },
+                                "remediation_actions": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction"
+                                    }
                                 }
                             }
                         }
@@ -17312,6 +17336,18 @@ const docTemplate = `{
                             "properties": {
                                 "error": {
                                     "type": "string"
+                                },
+                                "evidence_policy_results": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult"
+                                    }
+                                },
+                                "remediation_actions": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction"
+                                    }
                                 }
                             }
                         }
@@ -17516,6 +17552,18 @@ const docTemplate = `{
                             "properties": {
                                 "error": {
                                     "type": "string"
+                                },
+                                "evidence_policy_results": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.EvidencePolicyResult"
+                                    }
+                                },
+                                "remediation_actions": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_documents.DocumentRemediationAction"
+                                    }
                                 }
                             }
                         }
