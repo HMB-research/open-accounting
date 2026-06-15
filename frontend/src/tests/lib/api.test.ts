@@ -4336,6 +4336,9 @@ describe("API Client - Core Functionality", () => {
   describe("Plugin Endpoints", () => {
     beforeEach(() => {
       api.setTokens("valid-token", "refresh-token");
+      if (typeof window !== "undefined") {
+        window.history.pushState({}, "", "/");
+      }
     });
 
     it("should list plugin registries", async () => {
@@ -4429,6 +4432,29 @@ describe("API Client - Core Functionality", () => {
       const result = await api.getPluginPermissions();
 
       expect(result).toBeDefined();
+    });
+
+    it("should send tenant context for admin plugin permissions from tenant pages", async () => {
+      window.history.pushState({}, "", "/settings/plugins?tenant=tenant-123");
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          "read:invoices": { name: "Read Invoices", risk: "low" },
+        }),
+      });
+
+      await api.getPluginPermissions();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/admin/plugins/permissions"),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: "Bearer valid-token",
+            "X-Tenant-ID": "tenant-123",
+          }),
+        }),
+      );
     });
 
     it("should install plugin", async () => {

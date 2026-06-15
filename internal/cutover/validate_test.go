@@ -4640,6 +4640,87 @@ func TestValidateBundleAcceptsStockAdjustmentUUIDReferencesWithoutMasterFiles(t 
 	assert.Empty(t, report.Issues)
 }
 
+func TestValidateBundleReportsDocumentGeneratedProductIDReferencesWhenProductsPresent(t *testing.T) {
+	productID := "11111111-1111-1111-1111-111111111111"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindProducts,
+			FileName:   "products.csv",
+			CSVContent: "product_code,name,sales_price\nSKU-1,Widget,10\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_name,issue_date,due_date,line_description,quantity,unit_price,vat_rate,product_id\nINV-1,SALES,Customer One,2026-05-30,2026-06-14,Work,1,100,22," + productID + "\n",
+		},
+		{
+			Kind:       KindQuotes,
+			FileName:   "quotes.csv",
+			CSVContent: "quote_number,quote_date,contact_name,line_description,quantity,unit_price,vat_rate,product_id\nQ-1,2026-05-30,Customer One,Work,1,100,22," + productID + "\n",
+		},
+		{
+			Kind:       KindOrders,
+			FileName:   "orders.csv",
+			CSVContent: "order_number,order_date,contact_name,line_description,quantity,unit_price,vat_rate,product_id\nSO-1,2026-05-31,Customer One,Work,1,100,22," + productID + "\n",
+		},
+		{
+			Kind:       KindRecurringInvoices,
+			FileName:   "recurring.csv",
+			CSVContent: "name,frequency,start_date,contact_name,line_description,quantity,unit_price,vat_rate,product_id\nMonthly,MONTHLY,2026-06-01,Customer One,Work,1,100,22," + productID + "\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 4, report.Summary.ErrorCount)
+	require.Len(t, report.Issues, 4)
+	for _, issue := range report.Issues {
+		assert.Equal(t, KindProducts, issue.TargetKind)
+		assert.Equal(t, "product_id", issue.Field)
+		assert.Equal(t, productID, issue.Value)
+		assert.Contains(t, issue.Message, "use product_code")
+	}
+	assertValidationIssue(t, report, KindInvoices, "product_id", "use product_code")
+	assertValidationIssue(t, report, KindQuotes, "product_id", "use product_code")
+	assertValidationIssue(t, report, KindOrders, "product_id", "use product_code")
+	assertValidationIssue(t, report, KindRecurringInvoices, "product_id", "use product_code")
+}
+
+func TestValidateBundleAcceptsDocumentProductIDReferencesWithoutProductsFile(t *testing.T) {
+	productID := "11111111-1111-1111-1111-111111111111"
+
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_name,issue_date,due_date,line_description,quantity,unit_price,vat_rate,product_id\nINV-1,SALES,Customer One,2026-05-30,2026-06-14,Work,1,100,22," + productID + "\n",
+		},
+		{
+			Kind:       KindQuotes,
+			FileName:   "quotes.csv",
+			CSVContent: "quote_number,quote_date,contact_name,line_description,quantity,unit_price,vat_rate,product_id\nQ-1,2026-05-30,Customer One,Work,1,100,22," + productID + "\n",
+		},
+		{
+			Kind:       KindOrders,
+			FileName:   "orders.csv",
+			CSVContent: "order_number,order_date,contact_name,line_description,quantity,unit_price,vat_rate,product_id\nSO-1,2026-05-31,Customer One,Work,1,100,22," + productID + "\n",
+		},
+		{
+			Kind:       KindRecurringInvoices,
+			FileName:   "recurring.csv",
+			CSVContent: "name,frequency,start_date,contact_name,line_description,quantity,unit_price,vat_rate,product_id\nMonthly,MONTHLY,2026-06-01,Customer One,Work,1,100,22," + productID + "\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	assert.Empty(t, report.Issues)
+}
+
 func TestValidateBundleCanonicalizesImporterDescriptionMemoAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

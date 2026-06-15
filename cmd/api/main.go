@@ -438,6 +438,8 @@ func resolveAllowedOrigins(raw string, production bool) ([]string, error) {
 
 func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi.Mux {
 	r := chi.NewRouter()
+	canCreateEntries := func(perms tenant.RolePermissions) bool { return perms.CanCreateEntries }
+	canManageSettings := func(perms tenant.RolePermissions) bool { return perms.CanManageSettings }
 
 	// Middleware
 	r.Use(middleware.RequestID)
@@ -571,7 +573,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/migration/provider-presets", h.ListMigrationProviderPresets)
 				r.Post("/migration/validate", h.ValidateMigrationBundle)
 				r.Post("/migration/execution-plan", h.PlanMigrationExecution)
-				r.Post("/migration/execute", h.ExecuteMigration)
+				r.With(h.RequireTenantPermission(canCreateEntries)).Post("/migration/execute", h.ExecuteMigration)
 				r.Get("/migration/execution-runs", h.ListMigrationExecutionRuns)
 				r.Get("/migration/execution-runs/{runID}", h.GetMigrationExecutionRun)
 				r.Get("/migration/execution-runs/{runID}/events", h.StreamMigrationExecutionRun)
@@ -772,24 +774,24 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Post("/recurring-invoices/{recurringID}/generate", h.GenerateRecurringInvoice)
 
 				// Email Settings
-				r.Get("/settings/smtp", h.GetSMTPConfig)
-				r.Put("/settings/smtp", h.UpdateSMTPConfig)
-				r.Post("/settings/smtp/test", h.TestSMTP)
-				r.Get("/email-templates", h.ListEmailTemplates)
-				r.Put("/email-templates/{templateType}", h.UpdateEmailTemplate)
-				r.Get("/email-log", h.GetEmailLog)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/settings/smtp", h.GetSMTPConfig)
+				r.With(h.RequireTenantPermission(canManageSettings)).Put("/settings/smtp", h.UpdateSMTPConfig)
+				r.With(h.RequireTenantPermission(canManageSettings)).Post("/settings/smtp/test", h.TestSMTP)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/email-templates", h.ListEmailTemplates)
+				r.With(h.RequireTenantPermission(canManageSettings)).Put("/email-templates/{templateType}", h.UpdateEmailTemplate)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/email-log", h.GetEmailLog)
 
 				// Reminder Rules (Automated Payment Reminders)
-				r.Get("/reminder-rules", h.ListReminderRules)
-				r.Post("/reminder-rules", h.CreateReminderRule)
-				r.Post("/reminder-rules/trigger", h.TriggerReminders)
-				r.Get("/reminder-rules/{ruleID}", h.GetReminderRule)
-				r.Put("/reminder-rules/{ruleID}", h.UpdateReminderRule)
-				r.Delete("/reminder-rules/{ruleID}", h.DeleteReminderRule)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/reminder-rules", h.ListReminderRules)
+				r.With(h.RequireTenantPermission(canManageSettings)).Post("/reminder-rules", h.CreateReminderRule)
+				r.With(h.RequireTenantPermission(canManageSettings)).Post("/reminder-rules/trigger", h.TriggerReminders)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/reminder-rules/{ruleID}", h.GetReminderRule)
+				r.With(h.RequireTenantPermission(canManageSettings)).Put("/reminder-rules/{ruleID}", h.UpdateReminderRule)
+				r.With(h.RequireTenantPermission(canManageSettings)).Delete("/reminder-rules/{ruleID}", h.DeleteReminderRule)
 
 				// Interest Calculations
-				r.Get("/settings/interest", h.GetInterestSettings)
-				r.Put("/settings/interest", h.UpdateInterestSettings)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/settings/interest", h.GetInterestSettings)
+				r.With(h.RequireTenantPermission(canManageSettings)).Put("/settings/interest", h.UpdateInterestSettings)
 				r.Get("/invoices/overdue-with-interest", h.GetOverdueInvoicesWithInterest)
 				r.Get("/invoices/{invoiceID}/interest", h.GetInvoiceInterest)
 				r.Get("/invoices/{invoiceID}/interest/history", h.GetInvoiceInterestHistory)
@@ -831,7 +833,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 				// Tax (Estonian KMD)
 				r.Post("/tax/kmd", h.HandleGenerateKMD)
-				r.Post("/tax/kmd/import-history", h.HandleImportKMDHistory)
+				r.With(h.RequireTenantPermission(canCreateEntries)).Post("/tax/kmd/import-history", h.HandleImportKMDHistory)
 				r.Get("/tax/kmd", h.HandleListKMD)
 				r.Get("/tax/kmd/{year}/{month}/xml", h.HandleExportKMD)
 				r.Get("/tax/kmd/{year}/{month}/inf", h.HandleGenerateKMDINF)
@@ -852,7 +854,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				// Payroll - Runs
 				r.Get("/payroll-runs", h.ListPayrollRuns)
 				r.Post("/payroll-runs", h.CreatePayrollRun)
-				r.Post("/payroll-runs/import-history", h.ImportPayrollHistory)
+				r.With(h.RequireTenantPermission(canCreateEntries)).Post("/payroll-runs/import-history", h.ImportPayrollHistory)
 				r.Get("/payroll-runs/{runID}", h.GetPayrollRun)
 				r.Patch("/payroll-runs/{runID}/payment-date", h.UpdatePayrollRunPaymentDate)
 				r.Post("/payroll-runs/{runID}/calculate", h.CalculatePayroll)
@@ -872,7 +874,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/employees/{employeeID}/leave-balances/{year}", h.GetLeaveBalancesByYear)
 				r.Put("/employees/{employeeID}/leave-balances/{year}/{typeID}", h.UpdateLeaveBalance)
 				r.Post("/employees/{employeeID}/leave-balances/{year}/initialize", h.InitializeLeaveBalances)
-				r.Post("/leave-balances/import", h.ImportLeaveBalances)
+				r.With(h.RequireTenantPermission(canCreateEntries)).Post("/leave-balances/import", h.ImportLeaveBalances)
 				r.Get("/leave-records", h.ListLeaveRecords)
 				r.Post("/leave-records", h.CreateLeaveRecord)
 				r.Get("/leave-records/{recordID}", h.GetLeaveRecord)
@@ -885,7 +887,7 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/tsd/{year}/{month}", h.GetTSD)
 				r.Get("/tsd/{year}/{month}/xml", h.ExportTSDXML)
 				r.Get("/tsd/{year}/{month}/csv", h.ExportTSDCSV)
-				r.Post("/tsd/import-history", h.ImportTSDHistory)
+				r.With(h.RequireTenantPermission(canCreateEntries)).Post("/tsd/import-history", h.ImportTSDHistory)
 				r.Post("/tsd/{year}/{month}/submit", h.MarkTSDSubmitted)
 				r.Post("/tsd/{year}/{month}/accept", h.MarkTSDAccepted)
 				r.Post("/tsd/{year}/{month}/reject", h.MarkTSDRejected)
@@ -904,14 +906,14 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 				r.Get("/audit-events", h.ListTenantAuditEvents)
 
 				// Webhooks
-				r.Get("/webhooks/events", h.ListWebhookEventTypes)
-				r.Get("/webhooks", h.ListWebhookEndpoints)
-				r.Post("/webhooks", h.CreateWebhookEndpoint)
-				r.Get("/webhooks/{webhookID}", h.GetWebhookEndpoint)
-				r.Put("/webhooks/{webhookID}", h.UpdateWebhookEndpoint)
-				r.Delete("/webhooks/{webhookID}", h.DeleteWebhookEndpoint)
-				r.Get("/webhooks/{webhookID}/deliveries", h.ListWebhookDeliveries)
-				r.Post("/webhooks/{webhookID}/test", h.TestWebhookEndpoint)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/webhooks/events", h.ListWebhookEventTypes)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/webhooks", h.ListWebhookEndpoints)
+				r.With(h.RequireTenantPermission(canManageSettings)).Post("/webhooks", h.CreateWebhookEndpoint)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/webhooks/{webhookID}", h.GetWebhookEndpoint)
+				r.With(h.RequireTenantPermission(canManageSettings)).Put("/webhooks/{webhookID}", h.UpdateWebhookEndpoint)
+				r.With(h.RequireTenantPermission(canManageSettings)).Delete("/webhooks/{webhookID}", h.DeleteWebhookEndpoint)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/webhooks/{webhookID}/deliveries", h.ListWebhookDeliveries)
+				r.With(h.RequireTenantPermission(canManageSettings)).Post("/webhooks/{webhookID}/test", h.TestWebhookEndpoint)
 
 				// Expenses
 				r.Get("/expenses", h.ListExpenses)
@@ -930,10 +932,10 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 				// Tenant Plugin Management
 				r.Get("/plugins", h.ListTenantPlugins)
-				r.Post("/plugins/{pluginID}/enable", h.EnableTenantPlugin)
-				r.Post("/plugins/{pluginID}/disable", h.DisableTenantPlugin)
-				r.Get("/plugins/{pluginID}/settings", h.GetTenantPluginSettings)
-				r.Put("/plugins/{pluginID}/settings", h.UpdateTenantPluginSettings)
+				r.With(h.RequireTenantPermission(canManageSettings)).Post("/plugins/{pluginID}/enable", h.EnableTenantPlugin)
+				r.With(h.RequireTenantPermission(canManageSettings)).Post("/plugins/{pluginID}/disable", h.DisableTenantPlugin)
+				r.With(h.RequireTenantPermission(canManageSettings)).Get("/plugins/{pluginID}/settings", h.GetTenantPluginSettings)
+				r.With(h.RequireTenantPermission(canManageSettings)).Put("/plugins/{pluginID}/settings", h.UpdateTenantPluginSettings)
 				r.Get("/plugins/{pluginID}/runtime/*", h.InvokeTenantPluginRoute)
 				r.Post("/plugins/{pluginID}/runtime/*", h.InvokeTenantPluginRoute)
 				r.Put("/plugins/{pluginID}/runtime/*", h.InvokeTenantPluginRoute)

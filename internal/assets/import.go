@@ -57,6 +57,12 @@ var assetImportHeaderAliases = map[string]string{
 	"supplier_email":                        "supplier_email",
 	"vendor_email":                          "supplier_email",
 	"invoice_id":                            "invoice_id",
+	"invoice_number":                        "invoice_number",
+	"invoice_no":                            "invoice_number",
+	"purchase_invoice_no":                   "invoice_number",
+	"document_no":                           "invoice_number",
+	"arve_nr":                               "invoice_number",
+	"ostuarve_nr":                           "invoice_number",
 	"serial_number":                         "serial_number",
 	"serial_no":                             "serial_number",
 	"location":                              "location",
@@ -138,7 +144,13 @@ func (s *Service) ImportAssetsCSV(ctx context.Context, tenantID, schemaName stri
 	for _, row := range rows {
 		result.RowsProcessed++
 
-		asset, err := buildFixedAssetFromImportRow(row, tenantID, req.UserID, categoryNameToID, accountIDsByCode, supplierLookup)
+		invoiceID, err := s.resolveAssetImportInvoiceID(ctx, tenantID, schemaName, row)
+		if err != nil {
+			appendAssetImportRowError(result, row, err)
+			continue
+		}
+
+		asset, err := buildFixedAssetFromImportRow(row, tenantID, req.UserID, categoryNameToID, accountIDsByCode, supplierLookup, invoiceID)
 		if err != nil {
 			appendAssetImportRowError(result, row, err)
 			continue
@@ -278,6 +290,7 @@ func buildFixedAssetFromImportRow(
 	categoryNameToID map[string]string,
 	accountIDsByCode map[string]string,
 	supplierLookup contactrefs.SupplierLookup,
+	invoiceID *string,
 ) (*FixedAsset, error) {
 	name := strings.TrimSpace(row.values["name"])
 	if name == "" {
@@ -369,10 +382,6 @@ func buildFixedAssetFromImportRow(
 		return nil, err
 	}
 	supplierID, err := resolveOptionalAssetImportSupplierID(row, supplierLookup)
-	if err != nil {
-		return nil, err
-	}
-	invoiceID, err := parseOptionalAssetImportUUID("invoice_id", row.values["invoice_id"])
 	if err != nil {
 		return nil, err
 	}
@@ -513,6 +522,26 @@ func resolveOptionalAssetImportSupplierID(row assetImportRow, supplierLookup con
 		return nil, nil
 	}
 	return supplierID, nil
+}
+
+func (s *Service) resolveAssetImportInvoiceID(ctx context.Context, tenantID, schemaName string, row assetImportRow) (*string, error) {
+	if invoiceID := strings.TrimSpace(row.values["invoice_id"]); invoiceID != "" {
+		return parseOptionalAssetImportUUID("invoice_id", invoiceID)
+	}
+
+	invoiceNumber := strings.TrimSpace(row.values["invoice_number"])
+	if invoiceNumber == "" {
+		return nil, nil
+	}
+	if s.invoicing == nil {
+		return nil, fmt.Errorf("invoice_number %q cannot be resolved without invoicing service", invoiceNumber)
+	}
+
+	invoiceID, err := s.invoicing.ResolveInvoiceIDByNumber(ctx, tenantID, schemaName, invoiceNumber)
+	if err != nil {
+		return nil, fmt.Errorf("resolve invoice_number %q: %w", invoiceNumber, err)
+	}
+	return &invoiceID, nil
 }
 
 func hasAssetImportSupplierLookupReference(row assetImportRow) bool {

@@ -63,6 +63,20 @@ export function buildQuery(filter?: object): string {
   return queryString ? `?${queryString}` : "";
 }
 
+function getCurrentTenantContext(): string | null {
+  if (!browser || typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return (
+      new URL(window.location.href).searchParams.get("tenant")?.trim() || null
+    );
+  } catch {
+    return null;
+  }
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -196,6 +210,12 @@ class ApiClient {
 
     if (!skipAuth && this.accessToken) {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
+    }
+    if (!skipAuth && path.startsWith("/api/v1/admin/")) {
+      const tenantContext = getCurrentTenantContext();
+      if (tenantContext) {
+        headers["X-Tenant-ID"] = tenantContext;
+      }
     }
 
     const isFormData =

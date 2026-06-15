@@ -3144,6 +3144,7 @@ func TestCLIPluginRuntimeInvokeMethodVariants(t *testing.T) {
 
 	const pluginID = "11111111-1111-1111-1111-111111111111"
 	seen := map[string]bool{
+		http.MethodPost:   false,
 		http.MethodPut:    false,
 		http.MethodPatch:  false,
 		http.MethodDelete: false,
@@ -3154,6 +3155,14 @@ func TestCLIPluginRuntimeInvokeMethodVariants(t *testing.T) {
 		require.Equal(t, "*/*", r.Header.Get("Accept"))
 
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/runtime/import/payments":
+			seen[http.MethodPost] = true
+			require.Equal(t, "source=file", r.URL.RawQuery)
+			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "file", req["mode"])
+			_ = json.NewEncoder(w).Encode(map[string]string{"method": http.MethodPost, "source": "body-file"})
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/tenants/tenant-1/plugins/"+pluginID+"/runtime/settings/update":
 			seen[http.MethodPut] = true
 			require.Equal(t, "force=true&source=cli", r.URL.RawQuery)
@@ -3187,11 +3196,18 @@ func TestCLIPluginRuntimeInvokeMethodVariants(t *testing.T) {
 	t.Setenv("OA_BASE_URL", server.URL)
 
 	app, stdout, _ := newTestCLIApp()
+	bodyFile := filepath.Join(t.TempDir(), "runtime-body.json")
+	require.NoError(t, os.WriteFile(bodyFile, []byte(`{"mode":"file"}`), 0o600))
 	for _, tc := range []struct {
 		name string
 		args []string
 		want string
 	}{
+		{
+			name: "POST with body file",
+			args: []string{"plugins", "runtime", "invoke", "--id", pluginID, "--method", "post", "--path", "/import/payments", "--query", "source=file", "--body-file", bodyFile},
+			want: `"source":"body-file"`,
+		},
 		{
 			name: "PUT with leading query marker",
 			args: []string{"plugins", "runtime", "invoke", "--id", pluginID, "--method", "put", "--path", "/settings/update", "--query", "?force=true&source=cli", "--body-json", `{"mode":"strict"}`},
