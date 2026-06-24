@@ -407,9 +407,9 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 
 		result, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
 			UserID: "user-1",
-			CSVContent: "entry_reference,entry_date,account_code,debit,credit,currency,exchange_rate,source_type,source_id\n" +
-				"FX-001,2026-03-31,1000,10,0,usd,1.10,LEGACY_IMPORT," + sourceID + "\n" +
-				"FX-001,2026-03-31,4000,0,10,usd,1.10,LEGACY_IMPORT," + sourceID + "\n",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit,currency,exchange_rate,vat_rate,is_vat_inclusive,source_type,source_id\n" +
+				"FX-001,2026-03-31,1000,10,0,usd,1.10,22,true,LEGACY_IMPORT," + sourceID + "\n" +
+				"FX-001,2026-03-31,4000,0,10,usd,1.10,,false,LEGACY_IMPORT," + sourceID + "\n",
 		})
 
 		require.NoError(t, err)
@@ -424,6 +424,10 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 		require.Len(t, entry.Lines, 2)
 		assert.Equal(t, "USD", entry.Lines[0].Currency)
 		assert.True(t, decimal.RequireFromString("1.10").Equal(entry.Lines[0].ExchangeRate))
+		assert.True(t, decimal.RequireFromString("22").Equal(entry.Lines[0].VATRate))
+		assert.True(t, entry.Lines[0].IsVATInclusive)
+		assert.True(t, entry.Lines[1].VATRate.IsZero())
+		assert.False(t, entry.Lines[1].IsVATInclusive)
 	})
 
 	t.Run("records group validation errors", func(t *testing.T) {
