@@ -45,8 +45,19 @@ func NewReminderRuleGORMRepository(db *gorm.DB) *ReminderRuleGORMRepository {
 	return &ReminderRuleGORMRepository{db: db}
 }
 
+func (r *ReminderRuleGORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("reminder rule repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *ReminderRuleGORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
 }
 
 func (r *ReminderRuleGORMRepository) ListRules(ctx context.Context, schemaName, tenantID string) ([]ReminderRule, error) {
@@ -172,6 +183,10 @@ func (r *ReminderRuleGORMRepository) GetInvoicesForRule(ctx context.Context, sch
 	if err != nil {
 		return nil, fmt.Errorf("qualify contacts table: %w", err)
 	}
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query invoices for rule: %w", err)
+	}
 
 	var rows []struct {
 		ID                string
@@ -186,7 +201,7 @@ func (r *ReminderRuleGORMRepository) GetInvoicesForRule(ctx context.Context, sch
 		OutstandingAmount string
 		Currency          string
 	}
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Table(invoicesTable+" AS i").
 		Select(`
 			i.id,

@@ -32,8 +32,19 @@ func NewReminderGORMRepository(db *gorm.DB) *ReminderGORMRepository {
 	return &ReminderGORMRepository{db: db}
 }
 
+func (r *ReminderGORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("reminder repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *ReminderGORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
 }
 
 // GetOverdueInvoices retrieves all overdue sales invoices.
@@ -45,6 +56,10 @@ func (r *ReminderGORMRepository) GetOverdueInvoices(ctx context.Context, schemaN
 	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
 	if err != nil {
 		return nil, fmt.Errorf("qualify contacts table: %w", err)
+	}
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query overdue invoices: %w", err)
 	}
 
 	var rows []struct {
@@ -61,7 +76,7 @@ func (r *ReminderGORMRepository) GetOverdueInvoices(ctx context.Context, schemaN
 		Currency          string
 		DaysOverdue       int
 	}
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Table(invoicesTable+" AS i").
 		Select(`
 			i.id,
