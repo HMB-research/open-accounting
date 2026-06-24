@@ -148,6 +148,14 @@ func TestResetRepositoryDryRunCleanupErrors(t *testing.T) {
 	})
 }
 
+func TestResetRepositoryDropTenantSchemaRejectsInvalidSchema(t *testing.T) {
+	repository := NewResetRepository(nil, nil)
+
+	err := repository.dropTenantSchema(context.Background(), nil, "tenant-demo")
+
+	require.ErrorContains(t, err, "quote tenant schema")
+}
+
 func registerDryRunDeleteError(t *testing.T, db *gorm.DB, err error) {
 	t.Helper()
 

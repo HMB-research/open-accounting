@@ -553,6 +553,30 @@ func TestGeneratePayslipPDF(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, pdfBytes)
 	assert.Equal(t, "%PDF", string(pdfBytes[:4]))
+
+	t.Run("generates paid payslip without run or employee", func(t *testing.T) {
+		paidAt := time.Date(2026, 4, 5, 0, 0, 0, 0, time.UTC)
+		edgePayslip := *payslip
+		edgePayslip.Employee = nil
+		edgePayslip.PaidAt = &paidAt
+
+		pdfBytes, err := svc.GeneratePayslipPDF(&edgePayslip, nil, tnant)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+		assert.Equal(t, "%PDF", string(pdfBytes[:4]))
+	})
+
+	t.Run("falls back to employee id when employee name is blank", func(t *testing.T) {
+		edgePayslip := *payslip
+		edgePayslip.Employee = &payroll.Employee{Email: "blank-name@example.com"}
+
+		pdfBytes, err := svc.GeneratePayslipPDF(&edgePayslip, run, tnant)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+		assert.Equal(t, "%PDF", string(pdfBytes[:4]))
+	})
 }
 
 func createTestInvoice() *invoicing.Invoice {
