@@ -1,7 +1,7 @@
 # Open Accounting Development Status
 
 > Last updated: 2026-06-15
-> This is the current-state status document. Historical plan docs may be more optimistic than what is verified here.
+> This is the current-state status document. Legacy plan docs have been removed; current gaps live in the canonical docs linked from [Documentation](./README.md).
 > For the concise cap/gap summary before full product parity, see [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md).
 
 ## Status Definitions
@@ -182,7 +182,7 @@ Full local baseline last completed on 2026-06-08. On 2026-06-12, the current bra
 Still not done:
 
 - Optional remote hosted-demo E2E remains informational because it depends on explicitly configured hosted demo URLs and secrets
-- Documentation outside this file may still contain historical planning language
+- Current product limits, use-case coverage, and development gaps are consolidated in the canonical docs linked from `docs/README.md`
 
 ## Capability Matrix
 

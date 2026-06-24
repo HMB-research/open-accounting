@@ -268,7 +268,7 @@ These features cannot be implemented without external dependencies or significan
 
 ## Priority Themes
 
-This document's older quarter-based priorities have been superseded by the 2026 roadmap. The current priority order is:
+This document's older quarter-based priorities have been superseded by the current product-limit and development-status docs. The current priority order is:
 
 1. Reliability and truthful status reporting
 2. Imports, close controls, and attachments
