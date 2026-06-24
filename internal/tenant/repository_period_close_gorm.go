@@ -28,12 +28,12 @@ func (periodCloseEventModel) TableName() string {
 }
 
 func (r *GORMRepository) UpdateTenantWithPeriodCloseEvent(ctx context.Context, tenantID, name string, settingsJSON []byte, updatedAt time.Time, event *PeriodCloseEvent) error {
-	eventModel, err := periodCloseEventToModel(event)
+	db, err := r.dbWithContext(ctx)
 	if err != nil {
 		return err
 	}
 
-	db, err := r.dbWithContext(ctx)
+	eventModel, err := periodCloseEventToModel(event)
 	if err != nil {
 		return err
 	}
