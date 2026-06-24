@@ -29,8 +29,9 @@ current facts into one of the canonical documents below instead.
   filing boundaries.
 - [Merit And SmartAccounts Mapping](./FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md)
   records incumbent-system feature and migration mapping.
-- [UI Issues Report](./UI_ISSUES_REPORT.md) is a retained UI snapshot, not the
-  current product source of truth.
+
+## Reference
+
 - [SmartAccounts API PDF](./reference/vendor/smartaccounts/SmartAccounts_API_2026-06-12.pdf)
   is a dated vendor reference captured for migration research.
 

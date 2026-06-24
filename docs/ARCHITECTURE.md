@@ -235,7 +235,7 @@ The frontend is built with **SvelteKit** and **Svelte 5** using the new runes re
 
 ### Technology Stack
 - **Framework**: SvelteKit 2.x with Svelte 5
-- **Styling**: Tailwind CSS
+- **Styling**: CSS custom properties plus component-scoped styles
 - **Build Tool**: Vite
 - **Type Safety**: TypeScript
 
