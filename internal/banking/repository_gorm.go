@@ -26,6 +26,9 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 }
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("banking repository database is not configured")
+	}
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
@@ -356,6 +359,9 @@ func (r *GORMRepository) GetTransaction(ctx context.Context, schemaName, tenantI
 
 // ListPaymentMatchCandidates returns unallocated payments that can be matched to a bank transaction.
 func (r *GORMRepository) ListPaymentMatchCandidates(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]PaymentForMatching, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("banking repository database is not configured")
+	}
 	paymentsTable, err := database.QualifiedTable(schemaName, "payments")
 	if err != nil {
 		return nil, err
@@ -521,6 +527,9 @@ func (r *GORMRepository) CreatePaymentFromTransaction(ctx context.Context, schem
 	}
 	if transaction.Status != StatusUnmatched {
 		return "", ErrTransactionAlreadyMatched
+	}
+	if r.db == nil {
+		return "", fmt.Errorf("banking repository database is not configured")
 	}
 
 	paymentType := paymentTypeForTransactionAmount(transaction.Amount)

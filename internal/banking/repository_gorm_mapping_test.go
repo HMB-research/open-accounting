@@ -1,12 +1,332 @@
 package banking
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/models"
+	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/shopspring/decimal"
 )
+
+func TestGORMRepositoryNilDatabase(t *testing.T) {
+	repo := NewGORMRepository(nil)
+	ctx := context.Background()
+	schemaName := "tenant_schema"
+	tenantID := "tenant-1"
+	now := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
+	followUp := FollowUpEvidenceRequired
+	reviewNote := "Needs evidence"
+
+	if repo == nil {
+		t.Fatal("NewGORMRepository(nil) returned nil")
+	}
+	if repo.db != nil {
+		t.Fatalf("NewGORMRepository(nil).db = %#v, want nil", repo.db)
+	}
+
+	tests := []struct {
+		name string
+		run  func(t *testing.T) error
+	}{
+		{
+			name: "tenantTable",
+			run: func(t *testing.T) error {
+				table, err := repo.tenantTable(ctx, schemaName, "bank_accounts")
+				if table != nil {
+					t.Fatalf("tenantTable() table = %#v, want nil", table)
+				}
+				return err
+			},
+		},
+		{
+			name: "CreateBankAccount",
+			run: func(t *testing.T) error {
+				return repo.CreateBankAccount(ctx, schemaName, &BankAccount{TenantID: tenantID})
+			},
+		},
+		{
+			name: "GetBankAccount",
+			run: func(t *testing.T) error {
+				account, err := repo.GetBankAccount(ctx, schemaName, tenantID, "account-1")
+				if account != nil {
+					t.Fatalf("GetBankAccount() account = %#v, want nil", account)
+				}
+				return err
+			},
+		},
+		{
+			name: "ListBankAccounts",
+			run: func(t *testing.T) error {
+				active := true
+				accounts, err := repo.ListBankAccounts(ctx, schemaName, tenantID, &BankAccountFilter{
+					IsActive: &active,
+					Currency: "EUR",
+				})
+				if accounts != nil {
+					t.Fatalf("ListBankAccounts() accounts = %#v, want nil", accounts)
+				}
+				return err
+			},
+		},
+		{
+			name: "UpdateBankAccount",
+			run: func(t *testing.T) error {
+				return repo.UpdateBankAccount(ctx, schemaName, &BankAccount{ID: "account-1", TenantID: tenantID})
+			},
+		},
+		{
+			name: "DeleteBankAccount",
+			run: func(t *testing.T) error {
+				return repo.DeleteBankAccount(ctx, schemaName, tenantID, "account-1")
+			},
+		},
+		{
+			name: "UnsetDefaultAccounts",
+			run: func(t *testing.T) error {
+				return repo.UnsetDefaultAccounts(ctx, schemaName, tenantID)
+			},
+		},
+		{
+			name: "CountTransactionsForAccount",
+			run: func(t *testing.T) error {
+				count, err := repo.CountTransactionsForAccount(ctx, schemaName, "account-1")
+				if count != 0 {
+					t.Fatalf("CountTransactionsForAccount() count = %d, want 0", count)
+				}
+				return err
+			},
+		},
+		{
+			name: "CalculateAccountBalance",
+			run: func(t *testing.T) error {
+				balance, err := repo.CalculateAccountBalance(ctx, schemaName, "account-1")
+				if !balance.IsZero() {
+					t.Fatalf("CalculateAccountBalance() balance = %s, want zero", balance)
+				}
+				return err
+			},
+		},
+		{
+			name: "CreateBankMatchRule",
+			run: func(t *testing.T) error {
+				return repo.CreateBankMatchRule(ctx, schemaName, &BankMatchRule{TenantID: tenantID})
+			},
+		},
+		{
+			name: "GetBankMatchRule",
+			run: func(t *testing.T) error {
+				rule, err := repo.GetBankMatchRule(ctx, schemaName, tenantID, "rule-1")
+				if rule != nil {
+					t.Fatalf("GetBankMatchRule() rule = %#v, want nil", rule)
+				}
+				return err
+			},
+		},
+		{
+			name: "ListBankMatchRules",
+			run: func(t *testing.T) error {
+				rules, err := repo.ListBankMatchRules(ctx, schemaName, tenantID, &BankMatchRuleFilter{
+					ActiveOnly:    true,
+					BankAccountID: "account-1",
+					IncludeGlobal: true,
+				})
+				if rules != nil {
+					t.Fatalf("ListBankMatchRules() rules = %#v, want nil", rules)
+				}
+				return err
+			},
+		},
+		{
+			name: "UpdateBankMatchRule",
+			run: func(t *testing.T) error {
+				return repo.UpdateBankMatchRule(ctx, schemaName, &BankMatchRule{ID: "rule-1", TenantID: tenantID})
+			},
+		},
+		{
+			name: "DeleteBankMatchRule",
+			run: func(t *testing.T) error {
+				return repo.DeleteBankMatchRule(ctx, schemaName, tenantID, "rule-1")
+			},
+		},
+		{
+			name: "ListTransactions",
+			run: func(t *testing.T) error {
+				minAmount := decimal.NewFromInt(10)
+				maxAmount := decimal.NewFromInt(100)
+				transactions, err := repo.ListTransactions(ctx, schemaName, tenantID, &TransactionFilter{
+					BankAccountID: "account-1",
+					Status:        StatusUnmatched,
+					FromDate:      &now,
+					ToDate:        &now,
+					MinAmount:     &minAmount,
+					MaxAmount:     &maxAmount,
+				})
+				if transactions != nil {
+					t.Fatalf("ListTransactions() transactions = %#v, want nil", transactions)
+				}
+				return err
+			},
+		},
+		{
+			name: "GetTransaction",
+			run: func(t *testing.T) error {
+				transaction, err := repo.GetTransaction(ctx, schemaName, tenantID, "transaction-1")
+				if transaction != nil {
+					t.Fatalf("GetTransaction() transaction = %#v, want nil", transaction)
+				}
+				return err
+			},
+		},
+		{
+			name: "ListPaymentMatchCandidates",
+			run: func(t *testing.T) error {
+				candidates, err := repo.ListPaymentMatchCandidates(ctx, schemaName, tenantID, payments.PaymentTypeReceived, decimal.NewFromInt(25), 5)
+				if candidates != nil {
+					t.Fatalf("ListPaymentMatchCandidates() candidates = %#v, want nil", candidates)
+				}
+				return err
+			},
+		},
+		{
+			name: "MatchTransaction",
+			run: func(t *testing.T) error {
+				return repo.MatchTransaction(ctx, schemaName, tenantID, "transaction-1", "payment-1")
+			},
+		},
+		{
+			name: "UnmatchTransaction",
+			run: func(t *testing.T) error {
+				return repo.UnmatchTransaction(ctx, schemaName, tenantID, "transaction-1")
+			},
+		},
+		{
+			name: "UpdateTransactionReview",
+			run: func(t *testing.T) error {
+				transaction, err := repo.UpdateTransactionReview(ctx, schemaName, tenantID, "transaction-1", TransactionReviewUpdate{
+					FollowUpStatus: &followUp,
+					ReviewNote:     &reviewNote,
+					ReviewedBy:     "user-1",
+					ReviewedAt:     now,
+				})
+				if transaction != nil {
+					t.Fatalf("UpdateTransactionReview() transaction = %#v, want nil", transaction)
+				}
+				return err
+			},
+		},
+		{
+			name: "CreateTransaction",
+			run: func(t *testing.T) error {
+				return repo.CreateTransaction(ctx, schemaName, &BankTransaction{TenantID: tenantID})
+			},
+		},
+		{
+			name: "CreatePaymentFromTransaction",
+			run: func(t *testing.T) error {
+				paymentID, err := repo.CreatePaymentFromTransaction(ctx, schemaName, tenantID, "user-1", &BankTransaction{
+					ID:              "transaction-1",
+					TenantID:        tenantID,
+					Status:          StatusUnmatched,
+					Amount:          decimal.NewFromInt(25),
+					Currency:        "EUR",
+					TransactionDate: now,
+				})
+				if paymentID != "" {
+					t.Fatalf("CreatePaymentFromTransaction() paymentID = %q, want empty", paymentID)
+				}
+				return err
+			},
+		},
+		{
+			name: "IsTransactionDuplicate",
+			run: func(t *testing.T) error {
+				duplicate, err := repo.IsTransactionDuplicate(ctx, schemaName, tenantID, "account-1", now, decimal.NewFromInt(25), "external-1")
+				if duplicate {
+					t.Fatal("IsTransactionDuplicate() duplicate = true, want false")
+				}
+				return err
+			},
+		},
+		{
+			name: "CreateReconciliation",
+			run: func(t *testing.T) error {
+				return repo.CreateReconciliation(ctx, schemaName, &BankReconciliation{TenantID: tenantID})
+			},
+		},
+		{
+			name: "GetReconciliation",
+			run: func(t *testing.T) error {
+				reconciliation, err := repo.GetReconciliation(ctx, schemaName, tenantID, "reconciliation-1")
+				if reconciliation != nil {
+					t.Fatalf("GetReconciliation() reconciliation = %#v, want nil", reconciliation)
+				}
+				return err
+			},
+		},
+		{
+			name: "ListReconciliations",
+			run: func(t *testing.T) error {
+				reconciliations, err := repo.ListReconciliations(ctx, schemaName, tenantID, "account-1")
+				if reconciliations != nil {
+					t.Fatalf("ListReconciliations() reconciliations = %#v, want nil", reconciliations)
+				}
+				return err
+			},
+		},
+		{
+			name: "CompleteReconciliation",
+			run: func(t *testing.T) error {
+				return repo.CompleteReconciliation(ctx, schemaName, tenantID, "reconciliation-1")
+			},
+		},
+		{
+			name: "AddTransactionToReconciliation",
+			run: func(t *testing.T) error {
+				return repo.AddTransactionToReconciliation(ctx, schemaName, tenantID, "transaction-1", "reconciliation-1")
+			},
+		},
+		{
+			name: "CreateImportRecord",
+			run: func(t *testing.T) error {
+				return repo.CreateImportRecord(ctx, schemaName, &BankStatementImport{TenantID: tenantID})
+			},
+		},
+		{
+			name: "IncrementLatestImportMatchedCount",
+			run: func(t *testing.T) error {
+				return repo.IncrementLatestImportMatchedCount(ctx, schemaName, tenantID, "account-1", 1)
+			},
+		},
+		{
+			name: "GetImportHistory",
+			run: func(t *testing.T) error {
+				imports, err := repo.GetImportHistory(ctx, schemaName, tenantID, "account-1")
+				if imports != nil {
+					t.Fatalf("GetImportHistory() imports = %#v, want nil", imports)
+				}
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run(t)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if got := err.Error(); got != "banking repository database is not configured" {
+				t.Fatalf("error = %q, want banking repository database is not configured", got)
+			}
+		})
+	}
+
+	if err := repo.IncrementLatestImportMatchedCount(ctx, schemaName, tenantID, "account-1", 0); err != nil {
+		t.Fatalf("IncrementLatestImportMatchedCount zero matched count error = %v, want nil", err)
+	}
+}
 
 func TestBankAccountModelMappings(t *testing.T) {
 	createdAt := time.Date(2026, 6, 1, 10, 30, 0, 0, time.UTC)
