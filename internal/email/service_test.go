@@ -1047,6 +1047,108 @@ func TestNewServiceWithRepository(t *testing.T) {
 	}
 }
 
+func TestNewServiceNilPoolConfiguresDefaultMailer(t *testing.T) {
+	svc := NewService(nil)
+
+	if svc == nil {
+		t.Fatal("NewService(nil) returned nil")
+	}
+	if svc.repo != nil {
+		t.Fatalf("NewService(nil).repo = %#v, want nil", svc.repo)
+	}
+	if _, ok := svc.mailer.(*DefaultMailSender); !ok {
+		t.Fatalf("NewService(nil).mailer = %T, want *DefaultMailSender", svc.mailer)
+	}
+}
+
+func TestServiceRepositoryGuardErrors(t *testing.T) {
+	svc := NewService(nil)
+	ctx := context.Background()
+	want := "email service repository is not configured"
+
+	if _, err := svc.GetSMTPConfig(ctx, "tenant-1"); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("GetSMTPConfig error = %v, want containing %q", err, want)
+	}
+	if err := svc.UpdateSMTPConfig(ctx, "tenant-1", &UpdateSMTPConfigRequest{}); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("UpdateSMTPConfig error = %v, want containing %q", err, want)
+	}
+	if _, err := svc.GetTemplate(ctx, "tenant_test", "tenant-1", TemplateInvoiceSend); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("GetTemplate error = %v, want containing %q", err, want)
+	}
+	if _, err := svc.ListTemplates(ctx, "tenant_test", "tenant-1"); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("ListTemplates error = %v, want containing %q", err, want)
+	}
+	if _, err := svc.UpdateTemplate(ctx, "tenant_test", "tenant-1", TemplateInvoiceSend, &UpdateTemplateRequest{}); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("UpdateTemplate error = %v, want containing %q", err, want)
+	}
+	if _, err := svc.SendEmail(ctx, "tenant_test", "tenant-1", "INVOICE_SEND", "customer@example.com", "", "Subject", "<p>Body</p>", "", nil, ""); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("SendEmail error = %v, want containing %q", err, want)
+	}
+	if _, err := svc.GetEmailLog(ctx, "tenant_test", "tenant-1", 10); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("GetEmailLog error = %v, want containing %q", err, want)
+	}
+
+	result, err := svc.TestSMTP(ctx, "tenant-1", "test@example.com")
+	if err != nil {
+		t.Fatalf("TestSMTP returned unexpected error: %v", err)
+	}
+	if result.Success || !strings.Contains(result.Message, want) {
+		t.Fatalf("TestSMTP result = %+v, want failure containing %q", result, want)
+	}
+}
+
+func TestServiceMailerGuardErrors(t *testing.T) {
+	ctx := context.Background()
+	want := "email service mailer is not configured"
+
+	t.Run("TestSMTP", func(t *testing.T) {
+		repo := &MockRepository{
+			GetTenantSettingsFn: func(ctx context.Context, tenantID string) ([]byte, error) {
+				return validSMTPSettingsJSON(), nil
+			},
+		}
+		svc := NewServiceWithRepository(repo, nil)
+
+		result, err := svc.TestSMTP(ctx, "tenant-1", "test@example.com")
+		if err != nil {
+			t.Fatalf("TestSMTP returned unexpected error: %v", err)
+		}
+		if result.Success || !strings.Contains(result.Message, want) {
+			t.Fatalf("TestSMTP result = %+v, want failure containing %q", result, want)
+		}
+	})
+
+	t.Run("SendEmail", func(t *testing.T) {
+		var updatedStatus EmailStatus
+		var updateErrorMessage string
+		repo := &MockRepository{
+			GetTenantSettingsFn: func(ctx context.Context, tenantID string) ([]byte, error) {
+				return validSMTPSettingsJSON(), nil
+			},
+			CreateEmailLogFn: func(ctx context.Context, schemaName string, log *EmailLog) error {
+				return nil
+			},
+			UpdateEmailLogStatusFn: func(ctx context.Context, schemaName, logID string, status EmailStatus, sentAt *time.Time, errorMessage string) error {
+				updatedStatus = status
+				updateErrorMessage = errorMessage
+				return nil
+			},
+		}
+		svc := NewServiceWithRepository(repo, nil)
+
+		_, err := svc.SendEmail(ctx, "tenant_test", "tenant-1", "INVOICE_SEND", "customer@example.com", "", "Subject", "<p>Body</p>", "", nil, "")
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("SendEmail error = %v, want containing %q", err, want)
+		}
+		if updatedStatus != StatusFailed {
+			t.Fatalf("updatedStatus = %s, want %s", updatedStatus, StatusFailed)
+		}
+		if !strings.Contains(updateErrorMessage, want) {
+			t.Fatalf("UpdateEmailLogStatus errorMessage = %q, want containing %q", updateErrorMessage, want)
+		}
+	})
+}
+
 func TestService_RenderTemplate_EdgeCases(t *testing.T) {
 	svc := NewServiceWithRepository(&MockRepository{}, &MockMailSender{})
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"html/template"
 	"time"
@@ -60,6 +61,11 @@ type Service struct {
 	mailer MailSender
 }
 
+var (
+	errEmailRepositoryNotConfigured = errors.New("email service repository is not configured")
+	errEmailMailerNotConfigured     = errors.New("email service mailer is not configured")
+)
+
 // NewService creates a new email service
 func NewService(db *pgxpool.Pool) *Service {
 	if db == nil {
@@ -83,9 +89,28 @@ func NewServiceWithRepository(repo Repository, mailer MailSender) *Service {
 	}
 }
 
+func (s *Service) repository() (Repository, error) {
+	if s == nil || s.repo == nil {
+		return nil, errEmailRepositoryNotConfigured
+	}
+	return s.repo, nil
+}
+
+func (s *Service) mailSender() (MailSender, error) {
+	if s == nil || s.mailer == nil {
+		return nil, errEmailMailerNotConfigured
+	}
+	return s.mailer, nil
+}
+
 // GetSMTPConfig retrieves SMTP configuration for a tenant
 func (s *Service) GetSMTPConfig(ctx context.Context, tenantID string) (*SMTPConfig, error) {
-	settingsJSON, err := s.repo.GetTenantSettings(ctx, tenantID)
+	repo, err := s.repository()
+	if err != nil {
+		return nil, err
+	}
+
+	settingsJSON, err := repo.GetTenantSettings(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant settings: %w", err)
 	}
@@ -95,8 +120,13 @@ func (s *Service) GetSMTPConfig(ctx context.Context, tenantID string) (*SMTPConf
 
 // UpdateSMTPConfig updates SMTP configuration for a tenant
 func (s *Service) UpdateSMTPConfig(ctx context.Context, tenantID string, req *UpdateSMTPConfigRequest) error {
+	repo, err := s.repository()
+	if err != nil {
+		return err
+	}
+
 	// Get current settings
-	settingsJSON, err := s.repo.GetTenantSettings(ctx, tenantID)
+	settingsJSON, err := repo.GetTenantSettings(ctx, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to get tenant settings: %w", err)
 	}
@@ -107,7 +137,7 @@ func (s *Service) UpdateSMTPConfig(ctx context.Context, tenantID string, req *Up
 		return fmt.Errorf("failed to marshal settings: %w", err)
 	}
 
-	if err := s.repo.UpdateTenantSettings(ctx, tenantID, newSettingsJSON); err != nil {
+	if err := repo.UpdateTenantSettings(ctx, tenantID, newSettingsJSON); err != nil {
 		return fmt.Errorf("failed to update settings: %w", err)
 	}
 
@@ -136,8 +166,13 @@ func (s *Service) TestSMTP(ctx context.Context, tenantID string, recipientEmail 
 	m.Subject("Test Email from Open Accounting")
 	m.SetBodyString(mail.TypeTextPlain, "This is a test email to verify your SMTP configuration is working correctly.")
 
+	mailer, err := s.mailSender()
+	if err != nil {
+		return &TestSMTPResponse{Success: false, Message: err.Error()}, nil
+	}
+
 	// Send test email
-	if err := s.mailer.SendMail(config, m); err != nil {
+	if err := mailer.SendMail(config, m); err != nil {
 		return &TestSMTPResponse{Success: false, Message: fmt.Sprintf("failed to send: %v", err)}, nil
 	}
 
@@ -146,7 +181,12 @@ func (s *Service) TestSMTP(ctx context.Context, tenantID string, recipientEmail 
 
 // GetTemplate retrieves an email template
 func (s *Service) GetTemplate(ctx context.Context, schemaName string, tenantID string, templateType TemplateType) (*EmailTemplate, error) {
-	tmpl, err := s.repo.GetTemplate(ctx, schemaName, tenantID, templateType)
+	repo, err := s.repository()
+	if err != nil {
+		return nil, err
+	}
+
+	tmpl, err := repo.GetTemplate(ctx, schemaName, tenantID, templateType)
 	if err == ErrTemplateNotFound {
 		// Return default template if not found
 		defaults := DefaultTemplates()
@@ -164,7 +204,12 @@ func (s *Service) GetTemplate(ctx context.Context, schemaName string, tenantID s
 
 // ListTemplates lists all email templates for a tenant
 func (s *Service) ListTemplates(ctx context.Context, schemaName string, tenantID string) ([]EmailTemplate, error) {
-	templates, err := s.repo.ListTemplates(ctx, schemaName, tenantID)
+	repo, err := s.repository()
+	if err != nil {
+		return nil, err
+	}
+
+	templates, err := repo.ListTemplates(ctx, schemaName, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list templates: %w", err)
 	}
@@ -188,6 +233,11 @@ func (s *Service) ListTemplates(ctx context.Context, schemaName string, tenantID
 
 // UpdateTemplate updates an email template
 func (s *Service) UpdateTemplate(ctx context.Context, schemaName string, tenantID string, templateType TemplateType, req *UpdateTemplateRequest) (*EmailTemplate, error) {
+	repo, err := s.repository()
+	if err != nil {
+		return nil, err
+	}
+
 	tmpl := &EmailTemplate{
 		ID:           uuid.New().String(),
 		TenantID:     tenantID,
@@ -198,7 +248,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, schemaName string, tenantI
 		IsActive:     req.IsActive,
 	}
 
-	if err := s.repo.UpsertTemplate(ctx, schemaName, tmpl); err != nil {
+	if err := repo.UpsertTemplate(ctx, schemaName, tmpl); err != nil {
 		return nil, fmt.Errorf("failed to update template: %w", err)
 	}
 
@@ -207,6 +257,11 @@ func (s *Service) UpdateTemplate(ctx context.Context, schemaName string, tenantI
 
 // SendEmail sends an email using the tenant's SMTP configuration
 func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID string, emailType string, recipient string, recipientName string, subject string, bodyHTML string, bodyText string, attachments []Attachment, relatedID string) (*EmailSentResponse, error) {
+	repo, err := s.repository()
+	if err != nil {
+		return nil, err
+	}
+
 	// Get SMTP config
 	config, err := s.GetSMTPConfig(ctx, tenantID)
 	if err != nil {
@@ -229,7 +284,7 @@ func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID str
 		Status:         StatusPending,
 		RelatedID:      relatedID,
 	}
-	if err := s.repo.CreateEmailLog(ctx, schemaName, emailLog); err != nil {
+	if err := repo.CreateEmailLog(ctx, schemaName, emailLog); err != nil {
 		return nil, fmt.Errorf("failed to create email log: %w", err)
 	}
 
@@ -268,14 +323,19 @@ func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID str
 		}
 	}
 
+	mailer, err := s.mailSender()
+	if err != nil {
+		return s.logEmailError(ctx, schemaName, logID, err)
+	}
+
 	// Send email
-	if err := s.mailer.SendMail(config, m); err != nil {
+	if err := mailer.SendMail(config, m); err != nil {
 		return s.logEmailError(ctx, schemaName, logID, err)
 	}
 
 	// Update log as sent
 	now := time.Now()
-	if err := s.repo.UpdateEmailLogStatus(ctx, schemaName, logID, StatusSent, &now, ""); err != nil {
+	if err := repo.UpdateEmailLogStatus(ctx, schemaName, logID, StatusSent, &now, ""); err != nil {
 		// Email was sent, just log the error
 		fmt.Printf("failed to update email log: %v\n", err)
 	}
@@ -289,7 +349,12 @@ func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID str
 
 // logEmailError logs an email error and returns the response
 func (s *Service) logEmailError(ctx context.Context, schemaName string, logID string, sendErr error) (*EmailSentResponse, error) {
-	if err := s.repo.UpdateEmailLogStatus(ctx, schemaName, logID, StatusFailed, nil, sendErr.Error()); err != nil {
+	repo, err := s.repository()
+	if err != nil {
+		return nil, fmt.Errorf("failed to send email: %w", sendErr)
+	}
+
+	if err := repo.UpdateEmailLogStatus(ctx, schemaName, logID, StatusFailed, nil, sendErr.Error()); err != nil {
 		fmt.Printf("failed to update email log: %v\n", err)
 	}
 	return nil, fmt.Errorf("failed to send email: %w", sendErr)
@@ -337,7 +402,12 @@ func (s *Service) RenderTemplate(tmpl *EmailTemplate, data *TemplateData) (subje
 
 // GetEmailLog retrieves email logs for a tenant
 func (s *Service) GetEmailLog(ctx context.Context, schemaName string, tenantID string, limit int) ([]EmailLog, error) {
-	logs, err := s.repo.GetEmailLog(ctx, schemaName, tenantID, limit)
+	repo, err := s.repository()
+	if err != nil {
+		return nil, err
+	}
+
+	logs, err := repo.GetEmailLog(ctx, schemaName, tenantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get email log: %w", err)
 	}
