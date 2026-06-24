@@ -34,7 +34,7 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 }
 
 func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
-	if r.db == nil {
+	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("api token repository database is not configured")
 	}
 	return r.db.WithContext(ctx), nil

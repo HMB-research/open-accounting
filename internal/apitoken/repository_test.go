@@ -11,9 +11,6 @@ import (
 )
 
 func TestGORMRepository_NilDatabase(t *testing.T) {
-	repo := NewGORMRepository(nil)
-	require.NotNil(t, repo)
-
 	ctx := context.Background()
 	now := time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC)
 	token := &APIToken{
@@ -25,13 +22,21 @@ func TestGORMRepository_NilDatabase(t *testing.T) {
 		CreatedAt:   now,
 	}
 
+	repositories := []struct {
+		name string
+		repo *GORMRepository
+	}{
+		{name: "nil receiver"},
+		{name: "nil database", repo: NewGORMRepository(nil)},
+	}
+
 	tests := []struct {
 		name string
-		run  func() error
+		run  func(*GORMRepository) error
 	}{
 		{
 			name: "dbWithContext",
-			run: func() error {
+			run: func(repo *GORMRepository) error {
 				db, err := repo.dbWithContext(ctx)
 				assert.Nil(t, db)
 				return err
@@ -39,13 +44,13 @@ func TestGORMRepository_NilDatabase(t *testing.T) {
 		},
 		{
 			name: "CreateToken",
-			run: func() error {
+			run: func(repo *GORMRepository) error {
 				return repo.CreateToken(ctx, token, "hash")
 			},
 		},
 		{
 			name: "ListTokens",
-			run: func() error {
+			run: func(repo *GORMRepository) error {
 				tokens, err := repo.ListTokens(ctx, "user-1", "tenant-1")
 				assert.Nil(t, tokens)
 				return err
@@ -53,13 +58,13 @@ func TestGORMRepository_NilDatabase(t *testing.T) {
 		},
 		{
 			name: "RevokeToken",
-			run: func() error {
+			run: func(repo *GORMRepository) error {
 				return repo.RevokeToken(ctx, "user-1", "tenant-1", "token-1", now)
 			},
 		},
 		{
 			name: "GetValidationRecord",
-			run: func() error {
+			run: func(repo *GORMRepository) error {
 				record, err := repo.GetValidationRecord(ctx, "hash", now)
 				assert.Nil(t, record)
 				return err
@@ -67,19 +72,33 @@ func TestGORMRepository_NilDatabase(t *testing.T) {
 		},
 		{
 			name: "TouchToken",
-			run: func() error {
+			run: func(repo *GORMRepository) error {
 				return repo.TouchToken(ctx, "token-1", now)
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.run()
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "api token repository database is not configured")
-		})
+	for _, repository := range repositories {
+		for _, tt := range tests {
+			t.Run(repository.name+"/"+tt.name, func(t *testing.T) {
+				err := tt.run(repository.repo)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "api token repository database is not configured")
+			})
+		}
 	}
+}
+
+func TestGORMRepository_NilDatabaseConstructor(t *testing.T) {
+	repo := NewGORMRepository(nil)
+	require.NotNil(t, repo)
+	assert.Nil(t, repo.db)
+}
+
+func TestNewServiceWithoutDatabase(t *testing.T) {
+	service := NewService(nil)
+	require.NotNil(t, service)
+	assert.Nil(t, service.repo)
 }
 
 func TestAPITokenModelMappingRoundTrip(t *testing.T) {
@@ -140,10 +159,4 @@ func TestModelToAPITokenPreservesNilOptionalTimes(t *testing.T) {
 	assert.Nil(t, token.ExpiresAt)
 	assert.Nil(t, token.RevokedAt)
 	assert.Equal(t, model.CreatedAt, token.CreatedAt)
-}
-
-func TestNewServiceWithoutDatabase(t *testing.T) {
-	service := NewService(nil)
-	require.NotNil(t, service)
-	assert.Nil(t, service.repo)
 }

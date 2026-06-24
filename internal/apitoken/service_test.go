@@ -122,7 +122,11 @@ func TestService_CreateTokenRejectsBadInput(t *testing.T) {
 	repo := newMockRepository()
 	service := NewServiceWithRepository(repo)
 
-	_, err := service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{})
+	_, err := service.CreateToken(context.Background(), "user-1", "tenant-1", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create request is required")
+
+	_, err = service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "name is required")
 
@@ -194,6 +198,17 @@ func TestService_ListTokens(t *testing.T) {
 	assert.ElementsMatch(t, []string{first.APIToken.ID, second.APIToken.ID}, []string{tokens[0].ID, tokens[1].ID})
 }
 
+func TestService_ListTokensReturnsRepositoryError(t *testing.T) {
+	repo := newMockRepository()
+	repo.listErr = assert.AnError
+	service := NewServiceWithRepository(repo)
+
+	tokens, err := service.ListTokens(context.Background(), "user-1", "tenant-1")
+	require.Error(t, err)
+	assert.Nil(t, tokens)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
 func TestService_RevokeTokenRejectsMissingIDAndNotFound(t *testing.T) {
 	repo := newMockRepository()
 	service := NewServiceWithRepository(repo)
@@ -215,6 +230,40 @@ func TestService_RevokeTokenReturnsRepositoryError(t *testing.T) {
 	err := service.RevokeToken(context.Background(), "user-1", "tenant-1", "token-1")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func TestService_MethodsRequireConfiguredRepository(t *testing.T) {
+	ctx := context.Background()
+	services := []struct {
+		name    string
+		service *Service
+	}{
+		{name: "nil service"},
+		{name: "nil repository", service: NewServiceWithRepository(nil)},
+	}
+
+	for _, tt := range services {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tt.service.CreateToken(ctx, "user-1", "tenant-1", &CreateRequest{Name: "CLI token"})
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.Contains(t, err.Error(), "api token repository is not configured")
+
+			tokens, err := tt.service.ListTokens(ctx, "user-1", "tenant-1")
+			require.Error(t, err)
+			assert.Nil(t, tokens)
+			assert.Contains(t, err.Error(), "api token repository is not configured")
+
+			err = tt.service.RevokeToken(ctx, "user-1", "tenant-1", "token-1")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "api token repository is not configured")
+
+			claims, err := tt.service.ValidateAPIToken(ctx, "oa_anything")
+			require.Error(t, err)
+			assert.Nil(t, claims)
+			assert.Contains(t, err.Error(), "api token repository is not configured")
+		})
+	}
 }
 
 func TestService_ValidateAPITokenReturnsErrors(t *testing.T) {
