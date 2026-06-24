@@ -12,14 +12,146 @@ import (
 
 func TestGORMRepository_NilDatabase(t *testing.T) {
 	repo := NewGORMRepository(nil)
+	ctx := context.Background()
+	schemaName := "tenant_schema"
+	tenantID := "tenant-1"
 
 	require.NotNil(t, repo)
 	assert.Nil(t, repo.db)
 
-	category, err := repo.GetCategoryByID(context.Background(), "tenant_schema", "tenant-1", "category-1")
-	require.Error(t, err)
-	assert.Nil(t, category)
-	assert.Contains(t, err.Error(), "assets repository database is not configured")
+	tests := []struct {
+		name string
+		run  func(t *testing.T) error
+	}{
+		{
+			name: "CreateCategory",
+			run: func(t *testing.T) error {
+				return repo.CreateCategory(ctx, schemaName, &AssetCategory{TenantID: tenantID})
+			},
+		},
+		{
+			name: "GetCategoryByID",
+			run: func(t *testing.T) error {
+				category, err := repo.GetCategoryByID(ctx, schemaName, tenantID, "category-1")
+				assert.Nil(t, category)
+				return err
+			},
+		},
+		{
+			name: "ListCategories",
+			run: func(t *testing.T) error {
+				categories, err := repo.ListCategories(ctx, schemaName, tenantID)
+				assert.Nil(t, categories)
+				return err
+			},
+		},
+		{
+			name: "UpdateCategory",
+			run: func(t *testing.T) error {
+				return repo.UpdateCategory(ctx, schemaName, &AssetCategory{ID: "category-1", TenantID: tenantID})
+			},
+		},
+		{
+			name: "DeleteCategory",
+			run: func(t *testing.T) error {
+				return repo.DeleteCategory(ctx, schemaName, tenantID, "category-1")
+			},
+		},
+		{
+			name: "Create",
+			run: func(t *testing.T) error {
+				return repo.Create(ctx, schemaName, &FixedAsset{TenantID: tenantID})
+			},
+		},
+		{
+			name: "GetByID",
+			run: func(t *testing.T) error {
+				asset, err := repo.GetByID(ctx, schemaName, tenantID, "asset-1")
+				assert.Nil(t, asset)
+				return err
+			},
+		},
+		{
+			name: "List",
+			run: func(t *testing.T) error {
+				assets, err := repo.List(ctx, schemaName, tenantID, &AssetFilter{
+					Status:     AssetStatusActive,
+					CategoryID: "category-1",
+					Search:     " asset ",
+				})
+				assert.Nil(t, assets)
+				return err
+			},
+		},
+		{
+			name: "Update",
+			run: func(t *testing.T) error {
+				return repo.Update(ctx, schemaName, &FixedAsset{ID: "asset-1", TenantID: tenantID})
+			},
+		},
+		{
+			name: "UpdateStatus",
+			run: func(t *testing.T) error {
+				return repo.UpdateStatus(ctx, schemaName, tenantID, "asset-1", AssetStatusActive)
+			},
+		},
+		{
+			name: "UpdateDisposal",
+			run: func(t *testing.T) error {
+				return repo.UpdateDisposal(ctx, schemaName, &FixedAsset{ID: "asset-1", TenantID: tenantID}, AssetStatusSold)
+			},
+		},
+		{
+			name: "Delete",
+			run: func(t *testing.T) error {
+				return repo.Delete(ctx, schemaName, tenantID, "asset-1")
+			},
+		},
+		{
+			name: "GenerateNumber",
+			run: func(t *testing.T) error {
+				number, err := repo.GenerateNumber(ctx, schemaName, tenantID)
+				assert.Empty(t, number)
+				return err
+			},
+		},
+		{
+			name: "CreateDepreciationEntry",
+			run: func(t *testing.T) error {
+				return repo.CreateDepreciationEntry(ctx, schemaName, &DepreciationEntry{TenantID: tenantID})
+			},
+		},
+		{
+			name: "ListDepreciationEntries",
+			run: func(t *testing.T) error {
+				entries, err := repo.ListDepreciationEntries(ctx, schemaName, tenantID, "asset-1")
+				assert.Nil(t, entries)
+				return err
+			},
+		},
+		{
+			name: "UpdateAssetDepreciation",
+			run: func(t *testing.T) error {
+				return repo.UpdateAssetDepreciation(ctx, schemaName, &FixedAsset{ID: "asset-1", TenantID: tenantID})
+			},
+		},
+		{
+			name: "tenantTable",
+			run: func(t *testing.T) error {
+				table, err := repo.tenantTable(ctx, schemaName, "fixed_assets")
+				assert.Nil(t, table)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run(t)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "assets repository database is not configured")
+		})
+	}
 }
 
 func TestAssetCategoryModelMappingRoundTrip(t *testing.T) {
