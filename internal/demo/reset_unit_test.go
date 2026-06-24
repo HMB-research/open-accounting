@@ -3,10 +3,14 @@ package demo
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestResetServiceUnitPaths(t *testing.T) {
@@ -75,16 +79,83 @@ func TestDemoConstructorsRejectNilPools(t *testing.T) {
 }
 
 func TestResetRepositoryUnitConfiguration(t *testing.T) {
-	repository := NewResetRepository(nil, nil)
+	pool := &pgxpool.Pool{}
+	db := newDryRunGormDB(t)
+
+	repository := NewResetRepository(pool, db)
 	require.NotNil(t, repository)
+	assert.Same(t, pool, repository.pool)
+	assert.Same(t, db, repository.db)
 	assert.Equal(t, ResetAdvisoryLockKey, repository.advisoryLockKey)
 
-	err := repository.ResetDemoData(context.Background(), []ResetUser{{Number: 1}}, "seed sql")
-	require.ErrorContains(t, err, "demo reset repository is not configured")
+	tests := []struct {
+		name       string
+		repository *GORMResetRepository
+	}{
+		{name: "nil receiver"},
+		{name: "missing pool", repository: NewResetRepository(nil, db)},
+		{name: "missing db", repository: NewResetRepository(pool, nil)},
+		{name: "missing both", repository: NewResetRepository(nil, nil)},
+	}
 
-	var nilRepository *GORMResetRepository
-	err = nilRepository.ResetDemoData(context.Background(), []ResetUser{{Number: 1}}, "seed sql")
-	require.ErrorContains(t, err, "demo reset repository is not configured")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.repository.ResetDemoData(context.Background(), []ResetUser{{Number: 1}}, "seed sql")
+			require.ErrorContains(t, err, "demo reset repository is not configured")
+		})
+	}
+}
+
+func TestResetRepositoryDryRunCleanupQueries(t *testing.T) {
+	ctx := context.Background()
+	repository := NewResetRepository(nil, newDryRunGormDB(t))
+	user := ResetUser{
+		Email: "demo@example.com",
+		Slug:  "demo-company",
+	}
+
+	require.NoError(t, repository.cleanPublicDemoPluginFixtures(ctx))
+	require.NoError(t, repository.cleanPublicDemoRows(ctx, user))
+}
+
+func TestResetRepositoryDryRunCleanupErrors(t *testing.T) {
+	ctx := context.Background()
+	expectedErr := errors.New("delete failed")
+
+	t.Run("plugin fixtures", func(t *testing.T) {
+		db := newDryRunGormDB(t)
+		registerDryRunDeleteError(t, db, expectedErr)
+		repository := NewResetRepository(nil, db)
+
+		err := repository.cleanPublicDemoPluginFixtures(ctx)
+
+		require.ErrorIs(t, err, expectedErr)
+		require.ErrorContains(t, err, "clean demo plugin fixture tenant links")
+	})
+
+	t.Run("demo rows", func(t *testing.T) {
+		db := newDryRunGormDB(t)
+		registerDryRunDeleteError(t, db, expectedErr)
+		repository := NewResetRepository(nil, db)
+
+		err := repository.cleanPublicDemoRows(ctx, ResetUser{
+			Email: "demo@example.com",
+			Slug:  "demo-company",
+		})
+
+		require.ErrorIs(t, err, expectedErr)
+		require.ErrorContains(t, err, "clean tenant users for demo-company")
+	})
+}
+
+func registerDryRunDeleteError(t *testing.T, db *gorm.DB, err error) {
+	t.Helper()
+
+	callbackName := fmt.Sprintf("demo_reset_unit:delete_error_%d", atomic.AddUint64(&dryRunCallbackID, 1))
+	registerErr := db.Callback().Delete().Before("gorm:delete").Register(callbackName, func(tx *gorm.DB) {
+		tx.AddError(err)
+	})
+	require.NoError(t, registerErr)
 }
 
 type unitResetRepository struct {
