@@ -395,4 +395,295 @@ func TestDeriveInvoiceImportStatus(t *testing.T) {
 	_, _, err = deriveInvoiceImportStatus(StatusPaid, decimal.RequireFromString("60.00"), true, total, now, now)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must equal total")
+
+	status, amount, err = deriveInvoiceImportStatus(StatusPaid, decimal.Zero, false, total, now, now)
+	require.NoError(t, err)
+	assert.Equal(t, StatusPaid, status)
+	assert.True(t, amount.Equal(total))
+
+	status, amount, err = deriveInvoiceImportStatus(StatusPartiallyPaid, decimal.RequireFromString("60.00"), true, total, now, now)
+	require.NoError(t, err)
+	assert.Equal(t, StatusPartiallyPaid, status)
+	assert.True(t, amount.Equal(decimal.RequireFromString("60.00")))
+
+	status, amount, err = deriveInvoiceImportStatus("", total, true, total, now, now)
+	require.NoError(t, err)
+	assert.Equal(t, StatusPaid, status)
+	assert.True(t, amount.Equal(total))
+
+	status, amount, err = deriveInvoiceImportStatus("", decimal.Zero, false, total, time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC), now)
+	require.NoError(t, err)
+	assert.Equal(t, StatusSent, status)
+	assert.True(t, amount.IsZero())
+
+	_, _, err = deriveInvoiceImportStatus("", decimal.RequireFromString("200.00"), true, total, now, now)
+	require.ErrorContains(t, err, "amount_paid cannot exceed")
+
+	_, _, err = deriveInvoiceImportStatus(StatusDraft, decimal.RequireFromString("1.00"), true, total, now, now)
+	require.ErrorContains(t, err, "amount_paid must be zero")
+
+	_, _, err = deriveInvoiceImportStatus(StatusPartiallyPaid, total, true, total, now, now)
+	require.ErrorContains(t, err, "greater than zero and less than total")
+
+	_, _, err = deriveInvoiceImportStatus(InvoiceStatus("ARCHIVED"), decimal.Zero, false, total, now, now)
+	require.ErrorContains(t, err, `invalid status "ARCHIVED"`)
+}
+
+func TestInvoiceImportParserHelpers(t *testing.T) {
+	invoiceType, err := parseInvoiceImportType("SALES")
+	require.NoError(t, err)
+	assert.Equal(t, InvoiceTypeSales, invoiceType)
+
+	invoiceType, err = parseInvoiceImportType("credit note")
+	require.NoError(t, err)
+	assert.Equal(t, InvoiceTypeCreditNote, invoiceType)
+
+	_, err = parseInvoiceImportType("")
+	require.ErrorContains(t, err, "invoice_type is required")
+
+	_, err = parseInvoiceImportType("unsupported")
+	require.ErrorContains(t, err, "invalid invoice_type")
+
+	status, err := parseInvoiceImportStatus("")
+	require.NoError(t, err)
+	assert.Empty(t, status)
+
+	status, err = parseInvoiceImportStatus("PARTIALLY_PAID")
+	require.NoError(t, err)
+	assert.Equal(t, StatusPartiallyPaid, status)
+
+	status, err = parseInvoiceImportStatus("void")
+	require.NoError(t, err)
+	assert.Equal(t, StatusVoided, status)
+
+	_, err = parseInvoiceImportStatus("waiting")
+	require.ErrorContains(t, err, "invalid status")
+
+	treatment, err := parseInvoiceImportVATTreatment("REVERSE-CHARGE", "")
+	require.NoError(t, err)
+	assert.Equal(t, VATTreatmentReverseCharge, treatment)
+
+	_, err = parseInvoiceImportVATTreatment("outside-scope", "")
+	require.ErrorContains(t, err, "invalid vat_treatment")
+
+	_, err = parseInvoiceImportDate("2026/03/01", "issue_date")
+	require.ErrorContains(t, err, "issue_date must use YYYY-MM-DD")
+
+	_, err = parseInvoiceImportDecimal("not-a-number", "quantity")
+	require.ErrorContains(t, err, "invalid quantity")
+
+	assert.Equal(t, "invoice_number", canonicalInvoiceImportHeader(" invoice_no. "))
+	assert.Empty(t, canonicalInvoiceImportHeader("legacy_only"))
+	assert.Equal(t, '\t', detectInvoiceImportDelimiter("a\tb\n1\t2"))
+	assert.Equal(t, ';', detectInvoiceImportDelimiter("a;b\n1;2"))
+	assert.Equal(t, ',', detectInvoiceImportDelimiter("a,b\n1,2"))
+}
+
+func TestMergeInvoiceImportGroupEdges(t *testing.T) {
+	issueDate := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	dueDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	baseHeader := invoiceImportHeader{
+		invoiceNumber: "INV-1",
+		invoiceType:   InvoiceTypeSales,
+		contactRef:    invoiceImportContactRef{code: "CUST-1"},
+		issueDate:     issueDate,
+		dueDate:       dueDate,
+		currency:      "EUR",
+		exchangeRate:  decimal.NewFromInt(1),
+	}
+
+	t.Run("fills optional header values", func(t *testing.T) {
+		group := &invoiceImportGroup{header: baseHeader}
+		next := baseHeader
+		next.id = "11111111-1111-1111-1111-111111111111"
+		next.reference = "PO-1"
+		next.notes = "Imported note"
+		next.explicitStatus = StatusPaid
+		next.amountPaidSpecified = true
+		next.amountPaid = decimal.RequireFromString("122.00")
+
+		conflict := mergeInvoiceImportGroup(group, next, 7)
+
+		assert.Empty(t, conflict)
+		assert.Equal(t, next.id, group.header.id)
+		assert.Equal(t, "PO-1", group.header.reference)
+		assert.Equal(t, "Imported note", group.header.notes)
+		assert.Equal(t, StatusPaid, group.header.explicitStatus)
+		assert.True(t, group.header.amountPaid.Equal(decimal.RequireFromString("122.00")))
+	})
+
+	tests := []struct {
+		name         string
+		mutateGroup  func(*invoiceImportHeader)
+		mutateNext   func(*invoiceImportHeader)
+		wantConflict string
+	}{
+		{
+			name:         "id mismatch",
+			mutateGroup:  func(header *invoiceImportHeader) { header.id = "legacy-1" },
+			mutateNext:   func(header *invoiceImportHeader) { header.id = "legacy-2" },
+			wantConflict: "id must be consistent",
+		},
+		{
+			name:         "invoice type mismatch",
+			mutateNext:   func(header *invoiceImportHeader) { header.invoiceType = InvoiceTypePurchase },
+			wantConflict: "invoice_type must be consistent",
+		},
+		{
+			name:         "issue date mismatch",
+			mutateNext:   func(header *invoiceImportHeader) { header.issueDate = issueDate.AddDate(0, 0, 1) },
+			wantConflict: "issue_date must be consistent",
+		},
+		{
+			name:         "due date mismatch",
+			mutateNext:   func(header *invoiceImportHeader) { header.dueDate = dueDate.AddDate(0, 0, 1) },
+			wantConflict: "due_date must be consistent",
+		},
+		{
+			name:         "currency mismatch",
+			mutateNext:   func(header *invoiceImportHeader) { header.currency = "USD" },
+			wantConflict: "currency must be consistent",
+		},
+		{
+			name:         "exchange rate mismatch",
+			mutateNext:   func(header *invoiceImportHeader) { header.exchangeRate = decimal.RequireFromString("1.1") },
+			wantConflict: "exchange_rate must be consistent",
+		},
+		{
+			name:         "contact code mismatch",
+			mutateNext:   func(header *invoiceImportHeader) { header.contactRef.code = "CUST-2" },
+			wantConflict: "contact_code must be consistent",
+		},
+		{
+			name:         "reference mismatch",
+			mutateGroup:  func(header *invoiceImportHeader) { header.reference = "PO-1" },
+			mutateNext:   func(header *invoiceImportHeader) { header.reference = "PO-2" },
+			wantConflict: "reference must be consistent",
+		},
+		{
+			name:         "notes mismatch",
+			mutateGroup:  func(header *invoiceImportHeader) { header.notes = "note 1" },
+			mutateNext:   func(header *invoiceImportHeader) { header.notes = "note 2" },
+			wantConflict: "notes must be consistent",
+		},
+		{
+			name:         "status mismatch",
+			mutateGroup:  func(header *invoiceImportHeader) { header.explicitStatus = StatusSent },
+			mutateNext:   func(header *invoiceImportHeader) { header.explicitStatus = StatusPaid },
+			wantConflict: "status must be consistent",
+		},
+		{
+			name: "amount paid mismatch",
+			mutateGroup: func(header *invoiceImportHeader) {
+				header.amountPaidSpecified = true
+				header.amountPaid = decimal.RequireFromString("10.00")
+			},
+			mutateNext: func(header *invoiceImportHeader) {
+				header.amountPaidSpecified = true
+				header.amountPaid = decimal.RequireFromString("11.00")
+			},
+			wantConflict: "amount_paid must be consistent for each invoice_number (row 7)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			groupHeader := baseHeader
+			next := baseHeader
+			if tt.mutateGroup != nil {
+				tt.mutateGroup(&groupHeader)
+			}
+			if tt.mutateNext != nil {
+				tt.mutateNext(&next)
+			}
+			group := &invoiceImportGroup{header: groupHeader}
+
+			conflict := mergeInvoiceImportGroup(group, next, 7)
+
+			assert.Contains(t, conflict, tt.wantConflict)
+		})
+	}
+}
+
+func TestInvoiceImportContactLookupEdges(t *testing.T) {
+	lookup := buildInvoiceImportContactLookup([]contacts.Contact{
+		{
+			ID:        "by-code",
+			Code:      "CUST-1",
+			Name:      "Code Customer",
+			RegCode:   "100",
+			VATNumber: "EE100",
+			Email:     "code@example.com",
+		},
+		{
+			ID:    "by-email",
+			Email: "ops@example.com",
+		},
+		{
+			ID:   "by-name",
+			Name: "Acme OU",
+		},
+	})
+
+	contact, err := lookup.find(invoiceImportContactRef{email: " OPS@example.com "})
+	require.NoError(t, err)
+	assert.Equal(t, "by-email", contact.ID)
+
+	contact, err = lookup.find(invoiceImportContactRef{name: " acme ou "})
+	require.NoError(t, err)
+	assert.Equal(t, "by-name", contact.ID)
+
+	_, err = lookup.find(invoiceImportContactRef{code: "missing"})
+	require.ErrorContains(t, err, `contact_code "missing" was not found`)
+
+	_, err = lookup.find(invoiceImportContactRef{vatNumber: "EE404"})
+	require.ErrorContains(t, err, `contact_vat_number "EE404" was not found`)
+
+	_, err = lookup.find(invoiceImportContactRef{email: "missing@example.com"})
+	require.ErrorContains(t, err, `contact_email "missing@example.com" was not found`)
+
+	_, err = lookup.find(invoiceImportContactRef{})
+	require.ErrorContains(t, err, "a contact identifier is required")
+}
+
+func TestMergeInvoiceImportContactRefConflicts(t *testing.T) {
+	tests := []struct {
+		name         string
+		target       invoiceImportContactRef
+		next         invoiceImportContactRef
+		wantConflict string
+	}{
+		{
+			name:         "registry code",
+			target:       invoiceImportContactRef{regCode: "100"},
+			next:         invoiceImportContactRef{regCode: "200"},
+			wantConflict: "contact_reg_code must be consistent",
+		},
+		{
+			name:         "VAT number",
+			target:       invoiceImportContactRef{vatNumber: "EE100"},
+			next:         invoiceImportContactRef{vatNumber: "EE200"},
+			wantConflict: "contact_vat_number must be consistent",
+		},
+		{
+			name:         "email",
+			target:       invoiceImportContactRef{email: "a@example.com"},
+			next:         invoiceImportContactRef{email: "b@example.com"},
+			wantConflict: "contact_email must be consistent",
+		},
+		{
+			name:         "name",
+			target:       invoiceImportContactRef{name: "Alpha"},
+			next:         invoiceImportContactRef{name: "Beta"},
+			wantConflict: "contact_name must be consistent",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conflict := mergeInvoiceImportContactRef(&tt.target, tt.next)
+
+			assert.Contains(t, conflict, tt.wantConflict)
+		})
+	}
 }
