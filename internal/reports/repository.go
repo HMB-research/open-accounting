@@ -74,7 +74,7 @@ func NewGORMRepository(pool *pgxpool.Pool) *GORMRepository {
 }
 
 func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
-	if r.db == nil {
+	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("reports repository database is not configured")
 	}
 	return r.db.WithContext(ctx), nil
