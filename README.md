@@ -297,8 +297,8 @@ open-accounting/
 | [CLI Guide](docs/CLI.md)                                              | API-token bootstrap, token management, and import examples for the `oa` CLI |
 | [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md)               | Concise current caps and gaps before full product parity                    |
 | [Use Case Coverage Matrix](docs/USE_CASE_COVERAGE.md)                 | Current use-case status, evidence gates, and remaining gaps                 |
-| [Deployment](docs/DEPLOYMENT.md)                                      | Production deployment guide                                                 |
-| [EMTA Integration](docs/EMTA_INTEGRATION.md)                          | Estonian Tax Board integration guide                                        |
+| [Deployment](docs/DEPLOYMENT.md)                                      | Deployment and operations guide                                             |
+| [EMTA Integration](docs/EMTA_INTEGRATION.md)                          | Manual export and blocked automatic e-MTA submission notes                  |
 | [Plugins](docs/PLUGINS.md)                                            | Plugin development and marketplace guide                                    |
 | [E2E Testing](docs/demo-e2e-testing.md)                               | End-to-end testing architecture                                             |
 | [Swagger UI](/swagger/)                                               | Interactive API explorer (when server is running)                           |
