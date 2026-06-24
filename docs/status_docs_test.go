@@ -1,8 +1,10 @@
 package docs
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -24,6 +26,9 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		"USE_CASE_COVERAGE.md":                   readDoc(t, "USE_CASE_COVERAGE.md"),
 		"FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md": readDoc(t, "FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md"),
 		"EMTA_INTEGRATION.md":                    readDoc(t, "EMTA_INTEGRATION.md"),
+		"PLUGINS.md":                             readDoc(t, "PLUGINS.md"),
+		"ARCHITECTURE.md":                        readDoc(t, "ARCHITECTURE.md"),
+		"DEPLOYMENT.md":                          readDoc(t, "DEPLOYMENT.md"),
 		"README.md":                              readDoc(t, "README.md"),
 		"demo-e2e-testing.md":                    readDoc(t, "demo-e2e-testing.md"),
 		filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md"): readDoc(t, filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md")),
@@ -31,9 +36,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 
 	required := map[string][]string{
 		filepath.Join("..", "README.md"): {
-			"Current branch documentation baseline: 2026-06-25.",
-			"Backend coverage is 81.7%.",
-			"Frontend coverage is 100.0% statements/functions/lines and 94.27% branches.",
+			"This project is under active development and not yet production-ready.",
 			"[documentation index](docs/README.md)",
 			"[Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md)",
 			"[Development Status](docs/DEVELOPMENT_STATUS.md)",
@@ -47,46 +50,62 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		},
 		"DEVELOPMENT_STATUS.md": {
 			"> Last updated: 2026-06-25",
-			"`chore/coverage-docs-reorg` branch baseline reviewed on 2026-06-25",
-			"Backend coverage: 81.7%.",
+			"latest verified local baseline reviewed on 2026-06-25",
+			"Backend coverage: 82.3%.",
 			"Frontend coverage: 100.0% statements, 100.0% functions, 100.0% lines, and 94.27% branches.",
 			"Documentation gate: `go test -timeout=3m ./docs -count=1` passing.",
 			"Historical pull-request logs belong in PRs and CI, not in this status page.",
 			"## Capability Matrix",
-			"## Immediate Priorities",
+			"## Current Verification Gates",
+			"make test-backend-coverage",
+			"cd frontend && bun run test:prepared",
 		},
 		"CURRENT_PRODUCT_LIMITS.md": {
 			"Last reviewed: 2026-06-25",
-			"backend coverage at\n81.7%",
-			"frontend coverage at 100.0% statements/functions/lines and 94.27%\nbranches",
-			"`go test -timeout=3m ./docs -count=1`",
+			"Current gate evidence is maintained in\n[Development Status](./DEVELOPMENT_STATUS.md).",
 			"## Gaps From A Full-Featured Product",
+			"Use this file for the concise product cap/gap summary and open work.",
 			"Do not move an item out of the gaps table until there is authoritative code, test, and documentation evidence",
 		},
 		"USE_CASE_COVERAGE.md": {
 			"Last reviewed: 2026-06-25",
-			"Current branch baseline reviewed on 2026-06-25",
+			"Latest verified baseline reviewed on 2026-06-25",
 			"`make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.",
 			"`go test -timeout=3m ./docs -count=1` keeps the documentation status, route coverage, and link checks active.",
 			"Broad workflow proof is summarized by matrix area instead of by per-stage pull-request history.",
 			"## Matrix",
-			"## Open Goal Work Items",
+			"## Sources Of Truth",
+			"Use [Development Status](./DEVELOPMENT_STATUS.md) for the latest gate evidence",
 		},
 		"FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md": {
 			"# Feature Mapping: Merit & SmartAccounts vs Open Accounting",
 			"## Blockers Summary",
 			"For the verified repository baseline and current branch gate summary",
+			"Treat this file as dated vendor research",
 			"## Verification Note",
 		},
 		"EMTA_INTEGRATION.md": {
 			"# e-MTA Manual Export And Blocked Automatic Submission",
 			"**Status: BLOCKED / EXTERNAL INTEGRATION NOT LIVE**",
 			"Automatic e-MTA submission is not implemented",
+			"## X-Road Integration Requirements",
+			"### X-Road Service Verification",
 			"## External Integration Boundary",
 			"Existing TSD status endpoints record manual workflow state; they do not submit declarations to e-MTA.",
-			"Candidate API surface, still blocked and not live",
 			"## Boundary Until Blockers Clear",
 			"Do not describe automatic submission, status polling, or feedback retrieval as working product capabilities.",
+		},
+		"DEPLOYMENT.md": {
+			"The demo environment supports 4 parallel users for E2E testing:",
+			"demo4@example.com",
+			"tenant_demo4",
+			"resets all 4 demo tenants simultaneously",
+		},
+		"ARCHITECTURE.md": {
+			"Web App",
+			"API Client",
+			"bun run test:prepared",
+			"bun run test:coverage",
 		},
 		"demo-e2e-testing.md": {
 			"The broader `e2e` job runs the full `demo-chromium` project across four shards and is blocking.",
@@ -122,9 +141,58 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"## Timeline",
 			"Proposed Implementation",
 			"estimated implementation time",
+			"Current branch documentation baseline",
+			"`chore/coverage-docs-reorg` branch baseline",
+			"Legacy plan docs have been removed",
+			"Legacy development plans were removed",
+			"## Immediate Priorities",
+			"## Open Goal Work Items",
+			"## Stage Gates To Keep Current",
+			"Candidate Shape After Blockers Clear",
+			"Candidate API surface",
+			"Candidate persistence",
+			"Recommendation: Create",
+			"roughly 60-70%",
+			"Mobile App",
+			"(Future)",
+			"3 parallel users",
+			"all 3 demo tenants",
+			"Legacy manifest metadata",
+			"future component-runtime work",
 		} {
 			if strings.Contains(doc, stale) {
 				t.Fatalf("%s contains stale status snippet %q", path, stale)
+			}
+		}
+	}
+}
+
+func TestDeploymentDemoUserDocumentationMatchesCode(t *testing.T) {
+	demoUsers := readDoc(t, filepath.Join("..", "cmd", "api", "demo_users.go"))
+	deployment := readDoc(t, "DEPLOYMENT.md")
+
+	emailMatches := regexp.MustCompile(`email: "demo[0-9]+@example\.com"`).FindAllString(demoUsers, -1)
+	schemaMatches := regexp.MustCompile(`schema: "tenant_demo[0-9]+"`).FindAllString(demoUsers, -1)
+	requireCount := len(emailMatches)
+	if requireCount == 0 || len(schemaMatches) != requireCount {
+		t.Fatalf("expected demo user source to expose matching email/schema rows, got emails=%d schemas=%d", requireCount, len(schemaMatches))
+	}
+
+	for _, snippet := range []string{
+		fmt.Sprintf("supports %d parallel users", requireCount),
+		fmt.Sprintf("resets all %d demo tenants", requireCount),
+	} {
+		if !strings.Contains(deployment, snippet) {
+			t.Fatalf("deployment docs missing demo count snippet %q", snippet)
+		}
+	}
+	for i := 1; i <= requireCount; i++ {
+		for _, snippet := range []string{
+			fmt.Sprintf("demo%d@example.com", i),
+			fmt.Sprintf("tenant_demo%d", i),
+		} {
+			if !strings.Contains(deployment, snippet) {
+				t.Fatalf("deployment docs missing demo user snippet %q", snippet)
 			}
 		}
 	}
@@ -166,7 +234,7 @@ func TestUseCaseCoverageMatrixDocumentsGoalEvidence(t *testing.T) {
 
 	for _, snippet := range []string{
 		"# Use Case Coverage Matrix",
-		"Current branch baseline reviewed on 2026-06-25",
+		"Latest verified baseline reviewed on 2026-06-25",
 		"`make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.",
 		"`make test-backend-coverage` enforces the same CLI package coverage from the backend coverage gate",
 		"`go test -timeout=3m ./docs -count=1` keeps the documentation status, route coverage, and link checks active.",
@@ -175,7 +243,7 @@ func TestUseCaseCoverageMatrixDocumentsGoalEvidence(t *testing.T) {
 		"legal hold placement/release audit metadata with disposal, replacement, hard-delete, and purge guards",
 		"loopback-only out-of-process HTTP backend runtime and supervised package runtime startup/proxy/shutdown for manifest-declared hooks and tenant-scoped plugin routes",
 		"| Direct bank feeds, direct SEPA initiation, e-invoice operator exchange, OCR, and automatic authority filing | `Blocked` |",
-		"Keep replacing uncovered migration validator branches with focused tests until the use-case coverage evidence is no longer mostly indirect.",
+		"Use [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md)\nfor the concise open work and product gap list.",
 	} {
 		if !strings.Contains(matrix, snippet) {
 			t.Fatalf("use case coverage matrix missing snippet %q", snippet)
