@@ -1,6 +1,7 @@
 # Deployment Guide
 
-This guide covers deploying Open Accounting to production environments.
+This guide covers deployment and operations patterns for Open Accounting.
+It is operational guidance, not a claim that the current product is production-ready.
 
 ## Prerequisites
 

@@ -79,6 +79,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"## Verification Note",
 		},
 		"EMTA_INTEGRATION.md": {
+			"# e-MTA Manual Export And Blocked Automatic Submission",
 			"**Status: BLOCKED / EXTERNAL INTEGRATION NOT LIVE**",
 			"Automatic e-MTA submission is not implemented",
 			"## External Integration Boundary",
@@ -116,6 +117,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"27512752079",
 			"97e9d8b",
 			"2026-06-15",
+			"June 12, 2026 verification pass",
 			"## Priority Themes",
 			"## Timeline",
 			"Proposed Implementation",

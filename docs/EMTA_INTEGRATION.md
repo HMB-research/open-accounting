@@ -1,4 +1,4 @@
-# e-MTA Automatic TSD Submission
+# e-MTA Manual Export And Blocked Automatic Submission
 
 > **Status: BLOCKED / EXTERNAL INTEGRATION NOT LIVE**
 >
@@ -50,9 +50,9 @@ X-Road services require one of the following authentication methods:
 
 **For automatic submission, an organizational X-Road certificate is required.**
 
-### Required X-Road Services
+### Candidate X-Road Services To Verify
 
-The following X-Road services are needed for automatic TSD submission:
+The following X-Road services are candidate integration points to verify against official WSDLs before any automatic TSD submission implementation:
 
 #### 1. `uploadMime` - Upload Declaration
 
