@@ -336,6 +336,22 @@ func (m mockDialector) Explain(sql string, vars ...interface{}) string {
 }
 
 func TestDecimal_GormDBDataType(t *testing.T) {
+	t.Run("nil database", func(t *testing.T) {
+		var d Decimal
+		assert.Equal(t, "NUMERIC(28,8)", d.GormDBDataType(nil, nil))
+	})
+
+	t.Run("nil config", func(t *testing.T) {
+		var d Decimal
+		assert.Equal(t, "NUMERIC(28,8)", d.GormDBDataType(&gorm.DB{}, nil))
+	})
+
+	t.Run("nil dialector", func(t *testing.T) {
+		var d Decimal
+		db := &gorm.DB{Config: &gorm.Config{}}
+		assert.Equal(t, "NUMERIC(28,8)", d.GormDBDataType(db, nil))
+	})
+
 	tests := []struct {
 		dialect  string
 		expected string
@@ -382,6 +398,22 @@ func TestJSONB_GormDBDataType(t *testing.T) {
 }
 
 func TestJSONBRaw_GormDBDataType(t *testing.T) {
+	t.Run("nil database", func(t *testing.T) {
+		var j JSONBRaw
+		assert.Equal(t, "JSONB", j.GormDBDataType(nil, nil))
+	})
+
+	t.Run("nil config", func(t *testing.T) {
+		var j JSONBRaw
+		assert.Equal(t, "JSONB", j.GormDBDataType(&gorm.DB{}, nil))
+	})
+
+	t.Run("nil dialector", func(t *testing.T) {
+		var j JSONBRaw
+		db := &gorm.DB{Config: &gorm.Config{}}
+		assert.Equal(t, "JSONB", j.GormDBDataType(db, nil))
+	})
+
 	tests := []struct {
 		dialect  string
 		expected string
