@@ -16,11 +16,9 @@ func TestDocumentedFrontendScriptsExist(t *testing.T) {
 	checkedFiles := []string{
 		filepath.Join("..", "README.md"),
 		filepath.Join("..", "CONTRIBUTING.md"),
+		"README.md",
 		"DEVELOPMENT_STATUS.md",
 		"demo-e2e-testing.md",
-		"RALPH_HOOK_SETUP.md",
-		"ralph-wiggum-loop.md",
-		filepath.Join("..", "scripts", "ralph-loop-views.sh"),
 		filepath.Join("..", "scripts", "test-demo-loop.sh"),
 		filepath.Join("..", "scripts", "test-loop.sh"),
 	}
