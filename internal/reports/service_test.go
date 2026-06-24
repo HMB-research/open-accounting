@@ -10,6 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestNewServiceUsesNilSafeGORMRepository(t *testing.T) {
+	service := NewService(nil)
+	require.NotNil(t, service)
+	repository, ok := service.repo.(*GORMRepository)
+	require.True(t, ok)
+	assert.Nil(t, repository.db)
+
+	repository = NewGORMRepository(nil)
+	require.NotNil(t, repository)
+	assert.Nil(t, repository.db)
+}
+
 func TestGenerateCashFlowStatement(t *testing.T) {
 	ctx := context.Background()
 	mockRepo := NewMockRepository()
