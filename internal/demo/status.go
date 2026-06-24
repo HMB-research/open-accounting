@@ -55,6 +55,10 @@ func NewStatusReader(pool *pgxpool.Pool) (StatusReader, error) {
 
 func (r *gormStatusReader) ReadDemoStatus(ctx context.Context, schema string, userNum int) (StatusResponse, error) {
 	response := StatusResponse{User: userNum}
+	if r == nil || r.db == nil {
+		return response, fmt.Errorf("demo status reader is not configured")
+	}
+
 	var err error
 
 	if response.Accounts, err = r.entityStatus(ctx, schema, "accounts", "name"); err != nil {
@@ -169,6 +173,9 @@ func (r *gormStatusReader) periodStatus(ctx context.Context, schema, table strin
 }
 
 func (r *gormStatusReader) tenantTable(ctx context.Context, schema, table string) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("demo status reader is not configured")
+	}
 	qualifiedTable, err := database.QualifiedTable(schema, table)
 	if err != nil {
 		return nil, err
