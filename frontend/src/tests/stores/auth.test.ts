@@ -24,7 +24,25 @@ describe('authStore', () => {
 	beforeEach(() => {
 		mockLocalStorage.clear();
 		mockSessionStorage.clear();
+		vi.clearAllMocks();
 		vi.resetModules();
+	});
+
+	describe('initial state', () => {
+		it('hydrates remembered tokens from localStorage', async () => {
+			mockLocalStorage.set('remember_me', 'true');
+			mockLocalStorage.set('access_token', 'saved-access');
+			mockLocalStorage.set('refresh_token', 'saved-refresh');
+
+			const { authStore } = await import('$lib/stores/auth');
+
+			expect(get(authStore)).toEqual({
+				isAuthenticated: true,
+				accessToken: 'saved-access',
+				refreshToken: 'saved-refresh',
+				rememberMe: true
+			});
+		});
 	});
 
 	describe('setTokens', () => {

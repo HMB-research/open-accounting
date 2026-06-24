@@ -39,6 +39,8 @@ export interface PluginManagerState {
 	currentTenantId: string | null;
 }
 
+type EnabledTenantPlugin = TenantPlugin & { plugin: NonNullable<TenantPlugin['plugin']> };
+
 /**
  * Creates a plugin manager for managing loaded plugins and their contributions
  */
@@ -78,7 +80,9 @@ function createPluginManager() {
 
 		try {
 			const plugins = await api.listTenantPlugins(tenantId) ?? [];
-			const enabledPlugins = plugins.filter((p) => p.is_enabled && p.plugin);
+			const enabledPlugins = plugins.filter(
+				(p): p is EnabledTenantPlugin => p.is_enabled && p.plugin != null
+			);
 
 			// Extract navigation items from enabled plugins
 			const navigation: PluginNavigationItem[] = [];
@@ -86,7 +90,6 @@ function createPluginManager() {
 
 			for (const tenantPlugin of enabledPlugins) {
 				const plugin = tenantPlugin.plugin;
-				if (!plugin) continue;
 
 				// Extract navigation items
 				if (plugin.manifest?.frontend?.navigation) {

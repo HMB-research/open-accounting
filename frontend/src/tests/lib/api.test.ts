@@ -6,6 +6,14 @@ import { api } from "$lib/api";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
+function mockJsonResponse(payload: unknown = {}, status = 200) {
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    status,
+    json: async () => payload,
+  });
+}
+
 describe("API Client - Core Functionality", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1906,6 +1914,587 @@ describe("API Client - Core Functionality", () => {
 
       expect(result.id).toBe("acc-1");
     });
+
+    it("should update account", async () => {
+      mockJsonResponse({ id: "acc-1", code: "1001", name: "Main bank" });
+
+      const result = await api.updateAccount("tenant-123", "acc-1", {
+        name: "Main bank",
+        code: "1001",
+        account_type: "ASSET",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/accounts/acc-1"),
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({
+            name: "Main bank",
+            code: "1001",
+            account_type: "ASSET",
+          }),
+        }),
+      );
+      expect(result.name).toBe("Main bank");
+    });
+
+    it("should delete account", async () => {
+      mockJsonResponse({ id: "acc-1", deleted: true });
+
+      await api.deleteAccount("tenant-123", "acc-1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/accounts/acc-1"),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+  });
+
+  describe("Quote and Order Endpoints", () => {
+    beforeEach(() => {
+      api.setTokens("valid-token", "refresh-token");
+    });
+
+    it("should call quote wrapper endpoints with the expected methods and bodies", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "list quotes",
+          call: () => api.listQuotes("tenant-123", { status: "DRAFT" } as never),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/quotes?status=DRAFT",
+        },
+        {
+          name: "create quote",
+          call: () =>
+            api.createQuote("tenant-123", {
+              customer_id: "contact-1",
+              quote_date: "2026-06-24",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/quotes",
+          body: {
+            customer_id: "contact-1",
+            quote_date: "2026-06-24",
+          },
+        },
+        {
+          name: "get quote",
+          call: () => api.getQuote("tenant-123", "quote-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1",
+        },
+        {
+          name: "update quote",
+          call: () =>
+            api.updateQuote("tenant-123", "quote-1", {
+              status: "SENT",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1",
+          body: { status: "SENT" },
+        },
+        {
+          name: "delete quote",
+          call: () => api.deleteQuote("tenant-123", "quote-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1",
+        },
+        {
+          name: "send quote",
+          call: () => api.sendQuote("tenant-123", "quote-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1/send",
+        },
+        {
+          name: "accept quote",
+          call: () => api.acceptQuote("tenant-123", "quote-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1/accept",
+        },
+        {
+          name: "reject quote",
+          call: () => api.rejectQuote("tenant-123", "quote-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1/reject",
+        },
+        {
+          name: "convert quote",
+          call: () => api.convertQuoteToInvoice("tenant-123", "quote-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1/convert-to-invoice",
+          body: {},
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
+    });
+
+    it("should call order wrapper endpoints with the expected methods and bodies", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "list orders",
+          call: () => api.listOrders("tenant-123", { status: "CONFIRMED" } as never),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/orders?status=CONFIRMED",
+        },
+        {
+          name: "create order",
+          call: () =>
+            api.createOrder("tenant-123", {
+              customer_id: "contact-1",
+              order_date: "2026-06-24",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders",
+          body: {
+            customer_id: "contact-1",
+            order_date: "2026-06-24",
+          },
+        },
+        {
+          name: "get order",
+          call: () => api.getOrder("tenant-123", "order-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/orders/order-1",
+        },
+        {
+          name: "update order",
+          call: () =>
+            api.updateOrder("tenant-123", "order-1", {
+              status: "PROCESSING",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/orders/order-1",
+          body: { status: "PROCESSING" },
+        },
+        {
+          name: "delete order",
+          call: () => api.deleteOrder("tenant-123", "order-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/orders/order-1",
+        },
+        {
+          name: "confirm order",
+          call: () => api.confirmOrder("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/confirm",
+        },
+        {
+          name: "process order",
+          call: () => api.processOrder("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/process",
+        },
+        {
+          name: "ship order",
+          call: () => api.shipOrder("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/ship",
+        },
+        {
+          name: "deliver order",
+          call: () => api.deliverOrder("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/deliver",
+        },
+        {
+          name: "cancel order",
+          call: () => api.cancelOrder("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/cancel",
+        },
+        {
+          name: "convert order",
+          call: () => api.convertOrderToInvoice("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/convert-to-invoice",
+          body: {},
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
+    });
+  });
+
+  describe("Asset and Inventory Catalog Endpoints", () => {
+    beforeEach(() => {
+      api.setTokens("valid-token", "refresh-token");
+    });
+
+    it("should call fixed-asset category and asset wrapper endpoints", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "list asset categories",
+          call: () => api.listAssetCategories("tenant-123"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/asset-categories",
+        },
+        {
+          name: "create asset category",
+          call: () =>
+            api.createAssetCategory("tenant-123", {
+              name: "Equipment",
+              depreciation_method: "straight_line",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/asset-categories",
+          body: {
+            name: "Equipment",
+            depreciation_method: "straight_line",
+          },
+        },
+        {
+          name: "get asset category",
+          call: () => api.getAssetCategory("tenant-123", "asset-cat-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/asset-categories/asset-cat-1",
+        },
+        {
+          name: "delete asset category",
+          call: () => api.deleteAssetCategory("tenant-123", "asset-cat-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/asset-categories/asset-cat-1",
+        },
+        {
+          name: "list assets with filters",
+          call: () =>
+            api.listAssets("tenant-123", {
+              status: "ACTIVE",
+              category_id: "asset-cat-1",
+              from_date: "2026-01-01",
+              to_date: "2026-06-24",
+              search: "laptop",
+            } as never),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/assets?status=ACTIVE&category_id=asset-cat-1&from_date=2026-01-01&to_date=2026-06-24&search=laptop",
+        },
+        {
+          name: "create asset",
+          call: () =>
+            api.createAsset("tenant-123", {
+              asset_number: "FA-001",
+              name: "Laptop",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/assets",
+          body: { asset_number: "FA-001", name: "Laptop" },
+        },
+        {
+          name: "get asset",
+          call: () => api.getAsset("tenant-123", "asset-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1",
+        },
+        {
+          name: "update asset",
+          call: () =>
+            api.updateAsset("tenant-123", "asset-1", {
+              name: "Laptop Pro",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1",
+          body: { name: "Laptop Pro" },
+        },
+        {
+          name: "delete asset",
+          call: () => api.deleteAsset("tenant-123", "asset-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1",
+        },
+        {
+          name: "activate asset",
+          call: () => api.activateAsset("tenant-123", "asset-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1/activate",
+        },
+        {
+          name: "dispose asset",
+          call: () =>
+            api.disposeAsset("tenant-123", "asset-1", {
+              disposal_date: "2026-06-24",
+              disposal_amount: "100.00",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1/dispose",
+          body: {
+            disposal_date: "2026-06-24",
+            disposal_amount: "100.00",
+          },
+        },
+        {
+          name: "record depreciation",
+          call: () =>
+            api.recordDepreciation("tenant-123", "asset-1", {
+              depreciation_date: "2026-06-24",
+              amount: "50.00",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1/depreciation",
+          body: {
+            depreciation_date: "2026-06-24",
+            amount: "50.00",
+          },
+        },
+        {
+          name: "get depreciation history",
+          call: () => api.getDepreciationHistory("tenant-123", "asset-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1/depreciation",
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
+    });
+
+    it("should call product, warehouse, and stock wrapper endpoints", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "list product categories",
+          call: () => api.listProductCategories("tenant-123"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/product-categories",
+        },
+        {
+          name: "create product category",
+          call: () =>
+            api.createProductCategory("tenant-123", {
+              name: "Finished goods",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/product-categories",
+          body: { name: "Finished goods" },
+        },
+        {
+          name: "get product category",
+          call: () => api.getProductCategory("tenant-123", "product-cat-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/product-categories/product-cat-1",
+        },
+        {
+          name: "delete product category",
+          call: () => api.deleteProductCategory("tenant-123", "product-cat-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/product-categories/product-cat-1",
+        },
+        {
+          name: "list products with filters",
+          call: () =>
+            api.listProducts("tenant-123", {
+              product_type: "STOCK",
+              status: "ACTIVE",
+              category_id: "product-cat-1",
+              search: "widget",
+              low_stock: true,
+            } as never),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/products?product_type=STOCK&status=ACTIVE&category_id=product-cat-1&search=widget&low_stock=true",
+        },
+        {
+          name: "create product",
+          call: () =>
+            api.createProduct("tenant-123", {
+              sku: "SKU-001",
+              name: "Widget",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/products",
+          body: { sku: "SKU-001", name: "Widget" },
+        },
+        {
+          name: "get product",
+          call: () => api.getProduct("tenant-123", "product-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/products/product-1",
+        },
+        {
+          name: "update product",
+          call: () =>
+            api.updateProduct("tenant-123", "product-1", {
+              name: "Updated widget",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/products/product-1",
+          body: { name: "Updated widget" },
+        },
+        {
+          name: "delete product",
+          call: () => api.deleteProduct("tenant-123", "product-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/products/product-1",
+        },
+        {
+          name: "get product stock levels",
+          call: () => api.getProductStockLevels("tenant-123", "product-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/products/product-1/stock-levels",
+        },
+        {
+          name: "get product movements",
+          call: () => api.getProductMovements("tenant-123", "product-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/products/product-1/movements",
+        },
+        {
+          name: "list active warehouses",
+          call: () => api.listWarehouses("tenant-123", true),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/warehouses?active_only=true",
+        },
+        {
+          name: "create warehouse",
+          call: () =>
+            api.createWarehouse("tenant-123", {
+              code: "MAIN",
+              name: "Main warehouse",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/warehouses",
+          body: { code: "MAIN", name: "Main warehouse" },
+        },
+        {
+          name: "get warehouse",
+          call: () => api.getWarehouse("tenant-123", "warehouse-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/warehouses/warehouse-1",
+        },
+        {
+          name: "update warehouse",
+          call: () =>
+            api.updateWarehouse("tenant-123", "warehouse-1", {
+              name: "Updated warehouse",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/warehouses/warehouse-1",
+          body: { name: "Updated warehouse" },
+        },
+        {
+          name: "delete warehouse",
+          call: () => api.deleteWarehouse("tenant-123", "warehouse-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/warehouses/warehouse-1",
+        },
+        {
+          name: "adjust stock",
+          call: () =>
+            api.adjustStock("tenant-123", {
+              product_id: "product-1",
+              warehouse_id: "warehouse-1",
+              quantity: "5",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/inventory/adjust",
+          body: {
+            product_id: "product-1",
+            warehouse_id: "warehouse-1",
+            quantity: "5",
+          },
+        },
+        {
+          name: "transfer stock",
+          call: () =>
+            api.transferStock("tenant-123", {
+              product_id: "product-1",
+              from_warehouse_id: "warehouse-1",
+              to_warehouse_id: "warehouse-2",
+              quantity: "2",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/inventory/transfer",
+          body: {
+            product_id: "product-1",
+            from_warehouse_id: "warehouse-1",
+            to_warehouse_id: "warehouse-2",
+            quantity: "2",
+          },
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
+    });
   });
 
   describe("Journal Entry Endpoints", () => {
@@ -2568,6 +3157,37 @@ describe("API Client - Core Functionality", () => {
       const result = await api.getPayablesAging("tenant-123");
 
       expect(result).toBeDefined();
+    });
+
+    it("should get recent activity with an explicit limit", async () => {
+      mockJsonResponse([{ id: "activity-1", type: "invoice" }]);
+
+      const result = await api.getRecentActivity("tenant-123", 25);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/analytics/activity?limit=25",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    it("should calculate cash-flow analytics months from the date range", async () => {
+      mockJsonResponse({ labels: ["Jan", "Feb", "Mar"], inflows: ["100"] });
+
+      await api.getCashFlowAnalytics(
+        "tenant-123",
+        "2026-01-01",
+        "2026-03-17",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/analytics/cash-flow?months=3",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
     });
   });
 
@@ -3608,6 +4228,147 @@ describe("API Client - Core Functionality", () => {
         expect.any(Object),
       );
       expect(result).toHaveLength(1);
+    });
+
+    it("should call reminder rule wrapper endpoints", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "list reminder rules",
+          call: () => api.listReminderRules("tenant-123"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/reminder-rules",
+        },
+        {
+          name: "get reminder rule",
+          call: () => api.getReminderRule("tenant-123", "rule-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/reminder-rules/rule-1",
+        },
+        {
+          name: "create reminder rule",
+          call: () =>
+            api.createReminderRule("tenant-123", {
+              name: "7 days overdue",
+              days_overdue: 7,
+              is_active: true,
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/reminder-rules",
+          body: {
+            name: "7 days overdue",
+            days_overdue: 7,
+            is_active: true,
+          },
+        },
+        {
+          name: "update reminder rule",
+          call: () =>
+            api.updateReminderRule("tenant-123", "rule-1", {
+              is_active: false,
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/reminder-rules/rule-1",
+          body: { is_active: false },
+        },
+        {
+          name: "delete reminder rule",
+          call: () => api.deleteReminderRule("tenant-123", "rule-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/reminder-rules/rule-1",
+        },
+        {
+          name: "trigger reminders",
+          call: () => api.triggerReminders("tenant-123"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/reminder-rules/trigger",
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
+    });
+
+    it("should call interest calculation wrapper endpoints", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "get interest settings",
+          call: () => api.getInterestSettings("tenant-123"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/settings/interest",
+        },
+        {
+          name: "update interest settings",
+          call: () =>
+            api.updateInterestSettings("tenant-123", {
+              enabled: true,
+              annual_rate: "8.00",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/settings/interest",
+          body: { enabled: true, annual_rate: "8.00" },
+        },
+        {
+          name: "get invoice interest",
+          call: () => api.getInvoiceInterest("tenant-123", "inv-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/invoices/inv-1/interest",
+        },
+        {
+          name: "get invoice interest history",
+          call: () => api.getInvoiceInterestHistory("tenant-123", "inv-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/invoices/inv-1/interest/history",
+        },
+        {
+          name: "get overdue invoices with interest",
+          call: () => api.getOverdueInvoicesWithInterest("tenant-123"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/invoices/overdue-with-interest",
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
     });
   });
 
