@@ -86,6 +86,14 @@ var journalImportHeaderAliases = map[string]string{
 	"kurss":                 "exchange_rate",
 	"valuuta_kurss":         "exchange_rate",
 	"valuutakurss":          "exchange_rate",
+	"vat_rate":              "vat_rate",
+	"vat":                   "vat_rate",
+	"tax_rate":              "vat_rate",
+	"käibemaks":             "vat_rate",
+	"kaibemaks":             "vat_rate",
+	"is_vat_inclusive":      "is_vat_inclusive",
+	"vat_inclusive":         "is_vat_inclusive",
+	"tax_inclusive":         "is_vat_inclusive",
 	"source_type":           "source_type",
 	"source_id":             "source_id",
 }
@@ -195,6 +203,14 @@ func (s *Service) buildJournalEntryFromImportGroup(
 		if err != nil {
 			return nil, decimal.Zero, decimal.Zero, fmt.Errorf("row %d: %w", row.rowNumber, err)
 		}
+		vatRate, err := parseJournalImportVATRate(row.values["vat_rate"])
+		if err != nil {
+			return nil, decimal.Zero, decimal.Zero, fmt.Errorf("row %d: %w", row.rowNumber, err)
+		}
+		isVATInclusive, err := parseJournalImportBool(row.values["is_vat_inclusive"], "is_vat_inclusive")
+		if err != nil {
+			return nil, decimal.Zero, decimal.Zero, fmt.Errorf("row %d: %w", row.rowNumber, err)
+		}
 		currency := strings.ToUpper(strings.TrimSpace(row.values["currency"]))
 		if currency == "" {
 			currency = "EUR"
@@ -205,12 +221,14 @@ func (s *Service) buildJournalEntryFromImportGroup(
 		}
 
 		line := CreateJournalEntryLineReq{
-			AccountID:    account.ID,
-			Description:  strings.TrimSpace(row.values["line_description"]),
-			DebitAmount:  debit,
-			CreditAmount: credit,
-			Currency:     currency,
-			ExchangeRate: exchangeRate,
+			AccountID:      account.ID,
+			Description:    strings.TrimSpace(row.values["line_description"]),
+			DebitAmount:    debit,
+			CreditAmount:   credit,
+			Currency:       currency,
+			ExchangeRate:   exchangeRate,
+			VATRate:        vatRate,
+			IsVATInclusive: isVATInclusive,
 		}
 		if lineID != nil {
 			line.LineID = *lineID
@@ -410,6 +428,30 @@ func parseJournalImportExchangeRate(value string) (decimal.Decimal, error) {
 		return decimal.Zero, fmt.Errorf("exchange_rate cannot be negative")
 	}
 	return exchangeRate, nil
+}
+
+func parseJournalImportVATRate(value string) (decimal.Decimal, error) {
+	vatRate, err := parseOpeningBalanceDecimal(value, "vat_rate")
+	if err != nil {
+		return decimal.Zero, err
+	}
+	if vatRate.LessThan(decimal.Zero) {
+		return decimal.Zero, fmt.Errorf("vat_rate cannot be negative")
+	}
+	return vatRate, nil
+}
+
+func parseJournalImportBool(value string, field string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+		return false, nil
+	case "true", "t", "yes", "y", "1":
+		return true, nil
+	case "false", "f", "no", "n", "0":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s must be true or false", field)
+	}
 }
 
 func canonicalJournalImportHeader(header string) string {

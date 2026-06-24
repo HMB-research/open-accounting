@@ -23677,8 +23677,14 @@ const docTemplate = `{
                 "exchange_rate": {
                     "type": "number"
                 },
+                "is_vat_inclusive": {
+                    "type": "boolean"
+                },
                 "line_id": {
                     "type": "string"
+                },
+                "vat_rate": {
+                    "type": "number"
                 }
             }
         },
@@ -24180,11 +24186,17 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "is_vat_inclusive": {
+                    "type": "boolean"
+                },
                 "journal_entry_id": {
                     "type": "string"
                 },
                 "tenant_id": {
                     "type": "string"
+                },
+                "vat_rate": {
+                    "type": "number"
                 }
             }
         },
