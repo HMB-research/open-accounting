@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/HMB-research/open-accounting/internal/contactrefs"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -809,6 +810,308 @@ func TestService_ImportAssetsCSV(t *testing.T) {
 	assert.True(t, generatedAsset.BookValue.Equal(decimal.RequireFromString("600.00")))
 }
 
+func TestAssetImportParsesCSVEdgeCases(t *testing.T) {
+	rows, err := parseAssetImportRows("\ufeffasset_no;asset_name;date;cost;unknown.header\nLEG-001;Laptop;2025-01-10;1200.00;ignored\n;;;;\n")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 2, rows[0].rowNumber)
+	assert.Equal(t, "LEG-001", rows[0].values["asset_number"])
+	assert.Equal(t, "Laptop", rows[0].values["name"])
+	assert.Equal(t, "2025-01-10", rows[0].values["purchase_date"])
+	assert.Equal(t, "1200.00", rows[0].values["purchase_cost"])
+	assert.Equal(t, "ignored", rows[0].values["unknown_header"])
+
+	rows, err = parseAssetImportRows("name\tpurchase_date\tpurchase_cost\nDesk\t2025-01-10\t500.00\n")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "Desk", rows[0].values["name"])
+
+	rows, err = parseAssetImportRows("name,,purchase_date,purchase_cost\nDesk,ignored,2025-01-10,500.00\n")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.NotContains(t, rows[0].values, "")
+	assert.Equal(t, "Desk", rows[0].values["name"])
+
+	rows, err = parseAssetImportRows("name,purchase_date,purchase_cost\n,,\n")
+	require.NoError(t, err)
+	assert.Empty(t, rows)
+
+	_, err = parseAssetImportRows(" ")
+	require.ErrorContains(t, err, "csv_content is required")
+
+	_, err = parseAssetImportRows("name,purchase_cost\nLaptop,1200.00\n")
+	require.ErrorContains(t, err, "missing required columns: purchase_date")
+
+	_, err = parseAssetImportRows("\"unterminated")
+	require.ErrorContains(t, err, "parse csv header")
+
+	_, err = parseAssetImportRows("name,purchase_date,purchase_cost\n\"unterminated")
+	require.ErrorContains(t, err, "parse csv row 2")
+}
+
+func TestAssetImportParsersCoverDefaultsAndVariants(t *testing.T) {
+	status, err := parseAssetImportStatus(" ")
+	require.NoError(t, err)
+	assert.Equal(t, AssetStatusDraft, status)
+	status, err = parseAssetImportStatus("sold")
+	require.NoError(t, err)
+	assert.Equal(t, AssetStatusSold, status)
+	_, err = parseAssetImportStatus("retired")
+	require.ErrorContains(t, err, "invalid status")
+
+	method, err := parseAssetImportDepreciationMethod(" ")
+	require.NoError(t, err)
+	assert.Equal(t, DepreciationStraightLine, method)
+	method, err = parseAssetImportDepreciationMethod("declining-balance")
+	require.NoError(t, err)
+	assert.Equal(t, DepreciationDecliningBalance, method)
+	method, err = parseAssetImportDepreciationMethod("units of production")
+	require.NoError(t, err)
+	assert.Equal(t, DepreciationUnitsOfProd, method)
+	_, err = parseAssetImportDepreciationMethod("manual")
+	require.ErrorContains(t, err, "invalid depreciation_method")
+
+	disposalMethod, err := parseAssetImportDisposalMethod(" ")
+	require.NoError(t, err)
+	assert.Nil(t, disposalMethod)
+	for _, value := range []string{"sold", "scrapped", "donated", "lost"} {
+		disposalMethod, err = parseAssetImportDisposalMethod(value)
+		require.NoError(t, err)
+		assert.Equal(t, DisposalMethod(strings.ToUpper(value)), *disposalMethod)
+	}
+	_, err = parseAssetImportDisposalMethod("recycled")
+	require.ErrorContains(t, err, "invalid disposal_method")
+
+	usefulLife, err := parseAssetImportUsefulLifeMonths(" ")
+	require.NoError(t, err)
+	assert.Equal(t, 60, usefulLife)
+	_, err = parseAssetImportUsefulLifeMonths("sixty")
+	require.ErrorContains(t, err, "must be an integer")
+	_, err = parseAssetImportUsefulLifeMonths("0")
+	require.ErrorContains(t, err, "must be positive")
+
+	value, err := parseAssetImportOptionalDecimal("residual_value", " ", decimal.NewFromInt(25))
+	require.NoError(t, err)
+	assert.True(t, value.Equal(decimal.NewFromInt(25)))
+	_, err = parseAssetImportOptionalDecimal("residual_value", "abc", decimal.Zero)
+	require.ErrorContains(t, err, "residual_value must be a decimal")
+
+	bookValue, provided, err := parseAssetImportBookValue(" ", decimal.NewFromInt(100))
+	require.NoError(t, err)
+	assert.False(t, provided)
+	assert.True(t, bookValue.Equal(decimal.NewFromInt(100)))
+	_, provided, err = parseAssetImportBookValue("abc", decimal.Zero)
+	assert.True(t, provided)
+	require.ErrorContains(t, err, "book_value must be a decimal")
+
+	parsedDate, err := parseAssetImportRequiredDate("purchase_date", "2025-01-10T12:30:00Z")
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2025, 1, 10, 12, 30, 0, 0, time.UTC), parsedDate)
+	_, err = parseAssetImportRequiredDate("purchase_date", " ")
+	require.ErrorContains(t, err, "purchase_date is required")
+	_, err = parseAssetImportOptionalDate("last_depreciation_date", "10/01/2025")
+	require.ErrorContains(t, err, "last_depreciation_date must be a date")
+
+	parsedID, err := parseOptionalAssetImportUUID("category_id", " ")
+	require.NoError(t, err)
+	assert.Nil(t, parsedID)
+}
+
+func TestBuildFixedAssetFromImportRowEdgeCases(t *testing.T) {
+	categoryID := "11111111-1111-4111-8111-111111111111"
+	supplierID := "22222222-2222-4222-8222-222222222222"
+	invoiceID := "33333333-3333-4333-8333-333333333333"
+	accountIDsByCode := map[string]string{
+		"fa":      "asset-account-id",
+		"dep-exp": "depreciation-expense-account-id",
+		"acc-dep": "accumulated-depreciation-account-id",
+	}
+	categoryNameToID := map[string]string{"equipment": categoryID}
+
+	row := assetImportTestRow(map[string]string{
+		"asset_number":                          " LEG-001 ",
+		"description":                           " Workstation ",
+		"category_name":                         "Equipment",
+		"status":                                "active",
+		"depreciation_method":                   "declining-balance",
+		"useful_life_months":                    "36",
+		"residual_value":                        "100.00",
+		"depreciation_start_date":               "2025-02-01",
+		"accumulated_depreciation":              "300.00",
+		"book_value":                            "900.00",
+		"last_depreciation_date":                "2025-12-31T00:00:00Z",
+		"disposal_date":                         "2026-01-15 12:30:00",
+		"disposal_method":                       "sold",
+		"disposal_proceeds":                     "50.00",
+		"disposal_notes":                        " Sold after upgrade ",
+		"asset_account_code":                    "FA",
+		"depreciation_expense_account_code":     "DEP-EXP",
+		"accumulated_depreciation_account_code": "ACC-DEP",
+		"supplier_id":                           supplierID,
+		"serial_number":                         "SN-1",
+		"location":                              "Office",
+	})
+
+	asset, err := buildFixedAssetFromImportRow(row, "tenant-1", "user-1", categoryNameToID, accountIDsByCode, contactrefs.SupplierLookup{}, &invoiceID)
+	require.NoError(t, err)
+	assert.Equal(t, "tenant-1", asset.TenantID)
+	assert.Equal(t, "LEG-001", asset.AssetNumber)
+	assert.Equal(t, "Laptop", asset.Name)
+	assert.Equal(t, AssetStatusActive, asset.Status)
+	require.NotNil(t, asset.CategoryID)
+	assert.Equal(t, categoryID, *asset.CategoryID)
+	assert.Equal(t, DepreciationDecliningBalance, asset.DepreciationMethod)
+	assert.Equal(t, 36, asset.UsefulLifeMonths)
+	assert.True(t, asset.ResidualValue.Equal(decimal.RequireFromString("100.00")))
+	assert.True(t, asset.AccumulatedDepreciation.Equal(decimal.RequireFromString("300.00")))
+	assert.True(t, asset.BookValue.Equal(decimal.RequireFromString("900.00")))
+	require.NotNil(t, asset.DepreciationStartDate)
+	require.NotNil(t, asset.LastDepreciationDate)
+	require.NotNil(t, asset.DisposalDate)
+	require.NotNil(t, asset.DisposalMethod)
+	assert.Equal(t, DisposalSold, *asset.DisposalMethod)
+	assert.True(t, asset.DisposalProceeds.Equal(decimal.RequireFromString("50.00")))
+	require.NotNil(t, asset.AssetAccountID)
+	assert.Equal(t, "asset-account-id", *asset.AssetAccountID)
+	require.NotNil(t, asset.DepreciationExpenseAccountID)
+	assert.Equal(t, "depreciation-expense-account-id", *asset.DepreciationExpenseAccountID)
+	require.NotNil(t, asset.AccumulatedDepreciationAcctID)
+	assert.Equal(t, "accumulated-depreciation-account-id", *asset.AccumulatedDepreciationAcctID)
+	require.NotNil(t, asset.SupplierID)
+	assert.Equal(t, supplierID, *asset.SupplierID)
+	require.NotNil(t, asset.InvoiceID)
+	assert.Equal(t, invoiceID, *asset.InvoiceID)
+	assert.Equal(t, "user-1", asset.CreatedBy)
+
+	tests := []struct {
+		name             string
+		overrides        map[string]string
+		categoryNameToID map[string]string
+		accountIDsByCode map[string]string
+		wantErr          string
+	}{
+		{name: "missing name", overrides: map[string]string{"name": " "}, wantErr: "name is required"},
+		{name: "invalid purchase date", overrides: map[string]string{"purchase_date": "01/10/2025"}, wantErr: "purchase_date must be a date"},
+		{name: "missing purchase cost", overrides: map[string]string{"purchase_cost": " "}, wantErr: "purchase_cost is required"},
+		{name: "invalid purchase cost", overrides: map[string]string{"purchase_cost": "abc"}, wantErr: "purchase_cost must be a decimal"},
+		{name: "nonpositive purchase cost", overrides: map[string]string{"purchase_cost": "0"}, wantErr: "purchase cost must be positive"},
+		{name: "invalid status", overrides: map[string]string{"status": "retired"}, wantErr: "invalid status"},
+		{name: "invalid depreciation method", overrides: map[string]string{"depreciation_method": "manual"}, wantErr: "invalid depreciation_method"},
+		{name: "invalid useful life", overrides: map[string]string{"useful_life_months": "zero"}, wantErr: "useful_life_months must be an integer"},
+		{name: "negative useful life", overrides: map[string]string{"useful_life_months": "-1"}, wantErr: "useful_life_months must be positive"},
+		{name: "invalid residual", overrides: map[string]string{"residual_value": "abc"}, wantErr: "residual_value must be a decimal"},
+		{name: "negative residual", overrides: map[string]string{"residual_value": "-1"}, wantErr: "residual value cannot be negative"},
+		{name: "residual exceeds cost", overrides: map[string]string{"residual_value": "1300"}, wantErr: "residual value cannot exceed purchase cost"},
+		{name: "invalid accumulated depreciation", overrides: map[string]string{"accumulated_depreciation": "abc"}, wantErr: "accumulated_depreciation must be a decimal"},
+		{name: "negative accumulated depreciation", overrides: map[string]string{"accumulated_depreciation": "-1"}, wantErr: "accumulated_depreciation cannot be negative"},
+		{name: "invalid book value", overrides: map[string]string{"book_value": "abc"}, wantErr: "book_value must be a decimal"},
+		{name: "negative book value", overrides: map[string]string{"purchase_cost": "100", "accumulated_depreciation": "101"}, wantErr: "book_value cannot be negative"},
+		{name: "book value mismatch", overrides: map[string]string{"accumulated_depreciation": "100", "book_value": "1200"}, wantErr: "book_value must equal purchase_cost minus accumulated_depreciation"},
+		{name: "invalid depreciation start date", overrides: map[string]string{"depreciation_start_date": "02/01/2025"}, wantErr: "depreciation_start_date must be a date"},
+		{name: "invalid last depreciation date", overrides: map[string]string{"last_depreciation_date": "12/31/2025"}, wantErr: "last_depreciation_date must be a date"},
+		{name: "invalid disposal date", overrides: map[string]string{"disposal_date": "01/15/2026"}, wantErr: "disposal_date must be a date"},
+		{name: "invalid disposal method", overrides: map[string]string{"disposal_method": "recycled"}, wantErr: "invalid disposal_method"},
+		{name: "invalid disposal proceeds", overrides: map[string]string{"disposal_proceeds": "abc"}, wantErr: "disposal_proceeds must be a decimal"},
+		{name: "negative disposal proceeds", overrides: map[string]string{"disposal_proceeds": "-1"}, wantErr: "disposal_proceeds cannot be negative"},
+		{name: "missing category", overrides: map[string]string{"category_name": "Vehicles"}, categoryNameToID: map[string]string{}, wantErr: `category_name "Vehicles" was not found`},
+		{name: "invalid category id", overrides: map[string]string{"category_id": "legacy-category"}, wantErr: "category_id must be a valid UUID"},
+		{name: "missing account code", overrides: map[string]string{"asset_account_code": "MISSING"}, accountIDsByCode: map[string]string{}, wantErr: `account code "MISSING" was not found for asset_account_code`},
+		{name: "invalid supplier id", overrides: map[string]string{"supplier_id": "legacy-supplier"}, wantErr: "supplier_id must be a valid UUID"},
+		{
+			name:      "accumulated depreciation exceeds depreciable amount",
+			overrides: map[string]string{"purchase_cost": "1000", "residual_value": "500", "accumulated_depreciation": "600", "book_value": "400"},
+			wantErr:   "accumulated_depreciation cannot exceed depreciable amount",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			categories := categoryNameToID
+			if tt.categoryNameToID != nil {
+				categories = tt.categoryNameToID
+			}
+			accounts := accountIDsByCode
+			if tt.accountIDsByCode != nil {
+				accounts = tt.accountIDsByCode
+			}
+
+			_, err := buildFixedAssetFromImportRow(assetImportTestRow(tt.overrides), "tenant-1", "user-1", categories, accounts, contactrefs.SupplierLookup{}, nil)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func assetImportTestRow(overrides map[string]string) assetImportRow {
+	values := map[string]string{
+		"name":          "Laptop",
+		"purchase_date": "2025-01-10",
+		"purchase_cost": "1200.00",
+	}
+	for key, value := range overrides {
+		values[key] = value
+	}
+	return assetImportRow{
+		rowNumber: 2,
+		values:    values,
+	}
+}
+
+func TestService_ImportAssetsCSVRejectsInvalidPayloads(t *testing.T) {
+	ts := newTestService()
+	ctx := context.Background()
+
+	_, err := ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", nil)
+	require.ErrorContains(t, err, "csv_content is required")
+
+	_, err = ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{CSVContent: " "})
+	require.ErrorContains(t, err, "csv_content is required")
+
+	_, err = ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "name,purchase_date,purchase_cost\n,,\n",
+	})
+	require.ErrorContains(t, err, "no assets found in CSV")
+
+	_, err = ts.svc.ImportAssetsCSV(ctx, "tenant-1", "test_schema", &ImportAssetsRequest{
+		CSVContent: "name,purchase_cost\nLaptop,1200.00\n",
+	})
+	require.ErrorContains(t, err, "missing required columns: purchase_date")
+}
+
+func TestAssetImportServiceHelperErrors(t *testing.T) {
+	ctx := context.Background()
+	accountCodeRow := assetImportTestRow(map[string]string{"asset_account_code": "FA"})
+
+	svc := &Service{}
+	_, err := svc.assetImportAccountIDsByCode(ctx, "test_schema", "tenant-1", []assetImportRow{accountCodeRow})
+	require.ErrorContains(t, err, "accounting service is required")
+
+	ledger := newFakeAssetAccountingPoster()
+	ledger.listErr = assert.AnError
+	svc.ledger = ledger
+	_, err = svc.assetImportAccountIDsByCode(ctx, "test_schema", "tenant-1", []assetImportRow{accountCodeRow})
+	require.ErrorIs(t, err, assert.AnError)
+	assert.Contains(t, err.Error(), "list accounts for asset import")
+
+	ledger = newFakeAssetAccountingPoster()
+	ledger.accounts["blank-code"] = &accounting.Account{ID: "blank-code", Code: " "}
+	svc.ledger = ledger
+	accountIDsByCode, err := svc.assetImportAccountIDsByCode(ctx, "test_schema", "tenant-1", []assetImportRow{accountCodeRow})
+	require.NoError(t, err)
+	assert.NotContains(t, accountIDsByCode, "")
+	assert.Equal(t, "fixed-assets", accountIDsByCode["fa"])
+
+	supplierRow := assetImportTestRow(map[string]string{"supplier_code": "SUP-001"})
+	svc = &Service{}
+	_, err = svc.assetImportSupplierLookup(ctx, "test_schema", "tenant-1", []assetImportRow{supplierRow})
+	require.ErrorContains(t, err, "contact service is required")
+
+	svc.contacts = fakeAssetContactLister{err: assert.AnError}
+	_, err = svc.assetImportSupplierLookup(ctx, "test_schema", "tenant-1", []assetImportRow{supplierRow})
+	require.ErrorIs(t, err, assert.AnError)
+	assert.Contains(t, err.Error(), "list contacts for asset import")
+}
+
 func TestService_ImportAssetsCSVReportsMissingAccountCode(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()
@@ -1344,6 +1647,84 @@ func TestService_Activate_NotDraft(t *testing.T) {
 	assert.Contains(t, err.Error(), "not in draft status")
 }
 
+func TestAssetJournalDescriptionAndReferenceFallbacks(t *testing.T) {
+	tests := []struct {
+		name                 string
+		asset                *FixedAsset
+		entry                *DepreciationEntry
+		disposalDate         time.Time
+		wantDepreciationDesc string
+		wantDepreciationRef  string
+		wantDisposalDesc     string
+		wantDisposalRef      string
+	}{
+		{
+			name: "number and name",
+			asset: &FixedAsset{
+				ID:          "asset-1",
+				AssetNumber: " FA-001 ",
+				Name:        " Laptop ",
+			},
+			entry:                &DepreciationEntry{PeriodEnd: time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC)},
+			disposalDate:         time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+			wantDepreciationDesc: "Depreciation FA-001 - Laptop",
+			wantDepreciationRef:  "FA-001-2026-05",
+			wantDisposalDesc:     "Disposal FA-001 - Laptop",
+			wantDisposalRef:      "FA-001-2026-06-01",
+		},
+		{
+			name: "number only",
+			asset: &FixedAsset{
+				ID:          "asset-2",
+				AssetNumber: " FA-002 ",
+			},
+			entry:                &DepreciationEntry{},
+			disposalDate:         time.Time{},
+			wantDepreciationDesc: "Depreciation FA-002",
+			wantDepreciationRef:  "FA-002",
+			wantDisposalDesc:     "Disposal FA-002",
+			wantDisposalRef:      "FA-002",
+		},
+		{
+			name: "name only",
+			asset: &FixedAsset{
+				ID:   "asset-3",
+				Name: " Desk ",
+			},
+			entry:                &DepreciationEntry{PeriodEnd: time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC)},
+			disposalDate:         time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC),
+			wantDepreciationDesc: "Depreciation Desk",
+			wantDepreciationRef:  "asset-3-2026-07",
+			wantDisposalDesc:     "Disposal Desk",
+			wantDisposalRef:      "asset-3-2026-08-02",
+		},
+		{
+			name: "id fallback",
+			asset: &FixedAsset{
+				ID: "asset-4",
+			},
+			entry:                &DepreciationEntry{},
+			disposalDate:         time.Time{},
+			wantDepreciationDesc: "Depreciation asset asset-4",
+			wantDepreciationRef:  "asset-4",
+			wantDisposalDesc:     "Disposal asset asset-4",
+			wantDisposalRef:      "asset-4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.wantDepreciationDesc, depreciationJournalDescription(tt.asset))
+			assert.Equal(t, tt.wantDepreciationRef, depreciationJournalReference(tt.asset, tt.entry))
+			assert.Equal(t, tt.wantDisposalDesc, disposalJournalDescription(tt.asset))
+			assert.Equal(t, tt.wantDisposalRef, disposalJournalReference(tt.asset, tt.disposalDate))
+		})
+	}
+
+	assert.True(t, isValidDisposalMethod(DisposalSold))
+	assert.False(t, isValidDisposalMethod(DisposalMethod("RECYCLED")))
+}
+
 func TestService_Dispose(t *testing.T) {
 	repo := NewMockRepository()
 	ledger := newFakeAssetAccountingPoster()
@@ -1786,6 +2167,7 @@ type fakeAssetAccountingPoster struct {
 	accounts       map[string]*accounting.Account
 	createdRequest *accounting.CreateJournalEntryRequest
 	postedIDs      []string
+	listErr        error
 }
 
 func newFakeAssetAccountingPoster() *fakeAssetAccountingPoster {
@@ -1802,6 +2184,9 @@ func newFakeAssetAccountingPoster() *fakeAssetAccountingPoster {
 }
 
 func (f *fakeAssetAccountingPoster) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	accounts := make([]accounting.Account, 0, len(f.accounts))
 	for _, account := range f.accounts {
 		accounts = append(accounts, *account)
