@@ -3,6 +3,7 @@ package contacts
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
@@ -20,6 +21,9 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 }
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("contacts repository database is not configured")
+	}
 	db, err := database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 	if err != nil {
 		return nil, err
