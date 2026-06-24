@@ -485,6 +485,19 @@ func TestNewServiceWithRepository(t *testing.T) {
 	assert.Equal(t, defaultPasswordHashCost, svc.passwordHashCost)
 }
 
+func TestWithPasswordHashCostClampsBounds(t *testing.T) {
+	repo := NewMockRepository()
+
+	svc := NewServiceWithRepository(repo, WithPasswordHashCost(0))
+	assert.Equal(t, bcrypt.MinCost, svc.passwordHashCost)
+
+	svc = NewServiceWithRepository(repo, WithPasswordHashCost(bcrypt.MaxCost+1))
+	assert.Equal(t, bcrypt.MaxCost, svc.passwordHashCost)
+
+	svc = NewServiceWithRepository(repo, WithPasswordHashCost(bcrypt.MinCost+1))
+	assert.Equal(t, bcrypt.MinCost+1, svc.passwordHashCost)
+}
+
 func TestService_CreateTenant(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -1701,6 +1714,81 @@ func TestService_ChangeUserPassword(t *testing.T) {
 		err = svc.ChangeUserPassword(context.Background(), user.ID, "oldpassword123", "oldpassword123")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "different")
+	})
+}
+
+func TestService_ChangeUserPasswordValidationAndRepositoryErrors(t *testing.T) {
+	t.Run("validates required fields before repository lookup", func(t *testing.T) {
+		svc := newTestServiceWithRepository(NewMockRepository())
+
+		err := svc.ChangeUserPassword(context.Background(), " ", "oldpassword123", "newpassword123")
+		require.ErrorContains(t, err, "user ID is required")
+
+		err = svc.ChangeUserPassword(context.Background(), "user-1", "", "newpassword123")
+		require.ErrorContains(t, err, "current password and new password are required")
+
+		err = svc.ChangeUserPassword(context.Background(), "user-1", "oldpassword123", "")
+		require.ErrorContains(t, err, "current password and new password are required")
+	})
+
+	t.Run("maps missing and inactive users", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := newTestServiceWithRepository(repo)
+
+		err := svc.ChangeUserPassword(context.Background(), "missing-user", "oldpassword123", "newpassword123")
+		require.ErrorContains(t, err, "user not found")
+
+		passwordHash, err := svc.hashPassword("oldpassword123")
+		require.NoError(t, err)
+		repo.AddTestUser(&User{
+			ID:           "disabled-user",
+			Email:        "disabled@example.com",
+			Name:         "Disabled User",
+			PasswordHash: string(passwordHash),
+			IsActive:     false,
+		})
+
+		err = svc.ChangeUserPassword(context.Background(), "disabled-user", "oldpassword123", "newpassword123")
+		require.ErrorContains(t, err, "account is disabled")
+	})
+
+	t.Run("propagates get user repository error", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.getUserByIDErr = assert.AnError
+		svc := newTestServiceWithRepository(repo)
+
+		err := svc.ChangeUserPassword(context.Background(), "user-1", "oldpassword123", "newpassword123")
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("maps update missing user", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := newTestServiceWithRepository(repo)
+		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
+			Email:    "update-missing@example.com",
+			Password: "oldpassword123",
+			Name:     "Update Missing",
+		})
+		require.NoError(t, err)
+		repo.updateUserPasswordErr = ErrUserNotFound
+
+		err = svc.ChangeUserPassword(context.Background(), user.ID, "oldpassword123", "newpassword123")
+		require.ErrorContains(t, err, "user not found")
+	})
+
+	t.Run("propagates update repository error", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := newTestServiceWithRepository(repo)
+		user, err := svc.CreateUser(context.Background(), &CreateUserRequest{
+			Email:    "update-error@example.com",
+			Password: "oldpassword123",
+			Name:     "Update Error",
+		})
+		require.NoError(t, err)
+		repo.updateUserPasswordErr = assert.AnError
+
+		err = svc.ChangeUserPassword(context.Background(), user.ID, "oldpassword123", "newpassword123")
+		require.ErrorIs(t, err, assert.AnError)
 	})
 }
 

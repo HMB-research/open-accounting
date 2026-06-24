@@ -65,3 +65,29 @@ func TestDefaultSettingsIncludesInventoryPolicy(t *testing.T) {
 	assert.Equal(t, InventoryIssueCostingMethodLot, settings.InventoryIssueCostingMethod)
 	assert.Equal(t, InventoryValuationMethodStandardCost, settings.InventoryValuationMethod)
 }
+
+func TestInventoryPolicyEffectiveFallbacksAndNilSettings(t *testing.T) {
+	assert.Equal(t, InventoryValuationMethodFIFO, EffectiveInventoryValuationMethod("fifo"))
+	assert.Equal(t, InventoryValuationMethodStandardCost, EffectiveInventoryValuationMethod("replacement-cost"))
+	assert.Equal(t, InventoryIssueCostingMethodWeightedAverage, EffectiveInventoryIssueCostingMethod("average-cost"))
+	assert.Equal(t, InventoryIssueCostingMethodLot, EffectiveInventoryIssueCostingMethod("lifo"))
+
+	require.NoError(t, normalizeInventoryPolicySettings(nil))
+
+	settings := &TenantSettings{
+		InventoryIssueCostingMethod: "standard",
+		InventoryValuationMethod:    "weighted",
+	}
+	require.NoError(t, normalizeInventoryPolicySettings(settings))
+	assert.Equal(t, InventoryIssueCostingMethodStandardCost, settings.InventoryIssueCostingMethod)
+	assert.Equal(t, InventoryValuationMethodWeightedAverage, settings.InventoryValuationMethod)
+
+	err := normalizeInventoryPolicySettings(&TenantSettings{InventoryIssueCostingMethod: "lifo"})
+	require.ErrorContains(t, err, "invalid inventory issue costing method")
+
+	err = normalizeInventoryPolicySettings(&TenantSettings{
+		InventoryIssueCostingMethod: InventoryIssueCostingMethodLot,
+		InventoryValuationMethod:    "replacement-cost",
+	})
+	require.ErrorContains(t, err, "invalid inventory valuation method")
+}
