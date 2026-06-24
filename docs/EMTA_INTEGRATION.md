@@ -1,8 +1,8 @@
 # e-MTA Automatic TSD Submission
 
-> **Status: BLOCKED / NEEDS TESTING**
+> **Status: BLOCKED / EXTERNAL INTEGRATION NOT LIVE**
 >
-> This feature requires Estonian X-Road access credentials and a test environment to implement and verify.
+> Open Accounting supports manual TSD XML export and local submitted/accepted status tracking. Automatic e-MTA submission is not implemented because it requires Estonian X-Road access, organizational credentials, current service definitions, and a test environment.
 
 ## Overview
 
@@ -121,74 +121,47 @@ X-Road uses SOAP-based messaging with specific headers:
 </SOAP-ENV:Envelope>
 ```
 
-## Proposed Implementation
+## External Integration Boundary
 
-### New Package Structure
+The repository must not claim live e-MTA integration until the external blockers below are resolved and verified against an approved test environment. The following are boundary requirements, not implemented capabilities:
+
+- No `internal/emta` X-Road SOAP client is currently part of the verified product boundary.
+- No tenant e-MTA credential storage, connectivity test, status polling, or auto-submit endpoint should be documented as live.
+- Existing TSD status endpoints record manual workflow state; they do not submit declarations to e-MTA.
+- Any future implementation must keep X-Road credentials isolated from tenant data, avoid logging sensitive certificate material, and prove behavior with unit tests plus authorized test-environment integration tests before moving out of `Blocked`.
+
+### Candidate Shape After Blockers Clear
+
+When access and official service definitions are available, the likely boundary is:
 
 ```
 internal/
 └── emta/
-    ├── client.go       # X-Road SOAP client
-    ├── types.go        # Request/response types
-    ├── upload.go       # uploadMime implementation
-    ├── confirm.go      # confirmTsd implementation
-    ├── status.go       # getTsdStatus implementation
-    ├── feedback.go     # getTsdFeedback implementation
-    └── config.go       # Configuration and credentials
+    ├── client.go       # X-Road SOAP client boundary
+    ├── types.go        # Request/response types generated or verified from official WSDLs
+    ├── upload.go       # Declaration upload adapter
+    ├── confirm.go      # Submission confirmation adapter
+    ├── status.go       # Status query adapter
+    ├── feedback.go     # Validation feedback adapter
+    └── config.go       # Credential and endpoint configuration
 ```
 
-### Configuration
-
-```go
-type EMTAConfig struct {
-    // X-Road Security Server URL
-    SecurityServerURL string `json:"security_server_url"`
-
-    // Client identification
-    XRoadInstance  string `json:"xroad_instance"`   // EE
-    MemberClass    string `json:"member_class"`     // COM or NGO
-    MemberCode     string `json:"member_code"`      // Registry code
-    SubsystemCode  string `json:"subsystem_code"`   // Registered subsystem
-
-    // Certificate paths
-    CertificatePath string `json:"certificate_path"`
-    PrivateKeyPath  string `json:"private_key_path"`
-
-    // Optional: CA certificate for verification
-    CACertificatePath string `json:"ca_certificate_path,omitempty"`
-}
-```
-
-### API Endpoints (Proposed)
+Candidate API surface, still blocked and not live:
 
 ```
 POST /api/v1/tenants/{tenantID}/tsd/{year}/{month}/auto-submit
-  - Uploads XML to e-MTA
-  - Confirms submission
-  - Returns submission reference
-
 GET /api/v1/tenants/{tenantID}/tsd/{year}/{month}/emta-status
-  - Queries current status from e-MTA
-  - Updates local status accordingly
-
 POST /api/v1/tenants/{tenantID}/settings/emta
-  - Configure e-MTA credentials for tenant
-
 GET /api/v1/tenants/{tenantID}/settings/emta/test
-  - Test X-Road connectivity
 ```
 
-### Database Changes
+Candidate persistence, still blocked and not live:
 
 ```sql
--- Add e-MTA tracking to TSD declarations
 ALTER TABLE tsd_declarations ADD COLUMN emta_document_id VARCHAR(100);
 ALTER TABLE tsd_declarations ADD COLUMN emta_submission_id VARCHAR(100);
 ALTER TABLE tsd_declarations ADD COLUMN emta_last_checked_at TIMESTAMPTZ;
 ALTER TABLE tsd_declarations ADD COLUMN emta_errors JSONB;
-
--- Add e-MTA configuration to tenant settings
--- (stored in tenant_settings JSONB field)
 ```
 
 ## Blockers
@@ -251,15 +224,15 @@ ALTER TABLE tsd_declarations ADD COLUMN emta_errors JSONB;
 - TSD XML Schema: Based on 01.01.2025 specification
 - SOAP Version: 1.1
 
-## Timeline
+## Boundary Until Blockers Clear
 
-This feature is **blocked** pending:
+Automatic e-MTA submission remains blocked pending:
 
 1. **Organizational X-Road registration** - Required for machine-to-machine communication
-2. **Test environment access** - Cannot develop without ability to test
-3. **Official WSDL/schema files** - Need current service definitions
+2. **Test environment access** - Required before implementation can be verified
+3. **Official WSDL/schema files** - Required for current service definitions and XML schema validation
 
-Once blockers are resolved, estimated implementation time: **3-5 days**
+Until those are available, the supported workflow is manual XML export, manual upload in e-MTA, and local status tracking. Do not describe automatic submission, status polling, or feedback retrieval as working product capabilities.
 
 ## Contact
 
