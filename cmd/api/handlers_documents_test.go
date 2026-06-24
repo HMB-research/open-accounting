@@ -19,8 +19,9 @@ import (
 )
 
 type mockDocumentRepository struct {
-	entityExists bool
-	docs         map[string]*documents.Document
+	entityExists     bool
+	docs             map[string]*documents.Document
+	listDocumentsErr error
 }
 
 func newMockDocumentRepository() *mockDocumentRepository {
@@ -40,6 +41,9 @@ func (m *mockDocumentRepository) CreateDocument(ctx context.Context, schemaName 
 }
 
 func (m *mockDocumentRepository) ListDocuments(ctx context.Context, schemaName, tenantID, entityType, entityID string) ([]documents.Document, error) {
+	if m.listDocumentsErr != nil {
+		return nil, m.listDocumentsErr
+	}
 	result := make([]documents.Document, 0, len(m.docs))
 	for _, doc := range m.docs {
 		if doc.TenantID == tenantID && doc.EntityType == entityType && doc.EntityID == entityID {
