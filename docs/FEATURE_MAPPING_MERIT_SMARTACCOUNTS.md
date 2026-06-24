@@ -16,7 +16,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Tax & Compliance | 5 | 6 | Export-centric today, direct submissions missing |
 | Integrations | 4 | 5 | Plugin foundation exists, partner integrations missing |
 
-**Overall breadth:** roughly 60-70% of the combined feature surface exists in some form, but production depth and accountant workflow completeness are materially lower than that headline number.
+**Overall breadth:** Open Accounting covers many incumbent feature families, but production depth and accountant workflow completeness vary by workflow. Treat this file as dated vendor research; use [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md) for the concise current gap list.
 
 ---
 
@@ -280,14 +280,14 @@ Merit uses a REST API with:
 - Unix timestamp validation
 - Specific endpoints for invoices, contacts, etc.
 
-**Recommendation**: Create Merit-compatible API adapter plugin
+Open Accounting does not currently provide a Merit-compatible API adapter.
 
 ### SmartAccounts API Compatibility
 SmartAccounts API features:
 - REST endpoints
 - Integration with Envoice, WooCommerce, ShopRoller
 
-**Recommendation**: Create SmartAccounts import/export adapter
+Open Accounting does not currently provide a SmartAccounts import/export adapter.
 
 ---
 

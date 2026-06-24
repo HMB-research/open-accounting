@@ -4,7 +4,7 @@ Last reviewed: 2026-06-25
 
 This is the short current-state gap document for Open Accounting. It is the
 place to check what still prevents the repository from being described as fully
-featured, production-ready accounting software. Legacy development plans were removed from the active docs set because they contained completed work, obsolete priorities, and older test evidence.
+featured, production-ready accounting software.
 
 ## Current Verified Cap
 
@@ -14,14 +14,10 @@ payments, manual bank import and reconciliation, payroll, leave records, KMD/TSD
 export-oriented compliance, document evidence workflows, accountant review
 queues, a Go operator CLI, and a Svelte dashboard.
 
-The current branch baseline reviewed on 2026-06-25 reports backend coverage at
-81.7%, frontend coverage at 100.0% statements/functions/lines and 94.27%
-branches, and a passing documentation gate with `go test -timeout=3m ./docs -count=1`.
-The `cmd/oa` package remains held at 100.0% statement coverage by the CLI
-coverage gate.
-
-That evidence is not a production-readiness claim. It proves the checked use
-cases and regression gates for the current branch.
+Current gate evidence is maintained in
+[Development Status](./DEVELOPMENT_STATUS.md). That evidence is not a
+production-readiness claim; it proves the checked use cases and regression gates
+for the current branch.
 
 ## Gaps From A Full-Featured Product
 
@@ -42,8 +38,8 @@ cases and regression gates for the current branch.
 - Use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md) for detailed current
   feature status and verification evidence.
 - Use [USE_CASE_COVERAGE.md](./USE_CASE_COVERAGE.md) for use-case-level test
-  evidence and open goal work items.
-- Use this file for the concise product cap/gap summary.
+  evidence.
+- Use this file for the concise product cap/gap summary and open work.
 - Keep new implementation plans outside the active documentation tree unless
   they are promoted into current status, coverage, architecture, or API docs.
 

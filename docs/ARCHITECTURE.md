@@ -7,13 +7,13 @@ This document describes the high-level architecture of Open Accounting.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Clients                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │   Web App    │  │  Mobile App  │  │  API Client  │          │
-│  │  (SvelteKit) │  │   (Future)   │  │  (REST/JSON) │          │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
-└─────────┼─────────────────┼─────────────────┼───────────────────┘
-          │                 │                 │
-          └────────────────┬┴─────────────────┘
+│  ┌──────────────┐                    ┌──────────────┐          │
+│  │   Web App    │                    │  API Client  │          │
+│  │  (SvelteKit) │                    │  (REST/JSON) │          │
+│  └──────┬───────┘                    └──────┬───────┘          │
+└─────────┼────────────────────────────────────┼───────────────────┘
+          │                                    │
+          └────────────────┬───────────────────┘
                            │
                     ┌──────▼──────┐
                     │   Nginx /   │
@@ -335,8 +335,8 @@ Vitest with jsdom environment for unit and integration tests:
 ```bash
 cd frontend
 
-# Run all tests
-bun test
+# Run prepared unit tests
+bun run test:prepared
 
 # Watch mode
 bun run test:watch

@@ -17,6 +17,7 @@ func TestDocumentedFrontendScriptsExist(t *testing.T) {
 		filepath.Join("..", "README.md"),
 		filepath.Join("..", "CONTRIBUTING.md"),
 		"README.md",
+		"ARCHITECTURE.md",
 		"DEVELOPMENT_STATUS.md",
 		"demo-e2e-testing.md",
 		filepath.Join("..", "scripts", "test-demo-loop.sh"),

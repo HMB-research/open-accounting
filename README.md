@@ -21,9 +21,7 @@
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
 >
-> Current branch documentation baseline: 2026-06-25. Backend coverage is 81.7%. Frontend coverage is 100.0% statements/functions/lines and 94.27% branches. The docs gate is passing with `go test -timeout=3m ./docs -count=1`.
->
-> Start with the [documentation index](docs/README.md). Current caps and gaps live in [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md), detailed status and gate evidence live in [Development Status](docs/DEVELOPMENT_STATUS.md), and workflow-level proof plus open work items live in [Use Case Coverage](docs/USE_CASE_COVERAGE.md).
+> Start with the [documentation index](docs/README.md). Current caps and gaps live in [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md), detailed status and gate evidence live in [Development Status](docs/DEVELOPMENT_STATUS.md), and workflow-level proof lives in [Use Case Coverage](docs/USE_CASE_COVERAGE.md).
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -31,9 +29,7 @@ CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API
 
 ## 🎮 Demo
 
-The previous hosted Railway demo is currently offline.
-
-For a resettable local demo instead:
+For a resettable local demo:
 
 ```bash
 docker-compose up -d db
@@ -140,7 +136,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Historical TSD Import**      | CSV import of prior TSD declarations and Annex 1 rows through API and CLI                                                                                                                   |
 | **Leave Balance Import**       | CSV import of employee leave balances for migration cutovers through API, web UI, and CLI                                                                                                   |
 | **Leave Evidence**             | Approved supporting documents can be required before approving documented leave/absence records                                                                                             |
-| **Migration Preflight**        | Non-mutating CSV/XML bundle validation for required columns, duplicate identifiers and history keys, account, contact, employee, payroll-history, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, bank-transaction, opening-balance, and historical-journal row values, grouped document and preserved-ID consistency, provider-style aliases for Merit, SmartAccounts, and Directo CSVs including payment currency aliases, cross-file references before cutover imports, and guarded CLI plus server-side API execution for fully ready plans with resume snapshots for interrupted runs, including e-invoice XML, expenses, expense/product/fixed-asset/bank-account GL/recurring-invoice account types, commercial history, inventory, banking, tax, cost allocations, payment bank-account default-currency checks, bank-transaction source-account omitted-currency and description-source checks, payment allocation dates against imported invoice issue dates, journal-line references, totals, percentages, and amount/percentage agreement, and fixed assets |
+| **Migration Preflight**        | Non-mutating CSV/XML bundle validation for required columns, duplicate identifiers, provider aliases, cross-file references, and guarded execution readiness before cutover imports. See [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md) for remaining migration gaps. |
 
 ### Estonian Compliance
 
@@ -325,19 +321,6 @@ open-accounting/
 | `DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING` | Include documents missing retention metadata in reminder digests | `true`                                       |
 | `DOCUMENT_RETENTION_REMINDER_MAX_ATTEMPTS` | Retry failed retention reminder delivery attempts before reporting failure | `3`                                          |
 | `DOCUMENT_RETENTION_REMINDER_ESCALATE_AFTER_ATTEMPTS` | Mark failed retention reminder delivery as escalated after this many attempts | `3`                                          |
-
----
-
-## Current Status
-
-Open Accounting is broad, active accounting software, but it is not yet a
-production-ready replacement for an accounting firm. The active source of truth
-for roadmap and readiness is split across the canonical docs:
-
-- [Documentation Index](docs/README.md) for the active docs set
-- [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md) for concise caps and gaps
-- [Development Status](docs/DEVELOPMENT_STATUS.md) for current branch gate evidence
-- [Use Case Coverage](docs/USE_CASE_COVERAGE.md) for the workflow matrix and open work items
 
 ---
 

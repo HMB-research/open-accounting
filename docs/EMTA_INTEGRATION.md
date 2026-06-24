@@ -50,76 +50,12 @@ X-Road services require one of the following authentication methods:
 
 **For automatic submission, an organizational X-Road certificate is required.**
 
-### Candidate X-Road Services To Verify
+### X-Road Service Verification
 
-The following X-Road services are candidate integration points to verify against official WSDLs before any automatic TSD submission implementation:
-
-#### 1. `uploadMime` - Upload Declaration
-
-```
-Service: emta-v6/uploadMime
-Purpose: Upload TSD XML document to e-MTA
-Input: MIME-encoded XML document
-Output: Document reference ID
-```
-
-#### 2. `confirmTsd` - Confirm Submission
-
-```
-Service: emta-v6/confirmTsd
-Purpose: Confirm and submit the uploaded declaration
-Input: Document reference ID, confirmation flag
-Output: Submission confirmation, reference number
-```
-
-#### 3. `getTsdStatus` - Check Status
-
-```
-Service: emta-v6/getTsdStatus
-Purpose: Query the processing status of a submitted declaration
-Input: Document reference ID or submission reference
-Output: Status (PENDING, PROCESSING, ACCEPTED, REJECTED)
-```
-
-#### 4. `getTsdFeedback` - Get Validation Feedback
-
-```
-Service: emta-v6/getTsdFeedback
-Purpose: Retrieve validation errors or acceptance confirmation
-Input: Document reference ID
-Output: List of errors/warnings, acceptance details
-```
-
-### X-Road Message Format
-
-X-Road uses SOAP-based messaging with specific headers:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
-  <SOAP-ENV:Header>
-    <xrd:client xrd:objectType="SUBSYSTEM">
-      <xrd:xRoadInstance>EE</xrd:xRoadInstance>
-      <xrd:memberClass>COM</xrd:memberClass>
-      <xrd:memberCode>REGISTRY_CODE</xrd:memberCode>
-      <xrd:subsystemCode>SUBSYSTEM_CODE</xrd:subsystemCode>
-    </xrd:client>
-    <xrd:service xrd:objectType="SERVICE">
-      <xrd:xRoadInstance>EE</xrd:xRoadInstance>
-      <xrd:memberClass>GOV</xrd:memberClass>
-      <xrd:memberCode>70000349</xrd:memberCode>
-      <xrd:subsystemCode>emta</xrd:subsystemCode>
-      <xrd:serviceCode>uploadMime</xrd:serviceCode>
-      <xrd:serviceVersion>v6</xrd:serviceVersion>
-    </xrd:service>
-    <xrd:id>unique-message-id</xrd:id>
-    <xrd:protocolVersion>4.0</xrd:protocolVersion>
-  </SOAP-ENV:Header>
-  <SOAP-ENV:Body>
-    <!-- Service-specific content -->
-  </SOAP-ENV:Body>
-</SOAP-ENV:Envelope>
-```
+Official service definitions, request formats, response formats, and test
+environment behavior must be verified with MTA/X-Road before any automatic TSD
+submission implementation is added. This repository currently documents only
+the manual export boundary.
 
 ## External Integration Boundary
 
@@ -129,40 +65,6 @@ The repository must not claim live e-MTA integration until the external blockers
 - No tenant e-MTA credential storage, connectivity test, status polling, or auto-submit endpoint should be documented as live.
 - Existing TSD status endpoints record manual workflow state; they do not submit declarations to e-MTA.
 - Any future implementation must keep X-Road credentials isolated from tenant data, avoid logging sensitive certificate material, and prove behavior with unit tests plus authorized test-environment integration tests before moving out of `Blocked`.
-
-### Candidate Shape After Blockers Clear
-
-When access and official service definitions are available, the likely boundary is:
-
-```
-internal/
-└── emta/
-    ├── client.go       # X-Road SOAP client boundary
-    ├── types.go        # Request/response types generated or verified from official WSDLs
-    ├── upload.go       # Declaration upload adapter
-    ├── confirm.go      # Submission confirmation adapter
-    ├── status.go       # Status query adapter
-    ├── feedback.go     # Validation feedback adapter
-    └── config.go       # Credential and endpoint configuration
-```
-
-Candidate API surface, still blocked and not live:
-
-```
-POST /api/v1/tenants/{tenantID}/tsd/{year}/{month}/auto-submit
-GET /api/v1/tenants/{tenantID}/tsd/{year}/{month}/emta-status
-POST /api/v1/tenants/{tenantID}/settings/emta
-GET /api/v1/tenants/{tenantID}/settings/emta/test
-```
-
-Candidate persistence, still blocked and not live:
-
-```sql
-ALTER TABLE tsd_declarations ADD COLUMN emta_document_id VARCHAR(100);
-ALTER TABLE tsd_declarations ADD COLUMN emta_submission_id VARCHAR(100);
-ALTER TABLE tsd_declarations ADD COLUMN emta_last_checked_at TIMESTAMPTZ;
-ALTER TABLE tsd_declarations ADD COLUMN emta_errors JSONB;
-```
 
 ## Blockers
 

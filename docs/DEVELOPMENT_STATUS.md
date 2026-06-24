@@ -1,7 +1,7 @@
 # Open Accounting Development Status
 
 > Last updated: 2026-06-25
-> This is the current-state status document. Legacy plan docs have been removed; current gaps live in the canonical docs linked from [Documentation](./README.md).
+> This is the current-state status document. Current gaps live in the canonical docs linked from [Documentation](./README.md).
 > For the concise cap/gap summary before full product parity, see [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md).
 
 ## Status Definitions
@@ -16,9 +16,9 @@
 
 ## Verified Engineering Baseline
 
-This page reflects the `chore/coverage-docs-reorg` branch baseline reviewed on 2026-06-25. Current gate summary:
+This page reflects the latest verified local baseline reviewed on 2026-06-25. Current gate summary:
 
-- Backend coverage: 81.7%.
+- Backend coverage: 82.3%.
 - Frontend coverage: 100.0% statements, 100.0% functions, 100.0% lines, and 94.27% branches.
 - Documentation gate: `go test -timeout=3m ./docs -count=1` passing.
 - CLI coverage: `cmd/oa` remains guarded by `make test-cli-coverage` and `make test-backend-coverage` at 100.0% statement coverage for the CLI package.
@@ -60,21 +60,31 @@ This is a branch verification baseline, not a production-readiness claim. Curren
 ## What The Project Can Honestly Claim Today
 
 - Open Accounting is a broad, real codebase with working accounting, invoicing, payroll, banking, and multi-tenant foundations.
-- The current branch baseline is dated 2026-06-25: backend coverage is 81.7%, frontend coverage is 100.0% statements/functions/lines and 94.27% branches, and the docs gate is passing.
+- The latest verified baseline is dated 2026-06-25: backend coverage is 82.3%, frontend coverage is 100.0% statements/functions/lines and 94.27% branches, and the docs gate is passing.
 - The project now includes a working Go CLI and tenant-scoped API tokens for scriptable reads and writes; the `cmd/oa` package is verified at 100.0% statement coverage by the blocking `make test-backend-coverage` CI gate and the focused `make test-cli-coverage` local gate. Payment correction is handled through auditable offsetting reversals in API, CLI, payments UI, and cash-payments UI instead of destructive deletion.
 - Quote and order workflows now include PDF download and email delivery through API, CLI, and UI, including optional approved commercial-evidence blockers before sending or confirmation.
 - Chart-of-accounts import with optional preserved UUIDs, contact import with optional preserved UUIDs for contact/supplier references, historical payroll run/payslip import, leave-balance import, TSD history import, KMD history import, invoice history import with optional preserved UUIDs for payment allocation, quote/order history import with optional preserved quote UUIDs for order linkage, recurring invoice template import, payment history import with contact identity lookup plus invoice ID/number allocation, expense import with contact identity lookup, bank-account import with ledger account-code resolution, bank transaction import with LHV CSV, standard ISO 20022 camt.053 XML, the LHV camt.053 alias, generic mappers, and statement account/currency validation, cost center/cost allocation/product category import with optional preserved category UUIDs, warehouse/product master imports with preserved codes, generated UUIDs, and product supplier-code lookup, stock import with lot/serial/expiry metadata, fixed-asset import with supplier-code lookup, historical journal import, and manual Estonian e-invoice XML import are now available through API and CLI, with migration preflight coverage for invoice CSV `invoice_type` and `due_date`, duplicate business identifiers and history keys, account, contact, employee, payroll-history, leave-balance, TSD-history, KMD-history, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, and bank-transaction row values, grouped invoice/quote/order/recurring header consistency, preserved account/invoice/quote UUID validation, e-invoice XML parsing plus supplier/customer party contact references selected by contact-validation mode, contact-ID/supplier-ID references, commercial-document and payment/expense contact identity references, payment bank-account default-currency consistency, payment invoice ID/number references including invoice import preserved UUIDs, invoice `amount_paid` consistency against imported invoice CSV totals and statuses, combined imported invoice paid amount/payment allocation totals, payment allocation totals against imported invoice CSV and e-invoice XML totals, payment allocation currency consistency against imported invoice CSV and e-invoice XML currencies, payment allocation direction consistency against imported invoice CSV and effective e-invoice XML invoice types, payment allocation date consistency against imported invoice CSV and e-invoice XML issue dates, payment allocation invoice-status consistency for imported invoice CSV draft/voided targets, and ambiguous invoice-number reference checks, bank-account ledger account ID/code references, recurring-invoice account-ID references plus revenue account-type consistency, bank-statement account/currency references, inventory product-category parent ordering, product category and supplier ID/code references, product account ID/code references, product/warehouse/cost-center code references for generated-ID master imports, commercial document contact-ID/product references, order quote-ID references, fixed-asset supplier ID/code and invoice references, fixed-asset account ID/code references, fixed-asset date/amount/status/depreciation/disposal row values, cost-center budget/status and allocation amount/percentage/date row values, opening-balance account-code and debit/credit row values including provider account and amount aliases, historical-journal account-code/date/line/amount/base-currency balance checks, KMD period/status/submission/VAT-total consistency, payroll/leave/TSD employee identifier references, payroll/TSD same employee-period amount consistency, stock quantity/unit-cost/expiry row values plus lot metadata columns and serialized-stock duplicate guards, execution-plan API/CLI output for ordered cutover import steps, guarded CLI plus server-side API execution for fully ready plans, resume snapshots for interrupted runs, saved execution run list/get/event-stream/resume-by-ID support, and provider preset catalog discovery for generic, Merit, SmartAccounts, and Directo mapping metadata in API, CLI, and dashboard workbench views, including separate SmartAccounts payroll/TSD year-month and tax amount aliases plus Merit/Directo/SmartAccounts opening-balance account and amount aliases, plus saved-run progress percentages, active-step telemetry, per-step duration totals, dashboard-side live stream updates, accountant-workspace cutover launch handoff, saved-bundle execution from confirmation-ready accountant workspace actions, and workbench resume-only execution from selected saved run IDs, but further provider-specific mapping depth, cross-file validation outside payroll/TSD history, and other dashboard-side incumbent-system mutating cutover controls are still incomplete.
 - The project is still not production-ready for accounting firms that need full historical cutover tooling, remaining payroll/document/evidence-policy remediation beyond current KMD, KMD INF/EU VAT OSS report generation, TSD declarations, payroll runs, and expense claims, deeper accountant-workspace execution beyond the current assignment queue and direct banking/reminder/tax/document-retention/evidence-upload/unapproved-evidence/TSD/KMD-acceptance actions, broader workflow-level document policy controls, and hardened operations.
 - The strongest near-term wedge is Estonian SMB/accountant workflow with manual bank import, invoicing, payroll, KMD/TSD export, and core reporting including customer/vendor statements.
 
-## Immediate Priorities
+## Current Verification Gates
 
-1. Extend historical migration beyond guarded CLI/server-side execution, resume snapshots, saved run records, dashboard migration workbench, provider preset catalog discovery, saved-run progress, duration, API/CLI event stream telemetry, dashboard live stream consumption, accountant-workspace launch handoff, and saved-bundle assignment execution into further provider-specific mapping depth and mutating dashboard controls, building on the migration bundle preflight validator.
-2. Extend remediation actions beyond year-end close, migration preflight, KMD tax/report review including status mutation and KMD INF/EU VAT OSS generation, TSD declaration generation/export/acceptance marking, payroll run calculation/payment/approval/TSD/archive actions, banking transactions, expense claims, document retention date setting, evidence upload/replacement, unapproved-evidence approval, and document evidence/retention metadata into remaining payroll/document/evidence-policy edges and accountant-workspace follow-up surfaces.
-3. Add more automated workflow blocks on top of document evidence-policy evaluation beyond reconciliation, fixed-asset activation/disposal, expense receipts, and year-end close packs.
-4. Add remaining auth hardening beyond the current settings UI, API, and CLI controls for tenant member status, sessions, API tokens, tenant-creation boundaries, audit visibility, failed-login audit, and credential-aware failed-login throttling.
-5. Harden provider-specific offsite backup credentials and host-specific timer enablement in real deployments.
-6. Harden plugins beyond the current loopback HTTP runtime, supervised package runtime startup/proxy/shutdown/status/manual restart/automatic crash restart, allowlisted package runtime process environment, and safe operator-bundled frontend component registry, especially OS-level sandboxing and broader production isolation.
+Run the smallest relevant focused tests first, then the shared gate that protects
+the changed surface. Broad readiness claims require the full set below:
+
+```sh
+golangci-lint run
+go test -timeout=3m ./docs -count=1
+make test-cli-coverage
+make test-backend-coverage
+DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage
+cd frontend && bun run lint
+cd frontend && bun run check:prepared
+cd frontend && bun run test:prepared
+cd frontend && bun run build:prepared
+cd frontend && bun run test:e2e:smoke
+cd frontend && bun run test:e2e
+```
 
 ## Related Docs
 

@@ -175,7 +175,7 @@ settings:
 
 | Runtime | Status | Required fields | Description |
 |---------|--------|-----------------|-------------|
-| omitted | Legacy manifest metadata | `package`, `entry` | Preserves old manifests. Hook and route declarations without an executable runtime are rejected during enablement. |
+| omitted | Compatibility metadata only | `package`, `entry` | Preserves old manifests. Hook and route declarations without an executable runtime are rejected during enablement. |
 | `http` | Supported | `base_url` | Open Accounting proxies hooks and tenant plugin routes to an operator-managed HTTP process on loopback. `base_url` must use `http` and a loopback host such as `127.0.0.1`, `::1`, or `localhost`. |
 | `package` | Supported, conservative supervisor | `package`, `executable` | Starts a plugin-local executable directly, waits for its loopback health endpoint, and proxies hooks and tenant plugin routes to declared handler paths. |
 
@@ -346,7 +346,7 @@ type Event struct {
 
 ## UI Extension Points
 
-Frontend slot declarations render safe manifest-defined cards, links, and actions in host slot locations. The runtime uses `label`, `description`, `path`, `kind`, `badge`, and `order` from the manifest; `path` must be an internal application route. Plugin Svelte components are still not dynamically loaded, so `component` remains the stable component identifier and fallback label for future component-runtime work.
+Frontend slot declarations render safe manifest-defined cards, links, and actions in host slot locations. The runtime uses `label`, `description`, `path`, `kind`, `badge`, and `order` from the manifest; `path` must be an internal application route. Plugin Svelte components are not dynamically loaded, so `component` remains a stable component identifier and fallback label.
 
 ### Available Slots
 
