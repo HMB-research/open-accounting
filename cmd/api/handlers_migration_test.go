@@ -8,9 +8,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/cutover"
+	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/stretchr/testify/assert"
@@ -82,6 +84,108 @@ func TestHandlerMigrationStepExecutorImportsOrdersWithQuoteNumberReferences(t *t
 		assert.Equal(t, "11111111-1111-4111-8111-111111111111", *order.QuoteID)
 		assert.Equal(t, "user-1", order.CreatedBy)
 	}
+}
+
+func TestMigrationExecutionHelpers(t *testing.T) {
+	t.Run("invoice type parsing", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			value   string
+			want    invoicing.InvoiceType
+			wantErr bool
+		}{
+			{name: "blank default", value: "", want: ""},
+			{name: "trimmed sales", value: " sales ", want: invoicing.InvoiceTypeSales},
+			{name: "purchase", value: "PURCHASE", want: invoicing.InvoiceTypePurchase},
+			{name: "credit note", value: "credit_note", want: invoicing.InvoiceTypeCreditNote},
+			{name: "invalid", value: "receipt", wantErr: true},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				got, err := parseMigrationExecuteInvoiceType(tt.value)
+				if tt.wantErr {
+					require.Error(t, err)
+					return
+				}
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			})
+		}
+	})
+
+	t.Run("opening balance reference", func(t *testing.T) {
+		assert.Equal(t, "OB-2026", migrationOpeningBalanceReference(" 2026-01-31 "))
+		assert.Equal(t, "OB", migrationOpeningBalanceReference("123"))
+		assert.Equal(t, "OB", migrationOpeningBalanceReference(" "))
+	})
+}
+
+func TestMigrationPeriodLockDate(t *testing.T) {
+	ctx := context.Background()
+
+	h := &Handlers{}
+	lockDate, err := h.migrationPeriodLockDate(ctx, "tenant-1")
+	require.NoError(t, err)
+	assert.Nil(t, lockDate)
+
+	tenantRepo := newMockTenantRepository()
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Tenant", "tenant")
+	h.tenantService = newTestTenantService(tenantRepo)
+
+	lockRaw := "2026-05-31"
+	tenantRecord.Settings.PeriodLockDate = &lockRaw
+	lockDate, err = h.migrationPeriodLockDate(ctx, "tenant-1")
+	require.NoError(t, err)
+	require.NotNil(t, lockDate)
+	assert.Equal(t, time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC), *lockDate)
+
+	invalidLockRaw := "05/31/2026"
+	tenantRecord.Settings.PeriodLockDate = &invalidLockRaw
+	_, err = h.migrationPeriodLockDate(ctx, "tenant-1")
+	require.ErrorContains(t, err, "YYYY-MM-DD")
+
+	tenantRecord.Settings.PeriodLockDate = nil
+	lockDate, err = h.migrationPeriodLockDate(ctx, "tenant-1")
+	require.NoError(t, err)
+	assert.Nil(t, lockDate)
+
+	tenantRepo.getTenantErr = assert.AnError
+	_, err = h.migrationPeriodLockDate(ctx, "tenant-1")
+	require.ErrorIs(t, err, assert.AnError)
+}
+
+func TestGetTenantPeriodLockDate(t *testing.T) {
+	ctx := context.Background()
+	tenantRepo := newMockTenantRepository()
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Tenant", "tenant")
+	h := &Handlers{tenantService: newTestTenantService(tenantRepo)}
+
+	lockDate, err := h.getTenantPeriodLockDate(ctx, "tenant-1")
+	require.NoError(t, err)
+	assert.Nil(t, lockDate)
+
+	blank := " "
+	tenantRecord.Settings.PeriodLockDate = &blank
+	lockDate, err = h.getTenantPeriodLockDate(ctx, "tenant-1")
+	require.NoError(t, err)
+	assert.Nil(t, lockDate)
+
+	lockRaw := "2026-05-31"
+	tenantRecord.Settings.PeriodLockDate = &lockRaw
+	lockDate, err = h.getTenantPeriodLockDate(ctx, "tenant-1")
+	require.NoError(t, err)
+	require.NotNil(t, lockDate)
+	assert.Equal(t, time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC), *lockDate)
+
+	invalidLockRaw := "05/31/2026"
+	tenantRecord.Settings.PeriodLockDate = &invalidLockRaw
+	_, err = h.getTenantPeriodLockDate(ctx, "tenant-1")
+	require.ErrorContains(t, err, "invalid tenant period lock date")
+
+	tenantRepo.getTenantErr = assert.AnError
+	_, err = h.getTenantPeriodLockDate(ctx, "tenant-1")
+	require.ErrorContains(t, err, "load tenant settings")
 }
 
 type fakeMigrationRunStore struct {
