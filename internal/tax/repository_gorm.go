@@ -41,7 +41,18 @@ type vatAggregateKey struct {
 }
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
+}
+
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("tax repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
 }
 
 // QueryVATData queries VAT data from journal entries for a period
@@ -66,9 +77,13 @@ func (r *GORMRepository) QueryVATData(ctx context.Context, schemaName, tenantID 
 	if err != nil {
 		return nil, err
 	}
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	var rows []vatAggregateScanRow
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Table(entriesTable+" AS je").
 		Select(`
 			COALESCE(jl.vat_rate, 0) AS vat_rate,
@@ -93,7 +108,7 @@ func (r *GORMRepository) QueryVATData(ctx context.Context, schemaName, tenantID 
 		TaxBase   models.Decimal
 		TaxAmount models.Decimal
 	}
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Table(invoicesTable+" AS i").
 		Select(`
 			il.vat_rate,
@@ -176,6 +191,10 @@ func (r *GORMRepository) QueryKMDINFData(ctx context.Context, schemaName, tenant
 	if err != nil {
 		return nil, err
 	}
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	var results []struct {
 		Part                       KMDINFPart
@@ -193,7 +212,7 @@ func (r *GORMRepository) QueryKMDINFData(ctx context.Context, schemaName, tenant
 		PartnerPeriodTaxableAmount models.Decimal
 	}
 
-	invoiceRows := r.db.WithContext(ctx).
+	invoiceRows := db.
 		Table(invoicesTable+" AS i").
 		Select(`
 			CASE WHEN i.invoice_type = 'SALES' THEN 'A' WHEN i.invoice_type = 'PURCHASE' THEN 'B' END AS part,
@@ -217,14 +236,14 @@ func (r *GORMRepository) QueryKMDINFData(ctx context.Context, schemaName, tenant
 		Where("i.invoice_type IN ?", []string{"SALES", "PURCHASE"}).
 		Where("COALESCE(i.base_vat_amount, 0) <> 0").
 		Where("COALESCE(NULLIF(c.country_code, ''), 'EE') = ?", "EE")
-	qualifiedRows := r.db.WithContext(ctx).
+	qualifiedRows := db.
 		Table("(?) AS invoice_rows", invoiceRows).
 		Select(`
 			invoice_rows.*,
 			SUM(taxable_amount) OVER (PARTITION BY part, contact_id) AS partner_period_taxable_amount
 		`)
 
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Table("(?) AS qualified_rows", qualifiedRows).
 		Select(`
 			part,
@@ -283,6 +302,10 @@ func (r *GORMRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tena
 	if err != nil {
 		return nil, err
 	}
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	var results []struct {
 		CountryCode   string
@@ -295,7 +318,7 @@ func (r *GORMRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tena
 	}
 
 	countryCodeExpr := "COALESCE(NULLIF(UPPER(c.country_code), ''), 'EE')"
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Table(invoicesTable+" AS i").
 		Select(fmt.Sprintf(`
 			%s AS country_code,
@@ -343,7 +366,11 @@ func (r *GORMRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tena
 
 // SaveDeclaration saves a KMD declaration (upsert)
 func (r *GORMRepository) SaveDeclaration(ctx context.Context, schemaName string, decl *KMDDeclaration) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
 		declarationsDB, err := database.TenantTable(tx, schemaName, "kmd_declarations")
 		if err != nil {
 			return err
