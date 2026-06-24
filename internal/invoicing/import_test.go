@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	"github.com/HMB-research/open-accounting/internal/importrefs"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 )
 
@@ -427,6 +428,188 @@ func TestDeriveInvoiceImportStatus(t *testing.T) {
 
 	_, _, err = deriveInvoiceImportStatus(InvoiceStatus("ARCHIVED"), decimal.Zero, false, total, now, now)
 	require.ErrorContains(t, err, `invalid status "ARCHIVED"`)
+}
+
+func TestInvoiceImportServiceEdges(t *testing.T) {
+	ctx := context.Background()
+	tenantID := "tenant-1"
+	schemaName := "tenant_test"
+
+	t.Run("rejects files with only headers", func(t *testing.T) {
+		service := NewServiceWithRepository(NewMockRepository(), nil)
+
+		_, err := service.ImportCSV(ctx, tenantID, schemaName, nil, nil, &ImportInvoicesRequest{
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n",
+		}, nil)
+
+		require.ErrorContains(t, err, "no invoices found in CSV")
+	})
+
+	t.Run("wraps repository list errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.ListFn = func(context.Context, string, string, *InvoiceFilter) ([]Invoice, error) {
+			return nil, fmt.Errorf("database unavailable")
+		}
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.ImportCSV(ctx, tenantID, schemaName, nil, nil, &ImportInvoicesRequest{
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-1,SALES,CUST-1,2026-03-01,2026-03-15,Consulting,1,100,22\n",
+		}, nil)
+
+		require.ErrorContains(t, err, "list existing invoices")
+	})
+
+	t.Run("skips duplicate imported IDs", func(t *testing.T) {
+		existingID := "11111111-1111-4111-8111-111111111111"
+		repo := NewMockRepository()
+		repo.invoices[existingID] = &Invoice{
+			ID:            existingID,
+			TenantID:      tenantID,
+			InvoiceNumber: "INV-EXISTING-ID",
+			InvoiceType:   InvoiceTypeSales,
+		}
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{{
+			ID:   "contact-1",
+			Code: "CUST-1",
+		}}, nil, &ImportInvoicesRequest{
+			CSVContent: "id,invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				existingID + ",INV-NEW,SALES,CUST-1,2026-03-01,2026-03-15,Consulting,1,100,22\n",
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Zero(t, result.InvoicesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "already exists")
+	})
+
+	t.Run("records repository create errors as skipped rows", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.CreateFn = func(context.Context, string, *Invoice) error {
+			return fmt.Errorf("write failed")
+		}
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{{
+			ID:   "contact-1",
+			Code: "CUST-1",
+		}}, nil, &ImportInvoicesRequest{
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-1,SALES,CUST-1,2026-03-01,2026-03-15,Consulting,1,100,22\n",
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Zero(t, result.InvoicesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "write failed")
+	})
+}
+
+func TestParseInvoiceImportDataRowEdges(t *testing.T) {
+	validValues := map[string]string{
+		"invoice_number":   "INV-1",
+		"invoice_type":     "SALES",
+		"contact_code":     "CUST-1",
+		"issue_date":       "2026-03-01",
+		"due_date":         "2026-03-15",
+		"line_description": "Consulting",
+		"quantity":         "1",
+		"unit_price":       "100",
+		"vat_rate":         "22",
+	}
+
+	tests := []struct {
+		name        string
+		mutate      func(map[string]string)
+		wantMessage string
+	}{
+		{
+			name:        "invoice number required",
+			mutate:      func(values map[string]string) { values["invoice_number"] = "" },
+			wantMessage: "invoice_number is required",
+		},
+		{
+			name:        "contact identifier required",
+			mutate:      func(values map[string]string) { values["contact_code"] = "" },
+			wantMessage: "a contact identifier is required",
+		},
+		{
+			name:        "invalid due date",
+			mutate:      func(values map[string]string) { values["due_date"] = "2026/03/15" },
+			wantMessage: "due_date must use YYYY-MM-DD",
+		},
+		{
+			name:        "invalid exchange rate",
+			mutate:      func(values map[string]string) { values["exchange_rate"] = "bad" },
+			wantMessage: "invalid exchange_rate",
+		},
+		{
+			name:        "zero exchange rate",
+			mutate:      func(values map[string]string) { values["exchange_rate"] = "0" },
+			wantMessage: "exchange_rate must be greater than zero",
+		},
+		{
+			name:        "invalid amount paid",
+			mutate:      func(values map[string]string) { values["amount_paid"] = "bad" },
+			wantMessage: "invalid amount_paid",
+		},
+		{
+			name:        "negative amount paid",
+			mutate:      func(values map[string]string) { values["amount_paid"] = "-1" },
+			wantMessage: "amount_paid cannot be negative",
+		},
+		{
+			name:        "line description required",
+			mutate:      func(values map[string]string) { values["line_description"] = "" },
+			wantMessage: "line_description is required",
+		},
+		{
+			name:        "negative unit price",
+			mutate:      func(values map[string]string) { values["unit_price"] = "-1" },
+			wantMessage: "unit_price cannot be negative",
+		},
+		{
+			name:        "invalid discount",
+			mutate:      func(values map[string]string) { values["discount_percent"] = "bad" },
+			wantMessage: "invalid discount_percent",
+		},
+		{
+			name:        "discount over limit",
+			mutate:      func(values map[string]string) { values["discount_percent"] = "101" },
+			wantMessage: "discount_percent must be between 0 and 100",
+		},
+		{
+			name:        "negative VAT rate",
+			mutate:      func(values map[string]string) { values["vat_rate"] = "-1" },
+			wantMessage: "vat_rate cannot be negative",
+		},
+		{
+			name: "reverse charge requires positive VAT rate",
+			mutate: func(values map[string]string) {
+				values["vat_rate"] = "0"
+				values["vat_treatment"] = "reverse_charge"
+			},
+			wantMessage: "reverse charge VAT rate must be positive",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values := make(map[string]string, len(validValues))
+			for key, value := range validValues {
+				values[key] = value
+			}
+			tt.mutate(values)
+
+			_, err := parseInvoiceImportDataRow(invoiceImportRow{rowNumber: 2, values: values}, importrefs.NewProductLookup(nil))
+
+			require.ErrorContains(t, err, tt.wantMessage)
+		})
+	}
 }
 
 func TestInvoiceImportParserHelpers(t *testing.T) {
