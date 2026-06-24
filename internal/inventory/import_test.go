@@ -358,3 +358,245 @@ func TestProductImportResolverDependencyEdges(t *testing.T) {
 	}})
 	require.ErrorContains(t, err, "contact service is required")
 }
+
+func TestCategoryImportRowsAndHelpersEdges(t *testing.T) {
+	_, err := parseCategoryImportRows(" ")
+	require.ErrorContains(t, err, "csv_content is required")
+
+	_, err = parseCategoryImportRows(`"unterminated`)
+	require.ErrorContains(t, err, "parse csv header")
+
+	_, err = parseCategoryImportRows("name\n\"unterminated")
+	require.ErrorContains(t, err, "parse csv row 2")
+
+	_, err = parseCategoryImportRows("description\nSpare parts\n")
+	require.ErrorContains(t, err, "missing required columns: name")
+
+	rows, err := parseCategoryImportRows("\ufeffcategory;parent;legacy.column\nParts;;ignored\n;;\n")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 2, rows[0].rowNumber)
+	assert.Equal(t, "Parts", rows[0].values["name"])
+	assert.Equal(t, "ignored", rows[0].values["legacy_column"])
+
+	parentID := "11111111-1111-4111-8111-111111111111"
+	category, err := buildCategoryFromImportRow(categoryImportRow{values: map[string]string{
+		"id":          "22222222-2222-4222-8222-222222222222",
+		"name":        " Fasteners ",
+		"description": " Bolts ",
+		"parent_name": " Parts ",
+	}}, "tenant-1", map[string]string{"parts": parentID})
+	require.NoError(t, err)
+	assert.Equal(t, "22222222-2222-4222-8222-222222222222", category.ID)
+	assert.Equal(t, "tenant-1", category.TenantID)
+	assert.Equal(t, "Fasteners", category.Name)
+	assert.Equal(t, "Bolts", category.Description)
+	assert.Equal(t, parentID, category.ParentID)
+
+	_, err = buildCategoryFromImportRow(categoryImportRow{values: map[string]string{"name": ""}}, "tenant-1", nil)
+	require.ErrorContains(t, err, "name is required")
+
+	_, err = buildCategoryFromImportRow(categoryImportRow{values: map[string]string{"id": "legacy-id", "name": "Parts"}}, "tenant-1", nil)
+	require.ErrorContains(t, err, "invalid id")
+
+	_, err = resolveCategoryImportParentID(categoryImportRow{values: map[string]string{"parent_id": "legacy-parent"}}, nil)
+	require.ErrorContains(t, err, "parent_id must be a valid UUID")
+
+	_, err = resolveCategoryImportParentID(categoryImportRow{values: map[string]string{"parent_name": "Missing"}}, nil)
+	require.ErrorContains(t, err, `parent_name "Missing" was not found`)
+
+	assert.Equal(t, "parent_name", canonicalCategoryImportHeader(" parent-category "))
+	assert.Equal(t, "legacy_column", canonicalCategoryImportHeader("legacy column"))
+}
+
+func TestWarehouseImportRowsAndHelpersEdges(t *testing.T) {
+	_, err := parseWarehouseImportRows(" ")
+	require.ErrorContains(t, err, "csv_content is required")
+
+	_, err = parseWarehouseImportRows(`"unterminated`)
+	require.ErrorContains(t, err, "parse csv header")
+
+	_, err = parseWarehouseImportRows("code,name\n\"unterminated")
+	require.ErrorContains(t, err, "parse csv row 2")
+
+	_, err = parseWarehouseImportRows("code,address\nMAIN,Tallinn\n")
+	require.ErrorContains(t, err, "missing required columns: name")
+
+	rows, err := parseWarehouseImportRows("\ufeffwarehouse_code;warehouse_name;default;status;legacy.column\nMAIN;Main;yes;ACTIVE;ignored\n;;;;\n")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "MAIN", rows[0].values["code"])
+	assert.Equal(t, "Main", rows[0].values["name"])
+	assert.Equal(t, "ignored", rows[0].values["legacy_column"])
+
+	warehouse, err := buildWarehouseFromImportRow(warehouseImportRow{values: map[string]string{
+		"code":       " MAIN ",
+		"name":       " Main warehouse ",
+		"address":    " Tallinn ",
+		"is_default": "true",
+		"status":     "INACTIVE",
+	}}, "tenant-1")
+	require.NoError(t, err)
+	assert.Equal(t, "tenant-1", warehouse.TenantID)
+	assert.Equal(t, "MAIN", warehouse.Code)
+	assert.Equal(t, "Main warehouse", warehouse.Name)
+	assert.Equal(t, "Tallinn", warehouse.Address)
+	assert.True(t, warehouse.IsDefault)
+	assert.False(t, warehouse.IsActive)
+
+	_, err = buildWarehouseFromImportRow(warehouseImportRow{values: map[string]string{"name": "Main"}}, "tenant-1")
+	require.ErrorContains(t, err, "code is required")
+
+	_, err = buildWarehouseFromImportRow(warehouseImportRow{values: map[string]string{"code": "MAIN"}}, "tenant-1")
+	require.ErrorContains(t, err, "name is required")
+
+	_, err = buildWarehouseFromImportRow(warehouseImportRow{values: map[string]string{"code": "MAIN", "name": "Main", "is_default": "maybe"}}, "tenant-1")
+	require.ErrorContains(t, err, "is_default must be true or false")
+
+	active, err := parseWarehouseImportActive("ACTIVE", "false")
+	require.NoError(t, err)
+	assert.True(t, active)
+
+	active, err = parseWarehouseImportActive("", "")
+	require.NoError(t, err)
+	assert.True(t, active)
+
+	active, err = parseWarehouseImportActive("", "no")
+	require.NoError(t, err)
+	assert.False(t, active)
+
+	_, err = parseWarehouseImportActive("ARCHIVED", "")
+	require.ErrorContains(t, err, "invalid status")
+
+	_, err = parseWarehouseImportActive("", "maybe")
+	require.ErrorContains(t, err, "is_active must be true or false")
+
+	assert.Equal(t, "is_default", canonicalWarehouseImportHeader(" default-warehouse "))
+	assert.Equal(t, "legacy_column", canonicalWarehouseImportHeader("legacy column"))
+}
+
+func TestStockImportRowsAndHelpersEdges(t *testing.T) {
+	_, err := parseStockImportRows(" ")
+	require.ErrorContains(t, err, "csv_content is required")
+
+	_, err = parseStockImportRows(`"unterminated`)
+	require.ErrorContains(t, err, "parse csv header")
+
+	_, err = parseStockImportRows("product_code,warehouse_code,quantity\n\"unterminated")
+	require.ErrorContains(t, err, "parse csv row 2")
+
+	_, err = parseStockImportRows("product_code,warehouse_code\nSKU-1,MAIN\n")
+	require.ErrorContains(t, err, "missing required columns: quantity")
+
+	_, err = parseStockImportRows("warehouse_code,quantity\nMAIN,1\n")
+	require.ErrorContains(t, err, "missing required product identifier column")
+
+	_, err = parseStockImportRows("product_code,quantity\nSKU-1,1\n")
+	require.ErrorContains(t, err, "missing required warehouse identifier column")
+
+	rows, err := parseStockImportRows("\ufeffsku;warehouse;qty;cost;serial;legacy.column\nSKU-1;MAIN;1;10;SN-1;ignored\n;;;;;\n")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "SKU-1", rows[0].values["product_code"])
+	assert.Equal(t, "MAIN", rows[0].values["warehouse_code"])
+	assert.Equal(t, "ignored", rows[0].values["legacy_column"])
+
+	productID := "11111111-1111-4111-8111-111111111111"
+	warehouseID := "22222222-2222-4222-8222-222222222222"
+	req, err := buildStockAdjustmentFromImportRow(stockImportRow{values: map[string]string{
+		"product_code":   " SKU-1 ",
+		"warehouse_code": " MAIN ",
+		"quantity":       "1",
+		"unit_cost":      "10.50",
+		"lot_number":     " LOT-1 ",
+		"serial_number":  " SN-1 ",
+		"expiry_date":    " 2027-01-31 ",
+		"reason":         " Opening stock ",
+	}}, "user-1", map[string]string{"sku-1": productID}, map[string]string{"main": warehouseID})
+	require.NoError(t, err)
+	assert.Equal(t, productID, req.ProductID)
+	assert.Equal(t, warehouseID, req.WarehouseID)
+	assert.Equal(t, "1", req.Quantity)
+	assert.Equal(t, "10.50", req.UnitCost)
+	assert.Equal(t, "LOT-1", req.LotNumber)
+	assert.Equal(t, "SN-1", req.SerialNumber)
+	assert.Equal(t, "2027-01-31", req.ExpiryDate)
+	assert.Equal(t, "Opening stock", req.Reason)
+	assert.Equal(t, "user-1", req.UserID)
+
+	tests := []struct {
+		name        string
+		values      map[string]string
+		wantMessage string
+	}{
+		{
+			name:        "missing product reference",
+			values:      map[string]string{"warehouse_code": "MAIN", "quantity": "1"},
+			wantMessage: "product_id or product_code is required",
+		},
+		{
+			name:        "unknown product code",
+			values:      map[string]string{"product_code": "MISSING", "warehouse_code": "MAIN", "quantity": "1"},
+			wantMessage: `product_code "MISSING" was not found`,
+		},
+		{
+			name:        "missing warehouse reference",
+			values:      map[string]string{"product_code": "SKU-1", "quantity": "1"},
+			wantMessage: "warehouse_id or warehouse_code is required",
+		},
+		{
+			name:        "unknown warehouse code",
+			values:      map[string]string{"product_code": "SKU-1", "warehouse_code": "MISSING", "quantity": "1"},
+			wantMessage: `warehouse_code "MISSING" was not found`,
+		},
+		{
+			name:        "quantity required",
+			values:      map[string]string{"product_code": "SKU-1", "warehouse_code": "MAIN"},
+			wantMessage: "quantity is required",
+		},
+		{
+			name:        "quantity decimal",
+			values:      map[string]string{"product_code": "SKU-1", "warehouse_code": "MAIN", "quantity": "one"},
+			wantMessage: "quantity must be a decimal",
+		},
+		{
+			name:        "quantity not zero",
+			values:      map[string]string{"product_code": "SKU-1", "warehouse_code": "MAIN", "quantity": "0"},
+			wantMessage: "quantity must not be zero",
+		},
+		{
+			name:        "serial quantity",
+			values:      map[string]string{"product_code": "SKU-1", "warehouse_code": "MAIN", "quantity": "2", "serial_number": "SN-1"},
+			wantMessage: "serial_number requires quantity 1 or -1",
+		},
+		{
+			name:        "unit cost decimal",
+			values:      map[string]string{"product_code": "SKU-1", "warehouse_code": "MAIN", "quantity": "1", "unit_cost": "ten"},
+			wantMessage: "unit_cost must be a decimal",
+		},
+		{
+			name:        "unit cost nonnegative",
+			values:      map[string]string{"product_code": "SKU-1", "warehouse_code": "MAIN", "quantity": "1", "unit_cost": "-1"},
+			wantMessage: "unit_cost cannot be negative",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := buildStockAdjustmentFromImportRow(stockImportRow{values: tt.values}, "user-1", map[string]string{"sku-1": productID}, map[string]string{"main": warehouseID})
+
+			require.ErrorContains(t, err, tt.wantMessage)
+		})
+	}
+
+	assert.Empty(t, stockImportSerialKey("", "SN-1"))
+	assert.Empty(t, stockImportSerialKey(productID, " "))
+	assert.Equal(t, productID+"\x00sn-1", stockImportSerialKey(productID, " SN-1 "))
+	assert.Equal(t, ';', detectStockImportDelimiter("sku;warehouse;qty\nSKU-1;MAIN;1"))
+	assert.Equal(t, '\t', detectStockImportDelimiter("sku\twarehouse\tqty\nSKU-1\tMAIN\t1"))
+	assert.Equal(t, ',', detectStockImportDelimiter("sku,warehouse,qty\nSKU-1,MAIN,1"))
+	assert.Equal(t, "expiry_date", canonicalStockImportHeader(" expiration-date "))
+	assert.Equal(t, "legacy_column", canonicalStockImportHeader("legacy column"))
+	assert.Equal(t, "first", firstNonBlank(" ", " first ", "second"))
+	assert.Empty(t, firstNonBlank(" ", ""))
+}
