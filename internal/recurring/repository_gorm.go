@@ -21,8 +21,19 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("recurring repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
 }
 
 // Create inserts a new recurring invoice
@@ -55,6 +66,11 @@ func (r *GORMRepository) CreateLine(ctx context.Context, schemaName string, line
 
 // GetByID retrieves a recurring invoice by ID (without lines)
 func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, id string) (*RecurringInvoice, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	recurringTable, err := database.QualifiedTable(schemaName, "recurring_invoices")
 	if err != nil {
 		return nil, err
@@ -69,7 +85,7 @@ func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, id s
 		ContactName string
 	}
 
-	err = r.db.WithContext(ctx).
+	err = db.
 		Table(recurringTable+" AS r").
 		Select("r.*, COALESCE(c.name, '') AS contact_name").
 		Joins("LEFT JOIN "+contactsTable+" AS c ON r.contact_id = c.id").
@@ -111,6 +127,11 @@ func (r *GORMRepository) GetLines(ctx context.Context, schemaName, recurringInvo
 
 // List retrieves all recurring invoices for a tenant
 func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]RecurringInvoice, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	recurringTable, err := database.QualifiedTable(schemaName, "recurring_invoices")
 	if err != nil {
 		return nil, err
@@ -120,7 +141,7 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 		return nil, err
 	}
 
-	query := r.db.WithContext(ctx).
+	query := db.
 		Table(recurringTable+" AS r").
 		Select("r.*, COALESCE(c.name, '') AS contact_name").
 		Joins("LEFT JOIN "+contactsTable+" AS c ON r.contact_id = c.id").
