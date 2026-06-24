@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import Decimal from 'decimal.js';
 import {
+	formStringValue,
+	optionalFormStringValue,
 	formatCurrency,
 	formatDate,
 	calculateLineTotal,
@@ -10,6 +12,19 @@ import {
 } from '$lib/utils/formatting';
 
 describe('Formatting Utilities', () => {
+	describe('form string helpers', () => {
+		it('trims string and number form values', () => {
+			expect(formStringValue('  INV-1  ')).toBe('INV-1');
+			expect(formStringValue(42)).toBe('42');
+		});
+
+		it('returns undefined for blank optional form values', () => {
+			expect(optionalFormStringValue('  ')).toBeUndefined();
+			expect(optionalFormStringValue('  ACME  ')).toBe('ACME');
+			expect(optionalFormStringValue(0)).toBe('0');
+		});
+	});
+
 	describe('formatCurrency', () => {
 		it('formats number values correctly', () => {
 			const result = formatCurrency(100);

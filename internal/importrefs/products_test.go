@@ -12,7 +12,9 @@ import (
 func TestProductLookupResolveID(t *testing.T) {
 	explicitID := "11111111-1111-4111-8111-111111111111"
 	lookup := NewProductLookup([]inventory.Product{
+		{ID: "empty-code", Code: "  "},
 		{ID: "prod-1", Code: "SERV-001"},
+		{ID: "prod-1", Code: " serv-001 "},
 		{ID: "prod-2", Code: "WIDGET"},
 	})
 

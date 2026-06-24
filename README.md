@@ -97,6 +97,10 @@
 > The `cmd/oa` CLI package is held at 100.0% statement coverage by `make test-backend-coverage` in the backend CI gate and `make test-cli-coverage` for focused CLI changes. Local seeded smoke plus full demo E2E shards are CI gates. The optional remote hosted-demo E2E job remains informational.
 > Production hardening, deeper historical cutover tooling beyond the current payroll, tax, commercial history, e-invoice XML, payment, expense, inventory, fixed-asset, bank-transaction, cost-allocation, opening-balance, historical-journal, KMD VAT-history execution dependency, and migration-preflight, assignment, execution-plan, guarded CLI execution, and guarded server-side execution coverage, broader accountant-workspace execution beyond the current assignment queue/direct banking, reminder actions, pending-document assignment approval, document-retention date setting, evidence/missing-document upload and replacement including evidence-policy violation upload, unapproved-evidence approval, payroll-run payment-date setting and approval, payroll TSD assignment generation, payroll paid-run TSD follow-up generation, declared payroll archive XML export, TSD declaration XML export and acceptance marking, KMD assignment regeneration/export/acceptance marking, KMD INF/EU VAT OSS report generation, draft/submitted/approved expense assignment completion, and fiscal-year close/carry-forward assignment completion plus remaining payroll/document/evidence-policy edges beyond current payroll run, TSD declaration, KMD, close, migration preflight, inventory, banking, expense claims, journal, document evidence/retention, and remaining evidence follow-up, and broader workflow-level policy enforcement are still in progress.
 
+Start with the [documentation index](docs/README.md) for the active product,
+developer, and operator docs. Historical plan and agent-loop notes are not part
+of the active documentation set.
+
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
 ---

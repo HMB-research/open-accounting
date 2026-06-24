@@ -7,12 +7,16 @@ import (
 )
 
 func TestRemediationAssignment(t *testing.T) {
-	meta := RemediationAssignment("Tax Declarations", "KMD Payable Review", "ACTION", "KMD", "2026-03")
+	meta := RemediationAssignment(" Tax Declarations ", "KMD Payable Review", "ACTION", "KMD", "2026-03")
 
 	assert.Equal(t, "Tax Declarations", meta.WorkspaceQueue)
 	assert.Equal(t, "tax-declarations:kmd-payable-review:kmd:2026-03", meta.AssignmentKey)
 	assert.Equal(t, PriorityHigh, meta.Priority)
 	assert.Equal(t, 1, meta.DueInDays)
+}
+
+func TestAssignmentKeyUsesPlaceholderWhenPartsAreEmpty(t *testing.T) {
+	assert.Equal(t, "documents:missing-evidence:-", AssignmentKey("documents", "missing evidence"))
 }
 
 func TestAssignmentPriority(t *testing.T) {
