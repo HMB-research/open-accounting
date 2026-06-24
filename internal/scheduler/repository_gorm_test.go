@@ -1,6 +1,9 @@
 package scheduler
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestTenantModelTableName(t *testing.T) {
 	var model tenantModel
@@ -16,6 +19,21 @@ func TestNewGORMRepository(t *testing.T) {
 	}
 	if repo.db != nil {
 		t.Fatalf("NewGORMRepository(nil).db = %#v, want nil", repo.db)
+	}
+}
+
+func TestGORMRepository_ListActiveTenantsNilDatabase(t *testing.T) {
+	repo := NewGORMRepository(nil)
+
+	tenants, err := repo.ListActiveTenants(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if tenants != nil {
+		t.Fatalf("ListActiveTenants() tenants = %#v, want nil", tenants)
+	}
+	if got := err.Error(); got != "scheduler repository database is not configured" {
+		t.Fatalf("error = %q, want scheduler repository database is not configured", got)
 	}
 }
 

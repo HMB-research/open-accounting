@@ -1,6 +1,7 @@
 package cutover
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -9,6 +10,50 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMigrationExecutionRunRepositoryNilDatabaseGuards(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMigrationExecutionRunRepository(nil)
+
+	require.NotNil(t, repo)
+	assert.Nil(t, repo.db)
+
+	table, err := repo.executionRunsTable(ctx, "tenant_schema")
+	require.Error(t, err)
+	assert.Nil(t, table)
+	assert.Contains(t, err.Error(), "database connection not available")
+
+	var nilRepo *GORMMigrationExecutionRunRepository
+	table, err = nilRepo.executionRunsTable(ctx, "tenant_schema")
+	require.Error(t, err)
+	assert.Nil(t, table)
+	assert.Contains(t, err.Error(), "database connection not available")
+
+	_, err = repo.SaveExecutionRun(ctx, "tenant_schema", "tenant-1", "user-1", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "migration execution run is required")
+
+	run := NewMigrationExecutionRun(&MigrationExecutionPlan{
+		Summary: MigrationExecutionPlanSummary{ValidationReady: true, Ready: true},
+	}, true)
+	saved, err := repo.SaveExecutionRun(ctx, "tenant_schema", "tenant-1", "user-1", run)
+	require.Error(t, err)
+	assert.Nil(t, saved)
+	assert.Contains(t, err.Error(), "database connection not available")
+
+	runs, err := repo.ListExecutionRuns(ctx, "tenant_schema", "tenant-1", MigrationExecutionRunFilter{
+		Status: "succeeded",
+		Limit:  250,
+	})
+	require.Error(t, err)
+	assert.Nil(t, runs)
+	assert.Contains(t, err.Error(), "database connection not available")
+
+	loaded, err := repo.GetExecutionRun(ctx, "tenant_schema", "tenant-1", "run-1")
+	require.Error(t, err)
+	assert.Nil(t, loaded)
+	assert.Contains(t, err.Error(), "database connection not available")
+}
 
 func TestMigrationExecutionRunRepositoryMappingRoundTripsPayload(t *testing.T) {
 	now := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
