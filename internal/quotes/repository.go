@@ -29,6 +29,8 @@ type Repository interface {
 // ErrQuoteNotFound is returned when a quote is not found
 var ErrQuoteNotFound = fmt.Errorf("quote not found")
 
+var errQuotesRepositoryDatabaseNotConfigured = errors.New("quotes repository database is not configured")
+
 // GORMRepository implements Repository with the shared ORM layer.
 type GORMRepository struct {
 	db *gorm.DB
@@ -49,13 +51,28 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, errQuotesRepositoryDatabaseNotConfigured
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
 }
 
 // Create inserts a new quote with its lines
 func (r *GORMRepository) Create(ctx context.Context, schemaName string, quote *Quote) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
 		quotesTable, err := database.TenantTable(tx, schemaName, "quotes")
 		if err != nil {
 			return fmt.Errorf("qualify quotes table: %w", err)
@@ -152,7 +169,11 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 
 // Update updates a quote and its lines
 func (r *GORMRepository) Update(ctx context.Context, schemaName string, quote *Quote) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
 		quotesTable, err := database.TenantTable(tx, schemaName, "quotes")
 		if err != nil {
 			return fmt.Errorf("qualify quotes table: %w", err)
