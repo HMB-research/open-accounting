@@ -23,10 +23,22 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("plugin repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 // ListRegistries returns all plugin registries
 func (r *GORMRepository) ListRegistries(ctx context.Context) ([]Registry, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var regModels []models.PluginRegistry
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Order("is_official DESC, name ASC").
 		Find(&regModels).Error; err != nil {
 		return nil, fmt.Errorf("list registries: %w", err)
@@ -41,8 +53,13 @@ func (r *GORMRepository) ListRegistries(ctx context.Context) ([]Registry, error)
 
 // GetRegistry returns a registry by ID
 func (r *GORMRepository) GetRegistry(ctx context.Context, id uuid.UUID) (*Registry, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var regModel models.PluginRegistry
-	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&regModel).Error; err != nil {
+	if err := db.Where("id = ?", id).First(&regModel).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("registry not found")
 		}
@@ -55,6 +72,11 @@ func (r *GORMRepository) GetRegistry(ctx context.Context, id uuid.UUID) (*Regist
 
 // CreateRegistry creates a new registry
 func (r *GORMRepository) CreateRegistry(ctx context.Context, name, url, description string) (*Registry, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	regModel := &models.PluginRegistry{
 		Name:        name,
 		URL:         url,
@@ -65,7 +87,7 @@ func (r *GORMRepository) CreateRegistry(ctx context.Context, name, url, descript
 		UpdatedAt:   time.Now(),
 	}
 
-	if err := r.db.WithContext(ctx).Create(regModel).Error; err != nil {
+	if err := db.Create(regModel).Error; err != nil {
 		return nil, fmt.Errorf("create registry: %w", err)
 	}
 
@@ -75,7 +97,12 @@ func (r *GORMRepository) CreateRegistry(ctx context.Context, name, url, descript
 
 // DeleteRegistry deletes a non-official registry
 func (r *GORMRepository) DeleteRegistry(ctx context.Context, id uuid.UUID) (int64, error) {
-	result := r.db.WithContext(ctx).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	result := db.
 		Where("id = ? AND is_official = ?", id, false).
 		Delete(&models.PluginRegistry{})
 	if result.Error != nil {
@@ -86,8 +113,13 @@ func (r *GORMRepository) DeleteRegistry(ctx context.Context, id uuid.UUID) (int6
 
 // UpdateRegistryLastSynced updates the last synced timestamp
 func (r *GORMRepository) UpdateRegistryLastSynced(ctx context.Context, id uuid.UUID) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
 	now := time.Now()
-	if err := r.db.WithContext(ctx).Model(&models.PluginRegistry{}).
+	if err := db.Model(&models.PluginRegistry{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"last_synced_at": now,
@@ -100,8 +132,13 @@ func (r *GORMRepository) UpdateRegistryLastSynced(ctx context.Context, id uuid.U
 
 // ListPlugins returns all plugins
 func (r *GORMRepository) ListPlugins(ctx context.Context) ([]Plugin, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var pluginModels []models.Plugin
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Order("display_name ASC").
 		Find(&pluginModels).Error; err != nil {
 		return nil, fmt.Errorf("list plugins: %w", err)
@@ -116,8 +153,13 @@ func (r *GORMRepository) ListPlugins(ctx context.Context) ([]Plugin, error) {
 
 // GetPlugin returns a plugin by ID
 func (r *GORMRepository) GetPlugin(ctx context.Context, id uuid.UUID) (*Plugin, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var pluginModel models.Plugin
-	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&pluginModel).Error; err != nil {
+	if err := db.Where("id = ?", id).First(&pluginModel).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("plugin not found")
 		}
@@ -130,8 +172,13 @@ func (r *GORMRepository) GetPlugin(ctx context.Context, id uuid.UUID) (*Plugin, 
 
 // GetPluginByName returns a plugin by name
 func (r *GORMRepository) GetPluginByName(ctx context.Context, name string) (*Plugin, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var pluginModel models.Plugin
-	if err := r.db.WithContext(ctx).Where("name = ?", name).First(&pluginModel).Error; err != nil {
+	if err := db.Where("name = ?", name).First(&pluginModel).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("plugin not found")
 		}
@@ -144,8 +191,13 @@ func (r *GORMRepository) GetPluginByName(ctx context.Context, name string) (*Plu
 
 // CreatePlugin creates a new plugin
 func (r *GORMRepository) CreatePlugin(ctx context.Context, p *Plugin) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
 	pluginModel := pluginToModel(p)
-	if err := r.db.WithContext(ctx).Create(pluginModel).Error; err != nil {
+	if err := db.Create(pluginModel).Error; err != nil {
 		return fmt.Errorf("create plugin: %w", err)
 	}
 	return nil
@@ -153,7 +205,12 @@ func (r *GORMRepository) CreatePlugin(ctx context.Context, p *Plugin) error {
 
 // UpdatePlugin updates a plugin
 func (r *GORMRepository) UpdatePlugin(ctx context.Context, p *Plugin) error {
-	if err := r.db.WithContext(ctx).Model(&models.Plugin{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Model(&models.Plugin{}).
 		Where("id = ?", p.ID).
 		Updates(map[string]interface{}{
 			"state":               p.State,
@@ -167,7 +224,12 @@ func (r *GORMRepository) UpdatePlugin(ctx context.Context, p *Plugin) error {
 
 // DeletePlugin deletes a plugin
 func (r *GORMRepository) DeletePlugin(ctx context.Context, id uuid.UUID) (int64, error) {
-	result := r.db.WithContext(ctx).Where("id = ?", id).Delete(&models.Plugin{})
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	result := db.Where("id = ?", id).Delete(&models.Plugin{})
 	if result.Error != nil {
 		return 0, fmt.Errorf("delete plugin: %w", result.Error)
 	}
@@ -176,8 +238,13 @@ func (r *GORMRepository) DeletePlugin(ctx context.Context, id uuid.UUID) (int64,
 
 // ListTenantPlugins returns all plugins enabled for a tenant
 func (r *GORMRepository) ListTenantPlugins(ctx context.Context, tenantID uuid.UUID) ([]TenantPlugin, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var tpModels []models.TenantPlugin
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Preload("Plugin").
 		Joins("JOIN plugins ON plugins.id = tenant_plugins.plugin_id").
 		Where("tenant_plugins.tenant_id = ?", tenantID).
@@ -195,8 +262,13 @@ func (r *GORMRepository) ListTenantPlugins(ctx context.Context, tenantID uuid.UU
 
 // GetTenantPlugin returns a tenant plugin
 func (r *GORMRepository) GetTenantPlugin(ctx context.Context, tenantID, pluginID uuid.UUID) (*TenantPlugin, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var tpModel models.TenantPlugin
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Preload("Plugin").
 		Where("tenant_id = ? AND plugin_id = ?", tenantID, pluginID).
 		First(&tpModel).Error; err != nil {
@@ -212,6 +284,11 @@ func (r *GORMRepository) GetTenantPlugin(ctx context.Context, tenantID, pluginID
 
 // CreateTenantPlugin enables a plugin for a tenant
 func (r *GORMRepository) CreateTenantPlugin(ctx context.Context, tenantID, pluginID uuid.UUID, settings json.RawMessage) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
 	now := time.Now()
 	tpModel := &models.TenantPlugin{
 		TenantID:  tenantID,
@@ -223,7 +300,7 @@ func (r *GORMRepository) CreateTenantPlugin(ctx context.Context, tenantID, plugi
 		UpdatedAt: now,
 	}
 
-	if err := r.db.WithContext(ctx).Create(tpModel).Error; err != nil {
+	if err := db.Create(tpModel).Error; err != nil {
 		return fmt.Errorf("create tenant plugin: %w", err)
 	}
 	return nil
@@ -231,6 +308,11 @@ func (r *GORMRepository) CreateTenantPlugin(ctx context.Context, tenantID, plugi
 
 // EnableTenantPlugin enables a plugin for a tenant (upsert)
 func (r *GORMRepository) EnableTenantPlugin(ctx context.Context, tenantID, pluginID uuid.UUID, settings json.RawMessage) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
 	now := time.Now()
 	tpModel := &models.TenantPlugin{
 		TenantID:  tenantID,
@@ -242,7 +324,7 @@ func (r *GORMRepository) EnableTenantPlugin(ctx context.Context, tenantID, plugi
 		UpdatedAt: now,
 	}
 
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "tenant_id"}, {Name: "plugin_id"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
@@ -260,7 +342,12 @@ func (r *GORMRepository) EnableTenantPlugin(ctx context.Context, tenantID, plugi
 
 // DisableTenantPlugin disables a plugin for a tenant
 func (r *GORMRepository) DisableTenantPlugin(ctx context.Context, tenantID, pluginID uuid.UUID) (int64, error) {
-	result := r.db.WithContext(ctx).Model(&models.TenantPlugin{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	result := db.Model(&models.TenantPlugin{}).
 		Where("tenant_id = ? AND plugin_id = ?", tenantID, pluginID).
 		Updates(map[string]interface{}{
 			"is_enabled": false,
@@ -274,10 +361,15 @@ func (r *GORMRepository) DisableTenantPlugin(ctx context.Context, tenantID, plug
 
 // GetTenantPluginSettings returns the settings for a tenant plugin
 func (r *GORMRepository) GetTenantPluginSettings(ctx context.Context, tenantID, pluginID uuid.UUID) (json.RawMessage, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var result struct {
 		Settings json.RawMessage `gorm:"column:settings"`
 	}
-	err := r.db.WithContext(ctx).Model(&models.TenantPlugin{}).
+	err = db.Model(&models.TenantPlugin{}).
 		Select("settings").
 		Where("tenant_id = ? AND plugin_id = ?", tenantID, pluginID).
 		Take(&result).Error
@@ -295,7 +387,12 @@ func (r *GORMRepository) GetTenantPluginSettings(ctx context.Context, tenantID, 
 
 // UpdateTenantPluginSettings updates tenant plugin settings
 func (r *GORMRepository) UpdateTenantPluginSettings(ctx context.Context, tenantID, pluginID uuid.UUID, settings json.RawMessage) error {
-	result := r.db.WithContext(ctx).Model(&models.TenantPlugin{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	result := db.Model(&models.TenantPlugin{}).
 		Where("tenant_id = ? AND plugin_id = ?", tenantID, pluginID).
 		Updates(map[string]interface{}{
 			"settings":   settings,
@@ -312,7 +409,12 @@ func (r *GORMRepository) UpdateTenantPluginSettings(ctx context.Context, tenantI
 
 // DeleteTenantPlugin removes a plugin from a tenant
 func (r *GORMRepository) DeleteTenantPlugin(ctx context.Context, tenantID, pluginID uuid.UUID) error {
-	if err := r.db.WithContext(ctx).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.
 		Where("tenant_id = ? AND plugin_id = ?", tenantID, pluginID).
 		Delete(&models.TenantPlugin{}).Error; err != nil {
 		return fmt.Errorf("delete tenant plugin: %w", err)
@@ -322,8 +424,13 @@ func (r *GORMRepository) DeleteTenantPlugin(ctx context.Context, tenantID, plugi
 
 // IsPluginEnabledForTenant checks if a plugin is enabled for a tenant
 func (r *GORMRepository) IsPluginEnabledForTenant(ctx context.Context, tenantID, pluginID uuid.UUID) (bool, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return false, err
+	}
+
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&models.TenantPlugin{}).
+	if err := db.Model(&models.TenantPlugin{}).
 		Where("tenant_id = ? AND plugin_id = ? AND is_enabled = ?", tenantID, pluginID, true).
 		Count(&count).Error; err != nil {
 		return false, fmt.Errorf("check tenant plugin: %w", err)
@@ -333,8 +440,13 @@ func (r *GORMRepository) IsPluginEnabledForTenant(ctx context.Context, tenantID,
 
 // ListEnabledPlugins returns all enabled plugins
 func (r *GORMRepository) ListEnabledPlugins(ctx context.Context) ([]Plugin, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var pluginModels []models.Plugin
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Where("state = ?", "enabled").
 		Order("display_name ASC").
 		Find(&pluginModels).Error; err != nil {
@@ -350,6 +462,11 @@ func (r *GORMRepository) ListEnabledPlugins(ctx context.Context) ([]Plugin, erro
 
 // InsertPluginReturning inserts a plugin and returns the created record
 func (r *GORMRepository) InsertPluginReturning(ctx context.Context, manifest *Manifest, repoURL string, repoType RepositoryType, manifestJSON []byte) (*Plugin, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	now := time.Now()
 	pluginModel := &models.Plugin{
 		Name:               manifest.Name,
@@ -368,7 +485,7 @@ func (r *GORMRepository) InsertPluginReturning(ctx context.Context, manifest *Ma
 		UpdatedAt:          now,
 	}
 
-	if err := r.db.WithContext(ctx).Create(pluginModel).Error; err != nil {
+	if err := db.Create(pluginModel).Error; err != nil {
 		return nil, fmt.Errorf("insert plugin: %w", err)
 	}
 
@@ -378,8 +495,13 @@ func (r *GORMRepository) InsertPluginReturning(ctx context.Context, manifest *Ma
 
 // CountEnabledTenantsForPlugin counts tenants that have the plugin enabled
 func (r *GORMRepository) CountEnabledTenantsForPlugin(ctx context.Context, pluginID uuid.UUID) (int, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return 0, err
+	}
+
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&models.TenantPlugin{}).
+	if err := db.Model(&models.TenantPlugin{}).
 		Where("plugin_id = ? AND is_enabled = ?", pluginID, true).
 		Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("count enabled tenants: %w", err)
@@ -389,7 +511,12 @@ func (r *GORMRepository) CountEnabledTenantsForPlugin(ctx context.Context, plugi
 
 // UpdatePluginState updates a plugin's state and permissions
 func (r *GORMRepository) UpdatePluginState(ctx context.Context, pluginID uuid.UUID, state PluginState, permissions []string) error {
-	if err := r.db.WithContext(ctx).Model(&models.Plugin{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Model(&models.Plugin{}).
 		Where("id = ?", pluginID).
 		Updates(map[string]interface{}{
 			"state":               state,
@@ -403,7 +530,12 @@ func (r *GORMRepository) UpdatePluginState(ctx context.Context, pluginID uuid.UU
 
 // DisableAllTenantsForPlugin disables the plugin for all tenants
 func (r *GORMRepository) DisableAllTenantsForPlugin(ctx context.Context, pluginID uuid.UUID) error {
-	if err := r.db.WithContext(ctx).Model(&models.TenantPlugin{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Model(&models.TenantPlugin{}).
 		Where("plugin_id = ?", pluginID).
 		Updates(map[string]interface{}{
 			"is_enabled": false,
@@ -416,6 +548,11 @@ func (r *GORMRepository) DisableAllTenantsForPlugin(ctx context.Context, pluginI
 
 // GetTenantPluginsWithAll returns all plugins available to a tenant (enabled or not)
 func (r *GORMRepository) GetTenantPluginsWithAll(ctx context.Context, tenantID uuid.UUID) ([]TenantPlugin, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var results []struct {
 		TPID        *uuid.UUID
 		TPTenantID  *uuid.UUID
@@ -428,7 +565,7 @@ func (r *GORMRepository) GetTenantPluginsWithAll(ctx context.Context, tenantID u
 		models.Plugin
 	}
 
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Table("plugins AS p").
 		Select(`
 			tp.id AS tp_id,
