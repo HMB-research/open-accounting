@@ -33,7 +33,12 @@ func (r *GORMRepository) UpdateTenantWithPeriodCloseEvent(ctx context.Context, t
 		return err
 	}
 
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.Tenant{}).
 			Where("id = ?", tenantID).
 			Updates(map[string]interface{}{
@@ -57,8 +62,13 @@ func (r *GORMRepository) ListPeriodCloseEvents(ctx context.Context, tenantID str
 		limit = 20
 	}
 
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var eventModels []periodCloseEventModel
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Where("tenant_id = ?", tenantID).
 		Order("created_at DESC").
 		Limit(limit).
@@ -80,8 +90,13 @@ func (r *GORMRepository) GetLatestCloseEventForPeriod(ctx context.Context, tenan
 		return nil, fmt.Errorf("parse period end date: %w", err)
 	}
 
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var eventModel periodCloseEventModel
-	err = r.db.WithContext(ctx).
+	err = db.
 		Where("tenant_id = ? AND period_end_date = ? AND action = ?", tenantID, periodEndValue, PeriodCloseActionClose).
 		Order("created_at DESC").
 		First(&eventModel).Error
