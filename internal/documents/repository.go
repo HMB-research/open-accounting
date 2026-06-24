@@ -49,8 +49,15 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("documents repository database is not configured")
+	}
+	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+}
+
 func (r *GORMRepository) documentsTable(ctx context.Context, schemaName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, "documents")
+	return r.tenantTable(ctx, schemaName, "documents")
 }
 
 func (r *GORMRepository) EntityExists(ctx context.Context, schemaName, tenantID, entityType, entityID string) (bool, error) {
@@ -66,7 +73,7 @@ func (r *GORMRepository) EntityExists(ctx context.Context, schemaName, tenantID,
 		return false, err
 	}
 
-	db, err := database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.tenantTable(ctx, schemaName, tableName)
 	if err != nil {
 		return false, fmt.Errorf("qualify entity table: %w", err)
 	}
