@@ -135,6 +135,18 @@ func TestService_CreateTokenRejectsBadInput(t *testing.T) {
 	assert.Contains(t, err.Error(), "expires_at")
 }
 
+func TestService_CreateTokenReturnsRepositoryError(t *testing.T) {
+	repo := newMockRepository()
+	repo.createErr = assert.AnError
+	service := NewServiceWithRepository(repo)
+
+	_, err := service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{
+		Name: "CLI token",
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
 func TestService_ValidateAPIToken(t *testing.T) {
 	repo := newMockRepository()
 	service := NewServiceWithRepository(repo)
@@ -195,6 +207,16 @@ func TestService_RevokeTokenRejectsMissingIDAndNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "api token not found")
 }
 
+func TestService_RevokeTokenReturnsRepositoryError(t *testing.T) {
+	repo := newMockRepository()
+	repo.revokeErr = assert.AnError
+	service := NewServiceWithRepository(repo)
+
+	err := service.RevokeToken(context.Background(), "user-1", "tenant-1", "token-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
 func TestService_ValidateAPITokenReturnsErrors(t *testing.T) {
 	repo := newMockRepository()
 	service := NewServiceWithRepository(repo)
@@ -208,6 +230,16 @@ func TestService_ValidateAPITokenReturnsErrors(t *testing.T) {
 
 	repo.touchErr = assert.AnError
 	_, err = service.ValidateAPIToken(context.Background(), result.Token)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func TestService_ValidateAPITokenReturnsValidationRepositoryError(t *testing.T) {
+	repo := newMockRepository()
+	repo.validationErr = assert.AnError
+	service := NewServiceWithRepository(repo)
+
+	_, err := service.ValidateAPIToken(context.Background(), "oa_anything")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, assert.AnError)
 }
