@@ -73,6 +73,34 @@ func TestEnsureAndGetAppliedMigrationsUnit(t *testing.T) {
 	}
 }
 
+func TestGetAppliedMigrationsErrorBranchesUnit(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("query error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		pool.queryErr = errors.New("query unavailable")
+
+		if _, err := getAppliedMigrations(ctx, pool); err == nil || !strings.Contains(err.Error(), "query unavailable") {
+			t.Fatalf("expected query error, got %v", err)
+		}
+	})
+
+	t.Run("scan error", func(t *testing.T) {
+		pool := newFakeMigrationPool(map[string]bool{"001_initial": true})
+		pool.scanErr = errors.New("scan failed")
+
+		if _, err := getAppliedMigrations(ctx, pool); err == nil || !strings.Contains(err.Error(), "scan failed") {
+			t.Fatalf("expected scan error, got %v", err)
+		}
+	})
+}
+
+func TestGetMigrationFilesMalformedPatternUnit(t *testing.T) {
+	if _, err := getMigrationFiles("[", ".up"); err == nil {
+		t.Fatal("expected malformed glob pattern to fail")
+	}
+}
+
 func TestMigrateUpHonorsStepsSkipsAndNoopsUnit(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -137,6 +165,79 @@ func TestMigrateUpRollsBackFailedMigrationUnit(t *testing.T) {
 	}
 }
 
+func TestMigrateUpErrorBranchesUnit(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("applied query error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		pool.queryErr = errors.New("query unavailable")
+
+		err := migrateUp(ctx, pool, t.TempDir(), 0)
+		if err == nil || !strings.Contains(err.Error(), "get applied migrations") {
+			t.Fatalf("expected applied migration query error, got %v", err)
+		}
+	})
+
+	t.Run("glob error", func(t *testing.T) {
+		err := migrateUp(ctx, newFakeMigrationPool(nil), "[", 0)
+		if err == nil || !strings.Contains(err.Error(), "get migration files") {
+			t.Fatalf("expected migration file glob error, got %v", err)
+		}
+	})
+
+	t.Run("read error", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, "001_bad.up.sql"), 0o755); err != nil {
+			t.Fatalf("failed to create directory migration: %v", err)
+		}
+
+		err := migrateUp(ctx, newFakeMigrationPool(nil), dir, 0)
+		if err == nil || !strings.Contains(err.Error(), "read migration file") {
+			t.Fatalf("expected migration read error, got %v", err)
+		}
+	})
+
+	t.Run("begin error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.up.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(nil)
+		pool.beginErr = errors.New("begin failed")
+
+		err := migrateUp(ctx, pool, dir, 0)
+		if err == nil || !strings.Contains(err.Error(), "begin transaction") {
+			t.Fatalf("expected begin error, got %v", err)
+		}
+	})
+
+	t.Run("record error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.up.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(nil)
+		pool.txErrContains = "INSERT INTO schema_migrations"
+		pool.txErr = errors.New("insert failed")
+
+		err := migrateUp(ctx, pool, dir, 0)
+		if err == nil || !strings.Contains(err.Error(), "record migration 001_initial") {
+			t.Fatalf("expected record migration error, got %v", err)
+		}
+		if got := len(pool.txs); got != 1 || !pool.txs[0].rolledBack {
+			t.Fatalf("expected record failure rollback, txs=%+v", pool.txs)
+		}
+	})
+
+	t.Run("commit error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.up.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(nil)
+		pool.commitErr = errors.New("commit failed")
+
+		err := migrateUp(ctx, pool, dir, 0)
+		if err == nil || !strings.Contains(err.Error(), "commit migration 001_initial") {
+			t.Fatalf("expected commit migration error, got %v", err)
+		}
+	})
+}
+
 func TestMigrateDownDefaultsSkipsAndNoopsUnit(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -172,6 +273,79 @@ func TestMigrateDownDefaultsSkipsAndNoopsUnit(t *testing.T) {
 	if len(pool.txs) != txCount {
 		t.Fatalf("expected no transaction for unapplied down migrations")
 	}
+}
+
+func TestMigrateDownErrorBranchesUnit(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("applied query error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		pool.queryErr = errors.New("query unavailable")
+
+		err := migrateDown(ctx, pool, t.TempDir(), 1)
+		if err == nil || !strings.Contains(err.Error(), "get applied migrations") {
+			t.Fatalf("expected applied migration query error, got %v", err)
+		}
+	})
+
+	t.Run("glob error", func(t *testing.T) {
+		err := migrateDown(ctx, newFakeMigrationPool(nil), "[", 1)
+		if err == nil || !strings.Contains(err.Error(), "get migration files") {
+			t.Fatalf("expected migration file glob error, got %v", err)
+		}
+	})
+
+	t.Run("read error", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, "001_bad.down.sql"), 0o755); err != nil {
+			t.Fatalf("failed to create directory migration: %v", err)
+		}
+
+		err := migrateDown(ctx, newFakeMigrationPool(map[string]bool{"001_bad": true}), dir, 1)
+		if err == nil || !strings.Contains(err.Error(), "read migration file") {
+			t.Fatalf("expected rollback read error, got %v", err)
+		}
+	})
+
+	t.Run("begin error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.down.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(map[string]bool{"001_initial": true})
+		pool.beginErr = errors.New("begin failed")
+
+		err := migrateDown(ctx, pool, dir, 1)
+		if err == nil || !strings.Contains(err.Error(), "begin transaction") {
+			t.Fatalf("expected begin error, got %v", err)
+		}
+	})
+
+	t.Run("record delete error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.down.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(map[string]bool{"001_initial": true})
+		pool.txErrContains = "DELETE FROM schema_migrations"
+		pool.txErr = errors.New("delete failed")
+
+		err := migrateDown(ctx, pool, dir, 1)
+		if err == nil || !strings.Contains(err.Error(), "remove migration record 001_initial") {
+			t.Fatalf("expected remove migration record error, got %v", err)
+		}
+		if got := len(pool.txs); got != 1 || !pool.txs[0].rolledBack {
+			t.Fatalf("expected delete failure rollback, txs=%+v", pool.txs)
+		}
+	})
+
+	t.Run("commit error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.down.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(map[string]bool{"001_initial": true})
+		pool.commitErr = errors.New("commit failed")
+
+		err := migrateDown(ctx, pool, dir, 1)
+		if err == nil || !strings.Contains(err.Error(), "commit rollback 001_initial") {
+			t.Fatalf("expected commit rollback error, got %v", err)
+		}
+	})
 }
 
 func TestMigrateDownRollsBackFailedRollbackUnit(t *testing.T) {
@@ -240,6 +414,7 @@ type fakeMigrationPool struct {
 	execErr       error
 	queryErr      error
 	rowsErr       error
+	scanErr       error
 	beginErr      error
 	txErrContains string
 	txErr         error
@@ -275,7 +450,7 @@ func (p *fakeMigrationPool) Query(_ context.Context, _ string, _ ...any) (pgx.Ro
 	}
 	sort.Strings(versions)
 
-	return &fakeMigrationRows{versions: versions, err: p.rowsErr}, nil
+	return &fakeMigrationRows{versions: versions, err: p.rowsErr, scanErr: p.scanErr}, nil
 }
 
 func (p *fakeMigrationPool) Begin(context.Context) (pgx.Tx, error) {
@@ -293,6 +468,7 @@ type fakeMigrationRows struct {
 	index    int
 	closed   bool
 	err      error
+	scanErr  error
 }
 
 func (r *fakeMigrationRows) Close() {
@@ -321,6 +497,9 @@ func (r *fakeMigrationRows) Next() bool {
 }
 
 func (r *fakeMigrationRows) Scan(dest ...any) error {
+	if r.scanErr != nil {
+		return r.scanErr
+	}
 	if len(dest) != 1 {
 		return errors.New("expected one scan destination")
 	}

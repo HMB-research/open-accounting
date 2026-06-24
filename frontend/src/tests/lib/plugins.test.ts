@@ -220,6 +220,18 @@ describe('pluginManager.loadPlugins', () => {
 		});
 	});
 
+	it('should treat missing API plugin lists as empty results', async () => {
+		vi.spyOn(api, 'listTenantPlugins').mockResolvedValueOnce(
+			undefined as unknown as import('$lib/api').TenantPlugin[]
+		);
+
+		await pluginManager.loadPlugins('tenant-1');
+
+		expect(pluginManager.isLoaded()).toBe(true);
+		expect(pluginManager.getEnabledPlugins()).toEqual([]);
+		expect(pluginManager.getNavigation()).toEqual([]);
+	});
+
 	it('should sort slot registrations and strip unsafe paths', async () => {
 		const mockPlugins = [
 			{
@@ -263,6 +275,11 @@ describe('pluginManager.loadPlugins', () => {
 									path: '/plugins/alpha/early',
 									kind: 'unsupported',
 									order: 10
+								},
+								{
+									name: 'dashboard.widgets',
+									component: 'DefaultedWidget',
+									path: '/plugins/alpha/defaulted'
 								}
 							]
 						}
@@ -308,7 +325,13 @@ describe('pluginManager.loadPlugins', () => {
 		await pluginManager.loadPlugins('tenant-1');
 
 		const registrations = pluginManager.getSlotRegistrations('dashboard.widgets');
-		expect(registrations.map((slot) => slot.label)).toEqual(['A label', 'B label', 'Beta', 'Late']);
+		expect(registrations.map((slot) => slot.label)).toEqual([
+			'A label',
+			'B label',
+			'Beta',
+			'Late',
+			'DefaultedWidget'
+		]);
 		expect(registrations[0]).toMatchObject({
 			path: '/plugins/alpha/early',
 			kind: 'link'
@@ -316,6 +339,12 @@ describe('pluginManager.loadPlugins', () => {
 		expect(registrations[1]).toMatchObject({
 			path: undefined,
 			kind: 'card'
+		});
+		expect(registrations[4]).toMatchObject({
+			label: 'DefaultedWidget',
+			path: '/plugins/alpha/defaulted',
+			kind: 'link',
+			order: 1000
 		});
 	});
 
@@ -596,6 +625,21 @@ describe('plugin frontend component registry', () => {
 				order: 10
 			})
 		).toEqual(['plugin-1/RiskWidget.svelte', 'risk-tools/RiskWidget.svelte']);
+	});
+
+	it('should drop unsafe generated component lookup candidates', () => {
+		expect(
+			getPluginFrontendComponentCandidateIds({
+				pluginId: '../plugin-1',
+				pluginName: 'risk tools',
+				slotName: 'dashboard.widgets',
+				componentName: 'RiskWidget.svelte',
+				componentRef: 'RiskWidget.svelte',
+				label: 'Risk widget',
+				kind: 'card',
+				order: 10
+			})
+		).toEqual([]);
 	});
 
 	it('should deduplicate component lookup candidates', () => {
