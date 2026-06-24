@@ -37,6 +37,8 @@ var ErrOrderNotFound = fmt.Errorf("order not found")
 // ErrOrderStockReservationNotFound is returned when an order stock reservation is not found.
 var ErrOrderStockReservationNotFound = fmt.Errorf("order stock reservation not found")
 
+var errOrdersRepositoryDatabaseNotConfigured = errors.New("orders repository database is not configured")
+
 // GORMRepository implements Repository with the shared ORM layer.
 type GORMRepository struct {
 	db *gorm.DB
@@ -57,13 +59,28 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, errOrdersRepositoryDatabaseNotConfigured
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
 }
 
 // Create inserts a new order with its lines
 func (r *GORMRepository) Create(ctx context.Context, schemaName string, order *Order) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
 		ordersTable, err := database.TenantTable(tx, schemaName, "orders")
 		if err != nil {
 			return fmt.Errorf("qualify orders table: %w", err)
@@ -160,7 +177,11 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 
 // Update updates an order and its lines
 func (r *GORMRepository) Update(ctx context.Context, schemaName string, order *Order) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
 		ordersTable, err := database.TenantTable(tx, schemaName, "orders")
 		if err != nil {
 			return fmt.Errorf("qualify orders table: %w", err)
