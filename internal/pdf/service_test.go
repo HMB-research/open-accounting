@@ -10,7 +10,9 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
+	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -458,6 +460,65 @@ func TestGenerateInvoicePDF(t *testing.T) {
 	})
 }
 
+func TestGenerateCommercialDocumentPDFs(t *testing.T) {
+	svc := NewService()
+	tnant := createTestTenant()
+	settings := DefaultPDFSettings()
+	settings.InvoiceTerms = "Payment due within 10 days."
+	settings.FooterText = "Thank you for choosing Test Company."
+
+	t.Run("generates quote PDF", func(t *testing.T) {
+		quote := createTestQuote()
+
+		pdfBytes, err := svc.GenerateQuotePDF(quote, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+		assert.Equal(t, "%PDF", string(pdfBytes[:4]))
+	})
+
+	t.Run("generates order PDF", func(t *testing.T) {
+		order := createTestOrder()
+
+		pdfBytes, err := svc.GenerateOrderPDF(order, tnant, settings)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+		assert.Equal(t, "%PDF", string(pdfBytes[:4]))
+	})
+
+	t.Run("generates document with default reference label and sparse contact", func(t *testing.T) {
+		doc := commercialDocumentPDF{
+			Title:            "CUSTOM DOCUMENT",
+			NumberLabel:      "Document No.",
+			Number:           "DOC-001",
+			Status:           "READY",
+			PrimaryDateLabel: "Document Date",
+			PrimaryDate:      "15.03.2026",
+			RecipientLabel:   "Recipient:",
+			Reference:        "EXT-REF-001",
+			Currency:         "EUR",
+			Subtotal:         decimal.NewFromInt(80),
+			VATAmount:        decimal.NewFromInt(16),
+			Total:            decimal.NewFromInt(96),
+			Lines: []commercialDocumentLine{{
+				Description:     "Standalone service line",
+				Quantity:        decimal.NewFromInt(1),
+				UnitPrice:       decimal.NewFromInt(80),
+				VATRate:         decimal.NewFromInt(20),
+				DiscountPercent: decimal.Zero,
+				LineTotal:       decimal.NewFromInt(96),
+			}},
+		}
+
+		pdfBytes, err := svc.generateCommercialDocumentPDF(doc, tnant, PDFSettings{})
+
+		require.NoError(t, err)
+		require.NotEmpty(t, pdfBytes)
+		assert.Equal(t, "%PDF", string(pdfBytes[:4]))
+	})
+}
+
 func TestGeneratePayslipPDF(t *testing.T) {
 	svc := NewService()
 	tnant := createTestTenant()
@@ -519,6 +580,100 @@ func createTestInvoice() *invoicing.Invoice {
 				LineTotal:       decimal.NewFromFloat(100.00),
 			},
 		},
+	}
+}
+
+func createTestQuote() *quotes.Quote {
+	quoteDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	validUntil := quoteDate.AddDate(0, 0, 30)
+	return &quotes.Quote{
+		ID:          "quote-123",
+		TenantID:    "tenant-123",
+		QuoteNumber: "QUO-2026-001",
+		ContactID:   "contact-123",
+		Contact:     createPDFTestContact(),
+		QuoteDate:   quoteDate,
+		ValidUntil:  &validUntil,
+		Status:      quotes.QuoteStatusSent,
+		Currency:    "EUR",
+		Subtotal:    decimal.NewFromInt(150),
+		VATAmount:   decimal.NewFromInt(30),
+		Total:       decimal.NewFromInt(180),
+		Notes:       "Quote notes for customer review.",
+		Lines: []quotes.QuoteLine{
+			{
+				Description:     "Commercial consulting package with a long description that exercises truncation in the PDF table",
+				Quantity:        decimal.NewFromInt(2),
+				UnitPrice:       decimal.NewFromInt(50),
+				VATRate:         decimal.NewFromInt(20),
+				DiscountPercent: decimal.NewFromInt(10),
+				LineTotal:       decimal.NewFromInt(108),
+			},
+			{
+				LineNumber:      2,
+				Description:     "Implementation support",
+				Quantity:        decimal.NewFromInt(1),
+				UnitPrice:       decimal.NewFromInt(60),
+				VATRate:         decimal.NewFromInt(20),
+				DiscountPercent: decimal.Zero,
+				LineTotal:       decimal.NewFromInt(72),
+			},
+		},
+	}
+}
+
+func createTestOrder() *orders.Order {
+	orderDate := time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC)
+	expectedDelivery := orderDate.AddDate(0, 0, 14)
+	quoteID := "quote-123"
+	return &orders.Order{
+		ID:               "order-123",
+		TenantID:         "tenant-123",
+		OrderNumber:      "ORD-2026-001",
+		ContactID:        "contact-123",
+		Contact:          createPDFTestContact(),
+		OrderDate:        orderDate,
+		ExpectedDelivery: &expectedDelivery,
+		Status:           orders.OrderStatusConfirmed,
+		Currency:         "EUR",
+		Subtotal:         decimal.NewFromInt(200),
+		VATAmount:        decimal.NewFromInt(40),
+		Total:            decimal.NewFromInt(240),
+		Notes:            "Order confirmation notes.",
+		QuoteID:          &quoteID,
+		Lines: []orders.OrderLine{
+			{
+				LineNumber:      1,
+				Description:     "Hardware bundle",
+				Quantity:        decimal.NewFromInt(1),
+				UnitPrice:       decimal.NewFromInt(120),
+				VATRate:         decimal.NewFromInt(20),
+				DiscountPercent: decimal.Zero,
+				LineTotal:       decimal.NewFromInt(144),
+			},
+			{
+				Description:     "Installation service",
+				Quantity:        decimal.NewFromInt(2),
+				UnitPrice:       decimal.NewFromInt(40),
+				VATRate:         decimal.NewFromInt(20),
+				DiscountPercent: decimal.Zero,
+				LineTotal:       decimal.NewFromInt(96),
+			},
+		},
+	}
+}
+
+func createPDFTestContact() *contacts.Contact {
+	return &contacts.Contact{
+		ID:           "contact-123",
+		Name:         "Customer Inc",
+		Email:        "customer@example.com",
+		AddressLine1: "123 Main St",
+		AddressLine2: "Suite 100",
+		City:         "Tallinn",
+		PostalCode:   "10115",
+		CountryCode:  "EE",
+		VATNumber:    "EE123456789",
 	}
 }
 
