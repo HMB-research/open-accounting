@@ -22,6 +22,13 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("tenant repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 // CreateTenant creates a new tenant with its schema
 func (r *GORMRepository) CreateTenant(ctx context.Context, tenant *Tenant, settingsJSON []byte, ownerID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
