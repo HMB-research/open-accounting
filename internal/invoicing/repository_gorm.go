@@ -23,6 +23,9 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 }
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("invoicing repository database is not configured")
+	}
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
