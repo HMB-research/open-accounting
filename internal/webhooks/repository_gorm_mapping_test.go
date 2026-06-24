@@ -8,6 +8,16 @@ import (
 	"github.com/lib/pq"
 )
 
+func TestNewGORMRepository(t *testing.T) {
+	repo := NewGORMRepository(nil)
+	if repo == nil {
+		t.Fatal("expected repository")
+	}
+	if repo.db != nil {
+		t.Fatal("expected repository to store nil db")
+	}
+}
+
 func TestWebhookEndpointModelMappings(t *testing.T) {
 	lastDeliveryAt := time.Date(2026, 6, 11, 9, 15, 0, 0, time.UTC)
 	createdAt := time.Date(2026, 6, 10, 8, 0, 0, 0, time.UTC)

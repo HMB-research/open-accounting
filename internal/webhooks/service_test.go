@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,6 +138,10 @@ func TestService_UpdateEndpointValidationAndSanitization(t *testing.T) {
 	blankName := " "
 	_, err = service.UpdateEndpoint(context.Background(), "tenant-1", endpoint.ID, &UpdateEndpointRequest{Name: &blankName})
 	require.ErrorContains(t, err, "name is required")
+
+	badURL := "ftp://example.com/hooks"
+	_, err = service.UpdateEndpoint(context.Background(), "tenant-1", endpoint.ID, &UpdateEndpointRequest{URL: &badURL})
+	require.ErrorContains(t, err, "url must use http or https")
 
 	_, err = service.UpdateEndpoint(context.Background(), "tenant-1", endpoint.ID, &UpdateEndpointRequest{Events: []string{"unknown.event"}})
 	require.ErrorContains(t, err, "unsupported event_type")
@@ -374,6 +379,345 @@ func TestService_RegisterPluginHooksDispatchesPluginEvents(t *testing.T) {
 	assert.Equal(t, DeliveryStatusSucceeded, repo.deliveries[0].Status)
 }
 
+func TestService_NewServiceWithNilPoolUsesDefaultClient(t *testing.T) {
+	service := NewService(nil)
+	require.NotNil(t, service)
+	assert.Nil(t, service.repo)
+	require.NotNil(t, service.httpClient)
+	assert.Equal(t, defaultHTTPTimeout, service.httpClient.Timeout)
+}
+
+func TestService_RegisterPluginHooksNilRegistry(t *testing.T) {
+	service := NewServiceWithRepository(newMemoryRepository(), nil)
+	require.NotPanics(t, func() {
+		service.RegisterPluginHooks(nil)
+	})
+}
+
+func TestService_NormalizeEventValidationAndDefaults(t *testing.T) {
+	service := NewServiceWithRepository(newMemoryRepository(), nil)
+	service.now = fixedWebhookTime
+
+	event, err := service.normalizeEvent(Event{
+		Type:     " invoice.created ",
+		TenantID: " tenant-1 ",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, plugin.EventInvoiceCreated, event.Type)
+	assert.Equal(t, "tenant-1", event.TenantID)
+	assert.NotEmpty(t, event.ID)
+	assert.Equal(t, json.RawMessage(`{}`), event.Data)
+	assert.Equal(t, fixedWebhookTime(), event.CreatedAt)
+
+	_, err = service.normalizeEvent(Event{TenantID: "tenant-1"})
+	require.ErrorContains(t, err, "event_type is required")
+
+	_, err = service.normalizeEvent(Event{Type: "unknown.event", TenantID: "tenant-1"})
+	require.ErrorContains(t, err, "unsupported event_type")
+
+	_, err = service.normalizeEvent(Event{Type: plugin.EventInvoiceCreated})
+	require.ErrorContains(t, err, "tenant_id is required")
+
+	_, err = service.normalizeEvent(Event{
+		Type:     plugin.EventInvoiceCreated,
+		TenantID: "tenant-1",
+		Data:     json.RawMessage(`{invalid}`),
+	})
+	require.ErrorContains(t, err, "payload must be valid JSON")
+}
+
+func TestService_CreateEndpointRejectsRequiredFields(t *testing.T) {
+	service := NewServiceWithRepository(newMemoryRepository(), nil)
+
+	_, err := service.CreateEndpoint(context.Background(), "tenant-1", nil)
+	require.ErrorContains(t, err, "request is required")
+
+	_, err = service.CreateEndpoint(context.Background(), "tenant-1", &CreateEndpointRequest{
+		Name:   "CRM",
+		URL:    "https://example.com/hooks",
+		Events: []string{" ", ""},
+	})
+	require.ErrorContains(t, err, "at least one event is required")
+
+	_, err = service.CreateEndpoint(context.Background(), "tenant-1", &CreateEndpointRequest{
+		Name:   "CRM",
+		URL:    "",
+		Events: []string{plugin.EventInvoiceCreated},
+	})
+	require.ErrorContains(t, err, "url is required")
+
+	_, err = service.CreateEndpoint(context.Background(), "tenant-1", &CreateEndpointRequest{
+		Name:   "CRM",
+		URL:    "://bad-url",
+		Events: []string{plugin.EventInvoiceCreated},
+	})
+	require.ErrorContains(t, err, "invalid url")
+
+	_, err = service.CreateEndpoint(context.Background(), "tenant-1", &CreateEndpointRequest{
+		Name:   "",
+		URL:    "https://example.com/hooks",
+		Events: []string{plugin.EventInvoiceCreated},
+	})
+	require.ErrorContains(t, err, "name is required")
+}
+
+func TestValidateWebhookURLRejectsMissingHost(t *testing.T) {
+	err := validateWebhookURL("http:/hooks")
+	require.ErrorContains(t, err, "url host is required")
+}
+
+func TestService_PropagatesRepositoryErrors(t *testing.T) {
+	ctx := context.Background()
+	validRequest := &CreateEndpointRequest{
+		Name:   "CRM",
+		URL:    "https://example.com/hooks",
+		Events: []string{plugin.EventInvoiceCreated},
+	}
+
+	t.Run("list endpoints", func(t *testing.T) {
+		repo := newErroringRepository()
+		repo.listErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.ListEndpoints(ctx, "tenant-1", true)
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("get endpoint", func(t *testing.T) {
+		repo := newErroringRepository()
+		repo.getErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.GetEndpoint(ctx, "tenant-1", "endpoint-1")
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("create endpoint", func(t *testing.T) {
+		repo := newErroringRepository()
+		repo.createErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.CreateEndpoint(ctx, "tenant-1", validRequest)
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("update endpoint get", func(t *testing.T) {
+		repo := newErroringRepository()
+		repo.getErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+
+		name := "Updated"
+		_, err := service.UpdateEndpoint(ctx, "tenant-1", "endpoint-1", &UpdateEndpointRequest{Name: &name})
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("update endpoint save", func(t *testing.T) {
+		repo := newErroringRepository()
+		endpoint := seededEndpoint("endpoint-1", "tenant-1", "https://example.com/hooks")
+		repo.endpoints[endpoint.ID] = endpoint
+		repo.updateErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+
+		name := "Updated"
+		_, err := service.UpdateEndpoint(ctx, "tenant-1", endpoint.ID, &UpdateEndpointRequest{Name: &name})
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("delete endpoint", func(t *testing.T) {
+		repo := newErroringRepository()
+		repo.deleteErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+
+		err := service.DeleteEndpoint(ctx, "tenant-1", "endpoint-1")
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("list deliveries endpoint lookup", func(t *testing.T) {
+		repo := newErroringRepository()
+		repo.getErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.ListDeliveries(ctx, "tenant-1", "endpoint-1", 10)
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("list deliveries", func(t *testing.T) {
+		repo := newErroringRepository()
+		endpoint := seededEndpoint("endpoint-1", "tenant-1", "https://example.com/hooks")
+		repo.endpoints[endpoint.ID] = endpoint
+		repo.listDeliveriesErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.ListDeliveries(ctx, "tenant-1", endpoint.ID, 10)
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("dispatch list endpoints", func(t *testing.T) {
+		repo := newErroringRepository()
+		repo.listErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.Dispatch(ctx, Event{Type: plugin.EventInvoiceCreated, TenantID: "tenant-1"})
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("dispatch test endpoint lookup", func(t *testing.T) {
+		repo := newErroringRepository()
+		repo.getErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.DispatchTest(ctx, "tenant-1", "endpoint-1", nil)
+		require.ErrorIs(t, err, assert.AnError)
+	})
+}
+
+func TestService_DeliveryFailureEdges(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("event encoding error is returned", func(t *testing.T) {
+		repo := newMemoryRepository()
+		endpoint := seededEndpoint("endpoint-1", "tenant-1", "https://example.com/hooks")
+		repo.endpoints[endpoint.ID] = endpoint
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.deliver(ctx, endpoint, Event{
+			ID:       "event-1",
+			Type:     plugin.EventInvoiceCreated,
+			TenantID: "tenant-1",
+			Data:     json.RawMessage(`{invalid}`),
+		})
+		require.ErrorContains(t, err, "encode webhook event")
+		require.Empty(t, repo.deliveries)
+	})
+
+	t.Run("invalid endpoint URL is recorded", func(t *testing.T) {
+		repo := newMemoryRepository()
+		endpoint := seededEndpoint("endpoint-1", "tenant-1", "http://[::1")
+		repo.endpoints[endpoint.ID] = endpoint
+		service := NewServiceWithRepository(repo, nil)
+		service.now = fixedWebhookTime
+
+		delivery, err := service.deliver(ctx, endpoint, Event{
+			ID:       "event-1",
+			Type:     plugin.EventInvoiceCreated,
+			TenantID: "tenant-1",
+			Data:     json.RawMessage(`{}`),
+		})
+		require.NoError(t, err)
+		assert.Equal(t, DeliveryStatusFailed, delivery.Status)
+		assert.NotEmpty(t, delivery.Error)
+		require.Len(t, repo.deliveries, 1)
+	})
+
+	t.Run("http client error is recorded", func(t *testing.T) {
+		repo := newMemoryRepository()
+		endpoint := seededEndpoint("endpoint-1", "tenant-1", "https://example.com/hooks")
+		repo.endpoints[endpoint.ID] = endpoint
+		service := NewServiceWithRepository(repo, &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, assert.AnError
+			}),
+		})
+		service.now = fixedWebhookTime
+
+		delivery, err := service.deliver(ctx, endpoint, Event{
+			ID:       "event-1",
+			Type:     plugin.EventInvoiceCreated,
+			TenantID: "tenant-1",
+			Data:     json.RawMessage(`{}`),
+		})
+		require.NoError(t, err)
+		assert.Equal(t, DeliveryStatusFailed, delivery.Status)
+		assert.Contains(t, delivery.Error, assert.AnError.Error())
+	})
+
+	t.Run("response body read error is recorded", func(t *testing.T) {
+		repo := newMemoryRepository()
+		endpoint := seededEndpoint("endpoint-1", "tenant-1", "https://example.com/hooks")
+		repo.endpoints[endpoint.ID] = endpoint
+		service := NewServiceWithRepository(repo, &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       errorReadCloser{},
+				}, nil
+			}),
+		})
+		service.now = fixedWebhookTime
+
+		delivery, err := service.deliver(ctx, endpoint, Event{
+			ID:       "event-1",
+			Type:     plugin.EventInvoiceCreated,
+			TenantID: "tenant-1",
+			Data:     json.RawMessage(`{}`),
+		})
+		require.NoError(t, err)
+		assert.Equal(t, DeliveryStatusFailed, delivery.Status)
+		assert.Contains(t, delivery.Error, assert.AnError.Error())
+	})
+
+	t.Run("create delivery error is returned", func(t *testing.T) {
+		repo := newErroringRepository()
+		endpoint := seededEndpoint("endpoint-1", "tenant-1", "http://[::1")
+		repo.endpoints[endpoint.ID] = endpoint
+		repo.createDeliveryErr = assert.AnError
+		service := NewServiceWithRepository(repo, nil)
+		service.now = fixedWebhookTime
+
+		_, err := service.deliver(ctx, endpoint, Event{
+			ID:       "event-1",
+			Type:     plugin.EventInvoiceCreated,
+			TenantID: "tenant-1",
+			Data:     json.RawMessage(`{}`),
+		})
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("update endpoint last delivery error is returned", func(t *testing.T) {
+		repo := newErroringRepository()
+		endpoint := seededEndpoint("endpoint-1", "tenant-1", "https://example.com/hooks")
+		repo.endpoints[endpoint.ID] = endpoint
+		repo.updateLastDeliveryErr = assert.AnError
+		service := NewServiceWithRepository(repo, &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusAccepted,
+					Body:       io.NopCloser(strings.NewReader("accepted")),
+				}, nil
+			}),
+		})
+		service.now = fixedWebhookTime
+
+		_, err := service.deliver(ctx, endpoint, Event{
+			ID:       "event-1",
+			Type:     plugin.EventInvoiceCreated,
+			TenantID: "tenant-1",
+			Data:     json.RawMessage(`{}`),
+		})
+		require.ErrorIs(t, err, assert.AnError)
+	})
+}
+
+func TestService_DispatchRejectsInvalidEvent(t *testing.T) {
+	service := NewServiceWithRepository(newMemoryRepository(), nil)
+
+	_, err := service.Dispatch(context.Background(), Event{TenantID: "tenant-1"})
+	require.ErrorContains(t, err, "event_type is required")
+}
+
+func TestService_DispatchTestRejectsInvalidOverrideEvent(t *testing.T) {
+	repo := newMemoryRepository()
+	endpoint := seededEndpoint("endpoint-1", "tenant-1", "https://example.com/hooks")
+	repo.endpoints[endpoint.ID] = endpoint
+	service := NewServiceWithRepository(repo, nil)
+
+	_, err := service.DispatchTest(context.Background(), "tenant-1", endpoint.ID, &TestDeliveryRequest{
+		EventType: "unknown.event",
+		Payload:   json.RawMessage(`{}`),
+	})
+	require.ErrorContains(t, err, "unsupported event_type")
+}
+
 func TestListEventTypesReturnsSortedCopy(t *testing.T) {
 	events := ListEventTypes()
 	require.NotEmpty(t, events)
@@ -408,4 +752,107 @@ func sortStringsAreAscending(values []string) bool {
 		}
 	}
 	return true
+}
+
+func seededEndpoint(id, tenantID, url string) *Endpoint {
+	return &Endpoint{
+		ID:        id,
+		TenantID:  tenantID,
+		Name:      "CRM",
+		URL:       url,
+		Events:    []string{plugin.EventInvoiceCreated},
+		Secret:    "secret",
+		IsActive:  true,
+		CreatedAt: fixedWebhookTime(),
+		UpdatedAt: fixedWebhookTime(),
+	}
+}
+
+type erroringRepository struct {
+	*memoryRepository
+
+	listErr               error
+	getErr                error
+	createErr             error
+	updateErr             error
+	deleteErr             error
+	createDeliveryErr     error
+	listDeliveriesErr     error
+	updateLastDeliveryErr error
+}
+
+func newErroringRepository() *erroringRepository {
+	return &erroringRepository{memoryRepository: newMemoryRepository()}
+}
+
+func (r *erroringRepository) ListEndpoints(ctx context.Context, tenantID string, activeOnly bool) ([]Endpoint, error) {
+	if r.listErr != nil {
+		return nil, r.listErr
+	}
+	return r.memoryRepository.ListEndpoints(ctx, tenantID, activeOnly)
+}
+
+func (r *erroringRepository) GetEndpoint(ctx context.Context, tenantID, endpointID string) (*Endpoint, error) {
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	return r.memoryRepository.GetEndpoint(ctx, tenantID, endpointID)
+}
+
+func (r *erroringRepository) CreateEndpoint(ctx context.Context, endpoint *Endpoint) error {
+	if r.createErr != nil {
+		return r.createErr
+	}
+	return r.memoryRepository.CreateEndpoint(ctx, endpoint)
+}
+
+func (r *erroringRepository) UpdateEndpoint(ctx context.Context, endpoint *Endpoint) error {
+	if r.updateErr != nil {
+		return r.updateErr
+	}
+	return r.memoryRepository.UpdateEndpoint(ctx, endpoint)
+}
+
+func (r *erroringRepository) DeleteEndpoint(ctx context.Context, tenantID, endpointID string) (int64, error) {
+	if r.deleteErr != nil {
+		return 0, r.deleteErr
+	}
+	return r.memoryRepository.DeleteEndpoint(ctx, tenantID, endpointID)
+}
+
+func (r *erroringRepository) CreateDelivery(ctx context.Context, delivery *Delivery) error {
+	if r.createDeliveryErr != nil {
+		return r.createDeliveryErr
+	}
+	return r.memoryRepository.CreateDelivery(ctx, delivery)
+}
+
+func (r *erroringRepository) ListDeliveries(ctx context.Context, tenantID, endpointID string, limit int) ([]Delivery, error) {
+	if r.listDeliveriesErr != nil {
+		return nil, r.listDeliveriesErr
+	}
+	return r.memoryRepository.ListDeliveries(ctx, tenantID, endpointID, limit)
+}
+
+func (r *erroringRepository) UpdateEndpointLastDelivery(ctx context.Context, tenantID, endpointID string, deliveredAt time.Time) error {
+	if r.updateLastDeliveryErr != nil {
+		return r.updateLastDeliveryErr
+	}
+	return r.memoryRepository.UpdateEndpointLastDelivery(ctx, tenantID, endpointID, deliveredAt)
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type errorReadCloser struct{}
+
+func (errorReadCloser) Read([]byte) (int, error) {
+	return 0, assert.AnError
+}
+
+func (errorReadCloser) Close() error {
+	return nil
 }
