@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Decimal from "decimal.js";
-import { api } from "$lib/api";
+import { env } from "$env/dynamic/public";
+import { api, buildQuery, getApiBase } from "$lib/api";
 
 // Mock fetch globally for API tests
 const mockFetch = vi.fn();
@@ -45,6 +46,23 @@ describe("API Client - Core Functionality", () => {
       api.setTokens("access-token-123", "refresh-token-456");
       api.logout();
       expect(api.isAuthenticated).toBe(false);
+    });
+  });
+
+  describe("API helpers", () => {
+    it("should normalize API base URLs without a protocol", () => {
+      const publicEnv = env as Record<string, string | undefined>;
+      const previousApiUrl = publicEnv.PUBLIC_API_URL;
+      publicEnv.PUBLIC_API_URL = "api.example.com";
+
+      expect(getApiBase()).toBe("https://api.example.com");
+
+      publicEnv.PUBLIC_API_URL = previousApiUrl;
+    });
+
+    it("should return an empty query for skipped filter values", () => {
+      expect(buildQuery()).toBe("");
+      expect(buildQuery({ status: "", from: null, to: undefined })).toBe("");
     });
   });
 
@@ -162,6 +180,52 @@ describe("API Client - Core Functionality", () => {
 
       await assertion;
       expect(mockFetch).toHaveBeenCalledTimes(4);
+    });
+
+    it("should return an empty object for successful non-JSON responses", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 204,
+        json: async () => {
+          throw new Error("empty response");
+        },
+      });
+
+      await expect(api.getCurrentUser()).resolves.toEqual({});
+    });
+
+    it("should throw the status for failed non-JSON responses", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 418,
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+
+      await expect(api.getCurrentUser()).rejects.toThrow(
+        "Request failed with status 418",
+      );
+    });
+
+    it("should throw the defensive retry guard when configured with no attempts", async () => {
+      const request = (
+        api as unknown as {
+          request<T>(
+            method: string,
+            path: string,
+            body: unknown,
+            skipAuth: boolean,
+            retryConfig: { maxRetries: number; baseDelayMs: number; maxDelayMs: number },
+          ): Promise<T>;
+        }
+      ).request("GET", "/api/v1/me", undefined, false, {
+        maxRetries: -1,
+        baseDelayMs: 0,
+        maxDelayMs: 0,
+      });
+
+      await expect(request).rejects.toThrow("Request failed after retries");
     });
   });
 
@@ -1452,6 +1516,144 @@ describe("API Client - Core Functionality", () => {
       expect(events[1].run?.summary.progress_percent).toBe(100);
     });
 
+    it("should emit a final migration event without a trailing stream delimiter", async () => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(": keepalive\n\n"));
+          controller.enqueue(
+            encoder.encode('event: progress\nid: 7\ndata: {"message":"done"}'),
+          );
+          controller.close();
+        },
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: stream,
+      });
+      const events: Array<{ type: string; sequence: number; message?: string }> =
+        [];
+
+      await api.watchMigrationExecutionRun("tenant-123", "run-1", {
+        onEvent: (event) => {
+          events.push(event as (typeof events)[number]);
+        },
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-runs/run-1/events",
+        ),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({ Accept: "text/event-stream" }),
+        }),
+      );
+      expect(events).toEqual([
+        { type: "progress", sequence: 7, message: "done" },
+      ]);
+    });
+
+    it("should refresh the access token before retrying a migration event stream", async () => {
+      api.setTokens("expired-token", "refresh-token");
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      });
+      mockFetch
+        .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ access_token: "fresh-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          body: stream,
+        });
+
+      await api.watchMigrationExecutionRun("tenant-123", "run-1", {
+        onEvent: vi.fn(),
+      });
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-runs/run-1/events",
+        ),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: "Bearer fresh-token",
+          }),
+        }),
+      );
+    });
+
+    it("should throw the API error when migration event stream creation fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({ error: "Stream temporarily unavailable" }),
+      });
+
+      await expect(
+        api.watchMigrationExecutionRun("tenant-123", "run-1", {
+          onEvent: vi.fn(),
+        }),
+      ).rejects.toThrow("Stream temporarily unavailable");
+    });
+
+    it("should throw when a migration event stream response has no body", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: null,
+      });
+
+      await expect(
+        api.watchMigrationExecutionRun("tenant-123", "run-1", {
+          onEvent: vi.fn(),
+        }),
+      ).rejects.toThrow("Migration execution run stream is not available.");
+    });
+
+    it("should clear tokens when migration event stream refresh is unavailable", async () => {
+      api.setTokens("expired-token", "");
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({}),
+      });
+
+      await expect(
+        api.watchMigrationExecutionRun("tenant-123", "run-1", {
+          onEvent: vi.fn(),
+        }),
+      ).rejects.toThrow("Session expired. Please log in again.");
+      expect(api.isAuthenticated).toBe(false);
+    });
+
+    it("should throw the fallback error when migration event stream failure is not JSON", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+
+      await expect(
+        api.watchMigrationExecutionRun("tenant-123", "run-1", {
+          onEvent: vi.fn(),
+        }),
+      ).rejects.toThrow(
+        "Migration execution run stream failed with status 502",
+      );
+    });
+
     it("should list expense claims with remediation actions", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -1656,6 +1858,8 @@ describe("API Client - Core Functionality", () => {
         document_type: "receipt",
         notes: "Customer supplied receipt",
         retention_until: "2027-03-31",
+        replaces_document_id: "doc-old",
+        replacement_note: "Corrected scan",
       });
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -1668,6 +1872,8 @@ describe("API Client - Core Functionality", () => {
       expect(formData.get("document_type")).toBe("receipt");
       expect(formData.get("notes")).toBe("Customer supplied receipt");
       expect(formData.get("retention_until")).toBe("2027-03-31");
+      expect(formData.get("replaces_document_id")).toBe("doc-old");
+      expect(formData.get("replacement_note")).toBe("Corrected scan");
       expect(formData.get("file")).toBe(file);
     });
 
@@ -1777,6 +1983,32 @@ describe("API Client - Core Functionality", () => {
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:doc-1");
     });
 
+    it("should throw the API error when document download fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "Document not found" }),
+      });
+
+      await expect(
+        api.downloadDocument("tenant-123", "missing-doc", "receipt.pdf"),
+      ).rejects.toThrow("Document not found");
+    });
+
+    it("should throw the fallback error when document download failure is not JSON", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+
+      await expect(
+        api.downloadDocument("tenant-123", "doc-1", "receipt.pdf"),
+      ).rejects.toThrow("Failed to download document");
+    });
+
     it("should download a year-end close audit archive", async () => {
       api.setTokens("valid-token", "refresh-token");
 
@@ -1813,6 +2045,32 @@ describe("API Client - Core Functionality", () => {
       expect(createObjectURL).toHaveBeenCalledWith(blob);
       expect(click).toHaveBeenCalledTimes(1);
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:year-end-audit");
+    });
+
+    it("should throw the fallback error when year-end close audit archive download fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(
+        api.downloadYearEndCloseAuditArchive("tenant-123", "2025-12-31"),
+      ).rejects.toThrow("Failed to download year-end audit archive");
+    });
+
+    it("should throw the fallback error when year-end close audit archive failure is not JSON", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+
+      await expect(
+        api.downloadYearEndCloseAuditArchive("tenant-123", "2025-12-31"),
+      ).rejects.toThrow("Failed to download year-end audit archive");
     });
   });
 
@@ -5218,6 +5476,66 @@ describe("API Client - Core Functionality", () => {
       );
     });
 
+    it("should skip tenant context when no browser window is available", async () => {
+      const originalWindow = globalThis.window;
+      vi.stubGlobal("window", undefined);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+
+      try {
+        await api.getPluginPermissions();
+      } finally {
+        vi.stubGlobal("window", originalWindow);
+      }
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/admin/plugins/permissions"),
+        expect.objectContaining({
+          headers: expect.not.objectContaining({
+            "X-Tenant-ID": expect.any(String),
+          }),
+        }),
+      );
+    });
+
+    it("should skip tenant context when the current browser URL is malformed", async () => {
+      const OriginalURL = globalThis.URL;
+      vi.stubGlobal(
+        "URL",
+        class {
+          static createObjectURL = OriginalURL.createObjectURL;
+          static revokeObjectURL = OriginalURL.revokeObjectURL;
+
+          constructor() {
+            throw new Error("bad URL");
+          }
+        },
+      );
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+
+      try {
+        await api.getPluginPermissions();
+      } finally {
+        vi.stubGlobal("URL", OriginalURL);
+      }
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/admin/plugins/permissions"),
+        expect.objectContaining({
+          headers: expect.not.objectContaining({
+            "X-Tenant-ID": expect.any(String),
+          }),
+        }),
+      );
+    });
+
     it("should install plugin", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -5478,6 +5796,32 @@ describe("API Client - Core Functionality", () => {
       await expect(
         api.downloadInvoicePDF("tenant-123", "inv-1", "INV-001"),
       ).rejects.toThrow("Failed to download PDF");
+    });
+
+    it("should throw API errors from shared quote PDF downloads", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "Quote PDF unavailable" }),
+      });
+
+      await expect(
+        api.downloadQuotePDF("tenant-123", "quote-missing", "QUO-404"),
+      ).rejects.toThrow("Quote PDF unavailable");
+    });
+
+    it("should throw fallback errors from shared order PDF downloads", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+
+      await expect(
+        api.downloadOrderPDF("tenant-123", "order-1", "ORD-001"),
+      ).rejects.toThrow("Failed to download order PDF");
     });
 
     it("should download KMD XML", async () => {
@@ -5795,6 +6139,122 @@ describe("API Client - Core Functionality", () => {
       expect(result.lines[0].inventory_value).toBeInstanceOf(Decimal);
       expect(result.lines[0].inventory_value.toString()).toBe("52.5");
     });
+  });
+
+  describe("Default Query Parameters", () => {
+    beforeEach(() => {
+      api.setTokens("valid-token", "refresh-token");
+    });
+
+    const defaultQueryCases: Array<[string, () => Promise<unknown>, string]> = [
+      [
+        "account balance without as-of date",
+        () => api.getAccountBalance("tenant-123", "acc-1"),
+        "/api/v1/tenants/tenant-123/reports/account-balance/acc-1",
+      ],
+      [
+        "balance sheet without as-of date",
+        () => api.getBalanceSheet("tenant-123"),
+        "/api/v1/tenants/tenant-123/reports/balance-sheet",
+      ],
+      [
+        "fixed assets without filters",
+        () => api.listAssets("tenant-123"),
+        "/api/v1/tenants/tenant-123/assets",
+      ],
+      [
+        "products without filters",
+        () => api.listProducts("tenant-123"),
+        "/api/v1/tenants/tenant-123/products",
+      ],
+      [
+        "warehouses without active-only filtering",
+        () => api.listWarehouses("tenant-123"),
+        "/api/v1/tenants/tenant-123/warehouses",
+      ],
+      [
+        "inventory valuation without options",
+        () => api.getInventoryValuation("tenant-123"),
+        "/api/v1/tenants/tenant-123/inventory/valuation",
+      ],
+      [
+        "inventory subledger reconciliation without options",
+        () => api.getInventorySubledgerReconciliation("tenant-123"),
+        "/api/v1/tenants/tenant-123/inventory/subledger-reconciliation",
+      ],
+      [
+        "bank accounts without active-only filtering",
+        () => api.listBankAccounts("tenant-123"),
+        "/api/v1/tenants/tenant-123/bank-accounts",
+      ],
+      [
+        "bank transactions without filters",
+        () => api.listBankTransactions("tenant-123", "bank-1"),
+        "/api/v1/tenants/tenant-123/bank-accounts/bank-1/transactions",
+      ],
+      [
+        "cost centers without active-only filtering",
+        () => api.listCostCenters("tenant-123"),
+        "/api/v1/tenants/tenant-123/cost-centers",
+      ],
+      [
+        "cost center report without dates",
+        () => api.getCostCenterReport("tenant-123"),
+        "/api/v1/tenants/tenant-123/cost-centers/report",
+      ],
+      [
+        "employees without active-only filtering",
+        () => api.listEmployees("tenant-123"),
+        "/api/v1/tenants/tenant-123/employees",
+      ],
+      [
+        "payroll runs without year filtering",
+        () => api.listPayrollRuns("tenant-123"),
+        "/api/v1/tenants/tenant-123/payroll-runs",
+      ],
+      [
+        "TSD declarations without year filtering",
+        () => api.listTSD("tenant-123"),
+        "/api/v1/tenants/tenant-123/tsd",
+      ],
+      [
+        "absence types without active-only filtering",
+        () => api.listAbsenceTypes("tenant-123"),
+        "/api/v1/tenants/tenant-123/absence-types",
+      ],
+      [
+        "leave balances without year filtering",
+        () => api.listLeaveBalances("tenant-123", "emp-1"),
+        "/api/v1/tenants/tenant-123/employees/emp-1/leave-balances",
+      ],
+      [
+        "leave records without filters",
+        () => api.listLeaveRecords("tenant-123"),
+        "/api/v1/tenants/tenant-123/leave-records",
+      ],
+      [
+        "tenant plugin enablement without settings",
+        () => api.enableTenantPlugin("tenant-123", "plugin-1"),
+        "/api/v1/tenants/tenant-123/plugins/plugin-1/enable",
+      ],
+    ];
+
+    it.each(defaultQueryCases)(
+      "should call %s without a query string",
+      async (_name, request, expectedPath) => {
+        mockJsonResponse({});
+
+        await request();
+
+        const [url, requestInit] = mockFetch.mock.calls[0] as [
+          string,
+          RequestInit,
+        ];
+        expect(url).toContain(expectedPath);
+        expect(url).not.toContain("?");
+        expect(requestInit.method).toMatch(/GET|POST/);
+      },
+    );
   });
 
   describe("Token Refresh Flow", () => {
