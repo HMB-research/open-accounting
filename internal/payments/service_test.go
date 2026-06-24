@@ -385,6 +385,62 @@ func TestFormatPaymentNumber(t *testing.T) {
 	}
 }
 
+func TestNextPaymentNumberSequence(t *testing.T) {
+	tests := []struct {
+		name           string
+		paymentNumbers []string
+		paymentType    PaymentType
+		expected       int
+	}{
+		{
+			name: "increments highest received sequence",
+			paymentNumbers: []string{
+				"PMT-00001",
+				"PMT-00009-adjusted",
+				"OUT-00020",
+				"PMT-adjusted",
+				" PMT-00003 ",
+			},
+			paymentType: PaymentTypeReceived,
+			expected:    10,
+		},
+		{
+			name: "increments highest outgoing sequence",
+			paymentNumbers: []string{
+				"PMT-00099",
+				"OUT-00007",
+				"OUT-adjusted",
+				"OUT-00008-reversal",
+			},
+			paymentType: PaymentTypeMade,
+			expected:    9,
+		},
+		{
+			name: "starts at one when none match",
+			paymentNumbers: []string{
+				"PMT-00099",
+				"OUT-adjusted",
+				"",
+			},
+			paymentType: PaymentTypeMade,
+			expected:    1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, NextPaymentNumberSequence(tt.paymentNumbers, tt.paymentType))
+		})
+	}
+}
+
+func TestPaymentNumberSequenceRejectsOverflow(t *testing.T) {
+	sequence, ok := paymentNumberSequence("PMT-999999999999999999999999999999999999", "PMT")
+
+	assert.Zero(t, sequence)
+	assert.False(t, ok)
+}
+
 func TestMockRepository_Create(t *testing.T) {
 	repo := NewMockRepository()
 	ctx := context.Background()
