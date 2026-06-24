@@ -52,8 +52,19 @@ func NewInterestGORMRepository(db *gorm.DB) *InterestGORMRepository {
 	return &InterestGORMRepository{db: db}
 }
 
+func (r *InterestGORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("interest repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *InterestGORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
 }
 
 func (r *InterestGORMRepository) GetInvoiceForInterest(ctx context.Context, schemaName, tenantID, invoiceID string) (*interestInvoice, error) {
