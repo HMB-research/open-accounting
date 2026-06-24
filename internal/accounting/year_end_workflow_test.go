@@ -334,6 +334,35 @@ func TestBuildYearEndCloseRemediationActions(t *testing.T) {
 	assert.Equal(t, []string{"period_not_fiscal_year_end"}, remediationCodes(BuildYearEndCloseRemediationActions(notYearEnd)))
 }
 
+func TestYearEndCloseRemediationMessageEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, BuildYearEndCloseRemediationActions(nil))
+	assert.Equal(t, "Approved close-pack evidence is missing.", closePackEvidenceMessage(nil))
+	assert.Equal(t, "Approved close-pack evidence is missing.", closePackEvidenceMessage(&documents.EvidencePolicyResult{}))
+	assert.Equal(
+		t,
+		"Close-pack evidence has 2 rejected document(s) and no approved document.",
+		closePackEvidenceMessage(&documents.EvidencePolicyResult{TotalCount: 2, RejectedCount: 2}),
+	)
+	assert.Equal(
+		t,
+		"Close-pack evidence is not compliant.",
+		closePackEvidenceMessage(&documents.EvidencePolicyResult{TotalCount: 1, ApprovedCount: 1, Compliant: false}),
+	)
+
+	status := &YearEndCloseStatus{
+		FiscalYearEndDate:        "2025-12-31",
+		IsFiscalYearEnd:          true,
+		PeriodClosed:             true,
+		HasProfitAndLossActivity: false,
+	}
+	actions := BuildYearEndCloseRemediationActions(status)
+	assert.Equal(t, []string{"no_profit_and_loss_activity"}, remediationCodes(actions))
+	require.Len(t, actions, 1)
+	assert.Contains(t, actions[0].AssignmentKey, "2025-12-31")
+}
+
 func remediationCodes(actions []YearEndCloseRemediationAction) []string {
 	codes := make([]string, 0, len(actions))
 	for _, action := range actions {
