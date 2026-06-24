@@ -1,6 +1,6 @@
 # Current Product Limits
 
-Last reviewed: 2026-06-15
+Last reviewed: 2026-06-25
 
 This is the short current-state gap document for Open Accounting. It is the
 place to check what still prevents the repository from being described as fully
@@ -14,11 +14,11 @@ payments, manual bank import and reconciliation, payroll, leave records, KMD/TSD
 export-oriented compliance, document evidence workflows, accountant review
 queues, a Go operator CLI, and a Svelte dashboard.
 
-PR #62 on `feat/payroll-history-import` was revalidated by the pull-request CI
-gate on 2026-06-15 before merge. The checked rollup covered backend tests with
-CLI coverage enforcement, lint, build, frontend lint/check/test/build, smoke
-E2E, all four local seeded demo E2E shards, and all four integration shards.
-`cmd/oa` remains held at 100.0% statement coverage by the CLI coverage gate.
+The current branch baseline reviewed on 2026-06-25 reports backend coverage at
+81.7%, frontend coverage at 100.0% statements/functions/lines and 94.27%
+branches, and a passing documentation gate with `go test -timeout=3m ./docs -count=1`.
+The `cmd/oa` package remains held at 100.0% statement coverage by the CLI
+coverage gate.
 
 That evidence is not a production-readiness claim. It proves the checked use
 cases and regression gates for the current branch.

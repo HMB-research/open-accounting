@@ -21,85 +21,9 @@
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
 >
-> Full local baseline last verified on 2026-06-08. On 2026-06-12, local revalidation covered `make test-cli-coverage`, `go test -timeout=3m ./docs -count=1`, focused quote/order delivery demo E2E with 3 passed, migration compatibility checks for `QUOTE_SEND`/`ORDER_CONFIRM`, recent frontend stage gates including `cd frontend && bun run test:prepared` with 32 files and 572 tests, historical TSD import, inventory lot reporting, and lot/serial/expiry-preserving inventory transfers. On 2026-06-13, the payroll-history-import branch was revalidated after employee import, payroll history import, leave balance import, TSD history import, absence repository, payroll TSD repository, absence service constructor coverage, cost-preserving inventory transfer, and inventory subledger reconciliation stages with `golangci-lint run`, `go test -tags=integration ./internal/payroll -count=1`, `go test -timeout=3m ./docs -count=1`, `make test-cli-coverage`, `make test-backend-coverage`, and `make test-integration-coverage`; PR #62 CI run `27512752079` at commit `97e9d8b` revalidated `golangci-lint run`, backend tests with CLI coverage enforcement, integration shards, frontend lint/check/test/build, smoke E2E, build, and all four seeded demo E2E shards. The follow-up frontend inventory subledger drill-down stage was locally revalidated with prepared Svelte checks, focused API unit coverage, prepared frontend build, and targeted seeded demo E2E inventory coverage. The follow-up close remediation actions stage was locally revalidated with focused accounting/API/CLI tests, Swagger regeneration, docs status tests, frontend API type checks, and the CLI coverage gate. The follow-up migration remediation actions stage was locally revalidated with focused cutover/API/CLI tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate. The follow-up migration remediation assignment stage was locally revalidated with focused cutover/API/CLI/frontend API tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate. The follow-up cross-workspace remediation assignment metadata stage was locally revalidated with focused workspace/accounting/banking/expenses/documents/payroll/tax/CLI tests and frontend API type coverage. The follow-up accountant workspace assignment queue stage was locally revalidated with targeted review-panel, portfolio-panel, workspace-helper, and frontend API tests plus prepared Svelte checks. The follow-up expense assignment queue stage was locally revalidated with focused review-panel, portfolio-panel, frontend API, prepared Svelte, docs, lint, CLI coverage, and backend coverage gates. The follow-up expense assignment completion stage was locally revalidated with focused review-panel and frontend API tests plus prepared Svelte checks. The follow-up document assignment completion stage was locally revalidated with focused review-panel tests and prepared Svelte checks. The follow-up payroll assignment approval stage was locally revalidated with focused review-panel tests plus prepared Svelte checks. The follow-up payroll TSD assignment generation stage was locally revalidated with focused review-panel tests plus prepared Svelte checks. The follow-up payroll payment-date assignment stage was locally revalidated with focused payroll service/API/CLI, review-panel, and frontend API tests plus prepared Svelte checks. The follow-up close assignment completion stage was locally revalidated with focused review-panel, workspace-helper, and frontend API tests plus prepared Svelte checks. The follow-up KMD assignment execution stage was locally revalidated with focused review-panel, workspace-helper, and frontend API tests plus prepared Svelte checks. The follow-up tax-report assignment execution stage was locally revalidated with focused frontend API/review-panel tests plus prepared Svelte checks. The follow-up KMD tax remediation actions stage was locally revalidated with focused tax/API/CLI tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate. The follow-up payroll run remediation actions stage was locally revalidated with focused payroll/API/CLI tests, Swagger regeneration, frontend API type checks, docs status tests, lint, and the CLI coverage gate. The follow-up document retention and evidence remediation actions stage was locally revalidated with focused documents/API/CLI tests, Swagger regeneration, frontend API type checks, docs status tests, lint, and the CLI coverage gate. The follow-up TSD declaration remediation actions stage was locally revalidated with focused payroll/API/CLI tests, Swagger regeneration, frontend API type checks, docs status tests, lint, and the CLI coverage gate. The follow-up banking transaction and expense claim remediation action stages were locally revalidated with focused service/API/CLI tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate. The follow-up guarded migration execution stage was locally revalidated with focused CLI execution and route-coverage tests. The follow-up server-side migration execution stage was locally revalidated with focused API handler, cutover/banking, CLI route-coverage, docs, Swagger, lint, and CLI coverage gates. The follow-up resume-aware migration execution stage was locally revalidated with focused cutover/API/CLI tests, docs updates, Swagger, lint, and the CLI coverage gate. The follow-up saved migration execution run stage was locally revalidated with focused cutover/model/API/CLI/frontend API tests, Swagger regeneration, docs, lint, CLI/backend/integration coverage gates, prepared frontend checks/tests/build, and migration `056` application through the integration gate. The follow-up migration workbench stage was locally revalidated with focused `MigrationWorkbench.test.ts` coverage and prepared Svelte checks. The follow-up migration progress telemetry stage was locally revalidated with focused cutover, API, CLI, frontend API, and workbench tests plus prepared Svelte checks. The follow-up migration duration telemetry stage was locally revalidated with focused cutover, API, CLI, frontend API, workbench, and prepared Svelte checks. The follow-up migration accountant-workspace launch handoff stage was locally revalidated with focused cutover, generated OpenAPI, docs, frontend API, review-panel, workbench, and prepared Svelte checks.
-> The follow-up migration remediation priority fallback stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up migration saved-run event stream stage was locally revalidated with focused API/CLI route coverage, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
-> The follow-up migration dashboard live stream stage was locally revalidated with focused frontend API/workbench tests and prepared Svelte checks.
-> The follow-up migration provider preset catalog stage was locally revalidated with focused cutover/API/CLI/frontend API/workbench tests and prepared Svelte checks.
-> The follow-up migration saved-bundle workspace execution stage was locally revalidated with focused cutover/repository/API/CLI/review-panel tests and prepared Svelte checks.
-> The follow-up migration FK UUID preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up product supplier-code migration stage was locally revalidated with focused inventory importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up fixed-asset supplier-code migration stage was locally revalidated with focused fixed-asset importer and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up supplier identity migration stage was locally revalidated with focused contact reference, product importer, fixed-asset importer, and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up supplier VAT-number migration reference stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment contact VAT-number migration reference stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment and expense contact identity migration stage was locally revalidated with focused contact reference, payment importer, expense importer, and cutover provider-alias tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up commercial-document contact identity migration stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up commercial-document VAT contact import stage was locally revalidated with focused quote, order, and recurring-invoice importer tests.
-> The follow-up invoice VAT-contact import and order quote-contact consistency stage was locally revalidated with focused invoice importer and cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up reconciliation evidence remediation and Directo fixed-asset alias batch was locally revalidated with focused banking API tests, cutover provider-alias tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment allocation amount decimal validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up e-invoice payment allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment allocation currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment currency code preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment bank-account default-currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up bank-account currency letter validation stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up bank-transaction source-account omitted-currency consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up bank-transaction description-source preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up bank-transaction format execution-plan stage was locally revalidated with focused cutover execution-plan tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
-> The follow-up opening-balance entry-date execution-plan stage was locally revalidated with focused cutover/accounting tests.
-> The follow-up invoice paid-amount consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up combined invoice paid/allocation consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment allocation direction consistency stage was locally revalidated with focused cutover validator, CLI request, frontend workbench, docs status, lint, and CLI coverage gates.
-> The follow-up payment invoice-contact consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up e-invoice payment invoice-contact consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up e-invoice credit-note payment contact selection stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment allocation date consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment allocation malformed-date guard stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment allocation invoice-status consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up payment allocation invoice-ID status consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up fixed-asset source-invoice consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up fixed-asset source-invoice date consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up fixed-asset source-invoice amount consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up fixed-asset source-invoice supplier identity stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up stock-adjustment product stockability stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up cost-allocation journal-line total consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up cost-allocation journal-line percentage consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up cost-allocation amount/percentage consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up expense account-type consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up expense employee-ID UUID preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up expense currency code preflight stage was locally revalidated with focused cutover validator tests, docs status tests, lint, the CLI coverage gate, and the backend coverage gate.
-> The follow-up product account-type consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up fixed-asset account-type consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up bank-account GL account-type consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up recurring-invoice account-type consistency stage was locally revalidated with focused cutover validator tests, docs status tests, lint, and the CLI coverage gate.
-> The follow-up TSD submission evidence and provider payment currency alias batch was locally revalidated with focused documents/API/cutover tests, docs status tests, Swagger regeneration, lint, and CLI/backend coverage gates.
-> The follow-up evidence-policy approval assignment stage was locally revalidated with focused document remediation and accountant review-panel tests plus prepared Svelte checks.
-> The follow-up payroll TSD follow-up/archive assignment execution stage was locally revalidated with focused accountant review-panel tests plus prepared Svelte checks.
-> The follow-up KMD status mutation and workspace acceptance assignment stage was locally revalidated with focused tax repository/service/API/CLI/frontend API/review-panel tests, Swagger regeneration, docs status tests, prepared Svelte checks, and the CLI coverage gate.
-> The follow-up KMD submission evidence gate stage was locally revalidated with focused tax API handler tests, Swagger regeneration, docs status tests, and the CLI coverage gate.
-> The follow-up TSD/KMD acceptance evidence gate stage was locally revalidated with focused payroll and tax API handler tests, Swagger regeneration, docs status tests, and the CLI coverage gate.
-> The follow-up leave-record evidence remediation stage was locally revalidated with focused payroll service/API tests, Swagger regeneration, docs status tests, and the CLI coverage gate.
-> The follow-up plugin HTTP runtime stage was locally revalidated with focused plugin service/API route tests, generated OpenAPI docs, docs status tests, and the CLI coverage gate.
-> The follow-up plugin runtime workspace actions stage was locally revalidated with focused plugin service/API/frontend tests, generated OpenAPI docs, docs status tests, prepared Svelte checks, frontend build, and the CLI coverage gate.
-> The follow-up plugin package runtime automatic restart stage was locally revalidated with a focused forced-crash supervisor test.
-> The follow-up plugin package runtime environment isolation stage was locally revalidated with focused package runtime environment and supervisor regression tests.
-> The follow-up API-token tenant-creation boundary stage was locally revalidated with focused tenant creation and tenant-auth boundary tests.
-> The follow-up tax declaration evidence workspace stage was locally revalidated with focused review-panel, review-workspace, document-queue, frontend API, prepared Svelte, docs, lint, and CLI coverage gates.
-> The follow-up KMD VAT-history execution dependency stage was locally revalidated with focused cutover execution-plan tests.
-> The follow-up evidence-policy violation upload assignment stage was locally revalidated with focused accountant review-panel tests and the Svelte autofixer.
-> The follow-up migration saved-run state assignment stage was locally revalidated with focused review-workspace, accountant review-panel, and migration workbench tests for running, blocked, failed, and confirmation-ready saved runs.
-> The follow-up journal/payment evidence, document CLI entity help, and fixed-asset invoice-number batch was locally revalidated with focused API/document/CLI/cutover tests, Swagger regeneration, docs status tests, lint, and the CLI coverage gate.
-> The follow-up quote/order commercial evidence conflict stage was locally revalidated with focused quote/order API evidence tests and Swagger regeneration.
-> The follow-up document lifecycle integrity constraints stage was locally revalidated with focused document service/repository tests plus the migration integration gate.
-> Current product caps and gaps are summarized in [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md). PR #62 was revalidated by the pull-request CI gate before merge; current test gates and evidence are surfaced by the badges above.
-> The `cmd/oa` CLI package is held at 100.0% statement coverage by `make test-backend-coverage` in the backend CI gate and `make test-cli-coverage` for focused CLI changes. Local seeded smoke plus full demo E2E shards are CI gates. The optional remote hosted-demo E2E job remains informational.
-> Production hardening, deeper historical cutover tooling beyond the current payroll, tax, commercial history, e-invoice XML, payment, expense, inventory, fixed-asset, bank-transaction, cost-allocation, opening-balance, historical-journal, KMD VAT-history execution dependency, and migration-preflight, assignment, execution-plan, guarded CLI execution, and guarded server-side execution coverage, broader accountant-workspace execution beyond the current assignment queue/direct banking, reminder actions, pending-document assignment approval, document-retention date setting, evidence/missing-document upload and replacement including evidence-policy violation upload, unapproved-evidence approval, payroll-run payment-date setting and approval, payroll TSD assignment generation, payroll paid-run TSD follow-up generation, declared payroll archive XML export, TSD declaration XML export and acceptance marking, KMD assignment regeneration/export/acceptance marking, KMD INF/EU VAT OSS report generation, draft/submitted/approved expense assignment completion, and fiscal-year close/carry-forward assignment completion plus remaining payroll/document/evidence-policy edges beyond current payroll run, TSD declaration, KMD, close, migration preflight, inventory, banking, expense claims, journal, document evidence/retention, and remaining evidence follow-up, and broader workflow-level policy enforcement are still in progress.
-
-Start with the [documentation index](docs/README.md) for the active product,
-developer, and operator docs. Historical plan and agent-loop notes are not part
-of the active documentation set.
+> Current branch documentation baseline: 2026-06-25. Backend coverage is 81.7%. Frontend coverage is 100.0% statements/functions/lines and 94.27% branches. The docs gate is passing with `go test -timeout=3m ./docs -count=1`.
+>
+> Start with the [documentation index](docs/README.md). Current caps and gaps live in [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md), detailed status and gate evidence live in [Development Status](docs/DEVELOPMENT_STATUS.md), and workflow-level proof plus open work items live in [Use Case Coverage](docs/USE_CASE_COVERAGE.md).
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -404,74 +328,16 @@ open-accounting/
 
 ---
 
-## 🗺 Roadmap
+## Current Status
 
-### Working in repo
+Open Accounting is broad, active accounting software, but it is not yet a
+production-ready replacement for an accounting firm. The active source of truth
+for roadmap and readiness is split across the canonical docs:
 
-- Feature presence only; not a claim of production parity or operational maturity.
-
-- [x] Double-entry bookkeeping with journal entries
-- [x] Multi-tenant architecture with schema isolation
-- [x] User authentication and RBAC
-- [x] Invoicing with PDF generation
-- [x] Payment recording and allocation
-- [x] Bank transaction import, reconciliation, and accountant remediation actions
-- [x] Estonian KMD/VAT compliance
-- [x] User invitation system
-- [x] Dashboard analytics with charts
-- [x] Email notifications
-- [x] Webhook notifications
-- [x] Recurring invoice automation
-- [x] Balance sheet and income statement reports
-- [x] Payroll module with Estonian TSD declarations
-- [x] API rate limiting
-- [x] Plugin marketplace system
-- [x] Internationalization (English/Estonian) with Paraglide-JS
-- [x] Mobile-responsive frontend with touch-friendly UI
-- [x] Report exports (Excel, CSV, PDF)
-- [x] Quotes with quote-to-order conversion
-- [x] Order management with delivered order-to-invoice conversion
-- [x] Fixed assets with depreciation tracking
-- [x] Receipt-backed expense tracking with remediation actions, approval, and posting
-- [x] Tenant-scoped API token auth and Go CLI
-- [x] Access/refresh JWT purpose separation
-- [x] Revocable, single-use refresh token sessions
-- [x] CLI/API refresh-session listing and revocation
-- [x] One-time password reset flow with expiring tokens, request throttling, and refresh-session revocation
-- [x] Auth security audit events for login success/failure, logout, password, session, API-token, and tenant-access actions with credential-aware failed-login throttling
-- [x] Tenant audit events for organization settings changes
-- [x] Tenant admin controls for member refresh-session inspection and revocation
-- [x] Tenant admin controls for member API-token inspection and revocation
-- [x] Tenant admin security-event visibility for member auth activity
-- [x] Tenant admin suspension/restoration of member tenant access with session revocation and audit events
-- [x] Tenant-scoped API tokens blocked from creating new tenant organizations outside their tenant boundary
-- [x] CSV import for chart of accounts with optional preserved UUIDs, contacts, employees, invoices, quotes, orders, and recurring invoice templates with contact identity lookup including VAT numbers, payments and expenses with contact identity lookup, bank accounts, bank transactions, cost centers, cost allocations, product categories/warehouses/products/stock, fixed assets with supplier identity lookup, payroll/TSD tax history, opening balances, and historical journals with optional preserved line IDs
-- [x] Migration bundle validation for cutover imports with API and CLI coverage across e-invoice XML, expenses, commercial history, inventory, banking, payroll/TSD tax history, cost allocations, and fixed assets, including duplicate identifiers and history keys, account, contact, employee, payroll-history, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, and bank-transaction row values, expense employee-ID UUID and currency code checks, payment currency code checks, expense, product, fixed-asset, bank-account GL, and recurring-invoice line account-type consistency, commercial-document and payment/expense contact identity references, order quote-contact consistency, payment bank-account default-currency consistency, bank-transaction source-account omitted-currency and description-source consistency, invoice paid-amount consistency, combined invoice paid/allocation totals, payment allocation totals, currencies, payment direction, payment invoice-contact consistency and payment date ordering against imported invoices and e-invoices, fixed-asset source-invoice purchase-type, supplier identity field, purchase-date, and amount-total consistency, stock-adjustment product stockability, recurring line account references, cost-allocation journal-line references plus amount and percentage total consistency and amount/percentage agreement, and grouped document/preserved-ID consistency
-- [x] Migration execution plans with ordered API/CLI import steps, dependency hints, and missing-context markers for bank-transaction and opening-balance cutover imports
-- [x] Guarded CLI and server-side migration execution that validates, plans, requires explicit confirmation, includes the provider execution CSV canonicalization stage, and runs ready cutover import steps through the existing tenant-scoped APIs and import services
-- [x] Dashboard migration workbench for cutover bundle assembly, provider preset catalog discovery, validation, execution planning, saved dry runs, confirmed execution, saved-run monitoring with live event streams, progress/active-step/duration telemetry, saved-run event stream API/CLI access, resume-by-ID selection, and accountant-workspace assignment handoff into deep-linked saved runs
-- [x] Tenant period lock on core write paths
-- [x] Close/reopen workflow with audit trail in API and company settings
-- [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
-- [x] Document attachments with review, retention dates, retention-year calculation, audited lifecycle states for replacement/archive/disposal decisions, retention review, reminder actions, evidence-policy approval assignments, scheduled retention reminder digests, configurable reminder retry/escalation controls, and approved-evidence workflow blockers with structured remediation for invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, orders, year-end close packs, leave records, TSD declarations, and KMD declarations
-- [x] TSD/KMD submission and acceptance evidence blockers requiring approved tax/support documents before declarations can be marked submitted or accepted
-- [x] Document evidence policy evaluation through API and CLI
-- [x] Optional approved evidence blockers for quote send and order confirmation
-- [x] Purchase-invoice send/email, quote/order send/email/confirmation, and fixed-asset activation/disposal evidence enforcement with structured evidence-policy remediation in 409 responses
-- [x] Reconciliation completion blocks bank transactions marked as requiring evidence until approved evidence is attached
-- [x] Backup creation, offsite sync, health-check, restore-drill, CLI offsite/restore preflight parity, offline host preflight, and systemd schedule template scripts for self-hosted operations
-
-### Still missing for reliable production use
-
-The concise source of truth for current product caps is
-[docs/CURRENT_PRODUCT_LIMITS.md](docs/CURRENT_PRODUCT_LIMITS.md). In summary:
-
-- [ ] Remaining mutating migration cutover orchestration beyond the guarded CLI/server-side execution, resume-snapshot, saved-run list/get/event-stream paths, provider preset catalog discovery for Merit, SmartAccounts, and Directo, dashboard workbench live streaming, saved-run progress/duration telemetry, accountant-workspace launch handoff, saved-bundle workspace execution, and KMD VAT-history execution dependency, especially further provider-specific cutover depth, cross-file validation outside payroll/TSD history, and deeper dashboard-side cutover controls
-- [ ] Remaining payroll/document/evidence-policy edges and deeper accountant-workspace execution beyond the current assignment queue, direct bank follow-up, reminder actions, pending-document assignment approval, document-retention date setting, evidence/missing-document upload and replacement including evidence-policy violation upload, unapproved-evidence approval, payroll-run calculation/recalculation, payment-date setting and approval, payroll TSD assignment generation, payroll paid-run TSD follow-up generation, declared payroll archive XML export, TSD declaration XML export and acceptance marking, KMD assignment regeneration/export/acceptance marking, KMD INF/EU VAT OSS report generation, expense submit/approve/post assignment completion, fiscal-year close/carry-forward assignment completion, and migration saved-run handoff, especially remaining document evidence-policy follow-up
-- [ ] Automated document policy enforcement in remaining workflow blockers
-- [ ] Remaining auth hardening beyond the current API/CLI/settings controls for tenant member status, sessions, API tokens, tenant-creation boundaries, audit visibility, failed-login audit, and credential-aware failed-login throttling
-- [ ] Broader plugin production hardening beyond the current loopback HTTP runtime, supervised package runtime startup/proxy/shutdown/status/manual restart/automatic crash restart, allowlisted package runtime process environment, and safe operator-bundled frontend component registry, especially OS-level sandboxing and broader resource isolation
-- [ ] Direct e-invoice operator send/receive, direct bank feeds, SEPA initiation, and automatic e-MTA submission
+- [Documentation Index](docs/README.md) for the active docs set
+- [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md) for concise caps and gaps
+- [Development Status](docs/DEVELOPMENT_STATUS.md) for current branch gate evidence
+- [Use Case Coverage](docs/USE_CASE_COVERAGE.md) for the workflow matrix and open work items
 
 ---
 

@@ -2,7 +2,7 @@
 
 This document maps features from [Merit Aktiva](https://www.merit.ee/en/) and [SmartAccounts](https://www.smartaccounts.eu/en/) to Open Accounting, identifying implementation status, gaps, and blockers.
 
-This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline, including the last full local baseline and current branch revalidation dates, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). For the concise current cap/gap summary before full product parity, use [CURRENT_PRODUCT_LIMITS.md](./CURRENT_PRODUCT_LIMITS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
+This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline and current branch gate summary, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). For the concise current cap/gap summary before full product parity, use [CURRENT_PRODUCT_LIMITS.md](./CURRENT_PRODUCT_LIMITS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
 
 ## Executive Summary
 
@@ -263,18 +263,6 @@ These features cannot be implemented without external dependencies or significan
 - **Requirement**: SEPA payment initiation
 - **Blocker**: Requires PSD2 PISP license or banking partnership
 - **Workaround**: Manual payment through bank
-
----
-
-## Priority Themes
-
-This document's older quarter-based priorities have been superseded by the current product-limit and development-status docs. The current priority order is:
-
-1. Reliability and truthful status reporting
-2. Imports, close controls, and attachments
-3. Server-side reporting depth and accountant workflow improvements
-4. Security and operational hardening
-5. Partner-dependent integrations such as e-invoice, bank feeds, and automatic tax submission
 
 ---
 

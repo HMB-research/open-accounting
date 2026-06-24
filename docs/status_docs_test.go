@@ -7,391 +7,91 @@ import (
 	"testing"
 )
 
-func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
-	read := func(path string) string {
-		t.Helper()
-		payload, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("read %s: %v", path, err)
-		}
-		return string(payload)
+func readDoc(t *testing.T, path string) string {
+	t.Helper()
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
 	}
+	return string(payload)
+}
 
+func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 	activeDocs := map[string]string{
-		"README.md":                                           read(filepath.Join("..", "README.md")),
-		"docs/DEVELOPMENT_STATUS.md":                          read("DEVELOPMENT_STATUS.md"),
-		"docs/ARCHITECTURE.md":                                read("ARCHITECTURE.md"),
-		"docs/CURRENT_PRODUCT_LIMITS.md":                      read("CURRENT_PRODUCT_LIMITS.md"),
-		"docs/USE_CASE_COVERAGE.md":                           read("USE_CASE_COVERAGE.md"),
-		"docs/demo-e2e-testing.md":                            read("demo-e2e-testing.md"),
-		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md":         read("FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md"),
-		".agents/skills/open-accounting-development/SKILL.md": read(filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md")),
+		filepath.Join("..", "README.md"):         readDoc(t, filepath.Join("..", "README.md")),
+		"DEVELOPMENT_STATUS.md":                  readDoc(t, "DEVELOPMENT_STATUS.md"),
+		"CURRENT_PRODUCT_LIMITS.md":              readDoc(t, "CURRENT_PRODUCT_LIMITS.md"),
+		"USE_CASE_COVERAGE.md":                   readDoc(t, "USE_CASE_COVERAGE.md"),
+		"FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md": readDoc(t, "FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md"),
+		"EMTA_INTEGRATION.md":                    readDoc(t, "EMTA_INTEGRATION.md"),
+		"README.md":                              readDoc(t, "README.md"),
+		"demo-e2e-testing.md":                    readDoc(t, "demo-e2e-testing.md"),
+		filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md"): readDoc(t, filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md")),
 	}
 
 	required := map[string][]string{
+		filepath.Join("..", "README.md"): {
+			"Current branch documentation baseline: 2026-06-25.",
+			"Backend coverage is 81.7%.",
+			"Frontend coverage is 100.0% statements/functions/lines and 94.27% branches.",
+			"[documentation index](docs/README.md)",
+			"[Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md)",
+			"[Development Status](docs/DEVELOPMENT_STATUS.md)",
+			"[Use Case Coverage](docs/USE_CASE_COVERAGE.md)",
+		},
 		"README.md": {
-			"Full local baseline last verified on 2026-06-08",
-			"On 2026-06-12, local revalidation covered",
-			"On 2026-06-13, the payroll-history-import branch was revalidated",
-			"`make test-backend-coverage`",
-			"`make test-cli-coverage`",
+			"[Current Product Limits](./CURRENT_PRODUCT_LIMITS.md)",
+			"[Development Status](./DEVELOPMENT_STATUS.md)",
+			"[Use Case Coverage](./USE_CASE_COVERAGE.md)",
+			"[EMTA Integration](./EMTA_INTEGRATION.md)",
+		},
+		"DEVELOPMENT_STATUS.md": {
+			"> Last updated: 2026-06-25",
+			"`chore/coverage-docs-reorg` branch baseline reviewed on 2026-06-25",
+			"Backend coverage: 81.7%.",
+			"Frontend coverage: 100.0% statements, 100.0% functions, 100.0% lines, and 94.27% branches.",
+			"Documentation gate: `go test -timeout=3m ./docs -count=1` passing.",
+			"Historical pull-request logs belong in PRs and CI, not in this status page.",
+			"## Capability Matrix",
+			"## Immediate Priorities",
+		},
+		"CURRENT_PRODUCT_LIMITS.md": {
+			"Last reviewed: 2026-06-25",
+			"backend coverage at\n81.7%",
+			"frontend coverage at 100.0% statements/functions/lines and 94.27%\nbranches",
 			"`go test -timeout=3m ./docs -count=1`",
-			"`go test -tags=integration ./internal/payroll -count=1`",
-			"focused quote/order delivery demo E2E with 3 passed",
-			"inventory subledger reconciliation stages",
-			"PR #62 CI run `27512752079` at commit `97e9d8b`",
-			"frontend inventory subledger drill-down stage",
-			"close remediation actions stage",
-			"migration remediation actions stage",
-			"migration remediation assignment stage",
-			"migration remediation priority fallback stage",
-			"cross-workspace remediation assignment metadata stage",
-			"accountant workspace assignment queue stage",
-			"expense assignment queue stage",
-			"expense assignment completion stage",
-			"document assignment completion stage",
-			"payroll assignment approval stage",
-			"payroll TSD assignment generation stage",
-			"payroll TSD follow-up/archive assignment execution stage",
-			"payroll payment-date assignment stage",
-			"close assignment completion stage",
-			"KMD assignment execution stage",
-			"tax-report assignment execution stage",
-			"plugin HTTP runtime stage",
-			"plugin runtime workspace actions stage",
-			"plugin package runtime environment isolation stage",
-			"API-token tenant-creation boundary stage",
-			"tax declaration evidence workspace stage",
-			"KMD VAT-history execution dependency stage",
-			"evidence-policy violation upload assignment stage",
-			"KMD tax remediation actions stage",
-			"KMD status mutation and workspace acceptance assignment stage",
-			"payroll run remediation actions stage",
-			"document retention and evidence remediation actions stage",
-			"TSD declaration remediation actions stage",
-			"banking transaction and expense claim remediation action stages",
-			"guarded migration execution stage",
-			"server-side migration execution stage",
-			"migration progress telemetry stage",
-			"migration duration telemetry stage",
-			"migration accountant-workspace launch handoff stage",
-			"migration dashboard live stream stage",
-			"migration provider preset catalog stage",
-			"migration saved-run state assignment stage",
-			"provider execution CSV canonicalization stage",
-			"migration FK UUID preflight stage",
-			"product supplier-code migration stage",
-			"fixed-asset supplier-code migration stage",
-			"supplier identity migration stage",
-			"supplier VAT-number migration reference stage",
-			"payment contact VAT-number migration reference stage",
-			"payment and expense contact identity migration stage",
-			"commercial-document contact identity migration stage",
-			"commercial-document VAT contact import stage",
-			"invoice VAT-contact import and order quote-contact consistency stage",
-			"reconciliation evidence remediation and Directo fixed-asset alias batch",
-			"journal/payment evidence, document CLI entity help, and fixed-asset invoice-number batch",
-			"payment allocation consistency stage",
-			"payment allocation amount decimal validation stage",
-			"e-invoice payment allocation consistency stage",
-			"payment allocation currency consistency stage",
-			"payment currency code preflight stage",
-			"payment bank-account default-currency consistency stage",
-			"bank-account currency letter validation stage",
-			"bank-transaction source-account omitted-currency consistency stage",
-			"bank-transaction description-source preflight stage",
-			"bank-transaction format execution-plan stage",
-			"opening-balance entry-date execution-plan stage",
-			"invoice paid-amount consistency stage",
-			"combined invoice paid/allocation consistency stage",
-			"payment allocation direction consistency stage",
-			"payment invoice-contact consistency stage",
-			"e-invoice payment invoice-contact consistency stage",
-			"e-invoice credit-note payment contact selection stage",
-			"payment allocation date consistency stage",
-			"payment allocation malformed-date guard stage",
-			"payment allocation invoice-status consistency stage",
-			"payment allocation invoice-ID status consistency stage",
-			"fixed-asset source-invoice consistency stage",
-			"fixed-asset source-invoice date consistency stage",
-			"fixed-asset source-invoice amount consistency stage",
-			"fixed-asset source-invoice supplier identity stage",
-			"stock-adjustment product stockability stage",
-			"cost-allocation journal-line total consistency stage",
-			"cost-allocation journal-line percentage consistency stage",
-			"expense employee-ID UUID preflight stage",
-			"expense currency code preflight stage",
-			"product account-type consistency stage",
-			"fixed-asset account-type consistency stage",
-			"bank-account GL account-type consistency stage",
-			"recurring-invoice account-type consistency stage",
-			"TSD submission evidence and provider payment currency alias batch",
-			"TSD/KMD acceptance evidence gate stage",
-			"leave-record evidence remediation stage",
-			"evidence-policy approval assignment stage",
-			"approved tax/support documents before declarations can be marked submitted or accepted",
-			"provider-style aliases for Merit, SmartAccounts, and Directo CSVs including payment currency aliases",
-			"`make test-integration-coverage`",
-			"32 files and 572 tests",
-			"all four seeded demo E2E shards",
-			"Broader plugin production hardening beyond the current loopback HTTP runtime, supervised package runtime startup/proxy/shutdown/status/manual restart/automatic crash restart, allowlisted package runtime process environment, and safe operator-bundled frontend component registry",
-			"Current product caps and gaps are summarized in [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md)",
-			"CLI%20coverage-100%25-brightgreen",
-			"docs%20gate-passing-brightgreen",
-			"demo%20E2E-blocking%20CI-brightgreen",
-			"PR #62 was revalidated by the pull-request CI gate before merge",
-		},
-		"docs/DEVELOPMENT_STATUS.md": {
-			"Full local baseline last completed on 2026-06-08. On 2026-06-12, the current branch was revalidated locally",
-			"For the concise cap/gap summary before full product parity, see [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md).",
-			"On 2026-06-13, the payroll-history-import branch was revalidated locally",
-			"inventory subledger reconciliation stages",
-			"PR #62 CI run `27512752079` at commit `97e9d8b`",
-			"PR #62 pull-request CI revalidated on 2026-06-15 before merge",
-			"frontend inventory subledger drill-down stage",
-			"close remediation actions stage",
-			"migration remediation actions stage",
-			"migration remediation assignment stage",
-			"cross-workspace remediation assignment metadata stage",
-			"accountant workspace assignment queue stage",
-			"expense assignment queue stage",
-			"expense assignment completion stage",
-			"document assignment completion stage",
-			"payroll assignment approval stage",
-			"payroll TSD assignment generation stage",
-			"payroll TSD follow-up/archive assignment execution stage",
-			"payroll payment-date assignment stage",
-			"close assignment completion stage",
-			"KMD assignment execution stage",
-			"tax-report assignment execution stage",
-			"plugin HTTP runtime stage",
-			"plugin package runtime automatic restart stage",
-			"focused plugin package runtime environment isolation coverage",
-			"tax declaration evidence workspace coverage",
-			"focused KMD VAT-history execution dependency coverage",
-			"focused evidence-policy violation upload assignment coverage",
-			"conservative supervised package runtime for manifest-declared hooks and tenant-scoped plugin routes",
-			"allowlisted process environment that withholds API process secrets",
-			"operator-bundled registered Svelte components",
-			"OS-level sandboxing and broader production plugin isolation",
-			"KMD tax remediation actions stage",
-			"focused KMD status mutation, submission evidence, and workspace acceptance assignment coverage",
-			"focused TSD/KMD acceptance evidence gate coverage",
-			"payroll run remediation actions stage",
-			"TSD declaration remediation actions stage",
-			"banking transaction remediation actions stage",
-			"expense claim remediation actions stage",
-			"guarded migration execution stage",
-			"server-side migration execution stage",
-			"migration accountant-workspace launch handoff coverage",
-			"focused saved-bundle workspace execution coverage",
-			"focused migration saved-run state assignment coverage",
-			"surface failed, running, blocked, and confirmation-ready migration saved-run assignments with deep links",
-			"saved-bundle execution from confirmation-ready accountant workspace actions",
-			"payroll/TSD same employee-period amount consistency",
-			"further provider-specific mapping depth, cross-file validation outside payroll/TSD history, and other dashboard-side incumbent-system mutating cutover controls are still incomplete",
-			"`make test-backend-coverage` passes without requiring PostgreSQL",
-			"`make test-cli-coverage` passes as the focused CLI-only coverage gate",
-			"`go test -timeout=3m ./docs -count=1` passes",
-			"`go test -tags=integration ./internal/payroll -count=1` passes",
-			"`DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable go test -tags=integration ./cmd/migrate -run TestEmailTemplateTypeMigrationAllowsQuoteAndOrderTemplates -count=1` passes",
-			"`DATABASE_URL=postgres://openaccounting:openaccounting@localhost:5432/openaccounting?sslmode=disable make test-integration-coverage` passes",
-			"`cd frontend && bun run test:prepared` passes with 32 files and 572 tests",
-			"`cd frontend && bun run test:prepared -- AccountantReviewPanel.test.ts AccountantPortfolioPanel.test.ts review-workspace.test.ts api.test.ts` passes targeted accountant workspace assignment queue, expense frontend follow-up, expense assignment completion, document assignment approval, payroll assignment approval, payroll payment-date assignment, payroll TSD assignment generation, close assignment completion, and KMD assignment execution coverage",
-			"`cd frontend && bun run test:prepared -- src/tests/lib/api.test.ts src/tests/components/AccountantReviewPanel.test.ts` passes focused tax-report assignment execution coverage for KMD INF and EU VAT OSS workspace rows",
-			"payroll paid-run TSD follow-up generation and declared payroll archive XML export",
-			"`cd frontend && bun run test:prepared -- api.test.ts` passes",
-			"`go test ./internal/accounting -run 'Test(Service_GetYearEndCloseStatusEdgeCases|BuildYearEndCloseRemediationActions)' -count=1` passes",
-			"`go test ./cmd/api -run 'TestGetYearEndCloseStatus|TestGetYearEndCloseStatusIncludes' -count=1` passes",
-			"`go test ./cmd/oa -run TestPrintCloseOutputs -count=1` passes",
-			"`make swagger` regenerates the OpenAPI schema for `remediation_actions`",
-			"`cd frontend && bun run check:prepared` passes against the close remediation API type additions",
-			"`go test ./internal/cutover -run 'TestValidateBundle(ReportsReadyBundle|BuildsRemediationActions)' -count=1` passes",
-			"`go test ./cmd/api -run TestValidateMigrationBundleHandler -count=1` passes",
-			"`go test ./cmd/oa -run 'TestPrintOutputs|TestCLIMigrationValidation' -count=1` passes",
-			"`make swagger` regenerates the OpenAPI schema for migration `remediation_actions`",
-			"`cd frontend && bun run test:prepared -- api.test.ts` passes focused frontend API coverage for migration assignment-ready remediation actions",
-			"`cd frontend && bun run check:prepared` passes against the migration assignment API type additions",
-			"focused migration remediation priority fallback coverage",
-			"`go test ./internal/cutover -count=1` passes focused migration execution-plan coverage",
-			"`go test ./cmd/api -run 'Test(ValidateMigrationBundleHandler|PlanMigrationExecutionHandler|Routes)' -count=1` passes focused migration execution-plan API coverage",
-			"`go test ./cmd/oa -run 'Test(CLI(MigrationValidationCommand|MigrationExecutionPlanCommand|MigrationValidationBranches)|OutputHelpers|CLIRouteCoverage)' -count=1` passes focused migration execution-plan CLI and docs-route coverage",
-			"`go test ./cmd/oa -run 'TestCLIMigrationExecute|TestMigrationExecutionRunHelperBranches|TestPrintMigrationExecutionRunBranches|TestCLIRouteCoverage' -count=1` passes focused guarded migration execution CLI coverage",
-			"`go test ./cmd/api -run 'Test(ExecuteMigrationHandler|PlanMigrationExecutionHandler|ValidateMigrationBundleHandler|Routes)' -count=1` passes focused server-side migration execution API coverage",
-			"`go test ./internal/cutover ./internal/banking -count=1` passes shared migration execution-run and bank-account parser coverage",
-			"`go test ./internal/cutover ./cmd/api ./cmd/oa -count=1` and `cd frontend && bun run test:prepared -- MigrationWorkbench.test.ts api.test.ts` pass focused migration progress and duration telemetry coverage",
-			"`go test ./internal/cutover -count=1`, `make swagger`, `go test -timeout=3m ./docs -count=1`, `cd frontend && bun run test:prepared -- AccountantReviewPanel.test.ts MigrationWorkbench.test.ts api.test.ts`, and `cd frontend && bun run check:prepared` pass focused migration accountant-workspace launch handoff coverage",
-			"`cd frontend && bun run test:prepared -- src/tests/lib/review-workspace.test.ts src/tests/components/AccountantReviewPanel.test.ts src/tests/components/MigrationWorkbench.test.ts` and `cd frontend && bun run check:prepared` pass focused migration saved-run state assignment coverage",
-			"`cd frontend && bun run test:prepared -- src/tests/components/MigrationWorkbench.test.ts src/tests/lib/api.test.ts` and `cd frontend && bun run check:prepared` pass focused migration dashboard live stream coverage",
-			"`go test ./internal/cutover ./cmd/api ./cmd/oa -run 'Test(ListMigrationProviderPresets|CLIMigrationProviderPresets|CLIRouteCoverage)' -count=1`, `cd frontend && bun run test:prepared -- src/tests/components/MigrationWorkbench.test.ts src/tests/lib/api.test.ts`, and `cd frontend && bun run check:prepared` pass focused migration provider preset catalog coverage",
-			"focused migration FK UUID preflight coverage",
-			"focused product supplier-code migration coverage",
-			"focused fixed-asset supplier-code migration coverage",
-			"focused supplier identity migration coverage",
-			"focused supplier VAT-number migration reference coverage",
-			"focused payment contact VAT-number migration reference coverage",
-			"focused payment and expense contact identity migration coverage",
-			"commercial-document contact identity migration stage",
-			"focused invoice VAT-contact import and order quote-contact consistency coverage",
-			"focused reconciliation evidence remediation and Directo fixed-asset alias coverage",
-			"focused journal/payment evidence, rejected replacement remediation, document CLI entity help, and fixed-asset invoice-number coverage",
-			"quote/order commercial evidence conflict stage",
-			"document lifecycle integrity constraints stage",
-			"Commercial-document imports now resolve invoice, quote, order, and recurring-invoice `contact_vat_number`/`vat_number` columns against contact VAT numbers rather than registry codes.",
-			"Order quote-contact consistency preflight now rejects",
-			"KMD history execution plans now order historical journals before KMD history and mark KMD imports as dependent on invoice, e-invoice, and journal VAT history.",
-			"Accountant workspace evidence-policy violation rows with supported entity and document metadata now expose the same evidence upload action as missing-evidence rows.",
-			"Directo fixed-asset provider presets now canonicalize numbered",
-			"Reconciliation evidence conflicts now return document evidence-policy results",
-			"Journal-entry, purchase-invoice, fixed-asset activation/disposal, and payment-receipt evidence conflicts now return document evidence-policy results",
-			"Quote send/email and order email/confirmation evidence conflicts now return document evidence-policy results",
-			"Rejected matching evidence-policy documents now produce replacement-upload remediation",
-			"Document CLI entity-type help now includes TSD and KMD declaration attachment targets",
-			"Fixed-asset migration preflight now resolves source invoices by `invoice_number`",
-			"focused failed-login audit and credential-aware throttling coverage",
-			"focused API-token tenant-creation boundary tests",
-			"failed-login attempts are throttled per credential and client IP",
-			"focused payment allocation consistency migration coverage",
-			"focused payment allocation amount decimal validation coverage",
-			"focused e-invoice payment allocation consistency migration coverage",
-			"focused payment allocation currency consistency migration coverage",
-			"focused payment currency code preflight coverage",
-			"focused payment bank-account default-currency consistency migration coverage",
-			"focused bank-account currency letter validation coverage",
-			"focused bank-transaction source-account omitted-currency consistency migration coverage",
-			"focused bank-transaction description-source preflight coverage",
-			"focused bank-transaction format execution-plan coverage",
-			"focused invoice paid-amount consistency migration coverage",
-			"focused combined invoice paid/allocation consistency migration coverage",
-			"focused payment allocation direction consistency migration coverage",
-			"focused payment invoice-contact consistency migration coverage",
-			"focused e-invoice payment invoice-contact consistency migration coverage",
-			"focused e-invoice credit-note payment contact selection coverage",
-			"focused payment allocation date consistency migration coverage",
-			"focused payment allocation malformed-date guard coverage",
-			"focused payment allocation invoice-status consistency migration coverage",
-			"focused payment allocation invoice-ID status consistency migration coverage",
-			"focused fixed-asset source-invoice consistency migration coverage",
-			"focused fixed-asset source-invoice date consistency migration coverage",
-			"focused fixed-asset source-invoice amount consistency migration coverage",
-			"focused fixed-asset source-invoice supplier identity coverage",
-			"focused stock-adjustment product stockability migration coverage",
-			"focused cost-allocation journal-line total consistency migration coverage",
-			"focused cost-allocation journal-line percentage consistency migration coverage",
-			"focused cost-allocation amount/percentage consistency migration coverage",
-			"focused plugin HTTP runtime coverage for manifest-declared hooks and tenant-scoped runtime routes",
-			"focused expense account-type consistency migration coverage",
-			"focused expense employee-ID UUID preflight coverage",
-			"focused expense currency code preflight coverage",
-			"focused product account-type consistency migration coverage",
-			"focused fixed-asset account-type consistency migration coverage",
-			"focused bank-account GL account-type consistency migration coverage",
-			"focused recurring-invoice account-type consistency migration coverage",
-			"separate SmartAccounts payroll/TSD year-month and tax amount aliases",
-			"provider opening-balance amount alias validation and import coverage",
-			"opening-balance entry-date execution-plan coverage",
-			"focused provider historical-journal alias import coverage",
-			"focused provider cost-center and cost-allocation alias import coverage",
-			"focused provider-preset execution CSV canonicalization coverage",
-			"including payroll, leave-balance, and TSD history payloads",
-			"`go test ./internal/documents -run 'Test(EntityTableName|Service_UploadDocumentForWorkflowEntities|Service_EvaluateEvidencePolicy)' -count=1` passes focused TSD/KMD document entity coverage",
-			"`go test ./cmd/api -run 'TestMarkTSDSubmittedRequiresApprovedTaxEvidence|TestPayrollBusinessHandlersTSDPeriodActions' -count=1` passes focused TSD submission evidence coverage",
-			"`go test ./internal/cutover -run 'TestValidateBundleAccepts(MeritPaymentAndBankProviderPresetAliases|SmartAccountsPaymentAndBankProviderPresetAliases|DirectoCommercialBankAndJournalProviderPresetAliases)' -count=1` passes focused provider payment-currency alias coverage",
-			"`make swagger`, `go test -timeout=3m ./docs -count=1`, `golangci-lint run`, `make test-cli-coverage`, and `make test-backend-coverage` pass the TSD submission evidence and provider payment currency alias batch",
-			"focused TSD/KMD acceptance evidence gate coverage",
-			"focused leave-record evidence remediation coverage",
-			"focused evidence-policy approval assignment coverage",
-			"provider payment currency aliases normalize Merit/Directo `valuuta` and `valuuta_kood` plus SmartAccounts `currency_code` and `payment_currency`",
-			"approved tax/support evidence blockers before marking TSD declarations submitted or accepted",
-			"Leave-record approval evidence conflicts now return document evidence-policy results",
-			"TSD/KMD declaration tax-support attachments, and TSD/KMD submission and acceptance evidence enforcement",
-			"opening-balance account-code and debit/credit row values including Merit/Directo/SmartAccounts account and amount aliases in both validation and import execution",
-			"Historical-journal provider aliases now execute through the mutating importer",
-			"Provider cost-center and cost-allocation aliases now execute through the mutating importers",
-			"Provider-preset migration execution now canonicalizes CSV headers with the same file-kind alias specs used by preflight",
-			"Fixed-asset source-invoice supplier identity preflight now rejects mismatches for `supplier_id`, `supplier_reg_code`, `supplier_vat_number`, `supplier_email`, and `supplier_name`",
-			"Product supplier VAT-number preflight now validates `supplier_vat_number` values against same-bundle contact VAT numbers",
-			"Payment contact VAT-number preflight now validates `contact_vat_number` values against same-bundle contact VAT numbers",
-			"Migration remediation priority fallback preflight keeps non-blocking action severities at low priority",
-			"Payment allocation invoice-ID status preflight now rejects `invoice_id` allocations",
-			"Payment currency preflight rejects non-blank `currency` values",
-			"E-invoice credit-note payment contact preflight now selects buyer contact fields in customer mode",
-			"expose CLI preflight parity for offsite sync and restore drills",
-			"provider-specific S3/rclone env examples, an offline host preflight helper that rejects missing or placeholder env before timer enablement, and an executable host install helper that runs preflight before enabling timers",
-			"Product migration preflight also rejects",
-			"Fixed-asset migration preflight also rejects",
-			"Bank-account migration preflight also rejects",
-			"Recurring-invoice migration preflight also rejects",
-			"payment allocation date consistency migration coverage",
-			"`make swagger` regenerates the OpenAPI schema for server-side migration execution",
-			"`cd frontend && bun run test:prepared src/tests/lib/api.test.ts` passes focused frontend API coverage for migration execution plans",
-			"`make swagger` regenerates the OpenAPI schema for migration execution plans",
-			"`go test ./internal/tax -run 'Test(Service_GenerateKMD_Success|Service_GenerateKMD_EmptyVATData|BuildKMDRemediationActions|Service_GetKMD_Success|Service_ListKMD_Success)' -count=1` passes",
-			"`go test ./cmd/api -run TestTaxHandlersKMDWorkflow -count=1` passes",
-			"`go test ./cmd/oa -run 'TestPrintOutputs|TestCLITaxAndTSDCommands' -count=1` passes",
-			"`make swagger` regenerates the OpenAPI schema for KMD tax `remediation_actions`",
-			"`go test ./internal/payroll -run 'Test(CreatePayrollRun_Success|UpdatePayrollRunPaymentDate|GetPayrollRun_Success|ListPayrollRuns_Success|ListPayrollRuns_FilterByYear|CalculatePayroll_Success|ProcessPayrollRun_CalculateOnly|ProcessPayrollRun_CalculatesAndApproves|CalculatePayroll_SkipsEmployeesWithoutSalary|BuildPayrollRunRemediationActions)' -count=1` passes",
-			"`go test ./cmd/api -run TestPayrollBusinessHandlersRunLifecycleAndTSD -count=1` passes",
-			"`go test ./cmd/oa -run 'TestPrintPayrollOutputs|TestCLIPayrollRunCommands' -count=1` passes",
-			"`make swagger` regenerates the OpenAPI schema for payroll run `remediation_actions`",
-			"`go test ./internal/documents -run 'TestService_UploadOpenListAndDeleteDocument|TestService_EvaluateEvidencePolicyValidation' -count=1` passes",
-			"`go test ./cmd/api -run TestUploadListDownloadAndDeleteDocument -count=1` passes",
-			"`go test ./cmd/oa -run 'TestPrintTables|TestCLIDocumentCommands' -count=1` passes",
-			"`make swagger` regenerates the OpenAPI schema for document `remediation_actions`",
-			"`go test ./internal/payroll -run 'Test(ServiceGenerateTSDWithMockRepository|ServiceTSDQuerySummaryAndStatusMarkers|BuildTSDRemediationActions)' -count=1` passes",
-			"`go test ./cmd/api -run 'TestPayrollBusinessHandlers(RunLifecycleAndTSD|TSDPeriodActions)' -count=1` passes",
-			"`go test ./cmd/oa -run 'TestPrintTaxReports|TestCLITaxAndTSDCommands' -count=1` passes",
-			"`make swagger` regenerates the OpenAPI schema for TSD declaration `remediation_actions`",
-			"`go test ./internal/expenses -run 'Test(ServiceExpenseRemediationHydration|BuildExpenseRemediationActions|ServiceExpenseLifecycleRequiresReceiptBeforeApproval|ServiceListExpensesNormalizesStatus)' -count=1` passes",
-			"`go test ./cmd/api -run TestExpenseHandlers -count=1` passes",
-			"`go test ./cmd/oa -run 'Test(PrintExpenseOutputs|CLIExpenseCommands|CLIExpenseBranches)' -count=1` passes",
-			"`go test ./internal/expenses ./cmd/api ./cmd/oa -count=1` passes",
-			"`make swagger` regenerates the OpenAPI schema for expense `remediation_actions`",
-			"`go test ./internal/workspace ./internal/accounting ./internal/banking ./internal/expenses ./internal/documents ./internal/payroll ./internal/tax -run 'Test(RemediationAssignment|AssignmentPriority|NormalizeAssignmentPart|BuildYearEndCloseRemediationActions|BuildBankRemediationActions|BuildExpenseRemediationActions|RetentionReview|EvidencePolicy|BuildPayrollRunRemediationActions|BuildTSDRemediationActions|BuildKMDRemediationActions)' -count=1` passes focused cross-workspace assignment metadata coverage",
-			"`go test ./cmd/oa -run 'TestPrint.*Outputs|TestRemediationAssignmentCells' -count=1` passes focused CLI rendering coverage for remediation assignment fields",
-			"e2e/demo/inventory-stock.spec.ts --workers=1` passes with 3 inventory demo specs",
-			"quotes.spec.ts e2e/demo/orders.spec.ts --workers=1` passes with auth setup plus quote and order delivery workflows",
-			"Backend unit tests no longer start PostgreSQL in CI",
-			"Backend integration tests are sharded in CI",
-			"Full local seeded demo E2E runs across four blocking CI shards",
-		},
-		"docs/ARCHITECTURE.md": {
-			"`go test -race ./...` must pass without PostgreSQL using Go's default package parallelism",
-			"`DATABASE_URL=... make test-integration-coverage` must pass",
-			"`INTEGRATION_SHARD` and `INTEGRATION_SHARDS`",
-			"Blocking smoke E2E plus blocking local seeded demo shards",
-		},
-		"docs/CURRENT_PRODUCT_LIMITS.md": {
-			"# Current Product Limits",
-			"PR #62 on `feat/payroll-history-import` was revalidated by the pull-request CI",
-			"all four local seeded demo E2E shards",
-			"KMD history preflight: declared KMD VAT totals are not yet reconciled",
-			"Legacy development plans were removed from the active docs set",
+			"## Gaps From A Full-Featured Product",
 			"Do not move an item out of the gaps table until there is authoritative code, test, and documentation evidence",
 		},
-		"docs/USE_CASE_COVERAGE.md": {
-			"For a concise cap/gap summary before full product parity, see [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md).",
-			"PR #62 on `feat/payroll-history-import` was revalidated by the pull-request CI gate on 2026-06-15 before merge.",
-			"legal hold placement/release audit metadata with disposal, replacement, hard-delete, and purge guards",
-			"focused document lifecycle/legal-hold/purge service/API/CLI tests",
-			"dry-run and executable purge automation for expired disposed non-held files",
-			"failed-login audit with credential-aware throttling",
-			"focused provider execution CSV canonicalization tests including payroll/leave/TSD payloads",
-			"Directo fixed-asset provider alias",
-			"canonicalization for `põhivara_nr`",
-			"Reconciliation evidence blocking now returns document evidence-policy results",
-			"plus flattened upload/review remediation actions",
+		"USE_CASE_COVERAGE.md": {
+			"Last reviewed: 2026-06-25",
+			"Current branch baseline reviewed on 2026-06-25",
+			"`make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.",
+			"`go test -timeout=3m ./docs -count=1` keeps the documentation status, route coverage, and link checks active.",
+			"Broad workflow proof is summarized by matrix area instead of by per-stage pull-request history.",
+			"## Matrix",
+			"## Open Goal Work Items",
 		},
-		"docs/demo-e2e-testing.md": {
+		"FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md": {
+			"# Feature Mapping: Merit & SmartAccounts vs Open Accounting",
+			"## Blockers Summary",
+			"For the verified repository baseline and current branch gate summary",
+			"## Verification Note",
+		},
+		"EMTA_INTEGRATION.md": {
+			"**Status: BLOCKED / EXTERNAL INTEGRATION NOT LIVE**",
+			"Automatic e-MTA submission is not implemented",
+			"## External Integration Boundary",
+			"Existing TSD status endpoints record manual workflow state; they do not submit declarations to e-MTA.",
+			"Candidate API surface, still blocked and not live",
+			"## Boundary Until Blockers Clear",
+			"Do not describe automatic submission, status polling, or feedback retrieval as working product capabilities.",
+		},
+		"demo-e2e-testing.md": {
 			"The broader `e2e` job runs the full `demo-chromium` project across four shards and is blocking.",
 			"The separate `e2e-demo` job targets an externally hosted demo and remains optional/informational",
 		},
-		"docs/FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md": {
-			"including the last full local baseline and current branch revalidation dates",
-			"For the concise current cap/gap summary before full product parity, use [CURRENT_PRODUCT_LIMITS.md](./CURRENT_PRODUCT_LIMITS.md).",
-			"Testing and coverage status changed materially after this comparison was first drafted.",
-		},
-		".agents/skills/open-accounting-development/SKILL.md": {
+		filepath.Join("..", ".agents", "skills", "open-accounting-development", "SKILL.md"): {
 			"demo1@example.com",
 			"demo12345",
 			"frontend/playwright.demo.config.ts",
@@ -399,71 +99,28 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"keep design notes in the task, PR description, or the current canonical docs instead of adding legacy plan files",
 		},
 	}
+
 	for path, snippets := range required {
+		doc := activeDocs[path]
 		for _, snippet := range snippets {
-			if !strings.Contains(activeDocs[path], snippet) {
+			if !strings.Contains(doc, snippet) {
 				t.Fatalf("%s missing current status snippet %q", path, snippet)
 			}
 		}
 	}
 
-	staleSnippets := []string{
-		"Full local baseline last verified on 2026-05-28",
-		"Full local baseline last completed on 2026-05-28",
-		"verified repository baseline as of 2026-04-24",
-		"PR #62 CI run `27364700539` at commit `2d55632`",
-		"PR #62 CI run `27365326654` at commit `4e608bb`",
-		"PR #62 CI run `27385096250` at commit `1737a54`",
-		"PR #62 CI run `27456883760` at commit `88157da`",
-		"PR #62 CI run `27469291590` at commit `5a4280f`",
-		"PR #62 CI run `27470177921` at commit `ef9a860`",
-		"PR #62 CI run `27470695729` at commit `77f057c`",
-		"PR #62 CI run `27473470206` at commit `991314e`",
-		"PR #62 CI run `27473943178` at commit `f6a553f`",
-		"PR #62 CI run `27474353861` at commit `c5cd5bc`",
-		"PR #62 CI run `27474840778` at commit `4bb6e16`",
-		"PR #62 CI run `27475433666` at commit `9888937`",
-		"PR #62 CI run `27475857115` at commit `a7a0068`",
-		"PR #62 CI run `27503344790` at commit `ae1d432`",
-		"PR #62 CI run `27503801568` at commit `d4f837f`",
-		"PR #62 CI run `27364049917` at commit `23f91bd`",
-		"PR #62 CI run `27363638201`",
-		"focused fixed-assets demo E2E with 3 passed",
-		"21 files and 493 tests",
-		"22 files and 517 tests",
-		"22 files and 509 tests",
-		"22 files and 510 tests",
-		"22 files and 515 tests",
-		"30 files and 546 tests",
-		"30 files and 555 tests",
-		"30 files and 557 tests",
-		"31 files and 559 tests",
-		"31 files and 569 tests",
-		"251 passed",
-		"259 passed",
-		"`go test -p 1 -count=1 -race ./...`",
-		"`go test -p 1 -race ./...`",
-		"`go test -p 1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...`",
-		"`go test -p 1 -count=1 -race -coverprofile=/tmp/open-accounting-unit-coverage.out ./...`",
-		"`go test -p 1 -count=1 -race -tags=integration $(go list ./... | rg -v /testutil)`",
-		"`go test -tags=integration -race ...` must pass",
-		"Broad demo E2E remains informational",
-		"Blocking smoke E2E plus informational demo shards",
-		"The broader `e2e` job runs the full `demo-chromium` project in shards and is informational.",
-		"The broader `e2e` job runs the full `demo-chromium` project in shards and is blocking.",
-		"Full local seeded demo E2E shards are now blocking in CI",
-		"dashboard-side live stream wiring",
-		"two-shard local demo E2E CI job",
-		"--shard=<shard>/2",
-		"Shard ${{ matrix.shard }}/2",
-		"demo@example.com",
-		"`demo123`",
-		"open-accounting.up.railway.app",
-		"frontend/playwright.config.ts",
-		"bun run test:e2e:demo",
-	}
 	for path, doc := range activeDocs {
-		for _, stale := range staleSnippets {
+		for _, stale := range []string{
+			"PR #62",
+			"payroll-history-import",
+			"27512752079",
+			"97e9d8b",
+			"2026-06-15",
+			"## Priority Themes",
+			"## Timeline",
+			"Proposed Implementation",
+			"estimated implementation time",
+		} {
 			if strings.Contains(doc, stale) {
 				t.Fatalf("%s contains stale status snippet %q", path, stale)
 			}
@@ -472,11 +129,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 }
 
 func TestCLIGuideDocumentsPayrollMigrationSamples(t *testing.T) {
-	payload, err := os.ReadFile("CLI.md")
-	if err != nil {
-		t.Fatalf("read CLI guide: %v", err)
-	}
-	guide := string(payload)
+	guide := readDoc(t, "CLI.md")
 
 	for _, snippet := range []string{
 		"### Payroll history",
@@ -507,189 +160,18 @@ func TestCLIGuideDocumentsPayrollMigrationSamples(t *testing.T) {
 }
 
 func TestUseCaseCoverageMatrixDocumentsGoalEvidence(t *testing.T) {
-	payload, err := os.ReadFile("USE_CASE_COVERAGE.md")
-	if err != nil {
-		t.Fatalf("read use case coverage matrix: %v", err)
-	}
-	matrix := string(payload)
+	matrix := readDoc(t, "USE_CASE_COVERAGE.md")
 
 	for _, snippet := range []string{
 		"# Use Case Coverage Matrix",
+		"Current branch baseline reviewed on 2026-06-25",
 		"`make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.",
-		"`make test-backend-coverage` enforces the same CLI coverage from the backend coverage gate.",
-		"`go test -timeout=3m ./docs -count=1` keeps the documentation status and route coverage checks active.",
-		"plugin HTTP runtime stage",
-		"plugin runtime workspace actions stage",
-		"plugin package runtime automatic restart stage",
-		"plugin package runtime environment isolation stage",
-		"tax declaration evidence workspace stage",
-		"TSD/KMD tax-support evidence",
-		"loopback-only out-of-process HTTP backend runtime and supervised package runtime startup/proxy/shutdown for manifest-declared hooks and tenant-scoped plugin routes, package runtime lifecycle/health/crash/backoff status plus manual restart through API/CLI, automatic package runtime restart after unexpected exits",
-		"allowlisted package runtime process environments that avoid inheriting API process secrets",
-		"safe operator-bundled frontend component registration",
-		"OS-level sandboxing and broader production plugin isolation remain incomplete.",
+		"`make test-backend-coverage` enforces the same CLI package coverage from the backend coverage gate",
+		"`go test -timeout=3m ./docs -count=1` keeps the documentation status, route coverage, and link checks active.",
 		"| Historical migration and cutover | `Partial` |",
-		"grouped migration remediation actions for ready bundles, unsupported file kinds, missing columns, missing references, duplicate identifiers, grouped consistency failures, malformed IDs, invalid row values, warning review, workspace queue assignment, stable assignment keys, priorities, and due windows",
-		"dependency-aware execution plans for ready bundles with API/CLI import steps, missing-context markers for bank-transaction and opening-balance imports, guarded CLI plus server-side API execution for fully ready plans, provider-aware execution-time CSV header canonicalization for Merit/SmartAccounts/Directo imports including payroll, leave-balance, and TSD history payloads, resume snapshots that skip previously succeeded steps when retrying interrupted runs, saved server-side execution run snapshots with list/get APIs, CLI access, status counters, progress percentages, active-step telemetry, per-step timestamps, and duration totals, saved-run event stream API/CLI access, provider preset catalog discovery for generic/Merit/SmartAccounts/Directo mapping metadata, dashboard live stream consumption, resume-by-ID support, accountant-workspace saved-run assignment handoff with deep links",
-		"focused migration dashboard live stream tests",
-		"SmartAccounts commercial contact alias stage",
-		"SmartAccounts payroll/TSD year-month alias stage",
-		"Merit/Directo commercial contact alias stage",
-		"provider opening-balance amount alias stage",
-		"opening-balance entry-date execution-plan stage",
-		"provider historical-journal import alias stage",
-		"provider cost-center and cost-allocation import alias stage",
-		"provider execution CSV canonicalization stage",
-		"migration saved-run state assignment stage",
-		"migration remediation priority fallback stage",
-		"Migration remediation priority fallback coverage now locks non-blocking action severities to low priority",
-		"payment allocation invoice-ID status consistency stage",
-		"Payment allocation invoice-ID status consistency coverage now locks",
-		"pending-document assignment approval, document-retention date setting, evidence upload for bank evidence-required, missing-document, and TSD/KMD tax-support assignments, replacement upload for rejected-document assignments, unapproved-evidence approval for evidence-policy assignment rows, calculated payroll-run calculation/recalculation, payment-date setting and approval, approved and paid payroll-run TSD generation, declared payroll archive XML export, TSD XML export and submitted-status marking with e-MTA references, submitted TSD acceptance marking, KMD regeneration/XML export/submission/acceptance assignment actions, KMD INF and EU VAT OSS report generation assignment actions, draft expense submission, submitted expense approval, approved-expense ledger posting, fiscal-year close, and carry-forward posting directly from the dashboard",
-		"a dashboard assignment queue that aggregates close, banking, document-retention, expense-claim, payroll-run, TSD, KMD, tax-report, and migration cutover remediation actions with tenant-scoped deep links plus CLI commands",
-		"KMD remediation actions for empty VAT periods, payable/refund/zero declarations, submitted declarations awaiting acceptance with API/CLI status mutation and direct dashboard acceptance marking, missing submission timestamps, and accepted declaration archiving",
-		"direct dashboard KMD INF/EU VAT OSS report generation from actionable assignment rows",
-		"dashboard regeneration for empty KMD periods and XML export/acceptance for actionable KMD review/archive assignments",
-		"focused KMD status transition repository/API/CLI tests",
-		"payroll run remediation actions for draft calculation, missing payment dates, zero-payslip review, approval, TSD generation, paid-run declaration follow-up with direct dashboard TSD generation, and declared payroll archive evidence with direct dashboard TSD XML export",
-		"TSD declaration remediation actions for empty rows/totals, draft export/submission, submitted declarations awaiting acceptance with direct dashboard acceptance marking, missing submission timestamps, rejected declaration review, and accepted declaration archiving",
-		"document remediation actions for missing retention, due-soon/expired retention, pending/rejected reviews, missing evidence, unapproved evidence, and evidence-policy violations",
-		"focused accountant review-panel document-retention, evidence-upload including TSD/KMD tax-support upload, and evidence-policy approval execution tests",
-		"focused TSD acceptance assignment execution tests",
-		"focused migration FK UUID preflight tests",
-		"focused product supplier-code migration tests",
-		"focused fixed-asset supplier-code migration tests",
-		"focused supplier identity migration tests",
-		"supplier VAT-number migration reference stage",
-		"Product supplier VAT-number preflight now validates `supplier_vat_number` values",
-		"payment contact VAT-number migration reference stage",
-		"Payment contact VAT-number preflight now validates `contact_vat_number` values",
-		"focused payment and expense contact identity migration tests",
-		"focused commercial-document contact identity migration tests",
-		"Focused commercial-document VAT contact import tests",
-		"focused invoice VAT-contact import tests",
-		"focused order quote-contact consistency migration tests",
-		"reconciliation evidence remediation and Directo fixed-asset alias batch",
-		"journal/payment evidence, document CLI entity help, and fixed-asset invoice-number batch",
-		"quote/order commercial evidence conflict stage",
-		"document lifecycle integrity constraints stage",
-		"Directo fixed-asset provider alias",
-		"canonicalization for `põhivara_nr`",
-		"Reconciliation evidence blocking now returns document evidence-policy results",
-		"plus flattened upload/review remediation actions",
-		"Fixed-asset source-invoice preflight now accepts `invoice_number`",
-		"Journal-entry, purchase-invoice, fixed-asset activation/disposal, and payment-receipt evidence blocking now returns document",
-		"Quote/order commercial evidence conflicts now return document evidence-policy",
-		"Purchase-invoice send/email evidence blocking now returns document",
-		"Fixed-asset activation/disposal evidence blocking now returns document",
-		"409 response so API clients and the CLI can surface",
-		"Rejected matching evidence-policy documents now create replacement-upload",
-		"help lists TSD/KMD declaration attachment targets",
-		"Document lifecycle integrity constraints now block dangling supersession links",
-		"focused payment allocation consistency migration tests",
-		"payment allocation amount decimal validation stage",
-		"Payment allocation amount decimal validation rejects malformed",
-		"focused e-invoice payment allocation consistency migration tests",
-		"focused payment allocation currency consistency migration tests",
-		"payment currency code preflight stage",
-		"Payment currency preflight rejects",
-		"focused payment currency code preflight tests",
-		"provider payment currency aliases for Merit/SmartAccounts/Directo exports",
-		"focused provider payment-currency alias tests",
-		"TSD submission/acceptance evidence blockers requiring approved tax/support documents before marking submitted or accepted",
-		"focused TSD submission and acceptance evidence handler/document tests",
-		"workflow blockers for reconciliation, assets, purchase invoices, journal entries, payments, expenses, leave records, TSD declarations, KMD declarations, close packs, and TSD/KMD submission and acceptance",
-		"focused document entity, TSD submission/acceptance evidence, and KMD submission/acceptance evidence tests",
-		"focused invoice paid-amount consistency migration tests",
-		"focused combined invoice paid/allocation consistency migration tests",
-		"payment invoice-contact consistency stage",
-		"e-invoice payment invoice-contact consistency stage",
-		"e-invoice credit-note payment contact selection stage",
-		"focused e-invoice credit-note payment contact selection migration tests",
-		"Credit-note e-invoice allocations now select buyer contact references in customer mode",
-		"payment allocation date consistency stage",
-		"Payment allocation date consistency rejects",
-		"focused payment allocation date consistency migration tests",
-		"payment allocation malformed-date guard stage",
-		"Payment allocation malformed-date guard coverage confirms malformed",
-		"payment bank-account default-currency consistency stage",
-		"Payment bank-account default-currency consistency rejects",
-		"focused payment bank-account default-currency consistency migration tests",
-		"bank-account currency letter validation stage",
-		"Bank-account currency letter validation rejects",
-		"bank-transaction source-account omitted-currency consistency stage",
-		"Bank-transaction source-account omitted-currency consistency accepts",
-		"focused bank-transaction source-account omitted-currency consistency migration tests",
-		"bank-transaction description-source preflight stage",
-		"Bank-transaction description-source preflight rejects",
-		"focused bank-transaction description-source preflight tests",
-		"bank-transaction format execution-plan stage",
-		"Bank-transaction execution plans preserve the requested import format",
-		"payment allocation invoice-status consistency stage",
-		"Payment allocation invoice-status consistency rejects",
-		"focused payment allocation invoice-status consistency migration tests",
-		"customer-mode sales e-invoices where the payment contact must match the buyer",
-		"fixed-asset source-invoice consistency migration tests",
-		"fixed-asset source-invoice date consistency stage",
-		"Fixed-asset source-invoice date consistency rejects",
-		"focused fixed-asset source-invoice date consistency migration tests",
-		"fixed-asset source-invoice amount consistency migration tests",
-		"fixed-asset source-invoice supplier identity tests",
-		"focused stock-adjustment product stockability migration tests",
-		"focused cost-allocation journal-line total consistency migration tests",
-		"focused cost-allocation journal-line percentage consistency migration tests",
-		"focused cost-allocation amount/percentage consistency migration tests",
-		"focused expense account-type consistency migration tests",
-		"Expense employee-ID preflight rejects",
-		"focused expense currency code preflight tests",
-		"Expense currency preflight rejects",
-		"expense currency code syntax",
-		"focused product account-type consistency migration tests",
-		"focused fixed-asset account-type consistency migration tests",
-		"focused bank-account GL account-type consistency migration tests",
-		"focused recurring-invoice account-type consistency migration tests",
-		"Fixed-asset source-invoice consistency now",
-		"Fixed-asset source-invoice supplier identity consistency now covers",
-		"`supplier_id`, `supplier_reg_code`, `supplier_vat_number`, `supplier_email`,",
-		"purchase_date` is before the imported source invoice issue date",
-		"Fixed-asset source-invoice amount consistency also rejects",
-		"Stock-adjustment product stockability also rejects",
-		"Cost-allocation journal-line total consistency also rejects",
-		"Cost-allocation journal-line percentage consistency also rejects",
-		"Cost-allocation amount/percentage consistency also rejects",
-		"Expense account-type consistency also rejects",
-		"expense `employee_id` UUID syntax",
-		"Product account-type consistency also rejects",
-		"Fixed-asset account-type consistency also rejects",
-		"Bank-account GL account-type consistency also rejects",
-		"Recurring-invoice account-type consistency also rejects",
-		"supplier identity cross-file references by code, registry code, VAT number, email, or name",
-		"commercial-document and payment/expense contact identity cross-file references by matching contact field",
-		"preflight now checks invoice, quote, order, and recurring-invoice contact",
-		"invoice, quote, order,",
-		"recurring-invoice contacts by VAT number",
-		"Order quote-contact consistency preflight rejects",
-		"SmartAccounts commercial-document provider presets now canonicalize",
-		"SmartAccounts payroll and TSD-history provider presets now canonicalize separate",
-		"Provider opening-balance presets and the opening-balance importer now",
-		"Opening-balance execution planning now treats malformed",
-		"Provider historical-journal presets and the historical-journal importer now",
-		"Provider cost-center and cost-allocation presets and importers now",
-		"Provider-preset migration execution now rewrites CSV headers",
-		"focused provider execution CSV canonicalization tests",
-		"payroll/TSD history consistency stage",
-		"focused payroll/TSD history consistency migration tests",
-		"payroll/TSD same employee-period amount consistency",
-		"validation and import execution run",
-		"Merit and Directo commercial-document provider presets now canonicalize",
-		"backup systemd hardening stage",
-		"CLI preflight parity for offsite sync and restore drills",
-		"focused backup CLI preflight tests",
-		"provider-specific backup env templates for S3/rclone",
-		"generated host preflight/install helpers for timer enablement",
-		"payment bank-account default-currency consistency, bank-transaction source-account omitted-currency consistency, bank-transaction description-source preflight, invoice `amount_paid` consistency against imported invoice CSV totals and statuses, combined imported invoice paid amount/payment allocation totals, payment allocation totals against imported invoice CSV and e-invoice XML totals, payment allocation currency consistency against imported invoice CSV and e-invoice XML currencies, payment currency code syntax, provider payment currency aliases for Merit/SmartAccounts/Directo exports, payment allocation direction consistency against imported invoice CSV and effective e-invoice XML invoice types, payment allocation date consistency against imported invoice CSV and e-invoice XML issue dates, payment allocation invoice-status consistency for imported invoice CSV draft/voided targets, ambiguous invoice-number reference checks, fixed-asset source-invoice purchase-type, supplier identity field, purchase-date, and amount-total consistency, stock-adjustment product stockability against same-bundle product type and tracking flags, expense currency code syntax, expense/product/fixed-asset/bank-account GL and recurring-invoice account-type consistency against same-bundle chart-of-account rows, provider opening-balance account and amount aliases for Merit, SmartAccounts, and Directo exports, provider historical-journal entry/date/line/account/amount/currency aliases for Merit, SmartAccounts, and Directo exports in import execution",
-		"payment bank-account and provider journal-line/cost-allocation cross-reference tests, provider opening-balance amount alias tests, provider historical-journal import alias tests, Merit/SmartAccounts payment, bank-data, expense, cost-allocation, inventory, fixed-asset, and KMD-history alias tests, Directo commercial/bank/journal/payroll/inventory/tax alias tests",
-		"Further provider-specific mapping depth, cross-file validation outside payroll/TSD history, and dashboard-side mutating cutover controls remain open.",
+		"provider-aware execution-time CSV header canonicalization for Merit/SmartAccounts/Directo imports including payroll, leave-balance, and TSD history payloads",
+		"legal hold placement/release audit metadata with disposal, replacement, hard-delete, and purge guards",
+		"loopback-only out-of-process HTTP backend runtime and supervised package runtime startup/proxy/shutdown for manifest-declared hooks and tenant-scoped plugin routes",
 		"| Direct bank feeds, direct SEPA initiation, e-invoice operator exchange, OCR, and automatic authority filing | `Blocked` |",
 		"Keep replacing uncovered migration validator branches with focused tests until the use-case coverage evidence is no longer mostly indirect.",
 	} {
@@ -698,17 +180,9 @@ func TestUseCaseCoverageMatrixDocumentsGoalEvidence(t *testing.T) {
 		}
 	}
 
-	read := func(path string) string {
-		t.Helper()
-		payload, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("read %s: %v", path, err)
-		}
-		return string(payload)
-	}
 	for path, doc := range map[string]string{
-		filepath.Join("..", "README.md"): read(filepath.Join("..", "README.md")),
-		"DEVELOPMENT_STATUS.md":          read("DEVELOPMENT_STATUS.md"),
+		filepath.Join("..", "README.md"): readDoc(t, filepath.Join("..", "README.md")),
+		"DEVELOPMENT_STATUS.md":          readDoc(t, "DEVELOPMENT_STATUS.md"),
 	} {
 		if !strings.Contains(doc, "USE_CASE_COVERAGE.md") {
 			t.Fatalf("%s missing use case coverage matrix link", path)
@@ -717,11 +191,7 @@ func TestUseCaseCoverageMatrixDocumentsGoalEvidence(t *testing.T) {
 }
 
 func TestWorkflowDemoE2EGatesMatchDocumentation(t *testing.T) {
-	workflowPayload, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
-	if err != nil {
-		t.Fatalf("read workflow: %v", err)
-	}
-	workflow := string(workflowPayload)
+	workflow := readDoc(t, filepath.Join("..", ".github", "workflows", "ci.yml"))
 
 	localE2E := workflowJobBlock(t, workflow, "e2e")
 	for _, snippet := range []string{
@@ -748,11 +218,7 @@ func TestWorkflowDemoE2EGatesMatchDocumentation(t *testing.T) {
 }
 
 func TestWorkflowIntegrationShardsMatchMakefile(t *testing.T) {
-	workflowPayload, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
-	if err != nil {
-		t.Fatalf("read workflow: %v", err)
-	}
-	workflow := string(workflowPayload)
+	workflow := readDoc(t, filepath.Join("..", ".github", "workflows", "ci.yml"))
 	integrationJob := workflowJobBlock(t, workflow, "integration-test")
 	for _, snippet := range []string{
 		"shard: [1, 2, 3, 4]",
@@ -766,11 +232,7 @@ func TestWorkflowIntegrationShardsMatchMakefile(t *testing.T) {
 		}
 	}
 
-	makefilePayload, err := os.ReadFile(filepath.Join("..", "Makefile"))
-	if err != nil {
-		t.Fatalf("read Makefile: %v", err)
-	}
-	makefile := string(makefilePayload)
+	makefile := readDoc(t, filepath.Join("..", "Makefile"))
 	for _, snippet := range []string{
 		"INTEGRATION_PACKAGE_SHARD",
 		"scripts/select-integration-packages.sh",
@@ -781,11 +243,7 @@ func TestWorkflowIntegrationShardsMatchMakefile(t *testing.T) {
 		}
 	}
 
-	selectorPayload, err := os.ReadFile(filepath.Join("..", "scripts", "select-integration-packages.sh"))
-	if err != nil {
-		t.Fatalf("read integration shard selector: %v", err)
-	}
-	selector := string(selectorPayload)
+	selector := readDoc(t, filepath.Join("..", "scripts", "select-integration-packages.sh"))
 	for _, snippet := range []string{
 		"INTEGRATION_SHARD and INTEGRATION_SHARDS must be set together",
 		"INTEGRATION_PACKAGE_WEIGHTS",
@@ -796,19 +254,12 @@ func TestWorkflowIntegrationShardsMatchMakefile(t *testing.T) {
 		}
 	}
 
-	weightsPayload, err := os.ReadFile(filepath.Join("..", "scripts", "integration-package-weights.tsv"))
-	if err != nil {
-		t.Fatalf("read integration package weights: %v", err)
-	}
-	if !strings.Contains(string(weightsPayload), "./internal/accounting") {
+	weights := readDoc(t, filepath.Join("..", "scripts", "integration-package-weights.tsv"))
+	if !strings.Contains(weights, "./internal/accounting") {
 		t.Fatal("integration package weights missing expected package entries")
 	}
 
-	architecturePayload, err := os.ReadFile("ARCHITECTURE.md")
-	if err != nil {
-		t.Fatalf("read architecture docs: %v", err)
-	}
-	architecture := string(architecturePayload)
+	architecture := readDoc(t, "ARCHITECTURE.md")
 	for _, snippet := range []string{
 		"Package selection is weight-aware",
 		"`scripts/select-integration-packages.sh`",
