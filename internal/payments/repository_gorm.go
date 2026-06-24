@@ -16,13 +16,26 @@ type GORMRepository struct {
 	db *gorm.DB
 }
 
+var errRepositoryDatabaseNotConfigured = errors.New("payments repository database is not configured")
+
 // NewGORMRepository creates a new GORM payments repository
 func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) gormDB(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, errRepositoryDatabaseNotConfigured
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.gormDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
 }
 
 // Create inserts a new payment
@@ -208,6 +221,11 @@ func (r *GORMRepository) GetNextPaymentNumber(ctx context.Context, schemaName, t
 
 // GetUnallocatedPayments returns payments with unallocated amounts
 func (r *GORMRepository) GetUnallocatedPayments(ctx context.Context, schemaName, tenantID string, paymentType PaymentType) ([]Payment, error) {
+	db, err := r.gormDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	paymentsTable, err := database.QualifiedTable(schemaName, "payments")
 	if err != nil {
 		return nil, err
@@ -218,12 +236,12 @@ func (r *GORMRepository) GetUnallocatedPayments(ctx context.Context, schemaName,
 	}
 
 	var paymentModels []models.Payment
-	allocatedAmount := r.db.WithContext(ctx).
+	allocatedAmount := db.
 		Table(allocationsTable + " AS pa").
 		Select("SUM(pa.amount)").
 		Where("pa.payment_id = p.id")
 
-	err = r.db.WithContext(ctx).
+	err = db.
 		Table(paymentsTable+" AS p").
 		Select("p.*").
 		Where("p.tenant_id = ? AND p.payment_type = ?", tenantID, paymentType).
