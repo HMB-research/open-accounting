@@ -32,10 +32,21 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("webhook repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 // ListEndpoints returns tenant webhook endpoints.
 func (r *GORMRepository) ListEndpoints(ctx context.Context, tenantID string, activeOnly bool) ([]Endpoint, error) {
-	query := r.db.WithContext(ctx).
-		Where("tenant_id = ?", tenantID)
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	query := db.Where("tenant_id = ?", tenantID)
 	if activeOnly {
 		query = query.Where("is_active = ?", true)
 	}
@@ -54,8 +65,13 @@ func (r *GORMRepository) ListEndpoints(ctx context.Context, tenantID string, act
 
 // GetEndpoint returns one tenant webhook endpoint.
 func (r *GORMRepository) GetEndpoint(ctx context.Context, tenantID, endpointID string) (*Endpoint, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var endpointModel models.WebhookEndpoint
-	err := r.db.WithContext(ctx).
+	err = db.
 		Where("tenant_id = ? AND id = ?", tenantID, endpointID).
 		First(&endpointModel).Error
 	if err == gorm.ErrRecordNotFound {
@@ -69,7 +85,12 @@ func (r *GORMRepository) GetEndpoint(ctx context.Context, tenantID, endpointID s
 
 // CreateEndpoint stores a tenant webhook endpoint.
 func (r *GORMRepository) CreateEndpoint(ctx context.Context, endpoint *Endpoint) error {
-	if err := r.db.WithContext(ctx).Create(endpointToModel(endpoint)).Error; err != nil {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Create(endpointToModel(endpoint)).Error; err != nil {
 		return fmt.Errorf("create webhook endpoint: %w", err)
 	}
 	return nil
@@ -77,7 +98,12 @@ func (r *GORMRepository) CreateEndpoint(ctx context.Context, endpoint *Endpoint)
 
 // UpdateEndpoint updates a tenant webhook endpoint.
 func (r *GORMRepository) UpdateEndpoint(ctx context.Context, endpoint *Endpoint) error {
-	if err := r.db.WithContext(ctx).Model(&models.WebhookEndpoint{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Model(&models.WebhookEndpoint{}).
 		Where("tenant_id = ? AND id = ?", endpoint.TenantID, endpoint.ID).
 		Updates(map[string]interface{}{
 			"name":       endpoint.Name,
@@ -94,7 +120,12 @@ func (r *GORMRepository) UpdateEndpoint(ctx context.Context, endpoint *Endpoint)
 
 // DeleteEndpoint deletes a tenant webhook endpoint.
 func (r *GORMRepository) DeleteEndpoint(ctx context.Context, tenantID, endpointID string) (int64, error) {
-	result := r.db.WithContext(ctx).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	result := db.
 		Where("tenant_id = ? AND id = ?", tenantID, endpointID).
 		Delete(&models.WebhookEndpoint{})
 	if result.Error != nil {
@@ -105,7 +136,12 @@ func (r *GORMRepository) DeleteEndpoint(ctx context.Context, tenantID, endpointI
 
 // CreateDelivery records a webhook delivery attempt.
 func (r *GORMRepository) CreateDelivery(ctx context.Context, delivery *Delivery) error {
-	if err := r.db.WithContext(ctx).Create(deliveryToModel(delivery)).Error; err != nil {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Create(deliveryToModel(delivery)).Error; err != nil {
 		return fmt.Errorf("create webhook delivery: %w", err)
 	}
 	return nil
@@ -113,8 +149,13 @@ func (r *GORMRepository) CreateDelivery(ctx context.Context, delivery *Delivery)
 
 // ListDeliveries returns recent delivery attempts for one endpoint.
 func (r *GORMRepository) ListDeliveries(ctx context.Context, tenantID, endpointID string, limit int) ([]Delivery, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var deliveryModels []models.WebhookDelivery
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Where("tenant_id = ? AND endpoint_id = ?", tenantID, endpointID).
 		Order("delivered_at DESC, created_at DESC").
 		Limit(limit).
@@ -131,7 +172,12 @@ func (r *GORMRepository) ListDeliveries(ctx context.Context, tenantID, endpointI
 
 // UpdateEndpointLastDelivery stores the most recent attempted delivery time.
 func (r *GORMRepository) UpdateEndpointLastDelivery(ctx context.Context, tenantID, endpointID string, deliveredAt time.Time) error {
-	if err := r.db.WithContext(ctx).Model(&models.WebhookEndpoint{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Model(&models.WebhookEndpoint{}).
 		Where("tenant_id = ? AND id = ?", tenantID, endpointID).
 		Updates(map[string]interface{}{
 			"last_delivery_at": deliveredAt,
