@@ -155,3 +155,23 @@ func TestGormDBWrapperMethodsWithDryRunDB(t *testing.T) {
 		t.Fatal("Close() error = nil, want error for non-sql dry-run connection")
 	}
 }
+
+func TestGormDBCloseClosesUnderlyingSQLHandle(t *testing.T) {
+	sqlDB, err := sql.Open("pgx", "postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
+	if err != nil {
+		t.Fatalf("open sql handle: %v", err)
+	}
+
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
+		DisableAutomaticPing:   true,
+		Logger:                 logger.Default.LogMode(logger.Silent),
+		SkipDefaultTransaction: true,
+	})
+	if err != nil {
+		t.Fatalf("open gorm database: %v", err)
+	}
+
+	if err := (&GormDB{DB: db}).Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+}

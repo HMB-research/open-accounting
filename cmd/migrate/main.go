@@ -28,12 +28,20 @@ type migrationPool interface {
 	Close()
 }
 
-var newMigrationPool = func(ctx context.Context, databaseURL string) (migrationPool, error) {
+var newMigrationPool = openMigrationPool
+
+func openMigrationPool(ctx context.Context, databaseURL string) (migrationPool, error) {
 	return pgxpool.New(ctx, databaseURL)
 }
 
-var fatalMigrationError = func(err error) {
-	log.Fatal().Err(err).Msg("Migration failed")
+var (
+	exitMigrationProcess = os.Exit
+	fatalMigrationError  = defaultFatalMigrationError
+)
+
+func defaultFatalMigrationError(err error) {
+	log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Migration failed")
+	exitMigrationProcess(1)
 }
 
 func main() {
