@@ -79,6 +79,16 @@ func TestBuildTSDRemediationActions(t *testing.T) {
 			},
 			wantCodes: []string{"tsd_rejected_review"},
 		},
+		{
+			name: "unsupported status",
+			declaration: &TSDDeclaration{
+				ID:          "tsd-unsupported",
+				PeriodYear:  2026,
+				PeriodMonth: 9,
+				Status:      TSDStatus("ARCHIVED"),
+			},
+			wantCodes: []string{"tsd_no_declaration_rows", "tsd_status_review"},
+		},
 	}
 
 	for _, tt := range tests {

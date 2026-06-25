@@ -3,11 +3,14 @@ package tenant
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,19 +60,21 @@ func (*tenantDryRunTx) Rollback() error {
 type tenantDryRunDBOption func(t *testing.T, db *gorm.DB)
 
 type tenantDryRunFixture struct {
-	tenants         []models.Tenant
-	tenantIndex     int
-	users           []models.User
-	userIndex       int
-	tenantUsers     []models.TenantUserModel
-	tenantUserIndex int
-	invitations     []models.UserInvitation
-	invitationIndex int
-	auditEvents     []models.TenantAuditEvent
-	userMemberships []tenantDryRunMembership
-	role            string
-	count           int64
-	countSet        bool
+	tenants          []models.Tenant
+	tenantIndex      int
+	users            []models.User
+	userIndex        int
+	tenantUsers      []models.TenantUserModel
+	tenantUserIndex  int
+	invitations      []models.UserInvitation
+	invitationIndex  int
+	auditEvents      []models.TenantAuditEvent
+	periodCloses     []periodCloseEventModel
+	periodCloseIndex int
+	userMemberships  []tenantDryRunMembership
+	role             string
+	count            int64
+	countSet         bool
 }
 
 type tenantDryRunMembership struct {
@@ -78,7 +83,16 @@ type tenantDryRunMembership struct {
 	isDefault bool
 }
 
+type tenantDryRunRowSet struct {
+	columns []string
+	values  [][]driver.Value
+}
+
 var tenantDryRunCallbackID uint64
+var tenantDryRunRowsDSNID uint64
+var tenantDryRunRowsDriverOnce sync.Once
+var tenantDryRunRowsMu sync.Mutex
+var tenantDryRunRowsByDSN = map[string]tenantDryRunRowSet{}
 
 func newTenantDryRunDB(t *testing.T, opts ...tenantDryRunDBOption) *gorm.DB {
 	t.Helper()
@@ -147,6 +161,25 @@ func withTenantDryRunQueryError(expectedErr error) tenantDryRunDBOption {
 	}
 }
 
+func withTenantDryRunScanRows(rowSets ...tenantDryRunRowSet) tenantDryRunDBOption {
+	return func(t *testing.T, db *gorm.DB) {
+		t.Helper()
+
+		var index int
+		err := db.Callback().Row().After("gorm:row").Register(tenantDryRunCallbackName("scan_rows"), func(tx *gorm.DB) {
+			if index >= len(rowSets) {
+				tx.AddError(fmt.Errorf("missing tenant dry-run row set %d", index))
+				return
+			}
+			rowSet := rowSets[index]
+			index++
+			tx.Statement.Dest = newTenantDryRunSQLRows(t, rowSet)
+			tx.RowsAffected = int64(len(rowSet.values))
+		})
+		require.NoError(t, err)
+	}
+}
+
 func withTenantDryRunRawError(expectedErr error) tenantDryRunDBOption {
 	return func(t *testing.T, db *gorm.DB) {
 		t.Helper()
@@ -207,6 +240,92 @@ func tenantDryRunCallbackName(suffix string) string {
 	return fmt.Sprintf("tenant_dryrun:%d:%s", id, suffix)
 }
 
+func newTenantDryRunSQLRows(t *testing.T, rowSet tenantDryRunRowSet) *sql.Rows {
+	t.Helper()
+
+	tenantDryRunRowsDriverOnce.Do(func() {
+		sql.Register("tenant_dryrun_rows", tenantDryRunRowsDriver{})
+	})
+
+	dsn := fmt.Sprintf("tenant-dry-run-rows-%d", atomic.AddUint64(&tenantDryRunRowsDSNID, 1))
+	tenantDryRunRowsMu.Lock()
+	tenantDryRunRowsByDSN[dsn] = rowSet
+	tenantDryRunRowsMu.Unlock()
+
+	db, err := sql.Open("tenant_dryrun_rows", dsn)
+	require.NoError(t, err)
+	rows, err := db.QueryContext(context.Background(), "SELECT 1")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = rows.Close()
+		_ = db.Close()
+		tenantDryRunRowsMu.Lock()
+		delete(tenantDryRunRowsByDSN, dsn)
+		tenantDryRunRowsMu.Unlock()
+	})
+
+	return rows
+}
+
+type tenantDryRunRowsDriver struct{}
+
+func (tenantDryRunRowsDriver) Open(name string) (driver.Conn, error) {
+	return tenantDryRunRowsConn{dsn: name}, nil
+}
+
+type tenantDryRunRowsConn struct {
+	dsn string
+}
+
+func (tenantDryRunRowsConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("tenant dry-run rows do not prepare statements")
+}
+
+func (tenantDryRunRowsConn) Close() error {
+	return nil
+}
+
+func (tenantDryRunRowsConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("tenant dry-run rows do not begin transactions")
+}
+
+func (c tenantDryRunRowsConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	tenantDryRunRowsMu.Lock()
+	rowSet, ok := tenantDryRunRowsByDSN[c.dsn]
+	tenantDryRunRowsMu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("tenant dry-run row set %q not found", c.dsn)
+	}
+	return &tenantDryRunSQLRows{
+		columns: append([]string(nil), rowSet.columns...),
+		values:  append([][]driver.Value(nil), rowSet.values...),
+	}, nil
+}
+
+type tenantDryRunSQLRows struct {
+	columns []string
+	values  [][]driver.Value
+	index   int
+}
+
+func (r *tenantDryRunSQLRows) Columns() []string {
+	return append([]string(nil), r.columns...)
+}
+
+func (*tenantDryRunSQLRows) Close() error {
+	return nil
+}
+
+func (r *tenantDryRunSQLRows) Next(dest []driver.Value) error {
+	if r.index >= len(r.values) {
+		return io.EOF
+	}
+	copy(dest, r.values[r.index])
+	r.index++
+	return nil
+}
+
 func populateTenantDryRunDest(tx *gorm.DB, dest any, fixture *tenantDryRunFixture) bool {
 	switch typed := dest.(type) {
 	case *models.Tenant:
@@ -218,6 +337,16 @@ func populateTenantDryRunDest(tx *gorm.DB, dest any, fixture *tenantDryRunFixtur
 	case *[]models.TenantAuditEvent:
 		*typed = append((*typed)[:0], fixture.auditEvents...)
 		tx.RowsAffected = int64(len(fixture.auditEvents))
+		return true
+	case *periodCloseEventModel:
+		if len(fixture.periodCloses) == 0 {
+			return false
+		}
+		*typed = fixture.periodCloses[fixture.nextPeriodCloseIndex()]
+		return true
+	case *[]periodCloseEventModel:
+		*typed = append((*typed)[:0], fixture.periodCloses...)
+		tx.RowsAffected = int64(len(fixture.periodCloses))
 		return true
 	case *models.TenantUserModel:
 		if len(fixture.tenantUsers) == 0 {
@@ -331,6 +460,15 @@ func (f *tenantDryRunFixture) nextInvitationIndex() int {
 	return index
 }
 
+func (f *tenantDryRunFixture) nextPeriodCloseIndex() int {
+	index := f.periodCloseIndex
+	if index >= len(f.periodCloses) {
+		index = len(f.periodCloses) - 1
+	}
+	f.periodCloseIndex++
+	return index
+}
+
 func tenantDryRunSetStringField(target reflect.Value, name string, value string) {
 	field := target.FieldByName(name)
 	if field.IsValid() && field.CanSet() && field.Kind() == reflect.String {
@@ -404,15 +542,47 @@ func TestGORMRepositoryDryRunTenantOperations(t *testing.T) {
 		Metadata:    json.RawMessage(`{"role":"accountant"}`),
 		CreatedAt:   now,
 	}
+	lockBefore := time.Date(2026, time.May, 31, 0, 0, 0, 0, time.UTC)
+	lockAfter := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+	periodCloseModel := periodCloseEventModel{
+		ID:              "period-close-1",
+		TenantID:        tenantModel.ID,
+		Action:          PeriodCloseActionClose,
+		CloseKind:       PeriodCloseKindMonthEnd,
+		PeriodEndDate:   lockBefore,
+		LockDateBefore:  &lockBefore,
+		LockDateAfter:   &lockAfter,
+		Note:            "Month-end close",
+		ReviewerSignOff: true,
+		PerformedBy:     userModel.ID,
+		CreatedAt:       now,
+	}
 	repo := NewGORMRepository(newTenantDryRunDB(t,
 		withTenantDryRunFixtures(tenantDryRunFixture{
-			tenants:     []models.Tenant{tenantModel},
-			users:       []models.User{userModel},
-			tenantUsers: []models.TenantUserModel{tenantUserModel},
-			invitations: []models.UserInvitation{invitationModel},
-			auditEvents: []models.TenantAuditEvent{auditEventModel},
-			count:       1,
-			countSet:    true,
+			tenants:      []models.Tenant{tenantModel},
+			users:        []models.User{userModel},
+			tenantUsers:  []models.TenantUserModel{tenantUserModel},
+			invitations:  []models.UserInvitation{invitationModel},
+			auditEvents:  []models.TenantAuditEvent{auditEventModel},
+			periodCloses: []periodCloseEventModel{periodCloseModel},
+			count:        1,
+			countSet:     true,
+		}),
+		withTenantDryRunScanRows(tenantDryRunRowSet{
+			columns: []string{"id", "name", "slug", "schema_name", "settings", "is_active", "onboarding_completed", "created_at", "updated_at", "role", "is_default"},
+			values: [][]driver.Value{{
+				tenantModel.ID,
+				tenantModel.Name,
+				tenantModel.Slug,
+				tenantModel.SchemaName,
+				[]byte(settingsJSON),
+				true,
+				true,
+				tenantModel.CreatedAt,
+				tenantModel.UpdatedAt,
+				RoleOwner,
+				true,
+			}},
 		}),
 		withTenantDryRunUpdateRows(1),
 		withTenantDryRunDeleteRows(1),
@@ -439,6 +609,33 @@ func TestGORMRepositoryDryRunTenantOperations(t *testing.T) {
 	assert.Equal(t, tenantModel.Slug, gotTenant.Slug)
 
 	require.NoError(t, repo.UpdateTenant(ctx, tenantModel.ID, "Updated OU", settingsJSON, now))
+	closeBeforeValue := lockBefore.Format(periodCloseDateLayout)
+	closeAfterValue := lockAfter.Format(periodCloseDateLayout)
+	require.NoError(t, repo.UpdateTenantWithPeriodCloseEvent(ctx, tenantModel.ID, "Updated OU", settingsJSON, now, &PeriodCloseEvent{
+		ID:              periodCloseModel.ID,
+		TenantID:        tenantModel.ID,
+		Action:          PeriodCloseActionClose,
+		CloseKind:       PeriodCloseKindMonthEnd,
+		PeriodEndDate:   lockBefore.Format(periodCloseDateLayout),
+		LockDateBefore:  &closeBeforeValue,
+		LockDateAfter:   &closeAfterValue,
+		Note:            periodCloseModel.Note,
+		ReviewerSignOff: true,
+		PerformedBy:     userModel.ID,
+		CreatedAt:       now,
+	}))
+
+	periodCloseEvents, err := repo.ListPeriodCloseEvents(ctx, tenantModel.ID, 0)
+	require.NoError(t, err)
+	require.Len(t, periodCloseEvents, 1)
+	assert.Equal(t, PeriodCloseActionClose, periodCloseEvents[0].Action)
+	assert.Equal(t, closeBeforeValue, *periodCloseEvents[0].LockDateBefore)
+
+	latestCloseEvent, err := repo.GetLatestCloseEventForPeriod(ctx, tenantModel.ID, lockBefore.Format(periodCloseDateLayout))
+	require.NoError(t, err)
+	require.NotNil(t, latestCloseEvent)
+	assert.Equal(t, periodCloseModel.ID, latestCloseEvent.ID)
+
 	require.NoError(t, repo.CompleteOnboarding(ctx, tenantModel.ID))
 
 	auditEvent := &TenantAuditEvent{
@@ -469,6 +666,13 @@ func TestGORMRepositoryDryRunTenantOperations(t *testing.T) {
 	tenantUser, err := repo.GetTenantUser(ctx, tenantModel.ID, userModel.ID)
 	require.NoError(t, err)
 	assert.Equal(t, RoleOwner, tenantUser.Role)
+
+	memberships, err := repo.ListUserTenants(ctx, userModel.ID)
+	require.NoError(t, err)
+	require.Len(t, memberships, 1)
+	assert.Equal(t, tenantModel.ID, memberships[0].Tenant.ID)
+	assert.Equal(t, RoleOwner, memberships[0].Role)
+	assert.True(t, memberships[0].IsDefault)
 
 	tenantUsers, err := repo.ListTenantUsers(ctx, tenantModel.ID)
 	require.NoError(t, err)
@@ -560,6 +764,17 @@ func TestGORMRepositoryDryRunTenantErrors(t *testing.T) {
 		ExpiresAt: now.Add(24 * time.Hour),
 		CreatedAt: now,
 	}
+	periodCloseEvent := &PeriodCloseEvent{
+		ID:              "period-close-1",
+		TenantID:        tenantValue.ID,
+		Action:          PeriodCloseActionClose,
+		CloseKind:       PeriodCloseKindMonthEnd,
+		PeriodEndDate:   "2026-05-31",
+		Note:            "Month-end close",
+		ReviewerSignOff: true,
+		PerformedBy:     "owner-1",
+		CreatedAt:       now,
+	}
 
 	t.Run("CreateTenant wraps insert errors", func(t *testing.T) {
 		repo := NewGORMRepository(newTenantDryRunDB(t, withTenantDryRunCreateError(dbErr)))
@@ -604,6 +819,78 @@ func TestGORMRepositoryDryRunTenantErrors(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "delete tenant users")
+	})
+
+	t.Run("UpdateTenantWithPeriodCloseEvent rejects invalid event date", func(t *testing.T) {
+		repo := NewGORMRepository(newTenantDryRunDB(t))
+		invalidEvent := *periodCloseEvent
+		invalidEvent.PeriodEndDate = "2026-99-99"
+
+		err := repo.UpdateTenantWithPeriodCloseEvent(ctx, tenantValue.ID, tenantValue.Name, settingsJSON, now, &invalidEvent)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "parse period end date")
+	})
+
+	t.Run("UpdateTenantWithPeriodCloseEvent wraps update errors", func(t *testing.T) {
+		repo := NewGORMRepository(newTenantDryRunDB(t, withTenantDryRunUpdateError(dbErr)))
+
+		err := repo.UpdateTenantWithPeriodCloseEvent(ctx, tenantValue.ID, tenantValue.Name, settingsJSON, now, periodCloseEvent)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update tenant")
+		assert.ErrorIs(t, err, dbErr)
+	})
+
+	t.Run("UpdateTenantWithPeriodCloseEvent wraps insert errors", func(t *testing.T) {
+		repo := NewGORMRepository(newTenantDryRunDB(t, withTenantDryRunCreateError(dbErr)))
+
+		err := repo.UpdateTenantWithPeriodCloseEvent(ctx, tenantValue.ID, tenantValue.Name, settingsJSON, now, periodCloseEvent)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "insert period close event")
+		assert.ErrorIs(t, err, dbErr)
+	})
+
+	t.Run("ListPeriodCloseEvents wraps query errors", func(t *testing.T) {
+		repo := NewGORMRepository(newTenantDryRunDB(t, withTenantDryRunQueryError(dbErr)))
+
+		events, err := repo.ListPeriodCloseEvents(ctx, tenantValue.ID, 0)
+
+		require.Error(t, err)
+		assert.Nil(t, events)
+		assert.Contains(t, err.Error(), "list period close events")
+		assert.ErrorIs(t, err, dbErr)
+	})
+
+	t.Run("GetLatestCloseEventForPeriod rejects invalid date", func(t *testing.T) {
+		repo := NewGORMRepository(newTenantDryRunDB(t))
+
+		event, err := repo.GetLatestCloseEventForPeriod(ctx, tenantValue.ID, "2026-99-99")
+
+		assert.Nil(t, event)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "parse period end date")
+	})
+
+	t.Run("GetLatestCloseEventForPeriod maps not found", func(t *testing.T) {
+		repo := NewGORMRepository(newTenantDryRunDB(t, withTenantDryRunQueryError(gorm.ErrRecordNotFound)))
+
+		event, err := repo.GetLatestCloseEventForPeriod(ctx, tenantValue.ID, periodCloseEvent.PeriodEndDate)
+
+		require.NoError(t, err)
+		assert.Nil(t, event)
+	})
+
+	t.Run("GetLatestCloseEventForPeriod wraps query errors", func(t *testing.T) {
+		repo := NewGORMRepository(newTenantDryRunDB(t, withTenantDryRunQueryError(dbErr)))
+
+		event, err := repo.GetLatestCloseEventForPeriod(ctx, tenantValue.ID, periodCloseEvent.PeriodEndDate)
+
+		assert.Nil(t, event)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get latest period close event")
+		assert.ErrorIs(t, err, dbErr)
 	})
 
 	t.Run("ListTenantAuditEvents wraps query errors", func(t *testing.T) {

@@ -3,8 +3,13 @@ package banking
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -68,6 +73,16 @@ type bankingDryRunFixtures struct {
 	counts          []int64
 	paymentNumbers  []string
 }
+
+type bankingDryRunRowSet struct {
+	columns []string
+	values  [][]driver.Value
+}
+
+var bankingDryRunRowsDSNID uint64
+var bankingDryRunRowsDriverOnce sync.Once
+var bankingDryRunRowsMu sync.Mutex
+var bankingDryRunRowsByDSN = map[string]bankingDryRunRowSet{}
 
 func newBankingDryRunDB(t *testing.T, opts ...bankingDryRunDBOption) *gorm.DB {
 	t.Helper()
@@ -175,6 +190,25 @@ func withBankingDryRunRowError(expectedErr error) bankingDryRunDBOption {
 	}
 }
 
+func withBankingDryRunScanRows(rowSets ...bankingDryRunRowSet) bankingDryRunDBOption {
+	return func(t *testing.T, db *gorm.DB) {
+		t.Helper()
+
+		var index int
+		err := db.Callback().Row().After("gorm:row").Register(bankingDryRunCallbackName(t, "scan_rows"), func(tx *gorm.DB) {
+			if index >= len(rowSets) {
+				tx.AddError(fmt.Errorf("missing banking dry-run row set %d", index))
+				return
+			}
+			rowSet := rowSets[index]
+			index++
+			tx.Statement.Dest = newBankingDryRunSQLRows(t, rowSet)
+			tx.RowsAffected = int64(len(rowSet.values))
+		})
+		require.NoError(t, err)
+	}
+}
+
 func withBankingDryRunUpdateRows(rows ...int64) bankingDryRunDBOption {
 	return func(t *testing.T, db *gorm.DB) {
 		t.Helper()
@@ -245,6 +279,92 @@ func withBankingDryRunCreateCapture(capture func(*gorm.DB)) bankingDryRunDBOptio
 func bankingDryRunCallbackName(t *testing.T, suffix string) string {
 	replacer := strings.NewReplacer("/", "_", " ", "_", ":", "_")
 	return "banking_test:" + replacer.Replace(t.Name()) + ":" + suffix
+}
+
+func newBankingDryRunSQLRows(t *testing.T, rowSet bankingDryRunRowSet) *sql.Rows {
+	t.Helper()
+
+	bankingDryRunRowsDriverOnce.Do(func() {
+		sql.Register("banking_dryrun_rows", bankingDryRunRowsDriver{})
+	})
+
+	dsn := fmt.Sprintf("banking-dry-run-rows-%d", atomic.AddUint64(&bankingDryRunRowsDSNID, 1))
+	bankingDryRunRowsMu.Lock()
+	bankingDryRunRowsByDSN[dsn] = rowSet
+	bankingDryRunRowsMu.Unlock()
+
+	db, err := sql.Open("banking_dryrun_rows", dsn)
+	require.NoError(t, err)
+	rows, err := db.QueryContext(context.Background(), "SELECT 1")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = rows.Close()
+		_ = db.Close()
+		bankingDryRunRowsMu.Lock()
+		delete(bankingDryRunRowsByDSN, dsn)
+		bankingDryRunRowsMu.Unlock()
+	})
+
+	return rows
+}
+
+type bankingDryRunRowsDriver struct{}
+
+func (bankingDryRunRowsDriver) Open(name string) (driver.Conn, error) {
+	return bankingDryRunRowsConn{dsn: name}, nil
+}
+
+type bankingDryRunRowsConn struct {
+	dsn string
+}
+
+func (bankingDryRunRowsConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("banking dry-run rows do not prepare statements")
+}
+
+func (bankingDryRunRowsConn) Close() error {
+	return nil
+}
+
+func (bankingDryRunRowsConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("banking dry-run rows do not begin transactions")
+}
+
+func (c bankingDryRunRowsConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	bankingDryRunRowsMu.Lock()
+	rowSet, ok := bankingDryRunRowsByDSN[c.dsn]
+	bankingDryRunRowsMu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("banking dry-run row set %q not found", c.dsn)
+	}
+	return &bankingDryRunSQLRows{
+		columns: append([]string(nil), rowSet.columns...),
+		values:  append([][]driver.Value(nil), rowSet.values...),
+	}, nil
+}
+
+type bankingDryRunSQLRows struct {
+	columns []string
+	values  [][]driver.Value
+	index   int
+}
+
+func (r *bankingDryRunSQLRows) Columns() []string {
+	return append([]string(nil), r.columns...)
+}
+
+func (*bankingDryRunSQLRows) Close() error {
+	return nil
+}
+
+func (r *bankingDryRunSQLRows) Next(dest []driver.Value) error {
+	if r.index >= len(r.values) {
+		return io.EOF
+	}
+	copy(dest, r.values[r.index])
+	r.index++
+	return nil
 }
 
 func TestNewServiceWithGORMUsesRepository(t *testing.T) {
@@ -527,6 +647,35 @@ func TestGORMRepositoryDryRunBasicRepositoryOperations(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, imports, 1)
 	assert.Equal(t, importID, imports[0].ID)
+}
+
+func TestGORMRepositoryDryRunCalculateAccountBalance(t *testing.T) {
+	ctx := context.Background()
+	schemaName := "tenant_banking"
+	accountID := "22222222-2222-2222-2222-222222222222"
+
+	t.Run("scans decimal sum", func(t *testing.T) {
+		repo := NewGORMRepository(newBankingDryRunDB(t, withBankingDryRunScanRows(bankingDryRunRowSet{
+			columns: []string{"balance"},
+			values:  [][]driver.Value{{"987.65"}},
+		})))
+
+		balance, err := repo.CalculateAccountBalance(ctx, schemaName, accountID)
+
+		require.NoError(t, err)
+		assert.True(t, balance.Equal(decimal.RequireFromString("987.65")))
+	})
+
+	t.Run("wraps scan errors", func(t *testing.T) {
+		expectedErr := errors.New("balance scan failed")
+		repo := NewGORMRepository(newBankingDryRunDB(t, withBankingDryRunRowError(expectedErr)))
+
+		balance, err := repo.CalculateAccountBalance(ctx, schemaName, accountID)
+
+		assert.True(t, balance.Equal(decimal.Zero))
+		require.ErrorContains(t, err, "calculate balance")
+		assert.ErrorIs(t, err, expectedErr)
+	})
 }
 
 func TestGORMRepositoryDryRunUpdateTransactionReview(t *testing.T) {
