@@ -442,6 +442,42 @@ func TestMainReportsMigrationErrorUnit(t *testing.T) {
 	main()
 }
 
+func TestDefaultFatalMigrationErrorLogsAndExitsUnit(t *testing.T) {
+	oldExitMigrationProcess := exitMigrationProcess
+	defer func() {
+		exitMigrationProcess = oldExitMigrationProcess
+	}()
+
+	var exitCode int
+	exitMigrationProcess = func(code int) {
+		exitCode = code
+		panic("exit called")
+	}
+
+	defer func() {
+		recovered := recover()
+		if recovered != "exit called" {
+			t.Fatalf("recover() = %v, want exit called", recovered)
+		}
+		if exitCode != 1 {
+			t.Fatalf("exit code = %d, want 1", exitCode)
+		}
+	}()
+
+	defaultFatalMigrationError(errors.New("boom"))
+}
+
+func TestOpenMigrationPoolReturnsPoolUnit(t *testing.T) {
+	pool, err := openMigrationPool(context.Background(), "postgres://unit")
+	if err != nil {
+		t.Fatalf("openMigrationPool() error = %v", err)
+	}
+	if pool == nil {
+		t.Fatal("openMigrationPool() returned nil pool")
+	}
+	pool.Close()
+}
+
 func TestRunMigrationCLIErrorBranchesUnit(t *testing.T) {
 	oldNewMigrationPool := newMigrationPool
 	defer func() {
