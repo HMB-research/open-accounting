@@ -823,6 +823,77 @@ func TestService_Cancel(t *testing.T) {
 	})
 }
 
+func TestService_StatusTransitionRepositoryErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     OrderStatus
+		call       func(*Service) error
+		wantPrefix string
+	}{
+		{
+			name:   "confirm",
+			status: OrderStatusPending,
+			call: func(svc *Service) error {
+				return svc.Confirm(context.Background(), "tenant-1", "test_schema", "order-1")
+			},
+			wantPrefix: "confirm order",
+		},
+		{
+			name:   "process",
+			status: OrderStatusConfirmed,
+			call: func(svc *Service) error {
+				return svc.Process(context.Background(), "tenant-1", "test_schema", "order-1")
+			},
+			wantPrefix: "process order",
+		},
+		{
+			name:       "ship",
+			status:     OrderStatusProcessing,
+			call:       func(svc *Service) error { return svc.Ship(context.Background(), "tenant-1", "test_schema", "order-1") },
+			wantPrefix: "ship order",
+		},
+		{
+			name:   "deliver",
+			status: OrderStatusShipped,
+			call: func(svc *Service) error {
+				return svc.Deliver(context.Background(), "tenant-1", "test_schema", "order-1")
+			},
+			wantPrefix: "deliver order",
+		},
+		{
+			name:   "cancel",
+			status: OrderStatusProcessing,
+			call: func(svc *Service) error {
+				return svc.Cancel(context.Background(), "tenant-1", "test_schema", "order-1")
+			},
+			wantPrefix: "cancel order",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name+" get error", func(t *testing.T) {
+			repo := NewMockRepository()
+			repo.GetErr = errors.New("lookup failed")
+			svc := NewServiceWithRepository(repo)
+
+			err := tt.call(svc)
+
+			require.ErrorContains(t, err, "get order: lookup failed")
+		})
+
+		t.Run(tt.name+" update error", func(t *testing.T) {
+			repo := NewMockRepository()
+			repo.Orders["order-1"] = &Order{ID: "order-1", Status: tt.status}
+			repo.UpdateStatErr = errors.New("status update failed")
+			svc := NewServiceWithRepository(repo)
+
+			err := tt.call(svc)
+
+			require.ErrorContains(t, err, tt.wantPrefix+": status update failed")
+		})
+	}
+}
+
 func TestService_Delete(t *testing.T) {
 	t.Run("deletes order", func(t *testing.T) {
 		repo := NewMockRepository()

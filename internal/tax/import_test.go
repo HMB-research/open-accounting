@@ -2,6 +2,7 @@ package tax
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -142,6 +143,77 @@ func TestImportKMDHistoryCSV_SkipsInvalidAndExistingRows(t *testing.T) {
 	assert.Contains(t, result.Errors[1].Message, "row_code is required")
 	assert.Contains(t, result.Errors[2].Message, "already exists")
 	assert.Empty(t, repo.savedDeclarations)
+}
+
+func TestImportKMDHistoryCSV_ErrorBranches(t *testing.T) {
+	t.Run("requires content and data rows", func(t *testing.T) {
+		svc := NewServiceWithRepository(&MockRepository{})
+
+		_, err := svc.ImportKMDHistoryCSV(context.Background(), "tenant_schema", "tenant-1", &ImportKMDHistoryRequest{CSVContent: " \n\t "})
+		require.EqualError(t, err, "csv_content is required")
+
+		_, err = svc.ImportKMDHistoryCSV(context.Background(), "tenant_schema", "tenant-1", &ImportKMDHistoryRequest{
+			CSVContent: "year,month,row_code,tax_base,tax_amount\n",
+		})
+		require.EqualError(t, err, "no KMD rows found in CSV")
+	})
+
+	t.Run("skips inconsistent rows while importing the valid group records", func(t *testing.T) {
+		repo := &MockRepository{}
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportKMDHistoryCSV(context.Background(), "tenant_schema", "tenant-1", &ImportKMDHistoryRequest{
+			CSVContent: `year,month,status,row_code,tax_base,tax_amount
+2025,12,ACCEPTED,1,100.00,22.00
+2025,12,DRAFT,4,50.00,11.00
+`,
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, 2, result.RowsProcessed)
+		assert.Equal(t, 1, result.DeclarationsCreated)
+		assert.Equal(t, 1, result.RowsImported)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Equal(t, 2025, result.Errors[0].Year)
+		assert.Equal(t, 12, result.Errors[0].Month)
+		assert.Equal(t, KMDRow4, result.Errors[0].RowCode)
+		assert.Contains(t, result.Errors[0].Message, "status must match other rows")
+		require.Len(t, repo.savedDeclarations, 1)
+		require.Len(t, repo.savedDeclarations[0].Rows, 1)
+	})
+
+	t.Run("returns get declaration repository errors", func(t *testing.T) {
+		svc := NewServiceWithRepository(&MockRepository{getDeclarationErr: errors.New("read failed")})
+
+		_, err := svc.ImportKMDHistoryCSV(context.Background(), "tenant_schema", "tenant-1", &ImportKMDHistoryRequest{
+			CSVContent: `year,month,row_code,tax_base,tax_amount
+2025,12,1,100.00,22.00
+`,
+		})
+
+		require.ErrorContains(t, err, "check existing KMD declaration for 2025-12: read failed")
+	})
+
+	t.Run("records save declaration errors on each group row", func(t *testing.T) {
+		repo := &MockRepository{saveDeclarationErr: errors.New("write failed")}
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportKMDHistoryCSV(context.Background(), "tenant_schema", "tenant-1", &ImportKMDHistoryRequest{
+			CSVContent: `year,month,row_code,tax_base,tax_amount
+2025,12,1,100.00,22.00
+2025,12,4,50.00,11.00
+`,
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.DeclarationsCreated)
+		assert.Zero(t, result.RowsImported)
+		assert.Equal(t, 2, result.RowsSkipped)
+		require.Len(t, result.Errors, 2)
+		assert.Contains(t, result.Errors[0].Message, "save KMD declaration: write failed")
+		assert.Empty(t, repo.savedDeclarations)
+	})
 }
 
 func TestImportKMDHistoryCSV_RejectsMissingHeaders(t *testing.T) {
@@ -338,6 +410,12 @@ func TestKMDHistoryVATReconciliationBranches(t *testing.T) {
 }
 
 func TestKMDHistoryImportHelperBranches(t *testing.T) {
+	_, err := parseKMDHistoryImportRows(`"unterminated`)
+	require.ErrorContains(t, err, "parse csv header")
+
+	_, err = parseKMDHistoryImportRows("year,month,row_code,tax_base,tax_amount\n2025,12,1,\"100.00\n")
+	require.ErrorContains(t, err, "parse csv row 2")
+
 	parsed, err := parseOptionalKMDHistoryDecimal(" 1 234,56 ", "tax_base")
 	require.NoError(t, err)
 	assert.True(t, parsed.Equal(decimal.RequireFromString("1234.56")))
@@ -349,12 +427,30 @@ func TestKMDHistoryImportHelperBranches(t *testing.T) {
 	_, err = parseOptionalKMDHistoryDecimal("not-a-number", "tax_amount")
 	require.ErrorContains(t, err, "invalid tax_amount")
 
+	pointer, err := parseOptionalKMDHistoryDecimalPointer(" 55,50 ", "total_input_vat")
+	require.NoError(t, err)
+	require.NotNil(t, pointer)
+	assert.True(t, pointer.Equal(decimal.RequireFromString("55.50")))
+
+	_, err = parseOptionalKMDHistoryDecimalPointer("bad", "total_input_vat")
+	require.ErrorContains(t, err, "invalid total_input_vat")
+
 	status, err := parseKMDHistoryStatus("filed")
 	require.NoError(t, err)
 	assert.Equal(t, KMDStatusSubmitted, status)
 
 	_, err = parseKMDHistoryStatus("unknown")
 	require.ErrorContains(t, err, "invalid status")
+
+	year, err := parseKMDHistoryImportYear(" 2025 ")
+	require.NoError(t, err)
+	assert.Equal(t, 2025, year)
+
+	_, err = parseKMDHistoryImportYear("1899")
+	require.ErrorContains(t, err, "year must be between 1900 and 2200")
+
+	_, err = parseKMDHistoryImportYear("2201")
+	require.ErrorContains(t, err, "year must be between 1900 and 2200")
 
 	assert.Equal(t, "output", kmdHistoryVATSupportClass(KMDRow21))
 	assert.Equal(t, "output", kmdHistoryVATSupportClass(KMDRow31))
@@ -367,6 +463,46 @@ func TestKMDHistoryImportHelperBranches(t *testing.T) {
 	assert.Equal(t, "001", kmdHistoryRowSortKey("1"))
 	assert.Equal(t, "021", kmdHistoryRowSortKey("21"))
 	assert.Equal(t, "A", kmdHistoryRowSortKey("A"))
+
+	record, err := buildKMDHistoryImportRecord(kmdHistoryImportRow{
+		rowNumber: 2,
+		values: map[string]string{
+			"year":         "2025",
+			"month":        "12",
+			"status":       "accepted",
+			"submitted_at": "20.01.2026",
+			"row_code":     "row_1",
+			"description":  "Custom row",
+			"tax_base":     "100",
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2025, record.year)
+	assert.Equal(t, 12, record.month)
+	assert.Equal(t, KMDStatusAccepted, record.status)
+	require.NotNil(t, record.submittedAt)
+	assert.Equal(t, KMDRow1, record.row.Code)
+	assert.Equal(t, "Custom row", record.row.Description)
+
+	_, err = buildKMDHistoryImportRecord(kmdHistoryImportRow{
+		values: map[string]string{
+			"year":         "2025",
+			"month":        "12",
+			"submitted_at": "2026/01/20",
+			"row_code":     "1",
+			"tax_base":     "100",
+		},
+	})
+	require.ErrorContains(t, err, "submitted_at must be in YYYY-MM-DD format")
+
+	_, err = buildKMDHistoryImportRecord(kmdHistoryImportRow{
+		values: map[string]string{
+			"year":     "2025",
+			"month":    "12",
+			"row_code": "1",
+		},
+	})
+	require.ErrorContains(t, err, "tax_base or tax_amount is required")
 }
 
 func kmdHistoryRecord(code string, amount int64) *kmdHistoryImportRecord {

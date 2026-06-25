@@ -62,6 +62,48 @@ func TestPaymentImportServiceEdges(t *testing.T) {
 		assert.Contains(t, result.Errors[0].Message, "insert failed")
 	})
 
+	t.Run("records generated number errors as skipped rows", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.getNextNumErr = errors.New("sequence unavailable")
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportPaymentsCSV(context.Background(), "tenant-1", "test_schema", &ImportPaymentsRequest{
+			CSVContent: "payment_type,payment_date,amount,reference\nRECEIVED,2026-03-01,10,Receipt\n",
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.PaymentsCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "generate payment number: sequence unavailable")
+	})
+
+	t.Run("records duplicate existing payment numbers as skipped rows", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.payments["existing"] = &Payment{
+			ID:            "existing",
+			TenantID:      "tenant-1",
+			PaymentNumber: "PMT-001",
+			PaymentType:   PaymentTypeReceived,
+			PaymentDate:   time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+			Amount:        decimal.NewFromInt(10),
+			Currency:      "EUR",
+			ExchangeRate:  decimal.NewFromInt(1),
+			BaseAmount:    decimal.NewFromInt(10),
+		}
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportPaymentsCSV(context.Background(), "tenant-1", "test_schema", &ImportPaymentsRequest{
+			CSVContent: "payment_number,payment_type,payment_date,amount,reference\nPMT-001,RECEIVED,2026-03-01,10,Receipt\n",
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.PaymentsCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, `duplicate payment_number "PMT-001"`)
+	})
+
 	t.Run("records allocation create errors as skipped rows", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.createAllocErr = errors.New("allocation insert failed")

@@ -99,6 +99,25 @@ func TestReminderService_GetReminderHistory(t *testing.T) {
 	})
 }
 
+func TestReminderService_SendBulkRemindersRecordsPerInvoiceErrors(t *testing.T) {
+	repo := NewMockReminderRepository()
+	repo.GetOverdueErr = errors.New("database unavailable")
+	svc := NewReminderServiceWithRepository(repo, nil)
+
+	result, err := svc.SendBulkReminders(context.Background(), "tenant-1", "test_schema", &SendBulkRemindersRequest{
+		InvoiceIDs: []string{"inv-1", "inv-2"},
+		Message:    "Please pay",
+	}, "Test Company")
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.TotalRequested)
+	assert.Zero(t, result.Successful)
+	assert.Equal(t, 2, result.Failed)
+	require.Len(t, result.Results, 2)
+	assert.Contains(t, result.Results[0].Message, "get overdue invoices")
+	assert.Contains(t, result.Results[1].Message, "get overdue invoices")
+}
+
 func TestMockReminderRepository(t *testing.T) {
 	t.Run("NewMockReminderRepository creates valid mock", func(t *testing.T) {
 		repo := NewMockReminderRepository()
@@ -157,16 +176,29 @@ func TestMockReminderRepository(t *testing.T) {
 
 	t.Run("GetReminderCount returns count of sent reminders", func(t *testing.T) {
 		repo := NewMockReminderRepository()
+		olderSentAt := now.Add(-2 * time.Hour)
+		newerSentAt := now.Add(-1 * time.Hour)
 		repo.Reminders["inv-1"] = []PaymentReminder{
-			{ID: "rem-1", Status: ReminderStatusSent},
+			{ID: "rem-1", Status: ReminderStatusSent, SentAt: &olderSentAt},
 			{ID: "rem-2", Status: ReminderStatusPending},
-			{ID: "rem-3", Status: ReminderStatusSent},
+			{ID: "rem-3", Status: ReminderStatusSent, SentAt: &newerSentAt},
 		}
 
-		count, _, err := repo.GetReminderCount(context.Background(), "schema", "tenant", "inv-1")
+		count, lastSentAt, err := repo.GetReminderCount(context.Background(), "schema", "tenant", "inv-1")
 
 		require.NoError(t, err)
 		assert.Equal(t, 2, count)
+		require.NotNil(t, lastSentAt)
+		assert.True(t, newerSentAt.Equal(*lastSentAt))
+	})
+
+	t.Run("UpdateReminderStatus ignores missing reminder", func(t *testing.T) {
+		repo := NewMockReminderRepository()
+
+		err := repo.UpdateReminderStatus(context.Background(), "schema", "missing", ReminderStatusFailed, nil, "missing")
+
+		require.NoError(t, err)
+		assert.Empty(t, repo.Reminders)
 	})
 
 	t.Run("AddMockOverdueInvoice adds invoice to list", func(t *testing.T) {

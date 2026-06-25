@@ -890,6 +890,24 @@ func TestReminderRuleGORMRepositoryDryRunErrors(t *testing.T) {
 		assert.Contains(t, err.Error(), "dry run mode unsupported")
 	})
 
+	t.Run("GetInvoicesForRule supports before and on due trigger branches", func(t *testing.T) {
+		for _, triggerType := range []TriggerType{TriggerBeforeDue, TriggerOnDue} {
+			triggerType := triggerType
+			t.Run(string(triggerType), func(t *testing.T) {
+				repo := NewReminderRuleGORMRepository(newInvoicingDryRunDB(t))
+				branchRule := *rule
+				branchRule.TriggerType = triggerType
+
+				got, err := repo.GetInvoicesForRule(ctx, schemaName, tenantID, &branchRule, now)
+
+				assert.Nil(t, got)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "query invoices for rule")
+				assert.Contains(t, err.Error(), "dry run mode unsupported")
+			})
+		}
+	})
+
 	t.Run("HasReminderBeenSent wraps count errors", func(t *testing.T) {
 		expectedErr := errors.New("count failed")
 		repo := NewReminderRuleGORMRepository(newInvoicingDryRunDB(t, withInvoicingDryRunQueryError(expectedErr)))
