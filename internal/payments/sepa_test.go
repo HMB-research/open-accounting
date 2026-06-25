@@ -47,6 +47,37 @@ func TestBuildSEPAExport(t *testing.T) {
 	assert.Contains(t, result.XML, `xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03"`)
 }
 
+func TestBuildSEPAExportDefaultBranches(t *testing.T) {
+	batchBooking := false
+
+	result, err := BuildSEPAExport(&SEPAExportRequest{
+		DebtorName:    "Example OU",
+		DebtorIBAN:    "EE38 2200 2210 2014 5685",
+		ExecutionDate: "2026-04-01",
+		BatchBooking:  &batchBooking,
+		Lines: []SEPACreditTransferLine{{
+			CreditorName: "Supplier AS",
+			CreditorIBAN: "EE471000001020145685",
+			Amount:       decimal.RequireFromString("125.499"),
+			InvoiceID:    "invoice-1",
+		}, {
+			CreditorName: "Fallback OU",
+			CreditorIBAN: "EE871600161234567892",
+			Amount:       decimal.RequireFromString("10"),
+		}},
+	})
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, result.MessageID)
+	assert.Equal(t, result.MessageID+"-PMT", result.PaymentInfoID)
+	assert.True(t, result.ControlSum.Equal(decimal.RequireFromString("135.50")))
+	assert.Contains(t, result.XML, "<BtchBookg>false</BtchBookg>")
+	assert.Contains(t, result.XML, "<EndToEndId>invoice-1</EndToEndId>")
+	assert.Contains(t, result.XML, "<EndToEndId>E2E-002</EndToEndId>")
+	assert.Contains(t, result.XML, "<Id>NOTPROVIDED</Id>")
+	assert.NotContains(t, result.XML, "<Ustrd>")
+}
+
 func TestBuildSEPAExportValidation(t *testing.T) {
 	base := &SEPAExportRequest{
 		MessageID:        "MSG-1",
@@ -94,6 +125,62 @@ func TestBuildSEPAExportValidation(t *testing.T) {
 			},
 			wantErr: "debtor_bic",
 		},
+		{
+			name: "missing debtor name",
+			mutate: func(req *SEPAExportRequest) {
+				req.DebtorName = " "
+			},
+			wantErr: "debtor_name is required",
+		},
+		{
+			name: "missing execution date",
+			mutate: func(req *SEPAExportRequest) {
+				req.ExecutionDate = " "
+			},
+			wantErr: "execution_date is required",
+		},
+		{
+			name: "bad execution date",
+			mutate: func(req *SEPAExportRequest) {
+				req.ExecutionDate = "2026/04/01"
+			},
+			wantErr: "execution_date must use YYYY-MM-DD",
+		},
+		{
+			name: "bad creation date",
+			mutate: func(req *SEPAExportRequest) {
+				req.CreationDateTime = "2026-04-01"
+			},
+			wantErr: "creation_date_time must use RFC3339",
+		},
+		{
+			name: "bad charge bearer",
+			mutate: func(req *SEPAExportRequest) {
+				req.ChargeBearer = "SHAR"
+			},
+			wantErr: "charge_bearer must be SLEV",
+		},
+		{
+			name: "missing creditor name",
+			mutate: func(req *SEPAExportRequest) {
+				req.Lines[0].CreditorName = " "
+			},
+			wantErr: "creditor_name is required",
+		},
+		{
+			name: "bad creditor IBAN",
+			mutate: func(req *SEPAExportRequest) {
+				req.Lines[0].CreditorIBAN = "EE001"
+			},
+			wantErr: "creditor_iban",
+		},
+		{
+			name: "zero amount",
+			mutate: func(req *SEPAExportRequest) {
+				req.Lines[0].Amount = decimal.Zero
+			},
+			wantErr: "amount must be positive",
+		},
 	}
 
 	for _, tt := range tests {
@@ -107,4 +194,18 @@ func TestBuildSEPAExportValidation(t *testing.T) {
 			assert.True(t, strings.Contains(err.Error(), tt.wantErr), "error %q should contain %q", err.Error(), tt.wantErr)
 		})
 	}
+}
+
+func TestSEPAHelpers(t *testing.T) {
+	_, err := BuildSEPAExport(nil)
+	require.EqualError(t, err, "request is required")
+
+	_, err = normalizeIBAN("EE38 2200 2210 2014 568!")
+	require.EqualError(t, err, "IBAN must contain only letters and digits")
+
+	assert.False(t, ibanChecksumValid("EE38-200221020145685"))
+	assert.Equal(t, " payment-id ", firstNonEmpty(" ", " payment-id "))
+	assert.Empty(t, firstNonEmpty(" ", "\t"))
+	assert.Equal(t, "HABAEE2X", sepaAgentForBIC("HABAEE2X").FinancialInstitution.BIC)
+	assert.NotNil(t, sepaAgentForBIC("").FinancialInstitution.Other)
 }

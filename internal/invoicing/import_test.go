@@ -435,6 +435,14 @@ func TestInvoiceImportServiceEdges(t *testing.T) {
 	tenantID := "tenant-1"
 	schemaName := "tenant_test"
 
+	t.Run("requires csv content", func(t *testing.T) {
+		service := NewServiceWithRepository(NewMockRepository(), nil)
+
+		_, err := service.ImportCSV(ctx, tenantID, schemaName, nil, nil, &ImportInvoicesRequest{CSVContent: " \n\t "}, nil)
+
+		require.EqualError(t, err, "csv_content is required")
+	})
+
 	t.Run("rejects files with only headers", func(t *testing.T) {
 		service := NewServiceWithRepository(NewMockRepository(), nil)
 
@@ -458,6 +466,27 @@ func TestInvoiceImportServiceEdges(t *testing.T) {
 		}, nil)
 
 		require.ErrorContains(t, err, "list existing invoices")
+	})
+
+	t.Run("skips groups with merged header conflicts", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{{
+			ID:   "contact-1",
+			Code: "CUST-1",
+		}}, nil, &ImportInvoicesRequest{
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,currency,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-CONFLICT,SALES,CUST-1,2026-03-01,2026-03-15,EUR,Consulting,1,100,22\n" +
+				"INV-CONFLICT,SALES,CUST-1,2026-03-01,2026-03-15,USD,Support,1,50,22\n",
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Zero(t, result.InvoicesCreated)
+		assert.Equal(t, 2, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "currency must be consistent")
+		assert.Empty(t, repo.invoices)
 	})
 
 	t.Run("skips duplicate imported IDs", func(t *testing.T) {
@@ -484,6 +513,26 @@ func TestInvoiceImportServiceEdges(t *testing.T) {
 		assert.Equal(t, 1, result.RowsSkipped)
 		require.Len(t, result.Errors, 1)
 		assert.Contains(t, result.Errors[0].Message, "already exists")
+	})
+
+	t.Run("skips invoice when resolved contact has no id", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportCSV(ctx, tenantID, schemaName, []contacts.Contact{{
+			Code: "CUST-1",
+			Name: "Nameless Customer",
+		}}, nil, &ImportInvoicesRequest{
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n" +
+				"INV-NO-CONTACT-ID,SALES,CUST-1,2026-03-01,2026-03-15,Consulting,1,100,22\n",
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Zero(t, result.InvoicesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "validation failed")
+		assert.Empty(t, repo.invoices)
 	})
 
 	t.Run("records repository create errors as skipped rows", func(t *testing.T) {
@@ -538,6 +587,11 @@ func TestParseInvoiceImportDataRowEdges(t *testing.T) {
 			wantMessage: "a contact identifier is required",
 		},
 		{
+			name:        "invalid issue date",
+			mutate:      func(values map[string]string) { values["issue_date"] = "2026/03/01" },
+			wantMessage: "issue_date must use YYYY-MM-DD",
+		},
+		{
 			name:        "invalid due date",
 			mutate:      func(values map[string]string) { values["due_date"] = "2026/03/15" },
 			wantMessage: "due_date must use YYYY-MM-DD",
@@ -568,6 +622,11 @@ func TestParseInvoiceImportDataRowEdges(t *testing.T) {
 			wantMessage: "line_description is required",
 		},
 		{
+			name:        "zero quantity",
+			mutate:      func(values map[string]string) { values["quantity"] = "0" },
+			wantMessage: "quantity must be greater than zero",
+		},
+		{
 			name:        "negative unit price",
 			mutate:      func(values map[string]string) { values["unit_price"] = "-1" },
 			wantMessage: "unit_price cannot be negative",
@@ -586,6 +645,11 @@ func TestParseInvoiceImportDataRowEdges(t *testing.T) {
 			name:        "negative VAT rate",
 			mutate:      func(values map[string]string) { values["vat_rate"] = "-1" },
 			wantMessage: "vat_rate cannot be negative",
+		},
+		{
+			name:        "missing product code",
+			mutate:      func(values map[string]string) { values["product_code"] = "MISSING" },
+			wantMessage: "product_code",
 		},
 		{
 			name: "reverse charge requires positive VAT rate",
@@ -613,6 +677,16 @@ func TestParseInvoiceImportDataRowEdges(t *testing.T) {
 }
 
 func TestInvoiceImportParserHelpers(t *testing.T) {
+	_, err := parseInvoiceImportRows(`"unterminated`)
+	require.ErrorContains(t, err, "parse csv header")
+
+	_, err = parseInvoiceImportRows("invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-03-01,2026-03-15,\"Consulting,1,100,22\n")
+	require.ErrorContains(t, err, "parse csv row 2")
+
+	rows, err := parseInvoiceImportRows("invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\n")
+	require.NoError(t, err)
+	assert.Empty(t, rows)
+
 	invoiceType, err := parseInvoiceImportType("SALES")
 	require.NoError(t, err)
 	assert.Equal(t, InvoiceTypeSales, invoiceType)

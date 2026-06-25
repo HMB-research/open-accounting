@@ -1095,6 +1095,87 @@ func TestService_ReverseRejectsInvalidRequests(t *testing.T) {
 		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-reversal", &ReversePaymentRequest{Reason: "Duplicate"})
 		require.ErrorIs(t, err, ErrPaymentReversalNotAllowed)
 	})
+
+	t.Run("payment lookup fails", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.getErr = errors.New("lookup failed")
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{Reason: "Duplicate"})
+
+		require.ErrorContains(t, err, "get payment: lookup failed")
+	})
+
+	t.Run("sequence generation fails", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.getNextNumErr = errors.New("sequence failed")
+		repo.payments["pay-1"] = &Payment{
+			ID:            "pay-1",
+			TenantID:      "tenant-1",
+			PaymentNumber: "PMT-00001",
+			PaymentType:   PaymentTypeReceived,
+			Amount:        decimal.NewFromInt(10),
+			Currency:      "EUR",
+			ExchangeRate:  decimal.NewFromInt(1),
+			BaseAmount:    decimal.NewFromInt(10),
+		}
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{Reason: "Duplicate"})
+
+		require.ErrorContains(t, err, "generate reversal payment number: sequence failed")
+	})
+
+	t.Run("create reversal fails", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.createReversalErr = errors.New("write failed")
+		repo.payments["pay-1"] = &Payment{
+			ID:            "pay-1",
+			TenantID:      "tenant-1",
+			PaymentNumber: "OUT-00001",
+			PaymentType:   PaymentTypeMade,
+			Amount:        decimal.NewFromInt(10),
+			Currency:      "EUR",
+			ExchangeRate:  decimal.NewFromInt(1),
+			BaseAmount:    decimal.NewFromInt(10),
+		}
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{
+			Reason:    "Duplicate",
+			Reference: "CUSTOM-REF",
+			Notes:     "Custom reversal note",
+		})
+
+		require.ErrorContains(t, err, "create payment reversal: write failed")
+	})
+
+	t.Run("invoice reversal update fails", func(t *testing.T) {
+		repo := NewMockRepository()
+		invoiceSvc := &MockInvoiceService{recordPaymentErr: errors.New("invoice update failed")}
+		repo.payments["pay-1"] = &Payment{
+			ID:            "pay-1",
+			TenantID:      "tenant-1",
+			PaymentNumber: "PMT-00001",
+			PaymentType:   PaymentTypeReceived,
+			Amount:        decimal.NewFromInt(10),
+			Currency:      "EUR",
+			ExchangeRate:  decimal.NewFromInt(1),
+			BaseAmount:    decimal.NewFromInt(10),
+		}
+		repo.allocations["pay-1"] = []PaymentAllocation{{
+			ID:        "alloc-1",
+			TenantID:  "tenant-1",
+			PaymentID: "pay-1",
+			InvoiceID: "inv-1",
+			Amount:    decimal.NewFromInt(10),
+		}}
+		service := NewServiceWithRepository(repo, invoiceSvc)
+
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{Reason: "Duplicate"})
+
+		require.ErrorContains(t, err, "reverse invoice allocation inv-1: invoice update failed")
+	})
 }
 
 func TestService_Create_RepositoryError(t *testing.T) {

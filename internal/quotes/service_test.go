@@ -556,6 +556,192 @@ QT-FAIL,Acme,2026-03-15,Consulting,1,10,22
 	})
 }
 
+func TestService_ImportCSVAdditionalImportBranches(t *testing.T) {
+	t.Run("skips duplicate imported quote id", func(t *testing.T) {
+		repo := NewMockRepository()
+		legacyID := "11111111-1111-4111-8111-111111111111"
+		repo.Quotes["existing"] = &Quote{
+			ID:          legacyID,
+			TenantID:    "tenant-1",
+			QuoteNumber: "QT-OLD",
+		}
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `id,quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate
+11111111-1111-4111-8111-111111111111,QT-NEW,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,Consulting,1,10,22
+`
+
+		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+			TenantID: "tenant-1",
+		}}, nil, &ImportQuotesRequest{CSVContent: csvContent})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.QuotesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, `id "11111111-1111-4111-8111-111111111111" already exists`)
+	})
+
+	t.Run("skips quote when resolved contact has no id", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		csvContent := `quote_number,contact_name,quote_date,line_description,quantity,unit_price,vat_rate
+QT-NO-CONTACT-ID,Nameless Customer,2026-03-15,Consulting,1,10,22
+`
+
+		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			TenantID: "tenant-1",
+			Name:     "Nameless Customer",
+		}}, nil, &ImportQuotesRequest{CSVContent: csvContent})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.QuotesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "validation failed")
+	})
+}
+
+func TestQuoteImportParserAdditionalBranches(t *testing.T) {
+	_, err := parseQuoteImportRows(`"unterminated`)
+	require.ErrorContains(t, err, "parse csv header")
+
+	_, err = parseQuoteImportRows("quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate\nQT-1,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb,2026-03-15,\"Consulting,1,10,22\n")
+	require.ErrorContains(t, err, "parse csv row 2")
+
+	rows, err := parseQuoteImportRows("quote_number,contact_id,quote_date,line_description,quantity,unit_price,vat_rate\n")
+	require.NoError(t, err)
+	assert.Empty(t, rows)
+
+	validValues := map[string]string{
+		"quote_number":     "QT-1",
+		"contact_id":       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		"quote_date":       "2026-03-15",
+		"line_description": "Consulting",
+		"quantity":         "1",
+		"unit_price":       "100",
+		"vat_rate":         "22",
+	}
+	productLookup := importrefs.NewProductLookup([]inventory.Product{{ID: "prod-1", Code: "SERV-1"}})
+	parsed, err := parseQuoteImportDataRow(quoteImportRow{rowNumber: 2, values: validValues}, productLookup)
+	require.NoError(t, err)
+	assert.Equal(t, "QT-1", parsed.header.quoteNumber)
+
+	tests := []struct {
+		name        string
+		mutate      func(map[string]string)
+		wantMessage string
+	}{
+		{
+			name:        "invalid contact id",
+			mutate:      func(values map[string]string) { values["contact_id"] = "not-a-uuid" },
+			wantMessage: "contact_id must be a valid UUID",
+		},
+		{
+			name:        "invalid valid until",
+			mutate:      func(values map[string]string) { values["valid_until"] = "2026/04/01" },
+			wantMessage: "valid_until must use YYYY-MM-DD",
+		},
+		{
+			name:        "invalid exchange rate",
+			mutate:      func(values map[string]string) { values["exchange_rate"] = "bad" },
+			wantMessage: "invalid exchange_rate",
+		},
+		{
+			name:        "zero exchange rate",
+			mutate:      func(values map[string]string) { values["exchange_rate"] = "0" },
+			wantMessage: "exchange_rate must be greater than zero",
+		},
+		{
+			name:        "invalid status",
+			mutate:      func(values map[string]string) { values["status"] = "waiting" },
+			wantMessage: "invalid status",
+		},
+		{
+			name:        "invalid unit price",
+			mutate:      func(values map[string]string) { values["unit_price"] = "bad" },
+			wantMessage: "invalid unit_price",
+		},
+		{
+			name:        "negative VAT rate",
+			mutate:      func(values map[string]string) { values["vat_rate"] = "-1" },
+			wantMessage: "vat_rate cannot be negative",
+		},
+		{
+			name:        "missing product code",
+			mutate:      func(values map[string]string) { values["product_code"] = "MISSING" },
+			wantMessage: "product_code",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values := make(map[string]string, len(validValues)+1)
+			for key, value := range validValues {
+				values[key] = value
+			}
+			tt.mutate(values)
+
+			_, err := parseQuoteImportDataRow(quoteImportRow{rowNumber: 2, values: values}, productLookup)
+
+			require.ErrorContains(t, err, tt.wantMessage)
+		})
+	}
+}
+
+func TestQuoteImportContactLookupAdditionalBranches(t *testing.T) {
+	lookup := buildQuoteImportContactLookup([]contacts.Contact{
+		{ID: "by-id", Code: "CUST-1"},
+		{ID: "by-reg", RegCode: "123"},
+		{ID: "by-vat", VATNumber: "EE123"},
+		{ID: "by-email", Email: "billing@example.com"},
+		{ID: "by-name", Name: "Acme OU"},
+	})
+
+	contact, err := lookup.find(quoteImportContactRef{code: " cust-1 "})
+	require.NoError(t, err)
+	assert.Equal(t, "by-id", contact.ID)
+
+	contact, err = lookup.find(quoteImportContactRef{regCode: "123"})
+	require.NoError(t, err)
+	assert.Equal(t, "by-reg", contact.ID)
+
+	contact, err = lookup.find(quoteImportContactRef{vatNumber: "ee123"})
+	require.NoError(t, err)
+	assert.Equal(t, "by-vat", contact.ID)
+
+	contact, err = lookup.find(quoteImportContactRef{email: "BILLING@example.com"})
+	require.NoError(t, err)
+	assert.Equal(t, "by-email", contact.ID)
+
+	contact, err = lookup.find(quoteImportContactRef{name: " acme ou "})
+	require.NoError(t, err)
+	assert.Equal(t, "by-name", contact.ID)
+
+	_, err = lookup.find(quoteImportContactRef{id: "missing"})
+	require.ErrorContains(t, err, `contact_id "missing" was not found`)
+
+	_, err = lookup.find(quoteImportContactRef{code: "missing"})
+	require.ErrorContains(t, err, `contact_code "missing" was not found`)
+
+	_, err = lookup.find(quoteImportContactRef{regCode: "404"})
+	require.ErrorContains(t, err, `contact_reg_code "404" was not found`)
+
+	_, err = lookup.find(quoteImportContactRef{vatNumber: "EE404"})
+	require.ErrorContains(t, err, `contact_vat_number "EE404" was not found`)
+
+	_, err = lookup.find(quoteImportContactRef{email: "missing@example.com"})
+	require.ErrorContains(t, err, `contact_email "missing@example.com" was not found`)
+
+	_, err = lookup.find(quoteImportContactRef{name: "Missing OU"})
+	require.ErrorContains(t, err, `contact_name "Missing OU" was not found`)
+
+	_, err = lookup.find(quoteImportContactRef{})
+	require.ErrorContains(t, err, "a contact identifier is required")
+}
+
 func TestService_GetByID(t *testing.T) {
 	t.Run("returns quote when found", func(t *testing.T) {
 		repo := NewMockRepository()
@@ -1095,6 +1281,60 @@ func TestMergeQuoteImportGroup(t *testing.T) {
 	}
 }
 
+func TestMergeQuoteImportContactRefConflicts(t *testing.T) {
+	tests := []struct {
+		name         string
+		target       quoteImportContactRef
+		next         quoteImportContactRef
+		wantConflict string
+	}{
+		{
+			name:         "contact id",
+			target:       quoteImportContactRef{id: "contact-1"},
+			next:         quoteImportContactRef{id: "contact-2"},
+			wantConflict: "contact_id must be consistent",
+		},
+		{
+			name:         "contact code",
+			target:       quoteImportContactRef{code: "CUST-1"},
+			next:         quoteImportContactRef{code: "CUST-2"},
+			wantConflict: "contact_code must be consistent",
+		},
+		{
+			name:         "registry code",
+			target:       quoteImportContactRef{regCode: "100"},
+			next:         quoteImportContactRef{regCode: "200"},
+			wantConflict: "contact_reg_code must be consistent",
+		},
+		{
+			name:         "VAT number",
+			target:       quoteImportContactRef{vatNumber: "EE100"},
+			next:         quoteImportContactRef{vatNumber: "EE200"},
+			wantConflict: "contact_vat_number must be consistent",
+		},
+		{
+			name:         "email",
+			target:       quoteImportContactRef{email: "a@example.com"},
+			next:         quoteImportContactRef{email: "b@example.com"},
+			wantConflict: "contact_email must be consistent",
+		},
+		{
+			name:         "name",
+			target:       quoteImportContactRef{name: "Alpha"},
+			next:         quoteImportContactRef{name: "Beta"},
+			wantConflict: "contact_name must be consistent",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conflict := mergeQuoteImportContactRef(&tt.target, tt.next)
+
+			assert.Contains(t, conflict, tt.wantConflict)
+		})
+	}
+}
+
 func TestQuoteImportContactLookupFind(t *testing.T) {
 	lookup := buildQuoteImportContactLookup([]contacts.Contact{{
 		ID:        "contact-id",
@@ -1148,6 +1388,9 @@ func TestQuoteImportHelpers(t *testing.T) {
 	future := time.Now().AddDate(0, 0, 1)
 	assert.Equal(t, QuoteStatusDraft, deriveQuoteImportStatus("", &future, normalizeQuoteImportDate(time.Now())))
 	assert.Equal(t, QuoteStatusRejected, deriveQuoteImportStatus(QuoteStatusRejected, nil, time.Now()))
+
+	assert.Equal(t, "contact_code", canonicalQuoteImportHeader(" customer_code "))
+	assert.Empty(t, canonicalQuoteImportHeader("legacy_only"))
 }
 
 func quoteImportRowForTest(overrides map[string]string) quoteImportRow {

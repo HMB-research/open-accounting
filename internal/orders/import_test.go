@@ -481,3 +481,152 @@ func TestBuildImportedOrderValidationError(t *testing.T) {
 
 	require.ErrorContains(t, err, "validation failed")
 }
+
+func TestOrderImportServiceAdditionalBranches(t *testing.T) {
+	t.Run("skips duplicate existing order number", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.Orders["existing"] = &Order{
+			ID:          "existing",
+			TenantID:    "tenant-1",
+			OrderNumber: "ORD-1",
+		}
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:   "contact-1",
+			Code: "CUST-1",
+		}}, nil, &ImportOrdersRequest{
+			CSVContent: "order_number,contact_code,order_date,line_description,quantity,unit_price,vat_rate\n" +
+				"ORD-1,CUST-1,2026-03-15,Consulting,1,100,22\n",
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.OrdersCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, `order_number "ORD-1" already exists`)
+	})
+
+	t.Run("skips orders when quote number cannot be resolved", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportCSVWithQuoteReferences(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:   "contact-1",
+			Code: "CUST-1",
+		}}, nil, nil, &ImportOrdersRequest{
+			CSVContent: "order_number,contact_code,order_date,quote_number,line_description,quantity,unit_price,vat_rate\n" +
+				"ORD-1,CUST-1,2026-03-15,QT-MISSING,Consulting,1,100,22\n",
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.OrdersCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, `quote_number "QT-MISSING" was not found`)
+	})
+
+	t.Run("skips orders when quote number is ambiguous", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportCSVWithQuoteReferences(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			ID:   "contact-1",
+			Code: "CUST-1",
+		}}, nil, []ImportQuoteReference{
+			{ID: "quote-1", QuoteNumber: "QT-1"},
+			{ID: "quote-2", QuoteNumber: "qt-1"},
+		}, &ImportOrdersRequest{
+			CSVContent: "order_number,contact_code,order_date,quote_number,line_description,quantity,unit_price,vat_rate\n" +
+				"ORD-1,CUST-1,2026-03-15,QT-1,Consulting,1,100,22\n",
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.OrdersCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, `quote_number "QT-1" is ambiguous`)
+	})
+
+	t.Run("skips order when resolved contact has no id", func(t *testing.T) {
+		repo := NewMockRepository()
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportCSV(context.Background(), "tenant-1", "test_schema", []contacts.Contact{{
+			Code: "CUST-1",
+			Name: "Nameless Customer",
+		}}, nil, &ImportOrdersRequest{
+			CSVContent: "order_number,contact_code,order_date,line_description,quantity,unit_price,vat_rate\n" +
+				"ORD-1,CUST-1,2026-03-15,Consulting,1,100,22\n",
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.OrdersCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "validation failed")
+	})
+}
+
+func TestOrderImportParserAdditionalBranches(t *testing.T) {
+	_, err := parseOrderImportRows(`"unterminated`)
+	require.ErrorContains(t, err, "parse csv header")
+
+	_, err = parseOrderImportRows("order_number,contact_code,order_date,line_description,quantity,unit_price,vat_rate\nORD-1,CUST-1,2026-03-15,\"Consulting,1,100,22\n")
+	require.ErrorContains(t, err, "parse csv row 2")
+
+	validValues := map[string]string{
+		"order_number":     "ORD-1",
+		"contact_code":     "CUST-1",
+		"order_date":       "2026-03-15",
+		"line_description": "Consulting",
+		"quantity":         "1",
+		"unit_price":       "100",
+		"vat_rate":         "22",
+	}
+
+	tests := []struct {
+		name        string
+		mutate      func(map[string]string)
+		wantMessage string
+	}{
+		{
+			name:        "invalid contact id",
+			mutate:      func(values map[string]string) { values["contact_id"] = "not-a-uuid"; values["contact_code"] = "" },
+			wantMessage: "contact_id must be a valid UUID",
+		},
+		{
+			name:        "invalid quote id",
+			mutate:      func(values map[string]string) { values["quote_id"] = "not-a-uuid" },
+			wantMessage: "quote_id must be a valid UUID",
+		},
+		{
+			name:        "zero quantity",
+			mutate:      func(values map[string]string) { values["quantity"] = "0" },
+			wantMessage: "quantity must be greater than zero",
+		},
+		{
+			name:        "missing product code",
+			mutate:      func(values map[string]string) { values["product_code"] = "MISSING" },
+			wantMessage: "product_code",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values := make(map[string]string, len(validValues)+1)
+			for key, value := range validValues {
+				values[key] = value
+			}
+			tt.mutate(values)
+
+			_, err := parseOrderImportDataRow(orderImportRow{rowNumber: 2, values: values}, importrefs.NewProductLookup(nil))
+
+			require.ErrorContains(t, err, tt.wantMessage)
+		})
+	}
+
+	status, err := parseOrderImportStatus("CANCELED")
+	require.NoError(t, err)
+	assert.Equal(t, OrderStatusCanceled, status)
+}

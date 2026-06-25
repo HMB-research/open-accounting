@@ -2,6 +2,7 @@ package invoicing
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -14,6 +15,12 @@ type mockReminderRuleRepo struct {
 	invoices         []InvoiceForReminder
 	sentReminders    map[string]bool
 	recordedReminder *PaymentReminder
+	listActiveErr    error
+	getInvoicesErr   error
+	hasSentErr       error
+	recordErr        error
+	createRuleErr    error
+	updateRuleErr    error
 }
 
 func (m *mockReminderRuleRepo) ListRules(ctx context.Context, schemaName, tenantID string) ([]ReminderRule, error) {
@@ -21,6 +28,9 @@ func (m *mockReminderRuleRepo) ListRules(ctx context.Context, schemaName, tenant
 }
 
 func (m *mockReminderRuleRepo) ListActiveRules(ctx context.Context, schemaName, tenantID string) ([]ReminderRule, error) {
+	if m.listActiveErr != nil {
+		return nil, m.listActiveErr
+	}
 	var active []ReminderRule
 	for _, r := range m.rules {
 		if r.IsActive {
@@ -40,11 +50,17 @@ func (m *mockReminderRuleRepo) GetRule(ctx context.Context, schemaName, tenantID
 }
 
 func (m *mockReminderRuleRepo) CreateRule(ctx context.Context, schemaName string, rule *ReminderRule) error {
+	if m.createRuleErr != nil {
+		return m.createRuleErr
+	}
 	m.rules = append(m.rules, *rule)
 	return nil
 }
 
 func (m *mockReminderRuleRepo) UpdateRule(ctx context.Context, schemaName string, rule *ReminderRule) error {
+	if m.updateRuleErr != nil {
+		return m.updateRuleErr
+	}
 	for i, r := range m.rules {
 		if r.ID == rule.ID {
 			m.rules[i] = *rule
@@ -65,15 +81,24 @@ func (m *mockReminderRuleRepo) DeleteRule(ctx context.Context, schemaName, tenan
 }
 
 func (m *mockReminderRuleRepo) GetInvoicesForRule(ctx context.Context, schemaName, tenantID string, rule *ReminderRule, asOfDate time.Time) ([]InvoiceForReminder, error) {
+	if m.getInvoicesErr != nil {
+		return nil, m.getInvoicesErr
+	}
 	return m.invoices, nil
 }
 
 func (m *mockReminderRuleRepo) HasReminderBeenSent(ctx context.Context, schemaName, tenantID, invoiceID, ruleID string) (bool, error) {
+	if m.hasSentErr != nil {
+		return false, m.hasSentErr
+	}
 	key := invoiceID + ":" + ruleID
 	return m.sentReminders[key], nil
 }
 
 func (m *mockReminderRuleRepo) RecordReminderSent(ctx context.Context, schemaName string, reminder *PaymentReminder) error {
+	if m.recordErr != nil {
+		return m.recordErr
+	}
 	m.recordedReminder = reminder
 	if m.sentReminders == nil {
 		m.sentReminders = make(map[string]bool)
@@ -309,6 +334,58 @@ func TestProcessRemindersForTenant_NoActiveRules(t *testing.T) {
 	}
 }
 
+func TestProcessRemindersForTenantRepositoryFailures(t *testing.T) {
+	t.Run("returns active rule list errors", func(t *testing.T) {
+		repo := &mockReminderRuleRepo{listActiveErr: errors.New("rules unavailable")}
+		service := NewAutomatedReminderServiceWithRepository(repo, nil)
+
+		_, err := service.ProcessRemindersForTenant(context.Background(), "tenant-1", "tenant_abc", "Test Company")
+
+		if err == nil || err.Error() != "list active rules: rules unavailable" {
+			t.Fatalf("expected wrapped list error, got %v", err)
+		}
+	})
+
+	t.Run("records invoice query errors on the rule result", func(t *testing.T) {
+		repo := &mockReminderRuleRepo{
+			rules:          []ReminderRule{{ID: "rule-1", Name: "Active Rule", IsActive: true}},
+			getInvoicesErr: errors.New("invoice query failed"),
+		}
+		service := NewAutomatedReminderServiceWithRepository(repo, nil)
+
+		results, err := service.ProcessRemindersForTenant(context.Background(), "tenant-1", "tenant_abc", "Test Company")
+
+		if err != nil {
+			t.Fatalf("ProcessRemindersForTenant failed: %v", err)
+		}
+		if len(results) != 1 || len(results[0].Errors) != 1 || results[0].Errors[0] != "get invoices: invoice query failed" {
+			t.Fatalf("unexpected result errors: %+v", results)
+		}
+	})
+
+	t.Run("continues after reminder sent check errors", func(t *testing.T) {
+		repo := &mockReminderRuleRepo{
+			rules: []ReminderRule{{ID: "rule-1", Name: "Active Rule", IsActive: true}},
+			invoices: []InvoiceForReminder{{
+				ID:            "inv-1",
+				InvoiceNumber: "INV-001",
+				ContactEmail:  "billing@example.com",
+			}},
+			hasSentErr: errors.New("sent check failed"),
+		}
+		service := NewAutomatedReminderServiceWithRepository(repo, nil)
+
+		results, err := service.ProcessRemindersForTenant(context.Background(), "tenant-1", "tenant_abc", "Test Company")
+
+		if err != nil {
+			t.Fatalf("ProcessRemindersForTenant failed: %v", err)
+		}
+		if len(results) != 1 || results[0].Failed != 1 || len(results[0].Errors) != 1 {
+			t.Fatalf("expected one failed reminder check, got %+v", results)
+		}
+	})
+}
+
 func TestProcessRemindersForTenant_NoInvoices(t *testing.T) {
 	repo := &mockReminderRuleRepo{
 		rules: []ReminderRule{
@@ -431,6 +508,80 @@ func TestProcessRemindersForTenant_SendsAndRecordsReminder(t *testing.T) {
 	if repo.recordedReminder == nil || repo.recordedReminder.Status != ReminderStatusSent {
 		t.Fatalf("expected sent reminder to be recorded, got %+v", repo.recordedReminder)
 	}
+}
+
+func TestProcessRemindersForTenant_SendFailureRecordsFailedReminder(t *testing.T) {
+	repo := &mockReminderRuleRepo{
+		rules: []ReminderRule{{
+			ID:                "rule-1",
+			Name:              "Overdue",
+			TenantID:          "tenant-1",
+			TriggerType:       TriggerAfterDue,
+			DaysOffset:        7,
+			EmailTemplateType: string(email.TemplateOverdueReminder),
+			IsActive:          true,
+		}},
+		invoices: []InvoiceForReminder{{
+			ID:                "inv-1",
+			InvoiceNumber:     "INV-001",
+			ContactID:         "contact-1",
+			ContactName:       "Example Customer",
+			ContactEmail:      "billing@example.com",
+			OutstandingAmount: decimal.NewFromInt(125).String(),
+			Currency:          "EUR",
+			DueDate:           "2026-01-15",
+			DaysOverdue:       10,
+		}},
+	}
+	emailSvc := email.NewServiceWithRepository(&reminderEmailRepo{}, &reminderMailSender{sendErr: errors.New("smtp refused")})
+	service := NewAutomatedReminderServiceWithRepository(repo, emailSvc)
+
+	results, err := service.ProcessRemindersForTenant(context.Background(), "tenant-1", "tenant_test", "Test Company")
+
+	if err != nil {
+		t.Fatalf("ProcessRemindersForTenant failed: %v", err)
+	}
+	if len(results) != 1 || results[0].Failed != 1 || results[0].RemindersSent != 0 {
+		t.Fatalf("unexpected failure result: %+v", results)
+	}
+	if repo.recordedReminder == nil || repo.recordedReminder.Status != ReminderStatusFailed {
+		t.Fatalf("expected failed reminder to be recorded, got %+v", repo.recordedReminder)
+	}
+}
+
+func TestAutomatedReminderRuleMutationFailures(t *testing.T) {
+	t.Run("returns create repository errors", func(t *testing.T) {
+		repo := &mockReminderRuleRepo{createRuleErr: errors.New("insert failed")}
+		service := NewAutomatedReminderServiceWithRepository(repo, nil)
+
+		_, err := service.CreateRule(context.Background(), "tenant-1", "tenant_abc", &CreateReminderRuleRequest{
+			Name:        "Test",
+			TriggerType: TriggerAfterDue,
+			DaysOffset:  7,
+			IsActive:    true,
+		})
+
+		if err == nil || err.Error() != "create rule: insert failed" {
+			t.Fatalf("expected create rule error, got %v", err)
+		}
+	})
+
+	t.Run("updates email template and returns update repository errors", func(t *testing.T) {
+		repo := &mockReminderRuleRepo{
+			rules:         []ReminderRule{{ID: "rule-1", TenantID: "tenant-1", Name: "Original", EmailTemplateType: "OLD", IsActive: true}},
+			updateRuleErr: errors.New("update failed"),
+		}
+		service := NewAutomatedReminderServiceWithRepository(repo, nil)
+		newTemplate := "NEW_TEMPLATE"
+
+		_, err := service.UpdateRule(context.Background(), "tenant-1", "tenant_abc", "rule-1", &UpdateReminderRuleRequest{
+			EmailTemplateType: &newTemplate,
+		})
+
+		if !errors.Is(err, repo.updateRuleErr) {
+			t.Fatalf("expected update error, got %v", err)
+		}
+	})
 }
 
 func TestCustomTemplateAssignment(t *testing.T) {
