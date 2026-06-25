@@ -67,7 +67,8 @@ railway run ./migrate -db $DATABASE_URL
 
 Demo mode provides sample data for testing and demonstrations. It includes:
 
-- **Demo User**: `demo@example.com` / `demo123`
+- **Demo users**: `demo1@example.com` through `demo4@example.com`
+- **Demo password**: `demo12345`
 - **Demo Organization**: Acme Corporation
 - Sample chart of accounts (Estonian standard)
 - Sample customers & suppliers
@@ -166,11 +167,12 @@ CMD ["crond", "-f", "-l", "2"]
 
 ### Demo Credentials
 
-| Field | Value |
-|-------|-------|
-| Email | `demo@example.com` |
-| Password | `demo123` |
-| Organization | Acme Corporation |
+| Email | Password | Tenant |
+|-------|----------|--------|
+| `demo1@example.com` | `demo12345` | `demo1` |
+| `demo2@example.com` | `demo12345` | `demo2` |
+| `demo3@example.com` | `demo12345` | `demo3` |
+| `demo4@example.com` | `demo12345` | `demo4` |
 
 ---
 

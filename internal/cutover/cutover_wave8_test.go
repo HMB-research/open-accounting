@@ -25,7 +25,7 @@ func TestCutoverWave8CrossFileSkipBranches(t *testing.T) {
 	kmdFile := wave6ParsedFile(KindKMDHistory, "kmd.csv", []string{"year", "month", "row_code", "tax_amount"},
 		map[string]string{"year": "bad", "month": "5", "row_code": "1", "tax_amount": "22"},
 	)
-	validateKMDHistoryVATReconciliation(report, []parsedFile{kmdFile})
+	validateKMDHistoryVATReconciliation(report, []parsedFile{kmdFile}, nil)
 	assert.Empty(t, report.Issues)
 
 	targets := buildCutoverInvoiceAllocationTargets([]parsedFile{

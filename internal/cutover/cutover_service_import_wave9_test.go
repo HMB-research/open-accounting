@@ -61,7 +61,7 @@ func TestCutoverWave9CrossFileSkipBranches(t *testing.T) {
 		wave6ParsedFile(KindKMDHistory, "kmd.csv", []string{"year", "month", "row_code", "tax_amount"},
 			map[string]string{"year": "", "month": "", "row_code": "1", "tax_amount": "22"},
 		),
-	})
+	}, nil)
 	assert.Empty(t, report.Issues)
 
 	report = &BundleValidationReport{}

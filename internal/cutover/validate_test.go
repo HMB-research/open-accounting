@@ -2464,6 +2464,49 @@ func TestValidateBundleReportsKMDHistoryVATReconciliationIssues(t *testing.T) {
 	assertValidationIssue(t, report, KindKMDHistory, "total_output_vat", "does not match supporting KMD output VAT rows")
 }
 
+func TestValidateBundleReportsKMDHistoryExternalVATSupportMismatch(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "account_code,name,account_type\n1000,Cash,ASSET\n4000,Sales,REVENUE\n5500,Expense,EXPENSE\n",
+		},
+		{
+			Kind:       KindInvoices,
+			FileName:   "invoices.csv",
+			CSVContent: "invoice_number,invoice_type,contact_code,issue_date,due_date,line_description,quantity,unit_price,vat_rate\nINV-1,SALES,CUST-1,2026-03-20,2026-04-04,Consulting,1,100,22\n",
+		},
+		{
+			Kind:       KindEInvoices,
+			FileName:   "e-invoices.xml",
+			XMLContent: cutoverEInvoiceXML("BILL-2026-001", "Supplier OÜ", "12345678"),
+		},
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit,vat_rate\n" +
+				"VAT-SALE,2026-03-31,1000,100,0,\n" +
+				"VAT-SALE,2026-03-31,4000,0,100,22\n" +
+				"VAT-PURCHASE,2026-03-31,5500,50,0,22\n" +
+				"VAT-PURCHASE,2026-03-31,1000,0,50,\n",
+		},
+		{
+			Kind:     KindKMDHistory,
+			FileName: "kmd-history.csv",
+			CSVContent: "year,month,row_code,tax_base,tax_amount,total_output_vat,total_input_vat\n" +
+				"2026,3,1,204.55,45,45,33\n" +
+				"2026,3,4,150,33,45,33\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assertValidationIssue(t, report, KindKMDHistory, "total_output_vat", "same-bundle invoice/e-invoice/journal output VAT support")
+	assertValidationIssue(t, report, KindKMDHistory, "total_output_vat", "supporting total 44")
+	require.Len(t, report.Issues, 1)
+}
+
 func TestValidateBundleReportsHistoryCompositeDuplicateIssues(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{
@@ -3940,6 +3983,23 @@ func TestValidateBundleReportsInvalidJournalLineIDs(t *testing.T) {
 	require.NotNil(t, report)
 	assert.False(t, report.Summary.Ready)
 	assertValidationIssue(t, report, KindJournalEntries, "line_id", "line_id must be a valid UUID")
+}
+
+func TestValidateBundleReportsInvalidJournalVATInclusiveFlag(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
+		{
+			Kind:     KindJournalEntries,
+			FileName: "journals.csv",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit,is_vat_inclusive\n" +
+				"JE-1,2026-05-31,1000,125.50,0,maybe\n" +
+				"JE-1,2026-05-31,4000,0,125.50,false\n",
+		},
+	}})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assertValidationIssue(t, report, KindJournalEntries, "is_vat_inclusive", "is_vat_inclusive must be true or false")
 }
 
 func TestValidateBundleReportsDuplicateJournalLineIDs(t *testing.T) {

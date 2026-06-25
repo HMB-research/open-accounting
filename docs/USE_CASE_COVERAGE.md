@@ -17,9 +17,9 @@ Status values:
 
 ## Current Evidence Baseline
 
-- Latest verified baseline reviewed on 2026-06-25: backend coverage is 82.3%, frontend coverage is 100.0% statements/functions/lines and 94.27% branches, and the docs gate is passing.
+- Latest verified baseline reviewed on 2026-06-25: backend coverage is 100.0% statements (`44913/44913`, zero missed statements), frontend coverage is 100.0% statements/functions/lines and 94.27% branches, and the docs gate is passing.
 - `make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.
-- `make test-backend-coverage` enforces the same CLI package coverage from the backend coverage gate while reporting the broader backend coverage baseline.
+- `make test-backend-coverage` verifies the backend at 100.0% statement coverage and keeps the CLI package inside the same blocking coverage gate.
 - `go test -timeout=3m ./docs -count=1` keeps the documentation status, route coverage, and link checks active.
 - Broad workflow proof is summarized by matrix area instead of by per-stage pull-request history. The active broad gates remain lint, backend unit/race tests, integration shards, frontend lint/check/test/build, smoke E2E, and seeded demo E2E shards.
 

@@ -89,6 +89,145 @@ func TestWave6DerivedKMDAndCostAllocationGuards(t *testing.T) {
 	assert.Empty(t, report.Issues)
 }
 
+func TestWave6KMDExternalVATSupportHelperEdges(t *testing.T) {
+	groups := map[string]*kmdHistoryVATReconciliationGroup{
+		"2026-03": {period: "2026-03"},
+	}
+	invoiceFile := wave6ParsedFile(KindInvoices, "invoices.csv",
+		[]string{"invoice_number", "invoice_type", "issue_date", "quantity", "unit_price", "discount_percent", "vat_rate", "reverse_charge", "exchange_rate"},
+		map[string]string{"invoice_number": "INV-BAD-DATE", "invoice_type": "SALES", "issue_date": "bad", "quantity": "1", "unit_price": "100", "vat_rate": "22"},
+		map[string]string{"invoice_number": "INV-NO-GROUP", "invoice_type": "SALES", "issue_date": "2026-04-01", "quantity": "1", "unit_price": "100", "vat_rate": "22"},
+		map[string]string{"invoice_number": "INV-ZERO", "invoice_type": "SALES", "issue_date": "2026-03-01", "quantity": "1", "unit_price": "100", "vat_rate": "0"},
+		map[string]string{"invoice_number": "INV-SALE", "invoice_type": "SALES", "issue_date": "2026-03-02", "quantity": "1", "unit_price": "100", "vat_rate": "22"},
+		map[string]string{"invoice_number": "BILL-RC", "invoice_type": "PURCHASE", "issue_date": "2026-03-03", "quantity": "1", "unit_price": "100", "vat_rate": "22", "reverse_charge": "true"},
+		map[string]string{"invoice_number": "BILL-INPUT", "invoice_type": "PURCHASE", "issue_date": "2026-03-04", "quantity": "1", "unit_price": "50", "vat_rate": "22"},
+	)
+	addKMDHistoryInvoiceVATSupport(groups, invoiceFile)
+	assert.True(t, groups["2026-03"].externalOutputSupport.Equal(decimal.NewFromInt(44)))
+	assert.True(t, groups["2026-03"].externalInputSupport.Equal(decimal.NewFromInt(33)))
+
+	eInvoiceFile := wave6ParsedFile(KindEInvoices, "einvoices.csv",
+		[]string{"issue_date", "vat_amount", "invoice_type"},
+		map[string]string{"issue_date": "bad", "vat_amount": "22", "invoice_type": "SALES"},
+		map[string]string{"issue_date": "2026-04-01", "vat_amount": "22", "invoice_type": "SALES"},
+		map[string]string{"issue_date": "2026-03-05", "vat_amount": "0", "invoice_type": "SALES"},
+		map[string]string{"issue_date": "2026-03-06", "vat_amount": "5", "invoice_type": "SALES"},
+		map[string]string{"issue_date": "2026-03-07", "vat_amount": "7", "invoice_type": "PURCHASE"},
+	)
+	addKMDHistoryEInvoiceVATSupport(groups, eInvoiceFile)
+	assert.True(t, groups["2026-03"].externalOutputSupport.Equal(decimal.NewFromInt(49)))
+	assert.True(t, groups["2026-03"].externalInputSupport.Equal(decimal.NewFromInt(40)))
+
+	journalGroups := map[string]*kmdHistoryVATReconciliationGroup{
+		"2026-03": {period: "2026-03"},
+	}
+	journalFile := wave6ParsedFile(KindJournalEntries, "journals.csv",
+		[]string{"entry_date", "account_code", "debit", "credit", "exchange_rate", "vat_rate"},
+		map[string]string{"entry_date": "bad", "account_code": "4000", "debit": "0", "credit": "100", "vat_rate": "22"},
+		map[string]string{"entry_date": "2026-04-01", "account_code": "4000", "debit": "0", "credit": "100", "vat_rate": "22"},
+		map[string]string{"entry_date": "2026-03-01", "account_code": "4000", "debit": "0", "credit": "100", "vat_rate": "0"},
+		map[string]string{"entry_date": "2026-03-02", "account_code": "4000", "debit": "bad", "credit": "100", "vat_rate": "22"},
+		map[string]string{"entry_date": "2026-03-03", "account_code": "4000", "debit": "0", "credit": "100", "exchange_rate": "-1", "vat_rate": "22"},
+		map[string]string{"entry_date": "2026-03-04", "account_code": "9999", "debit": "0", "credit": "100", "vat_rate": "22"},
+		map[string]string{"entry_date": "2026-03-05", "account_code": "4000", "debit": "0", "credit": "0.01", "vat_rate": "0.0001"},
+		map[string]string{"entry_date": "2026-03-06", "account_code": "4000", "debit": "0", "credit": "100", "vat_rate": "22"},
+		map[string]string{"entry_date": "2026-03-07", "account_code": "5500", "debit": "50", "credit": "0", "vat_rate": "22"},
+	)
+	addKMDHistoryJournalVATSupport(journalGroups, journalFile, nil)
+	assert.False(t, journalGroups["2026-03"].externalOutputSupportSet)
+	targets := map[string]cutoverAccountTypeTarget{
+		cutoverAccountTypeTargetKey("code", "4000"): {display: "4000", accountType: "REVENUE"},
+		cutoverAccountTypeTargetKey("code", "5500"): {display: "5500", accountType: "EXPENSE"},
+	}
+	addKMDHistoryJournalVATSupport(journalGroups, journalFile, targets)
+	assert.True(t, journalGroups["2026-03"].externalOutputSupport.Equal(decimal.NewFromInt(22)))
+	assert.True(t, journalGroups["2026-03"].externalInputSupport.Equal(decimal.RequireFromString("11")))
+}
+
+func TestWave6VATSupportPrimitiveBranches(t *testing.T) {
+	_, ok := cutoverVATSupportPeriodFromRowDate("bad")
+	assert.False(t, ok)
+	_, ok = cutoverVATSupportPeriodFromDate(time.Time{}, true)
+	assert.False(t, ok)
+	_, ok = cutoverVATSupportPeriodFromDate(time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), false)
+	assert.False(t, ok)
+	period, ok := cutoverVATSupportPeriodFromDate(time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), true)
+	assert.True(t, ok)
+	assert.Equal(t, "2026-03", period)
+
+	_, ok = cutoverVATSupportDecimal("", false)
+	assert.False(t, ok)
+	_, ok = cutoverVATSupportDecimal("bad", false)
+	assert.False(t, ok)
+	_, ok = cutoverVATSupportDecimal("0", false)
+	assert.False(t, ok)
+	amount, ok := cutoverVATSupportDecimal("0", true)
+	assert.True(t, ok)
+	assert.True(t, amount.IsZero())
+
+	outputTotal := &kmdHistoryVATReconciliationValue{amount: decimal.NewFromInt(10)}
+	inputTotal := &kmdHistoryVATReconciliationValue{amount: decimal.NewFromInt(5)}
+	group := &kmdHistoryVATReconciliationGroup{outputTotalRow: outputTotal, inputTotalRow: inputTotal}
+	got, ok := group.externalComparisonTotal("output")
+	assert.True(t, ok)
+	assert.Same(t, outputTotal, got)
+	got, ok = group.externalComparisonTotal("input")
+	assert.True(t, ok)
+	assert.Same(t, inputTotal, got)
+
+	report := &BundleValidationReport{}
+	group.validateExternalVAT(report, "output")
+	group.declaredOutput = &kmdHistoryVATReconciliationValue{amount: decimal.NewFromInt(3)}
+	group.externalOutputSupport = decimal.NewFromInt(3)
+	group.externalOutputSupportSet = true
+	group.validateExternalVAT(report, "output")
+	assert.Empty(t, report.Issues)
+}
+
+func TestWave6VATAmountHelperBranches(t *testing.T) {
+	_, ok := cutoverEInvoiceVAT(einvoice.Invoice{Lines: []einvoice.Line{{
+		Quantity: decimal.Zero,
+	}}})
+	assert.False(t, ok)
+	_, ok = cutoverEInvoiceVAT(einvoice.Invoice{Lines: []einvoice.Line{{
+		Quantity:  decimal.NewFromInt(1),
+		UnitPrice: decimal.NewFromInt(100),
+		VATRate:   decimal.Zero,
+	}}})
+	assert.False(t, ok)
+	_, ok = cutoverEInvoiceLineVAT(einvoice.Line{
+		Quantity:        decimal.NewFromInt(1),
+		UnitPrice:       decimal.NewFromInt(100),
+		DiscountPercent: decimal.NewFromInt(101),
+		VATRate:         decimal.NewFromInt(22),
+	})
+	assert.False(t, ok)
+
+	invalidRows := []map[string]string{
+		{"quantity": "", "unit_price": "100", "vat_rate": "22"},
+		{"quantity": "1", "unit_price": "-1", "vat_rate": "22"},
+		{"quantity": "1", "unit_price": "100", "discount_percent": "101", "vat_rate": "22"},
+		{"quantity": "1", "unit_price": "100", "vat_rate": "bad"},
+		{"quantity": "1", "unit_price": "100", "vat_rate": "22", "exchange_rate": "-1"},
+	}
+	for _, values := range invalidRows {
+		_, _, ok := cutoverInvoiceLineVAT(parsedRow{values: values})
+		assert.False(t, ok)
+	}
+
+	amount, reverseCharge, ok := cutoverInvoiceLineVAT(parsedRow{values: map[string]string{
+		"quantity":         "1",
+		"unit_price":       "100",
+		"discount_percent": "10",
+		"vat_rate":         "22",
+		"exchange_rate":    "2",
+		"reverse_charge":   "true",
+	}})
+	assert.True(t, ok)
+	assert.True(t, reverseCharge)
+	assert.True(t, amount.Equal(decimal.RequireFromString("39.6")))
+}
+
 func TestWave6CrossFileInvoiceAndAssetGuards(t *testing.T) {
 	invoiceTargets := map[string]cutoverInvoiceAllocationTarget{}
 	addCutoverInvoiceAllocationTarget(invoiceTargets, KindInvoices, "invoice_number", " ", decimal.NewFromInt(100), decimal.Zero, false, "EUR", "SALES", "", time.Time{}, false, nil)

@@ -815,6 +815,8 @@ func modelToJournalEntryLine(m *models.JournalEntryLine) *JournalEntryLine {
 		ExchangeRate:   m.ExchangeRate.Decimal,
 		BaseDebit:      m.BaseDebit.Decimal,
 		BaseCredit:     m.BaseCredit.Decimal,
+		VATRate:        m.VATRate.Decimal,
+		IsVATInclusive: m.IsVATInclusive,
 	}
 }
 
@@ -831,6 +833,8 @@ func journalEntryLineToModel(l *JournalEntryLine) *models.JournalEntryLine {
 		ExchangeRate:   models.Decimal{Decimal: l.ExchangeRate},
 		BaseDebit:      models.Decimal{Decimal: l.BaseDebit},
 		BaseCredit:     models.Decimal{Decimal: l.BaseCredit},
+		VATRate:        models.Decimal{Decimal: l.VATRate},
+		IsVATInclusive: l.IsVATInclusive,
 	}
 }
 
