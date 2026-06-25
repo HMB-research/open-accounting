@@ -39,6 +39,8 @@ var ErrOrderStockReservationNotFound = fmt.Errorf("order stock reservation not f
 
 var errOrdersRepositoryDatabaseNotConfigured = errors.New("orders repository database is not configured")
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // GORMRepository implements Repository with the shared ORM layer.
 type GORMRepository struct {
 	db *gorm.DB
@@ -48,7 +50,7 @@ func NewRepository(db *pgxpool.Pool) *GORMRepository {
 	if db == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create orders GORM repository: %w", err))
 	}

@@ -21,6 +21,16 @@ import (
 var (
 	githubHTTPSRegex = regexp.MustCompile(`^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$`)
 	gitlabHTTPSRegex = regexp.MustCompile(`^https://gitlab\.com/([^/]+)/([^/]+?)(?:\.git)?/?$`)
+
+	pluginAbs       = filepath.Abs
+	pluginEnviron   = os.Environ
+	pluginMkdirAll  = os.MkdirAll
+	pluginRemoveAll = os.RemoveAll
+	pluginStat      = os.Stat
+	pluginWriteFile = os.WriteFile
+
+	newRegistryIndexRequest = http.NewRequestWithContext
+	fetchRegistryIndexDo    = http.DefaultClient.Do
 )
 
 const (
@@ -77,7 +87,7 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 	}
 
 	// Create plugins directory if it doesn't exist
-	if err := os.MkdirAll(s.pluginDir, 0750); err != nil {
+	if err := pluginMkdirAll(s.pluginDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create plugins directory: %w", err)
 	}
 
@@ -85,15 +95,10 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 	targetDir := filepath.Join(s.pluginDir, fmt.Sprintf("%s-%s", owner, repo))
 
 	// Remove existing directory if it exists
-	if _, err := os.Stat(targetDir); err == nil {
-		if err := os.RemoveAll(targetDir); err != nil {
+	if _, err := pluginStat(targetDir); err == nil {
+		if err := pluginRemoveAll(targetDir); err != nil {
 			return "", fmt.Errorf("failed to remove existing plugin directory: %w", err)
 		}
-	}
-
-	// Validate the repository URL before passing to git
-	if _, err := parseRepositoryType(repoURL); err != nil {
-		return "", fmt.Errorf("refusing to clone: %w", err)
 	}
 
 	cloneURL := repoURL
@@ -116,7 +121,7 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 		cloneArgs = append([]string{"-c", "protocol.file.allow=always"}, cloneArgs...)
 	}
 	cmd := exec.CommandContext(ctx, "git", cloneArgs...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(pluginEnviron(), "GIT_TERMINAL_PROMPT=0")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -125,8 +130,8 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 
 	// Verify plugin.yaml exists
 	manifestPath := filepath.Join(targetDir, "plugin.yaml")
-	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
-		if cleanErr := os.RemoveAll(targetDir); cleanErr != nil {
+	if _, err := pluginStat(manifestPath); os.IsNotExist(err) {
+		if cleanErr := pluginRemoveAll(targetDir); cleanErr != nil {
 			log.Warn().Err(cleanErr).Str("dir", targetDir).Msg("Failed to clean up cloned directory")
 		}
 		return "", fmt.Errorf("repository does not contain a plugin.yaml file")
@@ -134,7 +139,7 @@ func (s *Service) cloneRepository(ctx context.Context, repoURL string) (string, 
 
 	// Verify LICENSE file exists
 	if !hasLicenseFile(targetDir) {
-		if cleanErr := os.RemoveAll(targetDir); cleanErr != nil {
+		if cleanErr := pluginRemoveAll(targetDir); cleanErr != nil {
 			log.Warn().Err(cleanErr).Str("dir", targetDir).Msg("Failed to clean up cloned directory")
 		}
 		return "", fmt.Errorf("repository does not contain a LICENSE file (open source license required)")
@@ -154,21 +159,21 @@ func createDemoInstallFixtureRepository(ctx context.Context) (string, func(), er
 	}
 
 	cleanup := func() {
-		if cleanErr := os.RemoveAll(tempDir); cleanErr != nil {
+		if cleanErr := pluginRemoveAll(tempDir); cleanErr != nil {
 			log.Warn().Err(cleanErr).Str("dir", tempDir).Msg("Failed to clean up demo plugin fixture")
 		}
 	}
 
 	repoDir := filepath.Join(tempDir, "repo")
-	if err := os.MkdirAll(repoDir, 0750); err != nil {
+	if err := pluginMkdirAll(repoDir, 0750); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("create demo plugin repository: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(repoDir, "plugin.yaml"), []byte(demoInstallFixtureManifest), 0600); err != nil {
+	if err := pluginWriteFile(filepath.Join(repoDir, "plugin.yaml"), []byte(demoInstallFixtureManifest), 0600); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("write demo plugin manifest: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(repoDir, "LICENSE"), []byte("MIT\n"), 0600); err != nil {
+	if err := pluginWriteFile(filepath.Join(repoDir, "LICENSE"), []byte("MIT\n"), 0600); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("write demo plugin license: %w", err)
 	}
@@ -205,7 +210,7 @@ func createDemoInstallFixtureRepository(ctx context.Context) (string, func(), er
 func runDemoInstallFixtureGit(ctx context.Context, repoDir string, args ...string) error {
 	cmdArgs := append([]string{"-C", repoDir}, args...)
 	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(pluginEnviron(), "GIT_TERMINAL_PROMPT=0")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -223,11 +228,11 @@ func (s *Service) updateRepository(ctx context.Context, pluginName string) error
 	}
 
 	// Validate pluginPath is within the expected plugins directory
-	absPluginPath, err := filepath.Abs(pluginPath)
+	absPluginPath, err := pluginAbs(pluginPath)
 	if err != nil {
 		return fmt.Errorf("invalid plugin path: %w", err)
 	}
-	absPluginDir, err := filepath.Abs(s.pluginDir)
+	absPluginDir, err := pluginAbs(s.pluginDir)
 	if err != nil {
 		return fmt.Errorf("invalid plugin directory: %w", err)
 	}
@@ -236,7 +241,7 @@ func (s *Service) updateRepository(ctx context.Context, pluginName string) error
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "-C", absPluginPath, "pull", "--ff-only")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(pluginEnviron(), "GIT_TERMINAL_PROMPT=0")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -314,7 +319,7 @@ func hasLicenseFile(dir string) bool {
 	}
 
 	for _, name := range licenseFiles {
-		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+		if _, err := pluginStat(filepath.Join(dir, name)); err == nil {
 			return true
 		}
 	}
@@ -352,11 +357,11 @@ func (s *Service) FetchRegistryIndex(ctx context.Context, registryURL string) (*
 	}
 
 	// Fetch the registry index over HTTP
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	req, err := newRegistryIndexRequest(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fetchRegistryIndexDo(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch registry index: %w", err)
 	}

@@ -2,18 +2,17 @@ package accounting
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
 
-func TestCostCentersWave9RepositoryConstructorPanicsForUnreachablePool(t *testing.T) {
-	pool := costCentersWave9UnreachablePool(t)
-	defer pool.Close()
+func TestCostCentersWave9RepositoryConstructorPanicsForGormPoolError(t *testing.T) {
+	pool := stubNewGormDBFromPoolError(t, errors.New("pool unavailable"))
 
-	require.Panics(t, func() {
+	require.PanicsWithError(t, "create cost center GORM repository: pool unavailable", func() {
 		_ = NewCostCenterRepository(pool)
 	})
 }
@@ -37,14 +36,4 @@ func TestCostCentersWave9MockAllocationFiltersSkipNonMatches(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, allocations, 1)
 	require.Equal(t, "match", allocations[0].ID)
-}
-
-func costCentersWave9UnreachablePool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	config, err := pgxpool.ParseConfig("postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
-	require.NoError(t, err)
-	config.ConnConfig.ConnectTimeout = 10 * time.Millisecond
-	pool, err := pgxpool.NewWithConfig(context.Background(), config)
-	require.NoError(t, err)
-	return pool
 }

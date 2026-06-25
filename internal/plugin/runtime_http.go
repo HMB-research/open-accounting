@@ -26,6 +26,8 @@ var (
 	ErrPluginRuntimeUnsupported = errors.New("plugin backend runtime is unsupported")
 	ErrPluginRouteNotFound      = errors.New("plugin route is not registered")
 	ErrPluginNotEnabled         = errors.New("plugin is not enabled")
+
+	newRuntimeHTTPRequest = http.NewRequestWithContext
 )
 
 type runtimeHTTPClient struct {
@@ -122,7 +124,7 @@ func (c *runtimeHTTPClient) invokeHook(ctx context.Context, pluginID uuid.UUID, 
 		return err
 	}
 	target := c.handlerURL(hook.Handler, "")
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(payload))
+	req, err := newRuntimeHTTPRequest(ctx, http.MethodPost, target, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -165,7 +167,7 @@ func (c *runtimeHTTPClient) invokeRoute(
 	}
 
 	target := c.handlerURL(route.Handler, rawQuery)
-	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(payload))
+	req, err := newRuntimeHTTPRequest(ctx, method, target, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}

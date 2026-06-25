@@ -41,7 +41,7 @@ func NewInterestRepository(db *pgxpool.Pool) *InterestGORMRepository {
 	if db == nil {
 		return &InterestGORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create interest GORM repository: %w", err))
 	}

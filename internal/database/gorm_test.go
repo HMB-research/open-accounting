@@ -3,15 +3,153 @@ package database
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+func restoreGormConstructorSeams(t *testing.T) {
+	t.Helper()
+	originalOpenGorm := openGorm
+	originalOpenDBFromPool := openDBFromPool
+	originalGormDBSQL := gormDBSQL
+	originalPingSQLDB := pingSQLDB
+	t.Cleanup(func() {
+		openGorm = originalOpenGorm
+		openDBFromPool = originalOpenDBFromPool
+		gormDBSQL = originalGormDBSQL
+		pingSQLDB = originalPingSQLDB
+	})
+}
+
+type gormPingConnector struct {
+	pingErr error
+}
+
+func (c gormPingConnector) Connect(context.Context) (driver.Conn, error) {
+	return gormPingConn{pingErr: c.pingErr}, nil
+}
+
+func (gormPingConnector) Driver() driver.Driver {
+	return gormPingDriver{}
+}
+
+type gormPingDriver struct{}
+
+func (gormPingDriver) Open(string) (driver.Conn, error) {
+	return nil, errors.New("gorm ping test driver should use Connector")
+}
+
+type gormPingConn struct {
+	pingErr error
+}
+
+func (c gormPingConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("gorm ping test driver should not prepare statements")
+}
+
+func (c gormPingConn) Close() error {
+	return nil
+}
+
+func (c gormPingConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("gorm ping test driver should not begin transactions")
+}
+
+func (c gormPingConn) Ping(context.Context) error {
+	return c.pingErr
+}
+
+func newGormDBFromSQLHandle(t *testing.T, sqlDB *sql.DB) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
+		DisableAutomaticPing:   true,
+		Logger:                 logger.Default.LogMode(logger.Silent),
+		SkipDefaultTransaction: true,
+	})
+	if err != nil {
+		t.Fatalf("open gorm database: %v", err)
+	}
+	return db
+}
+
+func TestNewGormDBReturnsOpenError(t *testing.T) {
+	restoreGormConstructorSeams(t)
+	expectedErr := errors.New("open failed")
+	openGorm = func(gorm.Dialector, ...gorm.Option) (*gorm.DB, error) {
+		return nil, expectedErr
+	}
+
+	db, err := NewGormDB(context.Background(), "postgres://ignored")
+
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("NewGormDB() error = %v, want %v", err, expectedErr)
+	}
+	if db != nil {
+		t.Fatalf("NewGormDB() db = %#v, want nil", db)
+	}
+}
+
+func TestNewGormDBReturnsUnderlyingDBError(t *testing.T) {
+	restoreGormConstructorSeams(t)
+	expectedErr := errors.New("sql handle unavailable")
+	fakeDB := &gorm.DB{}
+	openGorm = func(gorm.Dialector, ...gorm.Option) (*gorm.DB, error) {
+		return fakeDB, nil
+	}
+	gormDBSQL = func(db *gorm.DB) (*sql.DB, error) {
+		if db != fakeDB {
+			t.Fatalf("gormDBSQL got %#v, want %#v", db, fakeDB)
+		}
+		return nil, expectedErr
+	}
+
+	db, err := NewGormDB(context.Background(), "postgres://ignored")
+
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("NewGormDB() error = %v, want %v", err, expectedErr)
+	}
+	if db != nil {
+		t.Fatalf("NewGormDB() db = %#v, want nil", db)
+	}
+}
+
+func TestNewGormDBUsesInjectedOpenAndPing(t *testing.T) {
+	restoreGormConstructorSeams(t)
+	fakeDB := &gorm.DB{}
+	var pinged bool
+	openGorm = func(gorm.Dialector, ...gorm.Option) (*gorm.DB, error) {
+		return fakeDB, nil
+	}
+	gormDBSQL = func(db *gorm.DB) (*sql.DB, error) {
+		if db != fakeDB {
+			t.Fatalf("gormDBSQL got %#v, want %#v", db, fakeDB)
+		}
+		return nil, nil
+	}
+	pingSQLDB = func(context.Context, *sql.DB) error {
+		pinged = true
+		return nil
+	}
+
+	db, err := NewGormDB(context.Background(), "postgres://ignored")
+
+	if err != nil {
+		t.Fatalf("NewGormDB() error = %v, want nil", err)
+	}
+	if db == nil || db.DB != fakeDB {
+		t.Fatalf("NewGormDB() db = %#v, want wrapper around %#v", db, fakeDB)
+	}
+	if !pinged {
+		t.Fatal("expected pingSQLDB to be called")
+	}
+}
 
 func TestNewGormDBFromPoolRejectsNilPool(t *testing.T) {
 	db, err := NewGormDBFromPool(context.Background(), nil)
@@ -24,57 +162,105 @@ func TestNewGormDBFromPoolRejectsNilPool(t *testing.T) {
 }
 
 func TestNewGormDBReturnsPingError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
+	restoreGormConstructorSeams(t)
+	expectedErr := errors.New("ping failed")
+	sqlDB := sql.OpenDB(gormPingConnector{pingErr: expectedErr})
+	defer sqlDB.Close()
+	fakeDB := newGormDBFromSQLHandle(t, sqlDB)
+	openGorm = func(gorm.Dialector, ...gorm.Option) (*gorm.DB, error) {
+		return fakeDB, nil
+	}
 
-	db, err := NewGormDB(ctx, "postgres://invalid")
-	if err == nil {
-		_ = db.Close()
-		t.Fatal("expected connection error")
+	db, err := NewGormDB(context.Background(), "postgres://ignored")
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("NewGormDB() error = %v, want %v", err, expectedErr)
 	}
 	if db != nil {
-		t.Fatalf("expected nil database on error, got %#v", db)
+		t.Fatalf("NewGormDB() db = %#v, want nil", db)
 	}
 }
 
-func TestNewGormDBReturnsPingErrorAfterOpening(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	db, err := NewGormDB(ctx, "postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
-	if err == nil {
-		_ = db.Close()
-		t.Fatal("expected ping error")
-	}
-	if db != nil {
-		t.Fatalf("expected nil database on ping error, got %#v", db)
-	}
-}
-
-func TestNewGormDBFromPoolReturnsPingErrorForUnreachablePool(t *testing.T) {
-	config, err := pgxpool.ParseConfig("postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
-	if err != nil {
-		t.Fatalf("parse pgxpool config: %v", err)
-	}
-	config.ConnConfig.ConnectTimeout = 10 * time.Millisecond
-	pool, err := pgxpool.NewWithConfig(context.Background(), config)
-	if err != nil {
-		t.Fatalf("create pgxpool: %v", err)
-	}
-	defer pool.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	db, err := NewGormDBFromPool(ctx, pool)
-	if err == nil {
-		sqlDB, _ := db.DB()
-		if sqlDB != nil {
-			_ = sqlDB.Close()
+func TestNewGormDBFromPoolReturnsOpenError(t *testing.T) {
+	restoreGormConstructorSeams(t)
+	expectedErr := errors.New("open from pool failed")
+	pool := new(pgxpool.Pool)
+	openDBFromPool = func(got *pgxpool.Pool, _ ...stdlib.OptionOpenDB) *sql.DB {
+		if got != pool {
+			t.Fatalf("openDBFromPool got %#v, want %#v", got, pool)
 		}
-		t.Fatal("expected ping error")
+		return nil
+	}
+	openGorm = func(gorm.Dialector, ...gorm.Option) (*gorm.DB, error) {
+		return nil, expectedErr
+	}
+
+	db, err := NewGormDBFromPool(context.Background(), pool)
+
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("NewGormDBFromPool() error = %v, want %v", err, expectedErr)
 	}
 	if db != nil {
-		t.Fatalf("expected nil gorm DB on ping error, got %#v", db)
+		t.Fatalf("NewGormDBFromPool() db = %#v, want nil", db)
+	}
+}
+
+func TestNewGormDBFromPoolReturnsPingError(t *testing.T) {
+	restoreGormConstructorSeams(t)
+	expectedErr := errors.New("ping failed")
+	pool := new(pgxpool.Pool)
+	fakeDB := &gorm.DB{}
+	openDBFromPool = func(got *pgxpool.Pool, _ ...stdlib.OptionOpenDB) *sql.DB {
+		if got != pool {
+			t.Fatalf("openDBFromPool got %#v, want %#v", got, pool)
+		}
+		return nil
+	}
+	openGorm = func(gorm.Dialector, ...gorm.Option) (*gorm.DB, error) {
+		return fakeDB, nil
+	}
+	pingSQLDB = func(context.Context, *sql.DB) error {
+		return expectedErr
+	}
+
+	db, err := NewGormDBFromPool(context.Background(), pool)
+
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("NewGormDBFromPool() error = %v, want %v", err, expectedErr)
+	}
+	if db != nil {
+		t.Fatalf("NewGormDBFromPool() db = %#v, want nil", db)
+	}
+}
+
+func TestNewGormDBFromPoolUsesInjectedOpenAndPing(t *testing.T) {
+	restoreGormConstructorSeams(t)
+	pool := new(pgxpool.Pool)
+	fakeDB := &gorm.DB{}
+	var pinged bool
+	openDBFromPool = func(got *pgxpool.Pool, _ ...stdlib.OptionOpenDB) *sql.DB {
+		if got != pool {
+			t.Fatalf("openDBFromPool got %#v, want %#v", got, pool)
+		}
+		return nil
+	}
+	openGorm = func(gorm.Dialector, ...gorm.Option) (*gorm.DB, error) {
+		return fakeDB, nil
+	}
+	pingSQLDB = func(context.Context, *sql.DB) error {
+		pinged = true
+		return nil
+	}
+
+	db, err := NewGormDBFromPool(context.Background(), pool)
+
+	if err != nil {
+		t.Fatalf("NewGormDBFromPool() error = %v, want nil", err)
+	}
+	if db != fakeDB {
+		t.Fatalf("NewGormDBFromPool() db = %#v, want %#v", db, fakeDB)
+	}
+	if !pinged {
+		t.Fatal("expected pingSQLDB to be called")
 	}
 }
 
@@ -157,19 +343,8 @@ func TestGormDBWrapperMethodsWithDryRunDB(t *testing.T) {
 }
 
 func TestGormDBCloseClosesUnderlyingSQLHandle(t *testing.T) {
-	sqlDB, err := sql.Open("pgx", "postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
-	if err != nil {
-		t.Fatalf("open sql handle: %v", err)
-	}
-
-	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
-		DisableAutomaticPing:   true,
-		Logger:                 logger.Default.LogMode(logger.Silent),
-		SkipDefaultTransaction: true,
-	})
-	if err != nil {
-		t.Fatalf("open gorm database: %v", err)
-	}
+	sqlDB := sql.OpenDB(gormPingConnector{})
+	db := newGormDBFromSQLHandle(t, sqlDB)
 
 	if err := (&GormDB{DB: db}).Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)

@@ -21,7 +21,7 @@ func NewReminderRepository(db *pgxpool.Pool) *ReminderGORMRepository {
 	if db == nil {
 		return &ReminderGORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create reminder GORM repository: %w", err))
 	}

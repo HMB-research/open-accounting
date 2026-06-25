@@ -45,6 +45,20 @@ func (r *GORMRepository) tenantTableAlias(ctx context.Context, schemaName, table
 	return r.db.WithContext(ctx).Table(qualifiedTable + " AS " + quotedAlias), nil
 }
 
+func qualifiedTableAfterSchemaValidated(schemaName, tableName string) string {
+	qualifiedTable, _ := database.QualifiedTable(schemaName, tableName)
+	return qualifiedTable
+}
+
+func tenantTableAfterSchemaValidated(db *gorm.DB, schemaName, tableName string) *gorm.DB {
+	return db.Session(&gorm.Session{NewDB: true}).Table(qualifiedTableAfterSchemaValidated(schemaName, tableName))
+}
+
+func tenantTableAliasAfterSchemaValidated(db *gorm.DB, schemaName, tableName, alias string) *gorm.DB {
+	quotedAlias, _ := database.QuoteIdentifier(alias)
+	return db.Session(&gorm.Session{NewDB: true}).Table(qualifiedTableAfterSchemaValidated(schemaName, tableName) + " AS " + quotedAlias)
+}
+
 // GetAccountByID retrieves an account by ID
 func (r *GORMRepository) GetAccountByID(ctx context.Context, schemaName, tenantID, accountID string) (*Account, error) {
 	db, err := r.tenantTable(ctx, schemaName, "accounts")
@@ -152,10 +166,7 @@ func (r *GORMRepository) GetJournalEntryByID(ctx context.Context, schemaName, te
 	}
 
 	// Load lines
-	linesDB, err := r.tenantTable(ctx, schemaName, "journal_entry_lines")
-	if err != nil {
-		return nil, err
-	}
+	linesDB := tenantTableAfterSchemaValidated(db, schemaName, "journal_entry_lines")
 	var lines []models.JournalEntryLine
 	if err := linesDB.Where("journal_entry_id = ? AND tenant_id = ?", entryID, tenantID).
 		Order("id").
@@ -226,10 +237,7 @@ func (r *GORMRepository) ListJournalEntries(ctx context.Context, schemaName, ten
 		return entries, nil
 	}
 
-	linesDB, err := r.tenantTable(ctx, schemaName, "journal_entry_lines")
-	if err != nil {
-		return nil, err
-	}
+	linesDB := tenantTableAfterSchemaValidated(entriesDB, schemaName, "journal_entry_lines")
 	var lineModels []models.JournalEntryLine
 	if err := linesDB.
 		Where("tenant_id = ? AND journal_entry_id IN ?", tenantID, entryIDs).
@@ -259,10 +267,7 @@ func (r *GORMRepository) CreateJournalEntryTemplate(ctx context.Context, schemaN
 		if err != nil {
 			return err
 		}
-		linesDB, err := database.TenantTable(tx, schemaName, "journal_entry_template_lines")
-		if err != nil {
-			return err
-		}
+		linesDB := tenantTableAfterSchemaValidated(tx, schemaName, "journal_entry_template_lines")
 
 		if template.ID == "" {
 			template.ID = uuid.New().String()
@@ -349,10 +354,7 @@ func (r *GORMRepository) GetJournalEntryTemplateByID(ctx context.Context, schema
 		return nil, fmt.Errorf("get journal entry template: %w", err)
 	}
 
-	linesDB, err := r.tenantTable(ctx, schemaName, "journal_entry_template_lines")
-	if err != nil {
-		return nil, err
-	}
+	linesDB := tenantTableAfterSchemaValidated(templatesDB, schemaName, "journal_entry_template_lines")
 	var lineModels []models.JournalEntryTemplateLine
 	if err := linesDB.Where("template_id = ?", templateID).Order("line_number").Find(&lineModels).Error; err != nil {
 		return nil, fmt.Errorf("get journal entry template lines: %w", err)
@@ -459,10 +461,7 @@ func (r *GORMRepository) createJournalEntryInTx(ctx context.Context, tx *gorm.DB
 	if err != nil {
 		return err
 	}
-	linesDB, err := database.TenantTable(tx, schemaName, "journal_entry_lines")
-	if err != nil {
-		return err
-	}
+	linesDB := tenantTableAfterSchemaValidated(tx, schemaName, "journal_entry_lines")
 
 	if je.ID == "" {
 		je.ID = uuid.New().String()
@@ -552,14 +551,8 @@ func (r *GORMRepository) GetAccountBalance(ctx context.Context, schemaName, tena
 		return decimal.Zero, err
 	}
 
-	linesDB, err := r.tenantTableAlias(ctx, schemaName, "journal_entry_lines", "jel")
-	if err != nil {
-		return decimal.Zero, err
-	}
-	entriesTable, err := database.QualifiedTable(schemaName, "journal_entries")
-	if err != nil {
-		return decimal.Zero, err
-	}
+	linesDB := tenantTableAliasAfterSchemaValidated(r.db.WithContext(ctx), schemaName, "journal_entry_lines", "jel")
+	entriesTable := qualifiedTableAfterSchemaValidated(schemaName, "journal_entries")
 
 	var result struct {
 		DebitSum  models.Decimal
@@ -588,14 +581,8 @@ func (r *GORMRepository) GetTrialBalance(ctx context.Context, schemaName, tenant
 	if err != nil {
 		return nil, err
 	}
-	linesTable, err := database.QualifiedTable(schemaName, "journal_entry_lines")
-	if err != nil {
-		return nil, err
-	}
-	entriesTable, err := database.QualifiedTable(schemaName, "journal_entries")
-	if err != nil {
-		return nil, err
-	}
+	linesTable := qualifiedTableAfterSchemaValidated(schemaName, "journal_entry_lines")
+	entriesTable := qualifiedTableAfterSchemaValidated(schemaName, "journal_entries")
 
 	var results []struct {
 		AccountID    string
@@ -653,14 +640,8 @@ func (r *GORMRepository) GetPeriodBalances(ctx context.Context, schemaName, tena
 	if err != nil {
 		return nil, err
 	}
-	linesTable, err := database.QualifiedTable(schemaName, "journal_entry_lines")
-	if err != nil {
-		return nil, err
-	}
-	entriesTable, err := database.QualifiedTable(schemaName, "journal_entries")
-	if err != nil {
-		return nil, err
-	}
+	linesTable := qualifiedTableAfterSchemaValidated(schemaName, "journal_entry_lines")
+	entriesTable := qualifiedTableAfterSchemaValidated(schemaName, "journal_entries")
 
 	var results []struct {
 		AccountID    string
@@ -723,10 +704,7 @@ func (r *GORMRepository) VoidJournalEntry(ctx context.Context, schemaName, tenan
 
 	return db.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
-		entriesDB, err := database.TenantTable(tx, schemaName, "journal_entries")
-		if err != nil {
-			return err
-		}
+		entriesDB := tenantTableAfterSchemaValidated(tx, schemaName, "journal_entries")
 
 		// Mark original as voided
 		result := entriesDB.Where("id = ? AND tenant_id = ? AND status = ?", entryID, tenantID, StatusPosted).

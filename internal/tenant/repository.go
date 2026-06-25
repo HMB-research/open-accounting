@@ -59,11 +59,13 @@ var (
 	ErrEmailExists        = fmt.Errorf("email already exists")
 )
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 func NewRepository(db *pgxpool.Pool) *GORMRepository {
 	if db == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create tenant GORM repository: %w", err))
 	}

@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,6 +12,13 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+var (
+	openGorm       = gorm.Open
+	openDBFromPool = stdlib.OpenDBFromPool
+	gormDBSQL      = func(db *gorm.DB) (*sql.DB, error) { return db.DB() }
+	pingSQLDB      = func(ctx context.Context, db *sql.DB) error { return db.PingContext(ctx) }
+)
+
 // GormDB wraps gorm.DB and provides multi-tenant support
 type GormDB struct {
 	*gorm.DB
@@ -18,7 +26,7 @@ type GormDB struct {
 
 // NewGormDB creates a new GORM database connection from a connection string
 func NewGormDB(ctx context.Context, connString string) (*GormDB, error) {
-	db, err := gorm.Open(postgres.Open(connString), &gorm.Config{
+	db, err := openGorm(postgres.Open(connString), &gorm.Config{
 		Logger:                 logger.Default.LogMode(logger.Warn),
 		SkipDefaultTransaction: true, // We manage transactions explicitly
 	})
@@ -27,13 +35,13 @@ func NewGormDB(ctx context.Context, connString string) (*GormDB, error) {
 	}
 
 	// Get underlying sql.DB to configure connection pool
-	sqlDB, err := db.DB()
+	sqlDB, err := gormDBSQL(db)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
 	}
 
 	// Verify connection
-	if err := sqlDB.PingContext(ctx); err != nil {
+	if err := pingSQLDB(ctx, sqlDB); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
@@ -46,8 +54,8 @@ func NewGormDBFromPool(ctx context.Context, pool *pgxpool.Pool) (*gorm.DB, error
 		return nil, fmt.Errorf("database connection not available")
 	}
 
-	sqlDB := stdlib.OpenDBFromPool(pool)
-	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
+	sqlDB := openDBFromPool(pool)
+	db, err := openGorm(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
 		Logger:                 logger.Default.LogMode(logger.Warn),
 		SkipDefaultTransaction: true,
 	})
@@ -55,7 +63,7 @@ func NewGormDBFromPool(ctx context.Context, pool *pgxpool.Pool) (*gorm.DB, error
 		return nil, fmt.Errorf("failed to open gorm connection: %w", err)
 	}
 
-	if err := sqlDB.PingContext(ctx); err != nil {
+	if err := pingSQLDB(ctx, sqlDB); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 

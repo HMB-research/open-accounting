@@ -23,8 +23,26 @@ import (
 	"github.com/HMB-research/open-accounting/internal/reports"
 )
 
+var (
+	exportTrialBalancePDF               = trialBalancePDF
+	exportBalanceSheetPDF               = balanceSheetPDF
+	exportIncomeStatementPDF            = incomeStatementPDF
+	exportCashFlowStatementPDF          = cashFlowStatementPDF
+	exportAccountBalancePDF             = accountBalancePDF
+	exportAgingReportPDF                = agingReportPDF
+	exportBalanceConfirmationSummaryPDF = balanceConfirmationSummaryPDF
+	exportBalanceConfirmationPDF        = balanceConfirmationPDF
+	exportContactStatementPDF           = contactStatementPDF
+	exportSalesMarginPDF                = salesMarginPDF
+	exportCostCenterReportPDF           = costCenterReportPDF
+	exportReportRowsPDF                 = reportRowsPDF
+	reportPDFGenerate                   = func(m core.Maroto) (core.Document, error) {
+		return m.Generate()
+	}
+)
+
 func trialBalancePDF(report *accounting.TrialBalance, asOfDate time.Time) ([]byte, error) {
-	content, err := trialBalanceCSV(report)
+	content, err := exportTrialBalanceCSV(report)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +50,7 @@ func trialBalancePDF(report *accounting.TrialBalance, asOfDate time.Time) ([]byt
 }
 
 func balanceSheetPDF(report *accounting.BalanceSheet, asOfDate time.Time) ([]byte, error) {
-	content, err := balanceSheetCSV(report)
+	content, err := exportBalanceSheetCSV(report)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +58,7 @@ func balanceSheetPDF(report *accounting.BalanceSheet, asOfDate time.Time) ([]byt
 }
 
 func incomeStatementPDF(report *accounting.IncomeStatement, startDate, endDate time.Time) ([]byte, error) {
-	content, err := incomeStatementCSV(report)
+	content, err := exportIncomeStatementCSV(report)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +66,7 @@ func incomeStatementPDF(report *accounting.IncomeStatement, startDate, endDate t
 }
 
 func cashFlowStatementPDF(report *reports.CashFlowStatement) ([]byte, error) {
-	content, err := cashFlowStatementCSV(report)
+	content, err := exportCashFlowStatementCSV(report)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +74,7 @@ func cashFlowStatementPDF(report *reports.CashFlowStatement) ([]byte, error) {
 }
 
 func accountBalancePDF(accountID, asOfDate, balance string) ([]byte, error) {
-	content, err := accountBalanceCSV(accountID, asOfDate, balance)
+	content, err := exportAccountBalanceCSV(accountID, asOfDate, balance)
 	if err != nil {
 		return nil, err
 	}
@@ -64,27 +82,27 @@ func accountBalancePDF(accountID, asOfDate, balance string) ([]byte, error) {
 }
 
 func agingReportPDF(report *analytics.AgingReport) ([]byte, error) {
-	return reportRowsPDF(reportPDFTitleCase(report.ReportType)+" Aging", "As of "+reportExportDate(report.AsOfDate), agingReportRows(report))
+	return exportReportRowsPDF(reportPDFTitleCase(report.ReportType)+" Aging", "As of "+reportExportDate(report.AsOfDate), agingReportRows(report))
 }
 
 func balanceConfirmationSummaryPDF(report *reports.BalanceConfirmationSummary) ([]byte, error) {
-	return reportRowsPDF("Balance Confirmations", fmt.Sprintf("%s as of %s", report.Type, report.AsOfDate), balanceConfirmationSummaryRows(report))
+	return exportReportRowsPDF("Balance Confirmations", fmt.Sprintf("%s as of %s", report.Type, report.AsOfDate), balanceConfirmationSummaryRows(report))
 }
 
 func balanceConfirmationPDF(report *reports.BalanceConfirmation) ([]byte, error) {
-	return reportRowsPDF("Balance Confirmation", fmt.Sprintf("%s %s as of %s", report.ContactName, report.Type, report.AsOfDate), balanceConfirmationRows(report))
+	return exportReportRowsPDF("Balance Confirmation", fmt.Sprintf("%s %s as of %s", report.ContactName, report.Type, report.AsOfDate), balanceConfirmationRows(report))
 }
 
 func contactStatementPDF(report *reports.ContactStatement) ([]byte, error) {
-	return reportRowsPDF("Contact Statement", fmt.Sprintf("%s %s from %s to %s", report.ContactName, report.Type, report.StartDate, report.EndDate), contactStatementRows(report))
+	return exportReportRowsPDF("Contact Statement", fmt.Sprintf("%s %s from %s to %s", report.ContactName, report.Type, report.StartDate, report.EndDate), contactStatementRows(report))
 }
 
 func salesMarginPDF(report *reports.SalesMarginReport) ([]byte, error) {
-	return reportRowsPDF("Sales Margin", fmt.Sprintf("%s to %s", report.StartDate, report.EndDate), salesMarginRows(report))
+	return exportReportRowsPDF("Sales Margin", fmt.Sprintf("%s to %s", report.StartDate, report.EndDate), salesMarginRows(report))
 }
 
 func costCenterReportPDF(report *accounting.CostCenterReport) ([]byte, error) {
-	return reportRowsPDF("Cost Center Report", fmt.Sprintf("%s to %s", reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), costCenterReportRows(report))
+	return exportReportRowsPDF("Cost Center Report", fmt.Sprintf("%s to %s", reportExportDate(report.PeriodStart), reportExportDate(report.PeriodEnd)), costCenterReportRows(report))
 }
 
 func reportCSVBytesToPDF(title, subtitle string, content []byte) ([]byte, error) {
@@ -93,7 +111,7 @@ func reportCSVBytesToPDF(title, subtitle string, content []byte) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
-	return reportRowsPDF(title, subtitle, rows)
+	return exportReportRowsPDF(title, subtitle, rows)
 }
 
 func reportRowsPDF(title, subtitle string, rows [][]string) ([]byte, error) {
@@ -146,7 +164,7 @@ func reportRowsPDF(title, subtitle string, rows [][]string) ([]byte, error) {
 		m.AddRow(6, reportPDFColumns(normalizeReportPDFRow(rowData, maxCols), headers, false)...).WithStyle(rowStyle)
 	}
 
-	doc, err := m.Generate()
+	doc, err := reportPDFGenerate(m)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate report PDF: %w", err)
 	}

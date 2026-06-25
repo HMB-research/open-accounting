@@ -6,16 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
 
-func TestOrdersWave9ConstructorPanicsForUnreachablePool(t *testing.T) {
-	pool := ordersWave9UnreachablePool(t)
-	defer pool.Close()
+func TestOrdersWave9ConstructorPanicsForGormPoolError(t *testing.T) {
+	pool := stubNewGormDBFromPoolError(t, errors.New("pool unavailable"))
 
-	require.Panics(t, func() {
+	require.PanicsWithError(t, "create orders GORM repository: pool unavailable", func() {
 		_ = NewService(pool)
 	})
 }
@@ -118,14 +116,4 @@ func TestOrdersWave9ImportParserEdges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, OrderStatusShipped, status)
 	})
-}
-
-func ordersWave9UnreachablePool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	config, err := pgxpool.ParseConfig("postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
-	require.NoError(t, err)
-	config.ConnConfig.ConnectTimeout = 10 * time.Millisecond
-	pool, err := pgxpool.NewWithConfig(context.Background(), config)
-	require.NoError(t, err)
-	return pool
 }

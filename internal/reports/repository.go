@@ -61,12 +61,14 @@ type GORMRepository struct {
 	db *gorm.DB
 }
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // NewGORMRepository creates an ORM-backed reports repository.
 func NewGORMRepository(pool *pgxpool.Pool) *GORMRepository {
 	if pool == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create reports GORM repository: %w", err))
 	}
@@ -99,20 +101,19 @@ func qualifiedTenantTable(schemaName, tableName string) (string, error) {
 	return database.QualifiedTable(schemaName, tableName)
 }
 
+func qualifiedTenantTableAfterSchemaValidated(schemaName, tableName string) string {
+	qualifiedTable, _ := qualifiedTenantTable(schemaName, tableName)
+	return qualifiedTable
+}
+
 // GetJournalEntriesForPeriod retrieves journal entries within a date range
 func (r *GORMRepository) GetJournalEntriesForPeriod(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]JournalEntryWithLines, error) {
 	journalEntries, err := r.tenantTable(ctx, schemaName, "journal_entries", "je")
 	if err != nil {
 		return nil, fmt.Errorf("qualify journal entries table: %w", err)
 	}
-	journalLinesTable, err := qualifiedTenantTable(schemaName, "journal_entry_lines")
-	if err != nil {
-		return nil, fmt.Errorf("qualify journal entry lines table: %w", err)
-	}
-	accountsTable, err := qualifiedTenantTable(schemaName, "accounts")
-	if err != nil {
-		return nil, fmt.Errorf("qualify accounts table: %w", err)
-	}
+	journalLinesTable := qualifiedTenantTableAfterSchemaValidated(schemaName, "journal_entry_lines")
+	accountsTable := qualifiedTenantTableAfterSchemaValidated(schemaName, "accounts")
 
 	var rows []journalEntryLineRow
 	if err := journalEntries.
@@ -173,14 +174,8 @@ func (r *GORMRepository) GetCashAccountBalance(ctx context.Context, schemaName, 
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("qualify journal entries table: %w", err)
 	}
-	journalLinesTable, err := qualifiedTenantTable(schemaName, "journal_entry_lines")
-	if err != nil {
-		return decimal.Zero, fmt.Errorf("qualify journal entry lines table: %w", err)
-	}
-	accountsTable, err := qualifiedTenantTable(schemaName, "accounts")
-	if err != nil {
-		return decimal.Zero, fmt.Errorf("qualify accounts table: %w", err)
-	}
+	journalLinesTable := qualifiedTenantTableAfterSchemaValidated(schemaName, "journal_entry_lines")
+	accountsTable := qualifiedTenantTableAfterSchemaValidated(schemaName, "accounts")
 
 	var row decimalRow
 	if err := journalEntries.
@@ -203,10 +198,7 @@ func (r *GORMRepository) GetOutstandingInvoicesByContact(ctx context.Context, sc
 	if err != nil {
 		return nil, fmt.Errorf("qualify invoices table: %w", err)
 	}
-	contactsTable, err := qualifiedTenantTable(schemaName, "contacts")
-	if err != nil {
-		return nil, fmt.Errorf("qualify contacts table: %w", err)
-	}
+	contactsTable := qualifiedTenantTableAfterSchemaValidated(schemaName, "contacts")
 
 	var rows []contactBalanceRow
 	if err := invoices.
@@ -497,18 +489,9 @@ func (r *GORMRepository) GetSalesMarginLines(ctx context.Context, schemaName, te
 	if err != nil {
 		return nil, fmt.Errorf("qualify invoices table: %w", err)
 	}
-	invoiceLinesTable, err := qualifiedTenantTable(schemaName, "invoice_lines")
-	if err != nil {
-		return nil, fmt.Errorf("qualify invoice lines table: %w", err)
-	}
-	contactsTable, err := qualifiedTenantTable(schemaName, "contacts")
-	if err != nil {
-		return nil, fmt.Errorf("qualify contacts table: %w", err)
-	}
-	productsTable, err := qualifiedTenantTable(schemaName, "products")
-	if err != nil {
-		return nil, fmt.Errorf("qualify products table: %w", err)
-	}
+	invoiceLinesTable := qualifiedTenantTableAfterSchemaValidated(schemaName, "invoice_lines")
+	contactsTable := qualifiedTenantTableAfterSchemaValidated(schemaName, "contacts")
+	productsTable := qualifiedTenantTableAfterSchemaValidated(schemaName, "products")
 
 	var rows []salesMarginRow
 	if err := invoicesTable.
@@ -710,16 +693,10 @@ func settingsWithCashFlowMapping(settings json.RawMessage, mapping CashFlowMappi
 	if err != nil {
 		return nil, err
 	}
-	rawMapping, err := json.Marshal(mapping)
-	if err != nil {
-		return nil, fmt.Errorf("marshal cash flow mapping: %w", err)
-	}
+	rawMapping, _ := json.Marshal(mapping)
 	settingsMap["cash_flow_mapping"] = rawMapping
 
-	updatedSettings, err := json.Marshal(settingsMap)
-	if err != nil {
-		return nil, fmt.Errorf("marshal tenant settings: %w", err)
-	}
+	updatedSettings, _ := json.Marshal(settingsMap)
 	return updatedSettings, nil
 }
 
