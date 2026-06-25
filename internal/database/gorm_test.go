@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -18,6 +19,20 @@ func TestNewGormDBFromPoolRejectsNilPool(t *testing.T) {
 	}
 	if db != nil {
 		t.Fatal("expected nil gorm DB on error")
+	}
+}
+
+func TestNewGormDBReturnsPingError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	db, err := NewGormDB(ctx, "postgres://invalid")
+	if err == nil {
+		_ = db.Close()
+		t.Fatal("expected connection error")
+	}
+	if db != nil {
+		t.Fatalf("expected nil database on error, got %#v", db)
 	}
 }
 
