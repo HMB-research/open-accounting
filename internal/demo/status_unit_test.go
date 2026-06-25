@@ -43,6 +43,33 @@ func TestGormStatusReaderRejectsInvalidIdentifiersBeforeQuery(t *testing.T) {
 
 	require.ErrorContains(t, err, `invalid SQL identifier "tenant-demo-invalid"`)
 	assert.Equal(t, EntityStatus{}, status)
+
+	status, err = reader.employeeStatus(context.Background(), "tenant-demo-invalid")
+	require.ErrorContains(t, err, `invalid SQL identifier "tenant-demo-invalid"`)
+	assert.Equal(t, EntityStatus{}, status)
+
+	status, err = reader.periodStatus(context.Background(), "tenant-demo-invalid", "payroll_runs")
+	require.ErrorContains(t, err, `invalid SQL identifier "tenant-demo-invalid"`)
+	assert.Equal(t, EntityStatus{}, status)
+}
+
+func TestGormStatusReaderTenantTableRejectsMissingConfiguration(t *testing.T) {
+	var reader *gormStatusReader
+
+	db, err := reader.tenantTable(context.Background(), "tenant_demo1", "accounts")
+
+	require.ErrorContains(t, err, "demo status reader is not configured")
+	assert.Nil(t, db)
+}
+
+func TestGormStatusReaderReadDemoStatusWrapsFirstEntityError(t *testing.T) {
+	reader := &gormStatusReader{db: newDryRunGormDB(t)}
+
+	status, err := reader.ReadDemoStatus(context.Background(), "tenant-demo-invalid", 2)
+
+	require.ErrorContains(t, err, "read accounts status")
+	require.ErrorContains(t, err, `invalid SQL identifier "tenant-demo-invalid"`)
+	assert.Equal(t, StatusResponse{User: 2}, status)
 }
 
 func TestGormStatusReaderReadDemoStatusWithDryRunQueries(t *testing.T) {
@@ -94,6 +121,56 @@ func TestGormStatusReaderEntityStatusToleratesQueryErrors(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, EntityStatus{Count: 7}, status)
+	})
+}
+
+func TestGormStatusReaderEmployeeAndPeriodStatusTolerateQueryErrors(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("employee count error returns empty status", func(t *testing.T) {
+		reader := newDryRunStatusReader(t, demoStatusDryRunFixture{
+			countErr: errors.New("employee count failed"),
+		})
+
+		status, err := reader.employeeStatus(ctx, "tenant_demo1")
+
+		require.NoError(t, err)
+		assert.Equal(t, EntityStatus{}, status)
+	})
+
+	t.Run("employee rows error keeps count", func(t *testing.T) {
+		reader := newDryRunStatusReader(t, demoStatusDryRunFixture{
+			count:   4,
+			rowsErr: errors.New("employee rows failed"),
+		})
+
+		status, err := reader.employeeStatus(ctx, "tenant_demo1")
+
+		require.NoError(t, err)
+		assert.Equal(t, EntityStatus{Count: 4}, status)
+	})
+
+	t.Run("period count error returns empty status", func(t *testing.T) {
+		reader := newDryRunStatusReader(t, demoStatusDryRunFixture{
+			countErr: errors.New("period count failed"),
+		})
+
+		status, err := reader.periodStatus(ctx, "tenant_demo1", "payroll_runs")
+
+		require.NoError(t, err)
+		assert.Equal(t, EntityStatus{}, status)
+	})
+
+	t.Run("period rows error keeps count", func(t *testing.T) {
+		reader := newDryRunStatusReader(t, demoStatusDryRunFixture{
+			count:   6,
+			rowsErr: errors.New("period rows failed"),
+		})
+
+		status, err := reader.periodStatus(ctx, "tenant_demo1", "payroll_runs")
+
+		require.NoError(t, err)
+		assert.Equal(t, EntityStatus{Count: 6}, status)
 	})
 }
 
