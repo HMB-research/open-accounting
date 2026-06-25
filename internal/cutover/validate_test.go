@@ -13,6 +13,80 @@ const (
 	cutoverJournalLineID2 = "22222222-2222-4222-8222-222222222222"
 )
 
+func TestCutoverValidationReferenceAndAmountHelperEdges(t *testing.T) {
+	file := parsedFile{kind: KindExpenses, fileName: "expenses.csv"}
+	employeeID := "11111111-1111-4111-8111-111111111111"
+
+	report := &BundleValidationReport{}
+	checkExpenseEmployeeIDReference(report, bundleIndexes{files: map[FileKind]bool{}}, file, parsedRow{
+		number: 2,
+		values: map[string]string{"employee_id": employeeID},
+	})
+	assert.Empty(t, report.Issues)
+
+	report = &BundleValidationReport{}
+	checkExpenseEmployeeIDReference(report, bundleIndexes{files: map[FileKind]bool{KindEmployees: true}}, file, parsedRow{
+		number: 2,
+		values: map[string]string{"employee_id": "not-a-uuid"},
+	})
+	assert.Empty(t, report.Issues)
+
+	report = &BundleValidationReport{}
+	checkExpenseEmployeeIDReference(report, bundleIndexes{
+		files:       map[FileKind]bool{KindEmployees: true},
+		employeeIDs: map[string]bool{},
+	}, file, parsedRow{
+		number: 2,
+		values: map[string]string{"employee_id": employeeID},
+	})
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, "employee_id", report.Issues[0].Field)
+
+	report = &BundleValidationReport{}
+	checkExpenseEmployeeIDReference(report, bundleIndexes{
+		files:       map[FileKind]bool{KindEmployees: true},
+		employeeIDs: map[string]bool{employeeID: true},
+	}, file, parsedRow{
+		number: 2,
+		values: map[string]string{"employee_id": employeeID},
+	})
+	assert.Empty(t, report.Issues)
+
+	report = &BundleValidationReport{}
+	checkContactIDReference(report, bundleIndexes{
+		files:      map[FileKind]bool{KindContacts: true},
+		contactIDs: map[string]bool{},
+	}, parsedFile{kind: KindInvoices, fileName: "invoices.csv"}, parsedRow{
+		number: 3,
+		values: map[string]string{"contact_id": "22222222-2222-4222-8222-222222222222"},
+	}, "contact_id")
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, KindContacts, report.Issues[0].TargetKind)
+
+	amount, ok := cutoverCostAllocationAmount(parsedRow{values: map[string]string{"amount": "12.50"}})
+	assert.True(t, ok)
+	assert.Equal(t, "12.5", amount.String())
+	_, ok = cutoverCostAllocationAmount(parsedRow{values: map[string]string{"amount": "0"}})
+	assert.False(t, ok)
+	_, ok = cutoverCostAllocationAmount(parsedRow{values: map[string]string{"amount": "bad"}})
+	assert.False(t, ok)
+
+	percentage, ok := cutoverCostAllocationPercentage(parsedRow{values: map[string]string{"allocation_percentage": "100"}})
+	assert.True(t, ok)
+	assert.Equal(t, "100", percentage.String())
+	_, ok = cutoverCostAllocationPercentage(parsedRow{values: map[string]string{"allocation_percentage": ""}})
+	assert.False(t, ok)
+	_, ok = cutoverCostAllocationPercentage(parsedRow{values: map[string]string{"allocation_percentage": "-1"}})
+	assert.False(t, ok)
+	_, ok = cutoverCostAllocationPercentage(parsedRow{values: map[string]string{"allocation_percentage": "101"}})
+	assert.False(t, ok)
+	_, ok = cutoverCostAllocationPercentage(parsedRow{values: map[string]string{"allocation_percentage": "bad"}})
+	assert.False(t, ok)
+
+	assert.Equal(t, "Q-1", cutoverQuoteReferenceDisplay(parsedRow{values: map[string]string{"quote_number": " Q-1 ", "id": "quote-id"}}))
+	assert.Equal(t, "quote-id", cutoverQuoteReferenceDisplay(parsedRow{values: map[string]string{"id": " quote-id "}}))
+}
+
 func TestValidateBundleReportsReadyBundle(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{Files: []BundleFile{
 		{

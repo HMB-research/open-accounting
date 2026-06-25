@@ -504,6 +504,48 @@ func setModelDecimalField(target reflect.Value, name string, value decimal.Decim
 	}
 }
 
+func TestRepositoryConstructorsNilPoolAndTenantGuards(t *testing.T) {
+	ctx := context.Background()
+
+	repo := NewRepository(nil)
+	require.NotNil(t, repo)
+	assert.Nil(t, repo.db)
+
+	table, err := repo.tenantTable(ctx, "tenant_schema", "accounts")
+	require.Error(t, err)
+	assert.Nil(t, table)
+	assert.Contains(t, err.Error(), "accounting repository database is not configured")
+
+	aliasTable, err := repo.tenantTableAlias(ctx, "tenant_schema", "journal_entries", "je")
+	require.Error(t, err)
+	assert.Nil(t, aliasTable)
+	assert.Contains(t, err.Error(), "accounting repository database is not configured")
+
+	dryRepo := NewGORMRepository(newAccountingDryRunDB(t))
+	aliasTable, err = dryRepo.tenantTableAlias(ctx, "tenant_schema", "journal_entries", "je")
+	require.NoError(t, err)
+	assert.NotNil(t, aliasTable)
+
+	aliasTable, err = dryRepo.tenantTableAlias(ctx, "bad.schema", "journal_entries", "je")
+	require.Error(t, err)
+	assert.Nil(t, aliasTable)
+	assert.Contains(t, err.Error(), "invalid SQL identifier")
+
+	aliasTable, err = dryRepo.tenantTableAlias(ctx, "tenant_schema", "journal_entries", "bad alias")
+	require.Error(t, err)
+	assert.Nil(t, aliasTable)
+	assert.Contains(t, err.Error(), "invalid SQL identifier")
+
+	costCenterRepo := NewCostCenterRepository(nil)
+	require.NotNil(t, costCenterRepo)
+	assert.Nil(t, costCenterRepo.db)
+
+	costCenterTable, err := costCenterRepo.tenantTable(ctx, "tenant_schema", "cost_centers")
+	require.Error(t, err)
+	assert.Nil(t, costCenterTable)
+	assert.Contains(t, err.Error(), "cost center repository database is not configured")
+}
+
 func TestGORMRepositoryDryRunAccountOperations(t *testing.T) {
 	ctx := context.Background()
 	createdAt := time.Date(2026, time.June, 1, 9, 0, 0, 0, time.UTC)
@@ -1056,6 +1098,16 @@ func TestCostCenterGORMRepositoryDryRunErrors(t *testing.T) {
 		err := repo.Delete(ctx, "tenant_schema", "tenant-1", "cc-1")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cannot delete cost center with 2 children")
+	})
+
+	t.Run("delete wraps child count error", func(t *testing.T) {
+		repo := NewCostCenterGORMRepository(newAccountingDryRunDB(t, withAccountingDryRunFixtures(accountingDryRunFixture{
+			counts: []accountingCountResult{{err: assert.AnError}},
+		})))
+		err := repo.Delete(ctx, "tenant_schema", "tenant-1", "cc-1")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, assert.AnError)
+		assert.Contains(t, err.Error(), "check children")
 	})
 
 	t.Run("delete wraps allocation count error", func(t *testing.T) {

@@ -74,6 +74,53 @@ func TestStoredMigrationExecutionRequestMergesSavedBundleContext(t *testing.T) {
 	assert.Contains(t, saved.Files[0].CSVContent, "1000,Cash")
 }
 
+func TestStoredMigrationExecutionRequestNilAndExplicitMergeValues(t *testing.T) {
+	assert.Nil(t, NewStoredMigrationExecutionRequest(nil))
+
+	MergeSavedMigrationExecutionRequest(nil, &ExecuteMigrationRequest{})
+	MergeSavedMigrationExecutionRequest(&ExecuteMigrationRequest{}, nil)
+
+	req := &ExecuteMigrationRequest{
+		Files: []BundleFile{{
+			Kind:       KindContacts,
+			FileName:   "contacts.csv",
+			CSVContent: "contact_code,name\nCUST-1,Customer\n",
+		}},
+		EInvoiceContactMode:      EInvoiceContactModeCustomer,
+		EInvoiceInvoiceType:      "sales",
+		ProviderPreset:           MigrationProviderPresetGeneric,
+		BankTransactionAccountID: "bank-existing",
+		BankTransactionFormat:    "csv",
+		OpeningBalanceEntryDate:  "2026-02-01",
+	}
+	saved := &ExecuteMigrationRequest{
+		Files: []BundleFile{{
+			Kind:       KindAccounts,
+			FileName:   "accounts.csv",
+			CSVContent: "code,name,account_type\n1000,Cash,ASSET\n",
+		}},
+		EInvoiceContactMode:      EInvoiceContactModeSupplier,
+		EInvoiceInvoiceType:      "purchase",
+		ProviderPreset:           MigrationProviderPresetDirecto,
+		BankTransactionAccountID: "bank-saved",
+		BankTransactionFormat:    "lhv",
+		OpeningBalanceEntryDate:  "2026-01-01",
+	}
+
+	MergeSavedMigrationExecutionRequest(req, saved)
+
+	require.Len(t, req.Files, 1)
+	assert.Equal(t, KindContacts, req.Files[0].Kind)
+	assert.Equal(t, EInvoiceContactModeCustomer, req.EInvoiceContactMode)
+	assert.Equal(t, "sales", req.EInvoiceInvoiceType)
+	assert.Equal(t, MigrationProviderPresetGeneric, req.ProviderPreset)
+	assert.Equal(t, "bank-existing", req.BankTransactionAccountID)
+	assert.Equal(t, "csv", req.BankTransactionFormat)
+	assert.Equal(t, "2026-02-01", req.OpeningBalanceEntryDate)
+	assert.Nil(t, cloneMigrationBundleFiles(nil))
+	assert.Nil(t, cloneMigrationBundleFiles([]BundleFile{}))
+}
+
 func TestNewResumableMigrationExecutionRunSkipsPreviouslySucceededSteps(t *testing.T) {
 	plan := &MigrationExecutionPlan{
 		Summary: MigrationExecutionPlanSummary{
@@ -190,4 +237,49 @@ func TestMigrationExecutionStepTimingHelpersTrackDuration(t *testing.T) {
 	assert.Equal(t, int64(2500), run.Steps[0].DurationMS)
 	assert.Equal(t, int64(2500), run.Summary.DurationMS)
 	assert.Equal(t, "succeeded", run.Summary.Status)
+}
+
+func TestMigrationExecutionRunAndTimingEdgeCases(t *testing.T) {
+	nilPlanRun := NewMigrationExecutionRun(nil, true)
+	require.NotNil(t, nilPlanRun)
+	assert.Equal(t, "blocked", nilPlanRun.Summary.Status)
+	assert.Empty(t, nilPlanRun.Steps)
+
+	RefreshMigrationExecutionRunProgress(nil)
+	MarkMigrationExecutionStepRunning(nil, 0, time.Now())
+	CompleteMigrationExecutionStep(nil, 0, MigrationExecutionResultSucceeded, "", "", nil, time.Now())
+
+	run := NewMigrationExecutionRun(&MigrationExecutionPlan{
+		Summary: MigrationExecutionPlanSummary{ValidationReady: true, Ready: true, StepCount: 1, ReadyStepCount: 1},
+		Steps: []MigrationExecutionStep{
+			{StepNumber: 1, Kind: KindAccounts, FileName: "accounts.csv", Status: MigrationExecutionStepReady},
+		},
+	}, true)
+
+	MarkMigrationExecutionStepRunning(run, -1, time.Now())
+	CompleteMigrationExecutionStep(run, 99, MigrationExecutionResultSucceeded, "", "", nil, time.Now())
+	assert.Equal(t, MigrationExecutionResultPlanned, run.Steps[0].Status)
+
+	MarkMigrationExecutionStepRunning(run, 0, time.Time{})
+	require.NotNil(t, run.Steps[0].StartedAt)
+	assert.False(t, run.Steps[0].StartedAt.IsZero())
+	assert.Equal(t, time.UTC, run.Steps[0].StartedAt.Location())
+
+	completedAt := run.Steps[0].StartedAt.Add(-time.Second)
+	CompleteMigrationExecutionStep(run, 0, MigrationExecutionResultFailed, "failed", "boom", nil, completedAt)
+	assert.Equal(t, int64(0), run.Steps[0].DurationMS)
+	assert.Equal(t, "failed", run.Summary.Status)
+	assert.Equal(t, 1, run.Summary.FailedStepCount)
+	assert.Equal(t, 1, run.Summary.ActiveStepNumber)
+	assert.Equal(t, MigrationExecutionResultFailed, run.Summary.ActiveStepStatus)
+
+	start := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.FixedZone("EET", 2*60*60))
+	normalized := normalizeMigrationExecutionTime(start)
+	assert.Equal(t, time.UTC, normalized.Location())
+	assert.Equal(t, start.UTC(), normalized)
+
+	end := start.Add(time.Nanosecond)
+	assert.Equal(t, int64(1), migrationExecutionStepDurationMS(&start, &end))
+	assert.Equal(t, int64(0), migrationExecutionStepDurationMS(nil, &end))
+	assert.Equal(t, int64(0), migrationExecutionStepDurationMS(&end, &start))
 }

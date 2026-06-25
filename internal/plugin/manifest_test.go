@@ -994,6 +994,99 @@ version: 1.0.0
 	}
 }
 
+func TestManifestToJSONReturnsMarshalErrors(t *testing.T) {
+	manifest := Manifest{
+		Name:        "bad-json-plugin",
+		DisplayName: "Bad JSON Plugin",
+		Version:     "1.0.0",
+		Settings: &SettingsSchema{
+			Type: "object",
+			Properties: map[string]SettingProperty{
+				"bad_default": {
+					Type:    "string",
+					Default: make(chan int),
+				},
+			},
+		},
+	}
+
+	data, err := manifest.ToJSON()
+	if err == nil {
+		t.Fatal("expected JSON marshal error")
+	}
+	if data != nil {
+		t.Fatalf("data = %s, want nil", data)
+	}
+}
+
+func TestValidateManifestRelativePathEdgeCases(t *testing.T) {
+	tests := []struct {
+		name         string
+		value        string
+		allowCurrent bool
+		want         string
+	}{
+		{name: "empty", value: " ", allowCurrent: true, want: "is required"},
+		{name: "nul byte", value: "backend\x00main", allowCurrent: true, want: "must not contain NUL"},
+		{name: "backslash", value: `backend\main`, allowCurrent: true, want: "slash-separated"},
+		{name: "url", value: "https://example.com/plugin", allowCurrent: true, want: "plugin-relative"},
+		{name: "protocol relative", value: "//example.com/plugin", allowCurrent: true, want: "plugin-relative"},
+		{name: "unsafe shell chars", value: "backend/main;rm", allowCurrent: true, want: "unsafe characters"},
+		{name: "current directory disallowed", value: ".", allowCurrent: false, want: "must point to a file"},
+		{name: "parent traversal", value: "../runtime", allowCurrent: true, want: "must stay within"},
+		{name: "clean current allowed", value: "./", allowCurrent: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateManifestRelativePath("backend.package", tt.value, tt.allowCurrent)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("validateManifestRelativePath() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q in error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestValidateFrontendSlotPathEdgeCases(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "invalid url", path: "http://[::1", want: "valid internal route"},
+		{name: "relative path", path: "dashboard", want: "path must start with a single slash"},
+		{name: "double slash path", path: "//dashboard", want: "path must be an internal route"},
+		{name: "query only internal path", path: "/dashboard?tab=ops"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateFrontendSlotPath(tt.path)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("validateFrontendSlotPath() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q in error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestContainsPermission(t *testing.T) {
 	tests := []struct {
 		name        string
