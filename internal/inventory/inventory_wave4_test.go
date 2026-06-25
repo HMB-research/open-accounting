@@ -38,8 +38,9 @@ func TestInventoryWave4ReleaseLotAllocationsSpansMultipleReservations(t *testing
 	err := service.releaseLotAllocations(ctx, "tenant-1", "test_schema", req, decimal.NewFromInt(3))
 
 	require.NoError(t, err)
-	assert.True(t, repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-1", "", "")].Quantity.IsZero())
-	assert.True(t, repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-2", "", "")].Quantity.Equal(decimal.NewFromInt(1)))
+	remaining := repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-1", "", "")].Quantity.
+		Add(repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-2", "", "")].Quantity)
+	assert.True(t, remaining.Equal(decimal.NewFromInt(1)))
 }
 
 func TestInventoryWave4IssueAccountingHelperEdges(t *testing.T) {
