@@ -120,6 +120,36 @@ func withDryRunQueryFixtures(fixtures dryRunQueryFixtures) authDryRunDBOption {
 	}
 }
 
+func withDryRunCreateError(expectedErr error) authDryRunDBOption {
+	return func(db *gorm.DB) {
+		db.Callback().Create().Before("gorm:create").Register("auth_test:create_error", func(tx *gorm.DB) {
+			tx.AddError(expectedErr)
+		})
+	}
+}
+
+func withDryRunQueryErrorForDest(expectedErr error, matches func(interface{}) bool) authDryRunDBOption {
+	return func(db *gorm.DB) {
+		db.Callback().Query().Before("gorm:query").Register("auth_test:query_error_for_dest", func(tx *gorm.DB) {
+			if matches(tx.Statement.Dest) {
+				tx.AddError(expectedErr)
+			}
+		})
+	}
+}
+
+func withDryRunUpdateErrorOnCall(callNumber int, expectedErr error) authDryRunDBOption {
+	return func(db *gorm.DB) {
+		calls := 0
+		db.Callback().Update().Before("gorm:update").Register("auth_test:update_error_on_call", func(tx *gorm.DB) {
+			calls++
+			if calls == callNumber {
+				tx.AddError(expectedErr)
+			}
+		})
+	}
+}
+
 func TestRefreshSessionServiceConstructorsAndDryRunOperations(t *testing.T) {
 	assert.Panics(t, func() {
 		NewRefreshSessionService(nil)
@@ -197,6 +227,45 @@ func TestRefreshSessionServiceDryRunSuccessBranches(t *testing.T) {
 	assert.Equal(t, lastUsedAt, *sessions[0].LastUsedAt)
 	require.NotNil(t, sessions[0].RevokedAt)
 	assert.Equal(t, revokedAt, *sessions[0].RevokedAt)
+}
+
+func TestRefreshSessionServiceDryRunErrorBranches(t *testing.T) {
+	now := time.Date(2026, 6, 24, 10, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+	updateErr := errors.New("update failed")
+	queryErr := errors.New("query failed")
+
+	service := &RefreshSessionService{
+		db:  newAuthDryRunDB(t, withDryRunUpdateErrorOnCall(1, updateErr)),
+		now: func() time.Time { return now },
+	}
+	err := service.RotateRefreshSession(ctx, "user-1", "token-1", "hash-1", "token-2", "hash-2", now.Add(time.Hour))
+	assert.ErrorIs(t, err, updateErr)
+
+	service = &RefreshSessionService{
+		db:  newAuthDryRunDB(t, withDryRunUpdateErrorOnCall(1, updateErr)),
+		now: func() time.Time { return now },
+	}
+	err = service.RevokeRefreshSession(ctx, "user-1", "token-1", "hash-1")
+	assert.ErrorIs(t, err, updateErr)
+
+	service = &RefreshSessionService{
+		db:  newAuthDryRunDB(t, withDryRunUpdateErrorOnCall(1, updateErr)),
+		now: func() time.Time { return now },
+	}
+	err = service.RevokeRefreshSessionByID(ctx, "user-1", "token-1")
+	assert.ErrorIs(t, err, updateErr)
+
+	service = &RefreshSessionService{
+		db: newAuthDryRunDB(t, withDryRunQueryErrorForDest(queryErr, func(dest interface{}) bool {
+			_, ok := dest.(*[]models.RefreshSession)
+			return ok
+		})),
+		now: func() time.Time { return now },
+	}
+	sessions, err := service.ListRefreshSessions(ctx, "user-1", false)
+	assert.Nil(t, sessions)
+	assert.ErrorIs(t, err, queryErr)
 }
 
 func TestSecurityAuditServiceConstructorsValidationAndDryRunOperations(t *testing.T) {
@@ -306,6 +375,33 @@ func TestSecurityAuditServiceListUserEventsDryRunMappings(t *testing.T) {
 	assert.Contains(t, err.Error(), "unmarshal security audit metadata")
 }
 
+func TestSecurityAuditServiceDryRunRepositoryErrors(t *testing.T) {
+	createErr := errors.New("create failed")
+	queryErr := errors.New("query failed")
+
+	service := &SecurityAuditService{
+		db:  newAuthDryRunDB(t, withDryRunCreateError(createErr)),
+		now: time.Now,
+	}
+	err := service.RecordEvent(context.Background(), &SecurityAuditEvent{Action: SecurityAuditActionLogin})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, createErr)
+	assert.Contains(t, err.Error(), "record security audit event")
+
+	service = &SecurityAuditService{
+		db: newAuthDryRunDB(t, withDryRunQueryErrorForDest(queryErr, func(dest interface{}) bool {
+			_, ok := dest.(*[]models.SecurityAuditEvent)
+			return ok
+		})),
+		now: time.Now,
+	}
+	events, err := service.ListUserEvents(context.Background(), "user-1", 10)
+	assert.Nil(t, events)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, queryErr)
+	assert.Contains(t, err.Error(), "list security audit events")
+}
+
 func TestPasswordResetConstructorAndGORMRepositoryDryRun(t *testing.T) {
 	assert.Panics(t, func() {
 		NewPasswordResetService(nil)
@@ -399,6 +495,180 @@ func TestPasswordResetGORMRepositoryDryRunSuccessAndThrottleBranches(t *testing.
 	assert.Equal(t, "user-1", outcome.UserID)
 	assert.False(t, outcome.Issued)
 	assert.True(t, outcome.Throttled)
+}
+
+func TestPasswordResetGORMRepositoryDryRunErrorBranches(t *testing.T) {
+	now := time.Date(2026, 6, 24, 14, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+	user := &models.User{
+		ID:       "user-1",
+		Email:    "user@example.com",
+		IsActive: true,
+	}
+	zeroCount := int64(0)
+	resetUser := &models.User{
+		ID:           "user-1",
+		PasswordHash: "$2a$04$2y7u8PvvPLuKHoKWFLaTh.VxzBFcyxfQdLq09AKiw0tu/yTKqXYOO",
+		IsActive:     true,
+	}
+
+	t.Run("request find user error", func(t *testing.T) {
+		findErr := errors.New("find failed")
+		repo := &passwordResetGORMRepository{db: newAuthDryRunDB(t, withDryRunQueryErrorForDest(findErr, func(dest interface{}) bool {
+			_, ok := dest.(*models.User)
+			return ok
+		}))}
+
+		outcome, err := repo.RequestPasswordReset(ctx, "user@example.com", now, time.Minute, func(userID string) (*models.PasswordResetToken, error) {
+			return nil, errors.New("should not build token")
+		})
+		assert.Nil(t, outcome)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, findErr)
+		assert.Contains(t, err.Error(), "find user for password reset")
+	})
+
+	t.Run("request cooldown count error", func(t *testing.T) {
+		countErr := errors.New("count failed")
+		repo := &passwordResetGORMRepository{db: newAuthDryRunDB(t,
+			withDryRunQueryFixtures(dryRunQueryFixtures{user: user}),
+			withDryRunQueryErrorForDest(countErr, func(dest interface{}) bool {
+				_, ok := dest.(*int64)
+				return ok
+			}),
+		)}
+
+		outcome, err := repo.RequestPasswordReset(ctx, "user@example.com", now, time.Minute, func(userID string) (*models.PasswordResetToken, error) {
+			return nil, errors.New("should not build token")
+		})
+		assert.Nil(t, outcome)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, countErr)
+		assert.Contains(t, err.Error(), "check password reset cooldown")
+	})
+
+	t.Run("request build token error", func(t *testing.T) {
+		buildErr := errors.New("build failed")
+		repo := &passwordResetGORMRepository{db: newAuthDryRunDB(t, withDryRunQueryFixtures(dryRunQueryFixtures{
+			user:  user,
+			count: &zeroCount,
+		}))}
+
+		outcome, err := repo.RequestPasswordReset(ctx, "user@example.com", now, time.Minute, func(userID string) (*models.PasswordResetToken, error) {
+			return nil, buildErr
+		})
+		assert.Nil(t, outcome)
+		assert.ErrorIs(t, err, buildErr)
+	})
+
+	t.Run("request expire previous tokens error", func(t *testing.T) {
+		updateErr := errors.New("update failed")
+		repo := &passwordResetGORMRepository{db: newAuthDryRunDB(t,
+			withDryRunQueryFixtures(dryRunQueryFixtures{user: user, count: &zeroCount}),
+			withDryRunUpdateErrorOnCall(1, updateErr),
+		)}
+
+		outcome, err := repo.RequestPasswordReset(ctx, "user@example.com", now, time.Minute, func(userID string) (*models.PasswordResetToken, error) {
+			return &models.PasswordResetToken{ID: "reset-1", UserID: userID}, nil
+		})
+		assert.Nil(t, outcome)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, updateErr)
+		assert.Contains(t, err.Error(), "expire previous password reset tokens")
+	})
+
+	t.Run("request create token error", func(t *testing.T) {
+		createErr := errors.New("create failed")
+		repo := &passwordResetGORMRepository{db: newAuthDryRunDB(t,
+			withDryRunQueryFixtures(dryRunQueryFixtures{user: user, count: &zeroCount}),
+			withDryRunCreateError(createErr),
+		)}
+
+		outcome, err := repo.RequestPasswordReset(ctx, "user@example.com", now, time.Minute, func(userID string) (*models.PasswordResetToken, error) {
+			return &models.PasswordResetToken{ID: "reset-1", UserID: userID}, nil
+		})
+		assert.Nil(t, outcome)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, createErr)
+		assert.Contains(t, err.Error(), "create password reset token")
+	})
+
+	t.Run("reset token query error", func(t *testing.T) {
+		queryErr := errors.New("query failed")
+		repo := &passwordResetGORMRepository{db: newAuthDryRunDB(t, withDryRunQueryErrorForDest(queryErr, func(dest interface{}) bool {
+			_, ok := dest.(*models.PasswordResetToken)
+			return ok
+		}))}
+
+		userID, err := repo.ResetPassword(ctx, HashRefreshToken("reset-token"), now, func(user *models.User) (string, error) {
+			return "", errors.New("should not build password hash")
+		})
+		assert.Empty(t, userID)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, queryErr)
+		assert.Contains(t, err.Error(), "get password reset token")
+	})
+
+	t.Run("reset token missing user", func(t *testing.T) {
+		repo := &passwordResetGORMRepository{db: newAuthDryRunDB(t, withDryRunQueryFixtures(dryRunQueryFixtures{
+			resetToken: &models.PasswordResetToken{ID: "reset-1", UserID: "user-1"},
+		}))}
+
+		userID, err := repo.ResetPassword(ctx, HashRefreshToken("reset-token"), now, func(user *models.User) (string, error) {
+			return "", errors.New("should not build password hash")
+		})
+		assert.Empty(t, userID)
+		assert.ErrorIs(t, err, ErrPasswordResetTokenInvalid)
+	})
+
+	t.Run("reset password hash builder error", func(t *testing.T) {
+		buildErr := errors.New("build failed")
+		repo := &passwordResetGORMRepository{db: newAuthDryRunDB(t, withDryRunQueryFixtures(dryRunQueryFixtures{
+			resetToken: &models.PasswordResetToken{ID: "reset-1", UserID: "user-1", User: resetUser},
+		}))}
+
+		userID, err := repo.ResetPassword(ctx, HashRefreshToken("reset-token"), now, func(user *models.User) (string, error) {
+			return "", buildErr
+		})
+		assert.Empty(t, userID)
+		assert.ErrorIs(t, err, buildErr)
+	})
+
+	t.Run("reset update user password error", func(t *testing.T) {
+		updateErr := errors.New("update failed")
+		repo := &passwordResetGORMRepository{db: newAuthDryRunDB(t,
+			withDryRunQueryFixtures(dryRunQueryFixtures{
+				resetToken: &models.PasswordResetToken{ID: "reset-1", UserID: "user-1", User: resetUser},
+			}),
+			withDryRunUpdateErrorOnCall(1, updateErr),
+		)}
+
+		userID, err := repo.ResetPassword(ctx, HashRefreshToken("reset-token"), now, func(user *models.User) (string, error) {
+			return "new-hash", nil
+		})
+		assert.Empty(t, userID)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, updateErr)
+		assert.Contains(t, err.Error(), "update user password")
+	})
+
+	t.Run("reset consume tokens error", func(t *testing.T) {
+		updateErr := errors.New("update failed")
+		repo := &passwordResetGORMRepository{db: newAuthDryRunDB(t,
+			withDryRunQueryFixtures(dryRunQueryFixtures{
+				resetToken: &models.PasswordResetToken{ID: "reset-1", UserID: "user-1", User: resetUser},
+			}),
+			withDryRunUpdateErrorOnCall(2, updateErr),
+		)}
+
+		userID, err := repo.ResetPassword(ctx, HashRefreshToken("reset-token"), now, func(user *models.User) (string, error) {
+			return "new-hash", nil
+		})
+		assert.Empty(t, userID)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, updateErr)
+		assert.Contains(t, err.Error(), "consume password reset tokens")
+	})
 }
 
 func TestPasswordResetServiceRequestValidationAndHashFailure(t *testing.T) {

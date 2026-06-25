@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
@@ -87,6 +88,28 @@ func TestNewServiceWithRepository(t *testing.T) {
 	}
 }
 
+func TestNewServiceWithNilPoolLeavesRepositoryUnconfigured(t *testing.T) {
+	service := NewService(nil)
+	if service == nil {
+		t.Fatal("NewService(nil) returned nil")
+	}
+	if service.repo != nil {
+		t.Fatalf("NewService(nil).repo = %#v, want nil", service.repo)
+	}
+}
+
+func TestNewServicePanicsWhenPoolCannotPing(t *testing.T) {
+	pool := newUnreachableContactsPool(t)
+	defer pool.Close()
+
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("NewService did not panic")
+		}
+	}()
+	NewService(pool)
+}
+
 func TestService_Create(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockRepository()
@@ -156,6 +179,27 @@ func TestService_Create(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "default_account_id must be a valid UUID",
+		},
+		{
+			name:     "Invalid explicit id",
+			tenantID: "tenant-1",
+			req: &CreateContactRequest{
+				ID:          "legacy-contact",
+				Name:        "Bad ID",
+				ContactType: ContactTypeCustomer,
+			},
+			wantErr: true,
+			errMsg:  "id must be a valid UUID",
+		},
+		{
+			name:     "Blank default account id is normalized",
+			tenantID: "tenant-1",
+			req: &CreateContactRequest{
+				Name:             "Blank Account",
+				ContactType:      ContactTypeCustomer,
+				DefaultAccountID: stringPtr(" \t "),
+			},
+			wantErr: false,
 		},
 	}
 
@@ -788,4 +832,20 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func newUnreachableContactsPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+
+	config, err := pgxpool.ParseConfig("postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
+	if err != nil {
+		t.Fatalf("parse pgxpool config: %v", err)
+	}
+	config.ConnConfig.ConnectTimeout = 10 * time.Millisecond
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		t.Fatalf("create pgxpool: %v", err)
+	}
+	return pool
 }

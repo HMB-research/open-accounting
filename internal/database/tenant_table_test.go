@@ -16,6 +16,18 @@ func TestTenantTableRejectsNilDBDefault(t *testing.T) {
 	}
 }
 
+func TestTenantTableReturnsQualifiedTableDefault(t *testing.T) {
+	wrapper := newDryRunGormWrapper(t)
+
+	db, err := TenantTable(wrapper.DB, "tenant_demo", "contacts")
+	if err != nil {
+		t.Fatalf("TenantTable returned error: %v", err)
+	}
+	if db == nil {
+		t.Fatal("TenantTable returned nil db")
+	}
+}
+
 func TestTenantTableRejectsInvalidSchemaDefault(t *testing.T) {
 	db, err := TenantTable(&gorm.DB{}, "tenant-demo", "contacts")
 	if err == nil {

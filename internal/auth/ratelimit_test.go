@@ -71,6 +71,23 @@ func TestRateLimiter_BlocksExcessRequests(t *testing.T) {
 	}
 }
 
+func TestRateLimiterRejectsImpossibleReservation(t *testing.T) {
+	rl := NewRateLimiter(1, 0)
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusTooManyRequests)
+	}
+}
+
 func TestRateLimiter_SeparatesClientsByIP(t *testing.T) {
 	rl := NewRateLimiter(1, 1) // 1 req/sec, burst 1
 
@@ -274,6 +291,35 @@ func TestLoginAttemptLimiterRecordsCredentialAwareFailures(t *testing.T) {
 	}
 	if result.Remaining != 2 {
 		t.Fatalf("remaining after reset = %d, want 2", result.Remaining)
+	}
+}
+
+func TestLoginAttemptLimiterNilAndBlockedRecordFailureBranches(t *testing.T) {
+	var nilLimiter *LoginAttemptLimiter
+	if result := nilLimiter.RecordFailure("user@example.com", "192.0.2.1"); result.Limited || result.Remaining != 0 {
+		t.Fatalf("nil limiter RecordFailure = %#v, want zero result", result)
+	}
+	nilLimiter.Reset("user@example.com", "192.0.2.1")
+
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	limiter := &LoginAttemptLimiter{
+		attempts:    make(map[string]*loginAttempt),
+		maxFailures: 2,
+		window:      time.Minute,
+		lockout:     5 * time.Minute,
+		now:         func() time.Time { return now },
+	}
+	key := loginAttemptKey("blocked@example.com", "192.0.2.1")
+	limiter.attempts[key] = &loginAttempt{
+		firstFailure: now.Add(-30 * time.Second),
+		lastSeen:     now.Add(-30 * time.Second),
+		failures:     3,
+		blockedUntil: now.Add(2 * time.Minute),
+	}
+
+	result := limiter.RecordFailure("blocked@example.com", "192.0.2.1")
+	if !result.Limited || result.RetryAfter != 2*time.Minute || result.Remaining != 0 {
+		t.Fatalf("blocked RecordFailure = %#v, want limited with 2m retry", result)
 	}
 }
 

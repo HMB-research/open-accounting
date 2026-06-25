@@ -25,6 +25,8 @@ const (
 	defaultPasswordResetHashCost     = 12
 )
 
+var passwordResetRandomRead = rand.Read
+
 // ErrPasswordResetTokenInvalid is returned for missing, expired, or already-used reset tokens.
 var ErrPasswordResetTokenInvalid = errors.New("password reset token invalid")
 
@@ -317,7 +319,7 @@ func (r *passwordResetGORMRepository) ResetPassword(
 
 func generatePasswordResetToken() (string, error) {
 	raw := make([]byte, defaultPasswordResetTokenEntropy)
-	if _, err := rand.Read(raw); err != nil {
+	if _, err := passwordResetRandomRead(raw); err != nil {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(raw), nil

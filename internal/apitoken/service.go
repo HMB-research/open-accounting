@@ -20,6 +20,8 @@ const (
 	tokenPrefix = "oa_"
 )
 
+var tokenRandomRead = rand.Read
+
 // Service manages tenant-scoped API tokens.
 type Service struct {
 	repo Repository
@@ -150,7 +152,7 @@ func (s *Service) repository() (Repository, error) {
 
 func generateTokenMaterial() (rawToken string, prefix string, tokenHash string, err error) {
 	secret := make([]byte, 32)
-	if _, err = rand.Read(secret); err != nil {
+	if _, err = tokenRandomRead(secret); err != nil {
 		return "", "", "", fmt.Errorf("generate api token: %w", err)
 	}
 

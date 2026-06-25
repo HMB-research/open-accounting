@@ -2,10 +2,12 @@ package apitoken
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -118,6 +120,21 @@ func TestService_CreateToken(t *testing.T) {
 	assert.True(t, strings.HasPrefix(result.Token, tokenPrefix))
 }
 
+func TestNewServiceWithNilPoolLeavesRepositoryUnconfigured(t *testing.T) {
+	service := NewService(nil)
+	require.NotNil(t, service)
+	assert.Nil(t, service.repo)
+}
+
+func TestNewServicePanicsWhenPoolCannotPing(t *testing.T) {
+	pool := newUnreachableAPITokenPool(t)
+	defer pool.Close()
+
+	assert.Panics(t, func() {
+		NewService(pool)
+	})
+}
+
 func TestService_CreateTokenRejectsBadInput(t *testing.T) {
 	repo := newMockRepository()
 	service := NewServiceWithRepository(repo)
@@ -149,6 +166,35 @@ func TestService_CreateTokenReturnsRepositoryError(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func TestService_CreateTokenReturnsRandomGenerationError(t *testing.T) {
+	randomErr := errors.New("random unavailable")
+	originalRandomRead := tokenRandomRead
+	tokenRandomRead = func([]byte) (int, error) {
+		return 0, randomErr
+	}
+	t.Cleanup(func() {
+		tokenRandomRead = originalRandomRead
+	})
+
+	repo := newMockRepository()
+	service := NewServiceWithRepository(repo)
+
+	result, err := service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{
+		Name: "CLI token",
+	})
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, randomErr)
+	assert.Contains(t, err.Error(), "generate api token")
+
+	rawToken, prefix, tokenHash, err := generateTokenMaterial()
+	require.Error(t, err)
+	assert.Empty(t, rawToken)
+	assert.Empty(t, prefix)
+	assert.Empty(t, tokenHash)
+	assert.ErrorIs(t, err, randomErr)
 }
 
 func TestService_ValidateAPIToken(t *testing.T) {
@@ -291,4 +337,16 @@ func TestService_ValidateAPITokenReturnsValidationRepositoryError(t *testing.T) 
 	_, err := service.ValidateAPIToken(context.Background(), "oa_anything")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func newUnreachableAPITokenPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+
+	config, err := pgxpool.ParseConfig("postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
+	require.NoError(t, err)
+	config.ConnConfig.ConnectTimeout = 10 * time.Millisecond
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	require.NoError(t, err)
+	return pool
 }
