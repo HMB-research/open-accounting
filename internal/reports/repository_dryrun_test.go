@@ -3,15 +3,19 @@ package reports
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/models"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
@@ -66,7 +70,16 @@ type reportsDryRunRecorder struct {
 	updates []string
 }
 
+type reportsDryRunRowSet struct {
+	columns []string
+	values  [][]driver.Value
+}
+
 var reportsDryRunCallbackID uint64
+var reportsDryRunRowsDSNID uint64
+var reportsDryRunRowsDriverOnce sync.Once
+var reportsDryRunRowsMu sync.Mutex
+var reportsDryRunRowsByDSN = map[string]reportsDryRunRowSet{}
 
 func newReportsDryRunDB(t *testing.T, opts ...reportsDryRunDBOption) *gorm.DB {
 	t.Helper()
@@ -115,6 +128,25 @@ func withReportsDryRunRowErrors(rowErrors ...error) reportsDryRunDBOption {
 			if rowErrors[errIndex] != nil {
 				tx.AddError(rowErrors[errIndex])
 			}
+		})
+		require.NoError(t, err)
+	}
+}
+
+func withReportsDryRunScanRows(rowSets ...reportsDryRunRowSet) reportsDryRunDBOption {
+	return func(t *testing.T, db *gorm.DB) {
+		t.Helper()
+
+		var index int
+		err := db.Callback().Row().After("gorm:row").Register(reportsDryRunCallbackName("scan_rows"), func(tx *gorm.DB) {
+			if index >= len(rowSets) {
+				tx.AddError(fmt.Errorf("missing reports dry-run row set %d", index))
+				return
+			}
+			rowSet := rowSets[index]
+			index++
+			tx.Statement.Dest = newReportsDryRunSQLRows(t, rowSet)
+			tx.RowsAffected = int64(len(rowSet.values))
 		})
 		require.NoError(t, err)
 	}
@@ -193,6 +225,92 @@ func withReportsDryRunUpdateError(expectedErr error) reportsDryRunDBOption {
 func reportsDryRunCallbackName(suffix string) string {
 	id := atomic.AddUint64(&reportsDryRunCallbackID, 1)
 	return fmt.Sprintf("reports_dryrun:%d:%s", id, suffix)
+}
+
+func newReportsDryRunSQLRows(t *testing.T, rowSet reportsDryRunRowSet) *sql.Rows {
+	t.Helper()
+
+	reportsDryRunRowsDriverOnce.Do(func() {
+		sql.Register("reports_dryrun_rows", reportsDryRunRowsDriver{})
+	})
+
+	dsn := fmt.Sprintf("reports-dry-run-rows-%d", atomic.AddUint64(&reportsDryRunRowsDSNID, 1))
+	reportsDryRunRowsMu.Lock()
+	reportsDryRunRowsByDSN[dsn] = rowSet
+	reportsDryRunRowsMu.Unlock()
+
+	db, err := sql.Open("reports_dryrun_rows", dsn)
+	require.NoError(t, err)
+	rows, err := db.QueryContext(context.Background(), "SELECT 1")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = rows.Close()
+		_ = db.Close()
+		reportsDryRunRowsMu.Lock()
+		delete(reportsDryRunRowsByDSN, dsn)
+		reportsDryRunRowsMu.Unlock()
+	})
+
+	return rows
+}
+
+type reportsDryRunRowsDriver struct{}
+
+func (reportsDryRunRowsDriver) Open(name string) (driver.Conn, error) {
+	return reportsDryRunRowsConn{dsn: name}, nil
+}
+
+type reportsDryRunRowsConn struct {
+	dsn string
+}
+
+func (reportsDryRunRowsConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("reports dry-run rows do not prepare statements")
+}
+
+func (reportsDryRunRowsConn) Close() error {
+	return nil
+}
+
+func (reportsDryRunRowsConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("reports dry-run rows do not begin transactions")
+}
+
+func (c reportsDryRunRowsConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	reportsDryRunRowsMu.Lock()
+	rowSet, ok := reportsDryRunRowsByDSN[c.dsn]
+	reportsDryRunRowsMu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("reports dry-run row set %q not found", c.dsn)
+	}
+	return &reportsDryRunSQLRows{
+		columns: append([]string(nil), rowSet.columns...),
+		values:  append([][]driver.Value(nil), rowSet.values...),
+	}, nil
+}
+
+type reportsDryRunSQLRows struct {
+	columns []string
+	values  [][]driver.Value
+	index   int
+}
+
+func (r *reportsDryRunSQLRows) Columns() []string {
+	return append([]string(nil), r.columns...)
+}
+
+func (*reportsDryRunSQLRows) Close() error {
+	return nil
+}
+
+func (r *reportsDryRunSQLRows) Next(dest []driver.Value) error {
+	if r.index >= len(r.values) {
+		return io.EOF
+	}
+	copy(dest, r.values[r.index])
+	r.index++
+	return nil
 }
 
 func populateReportsDryRunQueryDest(tx *gorm.DB, dest any, fixtures *reportsDryRunFixtures) {
@@ -362,6 +480,154 @@ func TestGORMRepositoryDryRunScanQueriesReturnGormDryRunError(t *testing.T) {
 	_, err := repo.GetSalesMarginLines(ctx, schemaName, tenantID, startDate, endDate)
 	require.ErrorContains(t, err, "query sales margin lines")
 	assert.ErrorIs(t, err, gorm.ErrDryRunModeUnsupported)
+}
+
+func TestGORMRepositoryDryRunScanSuccessMappings(t *testing.T) {
+	ctx := context.Background()
+	schemaName := "tenant_reports"
+	tenantID := "tenant-1"
+	contactID := "contact-1"
+	startDate := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)
+
+	t.Run("journal entries group lines in query order", func(t *testing.T) {
+		entryDate := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC)
+		repo := &GORMRepository{db: newReportsDryRunDB(t, withReportsDryRunScanRows(reportsDryRunRowSet{
+			columns: []string{"id", "entry_date", "description", "account_code", "account_name", "account_type", "debit", "credit"},
+			values: [][]driver.Value{
+				{"journal-1", entryDate, "Customer invoice", "1200", "Accounts receivable", "asset", "250.00", "0"},
+				{"journal-1", entryDate, "Customer invoice", "4000", "Sales revenue", "revenue", "0", "250.00"},
+				{"journal-2", entryDate.AddDate(0, 0, 1), "Bank fee", "6900", "Bank fees", "expense", "5.00", "0"},
+			},
+		}))}
+
+		entries, err := repo.GetJournalEntriesForPeriod(ctx, schemaName, tenantID, startDate, endDate)
+
+		require.NoError(t, err)
+		require.Len(t, entries, 2)
+		assert.Equal(t, "journal-1", entries[0].ID)
+		assert.Equal(t, "Customer invoice", entries[0].Description)
+		require.Len(t, entries[0].Lines, 2)
+		assert.Equal(t, "1200", entries[0].Lines[0].AccountCode)
+		assert.True(t, entries[0].Lines[0].Debit.Equal(decimal.RequireFromString("250.00")))
+		assert.True(t, entries[0].Lines[1].Credit.Equal(decimal.RequireFromString("250.00")))
+		assert.Equal(t, "journal-2", entries[1].ID)
+	})
+
+	t.Run("cash balance scans decimal total", func(t *testing.T) {
+		repo := &GORMRepository{db: newReportsDryRunDB(t, withReportsDryRunScanRows(reportsDryRunRowSet{
+			columns: []string{"total"},
+			values:  [][]driver.Value{{"1234.56"}},
+		}))}
+
+		balance, err := repo.GetCashAccountBalance(ctx, schemaName, tenantID, endDate)
+
+		require.NoError(t, err)
+		assert.True(t, balance.Equal(decimal.RequireFromString("1234.56")))
+	})
+
+	t.Run("outstanding invoices map contact balances and invoice rows", func(t *testing.T) {
+		oldestInvoice := time.Date(2026, time.January, 3, 0, 0, 0, 0, time.UTC)
+		repo := &GORMRepository{db: newReportsDryRunDB(t, withReportsDryRunScanRows(reportsDryRunRowSet{
+			columns: []string{"contact_id", "contact_name", "contact_code", "contact_email", "balance", "invoice_count", "oldest_invoice"},
+			values: [][]driver.Value{
+				{"contact-1", "Acme OU", "ACME", "billing@example.com", "375.00", int64(2), oldestInvoice},
+				{"contact-2", "No Date OU", "", "", "42.00", int64(1), nil},
+			},
+		}))}
+
+		balances, err := repo.GetOutstandingInvoicesByContact(ctx, schemaName, tenantID, string(models.InvoiceTypeSales), endDate)
+
+		require.NoError(t, err)
+		require.Len(t, balances, 2)
+		assert.Equal(t, "contact-1", balances[0].ContactID)
+		assert.True(t, balances[0].Balance.Equal(decimal.RequireFromString("375.00")))
+		assert.Equal(t, 2, balances[0].InvoiceCount)
+		assert.Equal(t, "2026-01-03", balances[0].OldestInvoice)
+		assert.Equal(t, "", balances[1].OldestInvoice)
+
+		repo = &GORMRepository{db: newReportsDryRunDB(t, withReportsDryRunScanRows(reportsDryRunRowSet{
+			columns: []string{"invoice_id", "invoice_number", "invoice_date", "due_date", "total_amount", "amount_paid", "currency", "days_overdue"},
+			values: [][]driver.Value{
+				{"invoice-1", "INV-0001", oldestInvoice, oldestInvoice.AddDate(0, 0, 14), "500.00", "125.00", "EUR", int64(10)},
+			},
+		}))}
+
+		invoices, err := repo.GetContactInvoices(ctx, schemaName, tenantID, contactID, string(models.InvoiceTypeSales), endDate)
+
+		require.NoError(t, err)
+		require.Len(t, invoices, 1)
+		assert.Equal(t, "INV-0001", invoices[0].InvoiceNumber)
+		assert.Equal(t, "2026-01-03", invoices[0].InvoiceDate)
+		assert.True(t, invoices[0].OutstandingAmount.Equal(decimal.RequireFromString("375.00")))
+		assert.Equal(t, 10, invoices[0].DaysOverdue)
+	})
+
+	t.Run("contact statement maps opening balance and sorted entries", func(t *testing.T) {
+		repo := &GORMRepository{db: newReportsDryRunDB(t, withReportsDryRunScanRows(
+			reportsDryRunRowSet{
+				columns: []string{"total"},
+				values:  [][]driver.Value{{"500.00"}},
+			},
+			reportsDryRunRowSet{
+				columns: []string{"total"},
+				values:  [][]driver.Value{{"125.00"}},
+			},
+		))}
+
+		opening, err := repo.GetContactStatementOpeningBalance(ctx, schemaName, tenantID, contactID, string(models.InvoiceTypeSales), string(models.PaymentTypeReceived), startDate)
+
+		require.NoError(t, err)
+		assert.True(t, opening.Equal(decimal.RequireFromString("375.00")))
+
+		invoiceDate := time.Date(2026, time.January, 12, 0, 0, 0, 0, time.UTC)
+		paymentDate := time.Date(2026, time.January, 10, 0, 0, 0, 0, time.UTC)
+		repo = &GORMRepository{db: newReportsDryRunDB(t, withReportsDryRunScanRows(
+			reportsDryRunRowSet{
+				columns: []string{"document_id", "document_number", "document_date", "due_date", "reference", "notes", "currency", "document_amount", "statement_amount"},
+				values: [][]driver.Value{
+					{"invoice-1", "INV-0001", invoiceDate, invoiceDate.AddDate(0, 0, 14), "", "Consulting", "EUR", "500.00", "500.00"},
+				},
+			},
+			reportsDryRunRowSet{
+				columns: []string{"document_id", "document_number", "document_date", "reference", "notes", "currency", "document_amount", "statement_amount"},
+				values: [][]driver.Value{
+					{"payment-1", "PMT-0001", paymentDate, "PAY-REF", "", "EUR", "125.00", "-125.00"},
+				},
+			},
+		))}
+
+		entries, err := repo.GetContactStatementEntries(ctx, schemaName, tenantID, contactID, string(models.InvoiceTypeSales), string(models.PaymentTypeReceived), startDate, endDate)
+
+		require.NoError(t, err)
+		require.Len(t, entries, 2)
+		assert.Equal(t, "PAYMENT", entries[0].DocumentType)
+		assert.Equal(t, "PAY-REF", entries[0].Description)
+		assert.True(t, entries[0].StatementAmount.Equal(decimal.RequireFromString("-125.00")))
+		assert.Equal(t, "INVOICE", entries[1].DocumentType)
+		assert.Equal(t, "Consulting", entries[1].Description)
+		assert.Equal(t, "2026-01-26", entries[1].DueDate)
+	})
+
+	t.Run("sales margin lines map scanned rows", func(t *testing.T) {
+		invoiceDate := time.Date(2026, time.January, 22, 0, 0, 0, 0, time.UTC)
+		repo := &GORMRepository{db: newReportsDryRunDB(t, withReportsDryRunScanRows(reportsDryRunRowSet{
+			columns: []string{"invoice_id", "invoice_number", "invoice_date", "contact_id", "contact_name", "product_id", "product_code", "product_name", "description", "quantity", "revenue", "unit_cost", "cost"},
+			values: [][]driver.Value{
+				{"invoice-1", "INV-0022", invoiceDate, "contact-1", "Acme OU", "product-1", "CONS", "Consulting", "Implementation", "3", "900.00", "100.00", "300.00"},
+			},
+		}))}
+
+		lines, err := repo.GetSalesMarginLines(ctx, schemaName, tenantID, startDate, endDate)
+
+		require.NoError(t, err)
+		require.Len(t, lines, 1)
+		assert.Equal(t, "INV-0022", lines[0].InvoiceNumber)
+		assert.Equal(t, "2026-01-22", lines[0].InvoiceDate)
+		assert.True(t, lines[0].Quantity.Equal(decimal.NewFromInt(3)))
+		assert.True(t, lines[0].Revenue.Equal(decimal.RequireFromString("900.00")))
+		assert.True(t, lines[0].Cost.Equal(decimal.RequireFromString("300.00")))
+	})
 }
 
 func TestGORMRepositoryDryRunRejectsInvalidTenantSchema(t *testing.T) {
