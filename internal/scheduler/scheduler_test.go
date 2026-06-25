@@ -11,6 +11,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // MockRepository implements Repository for testing
@@ -181,6 +182,18 @@ func TestNewScheduler(t *testing.T) {
 	if scheduler.config.RecurringInvoiceSchedule != config.RecurringInvoiceSchedule {
 		t.Error("config not set correctly")
 	}
+}
+
+func TestNewSchedulerPanicsWhenPoolCannotPing(t *testing.T) {
+	pool := newUnreachableSchedulerPool(t)
+	defer pool.Close()
+
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("NewScheduler did not panic")
+		}
+	}()
+	NewScheduler(pool, nil, nil, DefaultConfig())
 }
 
 func TestScheduler_IsRunning_Initially(t *testing.T) {
@@ -532,6 +545,22 @@ func TestScheduler_StopMultipleTimes(t *testing.T) {
 	if ctx2 == nil {
 		t.Error("second Stop() returned nil context")
 	}
+}
+
+func newUnreachableSchedulerPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+
+	config, err := pgxpool.ParseConfig("postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
+	if err != nil {
+		t.Fatalf("parse pgxpool config: %v", err)
+	}
+	config.ConnConfig.ConnectTimeout = 10 * time.Millisecond
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		t.Fatalf("create pgxpool: %v", err)
+	}
+	return pool
 }
 
 func TestScheduler_ScheduleFormatWithSeconds(t *testing.T) {

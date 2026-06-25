@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -33,6 +34,47 @@ func TestNewGormDBReturnsPingError(t *testing.T) {
 	}
 	if db != nil {
 		t.Fatalf("expected nil database on error, got %#v", db)
+	}
+}
+
+func TestNewGormDBReturnsPingErrorAfterOpening(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	db, err := NewGormDB(ctx, "postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
+	if err == nil {
+		_ = db.Close()
+		t.Fatal("expected ping error")
+	}
+	if db != nil {
+		t.Fatalf("expected nil database on ping error, got %#v", db)
+	}
+}
+
+func TestNewGormDBFromPoolReturnsPingErrorForUnreachablePool(t *testing.T) {
+	config, err := pgxpool.ParseConfig("postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
+	if err != nil {
+		t.Fatalf("parse pgxpool config: %v", err)
+	}
+	config.ConnConfig.ConnectTimeout = 10 * time.Millisecond
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		t.Fatalf("create pgxpool: %v", err)
+	}
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	db, err := NewGormDBFromPool(ctx, pool)
+	if err == nil {
+		sqlDB, _ := db.DB()
+		if sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+		t.Fatal("expected ping error")
+	}
+	if db != nil {
+		t.Fatalf("expected nil gorm DB on ping error, got %#v", db)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/models"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -179,6 +180,18 @@ func assetDryRunCallbackName(t *testing.T, suffix string) string {
 	return "assets_test:" + replacer.Replace(t.Name()) + ":" + suffix
 }
 
+func newUnreachableAssetPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+
+	config, err := pgxpool.ParseConfig("postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
+	require.NoError(t, err)
+	config.ConnConfig.ConnectTimeout = 10 * time.Millisecond
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	require.NoError(t, err)
+	return pool
+}
+
 func TestGORMRepositoryDryRunOperations(t *testing.T) {
 	ctx := context.Background()
 	schemaName := "tenant_assets"
@@ -256,6 +269,15 @@ func TestGORMRepositoryDryRunOperations(t *testing.T) {
 	asset.BookValue = decimal.NewFromInt(11000)
 	asset.LastDepreciationDate = &now
 	require.NoError(t, repo.UpdateAssetDepreciation(ctx, schemaName, asset))
+}
+
+func TestNewRepositoryPanicsWhenPoolCannotPing(t *testing.T) {
+	pool := newUnreachableAssetPool(t)
+	defer pool.Close()
+
+	assert.Panics(t, func() {
+		NewRepository(pool)
+	})
 }
 
 func TestGORMRepositoryDryRunErrors(t *testing.T) {
