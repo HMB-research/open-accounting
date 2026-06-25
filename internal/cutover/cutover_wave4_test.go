@@ -331,7 +331,7 @@ func TestWave4ValidationCrossFileAccountingEdges(t *testing.T) {
 			map[string]string{"year": "2026", "month": "5", "row_code": "9", "status": "ACCEPTED", "tax_amount": "6"},
 			map[string]string{"year": "bad", "month": "5", "row_code": "1", "status": "ACCEPTED", "tax_amount": "1"},
 			map[string]string{"year": "2026", "month": "5", "row_code": "2", "status": "ACCEPTED", "tax_amount": "bad"},
-		)})
+		)}, nil)
 		require.Len(t, report.Issues, 4)
 		assert.Contains(t, wave4IssueMessages(report.Issues), "supporting KMD output VAT rows")
 		assert.Contains(t, wave4IssueMessages(report.Issues), "supporting KMD input VAT rows")

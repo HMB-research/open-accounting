@@ -182,6 +182,8 @@ type JournalEntryLine struct {
 	ExchangeRate   decimal.Decimal `json:"exchange_rate"`
 	BaseDebit      decimal.Decimal `json:"base_debit"`
 	BaseCredit     decimal.Decimal `json:"base_credit"`
+	VATRate        decimal.Decimal `json:"vat_rate"`
+	IsVATInclusive bool            `json:"is_vat_inclusive"`
 }
 
 // Validate ensures the journal entry is balanced and valid
@@ -261,13 +263,15 @@ type CreateJournalEntryRequest struct {
 
 // CreateJournalEntryLineReq is a line in the create request
 type CreateJournalEntryLineReq struct {
-	AccountID    string          `json:"account_id"`
-	LineID       string          `json:"line_id,omitempty"`
-	Description  string          `json:"description,omitempty"`
-	DebitAmount  decimal.Decimal `json:"debit_amount"`
-	CreditAmount decimal.Decimal `json:"credit_amount"`
-	Currency     string          `json:"currency,omitempty"`
-	ExchangeRate decimal.Decimal `json:"exchange_rate,omitempty"`
+	AccountID      string          `json:"account_id"`
+	LineID         string          `json:"line_id,omitempty"`
+	Description    string          `json:"description,omitempty"`
+	DebitAmount    decimal.Decimal `json:"debit_amount"`
+	CreditAmount   decimal.Decimal `json:"credit_amount"`
+	Currency       string          `json:"currency,omitempty"`
+	ExchangeRate   decimal.Decimal `json:"exchange_rate,omitempty"`
+	VATRate        decimal.Decimal `json:"vat_rate,omitempty"`
+	IsVATInclusive bool            `json:"is_vat_inclusive,omitempty"`
 }
 
 // JournalEntryTemplate represents a reusable balanced journal entry pattern.

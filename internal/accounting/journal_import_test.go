@@ -407,9 +407,9 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 
 		result, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
 			UserID: "user-1",
-			CSVContent: "entry_reference,entry_date,account_code,debit,credit,currency,exchange_rate,source_type,source_id\n" +
-				"FX-001,2026-03-31,1000,10,0,usd,1.10,LEGACY_IMPORT," + sourceID + "\n" +
-				"FX-001,2026-03-31,4000,0,10,usd,1.10,LEGACY_IMPORT," + sourceID + "\n",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit,currency,exchange_rate,vat_rate,is_vat_inclusive,source_type,source_id\n" +
+				"FX-001,2026-03-31,1000,10,0,usd,1.10,22,true,LEGACY_IMPORT," + sourceID + "\n" +
+				"FX-001,2026-03-31,4000,0,10,usd,1.10,,false,LEGACY_IMPORT," + sourceID + "\n",
 		})
 
 		require.NoError(t, err)
@@ -424,6 +424,10 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 		require.Len(t, entry.Lines, 2)
 		assert.Equal(t, "USD", entry.Lines[0].Currency)
 		assert.True(t, decimal.RequireFromString("1.10").Equal(entry.Lines[0].ExchangeRate))
+		assert.True(t, decimal.RequireFromString("22").Equal(entry.Lines[0].VATRate))
+		assert.True(t, entry.Lines[0].IsVATInclusive)
+		assert.True(t, entry.Lines[1].VATRate.IsZero())
+		assert.False(t, entry.Lines[1].IsVATInclusive)
 	})
 
 	t.Run("records group validation errors", func(t *testing.T) {
@@ -491,6 +495,30 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 		require.Len(t, result.Errors, 2)
 		assert.Contains(t, result.Errors[0].Message, "row cannot contain both debit and credit amounts")
 		assert.Contains(t, result.Errors[1].Message, "exchange_rate cannot be negative")
+	})
+
+	t.Run("records VAT and VAT inclusive validation errors", func(t *testing.T) {
+		repo := newJournalImportMockRepository(tenantID)
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
+			UserID: "user-1",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit,vat_rate,is_vat_inclusive\n" +
+				"BAD-VAT-FORMAT,2026-03-31,1000,10,0,abc,false\n" +
+				"BAD-VAT-FORMAT,2026-03-31,4000,0,10,0,false\n" +
+				"BAD-VAT-NEG,2026-03-31,1000,10,0,-1,false\n" +
+				"BAD-VAT-NEG,2026-03-31,4000,0,10,0,false\n" +
+				"BAD-BOOL,2026-03-31,1000,10,0,0,maybe\n" +
+				"BAD-BOOL,2026-03-31,4000,0,10,0,false\n",
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.EntriesCreated)
+		assert.Equal(t, 6, result.RowsSkipped)
+		require.Len(t, result.Errors, 3)
+		assert.Contains(t, result.Errors[0].Message, "invalid vat_rate")
+		assert.Contains(t, result.Errors[1].Message, "vat_rate cannot be negative")
+		assert.Contains(t, result.Errors[2].Message, "is_vat_inclusive must be true or false")
 	})
 }
 
