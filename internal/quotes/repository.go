@@ -31,6 +31,8 @@ var ErrQuoteNotFound = fmt.Errorf("quote not found")
 
 var errQuotesRepositoryDatabaseNotConfigured = errors.New("quotes repository database is not configured")
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // GORMRepository implements Repository with the shared ORM layer.
 type GORMRepository struct {
 	db *gorm.DB
@@ -40,7 +42,7 @@ func NewRepository(db *pgxpool.Pool) *GORMRepository {
 	if db == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create quotes GORM repository: %w", err))
 	}

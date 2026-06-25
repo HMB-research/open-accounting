@@ -55,28 +55,25 @@ func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
 	return r.db.WithContext(ctx), nil
 }
 
+func qualifiedTableAfterSchemaValidated(schemaName, tableName string) string {
+	qualifiedTable, _ := database.QualifiedTable(schemaName, tableName)
+	return qualifiedTable
+}
+
+func tenantTableAfterSchemaValidated(db *gorm.DB, schemaName, tableName string) *gorm.DB {
+	return db.Session(&gorm.Session{NewDB: true}).Table(qualifiedTableAfterSchemaValidated(schemaName, tableName))
+}
+
 // QueryVATData queries VAT data from journal entries for a period
 func (r *GORMRepository) QueryVATData(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]VATAggregateRow, error) {
 	entriesTable, err := database.QualifiedTable(schemaName, "journal_entries")
 	if err != nil {
 		return nil, err
 	}
-	linesTable, err := database.QualifiedTable(schemaName, "journal_entry_lines")
-	if err != nil {
-		return nil, err
-	}
-	accountsTable, err := database.QualifiedTable(schemaName, "accounts")
-	if err != nil {
-		return nil, err
-	}
-	invoicesTable, err := database.QualifiedTable(schemaName, "invoices")
-	if err != nil {
-		return nil, err
-	}
-	invoiceLinesTable, err := database.QualifiedTable(schemaName, "invoice_lines")
-	if err != nil {
-		return nil, err
-	}
+	linesTable := qualifiedTableAfterSchemaValidated(schemaName, "journal_entry_lines")
+	accountsTable := qualifiedTableAfterSchemaValidated(schemaName, "accounts")
+	invoicesTable := qualifiedTableAfterSchemaValidated(schemaName, "invoices")
+	invoiceLinesTable := qualifiedTableAfterSchemaValidated(schemaName, "invoice_lines")
 	db, err := r.dbWithContext(ctx)
 	if err != nil {
 		return nil, err
@@ -187,10 +184,7 @@ func (r *GORMRepository) QueryKMDINFData(ctx context.Context, schemaName, tenant
 	if err != nil {
 		return nil, err
 	}
-	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
-	if err != nil {
-		return nil, err
-	}
+	contactsTable := qualifiedTableAfterSchemaValidated(schemaName, "contacts")
 	db, err := r.dbWithContext(ctx)
 	if err != nil {
 		return nil, err
@@ -294,14 +288,8 @@ func (r *GORMRepository) QueryEUVATOSSData(ctx context.Context, schemaName, tena
 	if err != nil {
 		return nil, err
 	}
-	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
-	if err != nil {
-		return nil, err
-	}
-	invoiceLinesTable, err := database.QualifiedTable(schemaName, "invoice_lines")
-	if err != nil {
-		return nil, err
-	}
+	contactsTable := qualifiedTableAfterSchemaValidated(schemaName, "contacts")
+	invoiceLinesTable := qualifiedTableAfterSchemaValidated(schemaName, "invoice_lines")
 	db, err := r.dbWithContext(ctx)
 	if err != nil {
 		return nil, err
@@ -370,15 +358,14 @@ func (r *GORMRepository) SaveDeclaration(ctx context.Context, schemaName string,
 	if err != nil {
 		return err
 	}
+	declarationsTable, err := database.QualifiedTable(schemaName, "kmd_declarations")
+	if err != nil {
+		return err
+	}
+	rowsTable := qualifiedTableAfterSchemaValidated(schemaName, "kmd_rows")
 	return db.Transaction(func(tx *gorm.DB) error {
-		declarationsDB, err := database.TenantTable(tx, schemaName, "kmd_declarations")
-		if err != nil {
-			return err
-		}
-		rowsDB, err := database.TenantTable(tx, schemaName, "kmd_rows")
-		if err != nil {
-			return err
-		}
+		declarationsDB := tx.Session(&gorm.Session{NewDB: true}).Table(declarationsTable)
+		rowsDB := tx.Session(&gorm.Session{NewDB: true}).Table(rowsTable)
 
 		declModel := kmdDeclarationToModel(decl)
 		if err := declarationsDB.
@@ -438,10 +425,7 @@ func (r *GORMRepository) GetDeclaration(ctx context.Context, schemaName, tenantI
 	}
 
 	// Get rows
-	rowsDB, err := r.tenantTable(ctx, schemaName, "kmd_rows")
-	if err != nil {
-		return nil, err
-	}
+	rowsDB := tenantTableAfterSchemaValidated(db, schemaName, "kmd_rows")
 	var rowModels []models.KMDRow
 	if err := rowsDB.Where("declaration_id = ?", declModel.ID).Order("code").Find(&rowModels).Error; err != nil {
 		return nil, fmt.Errorf("get rows: %w", err)

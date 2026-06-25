@@ -190,9 +190,7 @@ func (r *HookRegistry) EmitAsync(event Event) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := r.Emit(ctx, event); err != nil {
-			log.Error().Err(err).Str("event", event.Type).Msg("Async event emission failed")
-		}
+		_ = r.Emit(ctx, event)
 	}()
 }
 

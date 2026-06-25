@@ -11,6 +11,22 @@ import (
 	"github.com/HMB-research/open-accounting/internal/reports"
 )
 
+var (
+	reportCSVWriteRecord = func(writer *csv.Writer, row []string) error {
+		return writer.Write(row)
+	}
+	reportCSVFlush = func(writer *csv.Writer) error {
+		writer.Flush()
+		return writer.Error()
+	}
+
+	exportTrialBalanceCSV      = trialBalanceCSV
+	exportBalanceSheetCSV      = balanceSheetCSV
+	exportIncomeStatementCSV   = incomeStatementCSV
+	exportCashFlowStatementCSV = cashFlowStatementCSV
+	exportAccountBalanceCSV    = accountBalanceCSV
+)
+
 func reportResponseFormat(r *http.Request) (string, error) {
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
 	if format == "" {
@@ -55,19 +71,18 @@ func respondReportXML(w http.ResponseWriter, fileName string, content []byte) {
 func trialBalanceCSV(report *accounting.TrialBalance) ([]byte, error) {
 	buffer := &bytes.Buffer{}
 	writer := csv.NewWriter(buffer)
-	if err := writer.Write([]string{"account_code", "account_name", "account_type", "debit_balance", "credit_balance", "net_balance"}); err != nil {
+	if err := reportCSVWriteRecord(writer, []string{"account_code", "account_name", "account_type", "debit_balance", "credit_balance", "net_balance"}); err != nil {
 		return nil, err
 	}
 	for _, account := range report.Accounts {
-		if err := writer.Write(accountBalanceCSVRow(account)); err != nil {
+		if err := reportCSVWriteRecord(writer, accountBalanceCSVRow(account)); err != nil {
 			return nil, err
 		}
 	}
-	if err := writer.Write([]string{"TOTAL", "Total", "", report.TotalDebits.String(), report.TotalCredits.String(), ""}); err != nil {
+	if err := reportCSVWriteRecord(writer, []string{"TOTAL", "Total", "", report.TotalDebits.String(), report.TotalCredits.String(), ""}); err != nil {
 		return nil, err
 	}
-	writer.Flush()
-	if err := writer.Error(); err != nil {
+	if err := reportCSVFlush(writer); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
@@ -76,7 +91,7 @@ func trialBalanceCSV(report *accounting.TrialBalance) ([]byte, error) {
 func balanceSheetCSV(report *accounting.BalanceSheet) ([]byte, error) {
 	buffer := &bytes.Buffer{}
 	writer := csv.NewWriter(buffer)
-	if err := writer.Write([]string{"section", "account_code", "account_name", "account_type", "debit_balance", "credit_balance", "net_balance"}); err != nil {
+	if err := reportCSVWriteRecord(writer, []string{"section", "account_code", "account_name", "account_type", "debit_balance", "credit_balance", "net_balance"}); err != nil {
 		return nil, err
 	}
 	if err := writeAccountSectionCSV(writer, "assets", report.Assets); err != nil {
@@ -94,12 +109,11 @@ func balanceSheetCSV(report *accounting.BalanceSheet) ([]byte, error) {
 		{"retained_earnings", "", "Retained earnings", "", "", "", report.RetainedEarnings.String()},
 		{"total_equity", "", "Total equity", "", "", "", report.TotalEquity.String()},
 	} {
-		if err := writer.Write(row); err != nil {
+		if err := reportCSVWriteRecord(writer, row); err != nil {
 			return nil, err
 		}
 	}
-	writer.Flush()
-	if err := writer.Error(); err != nil {
+	if err := reportCSVFlush(writer); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
@@ -108,7 +122,7 @@ func balanceSheetCSV(report *accounting.BalanceSheet) ([]byte, error) {
 func incomeStatementCSV(report *accounting.IncomeStatement) ([]byte, error) {
 	buffer := &bytes.Buffer{}
 	writer := csv.NewWriter(buffer)
-	if err := writer.Write([]string{"section", "account_code", "account_name", "account_type", "debit_balance", "credit_balance", "net_balance"}); err != nil {
+	if err := reportCSVWriteRecord(writer, []string{"section", "account_code", "account_name", "account_type", "debit_balance", "credit_balance", "net_balance"}); err != nil {
 		return nil, err
 	}
 	if err := writeAccountSectionCSV(writer, "revenue", report.Revenue); err != nil {
@@ -122,12 +136,11 @@ func incomeStatementCSV(report *accounting.IncomeStatement) ([]byte, error) {
 		{"total_expenses", "", "Total expenses", "", "", "", report.TotalExpenses.String()},
 		{"net_income", "", "Net income", "", "", "", report.NetIncome.String()},
 	} {
-		if err := writer.Write(row); err != nil {
+		if err := reportCSVWriteRecord(writer, row); err != nil {
 			return nil, err
 		}
 	}
-	writer.Flush()
-	if err := writer.Error(); err != nil {
+	if err := reportCSVFlush(writer); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
@@ -136,7 +149,7 @@ func incomeStatementCSV(report *accounting.IncomeStatement) ([]byte, error) {
 func cashFlowStatementCSV(report *reports.CashFlowStatement) ([]byte, error) {
 	buffer := &bytes.Buffer{}
 	writer := csv.NewWriter(buffer)
-	if err := writer.Write([]string{"section", "code", "description", "description_et", "amount", "is_subtotal"}); err != nil {
+	if err := reportCSVWriteRecord(writer, []string{"section", "code", "description", "description_et", "amount", "is_subtotal"}); err != nil {
 		return nil, err
 	}
 	if err := writeCashFlowSectionCSV(writer, "operating", report.OperatingActivities); err != nil {
@@ -153,12 +166,11 @@ func cashFlowStatementCSV(report *reports.CashFlowStatement) ([]byte, error) {
 		{"summary", "net_cash_change", "Net cash change", "", report.NetCashChange.String(), "true"},
 		{"summary", "closing_cash", "Closing cash", "", report.ClosingCash.String(), "true"},
 	} {
-		if err := writer.Write(row); err != nil {
+		if err := reportCSVWriteRecord(writer, row); err != nil {
 			return nil, err
 		}
 	}
-	writer.Flush()
-	if err := writer.Error(); err != nil {
+	if err := reportCSVFlush(writer); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
@@ -167,14 +179,13 @@ func cashFlowStatementCSV(report *reports.CashFlowStatement) ([]byte, error) {
 func accountBalanceCSV(accountID, asOfDate, balance string) ([]byte, error) {
 	buffer := &bytes.Buffer{}
 	writer := csv.NewWriter(buffer)
-	if err := writer.Write([]string{"account_id", "as_of_date", "balance"}); err != nil {
+	if err := reportCSVWriteRecord(writer, []string{"account_id", "as_of_date", "balance"}); err != nil {
 		return nil, err
 	}
-	if err := writer.Write([]string{accountID, asOfDate, balance}); err != nil {
+	if err := reportCSVWriteRecord(writer, []string{accountID, asOfDate, balance}); err != nil {
 		return nil, err
 	}
-	writer.Flush()
-	if err := writer.Error(); err != nil {
+	if err := reportCSVFlush(writer); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
@@ -183,7 +194,7 @@ func accountBalanceCSV(accountID, asOfDate, balance string) ([]byte, error) {
 func writeAccountSectionCSV(writer *csv.Writer, section string, accounts []accounting.AccountBalance) error {
 	for _, account := range accounts {
 		row := append([]string{section}, accountBalanceCSVRow(account)...)
-		if err := writer.Write(row); err != nil {
+		if err := reportCSVWriteRecord(writer, row); err != nil {
 			return err
 		}
 	}
@@ -203,7 +214,7 @@ func accountBalanceCSVRow(account accounting.AccountBalance) []string {
 
 func writeCashFlowSectionCSV(writer *csv.Writer, section string, items []reports.CashFlowItem) error {
 	for _, item := range items {
-		if err := writer.Write([]string{
+		if err := reportCSVWriteRecord(writer, []string{
 			section,
 			item.Code,
 			item.Description,

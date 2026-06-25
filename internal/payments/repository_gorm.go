@@ -38,6 +38,15 @@ func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName 
 	return database.TenantTable(db, schemaName, tableName)
 }
 
+func qualifiedTableAfterSchemaValidated(schemaName, tableName string) string {
+	qualifiedTable, _ := database.QualifiedTable(schemaName, tableName)
+	return qualifiedTable
+}
+
+func tenantTableAfterSchemaValidated(db *gorm.DB, schemaName, tableName string) *gorm.DB {
+	return db.Session(&gorm.Session{NewDB: true}).Table(qualifiedTableAfterSchemaValidated(schemaName, tableName))
+}
+
 // Create inserts a new payment
 func (r *GORMRepository) Create(ctx context.Context, schemaName string, payment *Payment) error {
 	db, err := r.tenantTable(ctx, schemaName, "payments")
@@ -60,14 +69,9 @@ func (r *GORMRepository) CreateReversal(ctx context.Context, schemaName string, 
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		paymentsDB, err := database.TenantTable(tx.WithContext(ctx), schemaName, "payments")
-		if err != nil {
-			return err
-		}
-		allocationsDB, err := database.TenantTable(tx.WithContext(ctx), schemaName, "payment_allocations")
-		if err != nil {
-			return err
-		}
+		tx = tx.WithContext(ctx)
+		paymentsDB := tenantTableAfterSchemaValidated(tx, schemaName, "payments")
+		allocationsDB := tenantTableAfterSchemaValidated(tx, schemaName, "payment_allocations")
 
 		if err := paymentsDB.Create(paymentToModel(reversal)).Error; err != nil {
 			return fmt.Errorf("create reversal payment: %w", err)
@@ -79,10 +83,7 @@ func (r *GORMRepository) CreateReversal(ctx context.Context, schemaName string, 
 			}
 		}
 
-		paymentsUpdateDB, err := database.TenantTable(tx.WithContext(ctx), schemaName, "payments")
-		if err != nil {
-			return err
-		}
+		paymentsUpdateDB := tenantTableAfterSchemaValidated(tx, schemaName, "payments")
 		result := paymentsUpdateDB.
 			Model(&models.Payment{}).
 			Where("id = ? AND tenant_id = ? AND reversed_by_payment_id IS NULL", originalPaymentID, reversal.TenantID).
@@ -230,10 +231,7 @@ func (r *GORMRepository) GetUnallocatedPayments(ctx context.Context, schemaName,
 	if err != nil {
 		return nil, err
 	}
-	allocationsTable, err := database.QualifiedTable(schemaName, "payment_allocations")
-	if err != nil {
-		return nil, err
-	}
+	allocationsTable := qualifiedTableAfterSchemaValidated(schemaName, "payment_allocations")
 
 	var paymentModels []models.Payment
 	allocatedAmount := db.

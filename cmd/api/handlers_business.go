@@ -25,6 +25,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/orders"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/payroll"
+	internalpdf "github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/plugin"
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -46,6 +47,21 @@ var (
 	errApprovedOrderEvidenceRequired           = errors.New("approved order evidence is required")
 	errApprovedTSDSubmissionEvidenceRequired   = errors.New("approved TSD submission evidence is required")
 	errApprovedTSDAcceptanceEvidenceRequired   = errors.New("approved TSD acceptance evidence is required")
+)
+
+var (
+	generateInvoicePDF = func(pdfService *internalpdf.Service, invoice *invoicing.Invoice, tenantRecord *tenant.Tenant, pdfSettings internalpdf.PDFSettings) ([]byte, error) {
+		return pdfService.GenerateInvoicePDF(invoice, tenantRecord, pdfSettings)
+	}
+	generateQuotePDF = func(pdfService *internalpdf.Service, quote *quotes.Quote, tenantRecord *tenant.Tenant, pdfSettings internalpdf.PDFSettings) ([]byte, error) {
+		return pdfService.GenerateQuotePDF(quote, tenantRecord, pdfSettings)
+	}
+	generateOrderPDF = func(pdfService *internalpdf.Service, order *orders.Order, tenantRecord *tenant.Tenant, pdfSettings internalpdf.PDFSettings) ([]byte, error) {
+		return pdfService.GenerateOrderPDF(order, tenantRecord, pdfSettings)
+	}
+	generatePayslipPDF = func(pdfService *internalpdf.Service, payslip *payroll.Payslip, run *payroll.PayrollRun, tenantRecord *tenant.Tenant) ([]byte, error) {
+		return pdfService.GeneratePayslipPDF(payslip, run, tenantRecord)
+	}
 )
 
 // =============================================================================
@@ -165,7 +181,7 @@ func (h *Handlers) GetReceivablesAging(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if format == "csv" {
-		content, err := agingReportCSV(report)
+		content, err := exportAgingReportCSV(report)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export aging CSV")
 			return
@@ -174,7 +190,7 @@ func (h *Handlers) GetReceivablesAging(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "xlsx" {
-		content, err := agingReportXLSX(report)
+		content, err := exportAgingReportXLSX(report)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export aging XLSX")
 			return
@@ -183,7 +199,7 @@ func (h *Handlers) GetReceivablesAging(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "pdf" {
-		content, err := agingReportPDF(report)
+		content, err := exportAgingReportPDF(report)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export aging PDF")
 			return
@@ -223,7 +239,7 @@ func (h *Handlers) GetPayablesAging(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if format == "csv" {
-		content, err := agingReportCSV(report)
+		content, err := exportAgingReportCSV(report)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export aging CSV")
 			return
@@ -232,7 +248,7 @@ func (h *Handlers) GetPayablesAging(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "xlsx" {
-		content, err := agingReportXLSX(report)
+		content, err := exportAgingReportXLSX(report)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export aging XLSX")
 			return
@@ -241,7 +257,7 @@ func (h *Handlers) GetPayablesAging(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "pdf" {
-		content, err := agingReportPDF(report)
+		content, err := exportAgingReportPDF(report)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export aging PDF")
 			return
@@ -899,7 +915,7 @@ func (h *Handlers) GetInvoicePDF(w http.ResponseWriter, r *http.Request) {
 	pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
 
 	// Generate PDF
-	pdfBytes, err := h.pdfService.GenerateInvoicePDF(invoice, t, pdfSettings)
+	pdfBytes, err := generateInvoicePDF(h.pdfService, invoice, t, pdfSettings)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
 		return
@@ -1520,7 +1536,7 @@ func (h *Handlers) EmailInvoice(w http.ResponseWriter, r *http.Request) {
 	var attachments []email.Attachment
 	if req.AttachPDF {
 		pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
-		pdfBytes, err := h.pdfService.GenerateInvoicePDF(invoice, t, pdfSettings)
+		pdfBytes, err := generateInvoicePDF(h.pdfService, invoice, t, pdfSettings)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
 			return
@@ -1634,7 +1650,7 @@ func (h *Handlers) EmailQuote(w http.ResponseWriter, r *http.Request) {
 	var attachments []email.Attachment
 	if req.AttachPDF {
 		pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
-		pdfBytes, err := h.pdfService.GenerateQuotePDF(quote, t, pdfSettings)
+		pdfBytes, err := generateQuotePDF(h.pdfService, quote, t, pdfSettings)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
 			return
@@ -1746,7 +1762,7 @@ func (h *Handlers) EmailOrder(w http.ResponseWriter, r *http.Request) {
 	var attachments []email.Attachment
 	if req.AttachPDF {
 		pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
-		pdfBytes, err := h.pdfService.GenerateOrderPDF(order, t, pdfSettings)
+		pdfBytes, err := generateOrderPDF(h.pdfService, order, t, pdfSettings)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
 			return
@@ -4033,7 +4049,7 @@ func (h *Handlers) GetPayslipPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pdfBytes, err := h.pdfService.GeneratePayslipPDF(selected, run, tenantRecord)
+	pdfBytes, err := generatePayslipPDF(h.pdfService, selected, run, tenantRecord)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
 		return
@@ -4700,7 +4716,7 @@ func (h *Handlers) GetQuotePDF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
-	pdfBytes, err := h.pdfService.GenerateQuotePDF(quote, t, pdfSettings)
+	pdfBytes, err := generateQuotePDF(h.pdfService, quote, t, pdfSettings)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
 		return
@@ -5222,7 +5238,7 @@ func (h *Handlers) GetOrderPDF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pdfSettings := h.pdfService.PDFSettingsFromTenant(t)
-	pdfBytes, err := h.pdfService.GenerateOrderPDF(order, t, pdfSettings)
+	pdfBytes, err := generateOrderPDF(h.pdfService, order, t, pdfSettings)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate PDF")
 		return

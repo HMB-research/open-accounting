@@ -20,12 +20,14 @@ type Service struct {
 	accounting *accounting.Service
 }
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // NewService creates a new invoicing service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool, accountingService *accounting.Service) *Service {
 	if db == nil {
 		return &Service{accounting: accountingService}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create invoicing GORM repository: %w", err))
 	}
