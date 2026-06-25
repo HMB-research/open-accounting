@@ -3,6 +3,7 @@ package tax
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -152,4 +153,227 @@ func TestImportKMDHistoryCSV_RejectsMissingHeaders(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing required year, month, or row_code column")
+}
+
+func TestKMDHistoryImportGroupConsistencyBranches(t *testing.T) {
+	submittedAt := time.Date(2026, time.January, 20, 0, 0, 0, 0, time.UTC)
+	otherSubmittedAt := submittedAt.AddDate(0, 0, 1)
+	outputTotal := decimal.NewFromInt(220)
+	otherOutputTotal := decimal.NewFromInt(221)
+	inputTotal := decimal.NewFromInt(55)
+	otherInputTotal := decimal.NewFromInt(56)
+
+	tests := []struct {
+		name       string
+		group      *kmdHistoryImportGroup
+		record     *kmdHistoryImportRecord
+		want       string
+		assertions func(t *testing.T, group *kmdHistoryImportGroup)
+	}{
+		{
+			name: "status mismatch",
+			group: &kmdHistoryImportGroup{
+				year:   2026,
+				month:  1,
+				status: KMDStatusDraft,
+			},
+			record: &kmdHistoryImportRecord{status: KMDStatusSubmitted},
+			want:   "status must match other rows",
+		},
+		{
+			name: "submitted date mismatch",
+			group: &kmdHistoryImportGroup{
+				year:        2026,
+				month:       1,
+				status:      KMDStatusSubmitted,
+				submittedAt: &submittedAt,
+			},
+			record: &kmdHistoryImportRecord{status: KMDStatusSubmitted, submittedAt: &otherSubmittedAt},
+			want:   "submitted_at must match other rows",
+		},
+		{
+			name: "output total mismatch",
+			group: &kmdHistoryImportGroup{
+				year:           2026,
+				month:          1,
+				status:         KMDStatusAccepted,
+				totalOutputVAT: &outputTotal,
+			},
+			record: &kmdHistoryImportRecord{status: KMDStatusAccepted, totalOutputVAT: &otherOutputTotal},
+			want:   "total_output_vat must match other rows",
+		},
+		{
+			name: "input total mismatch",
+			group: &kmdHistoryImportGroup{
+				year:          2026,
+				month:         1,
+				status:        KMDStatusAccepted,
+				totalInputVAT: &inputTotal,
+			},
+			record: &kmdHistoryImportRecord{status: KMDStatusAccepted, totalInputVAT: &otherInputTotal},
+			want:   "total_input_vat must match other rows",
+		},
+		{
+			name: "adopts missing metadata",
+			group: &kmdHistoryImportGroup{
+				year:   2026,
+				month:  1,
+				status: KMDStatusSubmitted,
+			},
+			record: &kmdHistoryImportRecord{
+				status:         KMDStatusSubmitted,
+				submittedAt:    &submittedAt,
+				totalOutputVAT: &outputTotal,
+				totalInputVAT:  &inputTotal,
+			},
+			assertions: func(t *testing.T, group *kmdHistoryImportGroup) {
+				t.Helper()
+				require.NotNil(t, group.submittedAt)
+				assert.True(t, group.submittedAt.Equal(submittedAt))
+				require.NotNil(t, group.totalOutputVAT)
+				assert.True(t, group.totalOutputVAT.Equal(outputTotal))
+				require.NotNil(t, group.totalInputVAT)
+				assert.True(t, group.totalInputVAT.Equal(inputTotal))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validateKMDHistoryGroupConsistency(tt.group, tt.record)
+
+			if tt.want != "" {
+				assert.Contains(t, got, tt.want)
+				return
+			}
+			assert.Empty(t, got)
+			tt.assertions(t, tt.group)
+		})
+	}
+}
+
+func TestKMDHistoryVATReconciliationBranches(t *testing.T) {
+	outputTotal := decimal.NewFromInt(219)
+	inputTotal := decimal.NewFromInt(54)
+
+	tests := []struct {
+		name  string
+		group *kmdHistoryImportGroup
+		want  string
+	}{
+		{
+			name: "output total row mismatch without support rows",
+			group: &kmdHistoryImportGroup{
+				year:           2026,
+				month:          1,
+				totalOutputVAT: &outputTotal,
+				records: []*kmdHistoryImportRecord{
+					kmdHistoryRecord(KMDRow8, 220),
+				},
+			},
+			want: "does not match KMD row 8 tax_amount",
+		},
+		{
+			name: "input total row mismatch against support rows",
+			group: &kmdHistoryImportGroup{
+				year:  2026,
+				month: 1,
+				records: []*kmdHistoryImportRecord{
+					kmdHistoryRecord(KMDRow4, 55),
+					kmdHistoryRecord(KMDRow9, 54),
+				},
+			},
+			want: "KMD row 9 tax_amount 54 does not match supporting KMD input VAT rows",
+		},
+		{
+			name: "input declared total mismatch against support rows",
+			group: &kmdHistoryImportGroup{
+				year:          2026,
+				month:         1,
+				totalInputVAT: &inputTotal,
+				records: []*kmdHistoryImportRecord{
+					kmdHistoryRecord(KMDRow4, 55),
+				},
+			},
+			want: "total_input_vat 54 does not match supporting KMD input VAT rows",
+		},
+		{
+			name: "input total row mismatch without support rows",
+			group: &kmdHistoryImportGroup{
+				year:          2026,
+				month:         1,
+				totalInputVAT: &inputTotal,
+				records: []*kmdHistoryImportRecord{
+					kmdHistoryRecord(KMDRow9, 55),
+				},
+			},
+			want: "does not match KMD row 9 tax_amount",
+		},
+		{
+			name: "matching output and input support",
+			group: &kmdHistoryImportGroup{
+				year:  2026,
+				month: 1,
+				records: []*kmdHistoryImportRecord{
+					kmdHistoryRecord(KMDRow1, 220),
+					kmdHistoryRecord(KMDRow8, 220),
+					kmdHistoryRecord(KMDRow4, 55),
+					kmdHistoryRecord(KMDRow9, 55),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validateKMDHistoryVATReconciliation(tt.group)
+
+			if tt.want != "" {
+				assert.Contains(t, got, tt.want)
+				return
+			}
+			assert.Empty(t, got)
+		})
+	}
+}
+
+func TestKMDHistoryImportHelperBranches(t *testing.T) {
+	parsed, err := parseOptionalKMDHistoryDecimal(" 1 234,56 ", "tax_base")
+	require.NoError(t, err)
+	assert.True(t, parsed.Equal(decimal.RequireFromString("1234.56")))
+
+	blank, err := parseOptionalKMDHistoryDecimal(" ", "tax_amount")
+	require.NoError(t, err)
+	assert.True(t, blank.IsZero())
+
+	_, err = parseOptionalKMDHistoryDecimal("not-a-number", "tax_amount")
+	require.ErrorContains(t, err, "invalid tax_amount")
+
+	status, err := parseKMDHistoryStatus("filed")
+	require.NoError(t, err)
+	assert.Equal(t, KMDStatusSubmitted, status)
+
+	_, err = parseKMDHistoryStatus("unknown")
+	require.ErrorContains(t, err, "invalid status")
+
+	assert.Equal(t, "output", kmdHistoryVATSupportClass(KMDRow21))
+	assert.Equal(t, "output", kmdHistoryVATSupportClass(KMDRow31))
+	assert.Equal(t, "input", kmdHistoryVATSupportClass(KMDRow6))
+	assert.Equal(t, "input", kmdHistoryVATSupportClass(KMDRow7))
+	assert.Equal(t, "output_total", kmdHistoryVATSupportClass(KMDRow8))
+	assert.Equal(t, "input_total", kmdHistoryVATSupportClass(KMDRow9))
+	assert.Empty(t, kmdHistoryVATSupportClass("99"))
+
+	assert.Equal(t, "001", kmdHistoryRowSortKey("1"))
+	assert.Equal(t, "021", kmdHistoryRowSortKey("21"))
+	assert.Equal(t, "A", kmdHistoryRowSortKey("A"))
+}
+
+func kmdHistoryRecord(code string, amount int64) *kmdHistoryImportRecord {
+	return &kmdHistoryImportRecord{
+		row: KMDRow{
+			Code:      code,
+			TaxAmount: decimal.NewFromInt(amount),
+		},
+	}
 }
