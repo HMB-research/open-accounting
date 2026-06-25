@@ -17,6 +17,8 @@ import (
 
 var ErrKMDDeclarationNotFound = errors.New("kmd declaration not found")
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // VATEntry represents a VAT entry for aggregation
 type VATEntry struct {
 	VATCode   string
@@ -70,7 +72,7 @@ func NewService(db *pgxpool.Pool) *Service {
 	if db == nil {
 		return &Service{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create tax GORM repository: %w", err))
 	}

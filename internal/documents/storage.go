@@ -19,6 +19,15 @@ type LocalStore struct {
 	rootDir string
 }
 
+type localStoreTempFile interface {
+	io.Writer
+	Close() error
+}
+
+var createLocalStoreTempFile = func(path string) (localStoreTempFile, error) {
+	return os.Create(path)
+}
+
 func NewLocalStore(rootDir string) (*LocalStore, error) {
 	if strings.TrimSpace(rootDir) == "" {
 		return nil, fmt.Errorf("documents root directory is required")
@@ -40,7 +49,7 @@ func (s *LocalStore) Save(_ context.Context, key string, content io.Reader) erro
 	}
 
 	tempPath := targetPath + ".tmp"
-	file, err := os.Create(tempPath)
+	file, err := createLocalStoreTempFile(tempPath)
 	if err != nil {
 		return fmt.Errorf("create temp document: %w", err)
 	}

@@ -3,8 +3,13 @@ package orders
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -248,14 +253,20 @@ func TestGORMRepositoryDryRunOperations(t *testing.T) {
 	lineModel := orderLineToModel(&order.Lines[0])
 	reservation := orderDryRunStockReservation(tenantID, order.ID, now)
 	reservationModel := stockReservationToModel(reservation)
+	sequence := 42
 	capture := &orderDryRunSQLCapture{}
 	repo := NewGORMRepository(newOrderDryRunDB(t,
 		withOrderDryRunFixtures(orderDryRunFixtures{
 			order:             orderModel,
 			orders:            []models.Order{*orderModel},
 			orderLines:        []models.OrderLine{*lineModel},
+			sequence:          &sequence,
 			stockReservation:  reservationModel,
 			stockReservations: []models.OrderStockReservation{*reservationModel},
+		}),
+		withOrderWave11ScanRows(orderWave11RowSet{
+			columns: []string{"seq"},
+			values:  [][]driver.Value{{sequence}},
 		}),
 		withOrderDryRunUpdateRows(1, 1, 1, 1),
 		withOrderDryRunDeleteRows(1),
@@ -283,6 +294,10 @@ func TestGORMRepositoryDryRunOperations(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, listedOrders, 1)
 	assert.Equal(t, order.OrderNumber, listedOrders[0].OrderNumber)
+
+	nextNumber, err := repo.GenerateNumber(ctx, schemaName, tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, "ORD-00042", nextNumber)
 
 	order.Notes = "updated dry-run order"
 	require.NoError(t, repo.Update(ctx, schemaName, order))
@@ -490,6 +505,118 @@ func TestGORMRepositoryDryRunErrors(t *testing.T) {
 		assert.ErrorIs(t, err, expectedErr)
 		assert.Contains(t, err.Error(), "insert order line")
 	})
+}
+
+type orderWave11RowSet struct {
+	columns []string
+	values  [][]driver.Value
+}
+
+var orderWave11RowsDSNID uint64
+var orderWave11RowsDriverOnce sync.Once
+var orderWave11RowsMu sync.Mutex
+var orderWave11RowsByDSN = map[string]orderWave11RowSet{}
+
+func withOrderWave11ScanRows(rowSets ...orderWave11RowSet) orderDryRunDBOption {
+	return func(t *testing.T, db *gorm.DB) {
+		t.Helper()
+
+		var index int
+		err := db.Callback().Row().After("gorm:row").Register(orderDryRunCallbackName(t, "scan_rows_wave11"), func(tx *gorm.DB) {
+			if index >= len(rowSets) {
+				tx.AddError(fmt.Errorf("missing orders dry-run row set %d", index))
+				return
+			}
+			rowSet := rowSets[index]
+			index++
+			tx.Statement.Dest = newOrderWave11SQLRows(t, rowSet)
+			tx.RowsAffected = int64(len(rowSet.values))
+		})
+		require.NoError(t, err)
+	}
+}
+
+func newOrderWave11SQLRows(t *testing.T, rowSet orderWave11RowSet) *sql.Rows {
+	t.Helper()
+
+	orderWave11RowsDriverOnce.Do(func() {
+		sql.Register("orders_wave11_rows", orderWave11RowsDriver{})
+	})
+
+	dsn := fmt.Sprintf("orders-wave11-rows-%d", atomic.AddUint64(&orderWave11RowsDSNID, 1))
+	orderWave11RowsMu.Lock()
+	orderWave11RowsByDSN[dsn] = rowSet
+	orderWave11RowsMu.Unlock()
+
+	db, err := sql.Open("orders_wave11_rows", dsn)
+	require.NoError(t, err)
+	rows, err := db.QueryContext(context.Background(), "SELECT 1")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = rows.Close()
+		_ = db.Close()
+		orderWave11RowsMu.Lock()
+		delete(orderWave11RowsByDSN, dsn)
+		orderWave11RowsMu.Unlock()
+	})
+
+	return rows
+}
+
+type orderWave11RowsDriver struct{}
+
+func (orderWave11RowsDriver) Open(name string) (driver.Conn, error) {
+	return orderWave11RowsConn{dsn: name}, nil
+}
+
+type orderWave11RowsConn struct {
+	dsn string
+}
+
+func (orderWave11RowsConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("orders wave11 rows do not support Prepare")
+}
+
+func (orderWave11RowsConn) Close() error {
+	return nil
+}
+
+func (orderWave11RowsConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("orders wave11 rows do not support Begin")
+}
+
+func (c orderWave11RowsConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	orderWave11RowsMu.Lock()
+	rowSet, ok := orderWave11RowsByDSN[c.dsn]
+	orderWave11RowsMu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("orders wave11 row set %q not found", c.dsn)
+	}
+	return &orderWave11Rows{columns: rowSet.columns, values: rowSet.values}, nil
+}
+
+type orderWave11Rows struct {
+	columns []string
+	values  [][]driver.Value
+	index   int
+}
+
+func (r *orderWave11Rows) Columns() []string {
+	return r.columns
+}
+
+func (*orderWave11Rows) Close() error {
+	return nil
+}
+
+func (r *orderWave11Rows) Next(dest []driver.Value) error {
+	if r.index >= len(r.values) {
+		return io.EOF
+	}
+	copy(dest, r.values[r.index])
+	r.index++
+	return nil
 }
 
 func orderDryRunOrder(tenantID string, now time.Time) *Order {

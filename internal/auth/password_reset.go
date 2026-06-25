@@ -25,7 +25,10 @@ const (
 	defaultPasswordResetHashCost     = 12
 )
 
-var passwordResetRandomRead = rand.Read
+var (
+	newGormDBFromPool       = database.NewGormDBFromPool
+	passwordResetRandomRead = rand.Read
+)
 
 // ErrPasswordResetTokenInvalid is returned for missing, expired, or already-used reset tokens.
 var ErrPasswordResetTokenInvalid = errors.New("password reset token invalid")
@@ -94,7 +97,7 @@ type passwordResetGORMRepository struct {
 
 // NewPasswordResetService creates a PostgreSQL-backed password reset service.
 func NewPasswordResetService(pool *pgxpool.Pool, opts ...PasswordResetServiceOption) *PasswordResetService {
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create password reset GORM repository: %w", err))
 	}

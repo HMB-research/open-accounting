@@ -1525,9 +1525,6 @@ func (s *Service) issueStock(ctx context.Context, tenantID, schemaName string, r
 		if totalCost.LessThanOrEqual(decimal.Zero) {
 			return nil, fmt.Errorf("positive issue cost is required to post issue accounting")
 		}
-		if accountingLines == nil {
-			return nil, fmt.Errorf("cost_of_goods_sold_account_id and inventory_account_id are required to post issue accounting")
-		}
 	}
 
 	reference := strings.TrimSpace(req.Reference)

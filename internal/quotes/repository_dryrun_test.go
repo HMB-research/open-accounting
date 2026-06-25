@@ -3,8 +3,13 @@ package quotes
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -234,12 +239,18 @@ func TestGORMRepositoryDryRunOperations(t *testing.T) {
 	quote := quoteDryRunQuote(tenantID, now)
 	quoteModel := quoteToModel(quote)
 	lineModel := quoteLineToModel(&quote.Lines[0])
+	sequence := 42
 	capture := &quoteDryRunSQLCapture{}
 	repo := NewGORMRepository(newQuoteDryRunDB(t,
 		withQuoteDryRunFixtures(quoteDryRunFixtures{
 			quote:      quoteModel,
 			quotes:     []models.Quote{*quoteModel},
 			quoteLines: []models.QuoteLine{*lineModel},
+			sequence:   &sequence,
+		}),
+		withQuoteWave11ScanRows(quoteWave11RowSet{
+			columns: []string{"seq"},
+			values:  [][]driver.Value{{sequence}},
 		}),
 		withQuoteDryRunUpdateRows(1, 1, 1, 1),
 		withQuoteDryRunDeleteRows(1),
@@ -267,6 +278,10 @@ func TestGORMRepositoryDryRunOperations(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, listedQuotes, 1)
 	assert.Equal(t, quote.QuoteNumber, listedQuotes[0].QuoteNumber)
+
+	nextNumber, err := repo.GenerateNumber(ctx, schemaName, tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, "Q-00042", nextNumber)
 
 	quote.Notes = "updated dry-run quote"
 	require.NoError(t, repo.Update(ctx, schemaName, quote))
@@ -434,6 +449,118 @@ func TestGORMRepositoryDryRunErrors(t *testing.T) {
 		assert.ErrorIs(t, err, expectedErr)
 		assert.Contains(t, err.Error(), "insert quote line")
 	})
+}
+
+type quoteWave11RowSet struct {
+	columns []string
+	values  [][]driver.Value
+}
+
+var quoteWave11RowsDSNID uint64
+var quoteWave11RowsDriverOnce sync.Once
+var quoteWave11RowsMu sync.Mutex
+var quoteWave11RowsByDSN = map[string]quoteWave11RowSet{}
+
+func withQuoteWave11ScanRows(rowSets ...quoteWave11RowSet) quoteDryRunDBOption {
+	return func(t *testing.T, db *gorm.DB) {
+		t.Helper()
+
+		var index int
+		err := db.Callback().Row().After("gorm:row").Register(quoteDryRunCallbackName(t, "scan_rows_wave11"), func(tx *gorm.DB) {
+			if index >= len(rowSets) {
+				tx.AddError(fmt.Errorf("missing quotes dry-run row set %d", index))
+				return
+			}
+			rowSet := rowSets[index]
+			index++
+			tx.Statement.Dest = newQuoteWave11SQLRows(t, rowSet)
+			tx.RowsAffected = int64(len(rowSet.values))
+		})
+		require.NoError(t, err)
+	}
+}
+
+func newQuoteWave11SQLRows(t *testing.T, rowSet quoteWave11RowSet) *sql.Rows {
+	t.Helper()
+
+	quoteWave11RowsDriverOnce.Do(func() {
+		sql.Register("quotes_wave11_rows", quoteWave11RowsDriver{})
+	})
+
+	dsn := fmt.Sprintf("quotes-wave11-rows-%d", atomic.AddUint64(&quoteWave11RowsDSNID, 1))
+	quoteWave11RowsMu.Lock()
+	quoteWave11RowsByDSN[dsn] = rowSet
+	quoteWave11RowsMu.Unlock()
+
+	db, err := sql.Open("quotes_wave11_rows", dsn)
+	require.NoError(t, err)
+	rows, err := db.QueryContext(context.Background(), "SELECT 1")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = rows.Close()
+		_ = db.Close()
+		quoteWave11RowsMu.Lock()
+		delete(quoteWave11RowsByDSN, dsn)
+		quoteWave11RowsMu.Unlock()
+	})
+
+	return rows
+}
+
+type quoteWave11RowsDriver struct{}
+
+func (quoteWave11RowsDriver) Open(name string) (driver.Conn, error) {
+	return quoteWave11RowsConn{dsn: name}, nil
+}
+
+type quoteWave11RowsConn struct {
+	dsn string
+}
+
+func (quoteWave11RowsConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("quotes wave11 rows do not support Prepare")
+}
+
+func (quoteWave11RowsConn) Close() error {
+	return nil
+}
+
+func (quoteWave11RowsConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("quotes wave11 rows do not support Begin")
+}
+
+func (c quoteWave11RowsConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	quoteWave11RowsMu.Lock()
+	rowSet, ok := quoteWave11RowsByDSN[c.dsn]
+	quoteWave11RowsMu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("quotes wave11 row set %q not found", c.dsn)
+	}
+	return &quoteWave11Rows{columns: rowSet.columns, values: rowSet.values}, nil
+}
+
+type quoteWave11Rows struct {
+	columns []string
+	values  [][]driver.Value
+	index   int
+}
+
+func (r *quoteWave11Rows) Columns() []string {
+	return r.columns
+}
+
+func (*quoteWave11Rows) Close() error {
+	return nil
+}
+
+func (r *quoteWave11Rows) Next(dest []driver.Value) error {
+	if r.index >= len(r.values) {
+		return io.EOF
+	}
+	copy(dest, r.values[r.index])
+	r.index++
+	return nil
 }
 
 func quoteDryRunQuote(tenantID string, now time.Time) *Quote {

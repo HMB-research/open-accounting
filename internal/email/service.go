@@ -48,7 +48,7 @@ func (d *DefaultMailSender) SendMail(config *SMTPConfig, m *mail.Msg) error {
 		return fmt.Errorf("failed to create mail client: %w", err)
 	}
 
-	if err := client.DialAndSend(m); err != nil {
+	if err := dialAndSendMail(client, m); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
 
@@ -62,6 +62,14 @@ type Service struct {
 }
 
 var (
+	newGormDBFromPool = database.NewGormDBFromPool
+	mergeSMTPConfig   = MergeSMTPConfig
+	attachEmailReader = func(m *mail.Msg, filename string, content []byte) error {
+		return m.AttachReader(filename, bytes.NewReader(content))
+	}
+	dialAndSendMail = func(client *mail.Client, m *mail.Msg) error {
+		return client.DialAndSend(m)
+	}
 	errEmailRepositoryNotConfigured = errors.New("email service repository is not configured")
 	errEmailMailerNotConfigured     = errors.New("email service mailer is not configured")
 )
@@ -71,7 +79,7 @@ func NewService(db *pgxpool.Pool) *Service {
 	if db == nil {
 		return &Service{mailer: &DefaultMailSender{}}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create email GORM repository: %w", err))
 	}
@@ -132,7 +140,7 @@ func (s *Service) UpdateSMTPConfig(ctx context.Context, tenantID string, req *Up
 	}
 
 	// Merge new SMTP settings
-	newSettingsJSON, err := MergeSMTPConfig(settingsJSON, req)
+	newSettingsJSON, err := mergeSMTPConfig(settingsJSON, req)
 	if err != nil {
 		return fmt.Errorf("failed to marshal settings: %w", err)
 	}
@@ -318,7 +326,7 @@ func (s *Service) SendEmail(ctx context.Context, schemaName string, tenantID str
 
 	// Add attachments
 	for _, att := range attachments {
-		if err := m.AttachReader(att.Filename, bytes.NewReader(att.Content)); err != nil {
+		if err := attachEmailReader(m, att.Filename, att.Content); err != nil {
 			return s.logEmailError(ctx, schemaName, logID, fmt.Errorf("attach file %s: %w", att.Filename, err))
 		}
 	}

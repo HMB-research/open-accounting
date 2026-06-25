@@ -18,6 +18,21 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+type yearEndCloseAuditArchiveWriter interface {
+	Create(string) (io.Writer, error)
+	Close() error
+}
+
+var (
+	evaluateDocumentsEvidencePolicy = func(service *documents.Service, ctx context.Context, schemaName, tenantID string, req *documents.EvidencePolicyRequest) ([]documents.EvidencePolicyResult, error) {
+		return service.EvaluateEvidencePolicy(ctx, schemaName, tenantID, req)
+	}
+	marshalYearEndCloseAuditManifest  = json.MarshalIndent
+	newYearEndCloseAuditArchiveWriter = func(writer io.Writer) yearEndCloseAuditArchiveWriter {
+		return zip.NewWriter(writer)
+	}
+)
+
 // GetYearEndCloseStatus returns fiscal year-end close readiness.
 // @Summary Get year-end close status
 // @Description Get fiscal year close readiness, retained-earnings mapping, net income, period-lock status, inventory costing review using the explicit method or tenant valuation policy, and existing carry-forward state
@@ -409,9 +424,9 @@ func (h *Handlers) buildYearEndCloseAuditEvidence(ctx context.Context, tenantRec
 
 func (h *Handlers) buildYearEndCloseAuditArchive(ctx context.Context, tenantRecord *tenant.Tenant, audit *accounting.YearEndCloseAuditEvidence) ([]byte, error) {
 	var buffer bytes.Buffer
-	writer := zip.NewWriter(&buffer)
+	writer := newYearEndCloseAuditArchiveWriter(&buffer)
 
-	manifest, err := json.MarshalIndent(audit, "", "  ")
+	manifest, err := marshalYearEndCloseAuditManifest(audit, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("encode audit manifest: %w", err)
 	}
@@ -485,10 +500,7 @@ func (h *Handlers) requireApprovedYearEndClosePackEvidence(ctx context.Context, 
 		return nil
 	}
 
-	entityID, err := accounting.YearEndCloseEvidenceEntityID(tenantRecord.ID, rawPeriodEndDate)
-	if err != nil {
-		return err
-	}
+	entityID, _ := accounting.YearEndCloseEvidenceEntityID(tenantRecord.ID, rawPeriodEndDate)
 	if h.documentsService == nil {
 		return fmt.Errorf("%w before completing fiscal-year close workflow for %s (entity_id: %s)", errApprovedClosePackEvidenceRequired, rawPeriodEndDate, entityID)
 	}
@@ -611,7 +623,7 @@ func (h *Handlers) yearEndInventoryCostingReview(ctx context.Context, schemaName
 }
 
 func (h *Handlers) yearEndClosePackEvidence(ctx context.Context, schemaName, tenantID, entityID string) ([]documents.EvidencePolicyResult, error) {
-	return h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+	return evaluateDocumentsEvidencePolicy(h.documentsService, ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
 		EntityType: documents.EntityTypeYearEndClose,
 		EntityIDs:  []string{entityID},
 		Rules: []documents.EvidencePolicyRule{{

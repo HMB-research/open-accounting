@@ -177,9 +177,6 @@ func parseLeaveBalanceImportRows(content string) ([]leaveBalanceImportRow, error
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("csv file is empty")
-		}
 		return nil, fmt.Errorf("parse csv header: %w", err)
 	}
 
@@ -375,11 +372,12 @@ func findLeaveBalanceAbsenceType(values map[string]string, indexes *leaveBalance
 		return nil, fmt.Errorf("absence type identifiers do not match the same type")
 	}
 
+	var matched *AbsenceType
 	for _, absenceType := range candidates {
-		return absenceType, nil
+		matched = absenceType
+		break
 	}
-
-	return nil, fmt.Errorf("absence type not found")
+	return matched, nil
 }
 
 func uniqueLeaveBalanceAbsenceTypeMatches(matches []*AbsenceType) []*AbsenceType {

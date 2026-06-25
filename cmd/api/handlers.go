@@ -44,6 +44,10 @@ import (
 	"github.com/HMB-research/open-accounting/internal/webhooks"
 )
 
+var sendBulkRemindersWithService = func(ctx context.Context, service *invoicing.ReminderService, tenantID, schemaName string, req *invoicing.SendBulkRemindersRequest, companyName string) (*invoicing.BulkReminderResult, error) {
+	return service.SendBulkReminders(ctx, tenantID, schemaName, req, companyName)
+}
+
 // Handlers contains all HTTP handlers
 type Handlers struct {
 	tokenService             *auth.TokenService
@@ -2647,10 +2651,6 @@ func (h *Handlers) GetAnnualReport(w http.ResponseWriter, r *http.Request) {
 		respondYearEndCloseError(w, err)
 		return
 	}
-	if pack.Status == nil {
-		respondError(w, http.StatusInternalServerError, "Failed to generate annual report")
-		return
-	}
 	if err := h.attachYearEndCloseEvidenceStatus(r.Context(), routeCtx.schemaName, routeCtx.tenantID, pack.Status); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
 		return
@@ -3393,7 +3393,7 @@ func (h *Handlers) SendBulkPaymentReminders(w http.ResponseWriter, r *http.Reque
 		companyName = t.Name
 	}
 
-	result, err := h.reminderService.SendBulkReminders(r.Context(), tenantID, schemaName, &req, companyName)
+	result, err := sendBulkRemindersWithService(r.Context(), h.reminderService, tenantID, schemaName, &req, companyName)
 	if err != nil {
 		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to send bulk payment reminders")
 		respondError(w, http.StatusInternalServerError, "Failed to send bulk payment reminders")

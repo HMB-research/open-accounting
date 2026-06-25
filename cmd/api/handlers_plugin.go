@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,6 +11,15 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/plugin"
+)
+
+var (
+	syncPluginRegistryWithService = func(ctx context.Context, service *plugin.Service, id uuid.UUID) error {
+		return service.SyncRegistry(ctx, id)
+	}
+	restartPluginRuntimeWithService = func(ctx context.Context, service *plugin.Service, id uuid.UUID) (*plugin.PluginRuntimeStatus, error) {
+		return service.RestartPluginRuntime(ctx, id)
+	}
 )
 
 // Plugin Registry Handlers (Admin only)
@@ -109,7 +119,7 @@ func (h *Handlers) SyncPluginRegistry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.pluginService.SyncRegistry(r.Context(), id); err != nil {
+	if err := syncPluginRegistryWithService(r.Context(), h.pluginService, id); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -369,7 +379,7 @@ func (h *Handlers) RestartPluginRuntime(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	status, err := h.pluginService.RestartPluginRuntime(r.Context(), id)
+	status, err := restartPluginRuntimeWithService(r.Context(), h.pluginService, id)
 	if err != nil {
 		switch {
 		case errors.Is(err, plugin.ErrPluginRuntimeUnavailable):

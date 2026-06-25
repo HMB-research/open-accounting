@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
@@ -33,7 +32,7 @@ type RefreshSession struct {
 
 // NewRefreshSessionService creates a refresh session service backed by PostgreSQL.
 func NewRefreshSessionService(pool *pgxpool.Pool) *RefreshSessionService {
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create refresh session GORM repository: %w", err))
 	}

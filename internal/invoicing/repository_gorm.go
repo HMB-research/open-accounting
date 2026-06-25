@@ -37,14 +37,8 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, invoice 
 	}
 
 	return invoicesDB.Transaction(func(tx *gorm.DB) error {
-		invoicesTx, err := database.TenantTable(tx, schemaName, "invoices")
-		if err != nil {
-			return err
-		}
-		linesDB, err := database.TenantTable(tx, schemaName, "invoice_lines")
-		if err != nil {
-			return err
-		}
+		invoicesTx, _ := database.TenantTable(tx, schemaName, "invoices")
+		linesDB, _ := database.TenantTable(tx, schemaName, "invoice_lines")
 
 		// Insert invoice
 		invModel := invoiceToModel(invoice)
@@ -84,10 +78,7 @@ func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, invo
 	}
 
 	// Load lines
-	linesDB, err := r.tenantTable(ctx, schemaName, "invoice_lines")
-	if err != nil {
-		return nil, err
-	}
+	linesDB, _ := r.tenantTable(ctx, schemaName, "invoice_lines")
 	var lineModels []models.InvoiceLine
 	if err := linesDB.Where("invoice_id = ? AND tenant_id = ?", invoiceID, tenantID).
 		Order("line_number").

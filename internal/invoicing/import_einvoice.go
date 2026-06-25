@@ -12,6 +12,8 @@ import (
 	einvoicemapper "github.com/HMB-research/open-accounting/internal/invoicing/mappers/einvoice"
 )
 
+var buildEInvoiceImportedInvoice = buildImportedInvoice
+
 // ImportEInvoiceXML imports invoices from Estonian e-invoice XML.
 func (s *Service) ImportEInvoiceXML(
 	ctx context.Context,
@@ -95,7 +97,7 @@ func (s *Service) ImportEInvoiceXML(
 			}
 		}
 
-		invoice, err := buildImportedInvoice(tenantID, req.UserID, contact.ID, group, now)
+		invoice, err := buildEInvoiceImportedInvoice(tenantID, req.UserID, contact.ID, group, now)
 		if err != nil {
 			result.RowsSkipped++
 			result.Errors = append(result.Errors, ImportInvoicesRowError{

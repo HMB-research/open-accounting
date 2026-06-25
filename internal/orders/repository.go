@@ -95,10 +95,7 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, order *O
 			return nil
 		}
 
-		linesTable, err := database.TenantTable(tx, schemaName, "order_lines")
-		if err != nil {
-			return fmt.Errorf("qualify order lines table: %w", err)
-		}
+		linesTable, _ := database.TenantTable(tx, schemaName, "order_lines")
 		lineModels := make([]models.OrderLine, len(order.Lines))
 		for i := range order.Lines {
 			order.Lines[i].OrderID = order.ID
@@ -208,10 +205,7 @@ func (r *GORMRepository) Update(ctx context.Context, schemaName string, order *O
 			return ErrOrderNotFound
 		}
 
-		linesTable, err := database.TenantTable(tx, schemaName, "order_lines")
-		if err != nil {
-			return fmt.Errorf("qualify order lines table: %w", err)
-		}
+		linesTable, _ := database.TenantTable(tx, schemaName, "order_lines")
 		if err := linesTable.Where("order_id = ?", order.ID).Delete(&models.OrderLine{}).Error; err != nil {
 			return fmt.Errorf("delete order lines: %w", err)
 		}

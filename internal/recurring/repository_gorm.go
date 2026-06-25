@@ -75,10 +75,7 @@ func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, id s
 	if err != nil {
 		return nil, err
 	}
-	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
-	if err != nil {
-		return nil, err
-	}
+	contactsTable, _ := database.QualifiedTable(schemaName, "contacts")
 
 	var result struct {
 		models.RecurringInvoice
@@ -136,10 +133,7 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 	if err != nil {
 		return nil, err
 	}
-	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
-	if err != nil {
-		return nil, err
-	}
+	contactsTable, _ := database.QualifiedTable(schemaName, "contacts")
 
 	query := db.
 		Table(recurringTable+" AS r").
