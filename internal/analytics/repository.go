@@ -54,11 +54,13 @@ type GORMRepository struct {
 	db *gorm.DB
 }
 
+var newAnalyticsGormDBFromPool = database.NewGormDBFromPool
+
 func NewRepository(pool *pgxpool.Pool) *GORMRepository {
 	if pool == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newAnalyticsGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create analytics GORM repository: %w", err))
 	}

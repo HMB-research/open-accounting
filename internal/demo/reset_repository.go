@@ -7,24 +7,39 @@ import (
 
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/plugin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gorm.io/gorm"
 )
 
 // GORMResetRepository applies demo reset persistence with ORM-backed public-row cleanup.
 type GORMResetRepository struct {
-	pool            *pgxpool.Pool
-	db              *gorm.DB
-	advisoryLockKey int64
+	pool             *pgxpool.Pool
+	db               *gorm.DB
+	advisoryLockKey  int64
+	acquireResetConn func(context.Context) (resetConn, error)
 }
+
+type resetConn interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Release()
+}
+
+var newGormDBFromPool = database.NewGormDBFromPool
 
 // NewResetRepository creates an ORM-backed demo reset repository.
 func NewResetRepository(pool *pgxpool.Pool, db *gorm.DB) *GORMResetRepository {
-	return &GORMResetRepository{
+	repository := &GORMResetRepository{
 		pool:            pool,
 		db:              db,
 		advisoryLockKey: ResetAdvisoryLockKey,
 	}
+	if pool != nil {
+		repository.acquireResetConn = func(ctx context.Context) (resetConn, error) {
+			return pool.Acquire(ctx)
+		}
+	}
+	return repository
 }
 
 // NewResetRepositoryFromPool creates an ORM-backed demo reset repository from a pgx pool.
@@ -32,7 +47,7 @@ func NewResetRepositoryFromPool(ctx context.Context, pool *pgxpool.Pool) (*GORMR
 	if pool == nil {
 		return nil, fmt.Errorf("database pool is not configured")
 	}
-	db, err := database.NewGormDBFromPool(ctx, pool)
+	db, err := newGormDBFromPool(ctx, pool)
 	if err != nil {
 		return nil, fmt.Errorf("create demo reset ORM repository: %w", err)
 	}
@@ -41,11 +56,11 @@ func NewResetRepositoryFromPool(ctx context.Context, pool *pgxpool.Pool) (*GORMR
 
 // ResetDemoData drops selected demo schemas, removes public rows, and runs the seed script.
 func (r *GORMResetRepository) ResetDemoData(ctx context.Context, users []ResetUser, seedSQL string) error {
-	if r == nil || r.pool == nil || r.db == nil {
+	if r == nil || r.pool == nil || r.db == nil || r.acquireResetConn == nil {
 		return fmt.Errorf("demo reset repository is not configured")
 	}
 
-	conn, err := r.pool.Acquire(ctx)
+	conn, err := r.acquireResetConn(ctx)
 	if err != nil {
 		return fmt.Errorf("acquire database connection: %w", err)
 	}
@@ -80,7 +95,7 @@ func (r *GORMResetRepository) ResetDemoData(ctx context.Context, users []ResetUs
 	return nil
 }
 
-func (r *GORMResetRepository) dropTenantSchema(ctx context.Context, conn *pgxpool.Conn, schemaName string) error {
+func (r *GORMResetRepository) dropTenantSchema(ctx context.Context, conn resetConn, schemaName string) error {
 	quotedSchema, err := database.QuoteIdentifier(schemaName)
 	if err != nil {
 		return fmt.Errorf("quote tenant schema: %w", err)
