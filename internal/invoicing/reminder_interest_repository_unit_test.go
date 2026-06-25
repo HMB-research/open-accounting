@@ -414,6 +414,16 @@ func TestReminderRuleModelMappings(t *testing.T) {
 	}
 }
 
+func TestReminderRuleErrorMessages(t *testing.T) {
+	if got := ErrRuleNotFound.Error(); got != "reminder rule not found" {
+		t.Fatalf("ErrRuleNotFound.Error() = %q, want reminder rule not found", got)
+	}
+
+	if got := (&NotFoundError{Entity: "invoice"}).Error(); got != "invoice not found" {
+		t.Fatalf("NotFoundError.Error() = %q, want invoice not found", got)
+	}
+}
+
 func TestInterestGORMRepositoryNilDatabaseGuards(t *testing.T) {
 	ctx := context.Background()
 	schemaName := "tenant_schema"
