@@ -384,6 +384,172 @@ func TestMainRequiresDatabaseURLUnit(t *testing.T) {
 	}
 }
 
+func TestMainRunsWithInjectedMigrationPoolUnit(t *testing.T) {
+	dir := t.TempDir()
+	pool := newFakeMigrationPool(nil)
+	oldArgs := os.Args
+	oldNewMigrationPool := newMigrationPool
+	oldFatalMigrationError := fatalMigrationError
+	defer func() {
+		os.Args = oldArgs
+		newMigrationPool = oldNewMigrationPool
+		fatalMigrationError = oldFatalMigrationError
+	}()
+
+	os.Args = []string{"migrate", "-db", "postgres://unit", "-path", dir, "-direction", "up"}
+	newMigrationPool = func(ctx context.Context, databaseURL string) (migrationPool, error) {
+		if databaseURL != "postgres://unit" {
+			t.Fatalf("databaseURL = %q, want postgres://unit", databaseURL)
+		}
+		return pool, nil
+	}
+
+	main()
+
+	if !pool.closed {
+		t.Fatal("expected migration pool to be closed")
+	}
+	if len(pool.execs) == 0 || !strings.Contains(pool.execs[0], "CREATE TABLE IF NOT EXISTS schema_migrations") {
+		t.Fatalf("expected migrations table DDL, got %v", pool.execs)
+	}
+}
+
+func TestMainReportsMigrationErrorUnit(t *testing.T) {
+	oldArgs := os.Args
+	oldFatalMigrationError := fatalMigrationError
+	defer func() {
+		os.Args = oldArgs
+		fatalMigrationError = oldFatalMigrationError
+	}()
+
+	os.Args = []string{"migrate"}
+	var gotErr error
+	fatalMigrationError = func(err error) {
+		gotErr = err
+		panic("fatal migration error")
+	}
+
+	defer func() {
+		recovered := recover()
+		if recovered != "fatal migration error" {
+			t.Fatalf("recover() = %v, want fatal migration error", recovered)
+		}
+		if gotErr == nil || !strings.Contains(gotErr.Error(), "Database URL required") {
+			t.Fatalf("fatal error = %v, want missing database URL", gotErr)
+		}
+	}()
+
+	main()
+}
+
+func TestRunMigrationCLIErrorBranchesUnit(t *testing.T) {
+	oldNewMigrationPool := newMigrationPool
+	defer func() {
+		newMigrationPool = oldNewMigrationPool
+	}()
+
+	t.Run("flag parse error", func(t *testing.T) {
+		err := runMigrationCLI(context.Background(), []string{"-steps", "not-a-number"}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "invalid value") {
+			t.Fatalf("expected flag parse error, got %v", err)
+		}
+	})
+
+	t.Run("connect error", func(t *testing.T) {
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return nil, errors.New("connect failed")
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit"}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "failed to connect to database") {
+			t.Fatalf("expected connect error, got %v", err)
+		}
+	})
+
+	t.Run("ping error closes pool", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		pool.pingErr = errors.New("ping failed")
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit"}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "failed to ping database") {
+			t.Fatalf("expected ping error, got %v", err)
+		}
+		if !pool.closed {
+			t.Fatal("expected pool to be closed after ping error")
+		}
+	})
+
+	t.Run("environment database url and down direction", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.down.sql", "SELECT down;")
+		pool := newFakeMigrationPool(map[string]bool{"001_initial": true})
+		newMigrationPool = func(ctx context.Context, databaseURL string) (migrationPool, error) {
+			if databaseURL != "postgres://env" {
+				t.Fatalf("databaseURL = %q, want postgres://env", databaseURL)
+			}
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-path", dir, "-direction", "down"}, func(key string) string {
+			if key == "DATABASE_URL" {
+				return "postgres://env"
+			}
+			return ""
+		})
+		if err != nil {
+			t.Fatalf("runMigrationCLI down failed: %v", err)
+		}
+		if pool.applied["001_initial"] {
+			t.Fatal("expected down migration to remove applied version")
+		}
+	})
+
+	t.Run("invalid direction", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit", "-direction", "sideways"}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), `invalid direction "sideways"`) {
+			t.Fatalf("expected invalid direction error, got %v", err)
+		}
+	})
+
+	t.Run("ensure migrations table error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		pool.execErr = errors.New("ddl failed")
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit"}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "failed to create migrations table") {
+			t.Fatalf("expected migrations table error, got %v", err)
+		}
+	})
+
+	t.Run("migrate up error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit", "-path", "["}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "migration up failed") {
+			t.Fatalf("expected migration up error, got %v", err)
+		}
+	})
+
+	t.Run("migrate down error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit", "-direction", "down", "-path", "["}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "migration down failed") {
+			t.Fatalf("expected migration down error, got %v", err)
+		}
+	})
+}
+
 func TestMainUnitHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_MIGRATE_UNIT_HELPER") != "1" {
 		return
@@ -419,6 +585,8 @@ type fakeMigrationPool struct {
 	txErrContains string
 	txErr         error
 	commitErr     error
+	pingErr       error
+	closed        bool
 }
 
 func newFakeMigrationPool(applied map[string]bool) *fakeMigrationPool {
@@ -461,6 +629,14 @@ func (p *fakeMigrationPool) Begin(context.Context) (pgx.Tx, error) {
 	tx := &fakeMigrationTx{pool: p}
 	p.txs = append(p.txs, tx)
 	return tx, nil
+}
+
+func (p *fakeMigrationPool) Ping(context.Context) error {
+	return p.pingErr
+}
+
+func (p *fakeMigrationPool) Close() {
+	p.closed = true
 }
 
 type fakeMigrationRows struct {

@@ -22,63 +22,85 @@ type migrationDB interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
+type migrationPool interface {
+	migrationDB
+	Ping(ctx context.Context) error
+	Close()
+}
+
+var newMigrationPool = func(ctx context.Context, databaseURL string) (migrationPool, error) {
+	return pgxpool.New(ctx, databaseURL)
+}
+
+var fatalMigrationError = func(err error) {
+	log.Fatal().Err(err).Msg("Migration failed")
+}
+
 func main() {
 	// Configure logging
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
+	if err := runMigrationCLI(context.Background(), os.Args[1:], os.Getenv); err != nil {
+		fatalMigrationError(err)
+	}
+}
+
+func runMigrationCLI(ctx context.Context, args []string, getenv func(string) string) error {
 	// Parse flags
+	flags := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	var (
-		dbURL          = flag.String("db", "", "Database URL (or set DATABASE_URL env)")
-		migrationsPath = flag.String("path", "migrations", "Path to migrations directory")
-		direction      = flag.String("direction", "up", "Migration direction: up or down")
-		steps          = flag.Int("steps", 0, "Number of migrations to apply (0 = all)")
+		dbURL          = flags.String("db", "", "Database URL (or set DATABASE_URL env)")
+		migrationsPath = flags.String("path", "migrations", "Path to migrations directory")
+		direction      = flags.String("direction", "up", "Migration direction: up or down")
+		steps          = flags.Int("steps", 0, "Number of migrations to apply (0 = all)")
 	)
-	flag.Parse()
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
 
 	// Get database URL
 	databaseURL := *dbURL
 	if databaseURL == "" {
-		databaseURL = os.Getenv("DATABASE_URL")
+		databaseURL = getenv("DATABASE_URL")
 	}
 	if databaseURL == "" {
-		log.Fatal().Msg("Database URL required. Use -db flag or set DATABASE_URL env")
+		return fmt.Errorf("Database URL required. Use -db flag or set DATABASE_URL env")
 	}
 
-	ctx := context.Background()
-
 	// Connect to database
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool, err := newMigrationPool(ctx, databaseURL)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to connect to database")
+		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer pool.Close()
 
 	// Test connection
 	if err := pool.Ping(ctx); err != nil {
-		log.Fatal().Err(err).Msg("Failed to ping database")
+		return fmt.Errorf("failed to ping database: %w", err)
 	}
 	log.Info().Msg("Connected to database")
 
 	// Ensure migrations table exists
 	if err := ensureMigrationsTable(ctx, pool); err != nil {
-		log.Fatal().Err(err).Msg("Failed to create migrations table")
+		return fmt.Errorf("failed to create migrations table: %w", err)
 	}
 
 	// Run migrations
 	switch *direction {
 	case "up":
 		if err := migrateUp(ctx, pool, *migrationsPath, *steps); err != nil {
-			log.Fatal().Err(err).Msg("Migration up failed")
+			return fmt.Errorf("migration up failed: %w", err)
 		}
 	case "down":
 		if err := migrateDown(ctx, pool, *migrationsPath, *steps); err != nil {
-			log.Fatal().Err(err).Msg("Migration down failed")
+			return fmt.Errorf("migration down failed: %w", err)
 		}
 	default:
-		log.Fatal().Str("direction", *direction).Msg("Invalid direction. Use 'up' or 'down'")
+		return fmt.Errorf("invalid direction %q: use 'up' or 'down'", *direction)
 	}
 
 	log.Info().Msg("Migration completed successfully")
+	return nil
 }
 
 func ensureMigrationsTable(ctx context.Context, pool migrationDB) error {
