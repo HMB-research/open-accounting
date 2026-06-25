@@ -21,6 +21,7 @@ type mockRepository struct {
 	retentionReviewErr    error
 	reviewSummaryErr      error
 	getErr                error
+	hasDependentsErr      error
 	updateRetentionErr    error
 	updateLifecycleErr    error
 	updateLegalHoldErr    error
@@ -175,6 +176,9 @@ func (m *mockRepository) GetDocumentByID(ctx context.Context, schemaName, tenant
 }
 
 func (m *mockRepository) DocumentHasSupersededDependents(ctx context.Context, schemaName, tenantID, documentID string) (bool, error) {
+	if m.hasDependentsErr != nil {
+		return false, m.hasDependentsErr
+	}
 	for _, doc := range m.docs {
 		if doc.TenantID != tenantID || doc.SupersededBy == nil {
 			continue
@@ -1503,6 +1507,405 @@ func TestService_EvaluateEvidencePolicyValidation(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "list failed") {
 		t.Fatalf("expected list error, got %v", err)
+	}
+}
+
+func TestService_ReplacementDocumentValidationEdges(t *testing.T) {
+	t.Parallel()
+
+	baseRequest := func() *UploadDocumentRequest {
+		return &UploadDocumentRequest{
+			EntityType:         EntityTypePayment,
+			EntityID:           "pay-1",
+			DocumentType:       DocumentTypeReceipt,
+			FileName:           "replacement.pdf",
+			ContentType:        "application/pdf",
+			FileSize:           int64(len("replacement")),
+			ReplacesDocumentID: "doc-original",
+			UploadedBy:         "reviewer-1",
+		}
+	}
+	baseDocument := func() *Document {
+		return &Document{
+			ID:              "doc-original",
+			TenantID:        "tenant-1",
+			EntityType:      EntityTypePayment,
+			EntityID:        "pay-1",
+			DocumentType:    DocumentTypeReceipt,
+			FileName:        "receipt.pdf",
+			ReviewStatus:    ReviewStatusRejected,
+			LifecycleStatus: LifecycleStatusActive,
+			UploadedBy:      "user-1",
+			CreatedAt:       time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+		}
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Document, *UploadDocumentRequest)
+		want   string
+	}{
+		{
+			name: "missing original",
+			mutate: func(doc *Document, req *UploadDocumentRequest) {
+				req.ReplacesDocumentID = "missing"
+			},
+			want: "file does not exist",
+		},
+		{
+			name: "inactive original",
+			mutate: func(doc *Document, req *UploadDocumentRequest) {
+				doc.LifecycleStatus = LifecycleStatusSuperseded
+			},
+			want: "replacement source document must be active",
+		},
+		{
+			name: "legal hold original",
+			mutate: func(doc *Document, req *UploadDocumentRequest) {
+				doc.LegalHold = true
+			},
+			want: "replacement source document is under legal hold",
+		},
+		{
+			name: "different entity",
+			mutate: func(doc *Document, req *UploadDocumentRequest) {
+				doc.EntityID = "pay-other"
+			},
+			want: "replacement document must target the same entity",
+		},
+		{
+			name: "different document type",
+			mutate: func(doc *Document, req *UploadDocumentRequest) {
+				doc.DocumentType = DocumentTypeContract
+			},
+			want: "replacement document type must match",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newMockRepository()
+			doc := baseDocument()
+			req := baseRequest()
+			tt.mutate(doc, req)
+			repo.docs[doc.ID] = doc
+			svc := NewService(repo, &mockStore{})
+
+			_, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", req, bytes.NewBufferString("replacement"))
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+
+	t.Run("lifecycle update failure cleans replacement row and storage", func(t *testing.T) {
+		repo := newMockRepository()
+		repo.updateLifecycleErr = errors.New("lifecycle failed")
+		repo.docs["doc-original"] = baseDocument()
+		store := &mockStore{}
+		svc := NewService(repo, store)
+
+		_, err := svc.UploadDocument(context.Background(), "tenant_demo", "tenant-1", baseRequest(), bytes.NewBufferString("replacement"))
+
+		if err == nil || !strings.Contains(err.Error(), "lifecycle failed") {
+			t.Fatalf("expected lifecycle error, got %v", err)
+		}
+		if len(store.deleted) != 1 || store.deleted[0] != store.savedKey {
+			t.Fatalf("expected replacement blob cleanup, saved=%q deleted=%#v", store.savedKey, store.deleted)
+		}
+		if len(repo.docs) != 1 || repo.docs["doc-original"] == nil {
+			t.Fatalf("expected replacement metadata cleanup, docs=%#v", repo.docs)
+		}
+	})
+}
+
+func TestService_ListAndUpdateValidationEdges(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepository()
+	svc := NewService(repo, &mockStore{})
+
+	if _, err := svc.ListDocuments(context.Background(), "tenant_demo", "tenant-1", "bad", "entity-1"); err == nil || !strings.Contains(err.Error(), "unsupported document entity type") {
+		t.Fatalf("expected invalid entity type error, got %v", err)
+	}
+	if _, err := svc.ListDocuments(context.Background(), "tenant_demo", "tenant-1", EntityTypePayment, " "); err == nil || !strings.Contains(err.Error(), "entity ID is required") {
+		t.Fatalf("expected entity ID error, got %v", err)
+	}
+	repo.listErr = errors.New("list failed")
+	if _, err := svc.ListDocuments(context.Background(), "tenant_demo", "tenant-1", EntityTypePayment, "pay-1"); err == nil || !strings.Contains(err.Error(), "list failed") {
+		t.Fatalf("expected list error, got %v", err)
+	}
+	repo.listErr = nil
+
+	if _, err := svc.ListReviewSummaries(context.Background(), "tenant_demo", "tenant-1", "bad", []string{"pay-1"}); err == nil || !strings.Contains(err.Error(), "unsupported document entity type") {
+		t.Fatalf("expected invalid summary entity type error, got %v", err)
+	}
+	repo.reviewSummaryErr = errors.New("summaries failed")
+	if _, err := svc.ListReviewSummaries(context.Background(), "tenant_demo", "tenant-1", EntityTypePayment, []string{"pay-1"}); err == nil || !strings.Contains(err.Error(), "summaries failed") {
+		t.Fatalf("expected summary error, got %v", err)
+	}
+	repo.reviewSummaryErr = nil
+
+	repo.docs["doc-1"] = &Document{ID: "doc-1", TenantID: "tenant-1", EntityType: EntityTypePayment, EntityID: "pay-1", DocumentType: DocumentTypeReceipt}
+	repo.updateRetentionErr = errors.New("retention failed")
+	if _, err := svc.UpdateDocumentRetention(context.Background(), "tenant_demo", "tenant-1", "doc-1", nil); err == nil || !strings.Contains(err.Error(), "retention failed") {
+		t.Fatalf("expected retention update error, got %v", err)
+	}
+}
+
+func TestService_LifecycleAndLegalHoldValidationEdges(t *testing.T) {
+	t.Parallel()
+
+	baseRepo := func() *mockRepository {
+		repo := newMockRepository()
+		repo.docs["doc-1"] = &Document{
+			ID:              "doc-1",
+			TenantID:        "tenant-1",
+			EntityType:      EntityTypePayment,
+			EntityID:        "pay-1",
+			DocumentType:    DocumentTypeReceipt,
+			FileName:        "receipt.pdf",
+			ReviewStatus:    ReviewStatusApproved,
+			LifecycleStatus: LifecycleStatusArchived,
+			UploadedBy:      "user-1",
+			CreatedAt:       time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC),
+		}
+		repo.docs["doc-other-type"] = &Document{
+			ID:              "doc-other-type",
+			TenantID:        "tenant-1",
+			EntityType:      EntityTypePayment,
+			EntityID:        "pay-1",
+			DocumentType:    DocumentTypeContract,
+			LifecycleStatus: LifecycleStatusActive,
+		}
+		return repo
+	}
+
+	lifecycleTests := []struct {
+		name       string
+		documentID string
+		actionedBy string
+		req        *DocumentLifecycleRequest
+		mutateRepo func(*mockRepository)
+		want       string
+	}{
+		{name: "blank document id", documentID: " ", actionedBy: "user-1", req: &DocumentLifecycleRequest{LifecycleStatus: LifecycleStatusActive}, want: "document ID is required"},
+		{name: "blank actor", documentID: "doc-1", actionedBy: " ", req: &DocumentLifecycleRequest{LifecycleStatus: LifecycleStatusActive}, want: "lifecycle actioned by user is required"},
+		{name: "nil request", documentID: "doc-1", actionedBy: "user-1", req: nil, want: "lifecycle request is required"},
+		{name: "invalid status", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLifecycleRequest{LifecycleStatus: "bad"}, want: "lifecycle_status must be"},
+		{name: "long note", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLifecycleRequest{LifecycleStatus: LifecycleStatusActive, LifecycleNote: strings.Repeat("x", 2001)}, want: "lifecycle note must be 2000"},
+		{name: "missing superseded by", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLifecycleRequest{LifecycleStatus: LifecycleStatusSuperseded, LifecycleNote: "replaced"}, want: "superseded_by_document_id is required"},
+		{name: "self supersession", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLifecycleRequest{LifecycleStatus: LifecycleStatusSuperseded, LifecycleNote: "replaced", SupersededByDocument: "doc-1"}, want: "document cannot supersede itself"},
+		{name: "replacement not found", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLifecycleRequest{LifecycleStatus: LifecycleStatusSuperseded, LifecycleNote: "replaced", SupersededByDocument: "missing"}, want: "replacement document not found"},
+		{name: "replacement mismatch", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLifecycleRequest{LifecycleStatus: LifecycleStatusSuperseded, LifecycleNote: "replaced", SupersededByDocument: "doc-other-type"}, want: "replacement document must match"},
+		{name: "lookup error", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLifecycleRequest{LifecycleStatus: LifecycleStatusActive}, mutateRepo: func(repo *mockRepository) { repo.getErr = errors.New("lookup failed") }, want: "lookup failed"},
+		{name: "update error", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLifecycleRequest{LifecycleStatus: LifecycleStatusActive}, mutateRepo: func(repo *mockRepository) { repo.updateLifecycleErr = errors.New("update failed") }, want: "update failed"},
+	}
+
+	for _, tt := range lifecycleTests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := baseRepo()
+			if tt.mutateRepo != nil {
+				tt.mutateRepo(repo)
+			}
+			svc := NewService(repo, &mockStore{})
+
+			_, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", tt.documentID, tt.actionedBy, tt.req)
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+
+	repo := baseRepo()
+	svc := NewService(repo, &mockStore{})
+	restored, err := svc.UpdateDocumentLifecycle(context.Background(), "tenant_demo", "tenant-1", "doc-1", " reviewer-1 ", &DocumentLifecycleRequest{
+		LifecycleStatus: LifecycleStatusActive,
+	})
+	if err != nil {
+		t.Fatalf("UpdateDocumentLifecycle restore failed: %v", err)
+	}
+	if restored.LifecycleNote != "Document lifecycle restored to active" || restored.LifecycleBy == nil || *restored.LifecycleBy != "reviewer-1" {
+		t.Fatalf("expected default restore note and trimmed actor, got %#v", restored)
+	}
+
+	legalHoldTests := []struct {
+		name       string
+		documentID string
+		actionedBy string
+		req        *DocumentLegalHoldRequest
+		mutateRepo func(*mockRepository)
+		want       string
+	}{
+		{name: "blank document id", documentID: " ", actionedBy: "user-1", req: &DocumentLegalHoldRequest{LegalHold: true, Note: "hold"}, want: "document ID is required"},
+		{name: "blank actor", documentID: "doc-1", actionedBy: " ", req: &DocumentLegalHoldRequest{LegalHold: true, Note: "hold"}, want: "legal hold actioned by user is required"},
+		{name: "nil request", documentID: "doc-1", actionedBy: "user-1", req: nil, want: "legal hold request is required"},
+		{name: "long note", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLegalHoldRequest{LegalHold: true, Note: strings.Repeat("x", 2001)}, want: "legal hold note must be 2000"},
+		{name: "lookup error", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLegalHoldRequest{LegalHold: true, Note: "hold"}, mutateRepo: func(repo *mockRepository) { repo.getErr = errors.New("lookup failed") }, want: "lookup failed"},
+		{name: "update error", documentID: "doc-1", actionedBy: "user-1", req: &DocumentLegalHoldRequest{LegalHold: true, Note: "hold"}, mutateRepo: func(repo *mockRepository) { repo.updateLegalHoldErr = errors.New("hold failed") }, want: "hold failed"},
+	}
+
+	for _, tt := range legalHoldTests {
+		t.Run("legal hold "+tt.name, func(t *testing.T) {
+			repo := baseRepo()
+			if tt.mutateRepo != nil {
+				tt.mutateRepo(repo)
+			}
+			svc := NewService(repo, &mockStore{})
+
+			_, err := svc.UpdateDocumentLegalHold(context.Background(), "tenant_demo", "tenant-1", tt.documentID, tt.actionedBy, tt.req)
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestService_OpenAndDeleteDocumentFailureEdges(t *testing.T) {
+	t.Parallel()
+
+	baseRepo := func() *mockRepository {
+		repo := newMockRepository()
+		repo.docs["doc-1"] = &Document{
+			ID:              "doc-1",
+			TenantID:        "tenant-1",
+			EntityType:      EntityTypePayment,
+			EntityID:        "pay-1",
+			DocumentType:    DocumentTypeReceipt,
+			FileName:        "receipt.pdf",
+			StorageKey:      "tenant-1/doc-1.pdf",
+			LifecycleStatus: LifecycleStatusActive,
+		}
+		return repo
+	}
+
+	repo := baseRepo()
+	repo.getErr = errors.New("lookup failed")
+	svc := NewService(repo, &mockStore{})
+	if doc, reader, err := svc.OpenDocument(context.Background(), "tenant_demo", "tenant-1", "doc-1"); err == nil || doc != nil || reader != nil || !strings.Contains(err.Error(), "lookup failed") {
+		t.Fatalf("expected open lookup failure, doc=%#v reader=%#v err=%v", doc, reader, err)
+	}
+
+	repo = baseRepo()
+	svc = NewService(repo, &mockStore{openErr: errors.New("open failed")})
+	if doc, reader, err := svc.OpenDocument(context.Background(), "tenant_demo", "tenant-1", "doc-1"); err == nil || doc != nil || reader != nil || !strings.Contains(err.Error(), "open failed") {
+		t.Fatalf("expected store open failure, doc=%#v reader=%#v err=%v", doc, reader, err)
+	}
+
+	repo = baseRepo()
+	repo.getErr = errors.New("lookup failed")
+	svc = NewService(repo, &mockStore{})
+	if err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", "doc-1"); err == nil || !strings.Contains(err.Error(), "lookup failed") {
+		t.Fatalf("expected delete lookup failure, got %v", err)
+	}
+
+	repo = baseRepo()
+	repo.hasDependentsErr = errors.New("dependents failed")
+	svc = NewService(repo, &mockStore{})
+	if err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", "doc-1"); err == nil || !strings.Contains(err.Error(), "dependents failed") {
+		t.Fatalf("expected dependent lookup failure, got %v", err)
+	}
+
+	repo = baseRepo()
+	svc = NewService(repo, &mockStore{deleteErr: errors.New("delete blob failed")})
+	if err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", "doc-1"); err == nil || !strings.Contains(err.Error(), "delete blob failed") {
+		t.Fatalf("expected storage delete failure, got %v", err)
+	}
+	if repo.docs["doc-1"] == nil {
+		t.Fatal("metadata should remain after storage delete failure")
+	}
+
+	repo = baseRepo()
+	repo.deleteErr = errors.New("delete metadata failed")
+	svc = NewService(repo, &mockStore{})
+	if err := svc.DeleteDocument(context.Background(), "tenant_demo", "tenant-1", "doc-1"); err == nil || !strings.Contains(err.Error(), "delete metadata failed") {
+		t.Fatalf("expected metadata delete failure, got %v", err)
+	}
+}
+
+func TestDocumentServiceHelperEdges(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		raw  string
+		want string
+	}{
+		{" INVOICE ", EntityTypeInvoice},
+		{" JOURNAL_ENTRY ", EntityTypeJournalEntry},
+		{" ASSET ", EntityTypeAsset},
+		{" EXPENSE ", EntityTypeExpense},
+		{" LEAVE_RECORD ", EntityTypeLeaveRecord},
+		{" TSD_DECLARATION ", EntityTypeTSD},
+		{" KMD_DECLARATION ", EntityTypeKMD},
+	} {
+		got, err := normalizeEntityType(tt.raw)
+		if err != nil || got != tt.want {
+			t.Fatalf("normalizeEntityType(%q)=%q,%v want %q", tt.raw, got, err, tt.want)
+		}
+	}
+
+	for _, tt := range []struct {
+		raw  string
+		want string
+	}{
+		{" RECONCILIATION_EVIDENCE ", DocumentTypeReconciliation},
+		{" ASSET_RECORD ", DocumentTypeAssetRecord},
+		{" TAX_SUPPORT ", DocumentTypeTaxSupport},
+		{" OTHER ", DocumentTypeOther},
+	} {
+		got, err := normalizeDocumentType(tt.raw)
+		if err != nil || got != tt.want {
+			t.Fatalf("normalizeDocumentType(%q)=%q,%v want %q", tt.raw, got, err, tt.want)
+		}
+	}
+
+	for _, raw := range []string{ReviewStatusReviewed, ReviewStatusApproved, ReviewStatusRejected} {
+		if got, err := normalizeReviewStatus(strings.ToLower(raw)); err != nil || got != raw {
+			t.Fatalf("normalizeReviewStatus(%q)=%q,%v", raw, got, err)
+		}
+	}
+	for _, raw := range []string{LifecycleStatusActive, LifecycleStatusSuperseded, LifecycleStatusArchived, LifecycleStatusDisposed} {
+		if got, err := normalizeLifecycleStatus(strings.ToLower(raw)); err != nil || got != raw {
+			t.Fatalf("normalizeLifecycleStatus(%q)=%q,%v", raw, got, err)
+		}
+	}
+	if got := normalizeContentType("", "document.unknownext"); got != "application/octet-stream" {
+		t.Fatalf("expected fallback content type, got %q", got)
+	}
+	if got := sanitizeFileName(" "); got != "" {
+		t.Fatalf("expected blank sanitized file name, got %q", got)
+	}
+	key := buildStorageKey("tenant-1", time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC), "doc-1", ".pdf")
+	if !strings.Contains(key, "doc-1_document.pdf") {
+		t.Fatalf("expected storage key to use document fallback name, got %q", key)
+	}
+
+	rules, err := normalizeEvidencePolicyRules([]EvidencePolicyRule{{
+		DocumentTypes:   []string{" ", DocumentTypeReceipt, DocumentTypeReceipt, DocumentTypeOther},
+		RequireApproved: true,
+	}})
+	if err != nil {
+		t.Fatalf("normalizeEvidencePolicyRules failed: %v", err)
+	}
+	if len(rules) != 1 || rules[0].MinCount != 1 || len(rules[0].DocumentTypes) != 2 {
+		t.Fatalf("expected normalized default min count and deduped document types, got %#v", rules)
+	}
+
+	result := evaluateEvidencePolicyForDocuments(EntityTypePayment, "pay-1", []Document{
+		{ID: "doc-reviewed", DocumentType: DocumentTypeReceipt, ReviewStatus: ReviewStatusReviewed, LifecycleStatus: LifecycleStatusArchived},
+		{ID: "doc-other", DocumentType: DocumentTypeOther, ReviewStatus: ReviewStatusPending, LifecycleStatus: LifecycleStatusActive},
+	}, []EvidencePolicyRule{{MinCount: 2}})
+	if !result.Compliant || result.ReviewedCount != 1 || result.PendingReviewCount != 1 || result.MissingEvidence {
+		t.Fatalf("expected generic document policy to pass with reviewed and pending active docs, got %#v", result)
+	}
+	if documentLifecycleStatus(nil) != LifecycleStatusActive {
+		t.Fatal("nil document lifecycle should default to active")
+	}
+	if !evidencePolicyRuleMatchesDocumentType(EvidencePolicyRule{}, DocumentTypeReceipt) {
+		t.Fatal("empty evidence policy document type list should match any document")
 	}
 }
 
