@@ -64,6 +64,78 @@ func TestBuildMigrationExecutionPlanOrdersReadyStepsAndMarksMissingContext(t *te
 	assert.Equal(t, []FileKind{KindBankAccounts}, bankStep.DependsOn)
 }
 
+func TestBuildMigrationExecutionPlanNilRequestAndHelperFallbacks(t *testing.T) {
+	plan, err := BuildMigrationExecutionPlan(nil)
+	require.Error(t, err)
+	assert.Nil(t, plan)
+	assert.Contains(t, err.Error(), "migration execution plan request is required")
+
+	files := []BundleFile{
+		{Kind: FileKind("custom"), FileName: "z.csv"},
+		{Kind: KindContacts, FileName: "contacts.csv"},
+		{Kind: FileKind("custom"), FileName: "a.csv"},
+	}
+	sorted := sortedExecutionFiles(files)
+	require.Len(t, sorted, 3)
+	assert.Equal(t, KindContacts, sorted[0].Kind)
+	assert.Equal(t, "a.csv", sorted[1].FileName)
+	assert.Equal(t, "z.csv", sorted[2].FileName)
+
+	unknownSpec := migrationExecutionStepSpec(FileKind("custom"), "", &PlanMigrationExecutionRequest{})
+	assert.Equal(t, []string{"supported_migration_file_kind"}, unknownSpec.contextFields)
+	assert.Equal(t, "oa migration validate --provider-preset generic --json", unknownSpec.cliCommand)
+	assert.Contains(t, unknownSpec.message, "supported migration import kind")
+
+	assert.Equal(t, "<e_invoices.xml>", shellPlaceholderFile("", KindEInvoices))
+	assert.Equal(t, "<invoices.csv>", shellPlaceholderFile(" invoices.csv ", KindInvoices))
+}
+
+func TestMigrationExecutionStepSpecAdditionalKinds(t *testing.T) {
+	req := &PlanMigrationExecutionRequest{
+		EInvoiceInvoiceType:      " purchase ",
+		BankTransactionAccountID: "bank-1",
+		BankTransactionFormat:    "lhv",
+		OpeningBalanceEntryDate:  "2026-01-01",
+	}
+	tests := []struct {
+		name       string
+		kind       FileKind
+		fileName   string
+		wantPath   string
+		wantCLI    string
+		wantDeps   []FileKind
+		wantFields []string
+	}{
+		{name: "expenses", kind: KindExpenses, wantPath: "/api/v1/tenants/{tenantID}/expenses/import", wantCLI: "oa expenses import --file <expenses.csv>", wantDeps: []FileKind{KindAccounts, KindContacts, KindEmployees}},
+		{name: "invoices", kind: KindInvoices, wantPath: "/api/v1/tenants/{tenantID}/invoices/import", wantCLI: "oa invoices import --file <invoices.csv>", wantDeps: []FileKind{KindContacts, KindProducts}},
+		{name: "e-invoices", kind: KindEInvoices, fileName: "e.xml", wantPath: "/api/v1/tenants/{tenantID}/invoices/import-einvoice", wantCLI: "oa invoices import-einvoice --file <e.xml> --invoice-type PURCHASE", wantDeps: []FileKind{KindContacts}},
+		{name: "payments", kind: KindPayments, wantPath: "/api/v1/tenants/{tenantID}/payments/import", wantCLI: "oa payments import --file <payments.csv>", wantDeps: []FileKind{KindContacts, KindInvoices, KindBankAccounts}},
+		{name: "quotes", kind: KindQuotes, wantPath: "/api/v1/tenants/{tenantID}/quotes/import", wantCLI: "oa quotes import --file <quotes.csv>", wantDeps: []FileKind{KindContacts, KindProducts}},
+		{name: "orders", kind: KindOrders, wantPath: "/api/v1/tenants/{tenantID}/orders/import", wantCLI: "oa orders import --file <orders.csv>", wantDeps: []FileKind{KindContacts, KindProducts, KindQuotes}},
+		{name: "recurring invoices", kind: KindRecurringInvoices, wantPath: "/api/v1/tenants/{tenantID}/recurring-invoices/import", wantCLI: "oa recurring-invoices import --file <recurring_invoices.csv>", wantDeps: []FileKind{KindContacts, KindProducts, KindAccounts}},
+		{name: "cost centers", kind: KindCostCenters, wantPath: "/api/v1/tenants/{tenantID}/cost-centers/import", wantCLI: "oa cost-centers import --file <cost_centers.csv>"},
+		{name: "cost allocations", kind: KindCostAllocations, wantPath: "/api/v1/tenants/{tenantID}/cost-centers/allocations/import", wantCLI: "oa cost-centers allocations import --file <cost_allocations.csv>", wantDeps: []FileKind{KindCostCenters, KindJournalEntries}},
+		{name: "product categories", kind: KindProductCategories, wantPath: "/api/v1/tenants/{tenantID}/product-categories/import", wantCLI: "oa inventory categories import --file <product_categories.csv>"},
+		{name: "warehouses", kind: KindWarehouses, wantPath: "/api/v1/tenants/{tenantID}/warehouses/import", wantCLI: "oa inventory warehouses import --file <warehouses.csv>"},
+		{name: "products", kind: KindProducts, wantPath: "/api/v1/tenants/{tenantID}/products/import", wantCLI: "oa inventory products import --file <products.csv>", wantDeps: []FileKind{KindProductCategories, KindContacts}},
+		{name: "fixed assets", kind: KindFixedAssets, wantPath: "/api/v1/tenants/{tenantID}/assets/import", wantCLI: "oa assets import --file <fixed_assets.csv>", wantDeps: []FileKind{KindAccounts, KindContacts, KindInvoices}},
+		{name: "journal entries", kind: KindJournalEntries, wantPath: "/api/v1/tenants/{tenantID}/journal-entries/import", wantCLI: "oa journal import --file <journal_entries.csv>", wantDeps: []FileKind{KindAccounts}},
+		{name: "bank transactions with account", kind: KindBankTransactions, wantPath: "/api/v1/tenants/{tenantID}/bank-accounts/bank-1/import", wantCLI: "oa banking transactions import --account-id bank-1 --file <bank_transactions.csv> --format lhv", wantDeps: []FileKind{KindBankAccounts}},
+		{name: "opening balances with date", kind: KindOpeningBalances, wantPath: "/api/v1/tenants/{tenantID}/journal-entries/import-opening-balances", wantCLI: "oa journal import-opening-balances --entry-date 2026-01-01 --file <opening_balances.csv>", wantDeps: []FileKind{KindAccounts}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := migrationExecutionStepSpec(tt.kind, tt.fileName, req)
+			assert.Equal(t, tt.wantPath, spec.apiPath)
+			assert.Equal(t, tt.wantCLI, spec.cliCommand)
+			assert.Equal(t, tt.wantDeps, spec.dependsOn)
+			assert.Equal(t, tt.wantFields, spec.contextFields)
+			assert.NotEmpty(t, spec.message)
+		})
+	}
+}
+
 func TestBuildMigrationExecutionPlanRejectsInvalidOpeningBalanceEntryDate(t *testing.T) {
 	plan, err := BuildMigrationExecutionPlan(&PlanMigrationExecutionRequest{
 		Files: []BundleFile{
