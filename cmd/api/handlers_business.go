@@ -62,6 +62,9 @@ var (
 	generatePayslipPDF = func(pdfService *internalpdf.Service, payslip *payroll.Payslip, run *payroll.PayrollRun, tenantRecord *tenant.Tenant) ([]byte, error) {
 		return pdfService.GeneratePayslipPDF(payslip, run, tenantRecord)
 	}
+	testSMTPWithService = func(ctx context.Context, service *email.Service, tenantID, recipientEmail string) (*email.TestSMTPResponse, error) {
+		return service.TestSMTP(ctx, tenantID, recipientEmail)
+	}
 )
 
 // =============================================================================
@@ -814,7 +817,7 @@ func (h *Handlers) requireApprovedPurchaseInvoiceEvidence(ctx context.Context, s
 		return fmt.Errorf("%w before sending purchase invoice %s", errApprovedPurchaseInvoiceEvidenceRequired, invoiceID)
 	}
 
-	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+	results, err := evaluateDocumentsEvidencePolicy(h.documentsService, ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
 		EntityType: documents.EntityTypeInvoice,
 		EntityIDs:  []string{invoiceID},
 		Rules: []documents.EvidencePolicyRule{{
@@ -1344,7 +1347,7 @@ func (h *Handlers) TestSMTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.emailService.TestSMTP(r.Context(), tenantID, req.RecipientEmail)
+	result, err := testSMTPWithService(r.Context(), h.emailService, tenantID, req.RecipientEmail)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -4849,7 +4852,7 @@ func (h *Handlers) requireApprovedCommercialEvidence(ctx context.Context, schema
 		return fmt.Errorf("%w before %s %s", requiredErr, action, entityID)
 	}
 
-	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+	results, err := evaluateDocumentsEvidencePolicy(h.documentsService, ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
 		EntityType: entityType,
 		EntityIDs:  []string{entityID},
 		Rules: []documents.EvidencePolicyRule{{
@@ -6429,7 +6432,7 @@ func (h *Handlers) requireApprovedAssetActivationEvidence(ctx context.Context, s
 		return fmt.Errorf("%w before activating fixed asset %s", errApprovedAssetActivationEvidenceRequired, assetID)
 	}
 
-	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+	results, err := evaluateDocumentsEvidencePolicy(h.documentsService, ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
 		EntityType: documents.EntityTypeAsset,
 		EntityIDs:  []string{assetID},
 		Rules: []documents.EvidencePolicyRule{{
@@ -6525,7 +6528,7 @@ func (h *Handlers) requireApprovedAssetDisposalEvidence(ctx context.Context, sch
 		return fmt.Errorf("%w before disposing fixed asset %s", errApprovedAssetDisposalEvidenceRequired, assetID)
 	}
 
-	results, err := h.documentsService.EvaluateEvidencePolicy(ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
+	results, err := evaluateDocumentsEvidencePolicy(h.documentsService, ctx, schemaName, tenantID, &documents.EvidencePolicyRequest{
 		EntityType: documents.EntityTypeAsset,
 		EntityIDs:  []string{assetID},
 		Rules: []documents.EvidencePolicyRule{{

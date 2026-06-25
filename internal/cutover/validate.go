@@ -1260,19 +1260,23 @@ func ValidateBundle(req *ValidateBundleRequest) (*BundleValidationReport, error)
 	}
 	validateCrossFileConsistency(report, parsed, eInvoiceContactMode)
 
-	sort.SliceStable(report.Issues, func(i, j int) bool {
-		if report.Issues[i].Severity != report.Issues[j].Severity {
-			return report.Issues[i].Severity < report.Issues[j].Severity
-		}
-		if report.Issues[i].FileName != report.Issues[j].FileName {
-			return report.Issues[i].FileName < report.Issues[j].FileName
-		}
-		return report.Issues[i].Row < report.Issues[j].Row
-	})
+	sortMigrationIssues(report.Issues)
 
 	report.Summary.Ready = report.Summary.ErrorCount == 0
 	report.RemediationActions = BuildMigrationRemediationActions(report)
 	return report, nil
+}
+
+func sortMigrationIssues(issues []ValidationIssue) {
+	sort.SliceStable(issues, func(i, j int) bool {
+		if issues[i].Severity != issues[j].Severity {
+			return issues[i].Severity < issues[j].Severity
+		}
+		if issues[i].FileName != issues[j].FileName {
+			return issues[i].FileName < issues[j].FileName
+		}
+		return issues[i].Row < issues[j].Row
+	})
 }
 
 func BuildMigrationRemediationActions(report *BundleValidationReport) []MigrationRemediationAction {
@@ -1611,9 +1615,6 @@ func parseBundleFile(file BundleFile, spec fileSpec) (parsedFile, FileValidation
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return parsedFile{}, validation, fmt.Errorf("csv file is empty")
-		}
 		return parsedFile{}, validation, fmt.Errorf("parse csv header: %w", err)
 	}
 
@@ -2082,9 +2083,6 @@ func validateDuplicateIdentifierPreflight(report *BundleValidationReport, file p
 				continue
 			}
 			key := normalizedDuplicateIdentifierValue(spec, value)
-			if key == "" {
-				continue
-			}
 			first, ok := seen[key]
 			if !ok {
 				seen[key] = duplicateIdentifierValue{row: row.number}
@@ -2683,10 +2681,7 @@ func validateKMDHistoryVATReconciliation(report *BundleValidationReport, files [
 			if !cutoverKMDHistoryRowEligibleForVATReconciliation(row.values) {
 				continue
 			}
-			period, ok := cutoverKMDHistoryPeriod(row.values)
-			if !ok {
-				continue
-			}
+			period, _ := cutoverKMDHistoryPeriod(row.values)
 			group := groups[period]
 			if group == nil {
 				group = &kmdHistoryVATReconciliationGroup{period: period}
@@ -3251,9 +3246,6 @@ func buildCutoverJournalLineAmountTargets(files []parsedFile) map[string]cutover
 			amount := debit
 			if amount.IsZero() {
 				amount = credit
-			}
-			if amount.LessThanOrEqual(decimal.Zero) {
-				continue
 			}
 			targets[normalizedValue(lineID)] = cutoverJournalLineAmountTarget{
 				display: lineID,
@@ -4081,14 +4073,11 @@ func cutoverInvoiceLineReverseCharge(row parsedRow) bool {
 }
 
 func cutoverInvoiceRowCurrency(row parsedRow) string {
-	value, ok := groupedComparableFieldValue(row, groupedFieldSpec{
+	value, _ := groupedComparableFieldValue(row, groupedFieldSpec{
 		field:        "currency",
 		defaultValue: "EUR",
 		normalize:    normalizeCutoverUpper,
 	})
-	if !ok {
-		return ""
-	}
 	return value.normalized
 }
 
@@ -5706,12 +5695,7 @@ func cutoverNormalizedAccountType(value string) (string, bool) {
 	if accountType, ok := cutoverAccountTypeAliases[normalizedValue(value)]; ok {
 		return accountType, true
 	}
-	switch upper := normalizeCutoverUpper(value); upper {
-	case "ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE":
-		return upper, true
-	default:
-		return "", false
-	}
+	return "", false
 }
 
 func checkCommercialDocumentRows(report *BundleValidationReport, file parsedFile) {

@@ -181,11 +181,26 @@ func withTenantDryRunScanRows(rowSets ...tenantDryRunRowSet) tenantDryRunDBOptio
 }
 
 func withTenantDryRunRawError(expectedErr error) tenantDryRunDBOption {
+	return withTenantDryRunRawErrors(expectedErr)
+}
+
+func withTenantDryRunRawErrors(expectedErrs ...error) tenantDryRunDBOption {
 	return func(t *testing.T, db *gorm.DB) {
 		t.Helper()
 
+		var index int
 		err := db.Callback().Raw().Before("gorm:raw").Register(tenantDryRunCallbackName("raw_error"), func(tx *gorm.DB) {
-			tx.AddError(expectedErr)
+			var expectedErr error
+			if len(expectedErrs) > 0 {
+				expectedErr = expectedErrs[len(expectedErrs)-1]
+				if index < len(expectedErrs) {
+					expectedErr = expectedErrs[index]
+				}
+				index++
+			}
+			if expectedErr != nil {
+				tx.AddError(expectedErr)
+			}
 		})
 		require.NoError(t, err)
 	}
@@ -225,11 +240,26 @@ func withTenantDryRunDeleteRows(rows int64) tenantDryRunDBOption {
 }
 
 func withTenantDryRunDeleteError(expectedErr error) tenantDryRunDBOption {
+	return withTenantDryRunDeleteErrors(expectedErr)
+}
+
+func withTenantDryRunDeleteErrors(expectedErrs ...error) tenantDryRunDBOption {
 	return func(t *testing.T, db *gorm.DB) {
 		t.Helper()
 
+		var index int
 		err := db.Callback().Delete().Before("gorm:delete").Register(tenantDryRunCallbackName("delete_error"), func(tx *gorm.DB) {
-			tx.AddError(expectedErr)
+			var expectedErr error
+			if len(expectedErrs) > 0 {
+				expectedErr = expectedErrs[len(expectedErrs)-1]
+				if index < len(expectedErrs) {
+					expectedErr = expectedErrs[index]
+				}
+				index++
+			}
+			if expectedErr != nil {
+				tx.AddError(expectedErr)
+			}
 		})
 		require.NoError(t, err)
 	}
@@ -794,6 +824,16 @@ func TestGORMRepositoryDryRunTenantErrors(t *testing.T) {
 		assert.Contains(t, err.Error(), "create tenant schema")
 	})
 
+	t.Run("CreateTenant wraps default chart creation errors", func(t *testing.T) {
+		repo := NewGORMRepository(newTenantDryRunDB(t, withTenantDryRunRawErrors(nil, dbErr)))
+
+		err := repo.CreateTenant(ctx, tenantValue, settingsJSON, "owner-1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "create default chart of accounts")
+		assert.ErrorIs(t, err, dbErr)
+	})
+
 	t.Run("CreateTenant wraps owner membership errors", func(t *testing.T) {
 		repo := NewGORMRepository(newTenantDryRunDB(t, withTenantDryRunCreateErrors(nil, dbErr)))
 
@@ -819,6 +859,16 @@ func TestGORMRepositoryDryRunTenantErrors(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "delete tenant users")
+	})
+
+	t.Run("DeleteTenant wraps tenant record delete errors", func(t *testing.T) {
+		repo := NewGORMRepository(newTenantDryRunDB(t, withTenantDryRunDeleteErrors(nil, dbErr)))
+
+		err := repo.DeleteTenant(ctx, tenantValue.ID, tenantValue.SchemaName)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "delete tenant")
+		assert.ErrorIs(t, err, dbErr)
 	})
 
 	t.Run("UpdateTenantWithPeriodCloseEvent rejects invalid event date", func(t *testing.T) {
@@ -1010,6 +1060,16 @@ func TestGORMRepositoryDryRunTenantErrors(t *testing.T) {
 		err := repo.SetTenantUserActive(ctx, tenantValue.ID, "missing-user", false)
 
 		assert.ErrorIs(t, err, ErrUserNotInTenant)
+	})
+
+	t.Run("SetTenantUserActive wraps update errors", func(t *testing.T) {
+		repo := NewGORMRepository(newTenantDryRunDB(t, withTenantDryRunUpdateError(dbErr)))
+
+		err := repo.SetTenantUserActive(ctx, tenantValue.ID, "user-1", false)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update tenant user status")
+		assert.ErrorIs(t, err, dbErr)
 	})
 
 	t.Run("RevokeInvitation returns not found without rows", func(t *testing.T) {

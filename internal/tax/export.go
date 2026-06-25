@@ -7,6 +7,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+var marshalKMDXML = xml.MarshalIndent
+
 // KMDXML represents the Estonian e-MTA KMD XML format
 type KMDXML struct {
 	XMLName   xml.Name `xml:"KMD"`
@@ -78,7 +80,7 @@ func ExportKMDToXML(decl *KMDDeclaration, companyRegNr string) ([]byte, error) {
 		kmdXML.Row11 = formatDecimal(payable.Abs())
 	}
 
-	output, err := xml.MarshalIndent(kmdXML, "", "  ")
+	output, err := marshalKMDXML(kmdXML, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal XML: %w", err)
 	}

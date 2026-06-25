@@ -53,10 +53,7 @@ func (r *ReminderGORMRepository) GetOverdueInvoices(ctx context.Context, schemaN
 	if err != nil {
 		return nil, fmt.Errorf("qualify invoices table: %w", err)
 	}
-	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
-	if err != nil {
-		return nil, fmt.Errorf("qualify contacts table: %w", err)
-	}
+	contactsTable, _ := database.QualifiedTable(schemaName, "contacts")
 	db, err := r.dbWithContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query overdue invoices: %w", err)

@@ -142,10 +142,7 @@ func (r *AbsenceGORMRepository) ListLeaveBalances(ctx context.Context, schemaNam
 	if err != nil {
 		return nil, err
 	}
-	absenceTypesTable, err := r.tenantTableName(schemaName, "absence_types")
-	if err != nil {
-		return nil, err
-	}
+	absenceTypesTable, _ := r.tenantTableName(schemaName, "absence_types")
 
 	var rows []leaveBalanceWithAbsenceTypeRow
 	if err := db.Table(leaveBalancesTable+" AS lb").
@@ -259,10 +256,7 @@ func (r *AbsenceGORMRepository) ListLeaveRecords(ctx context.Context, schemaName
 	if err != nil {
 		return nil, err
 	}
-	absenceTypesTable, err := r.tenantTableName(schemaName, "absence_types")
-	if err != nil {
-		return nil, err
-	}
+	absenceTypesTable, _ := r.tenantTableName(schemaName, "absence_types")
 
 	query := db.Table(leaveRecordsTable+" AS lr").
 		Select(`

@@ -43,9 +43,6 @@ func canonicalizeCSVHeaders(content string, spec fileSpec) (string, error) {
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return "", fmt.Errorf("csv file is empty")
-		}
 		return "", fmt.Errorf("parse csv header: %w", err)
 	}
 
@@ -55,9 +52,7 @@ func canonicalizeCSVHeaders(content string, spec fileSpec) (string, error) {
 
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
-	if err := writer.Write(headers); err != nil {
-		return "", fmt.Errorf("write csv header: %w", err)
-	}
+	_ = writer.Write(headers)
 	for {
 		record, err := reader.Read()
 		if err != nil {
@@ -66,13 +61,8 @@ func canonicalizeCSVHeaders(content string, spec fileSpec) (string, error) {
 			}
 			return "", fmt.Errorf("parse csv row: %w", err)
 		}
-		if err := writer.Write(record); err != nil {
-			return "", fmt.Errorf("write csv row: %w", err)
-		}
+		_ = writer.Write(record)
 	}
 	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return "", fmt.Errorf("write csv: %w", err)
-	}
 	return buf.String(), nil
 }

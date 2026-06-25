@@ -49,11 +49,28 @@ type GORMRepository struct {
 	db *gorm.DB
 }
 
+var (
+	newGormDBFromPool       = database.NewGormDBFromPool
+	scanAssetNumberSequence = func(db *gorm.DB, tenantID string, seq *int) error {
+		return db.
+			Select(`
+				COALESCE(MAX(
+					CASE
+						WHEN asset_number ~ ? THEN CAST(SUBSTRING(asset_number FROM ?) AS INTEGER)
+						ELSE 0
+					END
+				), 0) + 1
+			`, "FA-[0-9]+$", "FA-([0-9]+)$").
+			Where("tenant_id = ?", tenantID).
+			Scan(seq).Error
+	}
+)
+
 func NewRepository(db *pgxpool.Pool) *GORMRepository {
 	if db == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create assets GORM repository: %w", err))
 	}
@@ -337,17 +354,7 @@ func (r *GORMRepository) GenerateNumber(ctx context.Context, schemaName, tenantI
 	}
 
 	var seq int
-	if err := db.
-		Select(`
-			COALESCE(MAX(
-				CASE
-					WHEN asset_number ~ ? THEN CAST(SUBSTRING(asset_number FROM ?) AS INTEGER)
-					ELSE 0
-				END
-			), 0) + 1
-		`, "FA-[0-9]+$", "FA-([0-9]+)$").
-		Where("tenant_id = ?", tenantID).
-		Scan(&seq).Error; err != nil {
+	if err := scanAssetNumberSequence(db, tenantID, &seq); err != nil {
 		return "", fmt.Errorf("generate asset number: %w", err)
 	}
 	return fmt.Sprintf("FA-%05d", seq), nil

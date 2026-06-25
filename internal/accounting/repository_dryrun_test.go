@@ -3,6 +3,7 @@ package accounting
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"reflect"
@@ -1038,6 +1039,52 @@ func TestCostCenterGORMRepositoryDryRunOperations(t *testing.T) {
 	assert.Nil(t, allocations)
 }
 
+func TestCostCenterGORMRepositoryWave11ScanSuccessPaths(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, time.June, 1, 9, 0, 0, 0, time.UTC)
+	repo := NewCostCenterGORMRepository(newAccountingDryRunDB(t, withAccountingDryRunScanRowsWave4(
+		accountingDryRunRowSetWave4{
+			columns: []string{"total"},
+			values:  [][]driver.Value{{"125.50"}},
+		},
+		accountingDryRunRowSetWave4{
+			columns: []string{
+				"id",
+				"tenant_id",
+				"cost_center_id",
+				"journal_entry_line_id",
+				"amount",
+				"allocation_date",
+				"created_at",
+				"cost_center_code",
+				"cost_center_name",
+			},
+			values: [][]driver.Value{{
+				"allocation-1",
+				"tenant-1",
+				"cc-1",
+				"line-1",
+				"125.50",
+				now,
+				now,
+				"OPS",
+				"Operations",
+			}},
+		},
+	)))
+
+	total, err := repo.GetExpensesByPeriod(ctx, "tenant_schema", "tenant-1", "cc-1", now.AddDate(0, 0, -1), now)
+	require.NoError(t, err)
+	assert.True(t, decimal.RequireFromString("125.50").Equal(total))
+
+	allocations, err := repo.ListAllocations(ctx, "tenant_schema", "tenant-1", CostAllocationFilters{})
+	require.NoError(t, err)
+	require.Len(t, allocations, 1)
+	assert.Equal(t, "OPS", allocations[0].CostCenterCode)
+	assert.Equal(t, "Operations", allocations[0].CostCenterName)
+	assert.True(t, decimal.RequireFromString("125.50").Equal(allocations[0].Amount))
+}
+
 func requireAccountingDryRunScanError(t *testing.T, err error, operation string) {
 	t.Helper()
 
@@ -1057,6 +1104,15 @@ func TestCostCenterGORMRepositoryDryRunErrors(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, got)
 		assert.Contains(t, err.Error(), "cost center not found")
+	})
+
+	t.Run("get wraps query error", func(t *testing.T) {
+		repo := NewCostCenterGORMRepository(newAccountingDryRunDB(t, withAccountingDryRunQueryError(assert.AnError)))
+		got, err := repo.GetByID(ctx, "tenant_schema", "tenant-1", "cc-1")
+		require.Error(t, err)
+		assert.Nil(t, got)
+		assert.ErrorIs(t, err, assert.AnError)
+		assert.Contains(t, err.Error(), "get cost center")
 	})
 
 	t.Run("list wraps query error", func(t *testing.T) {

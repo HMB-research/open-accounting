@@ -3,6 +3,7 @@ package invoicing
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"reflect"
 	"strings"
@@ -378,12 +379,18 @@ func TestGORMRepositoryDryRunOperations(t *testing.T) {
 	invoice := invoicingDryRunInvoice(tenantID, now)
 	invoiceModel := invoiceToModel(invoice)
 	lineModel := invoiceLineToModel(&invoice.Lines[0])
+	sequence := 42
 	capture := &invoicingDryRunSQLCapture{}
 	repo := NewGORMRepository(newInvoicingDryRunDB(t,
 		withInvoicingDryRunFixtures(invoicingDryRunFixtures{
 			invoice:      invoiceModel,
 			invoices:     []models.Invoice{*invoiceModel},
 			invoiceLines: []models.InvoiceLine{*lineModel},
+			sequence:     &sequence,
+		}),
+		withInvoicingWave6ScanRows(invoicingWave6RowSet{
+			columns: []string{"seq"},
+			values:  [][]driver.Value{{sequence}},
 		}),
 		withInvoicingDryRunUpdateRows(1, 1, 2),
 		withInvoicingDryRunSQLCapture(capture),
@@ -411,6 +418,10 @@ func TestGORMRepositoryDryRunOperations(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, listedInvoices, 1)
 	assert.Equal(t, invoice.InvoiceNumber, listedInvoices[0].InvoiceNumber)
+
+	nextNumber, err := repo.GenerateNumber(ctx, schemaName, tenantID, InvoiceTypeSales)
+	require.NoError(t, err)
+	assert.Equal(t, "INV-00042", nextNumber)
 
 	require.NoError(t, repo.UpdateStatus(ctx, schemaName, tenantID, invoice.ID, StatusPaid))
 	require.NoError(t, repo.UpdatePayment(ctx, schemaName, tenantID, invoice.ID, decimal.RequireFromString("122.00"), StatusPaid))
@@ -682,6 +693,16 @@ func TestReminderGORMRepositoryDryRunErrors(t *testing.T) {
 		repo := NewReminderGORMRepository(newInvoicingDryRunDB(t))
 
 		got, err := repo.GetRemindersByInvoice(ctx, "tenant-invoicing", tenantID, "invoice-1")
+
+		assert.Nil(t, got)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid SQL identifier")
+	})
+
+	t.Run("GetOverdueInvoices rejects invalid schema", func(t *testing.T) {
+		repo := NewReminderGORMRepository(newInvoicingDryRunDB(t))
+
+		got, err := repo.GetOverdueInvoices(ctx, "tenant-invoicing", tenantID, now)
 
 		assert.Nil(t, got)
 		require.Error(t, err)

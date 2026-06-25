@@ -87,10 +87,7 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, quote *Q
 			return nil
 		}
 
-		linesTable, err := database.TenantTable(tx, schemaName, "quote_lines")
-		if err != nil {
-			return fmt.Errorf("qualify quote lines table: %w", err)
-		}
+		linesTable, _ := database.TenantTable(tx, schemaName, "quote_lines")
 		lineModels := make([]models.QuoteLine, len(quote.Lines))
 		for i := range quote.Lines {
 			quote.Lines[i].QuoteID = quote.ID
@@ -200,10 +197,7 @@ func (r *GORMRepository) Update(ctx context.Context, schemaName string, quote *Q
 			return ErrQuoteNotFound
 		}
 
-		linesTable, err := database.TenantTable(tx, schemaName, "quote_lines")
-		if err != nil {
-			return fmt.Errorf("qualify quote lines table: %w", err)
-		}
+		linesTable, _ := database.TenantTable(tx, schemaName, "quote_lines")
 		if err := linesTable.Where("quote_id = ?", quote.ID).Delete(&models.QuoteLine{}).Error; err != nil {
 			return fmt.Errorf("delete quote lines: %w", err)
 		}

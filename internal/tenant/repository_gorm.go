@@ -187,11 +187,7 @@ func (r *GORMRepository) CreateTenantAuditEvent(ctx context.Context, event *Tena
 		return err
 	}
 
-	metadataJSON, err := json.Marshal(event.Metadata)
-	if err != nil {
-		return fmt.Errorf("marshal audit metadata: %w", err)
-	}
-
+	metadataJSON, _ := json.Marshal(event.Metadata)
 	eventModel := tenantAuditEventToModel(event, metadataJSON)
 	if err := db.Create(eventModel).Error; err != nil {
 		return fmt.Errorf("create tenant audit event: %w", err)

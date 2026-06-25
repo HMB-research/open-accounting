@@ -112,6 +112,9 @@ type apiMainDeps struct {
 var (
 	newDemoStatusReader = demo.NewStatusReader
 	newDemoResetService = demo.NewResetService
+	mainDepsProvider    = defaultAPIMainDeps
+	apiMainExit         = os.Exit
+	configFatalExit     = os.Exit
 )
 
 // healthCheck returns the API health status.
@@ -126,9 +129,15 @@ func healthCheck(w http.ResponseWriter, _ *http.Request) {
 }
 
 func main() {
-	if err := runAPI(context.Background(), defaultAPIMainDeps()); err != nil {
-		log.Fatal().Err(err).Msg("API failed")
+	if err := runAPI(context.Background(), mainDepsProvider()); err != nil {
+		log.WithLevel(zerolog.FatalLevel).Err(err).Msg("API failed")
+		apiMainExit(1)
 	}
+}
+
+func configFatal(err error, message string) {
+	log.WithLevel(zerolog.FatalLevel).Err(err).Msg(message)
+	configFatalExit(1)
 }
 
 func defaultAPIMainDeps() apiMainDeps {
@@ -383,14 +392,14 @@ func loadConfig() *Config {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		log.Fatal().Msg("DATABASE_URL environment variable required")
+		configFatal(nil, "DATABASE_URL environment variable required")
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	production := isProductionEnvironment()
 	resolvedJWTSecret, err := resolveJWTSecret(jwtSecret, production)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Invalid JWT_SECRET configuration")
+		configFatal(err, "Invalid JWT_SECRET configuration")
 	}
 	if strings.TrimSpace(jwtSecret) == "" {
 		log.Warn().Msg("Using development-only JWT_SECRET; set JWT_SECRET for shared or production deployments")
@@ -401,7 +410,7 @@ func loadConfig() *Config {
 	origins := os.Getenv("ALLOWED_ORIGINS")
 	allowedOrigins, err := resolveAllowedOrigins(origins, production)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Invalid ALLOWED_ORIGINS configuration")
+		configFatal(err, "Invalid ALLOWED_ORIGINS configuration")
 	}
 	log.Info().Strs("allowed_origins", allowedOrigins).Msg("CORS configuration")
 

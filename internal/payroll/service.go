@@ -17,6 +17,8 @@ type Service struct {
 	uuid UUIDGenerator
 }
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // NewService creates a new payroll service
 func NewService(db *pgxpool.Pool) *Service {
 	if db == nil {
@@ -24,7 +26,7 @@ func NewService(db *pgxpool.Pool) *Service {
 			uuid: &DefaultUUIDGenerator{},
 		}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create payroll GORM repository: %w", err))
 	}

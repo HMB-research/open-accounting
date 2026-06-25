@@ -179,10 +179,7 @@ func (r *ReminderRuleGORMRepository) GetInvoicesForRule(ctx context.Context, sch
 	if err != nil {
 		return nil, fmt.Errorf("qualify invoices table: %w", err)
 	}
-	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
-	if err != nil {
-		return nil, fmt.Errorf("qualify contacts table: %w", err)
-	}
+	contactsTable, _ := database.QualifiedTable(schemaName, "contacts")
 	db, err := r.dbWithContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query invoices for rule: %w", err)

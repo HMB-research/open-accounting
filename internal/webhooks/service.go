@@ -27,6 +27,8 @@ const (
 	maxResponseBytes   = 4096
 )
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // Service manages outbound webhook endpoints and delivery.
 type Service struct {
 	repo       Repository
@@ -39,7 +41,7 @@ func NewService(pool *pgxpool.Pool) *Service {
 	if pool == nil {
 		return NewServiceWithRepository(nil, &http.Client{Timeout: defaultHTTPTimeout})
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create webhook GORM repository: %w", err))
 	}

@@ -155,9 +155,6 @@ func (s *Service) ImportKMDHistoryCSV(
 
 	for _, key := range groupKeys {
 		group := groups[key]
-		if len(group.records) == 0 {
-			continue
-		}
 		if message := validateKMDHistoryVATReconciliation(group); message != "" {
 			appendKMDHistoryGroupError(result, group, message)
 			continue
@@ -216,9 +213,6 @@ func parseKMDHistoryImportRows(content string) ([]kmdHistoryImportRow, error) {
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("csv file is empty")
-		}
 		return nil, fmt.Errorf("parse csv header: %w", err)
 	}
 

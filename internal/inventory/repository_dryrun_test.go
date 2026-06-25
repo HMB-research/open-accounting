@@ -3,12 +3,14 @@ package inventory
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -69,6 +71,29 @@ type inventoryDryRunFixtures struct {
 
 type inventoryDryRunSQLCapture struct {
 	statements []string
+}
+
+func TestNewGORMRepositoryUsesInjectedPoolDB(t *testing.T) {
+	expectedDB := &gorm.DB{}
+	pool := new(pgxpool.Pool)
+	original := newInventoryGormDBFromPool
+	t.Cleanup(func() {
+		newInventoryGormDBFromPool = original
+	})
+	var called bool
+	newInventoryGormDBFromPool = func(ctx context.Context, got *pgxpool.Pool) (*gorm.DB, error) {
+		require.NotNil(t, ctx)
+		require.Same(t, pool, got)
+		called = true
+		return expectedDB, nil
+	}
+
+	repo := NewGORMRepository(pool)
+
+	require.True(t, called)
+	gormRepo, ok := repo.(*GORMRepository)
+	require.True(t, ok)
+	require.Same(t, expectedDB, gormRepo.db)
 }
 
 func newInventoryDryRunDB(t *testing.T, opts ...inventoryDryRunDBOption) *gorm.DB {
@@ -772,6 +797,48 @@ func TestGORMRepositoryDryRunReleaseLotReservationEdges(t *testing.T) {
 
 		assert.Nil(t, got)
 		require.EqualError(t, err, "tracked lot reservation not found")
+	})
+
+	t.Run("returns matching reservation after release", func(t *testing.T) {
+		reservation := InventoryLotReservation{
+			ID:           "reservation-1",
+			TenantID:     tenantID,
+			ProductID:    productID,
+			WarehouseID:  warehouseID,
+			LotNumber:    "lot-1",
+			SerialNumber: "serial-1",
+			ExpiryDate:   "2027-01-31",
+			Quantity:     decimal.NewFromInt(4),
+			CreatedAt:    time.Date(2026, time.June, 25, 12, 0, 0, 0, time.UTC),
+			UpdatedAt:    time.Date(2026, time.June, 25, 12, 0, 0, 0, time.UTC),
+		}
+		repo := &GORMRepository{db: newInventoryDryRunDB(t,
+			withInventoryDryRunUpdateRows(1),
+			withInventoryWave6ScanRows(inventoryWave6RowSet{
+				columns: []string{"id", "tenant_id", "product_id", "warehouse_id", "lot_number", "serial_number", "expiry_date", "quantity", "reason", "created_at", "updated_at", "created_by"},
+				values: [][]driver.Value{{
+					reservation.ID,
+					reservation.TenantID,
+					reservation.ProductID,
+					reservation.WarehouseID,
+					reservation.LotNumber,
+					reservation.SerialNumber,
+					reservation.ExpiryDate,
+					reservation.Quantity.String(),
+					"",
+					reservation.CreatedAt,
+					reservation.UpdatedAt,
+					"user-1",
+				}},
+			}),
+		)}
+
+		got, err := repo.ReleaseLotReservation(ctx, schemaName, tenantID, productID, warehouseID, " lot-1 ", " serial-1 ", " 2027-01-31 ", decimal.NewFromInt(1), "release", "user-1")
+
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, reservation.LotNumber, got.LotNumber)
+		assert.True(t, reservation.Quantity.Equal(got.Quantity))
 	})
 
 	t.Run("post-update scan error is returned", func(t *testing.T) {

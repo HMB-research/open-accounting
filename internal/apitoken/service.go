@@ -27,12 +27,14 @@ type Service struct {
 	repo Repository
 }
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // NewService creates a new API token service.
 func NewService(db *pgxpool.Pool) *Service {
 	if db == nil {
 		return &Service{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create API token GORM repository: %w", err))
 	}

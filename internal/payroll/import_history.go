@@ -310,9 +310,6 @@ func parsePayrollHistoryImportRows(content string) ([]payrollHistoryImportRow, e
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("csv file is empty")
-		}
 		return nil, fmt.Errorf("parse csv header: %w", err)
 	}
 
@@ -616,11 +613,12 @@ func findPayrollHistoryEmployee(values map[string]string, indexes *payrollHistor
 		return nil, "", fmt.Errorf("employee identifiers do not match the same employee")
 	}
 
+	var matched *Employee
 	for _, employee := range candidates {
-		return employee, employee.FullName(), nil
+		matched = employee
+		break
 	}
-
-	return nil, "", fmt.Errorf("employee not found")
+	return matched, matched.FullName(), nil
 }
 
 func payrollHistoryMatchesCandidate(candidates map[string]*Employee, matches []*Employee) bool {

@@ -319,10 +319,7 @@ func (r *CostCenterGORMRepository) Delete(ctx context.Context, schemaName, tenan
 		return fmt.Errorf("cannot delete cost center with %d children", childCount)
 	}
 
-	allocationsTable, err := r.tenantTable(ctx, schemaName, "cost_allocations")
-	if err != nil {
-		return fmt.Errorf("qualify cost allocations table: %w", err)
-	}
+	allocationsTable, _ := r.tenantTable(ctx, schemaName, "cost_allocations")
 
 	// Check for allocations
 	var allocationCount int64
@@ -335,11 +332,7 @@ func (r *CostCenterGORMRepository) Delete(ctx context.Context, schemaName, tenan
 		return fmt.Errorf("cannot delete cost center with %d allocations", allocationCount)
 	}
 
-	costCentersTable, err := r.tenantTable(ctx, schemaName, "cost_centers")
-	if err != nil {
-		return fmt.Errorf("qualify cost centers table: %w", err)
-	}
-	result := costCentersTable.Where("id = ? AND tenant_id = ?", costCenterID, tenantID).Delete(&models.CostCenter{})
+	result := childrenTable.Where("id = ? AND tenant_id = ?", costCenterID, tenantID).Delete(&models.CostCenter{})
 	if result.Error != nil {
 		return fmt.Errorf("delete cost center: %w", result.Error)
 	}
@@ -392,10 +385,7 @@ func (r *CostCenterGORMRepository) ListAllocations(ctx context.Context, schemaNa
 	if err != nil {
 		return nil, fmt.Errorf("qualify cost allocations table: %w", err)
 	}
-	costCentersTable, err := database.QualifiedTable(schemaName, "cost_centers")
-	if err != nil {
-		return nil, fmt.Errorf("qualify cost centers table: %w", err)
-	}
+	costCentersTable, _ := database.QualifiedTable(schemaName, "cost_centers")
 
 	query := allocationsTable.
 		Select("cost_allocations.*, cost_centers.code AS cost_center_code, cost_centers.name AS cost_center_name").
