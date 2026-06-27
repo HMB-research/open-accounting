@@ -92,7 +92,7 @@ jobs:
             esac
 
             case "$file" in
-              scripts/integration-package-weights.tsv|scripts/select-integration-packages.sh|scripts/verify-cli-coverage.sh|scripts/run-affected-tests.sh|scripts/parse-go-test-package-times.sh|scripts/parse-playwright-spec-times.mjs|scripts/test-loop.sh|scripts/test-demo-loop.sh)
+              scripts/integration-package-weights.tsv|scripts/select-integration-packages.sh|scripts/verify-cli-coverage.sh|scripts/verify-total-coverage.sh|scripts/run-affected-tests.sh|scripts/parse-go-test-package-times.sh|scripts/parse-playwright-spec-times.mjs|scripts/test-loop.sh|scripts/test-demo-loop.sh)
                 ci=true
                 ;;
             esac
@@ -125,20 +125,8 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run backend tests and verify CLI coverage
+      - name: Run backend tests and verify coverage
         run: make test-backend-coverage
-
-      - name: Upload coverage to Codecov
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        run: |
-          if [ -z "${CODECOV_TOKEN:-}" ]; then
-            echo "CODECOV_TOKEN not set; skipping coverage upload"
-            exit 0
-          fi
-          curl -Os https://cli.codecov.io/latest/linux/codecov
-          chmod +x codecov
-          ./codecov --verbose upload-process --disable-search -t "$CODECOV_TOKEN" -n "test-${GITHUB_RUN_ID}" -f coverage.out || echo "Codecov upload failed"
 
   lint:
     runs-on: ubuntu-latest
@@ -207,18 +195,6 @@ jobs:
           INTEGRATION_SHARD: ${{ matrix.shard }}
           INTEGRATION_SHARDS: ${{ matrix.total-shards }}
         run: make test-integration-coverage
-
-      - name: Upload integration coverage to Codecov
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        run: |
-          if [ -z "${CODECOV_TOKEN:-}" ]; then
-            echo "CODECOV_TOKEN not set; skipping integration coverage upload"
-            exit 0
-          fi
-          curl -Os https://cli.codecov.io/latest/linux/codecov
-          chmod +x codecov
-          ./codecov --verbose upload-process --disable-search -t "$CODECOV_TOKEN" -n "integration-${GITHUB_RUN_ID}-${{ matrix.shard }}" -F integration -f coverage-integration.out || echo "Codecov upload failed"
 
   build:
     runs-on: ubuntu-latest
