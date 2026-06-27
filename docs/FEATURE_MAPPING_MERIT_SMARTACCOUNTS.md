@@ -221,13 +221,13 @@ This is a competitive-gap document, not the authoritative current-state status p
 |--------------------------------|------------------------------|--------|------------------------|
 | Chart of accounts | `smartaccounts-snapshot` -> `migration validate/plan/execute --accounts` | Supported | Needs tenant export validation before confirmed cutover |
 | Contacts/customers/suppliers | `smartaccounts-snapshot` -> `--contacts` | Supported | Needs duplicate/contact identity review against invoices and payments |
-| Sales and purchase invoices | CSV import and Estonian e-invoice XML import | Needs sample proof | Needs real SmartAccounts export samples for invoice status, totals, and allocation references |
+| Sales and purchase invoices | CSV import and Estonian e-invoice XML import | Needs API/detail export | SmartAccounts UI grid CSVs are summary-only and do not include required line description, quantity, unit price, or VAT rate columns |
 | Estonian e-invoice XML | `--e-invoices` with validation mode/type overrides | Supported | Attachments and invoice PDFs are separate proof/export artifacts |
 | Payments and allocations | `--payments` with same-bundle invoice checks | Needs sample proof | Needs SmartAccounts payment export sample and direction/currency review |
 | Bank accounts | `--bank-accounts` | Supported | Needs tenant bank account mapping review |
 | Bank transactions | `--bank-transactions` or bank-native statement import | Needs context | Requires Open Accounting bank account id and either supported bank statement format or SmartAccounts transaction export proof |
 | Opening balances | `--opening-balances` plus `--opening-balance-entry-date` | Needs context | Requires accountant-approved cutover date |
-| Historical journal | `--journal` | Supported | Needs source line balancing and account mapping review |
+| Historical journal | `--journal` | Needs API/detail export | SmartAccounts UI grid CSVs are summary-only and do not include required account code and debit/credit split columns |
 | Cost centers and allocations | `--cost-centers`, `--cost-allocations` | Needs sample proof | Needs SmartAccounts export sample for allocation references and split totals |
 | Products, categories, warehouses, stock | Inventory import flags | Needs sample proof | Needs product type, tracking, lot, warehouse, and inventory value reconciliation |
 | Fixed assets | `--fixed-assets` | Needs sample proof | Needs purchase-source, depreciation, and register-total reconciliation |

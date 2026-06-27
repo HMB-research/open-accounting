@@ -2110,6 +2110,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
 		eInvoiceInvoiceType := fs.String("e-invoice-invoice-type", "", "Override e-invoice invoice type for validation: SALES, PURCHASE, or CREDIT_NOTE")
 		providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, smartaccounts, or directo")
+		manifestFile := fs.String("manifest", "", "Snapshot manifest.json produced by smartaccounts-snapshot")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
 		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
 		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
@@ -2138,7 +2139,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			return err
 		}
 
-		files, err := buildMigrationBundleFiles([]migrationFileInput{
+		files, err := buildMigrationBundleFilesWithManifest(*manifestFile, []migrationFileInput{
 			{kind: cutover.KindAccounts, path: *accountsFile},
 			{kind: cutover.KindContacts, path: *contactsFile},
 			{kind: cutover.KindEmployees, path: *employeesFile},
@@ -2199,6 +2200,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
 		eInvoiceInvoiceType := fs.String("e-invoice-invoice-type", "", "Override e-invoice invoice type for validation: SALES, PURCHASE, or CREDIT_NOTE")
 		providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, smartaccounts, or directo")
+		manifestFile := fs.String("manifest", "", "Snapshot manifest.json produced by smartaccounts-snapshot")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
 		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
 		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
@@ -2229,7 +2231,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			return err
 		}
 
-		files, err := buildMigrationBundleFiles([]migrationFileInput{
+		files, err := buildMigrationBundleFilesWithManifest(*manifestFile, []migrationFileInput{
 			{kind: cutover.KindAccounts, path: *accountsFile},
 			{kind: cutover.KindContacts, path: *contactsFile},
 			{kind: cutover.KindEmployees, path: *employeesFile},

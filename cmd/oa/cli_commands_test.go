@@ -5250,7 +5250,7 @@ func TestCLIMigrationExecuteSafetyBranches(t *testing.T) {
 		defer server.Close()
 		t.Setenv("OA_BASE_URL", server.URL)
 		stdout.Reset()
-		err := app.run(context.Background(), []string{"migration", "execute", "--accounts", accountsFile})
+		err := app.run(context.Background(), []string{"migration", "execute", "--accounts", accountsFile, "--confirm"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "plan unavailable")
 	})
@@ -5269,7 +5269,7 @@ func TestCLIMigrationExecuteSafetyBranches(t *testing.T) {
 	})
 }
 
-func TestCLIMigrationExecuteRequiresConfirmationAndReadyPlan(t *testing.T) {
+func TestCLIMigrationExecuteSavesDryRunAndRequiresReadyPlan(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{
 		BaseURL:    "https://placeholder.example.com",
@@ -5283,22 +5283,34 @@ func TestCLIMigrationExecuteRequiresConfirmationAndReadyPlan(t *testing.T) {
 	blockedPlan := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		require.Equal(t, "/api/v1/tenants/tenant-1/migration/execution-plan", r.URL.Path)
-		var req cutover.PlanMigrationExecutionRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-		plan := migrationExecuteReadyPlan(req.Files)
-		if blockedPlan {
-			plan.Summary.Ready = false
-			plan.Summary.ValidationReady = false
-			plan.Summary.ReadyStepCount = 0
-			plan.Summary.NeedsContextCount = 1
-			plan.Summary.BlockedStepCount = 1
-			plan.Steps = []cutover.MigrationExecutionStep{
-				{StepNumber: 1, Kind: cutover.KindAccounts, FileName: "accounts.csv", Status: cutover.MigrationExecutionStepNeedsContext, Message: "Needs tenant context."},
-				{StepNumber: 2, Kind: cutover.KindInvoices, FileName: "invoices.csv", Status: cutover.MigrationExecutionStepBlocked, Message: "Blocked by validation."},
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/migration/execute":
+			var req cutover.ExecuteMigrationRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.False(t, req.Confirm)
+			plan := migrationExecuteReadyPlan(req.Files)
+			run := cutover.NewMigrationExecutionRun(&plan, false)
+			run.ID = "run-dry"
+			_ = json.NewEncoder(w).Encode(run)
+		case "/api/v1/tenants/tenant-1/migration/execution-plan":
+			var req cutover.PlanMigrationExecutionRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			plan := migrationExecuteReadyPlan(req.Files)
+			if blockedPlan {
+				plan.Summary.Ready = false
+				plan.Summary.ValidationReady = false
+				plan.Summary.ReadyStepCount = 0
+				plan.Summary.NeedsContextCount = 1
+				plan.Summary.BlockedStepCount = 1
+				plan.Steps = []cutover.MigrationExecutionStep{
+					{StepNumber: 1, Kind: cutover.KindAccounts, FileName: "accounts.csv", Status: cutover.MigrationExecutionStepNeedsContext, Message: "Needs tenant context."},
+					{StepNumber: 2, Kind: cutover.KindInvoices, FileName: "invoices.csv", Status: cutover.MigrationExecutionStepBlocked, Message: "Blocked by validation."},
+				}
 			}
+			_ = json.NewEncoder(w).Encode(plan)
+		default:
+			t.Fatalf("unexpected request: %s", r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(plan)
 	}))
 	defer server.Close()
 
@@ -5306,8 +5318,7 @@ func TestCLIMigrationExecuteRequiresConfirmationAndReadyPlan(t *testing.T) {
 
 	app, stdout, _ := newTestCLIApp()
 	err := app.run(context.Background(), []string{"migration", "execute", "--accounts", accountsFile})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "requires --confirm")
+	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Migration execution: needs_confirmation")
 	assert.Contains(t, stdout.String(), "PLANNED")
 
@@ -5354,6 +5365,59 @@ func TestCLIMigrationExecuteReportsImportFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "execute migration step 1")
 	assert.Contains(t, stdout.String(), "Migration execution: failed")
 	assert.Contains(t, stdout.String(), "FAILED")
+}
+
+func TestMigrationManifestBundleLoader(t *testing.T) {
+	manifestDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(manifestDir, "bundle"), 0o755))
+	accountsContent := []byte("code,name,account_type\n1000,Cash,ASSET\n")
+	firstXML := []byte("<E_Invoice></E_Invoice>")
+	secondXML := []byte("<Invoice></Invoice>")
+	require.NoError(t, os.WriteFile(filepath.Join(manifestDir, "bundle", "accounts.csv"), accountsContent, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(manifestDir, "bundle", "e_invoices.xml"), firstXML, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(manifestDir, "bundle", "e_invoices-2.xml"), secondXML, 0o644))
+
+	manifest := cutover.SmartAccountsSnapshotReport{
+		PreparedFiles: []cutover.SmartAccountsSnapshotPreparedFile{
+			{Kind: cutover.KindAccounts, OutputPath: "bundle/accounts.csv", OutputSHA256: sha256HexForMigrationManifest(accountsContent)},
+			{Kind: cutover.KindAccounts, OutputPath: "bundle/accounts.csv", OutputSHA256: sha256HexForMigrationManifest(accountsContent)},
+			{Kind: cutover.KindEInvoices, OutputPath: "bundle/e_invoices.xml", OutputSHA256: sha256HexForMigrationManifest(firstXML)},
+			{Kind: cutover.KindEInvoices, OutputPath: "bundle/e_invoices-2.xml", OutputSHA256: sha256HexForMigrationManifest(secondXML)},
+		},
+	}
+	manifestPath := filepath.Join(manifestDir, "manifest.json")
+	require.NoError(t, os.WriteFile(manifestPath, []byte(mustJSON(t, manifest)), 0o644))
+
+	files, err := readMigrationBundleFilesFromManifest(manifestPath)
+	require.NoError(t, err)
+	require.Len(t, files, 3)
+	assert.Equal(t, cutover.KindAccounts, files[0].Kind)
+	assert.Contains(t, files[0].CSVContent, "1000,Cash")
+	assert.Equal(t, "e_invoices-2.xml", files[2].FileName)
+	assert.Contains(t, files[2].XMLContent, "<Invoice>")
+
+	contactsFile := writeTempCSV(t, "contacts.csv", "name\nExample OU\n")
+	files, err = buildMigrationBundleFilesWithManifest(manifestPath, []migrationFileInput{{kind: cutover.KindContacts, path: contactsFile}})
+	require.NoError(t, err)
+	require.Len(t, files, 4)
+
+	_, err = buildMigrationBundleFilesWithManifest(manifestPath, []migrationFileInput{{kind: cutover.KindAccounts, path: filepath.Join(manifestDir, "bundle", "accounts.csv")}})
+	require.ErrorContains(t, err, "duplicate migration bundle file")
+
+	manifest.PreparedFiles[0].OutputSHA256 = "bad"
+	require.NoError(t, os.WriteFile(manifestPath, []byte(mustJSON(t, manifest)), 0o644))
+	_, err = readMigrationBundleFilesFromManifest(manifestPath)
+	require.ErrorContains(t, err, "sha256 mismatch")
+
+	manifest.PreparedFiles[0].OutputSHA256 = sha256HexForMigrationManifest(accountsContent)
+	manifest.PreparedFiles[0].OutputPath = "../accounts.csv"
+	require.NoError(t, os.WriteFile(manifestPath, []byte(mustJSON(t, manifest)), 0o644))
+	_, err = readMigrationBundleFilesFromManifest(manifestPath)
+	require.ErrorContains(t, err, "escapes manifest directory")
+
+	require.NoError(t, os.WriteFile(manifestPath, []byte(`{"prepared_files":[]}`), 0o644))
+	_, err = readMigrationBundleFilesFromManifest(manifestPath)
+	require.ErrorContains(t, err, "no prepared files")
 }
 
 func TestMigrationExecutionRunHelperBranches(t *testing.T) {

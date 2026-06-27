@@ -51,6 +51,8 @@ type SmartAccountsSnapshotPreparedFile struct {
 	SourceSHA256      string   `json:"source_sha256"`
 	OutputSHA256      string   `json:"output_sha256"`
 	Rows              int      `json:"rows"`
+	OutputRowStart    int      `json:"output_row_start,omitempty"`
+	OutputRowEnd      int      `json:"output_row_end,omitempty"`
 	Transformations   []string `json:"transformations,omitempty"`
 	Classification    string   `json:"classification"`
 	ValidationCLIFlag string   `json:"validation_cli_flag,omitempty"`
@@ -64,12 +66,13 @@ type SmartAccountsSnapshotUnsupported struct {
 }
 
 type smartAccountsCSVSource struct {
-	kind           FileKind
-	relSourcePath  string
-	sourceHash     string
-	headers        []string
-	rows           [][]string
-	classification string
+	kind            FileKind
+	relSourcePath   string
+	sourceHash      string
+	headers         []string
+	rows            [][]string
+	classification  string
+	transformations []string
 }
 
 type smartAccountsXMLSource struct {
@@ -115,6 +118,9 @@ func PrepareSmartAccountsSnapshot(opts SmartAccountsSnapshotOptions) (*SmartAcco
 		SourceCompanyID:   strings.TrimSpace(opts.SourceCompanyID),
 		SourceCompanyName: strings.TrimSpace(opts.SourceCompanyName),
 		CutoverDate:       strings.TrimSpace(opts.CutoverDate),
+	}
+	if err := validateSmartAccountsCutoverDate(report.CutoverDate); err != nil {
+		return nil, err
 	}
 	report.Warnings = append(report.Warnings, smartAccountsGitWorktreeWarnings(sourceDir, outputDir)...)
 
@@ -187,6 +193,9 @@ func PrepareSmartAccountsSnapshot(opts SmartAccountsSnapshotOptions) (*SmartAcco
 	if err := writeSmartAccountsXMLBundles(outputDir, xmlSources, report); err != nil {
 		return nil, err
 	}
+	if report.CutoverDate == "" && smartAccountsSnapshotNeedsCutoverDate(csvSources) {
+		report.Warnings = append(report.Warnings, "cutover date is required before executing opening balance or historical journal imports")
+	}
 
 	report.SnapshotHash = smartAccountsSnapshotHash(report, csvSources, xmlSources)
 	report.ValidationCommand = smartAccountsValidationCommand(report.OutputDir, report.PreparedFiles)
@@ -208,11 +217,11 @@ func (r *SmartAccountsSnapshotReport) BundleFiles() []BundleFile {
 }
 
 func classifySmartAccountsCSV(path, relPath, sourceHash, content string) (smartAccountsCSVSource, string, error) {
-	headers, _, err := readSmartAccountsCSV(content)
+	hintedKind, hasHint := smartAccountsFilenameKind(path)
+	headers, rows, err := readSmartAccountsCSVWithHint(content, hintedKind, hasHint)
 	if err != nil {
 		return smartAccountsCSVSource{}, "", fmt.Errorf("parse %s: %w", relPath, err)
 	}
-	hintedKind, hasHint := smartAccountsFilenameKind(path)
 	bestKind, bestScore, matchedRequired := scoreSmartAccountsCSVHeaders(headers, hintedKind, hasHint)
 	if hasHint {
 		bestKind = hintedKind
@@ -221,19 +230,24 @@ func classifySmartAccountsCSV(path, relPath, sourceHash, content string) (smartA
 		return smartAccountsCSVSource{}, "could not classify CSV headers as a supported SmartAccounts migration file", nil
 	}
 
-	canonicalContent, _ := canonicalizeCSVHeaders(content, fileSpecForProviderPreset(bestKind, MigrationProviderPresetSmartAccounts))
-	canonicalHeaders, canonicalRows, _ := readSmartAccountsCSV(canonicalContent)
+	spec := fileSpecForProviderPreset(bestKind, MigrationProviderPresetSmartAccounts)
+	canonicalHeaders := make([]string, len(headers))
+	for i, header := range headers {
+		canonicalHeaders[i] = canonicalHeader(spec.aliases, header)
+	}
+	canonicalHeaders, rows, transformations := normalizeSmartAccountsSourceRows(bestKind, relPath, canonicalHeaders, rows)
 	classification := "headers"
 	if hasHint {
 		classification = "filename"
 	}
 	return smartAccountsCSVSource{
-		kind:           bestKind,
-		relSourcePath:  relPath,
-		sourceHash:     sourceHash,
-		headers:        canonicalHeaders,
-		rows:           canonicalRows,
-		classification: classification,
+		kind:            bestKind,
+		relSourcePath:   relPath,
+		sourceHash:      sourceHash,
+		headers:         canonicalHeaders,
+		rows:            rows,
+		classification:  classification,
+		transformations: transformations,
 	}, "", nil
 }
 
@@ -265,6 +279,10 @@ func smartAccountsUnsupportedFile(relPath, reason, sourceHash string, content []
 }
 
 func readSmartAccountsCSV(content string) ([]string, [][]string, error) {
+	return readSmartAccountsCSVWithHint(content, "", false)
+}
+
+func readSmartAccountsCSVWithHint(content string, hintedKind FileKind, hasHint bool) ([]string, [][]string, error) {
 	trimmed := strings.TrimPrefix(strings.TrimSpace(content), "\ufeff")
 	if trimmed == "" {
 		return nil, nil, fmt.Errorf("csv content is empty")
@@ -273,14 +291,7 @@ func readSmartAccountsCSV(content string) ([]string, [][]string, error) {
 	reader.Comma = detectDelimiter(trimmed)
 	reader.FieldsPerRecord = -1
 	reader.TrimLeadingSpace = true
-	headers, err := reader.Read()
-	if err != nil {
-		return nil, nil, fmt.Errorf("read header: %w", err)
-	}
-	for i := range headers {
-		headers[i] = strings.TrimPrefix(strings.TrimSpace(headers[i]), "\ufeff")
-	}
-	rows := make([][]string, 0)
+	records := make([][]string, 0)
 	for {
 		record, err := reader.Read()
 		if err != nil {
@@ -289,12 +300,83 @@ func readSmartAccountsCSV(content string) ([]string, [][]string, error) {
 			}
 			return nil, nil, fmt.Errorf("read row: %w", err)
 		}
+		records = append(records, trimSmartAccountsCSVRecord(record))
+	}
+	headerIndex := smartAccountsCSVHeaderIndex(records, hintedKind, hasHint)
+	if headerIndex < 0 {
+		return nil, nil, fmt.Errorf("read header: EOF")
+	}
+	headers := records[headerIndex]
+	rows := make([][]string, 0)
+	for _, record := range records[headerIndex+1:] {
 		if isBlankCSVRecord(record) {
 			continue
 		}
 		rows = append(rows, record)
 	}
 	return headers, rows, nil
+}
+
+func trimSmartAccountsCSVRecord(record []string) []string {
+	trimmed := make([]string, len(record))
+	for i := range record {
+		trimmed[i] = strings.TrimPrefix(strings.TrimSpace(record[i]), "\ufeff")
+	}
+	return trimmed
+}
+
+func smartAccountsCSVHeaderIndex(records [][]string, hintedKind FileKind, hasHint bool) int {
+	bestIndex := -1
+	bestScore := 0
+	firstNonBlank := -1
+	limit := len(records)
+	if limit > 20 {
+		limit = 20
+	}
+	for i := 0; i < limit; i++ {
+		record := records[i]
+		if isBlankCSVRecord(record) {
+			continue
+		}
+		if firstNonBlank == -1 {
+			firstNonBlank = i
+		}
+		score := smartAccountsCSVHeaderCandidateScore(record, hintedKind, hasHint)
+		if score > bestScore {
+			bestScore = score
+			bestIndex = i
+		}
+	}
+	if bestIndex >= 0 {
+		return bestIndex
+	}
+	return firstNonBlank
+}
+
+func smartAccountsCSVHeaderCandidateScore(headers []string, hintedKind FileKind, hasHint bool) int {
+	kinds := migrationPresetCatalogFileKinds()
+	if hasHint {
+		kinds = []FileKind{hintedKind}
+	}
+	bestScore := 0
+	for _, kind := range kinds {
+		spec := fileSpecForProviderPreset(kind, MigrationProviderPresetSmartAccounts)
+		canonicalSet := make(map[string]bool, len(headers))
+		matchedKnown := 0
+		for _, header := range headers {
+			normalized := normalizedHeader(header)
+			canonical := canonicalHeader(spec.aliases, header)
+			canonicalSet[canonical] = true
+			if canonical != normalized || valueInAliasMap(spec.aliases, canonical) {
+				matchedKnown++
+			}
+		}
+		score := matchedKnown + matchedRequiredGroups(spec.requiredGroups, canonicalSet)*100
+		if score > bestScore {
+			bestScore = score
+		}
+	}
+	return bestScore
 }
 
 func scoreSmartAccountsCSVHeaders(headers []string, hintedKind FileKind, hasHint bool) (FileKind, int, int) {
@@ -362,8 +444,8 @@ func smartAccountsFilenameKind(path string) (FileKind, bool) {
 		{[]string{"opening_balance", "opening_balances", "algsaldo"}, KindOpeningBalances},
 		{[]string{"journal_entry", "journal_entries", "general_ledger", "ledger", "kanne", "kanded"}, KindJournalEntries},
 		{[]string{"bank_transaction", "bank_transactions", "statement", "transactions"}, KindBankTransactions},
-		{[]string{"bank_account", "bank_accounts", "bank"}, KindBankAccounts},
 		{[]string{"payment", "payments", "laekumine", "tasumine"}, KindPayments},
+		{[]string{"bank_account", "bank_accounts"}, KindBankAccounts},
 		{[]string{"account", "accounts", "chart_of_accounts", "kontoplaan"}, KindAccounts},
 		{[]string{"contact", "contacts", "client", "clients", "customer", "customers", "vendor", "vendors", "supplier", "suppliers"}, KindContacts},
 		{[]string{"employee", "employees", "tootaja"}, KindEmployees},
@@ -378,7 +460,7 @@ func smartAccountsFilenameKind(path string) (FileKind, bool) {
 		{[]string{"product_category", "product_categories", "item_category"}, KindProductCategories},
 		{[]string{"warehouse", "warehouses"}, KindWarehouses},
 		{[]string{"stock_adjustment", "stock_adjustments", "stock"}, KindStockAdjustments},
-		{[]string{"product", "products", "item", "items"}, KindProducts},
+		{[]string{"product", "products", "item", "items", "article", "articles", "artikkel", "artiklid"}, KindProducts},
 		{[]string{"fixed_asset", "fixed_assets", "asset", "assets"}, KindFixedAssets},
 		{[]string{"expense", "expenses"}, KindExpenses},
 	}
@@ -405,6 +487,10 @@ func writeSmartAccountsCSVBundles(outputDir string, sources []smartAccountsCSVSo
 
 	for _, kind := range kinds {
 		mergedHeaders, mergedRows := mergeSmartAccountsCSVRows(byKind[kind])
+		mergeTransformations := []string{"canonicalized SmartAccounts CSV headers", "merged by cutover file kind"}
+		normalizedRows, extraTransformations := normalizeSmartAccountsMergedRows(kind, mergedHeaders, mergedRows)
+		mergedRows = normalizedRows
+		mergeTransformations = append(mergeTransformations, extraTransformations...)
 		content := writeCSVContent(mergedHeaders, mergedRows)
 		outputPath := filepath.Join(outputDir, "bundle", string(kind)+".csv")
 		if err := os.WriteFile(outputPath, []byte(content), 0o600); err != nil {
@@ -417,7 +503,14 @@ func writeSmartAccountsCSVBundles(outputDir string, sources []smartAccountsCSVSo
 			CSVContent: content,
 		})
 		relOutputPath, _ := filepath.Rel(outputDir, outputPath)
+		nextOutputRow := 1
 		for _, source := range byKind[kind] {
+			outputRowStart := 0
+			outputRowEnd := 0
+			if len(source.rows) > 0 {
+				outputRowStart = nextOutputRow
+				outputRowEnd = nextOutputRow + len(source.rows) - 1
+			}
 			report.PreparedFiles = append(report.PreparedFiles, SmartAccountsSnapshotPreparedFile{
 				Kind:              kind,
 				SourcePath:        source.relSourcePath,
@@ -425,10 +518,13 @@ func writeSmartAccountsCSVBundles(outputDir string, sources []smartAccountsCSVSo
 				SourceSHA256:      source.sourceHash,
 				OutputSHA256:      outputHash,
 				Rows:              len(source.rows),
-				Transformations:   []string{"canonicalized SmartAccounts CSV headers", "merged by cutover file kind"},
+				OutputRowStart:    outputRowStart,
+				OutputRowEnd:      outputRowEnd,
+				Transformations:   append(append([]string{}, mergeTransformations...), source.transformations...),
 				Classification:    source.classification,
 				ValidationCLIFlag: migrationKindCLIFlag(kind),
 			})
+			nextOutputRow += len(source.rows)
 		}
 	}
 	return nil
@@ -459,6 +555,8 @@ func writeSmartAccountsXMLBundles(outputDir string, sources []smartAccountsXMLSo
 			SourceSHA256:      source.sourceHash,
 			OutputSHA256:      outputHash,
 			Rows:              1,
+			OutputRowStart:    1,
+			OutputRowEnd:      1,
 			Transformations:   []string{"copied Estonian e-invoice XML"},
 			Classification:    source.classification,
 			ValidationCLIFlag: migrationKindCLIFlag(KindEInvoices),
@@ -496,6 +594,286 @@ func mergeSmartAccountsCSVRows(sources []smartAccountsCSVSource) ([]string, [][]
 		}
 	}
 	return headers, rows
+}
+
+func normalizeSmartAccountsSourceRows(kind FileKind, relPath string, headers []string, rows [][]string) ([]string, [][]string, []string) {
+	transformations := make([]string, 0)
+	if kind == KindContacts && !headerIndex(headers, "contact_type").ok {
+		contactType := ""
+		sourceKey := normalizedHeader(relPath)
+		if strings.Contains(sourceKey, "vendor") || strings.Contains(sourceKey, "supplier") || strings.Contains(sourceKey, "hankija") {
+			contactType = "SUPPLIER"
+		} else if strings.Contains(sourceKey, "client") || strings.Contains(sourceKey, "customer") || strings.Contains(sourceKey, "kliendid") {
+			contactType = "CUSTOMER"
+		}
+		if contactType != "" {
+			headers = append(headers, "contact_type")
+			for i := range rows {
+				rows[i] = append(rows[i], contactType)
+			}
+			transformations = append(transformations, "derived contact_type from SmartAccounts source export")
+		}
+	}
+	if kind == KindInvoices && !headerIndex(headers, "invoice_type").ok {
+		invoiceType := ""
+		sourceKey := normalizedHeader(relPath)
+		if strings.Contains(sourceKey, "vendor") || strings.Contains(sourceKey, "supplier") || strings.Contains(sourceKey, "ostuar") {
+			invoiceType = "PURCHASE"
+		} else if strings.Contains(sourceKey, "client") || strings.Contains(sourceKey, "customer") || strings.Contains(sourceKey, "müügi") || strings.Contains(sourceKey, "muugi") {
+			invoiceType = "SALES"
+		}
+		if invoiceType != "" {
+			headers = append(headers, "invoice_type")
+			for i := range rows {
+				rows[i] = append(rows[i], invoiceType)
+			}
+			transformations = append(transformations, "derived invoice_type from SmartAccounts source export")
+		}
+	}
+	if kind == KindPayments && !headerIndex(headers, "payment_type").ok {
+		headers = append(headers, "payment_type")
+		amountIndex := headerIndex(headers, "amount")
+		for i := range rows {
+			paymentType := "RECEIVED"
+			if amountIndex.ok && amountIndex.index < len(rows[i]) && strings.HasPrefix(strings.TrimSpace(rows[i][amountIndex.index]), "-") {
+				paymentType = "MADE"
+			}
+			rows[i] = append(rows[i], paymentType)
+		}
+		transformations = append(transformations, "derived payment_type from SmartAccounts amount sign")
+	}
+	for i := range rows {
+		if normalizeSmartAccountsRowValues(kind, headers, rows[i]) {
+			transformations = append(transformations, "normalized SmartAccounts localized dates, decimals, and enum values")
+		}
+	}
+	return headers, rows, uniqueStrings(transformations)
+}
+
+func normalizeSmartAccountsMergedRows(kind FileKind, headers []string, rows [][]string) ([][]string, []string) {
+	switch kind {
+	case KindContacts:
+		normalized, changed := dedupeSmartAccountsContactRows(headers, rows)
+		if changed {
+			return normalized, []string{"merged duplicate SmartAccounts client/vendor contacts by registry, VAT, or name"}
+		}
+	}
+	return rows, nil
+}
+
+type smartAccountsHeaderLookup struct {
+	index int
+	ok    bool
+}
+
+func headerIndex(headers []string, header string) smartAccountsHeaderLookup {
+	for i, candidate := range headers {
+		if candidate == header {
+			return smartAccountsHeaderLookup{index: i, ok: true}
+		}
+	}
+	return smartAccountsHeaderLookup{}
+}
+
+func normalizeSmartAccountsRowValues(kind FileKind, headers []string, row []string) bool {
+	changed := false
+	for i, header := range headers {
+		if i >= len(row) {
+			continue
+		}
+		value := strings.TrimSpace(row[i])
+		next := value
+		switch header {
+		case "issue_date", "due_date", "payment_date", "purchase_date", "depreciation_start_date", "depreciation_end_date", "entry_date", "date":
+			next = normalizeSmartAccountsDateValue(value)
+		case "amount", "total_amount", "balance_due", "purchase_cost", "sales_price", "purchase_price", "vat_rate", "debit", "credit", "depreciation_rate":
+			next = normalizeSmartAccountsDecimalValue(value)
+			if kind == KindPayments && header == "amount" && strings.HasPrefix(next, "-") {
+				next = strings.TrimPrefix(next, "-")
+			}
+			if kind == KindProducts && header == "sales_price" && next == "" {
+				next = "0"
+			}
+		case "account_type":
+			next = normalizeSmartAccountsAccountType(value, valueAtHeader(headers, row, "code"))
+		case "product_type":
+			next = normalizeSmartAccountsProductType(value)
+		}
+		if next != value {
+			row[i] = next
+			changed = true
+		}
+	}
+	return changed
+}
+
+func normalizeSmartAccountsDateValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if parsed, err := time.Parse("02.01.2006", trimmed); err == nil {
+		return parsed.Format("2006-01-02")
+	}
+	return trimmed
+}
+
+func normalizeSmartAccountsDecimalValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimSuffix(trimmed, "%")
+	trimmed = strings.TrimSpace(trimmed)
+	normalized := normalizedHeader(trimmed)
+	switch normalized {
+	case "km_vaba", "kaibemaksuvaba", "käibemaksuvaba":
+		return "0"
+	case "jah", "ei":
+		return ""
+	}
+	trimmed = strings.ReplaceAll(trimmed, " ", "")
+	trimmed = strings.ReplaceAll(trimmed, "\u00a0", "")
+	trimmed = strings.ReplaceAll(trimmed, ",", ".")
+	return trimmed
+}
+
+func normalizeSmartAccountsAccountType(value, code string) string {
+	switch normalizedHeader(value) {
+	case "aktiva", "asset", "assets", "vara":
+		return "ASSET"
+	case "passiva", "kohustus", "kohustis", "liability", "liabilities":
+		return inferSmartAccountsAccountTypeFromCode(code, "LIABILITY")
+	case "omakapital", "equity":
+		return "EQUITY"
+	case "inc", "tulu", "revenue", "income":
+		return "REVENUE"
+	case "kulu", "expense", "expenses":
+		return "EXPENSE"
+	}
+	return inferSmartAccountsAccountTypeFromCode(code, value)
+}
+
+func inferSmartAccountsAccountTypeFromCode(code, fallback string) string {
+	trimmed := strings.TrimSpace(code)
+	if trimmed == "" {
+		return fallback
+	}
+	switch trimmed[0] {
+	case '1':
+		return "ASSET"
+	case '2':
+		return "LIABILITY"
+	case '3':
+		return "EQUITY"
+	case '4':
+		return "REVENUE"
+	case '5', '6', '7', '8', '9':
+		return "EXPENSE"
+	default:
+		return fallback
+	}
+}
+
+func normalizeSmartAccountsProductType(value string) string {
+	switch normalizedHeader(value) {
+	case "teenus", "service":
+		return "SERVICE"
+	case "kaup", "laoartikkel", "goods", "item", "stock_item":
+		return "GOODS"
+	default:
+		return value
+	}
+}
+
+func dedupeSmartAccountsContactRows(headers []string, rows [][]string) ([][]string, bool) {
+	indexByHeader := make(map[string]int, len(headers))
+	for i, header := range headers {
+		indexByHeader[header] = i
+	}
+	keyFields := []string{"reg_code", "vat_number", "name"}
+	rowByKey := map[string]int{}
+	result := make([][]string, 0, len(rows))
+	changed := false
+	for _, row := range rows {
+		keys := make([]string, 0, len(keyFields))
+		for _, field := range keyFields {
+			idx, ok := indexByHeader[field]
+			if !ok || idx >= len(row) {
+				continue
+			}
+			if value := normalizedHeader(row[idx]); value != "" {
+				keys = append(keys, field+":"+value)
+			}
+		}
+		if len(keys) == 0 {
+			result = append(result, row)
+			continue
+		}
+		existingIndex := -1
+		for _, key := range keys {
+			if candidate, ok := rowByKey[key]; ok {
+				existingIndex = candidate
+				break
+			}
+		}
+		if existingIndex == -1 {
+			existingIndex = len(result)
+			result = append(result, row)
+			for _, key := range keys {
+				rowByKey[key] = existingIndex
+			}
+			continue
+		}
+		mergeSmartAccountsContactRow(headers, result[existingIndex], row)
+		for _, key := range keys {
+			rowByKey[key] = existingIndex
+		}
+		changed = true
+	}
+	return result, changed
+}
+
+func mergeSmartAccountsContactRow(headers []string, target, source []string) {
+	for i := range headers {
+		if i >= len(source) || strings.TrimSpace(source[i]) == "" {
+			continue
+		}
+		for len(target) <= i {
+			target = append(target, "")
+		}
+		if strings.TrimSpace(target[i]) == "" {
+			target[i] = source[i]
+			continue
+		}
+		if headers[i] == "contact_type" && !strings.EqualFold(strings.TrimSpace(target[i]), strings.TrimSpace(source[i])) {
+			target[i] = "BOTH"
+		}
+	}
+}
+
+func valueAtHeader(headers []string, row []string, header string) string {
+	idx := headerIndex(headers, header)
+	if !idx.ok || idx.index >= len(row) {
+		return ""
+	}
+	return row[idx.index]
+}
+
+func uniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		unique = append(unique, value)
+	}
+	return unique
 }
 
 func writeCSVContent(headers []string, rows [][]string) string {
@@ -546,28 +924,33 @@ func smartAccountsValidationCommand(outputDir string, files []SmartAccountsSnaps
 	if len(files) == 0 {
 		return ""
 	}
-	seen := map[FileKind]bool{}
-	parts := []string{"go run ./cmd/oa migration validate", "--provider-preset smartaccounts"}
-	sorted := append([]SmartAccountsSnapshotPreparedFile(nil), files...)
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].Kind != sorted[j].Kind {
-			return sorted[i].Kind < sorted[j].Kind
-		}
-		return sorted[i].OutputPath < sorted[j].OutputPath
-	})
-	for _, file := range sorted {
-		if seen[file.Kind] {
-			continue
-		}
-		flag := migrationKindCLIFlag(file.Kind)
-		if flag == "" {
-			continue
-		}
-		seen[file.Kind] = true
-		parts = append(parts, "--"+flag, shellQuote(filepath.Join(outputDir, file.OutputPath)))
+	parts := []string{
+		"go run ./cmd/oa migration validate",
+		"--provider-preset smartaccounts",
+		"--manifest",
+		shellQuote(filepath.Join(outputDir, "manifest.json")),
 	}
 	parts = append(parts, "--json")
 	return strings.Join(parts, " ")
+}
+
+func validateSmartAccountsCutoverDate(value string) error {
+	if value == "" {
+		return nil
+	}
+	if _, err := time.Parse("2006-01-02", value); err != nil {
+		return fmt.Errorf("cutover date must be YYYY-MM-DD: %w", err)
+	}
+	return nil
+}
+
+func smartAccountsSnapshotNeedsCutoverDate(sources []smartAccountsCSVSource) bool {
+	for _, source := range sources {
+		if source.kind == KindOpeningBalances || source.kind == KindJournalEntries {
+			return true
+		}
+	}
+	return false
 }
 
 func smartAccountsGitWorktreeWarnings(paths ...string) []string {

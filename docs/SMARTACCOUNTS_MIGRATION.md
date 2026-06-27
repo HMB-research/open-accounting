@@ -9,6 +9,7 @@ This runbook covers the safe Open Accounting path for SmartAccounts CSV/XML cuto
 - Keep SmartAccounts web-login, API key, and API secret values in macOS Keychain or environment variables.
 - Treat SmartAccounts web-login credentials as UI credentials only. API extraction requires SmartAccounts API key/secret credentials from connected services.
 - Run `smartaccounts-snapshot` with private `--source-dir` and `--out-dir` paths. The tool refuses to write snapshots inside the public Open Accounting worktree.
+- Run `oa migration validate/plan/execute` against a local or otherwise private Open Accounting API target. Bundle payloads are sent to the configured API, and saved dry runs persist replay payloads server-side for review/resume.
 
 ## Local Setup
 
@@ -42,17 +43,16 @@ go run ./cmd/smartaccounts-snapshot \
   --json | tee /path/to/private/smartaccounts/reports/snapshot-report.json
 ```
 
-The manifest records supported prepared files, unsupported files, source/output SHA-256 hashes, a stable snapshot hash, and the exact validation command.
+The manifest records supported prepared files, unsupported files, source/output SHA-256 hashes, source row ranges inside merged CSV outputs, a stable snapshot hash, and the exact validation command.
 
 ## Validate And Plan
 
-Run the validation command emitted in `manifest.json`, or pass the prepared bundle files directly:
+Run the validation command emitted in `manifest.json`, or pass the manifest explicitly:
 
 ```bash
 go run ./cmd/oa migration validate \
   --provider-preset smartaccounts \
-  --accounts /path/to/private/smartaccounts/prepared/bundle/accounts.csv \
-  --contacts /path/to/private/smartaccounts/prepared/bundle/contacts.csv \
+  --manifest /path/to/private/smartaccounts/prepared/manifest.json \
   --json | tee /path/to/private/smartaccounts/reports/validation-report.json
 ```
 
@@ -61,14 +61,15 @@ Build the execution plan:
 ```bash
 go run ./cmd/oa migration plan \
   --provider-preset smartaccounts \
-  --accounts /path/to/private/smartaccounts/prepared/bundle/accounts.csv \
-  --contacts /path/to/private/smartaccounts/prepared/bundle/contacts.csv \
+  --manifest /path/to/private/smartaccounts/prepared/manifest.json \
   --opening-balance-entry-date YYYY-MM-DD \
   --bank-transaction-account-id <open-accounting-bank-account-id> \
   --json | tee /path/to/private/smartaccounts/reports/plan-report.json
 ```
 
 Only include `--opening-balance-entry-date` when opening balances are present. Only include `--bank-transaction-account-id` when bank transactions are present.
+
+Direct file flags such as `--accounts` and `--contacts` remain available for generic bundles or manual overrides, but the manifest is preferred for SmartAccounts snapshots because it carries every prepared file, including repeated e-invoice XML payloads.
 
 ## Dry Run And Confirmed Execution
 
@@ -77,7 +78,8 @@ Run non-confirming execution first and save the report:
 ```bash
 go run ./cmd/oa migration execute \
   --provider-preset smartaccounts \
-  <same file flags used for plan> \
+  --manifest /path/to/private/smartaccounts/prepared/manifest.json \
+  <same context flags used for plan> \
   --json | tee /path/to/private/smartaccounts/reports/execute-dry-run.json
 ```
 
@@ -94,7 +96,8 @@ Confirmed execution:
 ```bash
 go run ./cmd/oa migration execute \
   --provider-preset smartaccounts \
-  <same file flags used for plan> \
+  --manifest /path/to/private/smartaccounts/prepared/manifest.json \
+  <same context flags used for plan> \
   --confirm \
   --json | tee /path/to/private/smartaccounts/reports/execute-confirmed.json
 ```
@@ -124,6 +127,8 @@ Compare those reports against Open Accounting reports after import and keep reco
 The offline snapshot path is ready for supported CSV/XML files. Remaining gaps are tracked in [Feature Mapping: Merit And SmartAccounts](./FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md):
 
 - signed live SmartAccounts API export;
+- SmartAccounts UI grid invoices and journal entries when they are summary-only
+  and do not include line-level invoice fields or account/debit-credit splits;
 - attachments and invoice PDFs;
 - bank-statement variants outside supported import formats;
 - sample-proven payroll, TSD/KMD, inventory, fixed-asset, recurring-invoice, cost-center, and cost-allocation exports;

@@ -40,7 +40,8 @@ func TestPrepareSmartAccountsSnapshotCanonicalizesAndValidatesBundle(t *testing.
 	require.FileExists(t, filepath.Join(outputDir, "bundle", "accounts.csv"))
 	require.FileExists(t, filepath.Join(outputDir, "bundle", "contacts.csv"))
 	require.Contains(t, report.ValidationCommand, "--provider-preset smartaccounts")
-	require.Contains(t, report.ValidationCommand, filepath.Join(outputDir, "bundle", "accounts.csv"))
+	require.Contains(t, report.ValidationCommand, "--manifest")
+	require.Contains(t, report.ValidationCommand, filepath.Join(outputDir, "manifest.json"))
 
 	accountsContent, err := os.ReadFile(filepath.Join(outputDir, "bundle", "accounts.csv"))
 	require.NoError(t, err)
@@ -62,6 +63,34 @@ func TestPrepareSmartAccountsSnapshotCanonicalizesAndValidatesBundle(t *testing.
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(manifestContent, &manifest))
 	require.Equal(t, report.SnapshotHash, manifest.SnapshotHash)
+	require.Equal(t, 1, manifest.PreparedFiles[1].OutputRowStart)
+	require.GreaterOrEqual(t, manifest.PreparedFiles[1].OutputRowEnd, manifest.PreparedFiles[1].OutputRowStart)
+}
+
+func TestSmartAccountsSnapshotSkipsGridPreambleAndCanonicalizesEstonianHeaders(t *testing.T) {
+	content := strings.Join([]string{
+		"Kontoplaan: Example Export OU,,,,",
+		",,,,",
+		"Koostatud,27.06.2026,,,",
+		"Kood,Kirjeldus,Tüüp,Bilansi või kasumiaruande rida,Rahavoogude aruande rida",
+		"1000,Cash,Aktiva,,",
+	}, "\n")
+
+	headers, rows, err := readSmartAccountsCSVWithHint(content, KindAccounts, true)
+	require.NoError(t, err)
+	require.Equal(t, []string{"Kood", "Kirjeldus", "Tüüp", "Bilansi või kasumiaruande rida", "Rahavoogude aruande rida"}, headers)
+	require.Len(t, rows, 1)
+
+	source, reason, err := classifySmartAccountsCSV("accounts.csv", "accounts.csv", "hash", content)
+	require.NoError(t, err)
+	require.Empty(t, reason)
+	require.Equal(t, KindAccounts, source.kind)
+	require.Equal(t, []string{"code", "name", "account_type", "bilansi_või_kasumiaruande_rida", "rahavoogude_aruande_rida"}, source.headers)
+
+	canonical, err := CanonicalizeBundleFileCSV(BundleFile{Kind: KindAccounts, FileName: "accounts.csv", CSVContent: content}, MigrationProviderPresetSmartAccounts)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(canonical.CSVContent, "code,name,account_type"))
+	require.Contains(t, canonical.CSVContent, "1000,Cash,ASSET")
 }
 
 func TestPrepareSmartAccountsSnapshotInputAndWalkErrors(t *testing.T) {
@@ -78,6 +107,11 @@ func TestPrepareSmartAccountsSnapshotInputAndWalkErrors(t *testing.T) {
 	require.NoError(t, os.WriteFile(sourceFile, []byte("client_no,client_name\nC-1,Example OU\n"), 0o644))
 	_, err = PrepareSmartAccountsSnapshot(SmartAccountsSnapshotOptions{SourceDir: sourceFile, OutputDir: filepath.Join(t.TempDir(), "out")})
 	require.ErrorContains(t, err, "source dir must be a directory")
+
+	sourceDirWithCutover := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDirWithCutover, "clients.csv"), []byte("client_no,client_name\nC-1,Example OU\n"), 0o644))
+	_, err = PrepareSmartAccountsSnapshot(SmartAccountsSnapshotOptions{SourceDir: sourceDirWithCutover, OutputDir: filepath.Join(t.TempDir(), "out"), CutoverDate: "2026/01/01"})
+	require.ErrorContains(t, err, "cutover date must be YYYY-MM-DD")
 
 	sourceDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "clients.csv"), []byte("client_no,client_name\nC-1,Example OU\n"), 0o644))
@@ -218,6 +252,12 @@ func TestSmartAccountsSnapshotHelperEdges(t *testing.T) {
 	kind, ok := smartAccountsFilenameKind("recurring_invoice_export.csv")
 	require.True(t, ok)
 	require.Equal(t, KindRecurringInvoices, kind)
+	kind, ok = smartAccountsFilenameKind("bankpayments.csv")
+	require.True(t, ok)
+	require.Equal(t, KindPayments, kind)
+	kind, ok = smartAccountsFilenameKind("articles.csv")
+	require.True(t, ok)
+	require.Equal(t, KindProducts, kind)
 	_, ok = smartAccountsFilenameKind("unmapped-file.csv")
 	require.False(t, ok)
 
@@ -227,8 +267,9 @@ func TestSmartAccountsSnapshotHelperEdges(t *testing.T) {
 		{Kind: KindContacts, OutputPath: "bundle/contacts-2.csv"},
 		{Kind: FileKind("custom"), OutputPath: "bundle/custom.csv"},
 	})
-	require.Equal(t, 1, strings.Count(command, "--contacts "))
-	require.Contains(t, command, "'/tmp/path with spaces/bundle/")
+	require.NotContains(t, command, "--contacts ")
+	require.Contains(t, command, "--manifest")
+	require.Contains(t, command, "'/tmp/path with spaces/manifest.json'")
 	require.NotContains(t, command, "custom.csv")
 
 	require.Equal(t, "''", shellQuote(""))

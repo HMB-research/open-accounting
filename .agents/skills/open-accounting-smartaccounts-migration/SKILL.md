@@ -33,27 +33,36 @@ go run ./cmd/smartaccounts-snapshot \
 
 The tool writes:
 
-- `manifest.json` with source hashes, snapshot hash, unsupported files, transformations, and a validation command.
+- `manifest.json` with source hashes, source row ranges, snapshot hash, unsupported files, transformations, and a validation command.
 - `bundle/*.csv` or `bundle/*.xml` canonical files ready for the existing migration flow.
 
 Run the emitted validation command, then plan:
 
 ```bash
-go run ./cmd/oa migration validate --provider-preset smartaccounts ... --json
+go run ./cmd/oa migration validate \
+  --provider-preset smartaccounts \
+  --manifest /path/to/private/smartaccounts/prepared/manifest.json \
+  --json
 go run ./cmd/oa migration plan \
   --provider-preset smartaccounts \
+  --manifest /path/to/private/smartaccounts/prepared/manifest.json \
   --opening-balance-entry-date 2026-01-01 \
   --bank-transaction-account-id <oa-bank-account-id> \
-  ... \
   --json
 ```
 
 Execute only after accountant review:
 
 ```bash
-go run ./cmd/oa migration execute --provider-preset smartaccounts ... --json
-go run ./cmd/oa migration execute --provider-preset smartaccounts ... --confirm --json
+go run ./cmd/oa migration execute --provider-preset smartaccounts --manifest /path/to/private/smartaccounts/prepared/manifest.json --json
+go run ./cmd/oa migration execute --provider-preset smartaccounts --manifest /path/to/private/smartaccounts/prepared/manifest.json --confirm --json
 ```
+
+SmartAccounts UI grid CSV exports can contain preamble rows, Estonian headers,
+localized enum/date/decimal values, duplicate client/vendor contacts, and
+summary-only invoice or journal rows. The snapshot tooling handles deterministic
+grid normalization, but do not import invoice or journal grid summaries as
+posted history when line-level fields are missing.
 
 ## API Extraction Notes
 
@@ -72,6 +81,7 @@ Track these gaps explicitly in docs/runbooks before claiming migration completen
 - Attachments, invoice PDFs, and report comparison exports need separate handling.
 - Bank transactions may require either bank-native statements or a SmartAccounts-specific transaction export shape.
 - Opening balances need a cutover date; bank transactions need an Open Accounting bank account id.
+- Invoice and journal UI grid exports are summary-only unless proven otherwise; full history needs API/detail exports with line-level invoice fields and account/debit-credit journal splits.
 - Payroll, TSD/KMD, inventory, fixed assets, recurring invoices, and cost centers must be validated with sample source exports before executing real data.
 - Reconciliation reports are not imported as entities; use them as post-import proof.
 
