@@ -20,7 +20,7 @@
     "test": "bun run paraglide && bun run test:prepared",
     "test:prepared": "vitest run",
     "test:watch": "bun run paraglide && vitest",
-    "test:coverage": "bun run paraglide && vitest run --coverage",
+    "test:coverage": "bun run paraglide && svelte-kit sync && vitest run --coverage",
     "test:e2e:smoke": "playwright test --config=playwright.demo.config.ts --project=smoke-chromium --workers=1",
     "test:e2e:smoke:headed": "playwright test --config=playwright.demo.config.ts --project=smoke-chromium --workers=1 --headed",
     "test:e2e": "playwright test --config=playwright.demo.config.ts",

@@ -3,7 +3,7 @@
 🇪🇪 **Made in Estonia** | Open-source accounting software for modern businesses
 
 [![CI](https://github.com/HMB-research/open-accounting/actions/workflows/ci.yml/badge.svg)](https://github.com/HMB-research/open-accounting/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/HMB-research/open-accounting/branch/main/graph/badge.svg)](https://codecov.io/gh/HMB-research/open-accounting)
+[![Coverage](https://github.com/HMB-research/open-accounting/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/HMB-research/open-accounting/actions/workflows/coverage.yml)
 [![CLI coverage](https://img.shields.io/badge/CLI%20coverage-100%25-brightgreen)](docs/USE_CASE_COVERAGE.md#current-evidence-baseline)
 [![Docs gate](https://img.shields.io/badge/docs%20gate-passing-brightgreen)](docs/DEVELOPMENT_STATUS.md#verified-engineering-baseline)
 [![Demo E2E](https://img.shields.io/badge/demo%20E2E-blocking%20CI-brightgreen)](docs/demo-e2e-testing.md)
@@ -174,7 +174,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Auth**      | JWT access/refresh tokens plus tenant-scoped API tokens                 |
 | **API Docs**  | Swagger/OpenAPI                                                         |
 | **Testing**   | Go unit tests, backend integration tests, Vitest, Playwright demo suite |
-| **CI/CD**     | GitHub Actions, Codecov                                                 |
+| **CI/CD**     | GitHub Actions                                                          |
 | **Container** | Docker, Docker Compose                                                  |
 
 ---
@@ -332,7 +332,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 # Development workflow
 git checkout -b feature/your-feature
 make test                    # Run tests
-make test-backend-coverage   # Run backend tests and enforce CLI coverage
+make test-backend-coverage   # Run backend tests and enforce exact backend plus CLI coverage
 make lint                    # Check code style
 git commit -m "feat: your feature"
 git push origin feature/your-feature

@@ -427,7 +427,7 @@ query := fmt.Sprintf(`
 
 ### Current Verification Gates
 
-Coverage is tracked in CI and Codecov, but the repository does not currently claim fixed 90%+/95% thresholds as a maintained standard.
+Coverage is tracked by GitHub Actions coverage gates. The backend gate enforces exact statement coverage from the generated Go profile, and frontend coverage runs through Vitest's V8 coverage provider.
 
 | Layer | Current Gate |
 |-------|--------------|
