@@ -415,6 +415,8 @@ func TestMainRunsWithInjectedMigrationPoolUnit(t *testing.T) {
 }
 
 func TestMainReportsMigrationErrorUnit(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+
 	oldArgs := os.Args
 	oldFatalMigrationError := fatalMigrationError
 	defer func() {
