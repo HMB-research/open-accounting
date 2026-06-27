@@ -2011,6 +2011,377 @@ func TestService_RuntimeStatusPrefersRestartFailureOverCrashedLoadedRuntime(t *t
 	}
 }
 
+func TestService_RuntimeStatusForPluginUnloadedRuntimeStates(t *testing.T) {
+	pluginID := uuid.New()
+	basePlugin := &Plugin{
+		ID:          pluginID,
+		Name:        "runtime-status-plugin",
+		DisplayName: "Runtime Status Plugin",
+		Version:     "1.0.0",
+		State:       StateEnabled,
+	}
+
+	tests := []struct {
+		name        string
+		plugin      *Plugin
+		manifest    *Manifest
+		wantState   RuntimeLifecycleState
+		wantHealth  RuntimeHealthState
+		wantRuntime string
+		wantMessage string
+		wantBaseURL string
+	}{
+		{
+			name:        "nil plugin and manifest",
+			wantState:   RuntimeStateNotConfigured,
+			wantHealth:  RuntimeHealthNotApplicable,
+			wantRuntime: "none",
+			wantMessage: "plugin does not declare backend runtime work",
+		},
+		{
+			name:   "disabled package runtime",
+			plugin: func() *Plugin { p := *basePlugin; p.State = StateInstalled; return &p }(),
+			manifest: &Manifest{
+				Backend: &BackendConfig{
+					Runtime: BackendRuntimePackage,
+					Routes:  []RouteConfig{{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"}},
+				},
+			},
+			wantState:   RuntimeStateNotLoaded,
+			wantHealth:  RuntimeHealthNotApplicable,
+			wantRuntime: BackendRuntimePackage,
+			wantMessage: "plugin is not enabled",
+		},
+		{
+			name:   "failed package runtime",
+			plugin: func() *Plugin { p := *basePlugin; p.State = StateFailed; return &p }(),
+			manifest: &Manifest{
+				Backend: &BackendConfig{
+					Runtime: BackendRuntimePackage,
+					Routes:  []RouteConfig{{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"}},
+				},
+			},
+			wantState:   RuntimeStateFailed,
+			wantHealth:  RuntimeHealthUnhealthy,
+			wantRuntime: BackendRuntimePackage,
+			wantMessage: "plugin failed to load",
+		},
+		{
+			name:   "enabled package runtime not loaded",
+			plugin: basePlugin,
+			manifest: &Manifest{
+				Backend: &BackendConfig{
+					Runtime: BackendRuntimePackage,
+					Routes:  []RouteConfig{{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"}},
+				},
+			},
+			wantState:   RuntimeStateNotLoaded,
+			wantHealth:  RuntimeHealthUnknown,
+			wantRuntime: BackendRuntimePackage,
+			wantMessage: "package runtime is not loaded",
+		},
+		{
+			name:   "external http runtime",
+			plugin: basePlugin,
+			manifest: &Manifest{
+				Backend: &BackendConfig{
+					Runtime: BackendRuntimeHTTP,
+					BaseURL: " http://127.0.0.1:3000 ",
+					Routes:  []RouteConfig{{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"}},
+				},
+			},
+			wantState:   RuntimeStateExternal,
+			wantHealth:  RuntimeHealthUnknown,
+			wantRuntime: BackendRuntimeHTTP,
+			wantMessage: "external HTTP runtime is operator-managed",
+			wantBaseURL: "http://127.0.0.1:3000",
+		},
+		{
+			name:   "legacy runtime work without configured runtime",
+			plugin: basePlugin,
+			manifest: &Manifest{
+				Backend: &BackendConfig{
+					Routes: []RouteConfig{{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"}},
+				},
+			},
+			wantState:   RuntimeStateNotConfigured,
+			wantHealth:  RuntimeHealthUnknown,
+			wantRuntime: "legacy",
+			wantMessage: "backend hooks or routes require backend.runtime",
+		},
+	}
+
+	service := NewServiceWithRepository(NewMockRepository(), nil, t.TempDir())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status := service.runtimeStatusForPlugin(tt.plugin, tt.manifest)
+			if status.State != tt.wantState {
+				t.Fatalf("state = %s, want %s", status.State, tt.wantState)
+			}
+			if status.Health != tt.wantHealth {
+				t.Fatalf("health = %s, want %s", status.Health, tt.wantHealth)
+			}
+			if status.Runtime != tt.wantRuntime {
+				t.Fatalf("runtime = %q, want %q", status.Runtime, tt.wantRuntime)
+			}
+			if status.Message != tt.wantMessage {
+				t.Fatalf("message = %q, want %q", status.Message, tt.wantMessage)
+			}
+			if status.BaseURL != tt.wantBaseURL {
+				t.Fatalf("base url = %q, want %q", status.BaseURL, tt.wantBaseURL)
+			}
+		})
+	}
+}
+
+func TestService_RuntimeHelperEdgeCases(t *testing.T) {
+	service := NewServiceWithRepository(NewMockRepository(), nil, t.TempDir())
+	pluginID := uuid.New()
+	plugin := &Plugin{
+		ID:          pluginID,
+		Name:        "helper-plugin",
+		DisplayName: "Helper Plugin",
+		State:       StateEnabled,
+		Manifest:    json.RawMessage(`{"name":"helper-plugin","version":"1.0.0"}`),
+	}
+	manifest := &Manifest{
+		Backend: &BackendConfig{
+			Runtime: BackendRuntimeHTTP,
+			BaseURL: "http://127.0.0.1:3000",
+			Hooks:   []HookConfig{{Event: EventInvoiceCreated, Handler: "/hooks/invoice"}},
+			Routes:  []RouteConfig{{Method: " post ", Path: "status", Handler: "/routes/status"}},
+		},
+	}
+
+	if manifestDeclaresRuntimeWork(nil) {
+		t.Fatal("nil manifest should not declare runtime work")
+	}
+	if manifestDeclaresRuntimeWork(&Manifest{Backend: &BackendConfig{}}) {
+		t.Fatal("backend without hooks or routes should not declare runtime work")
+	}
+	if !manifestDeclaresRuntimeWork(manifest) {
+		t.Fatal("manifest with hook and route should declare runtime work")
+	}
+
+	parsed, err := parsePluginManifest(plugin)
+	if err != nil {
+		t.Fatalf("parsePluginManifest(valid) error = %v", err)
+	}
+	if parsed.Name != "helper-plugin" {
+		t.Fatalf("parsed name = %q, want helper-plugin", parsed.Name)
+	}
+	parsed, err = parsePluginManifest(nil)
+	if err == nil || parsed != nil || !strings.Contains(err.Error(), "plugin is nil") {
+		t.Fatalf("parsePluginManifest(nil) = %+v, %v", parsed, err)
+	}
+	parsed, err = parsePluginManifest(&Plugin{Manifest: json.RawMessage(`{bad json`)})
+	if err == nil || parsed != nil || !strings.Contains(err.Error(), "failed to parse manifest") {
+		t.Fatalf("parsePluginManifest(invalid) = %+v, %v", parsed, err)
+	}
+
+	if normalizeRuntimePath("") != "/" || normalizeRuntimePath(" /status ") != "/status" || normalizeRuntimePath("status") != "/status" {
+		t.Fatalf("normalizeRuntimePath returned unexpected values")
+	}
+	if _, ok := findRuntimeRoute(&Manifest{}, http.MethodPost, "/status"); ok {
+		t.Fatal("manifest without backend should not match a route")
+	}
+	route, ok := findRuntimeRoute(manifest, "POST", "/status")
+	if !ok {
+		t.Fatal("expected normalized POST /status route match")
+	}
+	if route.Handler != "/routes/status" {
+		t.Fatalf("route handler = %q, want /routes/status", route.Handler)
+	}
+
+	decorated := decorateRuntimeStatus(plugin, manifest, PluginRuntimeStatus{Runtime: "none"})
+	if decorated.PluginID != pluginID {
+		t.Fatalf("decorated plugin id = %s, want %s", decorated.PluginID, pluginID)
+	}
+	if decorated.PluginName != "helper-plugin" || decorated.DisplayName != "Helper Plugin" {
+		t.Fatalf("decorated names = %q/%q", decorated.PluginName, decorated.DisplayName)
+	}
+	if decorated.Runtime != BackendRuntimeHTTP {
+		t.Fatalf("decorated runtime = %q, want %q", decorated.Runtime, BackendRuntimeHTTP)
+	}
+	if decorated.HookCount != 1 || decorated.RouteCount != 1 {
+		t.Fatalf("decorated counts = %d/%d, want 1/1", decorated.HookCount, decorated.RouteCount)
+	}
+
+	runtimeErr := errors.New("runtime failed")
+	service.recordRuntimeFailure(nil, manifest, runtimeErr, packageRuntimeStats{})
+	service.recordRuntimeFailure(plugin, manifest, nil, packageRuntimeStats{})
+	if len(service.runtimeFailures) != 0 {
+		t.Fatalf("runtime failures = %d, want none for nil inputs", len(service.runtimeFailures))
+	}
+	service.recordRuntimeFailure(plugin, manifest, runtimeErr, packageRuntimeStats{
+		RestartCount:  2,
+		CrashCount:    3,
+		LastExitError: "exit",
+	})
+	failure, ok := service.runtimeFailures[pluginID]
+	if !ok {
+		t.Fatal("expected recorded runtime failure")
+	}
+	if failure.RestartCount != 2 || failure.CrashCount != 3 || failure.LastError == "" {
+		t.Fatalf("failure status = %+v", failure)
+	}
+
+	var nilService *Service
+	if nilService.packageRuntimeCrashBackoff() != packageRuntimeCrashBackoff {
+		t.Fatal("nil service should use default package runtime backoff")
+	}
+	service.runtimeRestartBackoff = -time.Second
+	if service.packageRuntimeCrashBackoff() != packageRuntimeCrashBackoff {
+		t.Fatal("non-positive service backoff should use default")
+	}
+}
+
+func TestService_RestartPluginRuntimeRejectsDisabledAndUnsupportedPlugins(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+
+	t.Run("disabled package runtime", func(t *testing.T) {
+		manifest := &Manifest{
+			Name:        "disabled-package-runtime",
+			DisplayName: "Disabled Package Runtime",
+			Version:     "1.0.0",
+			Backend: &BackendConfig{
+				Runtime:    BackendRuntimePackage,
+				Package:    "backend",
+				Executable: "bin/runtime",
+				Routes: []RouteConfig{
+					{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"},
+				},
+			},
+			Permissions: []string{"routes:register"},
+		}
+		manifestJSON, err := manifest.ToJSON()
+		if err != nil {
+			t.Fatalf("serialize manifest: %v", err)
+		}
+		repo := NewMockRepository()
+		repo.plugins[pluginID] = &Plugin{
+			ID:                 pluginID,
+			Name:               manifest.Name,
+			DisplayName:        manifest.DisplayName,
+			Version:            manifest.Version,
+			State:              StateInstalled,
+			GrantedPermissions: []string{"routes:register"},
+			Manifest:           manifestJSON,
+		}
+		service := NewServiceWithRepository(repo, nil, t.TempDir())
+
+		status, err := service.RestartPluginRuntime(ctx, pluginID)
+		if err == nil {
+			t.Fatal("expected disabled plugin error")
+		}
+		if !errors.Is(err, ErrPluginNotEnabled) {
+			t.Fatalf("error = %v, want ErrPluginNotEnabled", err)
+		}
+		if status != nil {
+			t.Fatalf("status = %+v, want nil", status)
+		}
+	})
+
+	t.Run("external http runtime", func(t *testing.T) {
+		manifest := &Manifest{
+			Name:        "http-runtime-plugin",
+			DisplayName: "HTTP Runtime Plugin",
+			Version:     "1.0.0",
+			Backend: &BackendConfig{
+				Runtime: BackendRuntimeHTTP,
+				BaseURL: "http://127.0.0.1:3000",
+				Routes: []RouteConfig{
+					{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"},
+				},
+			},
+			Permissions: []string{"routes:register"},
+		}
+		manifestJSON, err := manifest.ToJSON()
+		if err != nil {
+			t.Fatalf("serialize manifest: %v", err)
+		}
+		repo := NewMockRepository()
+		repo.plugins[pluginID] = &Plugin{
+			ID:                 pluginID,
+			Name:               manifest.Name,
+			DisplayName:        manifest.DisplayName,
+			Version:            manifest.Version,
+			State:              StateEnabled,
+			GrantedPermissions: []string{"routes:register"},
+			Manifest:           manifestJSON,
+		}
+		service := NewServiceWithRepository(repo, nil, t.TempDir())
+
+		status, err := service.RestartPluginRuntime(ctx, pluginID)
+		if err == nil {
+			t.Fatal("expected unsupported runtime error")
+		}
+		if !errors.Is(err, ErrPluginRuntimeUnsupported) {
+			t.Fatalf("error = %v, want ErrPluginRuntimeUnsupported", err)
+		}
+		if status != nil {
+			t.Fatalf("status = %+v, want nil", status)
+		}
+	})
+}
+
+func TestService_RestartPluginRuntimeRestartsPackageRuntime(t *testing.T) {
+	ctx := context.Background()
+	pluginID := uuid.New()
+	pluginDir, manifest := createPackageRuntimePluginFixture(t, "package-manual-restart-plugin", []RouteConfig{
+		{Method: http.MethodGet, Path: "/status", Handler: "/routes/status"},
+	}, nil)
+	manifestJSON, err := manifest.ToJSON()
+	if err != nil {
+		t.Fatalf("serialize manifest: %v", err)
+	}
+
+	repo := NewMockRepository()
+	repo.plugins[pluginID] = &Plugin{
+		ID:                 pluginID,
+		Name:               manifest.Name,
+		DisplayName:        manifest.DisplayName,
+		Version:            manifest.Version,
+		State:              StateEnabled,
+		GrantedPermissions: []string{"routes:register"},
+		Manifest:           manifestJSON,
+	}
+	service := NewServiceWithRepository(repo, nil, pluginDir)
+	if err := service.loadPlugin(repo.plugins[pluginID], manifest); err != nil {
+		t.Fatalf("load package runtime plugin: %v", err)
+	}
+	t.Cleanup(func() {
+		service.unloadPlugin(manifest.Name)
+	})
+
+	initialStatus, err := service.GetPluginRuntimeStatus(ctx, pluginID)
+	if err != nil {
+		t.Fatalf("get initial runtime status: %v", err)
+	}
+	if initialStatus.PID == nil {
+		t.Fatal("expected initial package runtime pid")
+	}
+	initialPID := *initialStatus.PID
+
+	restarted, err := service.RestartPluginRuntime(ctx, pluginID)
+	if err != nil {
+		t.Fatalf("restart plugin runtime: %v", err)
+	}
+	if restarted.State != RuntimeStateRunning {
+		t.Fatalf("state = %s, want %s", restarted.State, RuntimeStateRunning)
+	}
+	if restarted.RestartCount != initialStatus.RestartCount+1 {
+		t.Fatalf("restart count = %d, want %d", restarted.RestartCount, initialStatus.RestartCount+1)
+	}
+	if restarted.PID == nil {
+		t.Fatal("expected restarted package runtime pid")
+	}
+	if *restarted.PID == initialPID {
+		t.Fatalf("pid = %d, want a newly started runtime", *restarted.PID)
+	}
+}
+
 func TestService_InvokeTenantPluginRoute_RequiresEnabledTenantPlugin(t *testing.T) {
 	repo := NewMockRepository()
 	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
@@ -2246,6 +2617,30 @@ func TestService_InstallPlugin_DemoFixture(t *testing.T) {
 	}
 	if installed.State != StateInstalled {
 		t.Fatalf("expected installed state, got %s", installed.State)
+	}
+}
+
+func TestService_InstallPlugin_DemoFixtureAlreadyInstalled(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary is required for plugin install fixture test")
+	}
+
+	ctx := context.Background()
+	t.Setenv("DEMO_MODE", "true")
+	repo := NewMockRepository()
+	repo.plugins[uuid.New()] = &Plugin{Name: "demo-admin-install"}
+	service := NewServiceWithRepository(repo, nil, t.TempDir())
+
+	installed, err := service.InstallPlugin(ctx, DemoInstallFixtureRepositoryURL)
+
+	if err == nil {
+		t.Fatal("expected already installed error")
+	}
+	if installed != nil {
+		t.Fatalf("installed plugin = %+v, want nil", installed)
+	}
+	if !strings.Contains(err.Error(), "already installed") {
+		t.Fatalf("error = %v, want already installed", err)
 	}
 }
 

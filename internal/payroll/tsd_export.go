@@ -10,6 +10,17 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+type tsdXMLEncoder interface {
+	Indent(prefix, indent string)
+	Encode(v any) error
+}
+
+var newTSDXMLEncoder = func(buf *bytes.Buffer) tsdXMLEncoder {
+	encoder := xml.NewEncoder(buf)
+	encoder.Indent("", "  ")
+	return encoder
+}
+
 // TSD XML structures for e-MTA submission
 // Based on Estonian Tax and Customs Board TSD XML schema (01.01.2025)
 
@@ -141,8 +152,7 @@ func (s *Service) ExportTSDToXML(ctx context.Context, schemaName, tenantID strin
 	var buf bytes.Buffer
 	buf.WriteString(xml.Header)
 
-	encoder := xml.NewEncoder(&buf)
-	encoder.Indent("", "  ")
+	encoder := newTSDXMLEncoder(&buf)
 
 	if err := encoder.Encode(doc); err != nil {
 		return nil, fmt.Errorf("encode XML: %w", err)

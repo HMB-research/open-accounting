@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/payments"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -233,6 +235,225 @@ func TestPaymentReceiptEvidenceRequirement(t *testing.T) {
 	require.Len(t, conflict.RemediationActions, 1)
 	assert.Equal(t, "document_evidence_missing", conflict.RemediationActions[0].Code)
 	assert.Equal(t, "oa documents upload --entity-type payment --entity-id pay-1 --document-type receipt --file <file>", conflict.RemediationActions[0].CLICommand)
+}
+
+func TestEmailPaymentReceiptSendsEmail(t *testing.T) {
+	h, repo, tenantRepo := setupPaymentTestHandlers()
+	emailRepo, mailer := configureEmailHandlerService(h, "tenant-1")
+	tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	repo.payments["pay-email"] = &payments.Payment{
+		ID:            "pay-email",
+		TenantID:      "tenant-1",
+		PaymentNumber: "PMT-EMAIL-001",
+		PaymentType:   payments.PaymentTypeReceived,
+		PaymentDate:   time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		Amount:        decimal.NewFromInt(100),
+		Currency:      "EUR",
+		Reference:     "REF-100",
+	}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/payments/pay-email/email-receipt", email.SendPaymentReceiptRequest{
+		RecipientEmail: "payer@example.com",
+		RecipientName:  "Payer",
+		Subject:        "Custom receipt subject",
+		Message:        "Thanks for your payment.",
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "paymentID": "pay-email"})
+	rr := httptest.NewRecorder()
+
+	h.EmailPaymentReceipt(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var result email.EmailSentResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	assert.True(t, result.Success)
+	assert.Equal(t, 1, mailer.sentCount)
+	require.Len(t, emailRepo.logs, 1)
+	assert.Equal(t, string(email.TemplatePaymentReceipt), emailRepo.logs[0].EmailType)
+	assert.Equal(t, "pay-email", emailRepo.logs[0].RelatedID)
+	assert.Equal(t, "Custom receipt subject", emailRepo.logs[0].Subject)
+	assert.Equal(t, email.StatusSent, emailRepo.logs[0].Status)
+}
+
+func TestEmailPaymentReceiptValidationAndErrorBranches(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       any
+		rawBody    string
+		setup      func(*Handlers, *mockPaymentsRepository, *mockTenantRepository)
+		wantStatus int
+		wantError  string
+	}{
+		{
+			name:       "invalid JSON",
+			rawBody:    "{",
+			wantStatus: http.StatusBadRequest,
+			wantError:  "Invalid request body",
+		},
+		{
+			name:       "missing recipient",
+			body:       email.SendPaymentReceiptRequest{},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "recipient email is required",
+		},
+		{
+			name: "payment not found",
+			body: email.SendPaymentReceiptRequest{RecipientEmail: "payer@example.com"},
+			setup: func(_ *Handlers, _ *mockPaymentsRepository, tenantRepo *mockTenantRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+			},
+			wantStatus: http.StatusNotFound,
+			wantError:  "Payment not found",
+		},
+		{
+			name: "required evidence without document service",
+			body: email.SendPaymentReceiptRequest{
+				RecipientEmail:          "payer@example.com",
+				RequireApprovedEvidence: true,
+			},
+			setup: func(_ *Handlers, repo *mockPaymentsRepository, tenantRepo *mockTenantRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				repo.payments["pay-email"] = &payments.Payment{
+					ID:          "pay-email",
+					TenantID:    "tenant-1",
+					PaymentType: payments.PaymentTypeReceived,
+					PaymentDate: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+					Amount:      decimal.NewFromInt(100),
+					Currency:    "EUR",
+				}
+			},
+			wantStatus: http.StatusConflict,
+			wantError:  "approved payment receipt evidence is required",
+		},
+		{
+			name: "evidence evaluation failure",
+			body: email.SendPaymentReceiptRequest{
+				RecipientEmail:          "payer@example.com",
+				RequireApprovedEvidence: true,
+			},
+			setup: func(h *Handlers, repo *mockPaymentsRepository, tenantRepo *mockTenantRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				repo.payments["pay-email"] = &payments.Payment{
+					ID:          "pay-email",
+					TenantID:    "tenant-1",
+					PaymentType: payments.PaymentTypeReceived,
+					PaymentDate: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+					Amount:      decimal.NewFromInt(100),
+					Currency:    "EUR",
+				}
+				docRepo := newMockDocumentRepository()
+				docRepo.listDocumentsErr = errors.New("document repository unavailable")
+				h.documentsService = documents.NewService(docRepo, nil)
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "Failed to verify payment receipt evidence",
+		},
+		{
+			name: "tenant lookup failure",
+			body: email.SendPaymentReceiptRequest{RecipientEmail: "payer@example.com"},
+			setup: func(_ *Handlers, repo *mockPaymentsRepository, _ *mockTenantRepository) {
+				repo.payments["pay-email"] = &payments.Payment{
+					ID:          "pay-email",
+					TenantID:    "tenant-1",
+					PaymentType: payments.PaymentTypeReceived,
+					PaymentDate: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+					Amount:      decimal.NewFromInt(100),
+					Currency:    "EUR",
+				}
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "Failed to get tenant",
+		},
+		{
+			name: "template lookup failure",
+			body: email.SendPaymentReceiptRequest{RecipientEmail: "payer@example.com"},
+			setup: func(h *Handlers, repo *mockPaymentsRepository, tenantRepo *mockTenantRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				repo.payments["pay-email"] = &payments.Payment{
+					ID:          "pay-email",
+					TenantID:    "tenant-1",
+					PaymentType: payments.PaymentTypeReceived,
+					PaymentDate: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+					Amount:      decimal.NewFromInt(100),
+					Currency:    "EUR",
+				}
+				emailRepo, _ := configureEmailHandlerService(h, "tenant-1")
+				emailRepo.getTemplateErr = errors.New("template repository unavailable")
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "Failed to get email template",
+		},
+		{
+			name: "template render failure",
+			body: email.SendPaymentReceiptRequest{RecipientEmail: "payer@example.com"},
+			setup: func(h *Handlers, repo *mockPaymentsRepository, tenantRepo *mockTenantRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				repo.payments["pay-email"] = &payments.Payment{
+					ID:          "pay-email",
+					TenantID:    "tenant-1",
+					PaymentType: payments.PaymentTypeReceived,
+					PaymentDate: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+					Amount:      decimal.NewFromInt(100),
+					Currency:    "EUR",
+				}
+				emailRepo, _ := configureEmailHandlerService(h, "tenant-1")
+				emailRepo.templates[emailTemplateKey("tenant-1", email.TemplatePaymentReceipt)] = email.EmailTemplate{
+					TenantID:     "tenant-1",
+					TemplateType: email.TemplatePaymentReceipt,
+					Subject:      "{{",
+					BodyHTML:     "<p>Receipt</p>",
+					IsActive:     true,
+				}
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "Failed to render email template",
+		},
+		{
+			name: "send failure",
+			body: email.SendPaymentReceiptRequest{RecipientEmail: "payer@example.com"},
+			setup: func(h *Handlers, repo *mockPaymentsRepository, tenantRepo *mockTenantRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				repo.payments["pay-email"] = &payments.Payment{
+					ID:          "pay-email",
+					TenantID:    "tenant-1",
+					PaymentType: payments.PaymentTypeReceived,
+					PaymentDate: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+					Amount:      decimal.NewFromInt(100),
+					Currency:    "EUR",
+				}
+				emailRepo, _ := configureEmailHandlerService(h, "tenant-1")
+				emailRepo.settings["tenant-1"] = []byte(`{}`)
+			},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "SMTP is not configured",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo, tenantRepo := setupPaymentTestHandlers()
+			if tt.setup != nil {
+				tt.setup(h, repo, tenantRepo)
+			}
+
+			var req *http.Request
+			if tt.rawBody != "" {
+				req = httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/payments/pay-email/email-receipt", bytes.NewBufferString(tt.rawBody))
+				req.Header.Set("Content-Type", "application/json")
+			} else {
+				req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/payments/pay-email/email-receipt", tt.body, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+			}
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "paymentID": "pay-email"})
+			rr := httptest.NewRecorder()
+
+			h.EmailPaymentReceipt(rr, req)
+
+			require.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
+			var body map[string]string
+			require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
+			assert.Contains(t, body["error"], tt.wantError)
+		})
+	}
 }
 
 func TestListPayments(t *testing.T) {

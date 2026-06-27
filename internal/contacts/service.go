@@ -16,12 +16,14 @@ type Service struct {
 	repo Repository
 }
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // NewService creates a new contacts service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
 	if db == nil {
 		return &Service{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create contacts GORM repository: %w", err))
 	}
@@ -35,17 +37,14 @@ func NewServiceWithRepository(repo Repository) *Service {
 
 // Create creates a new contact
 func (s *Service) Create(ctx context.Context, tenantID string, schemaName string, req *CreateContactRequest) (*Contact, error) {
-	if err := validateCreateRequest(req); err != nil {
+	defaultAccountID, err := validateCreateRequestAndNormalizeDefaultAccount(req)
+	if err != nil {
 		return nil, err
 	}
 
 	contactID := req.ID
 	if contactID == "" {
 		contactID = uuid.New().String()
-	}
-	defaultAccountID, err := normalizeOptionalContactUUIDPtr(req.DefaultAccountID, "default_account_id")
-	if err != nil {
-		return nil, err
 	}
 
 	contact := &Contact{
@@ -89,24 +88,26 @@ func (s *Service) Create(ctx context.Context, tenantID string, schemaName string
 
 // validateCreateRequest validates the create contact request
 func validateCreateRequest(req *CreateContactRequest) error {
+	_, err := validateCreateRequestAndNormalizeDefaultAccount(req)
+	return err
+}
+
+func validateCreateRequestAndNormalizeDefaultAccount(req *CreateContactRequest) (*string, error) {
 	if req.ID != "" {
 		if _, err := uuid.Parse(req.ID); err != nil {
-			return fmt.Errorf("id must be a valid UUID")
+			return nil, fmt.Errorf("id must be a valid UUID")
 		}
 	}
 	if req.Name == "" {
-		return fmt.Errorf("name is required")
+		return nil, fmt.Errorf("name is required")
 	}
 	if req.ContactType == "" {
-		return fmt.Errorf("contact type is required")
+		return nil, fmt.Errorf("contact type is required")
 	}
 	if !isValidContactType(req.ContactType) {
-		return fmt.Errorf("invalid contact type: %s", req.ContactType)
+		return nil, fmt.Errorf("invalid contact type: %s", req.ContactType)
 	}
-	if _, err := normalizeOptionalContactUUIDPtr(req.DefaultAccountID, "default_account_id"); err != nil {
-		return err
-	}
-	return nil
+	return normalizeOptionalContactUUIDPtr(req.DefaultAccountID, "default_account_id")
 }
 
 func normalizeOptionalContactUUIDPtr(value *string, field string) (*string, error) {

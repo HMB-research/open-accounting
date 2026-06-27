@@ -37,16 +37,26 @@ type Service struct {
 	invoicing assetInvoiceResolver
 }
 
+var (
+	newAssetsAccountingService = accounting.NewService
+	newAssetsContactsService   = func(db *pgxpool.Pool) contactLister {
+		return contacts.NewService(db)
+	}
+	newAssetsInvoicingService = func(db *pgxpool.Pool, ledger *accounting.Service) assetInvoiceResolver {
+		return invoicing.NewService(db, ledger)
+	}
+)
+
 // NewService creates a new assets service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool) *Service {
-	ledger := accounting.NewService(db)
+	ledger := newAssetsAccountingService(db)
 	service := &Service{
 		repo:     NewRepository(db),
 		ledger:   ledger,
-		contacts: contacts.NewService(db),
+		contacts: newAssetsContactsService(db),
 	}
 	if db != nil {
-		service.invoicing = invoicing.NewService(db, ledger)
+		service.invoicing = newAssetsInvoicingService(db, ledger)
 	}
 	return service
 }

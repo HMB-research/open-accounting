@@ -73,6 +73,34 @@ func TestEnsureAndGetAppliedMigrationsUnit(t *testing.T) {
 	}
 }
 
+func TestGetAppliedMigrationsErrorBranchesUnit(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("query error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		pool.queryErr = errors.New("query unavailable")
+
+		if _, err := getAppliedMigrations(ctx, pool); err == nil || !strings.Contains(err.Error(), "query unavailable") {
+			t.Fatalf("expected query error, got %v", err)
+		}
+	})
+
+	t.Run("scan error", func(t *testing.T) {
+		pool := newFakeMigrationPool(map[string]bool{"001_initial": true})
+		pool.scanErr = errors.New("scan failed")
+
+		if _, err := getAppliedMigrations(ctx, pool); err == nil || !strings.Contains(err.Error(), "scan failed") {
+			t.Fatalf("expected scan error, got %v", err)
+		}
+	})
+}
+
+func TestGetMigrationFilesMalformedPatternUnit(t *testing.T) {
+	if _, err := getMigrationFiles("[", ".up"); err == nil {
+		t.Fatal("expected malformed glob pattern to fail")
+	}
+}
+
 func TestMigrateUpHonorsStepsSkipsAndNoopsUnit(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -137,6 +165,79 @@ func TestMigrateUpRollsBackFailedMigrationUnit(t *testing.T) {
 	}
 }
 
+func TestMigrateUpErrorBranchesUnit(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("applied query error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		pool.queryErr = errors.New("query unavailable")
+
+		err := migrateUp(ctx, pool, t.TempDir(), 0)
+		if err == nil || !strings.Contains(err.Error(), "get applied migrations") {
+			t.Fatalf("expected applied migration query error, got %v", err)
+		}
+	})
+
+	t.Run("glob error", func(t *testing.T) {
+		err := migrateUp(ctx, newFakeMigrationPool(nil), "[", 0)
+		if err == nil || !strings.Contains(err.Error(), "get migration files") {
+			t.Fatalf("expected migration file glob error, got %v", err)
+		}
+	})
+
+	t.Run("read error", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, "001_bad.up.sql"), 0o755); err != nil {
+			t.Fatalf("failed to create directory migration: %v", err)
+		}
+
+		err := migrateUp(ctx, newFakeMigrationPool(nil), dir, 0)
+		if err == nil || !strings.Contains(err.Error(), "read migration file") {
+			t.Fatalf("expected migration read error, got %v", err)
+		}
+	})
+
+	t.Run("begin error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.up.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(nil)
+		pool.beginErr = errors.New("begin failed")
+
+		err := migrateUp(ctx, pool, dir, 0)
+		if err == nil || !strings.Contains(err.Error(), "begin transaction") {
+			t.Fatalf("expected begin error, got %v", err)
+		}
+	})
+
+	t.Run("record error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.up.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(nil)
+		pool.txErrContains = "INSERT INTO schema_migrations"
+		pool.txErr = errors.New("insert failed")
+
+		err := migrateUp(ctx, pool, dir, 0)
+		if err == nil || !strings.Contains(err.Error(), "record migration 001_initial") {
+			t.Fatalf("expected record migration error, got %v", err)
+		}
+		if got := len(pool.txs); got != 1 || !pool.txs[0].rolledBack {
+			t.Fatalf("expected record failure rollback, txs=%+v", pool.txs)
+		}
+	})
+
+	t.Run("commit error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.up.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(nil)
+		pool.commitErr = errors.New("commit failed")
+
+		err := migrateUp(ctx, pool, dir, 0)
+		if err == nil || !strings.Contains(err.Error(), "commit migration 001_initial") {
+			t.Fatalf("expected commit migration error, got %v", err)
+		}
+	})
+}
+
 func TestMigrateDownDefaultsSkipsAndNoopsUnit(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -174,6 +275,79 @@ func TestMigrateDownDefaultsSkipsAndNoopsUnit(t *testing.T) {
 	}
 }
 
+func TestMigrateDownErrorBranchesUnit(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("applied query error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		pool.queryErr = errors.New("query unavailable")
+
+		err := migrateDown(ctx, pool, t.TempDir(), 1)
+		if err == nil || !strings.Contains(err.Error(), "get applied migrations") {
+			t.Fatalf("expected applied migration query error, got %v", err)
+		}
+	})
+
+	t.Run("glob error", func(t *testing.T) {
+		err := migrateDown(ctx, newFakeMigrationPool(nil), "[", 1)
+		if err == nil || !strings.Contains(err.Error(), "get migration files") {
+			t.Fatalf("expected migration file glob error, got %v", err)
+		}
+	})
+
+	t.Run("read error", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, "001_bad.down.sql"), 0o755); err != nil {
+			t.Fatalf("failed to create directory migration: %v", err)
+		}
+
+		err := migrateDown(ctx, newFakeMigrationPool(map[string]bool{"001_bad": true}), dir, 1)
+		if err == nil || !strings.Contains(err.Error(), "read migration file") {
+			t.Fatalf("expected rollback read error, got %v", err)
+		}
+	})
+
+	t.Run("begin error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.down.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(map[string]bool{"001_initial": true})
+		pool.beginErr = errors.New("begin failed")
+
+		err := migrateDown(ctx, pool, dir, 1)
+		if err == nil || !strings.Contains(err.Error(), "begin transaction") {
+			t.Fatalf("expected begin error, got %v", err)
+		}
+	})
+
+	t.Run("record delete error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.down.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(map[string]bool{"001_initial": true})
+		pool.txErrContains = "DELETE FROM schema_migrations"
+		pool.txErr = errors.New("delete failed")
+
+		err := migrateDown(ctx, pool, dir, 1)
+		if err == nil || !strings.Contains(err.Error(), "remove migration record 001_initial") {
+			t.Fatalf("expected remove migration record error, got %v", err)
+		}
+		if got := len(pool.txs); got != 1 || !pool.txs[0].rolledBack {
+			t.Fatalf("expected delete failure rollback, txs=%+v", pool.txs)
+		}
+	})
+
+	t.Run("commit error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.down.sql", "SELECT 1;")
+		pool := newFakeMigrationPool(map[string]bool{"001_initial": true})
+		pool.commitErr = errors.New("commit failed")
+
+		err := migrateDown(ctx, pool, dir, 1)
+		if err == nil || !strings.Contains(err.Error(), "commit rollback 001_initial") {
+			t.Fatalf("expected commit rollback error, got %v", err)
+		}
+	})
+}
+
 func TestMigrateDownRollsBackFailedRollbackUnit(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -205,9 +379,213 @@ func TestMainRequiresDatabaseURLUnit(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected helper to fail without db url, output: %s", string(out))
 	}
-	if !strings.Contains(string(out), "Database URL required") {
+	if !strings.Contains(string(out), "missing database URL") {
 		t.Fatalf("expected missing database error, got: %s", string(out))
 	}
+}
+
+func TestMainRunsWithInjectedMigrationPoolUnit(t *testing.T) {
+	dir := t.TempDir()
+	pool := newFakeMigrationPool(nil)
+	oldArgs := os.Args
+	oldNewMigrationPool := newMigrationPool
+	oldFatalMigrationError := fatalMigrationError
+	defer func() {
+		os.Args = oldArgs
+		newMigrationPool = oldNewMigrationPool
+		fatalMigrationError = oldFatalMigrationError
+	}()
+
+	os.Args = []string{"migrate", "-db", "postgres://unit", "-path", dir, "-direction", "up"}
+	newMigrationPool = func(ctx context.Context, databaseURL string) (migrationPool, error) {
+		if databaseURL != "postgres://unit" {
+			t.Fatalf("databaseURL = %q, want postgres://unit", databaseURL)
+		}
+		return pool, nil
+	}
+
+	main()
+
+	if !pool.closed {
+		t.Fatal("expected migration pool to be closed")
+	}
+	if len(pool.execs) == 0 || !strings.Contains(pool.execs[0], "CREATE TABLE IF NOT EXISTS schema_migrations") {
+		t.Fatalf("expected migrations table DDL, got %v", pool.execs)
+	}
+}
+
+func TestMainReportsMigrationErrorUnit(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+
+	oldArgs := os.Args
+	oldFatalMigrationError := fatalMigrationError
+	defer func() {
+		os.Args = oldArgs
+		fatalMigrationError = oldFatalMigrationError
+	}()
+
+	os.Args = []string{"migrate"}
+	var gotErr error
+	fatalMigrationError = func(err error) {
+		gotErr = err
+		panic("fatal migration error")
+	}
+
+	defer func() {
+		recovered := recover()
+		if recovered != "fatal migration error" {
+			t.Fatalf("recover() = %v, want fatal migration error", recovered)
+		}
+		if gotErr == nil || !strings.Contains(gotErr.Error(), "missing database URL") {
+			t.Fatalf("fatal error = %v, want missing database URL", gotErr)
+		}
+	}()
+
+	main()
+}
+
+func TestDefaultFatalMigrationErrorLogsAndExitsUnit(t *testing.T) {
+	oldExitMigrationProcess := exitMigrationProcess
+	defer func() {
+		exitMigrationProcess = oldExitMigrationProcess
+	}()
+
+	var exitCode int
+	exitMigrationProcess = func(code int) {
+		exitCode = code
+		panic("exit called")
+	}
+
+	defer func() {
+		recovered := recover()
+		if recovered != "exit called" {
+			t.Fatalf("recover() = %v, want exit called", recovered)
+		}
+		if exitCode != 1 {
+			t.Fatalf("exit code = %d, want 1", exitCode)
+		}
+	}()
+
+	defaultFatalMigrationError(errors.New("boom"))
+}
+
+func TestOpenMigrationPoolReturnsPoolUnit(t *testing.T) {
+	pool, err := openMigrationPool(context.Background(), "postgres://unit")
+	if err != nil {
+		t.Fatalf("openMigrationPool() error = %v", err)
+	}
+	if pool == nil {
+		t.Fatal("openMigrationPool() returned nil pool")
+	}
+	pool.Close()
+}
+
+func TestRunMigrationCLIErrorBranchesUnit(t *testing.T) {
+	oldNewMigrationPool := newMigrationPool
+	defer func() {
+		newMigrationPool = oldNewMigrationPool
+	}()
+
+	t.Run("flag parse error", func(t *testing.T) {
+		err := runMigrationCLI(context.Background(), []string{"-steps", "not-a-number"}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "invalid value") {
+			t.Fatalf("expected flag parse error, got %v", err)
+		}
+	})
+
+	t.Run("connect error", func(t *testing.T) {
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return nil, errors.New("connect failed")
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit"}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "failed to connect to database") {
+			t.Fatalf("expected connect error, got %v", err)
+		}
+	})
+
+	t.Run("ping error closes pool", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		pool.pingErr = errors.New("ping failed")
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit"}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "failed to ping database") {
+			t.Fatalf("expected ping error, got %v", err)
+		}
+		if !pool.closed {
+			t.Fatal("expected pool to be closed after ping error")
+		}
+	})
+
+	t.Run("environment database url and down direction", func(t *testing.T) {
+		dir := t.TempDir()
+		writeUnitMigration(t, dir, "001_initial.down.sql", "SELECT down;")
+		pool := newFakeMigrationPool(map[string]bool{"001_initial": true})
+		newMigrationPool = func(ctx context.Context, databaseURL string) (migrationPool, error) {
+			if databaseURL != "postgres://env" {
+				t.Fatalf("databaseURL = %q, want postgres://env", databaseURL)
+			}
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-path", dir, "-direction", "down"}, func(key string) string {
+			if key == "DATABASE_URL" {
+				return "postgres://env"
+			}
+			return ""
+		})
+		if err != nil {
+			t.Fatalf("runMigrationCLI down failed: %v", err)
+		}
+		if pool.applied["001_initial"] {
+			t.Fatal("expected down migration to remove applied version")
+		}
+	})
+
+	t.Run("invalid direction", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit", "-direction", "sideways"}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), `invalid direction "sideways"`) {
+			t.Fatalf("expected invalid direction error, got %v", err)
+		}
+	})
+
+	t.Run("ensure migrations table error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		pool.execErr = errors.New("ddl failed")
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit"}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "failed to create migrations table") {
+			t.Fatalf("expected migrations table error, got %v", err)
+		}
+	})
+
+	t.Run("migrate up error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit", "-path", "["}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "migration up failed") {
+			t.Fatalf("expected migration up error, got %v", err)
+		}
+	})
+
+	t.Run("migrate down error", func(t *testing.T) {
+		pool := newFakeMigrationPool(nil)
+		newMigrationPool = func(context.Context, string) (migrationPool, error) {
+			return pool, nil
+		}
+		err := runMigrationCLI(context.Background(), []string{"-db", "postgres://unit", "-direction", "down", "-path", "["}, func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "migration down failed") {
+			t.Fatalf("expected migration down error, got %v", err)
+		}
+	})
 }
 
 func TestMainUnitHelperProcess(t *testing.T) {
@@ -240,10 +618,13 @@ type fakeMigrationPool struct {
 	execErr       error
 	queryErr      error
 	rowsErr       error
+	scanErr       error
 	beginErr      error
 	txErrContains string
 	txErr         error
 	commitErr     error
+	pingErr       error
+	closed        bool
 }
 
 func newFakeMigrationPool(applied map[string]bool) *fakeMigrationPool {
@@ -275,7 +656,7 @@ func (p *fakeMigrationPool) Query(_ context.Context, _ string, _ ...any) (pgx.Ro
 	}
 	sort.Strings(versions)
 
-	return &fakeMigrationRows{versions: versions, err: p.rowsErr}, nil
+	return &fakeMigrationRows{versions: versions, err: p.rowsErr, scanErr: p.scanErr}, nil
 }
 
 func (p *fakeMigrationPool) Begin(context.Context) (pgx.Tx, error) {
@@ -288,11 +669,20 @@ func (p *fakeMigrationPool) Begin(context.Context) (pgx.Tx, error) {
 	return tx, nil
 }
 
+func (p *fakeMigrationPool) Ping(context.Context) error {
+	return p.pingErr
+}
+
+func (p *fakeMigrationPool) Close() {
+	p.closed = true
+}
+
 type fakeMigrationRows struct {
 	versions []string
 	index    int
 	closed   bool
 	err      error
+	scanErr  error
 }
 
 func (r *fakeMigrationRows) Close() {
@@ -321,6 +711,9 @@ func (r *fakeMigrationRows) Next() bool {
 }
 
 func (r *fakeMigrationRows) Scan(dest ...any) error {
+	if r.scanErr != nil {
+		return r.scanErr
+	}
 	if len(dest) != 1 {
 		return errors.New("expected one scan destination")
 	}

@@ -26,7 +26,19 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 }
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("banking repository database is not configured")
+	}
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+}
+
+func qualifiedTableAfterSchemaValidated(schemaName, tableName string) string {
+	qualifiedTable, _ := database.QualifiedTable(schemaName, tableName)
+	return qualifiedTable
+}
+
+func tenantTableAfterSchemaValidated(db *gorm.DB, schemaName, tableName string) *gorm.DB {
+	return db.Session(&gorm.Session{NewDB: true}).Table(qualifiedTableAfterSchemaValidated(schemaName, tableName))
 }
 
 // CreateBankAccount inserts a new bank account
@@ -356,22 +368,16 @@ func (r *GORMRepository) GetTransaction(ctx context.Context, schemaName, tenantI
 
 // ListPaymentMatchCandidates returns unallocated payments that can be matched to a bank transaction.
 func (r *GORMRepository) ListPaymentMatchCandidates(ctx context.Context, schemaName, tenantID string, paymentType payments.PaymentType, amount decimal.Decimal, limit int) ([]PaymentForMatching, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("banking repository database is not configured")
+	}
 	paymentsTable, err := database.QualifiedTable(schemaName, "payments")
 	if err != nil {
 		return nil, err
 	}
-	allocationsTable, err := database.QualifiedTable(schemaName, "payment_allocations")
-	if err != nil {
-		return nil, err
-	}
-	transactionsTable, err := database.QualifiedTable(schemaName, "bank_transactions")
-	if err != nil {
-		return nil, err
-	}
-	contactsTable, err := database.QualifiedTable(schemaName, "contacts")
-	if err != nil {
-		return nil, err
-	}
+	allocationsTable := qualifiedTableAfterSchemaValidated(schemaName, "payment_allocations")
+	transactionsTable := qualifiedTableAfterSchemaValidated(schemaName, "bank_transactions")
+	contactsTable := qualifiedTableAfterSchemaValidated(schemaName, "contacts")
 
 	type paymentMatchCandidateRow struct {
 		ID            string
@@ -522,18 +528,20 @@ func (r *GORMRepository) CreatePaymentFromTransaction(ctx context.Context, schem
 	if transaction.Status != StatusUnmatched {
 		return "", ErrTransactionAlreadyMatched
 	}
+	if r.db == nil {
+		return "", fmt.Errorf("banking repository database is not configured")
+	}
 
 	paymentType := paymentTypeForTransactionAmount(transaction.Amount)
 	paymentID := uuid.New().String()
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		paymentsDB, err := database.TenantTable(tx, schemaName, "payments")
-		if err != nil {
-			return err
-		}
-		transactionsDB, err := database.TenantTable(tx, schemaName, "bank_transactions")
-		if err != nil {
-			return err
-		}
+	paymentsTable, err := database.QualifiedTable(schemaName, "payments")
+	if err != nil {
+		return "", err
+	}
+	transactionsTable := qualifiedTableAfterSchemaValidated(schemaName, "bank_transactions")
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		paymentsDB := tx.Session(&gorm.Session{NewDB: true}).Table(paymentsTable)
+		transactionsDB := tx.Session(&gorm.Session{NewDB: true}).Table(transactionsTable)
 
 		prefix := payments.PaymentNumberPrefix(paymentType)
 		var paymentNumbers []string
@@ -593,15 +601,21 @@ func (r *GORMRepository) CreatePaymentFromTransaction(ctx context.Context, schem
 
 // IsTransactionDuplicate checks if a transaction is a duplicate
 func (r *GORMRepository) IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error) {
-	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if r.db == nil {
+		return false, fmt.Errorf("banking repository database is not configured")
+	}
+	tableName, err := database.QualifiedTable(schemaName, "bank_transactions")
 	if err != nil {
 		return false, err
+	}
+	newTransactionsDB := func() *gorm.DB {
+		return r.db.WithContext(ctx).Session(&gorm.Session{NewDB: true}).Table(tableName)
 	}
 
 	// First check by external ID if provided
 	if externalID != "" {
 		var count int64
-		err := db.Where("tenant_id = ? AND bank_account_id = ? AND external_id = ?", tenantID, bankAccountID, externalID).
+		err := newTransactionsDB().Where("tenant_id = ? AND bank_account_id = ? AND external_id = ?", tenantID, bankAccountID, externalID).
 			Count(&count).Error
 		if err != nil {
 			return false, fmt.Errorf("check duplicate: %w", err)
@@ -611,25 +625,17 @@ func (r *GORMRepository) IsTransactionDuplicate(ctx context.Context, schemaName,
 		}
 	}
 
-	db, err = r.tenantTable(ctx, schemaName, "bank_transactions")
-	if err != nil {
-		return false, err
-	}
-
-	// Check by date and amount. Compare decimal values after loading matching
-	// date rows so numeric scale differences do not affect duplicate detection.
-	var candidates []models.BankTransaction
-	if err := db.Where("tenant_id = ? AND bank_account_id = ?", tenantID, bankAccountID).
-		Find(&candidates).Error; err != nil {
+	var count int64
+	if err := newTransactionsDB().Where(
+		"tenant_id = ? AND bank_account_id = ? AND transaction_date = ? AND amount = ?",
+		tenantID,
+		bankAccountID,
+		date.Format("2006-01-02"),
+		amount.String(),
+	).Count(&count).Error; err != nil {
 		return false, fmt.Errorf("check duplicate: %w", err)
 	}
-	for _, candidate := range candidates {
-		if candidate.TransactionDate.Format("2006-01-02") == date.Format("2006-01-02") &&
-			candidate.Amount.Equal(amount) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return count > 0, nil
 }
 
 // CreateReconciliation inserts a new reconciliation
@@ -696,14 +702,8 @@ func (r *GORMRepository) CompleteReconciliation(ctx context.Context, schemaName,
 
 	return db.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
-		reconciliationsDB, err := database.TenantTable(tx, schemaName, "bank_reconciliations")
-		if err != nil {
-			return err
-		}
-		transactionsDB, err := database.TenantTable(tx, schemaName, "bank_transactions")
-		if err != nil {
-			return err
-		}
+		reconciliationsDB := tenantTableAfterSchemaValidated(tx, schemaName, "bank_reconciliations")
+		transactionsDB := tenantTableAfterSchemaValidated(tx, schemaName, "bank_transactions")
 
 		// Update reconciliation status
 		result := reconciliationsDB.Where("id = ? AND tenant_id = ? AND status = ?", reconciliationID, tenantID, ReconciliationInProgress).

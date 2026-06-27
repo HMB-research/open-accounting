@@ -1,10 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Decimal from "decimal.js";
-import { api } from "$lib/api";
+import { env } from "$env/dynamic/public";
+import { api, buildQuery, getApiBase } from "$lib/api";
 
 // Mock fetch globally for API tests
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
+
+function mockJsonResponse(payload: unknown = {}, status = 200) {
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    status,
+    json: async () => payload,
+  });
+}
 
 describe("API Client - Core Functionality", () => {
   beforeEach(() => {
@@ -37,6 +46,23 @@ describe("API Client - Core Functionality", () => {
       api.setTokens("access-token-123", "refresh-token-456");
       api.logout();
       expect(api.isAuthenticated).toBe(false);
+    });
+  });
+
+  describe("API helpers", () => {
+    it("should normalize API base URLs without a protocol", () => {
+      const publicEnv = env as Record<string, string | undefined>;
+      const previousApiUrl = publicEnv.PUBLIC_API_URL;
+      publicEnv.PUBLIC_API_URL = "api.example.com";
+
+      expect(getApiBase()).toBe("https://api.example.com");
+
+      publicEnv.PUBLIC_API_URL = previousApiUrl;
+    });
+
+    it("should return an empty query for skipped filter values", () => {
+      expect(buildQuery()).toBe("");
+      expect(buildQuery({ status: "", from: null, to: undefined })).toBe("");
     });
   });
 
@@ -154,6 +180,52 @@ describe("API Client - Core Functionality", () => {
 
       await assertion;
       expect(mockFetch).toHaveBeenCalledTimes(4);
+    });
+
+    it("should return an empty object for successful non-JSON responses", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 204,
+        json: async () => {
+          throw new Error("empty response");
+        },
+      });
+
+      await expect(api.getCurrentUser()).resolves.toEqual({});
+    });
+
+    it("should throw the status for failed non-JSON responses", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 418,
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+
+      await expect(api.getCurrentUser()).rejects.toThrow(
+        "Request failed with status 418",
+      );
+    });
+
+    it("should throw the defensive retry guard when configured with no attempts", async () => {
+      const request = (
+        api as unknown as {
+          request<T>(
+            method: string,
+            path: string,
+            body: unknown,
+            skipAuth: boolean,
+            retryConfig: { maxRetries: number; baseDelayMs: number; maxDelayMs: number },
+          ): Promise<T>;
+        }
+      ).request("GET", "/api/v1/me", undefined, false, {
+        maxRetries: -1,
+        baseDelayMs: 0,
+        maxDelayMs: 0,
+      });
+
+      await expect(request).rejects.toThrow("Request failed after retries");
     });
   });
 
@@ -1444,6 +1516,144 @@ describe("API Client - Core Functionality", () => {
       expect(events[1].run?.summary.progress_percent).toBe(100);
     });
 
+    it("should emit a final migration event without a trailing stream delimiter", async () => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(": keepalive\n\n"));
+          controller.enqueue(
+            encoder.encode('event: progress\nid: 7\ndata: {"message":"done"}'),
+          );
+          controller.close();
+        },
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: stream,
+      });
+      const events: Array<{ type: string; sequence: number; message?: string }> =
+        [];
+
+      await api.watchMigrationExecutionRun("tenant-123", "run-1", {
+        onEvent: (event) => {
+          events.push(event as (typeof events)[number]);
+        },
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-runs/run-1/events",
+        ),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({ Accept: "text/event-stream" }),
+        }),
+      );
+      expect(events).toEqual([
+        { type: "progress", sequence: 7, message: "done" },
+      ]);
+    });
+
+    it("should refresh the access token before retrying a migration event stream", async () => {
+      api.setTokens("expired-token", "refresh-token");
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      });
+      mockFetch
+        .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ access_token: "fresh-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          body: stream,
+        });
+
+      await api.watchMigrationExecutionRun("tenant-123", "run-1", {
+        onEvent: vi.fn(),
+      });
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/migration/execution-runs/run-1/events",
+        ),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: "Bearer fresh-token",
+          }),
+        }),
+      );
+    });
+
+    it("should throw the API error when migration event stream creation fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({ error: "Stream temporarily unavailable" }),
+      });
+
+      await expect(
+        api.watchMigrationExecutionRun("tenant-123", "run-1", {
+          onEvent: vi.fn(),
+        }),
+      ).rejects.toThrow("Stream temporarily unavailable");
+    });
+
+    it("should throw when a migration event stream response has no body", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: null,
+      });
+
+      await expect(
+        api.watchMigrationExecutionRun("tenant-123", "run-1", {
+          onEvent: vi.fn(),
+        }),
+      ).rejects.toThrow("Migration execution run stream is not available.");
+    });
+
+    it("should clear tokens when migration event stream refresh is unavailable", async () => {
+      api.setTokens("expired-token", "");
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({}),
+      });
+
+      await expect(
+        api.watchMigrationExecutionRun("tenant-123", "run-1", {
+          onEvent: vi.fn(),
+        }),
+      ).rejects.toThrow("Session expired. Please log in again.");
+      expect(api.isAuthenticated).toBe(false);
+    });
+
+    it("should throw the fallback error when migration event stream failure is not JSON", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+
+      await expect(
+        api.watchMigrationExecutionRun("tenant-123", "run-1", {
+          onEvent: vi.fn(),
+        }),
+      ).rejects.toThrow(
+        "Migration execution run stream failed with status 502",
+      );
+    });
+
     it("should list expense claims with remediation actions", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -1648,6 +1858,8 @@ describe("API Client - Core Functionality", () => {
         document_type: "receipt",
         notes: "Customer supplied receipt",
         retention_until: "2027-03-31",
+        replaces_document_id: "doc-old",
+        replacement_note: "Corrected scan",
       });
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -1660,6 +1872,8 @@ describe("API Client - Core Functionality", () => {
       expect(formData.get("document_type")).toBe("receipt");
       expect(formData.get("notes")).toBe("Customer supplied receipt");
       expect(formData.get("retention_until")).toBe("2027-03-31");
+      expect(formData.get("replaces_document_id")).toBe("doc-old");
+      expect(formData.get("replacement_note")).toBe("Corrected scan");
       expect(formData.get("file")).toBe(file);
     });
 
@@ -1769,6 +1983,32 @@ describe("API Client - Core Functionality", () => {
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:doc-1");
     });
 
+    it("should throw the API error when document download fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "Document not found" }),
+      });
+
+      await expect(
+        api.downloadDocument("tenant-123", "missing-doc", "receipt.pdf"),
+      ).rejects.toThrow("Document not found");
+    });
+
+    it("should throw the fallback error when document download failure is not JSON", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+
+      await expect(
+        api.downloadDocument("tenant-123", "doc-1", "receipt.pdf"),
+      ).rejects.toThrow("Failed to download document");
+    });
+
     it("should download a year-end close audit archive", async () => {
       api.setTokens("valid-token", "refresh-token");
 
@@ -1805,6 +2045,32 @@ describe("API Client - Core Functionality", () => {
       expect(createObjectURL).toHaveBeenCalledWith(blob);
       expect(click).toHaveBeenCalledTimes(1);
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:year-end-audit");
+    });
+
+    it("should throw the fallback error when year-end close audit archive download fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      });
+
+      await expect(
+        api.downloadYearEndCloseAuditArchive("tenant-123", "2025-12-31"),
+      ).rejects.toThrow("Failed to download year-end audit archive");
+    });
+
+    it("should throw the fallback error when year-end close audit archive failure is not JSON", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+
+      await expect(
+        api.downloadYearEndCloseAuditArchive("tenant-123", "2025-12-31"),
+      ).rejects.toThrow("Failed to download year-end audit archive");
     });
   });
 
@@ -1905,6 +2171,587 @@ describe("API Client - Core Functionality", () => {
       const result = await api.getAccount("tenant-123", "acc-1");
 
       expect(result.id).toBe("acc-1");
+    });
+
+    it("should update account", async () => {
+      mockJsonResponse({ id: "acc-1", code: "1001", name: "Main bank" });
+
+      const result = await api.updateAccount("tenant-123", "acc-1", {
+        name: "Main bank",
+        code: "1001",
+        account_type: "ASSET",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/accounts/acc-1"),
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({
+            name: "Main bank",
+            code: "1001",
+            account_type: "ASSET",
+          }),
+        }),
+      );
+      expect(result.name).toBe("Main bank");
+    });
+
+    it("should delete account", async () => {
+      mockJsonResponse({ id: "acc-1", deleted: true });
+
+      await api.deleteAccount("tenant-123", "acc-1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-123/accounts/acc-1"),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+  });
+
+  describe("Quote and Order Endpoints", () => {
+    beforeEach(() => {
+      api.setTokens("valid-token", "refresh-token");
+    });
+
+    it("should call quote wrapper endpoints with the expected methods and bodies", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "list quotes",
+          call: () => api.listQuotes("tenant-123", { status: "DRAFT" } as never),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/quotes?status=DRAFT",
+        },
+        {
+          name: "create quote",
+          call: () =>
+            api.createQuote("tenant-123", {
+              customer_id: "contact-1",
+              quote_date: "2026-06-24",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/quotes",
+          body: {
+            customer_id: "contact-1",
+            quote_date: "2026-06-24",
+          },
+        },
+        {
+          name: "get quote",
+          call: () => api.getQuote("tenant-123", "quote-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1",
+        },
+        {
+          name: "update quote",
+          call: () =>
+            api.updateQuote("tenant-123", "quote-1", {
+              status: "SENT",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1",
+          body: { status: "SENT" },
+        },
+        {
+          name: "delete quote",
+          call: () => api.deleteQuote("tenant-123", "quote-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1",
+        },
+        {
+          name: "send quote",
+          call: () => api.sendQuote("tenant-123", "quote-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1/send",
+        },
+        {
+          name: "accept quote",
+          call: () => api.acceptQuote("tenant-123", "quote-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1/accept",
+        },
+        {
+          name: "reject quote",
+          call: () => api.rejectQuote("tenant-123", "quote-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1/reject",
+        },
+        {
+          name: "convert quote",
+          call: () => api.convertQuoteToInvoice("tenant-123", "quote-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/quotes/quote-1/convert-to-invoice",
+          body: {},
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
+    });
+
+    it("should call order wrapper endpoints with the expected methods and bodies", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "list orders",
+          call: () => api.listOrders("tenant-123", { status: "CONFIRMED" } as never),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/orders?status=CONFIRMED",
+        },
+        {
+          name: "create order",
+          call: () =>
+            api.createOrder("tenant-123", {
+              customer_id: "contact-1",
+              order_date: "2026-06-24",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders",
+          body: {
+            customer_id: "contact-1",
+            order_date: "2026-06-24",
+          },
+        },
+        {
+          name: "get order",
+          call: () => api.getOrder("tenant-123", "order-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/orders/order-1",
+        },
+        {
+          name: "update order",
+          call: () =>
+            api.updateOrder("tenant-123", "order-1", {
+              status: "PROCESSING",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/orders/order-1",
+          body: { status: "PROCESSING" },
+        },
+        {
+          name: "delete order",
+          call: () => api.deleteOrder("tenant-123", "order-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/orders/order-1",
+        },
+        {
+          name: "confirm order",
+          call: () => api.confirmOrder("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/confirm",
+        },
+        {
+          name: "process order",
+          call: () => api.processOrder("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/process",
+        },
+        {
+          name: "ship order",
+          call: () => api.shipOrder("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/ship",
+        },
+        {
+          name: "deliver order",
+          call: () => api.deliverOrder("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/deliver",
+        },
+        {
+          name: "cancel order",
+          call: () => api.cancelOrder("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/cancel",
+        },
+        {
+          name: "convert order",
+          call: () => api.convertOrderToInvoice("tenant-123", "order-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/orders/order-1/convert-to-invoice",
+          body: {},
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
+    });
+  });
+
+  describe("Asset and Inventory Catalog Endpoints", () => {
+    beforeEach(() => {
+      api.setTokens("valid-token", "refresh-token");
+    });
+
+    it("should call fixed-asset category and asset wrapper endpoints", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "list asset categories",
+          call: () => api.listAssetCategories("tenant-123"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/asset-categories",
+        },
+        {
+          name: "create asset category",
+          call: () =>
+            api.createAssetCategory("tenant-123", {
+              name: "Equipment",
+              depreciation_method: "straight_line",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/asset-categories",
+          body: {
+            name: "Equipment",
+            depreciation_method: "straight_line",
+          },
+        },
+        {
+          name: "get asset category",
+          call: () => api.getAssetCategory("tenant-123", "asset-cat-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/asset-categories/asset-cat-1",
+        },
+        {
+          name: "delete asset category",
+          call: () => api.deleteAssetCategory("tenant-123", "asset-cat-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/asset-categories/asset-cat-1",
+        },
+        {
+          name: "list assets with filters",
+          call: () =>
+            api.listAssets("tenant-123", {
+              status: "ACTIVE",
+              category_id: "asset-cat-1",
+              from_date: "2026-01-01",
+              to_date: "2026-06-24",
+              search: "laptop",
+            } as never),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/assets?status=ACTIVE&category_id=asset-cat-1&from_date=2026-01-01&to_date=2026-06-24&search=laptop",
+        },
+        {
+          name: "create asset",
+          call: () =>
+            api.createAsset("tenant-123", {
+              asset_number: "FA-001",
+              name: "Laptop",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/assets",
+          body: { asset_number: "FA-001", name: "Laptop" },
+        },
+        {
+          name: "get asset",
+          call: () => api.getAsset("tenant-123", "asset-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1",
+        },
+        {
+          name: "update asset",
+          call: () =>
+            api.updateAsset("tenant-123", "asset-1", {
+              name: "Laptop Pro",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1",
+          body: { name: "Laptop Pro" },
+        },
+        {
+          name: "delete asset",
+          call: () => api.deleteAsset("tenant-123", "asset-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1",
+        },
+        {
+          name: "activate asset",
+          call: () => api.activateAsset("tenant-123", "asset-1"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1/activate",
+        },
+        {
+          name: "dispose asset",
+          call: () =>
+            api.disposeAsset("tenant-123", "asset-1", {
+              disposal_date: "2026-06-24",
+              disposal_amount: "100.00",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1/dispose",
+          body: {
+            disposal_date: "2026-06-24",
+            disposal_amount: "100.00",
+          },
+        },
+        {
+          name: "record depreciation",
+          call: () =>
+            api.recordDepreciation("tenant-123", "asset-1", {
+              depreciation_date: "2026-06-24",
+              amount: "50.00",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1/depreciation",
+          body: {
+            depreciation_date: "2026-06-24",
+            amount: "50.00",
+          },
+        },
+        {
+          name: "get depreciation history",
+          call: () => api.getDepreciationHistory("tenant-123", "asset-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/assets/asset-1/depreciation",
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
+    });
+
+    it("should call product, warehouse, and stock wrapper endpoints", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "list product categories",
+          call: () => api.listProductCategories("tenant-123"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/product-categories",
+        },
+        {
+          name: "create product category",
+          call: () =>
+            api.createProductCategory("tenant-123", {
+              name: "Finished goods",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/product-categories",
+          body: { name: "Finished goods" },
+        },
+        {
+          name: "get product category",
+          call: () => api.getProductCategory("tenant-123", "product-cat-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/product-categories/product-cat-1",
+        },
+        {
+          name: "delete product category",
+          call: () => api.deleteProductCategory("tenant-123", "product-cat-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/product-categories/product-cat-1",
+        },
+        {
+          name: "list products with filters",
+          call: () =>
+            api.listProducts("tenant-123", {
+              product_type: "STOCK",
+              status: "ACTIVE",
+              category_id: "product-cat-1",
+              search: "widget",
+              low_stock: true,
+            } as never),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/products?product_type=STOCK&status=ACTIVE&category_id=product-cat-1&search=widget&low_stock=true",
+        },
+        {
+          name: "create product",
+          call: () =>
+            api.createProduct("tenant-123", {
+              sku: "SKU-001",
+              name: "Widget",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/products",
+          body: { sku: "SKU-001", name: "Widget" },
+        },
+        {
+          name: "get product",
+          call: () => api.getProduct("tenant-123", "product-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/products/product-1",
+        },
+        {
+          name: "update product",
+          call: () =>
+            api.updateProduct("tenant-123", "product-1", {
+              name: "Updated widget",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/products/product-1",
+          body: { name: "Updated widget" },
+        },
+        {
+          name: "delete product",
+          call: () => api.deleteProduct("tenant-123", "product-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/products/product-1",
+        },
+        {
+          name: "get product stock levels",
+          call: () => api.getProductStockLevels("tenant-123", "product-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/products/product-1/stock-levels",
+        },
+        {
+          name: "get product movements",
+          call: () => api.getProductMovements("tenant-123", "product-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/products/product-1/movements",
+        },
+        {
+          name: "list active warehouses",
+          call: () => api.listWarehouses("tenant-123", true),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/warehouses?active_only=true",
+        },
+        {
+          name: "create warehouse",
+          call: () =>
+            api.createWarehouse("tenant-123", {
+              code: "MAIN",
+              name: "Main warehouse",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/warehouses",
+          body: { code: "MAIN", name: "Main warehouse" },
+        },
+        {
+          name: "get warehouse",
+          call: () => api.getWarehouse("tenant-123", "warehouse-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/warehouses/warehouse-1",
+        },
+        {
+          name: "update warehouse",
+          call: () =>
+            api.updateWarehouse("tenant-123", "warehouse-1", {
+              name: "Updated warehouse",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/warehouses/warehouse-1",
+          body: { name: "Updated warehouse" },
+        },
+        {
+          name: "delete warehouse",
+          call: () => api.deleteWarehouse("tenant-123", "warehouse-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/warehouses/warehouse-1",
+        },
+        {
+          name: "adjust stock",
+          call: () =>
+            api.adjustStock("tenant-123", {
+              product_id: "product-1",
+              warehouse_id: "warehouse-1",
+              quantity: "5",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/inventory/adjust",
+          body: {
+            product_id: "product-1",
+            warehouse_id: "warehouse-1",
+            quantity: "5",
+          },
+        },
+        {
+          name: "transfer stock",
+          call: () =>
+            api.transferStock("tenant-123", {
+              product_id: "product-1",
+              from_warehouse_id: "warehouse-1",
+              to_warehouse_id: "warehouse-2",
+              quantity: "2",
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/inventory/transfer",
+          body: {
+            product_id: "product-1",
+            from_warehouse_id: "warehouse-1",
+            to_warehouse_id: "warehouse-2",
+            quantity: "2",
+          },
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
     });
   });
 
@@ -2568,6 +3415,37 @@ describe("API Client - Core Functionality", () => {
       const result = await api.getPayablesAging("tenant-123");
 
       expect(result).toBeDefined();
+    });
+
+    it("should get recent activity with an explicit limit", async () => {
+      mockJsonResponse([{ id: "activity-1", type: "invoice" }]);
+
+      const result = await api.getRecentActivity("tenant-123", 25);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/analytics/activity?limit=25",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    it("should calculate cash-flow analytics months from the date range", async () => {
+      mockJsonResponse({ labels: ["Jan", "Feb", "Mar"], inflows: ["100"] });
+
+      await api.getCashFlowAnalytics(
+        "tenant-123",
+        "2026-01-01",
+        "2026-03-17",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/analytics/cash-flow?months=3",
+        ),
+        expect.objectContaining({ method: "GET" }),
+      );
     });
   });
 
@@ -3609,6 +4487,147 @@ describe("API Client - Core Functionality", () => {
       );
       expect(result).toHaveLength(1);
     });
+
+    it("should call reminder rule wrapper endpoints", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "list reminder rules",
+          call: () => api.listReminderRules("tenant-123"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/reminder-rules",
+        },
+        {
+          name: "get reminder rule",
+          call: () => api.getReminderRule("tenant-123", "rule-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/reminder-rules/rule-1",
+        },
+        {
+          name: "create reminder rule",
+          call: () =>
+            api.createReminderRule("tenant-123", {
+              name: "7 days overdue",
+              days_overdue: 7,
+              is_active: true,
+            } as never),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/reminder-rules",
+          body: {
+            name: "7 days overdue",
+            days_overdue: 7,
+            is_active: true,
+          },
+        },
+        {
+          name: "update reminder rule",
+          call: () =>
+            api.updateReminderRule("tenant-123", "rule-1", {
+              is_active: false,
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/reminder-rules/rule-1",
+          body: { is_active: false },
+        },
+        {
+          name: "delete reminder rule",
+          call: () => api.deleteReminderRule("tenant-123", "rule-1"),
+          method: "DELETE",
+          path: "/api/v1/tenants/tenant-123/reminder-rules/rule-1",
+        },
+        {
+          name: "trigger reminders",
+          call: () => api.triggerReminders("tenant-123"),
+          method: "POST",
+          path: "/api/v1/tenants/tenant-123/reminder-rules/trigger",
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
+    });
+
+    it("should call interest calculation wrapper endpoints", async () => {
+      const cases: Array<{
+        name: string;
+        call: () => Promise<unknown>;
+        method: string;
+        path: string;
+        body?: unknown;
+      }> = [
+        {
+          name: "get interest settings",
+          call: () => api.getInterestSettings("tenant-123"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/settings/interest",
+        },
+        {
+          name: "update interest settings",
+          call: () =>
+            api.updateInterestSettings("tenant-123", {
+              enabled: true,
+              annual_rate: "8.00",
+            } as never),
+          method: "PUT",
+          path: "/api/v1/tenants/tenant-123/settings/interest",
+          body: { enabled: true, annual_rate: "8.00" },
+        },
+        {
+          name: "get invoice interest",
+          call: () => api.getInvoiceInterest("tenant-123", "inv-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/invoices/inv-1/interest",
+        },
+        {
+          name: "get invoice interest history",
+          call: () => api.getInvoiceInterestHistory("tenant-123", "inv-1"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/invoices/inv-1/interest/history",
+        },
+        {
+          name: "get overdue invoices with interest",
+          call: () => api.getOverdueInvoicesWithInterest("tenant-123"),
+          method: "GET",
+          path: "/api/v1/tenants/tenant-123/invoices/overdue-with-interest",
+        },
+      ];
+
+      for (const testCase of cases) {
+        mockFetch.mockClear();
+        mockJsonResponse({ id: testCase.name, status: "ok" });
+
+        await testCase.call();
+
+        expect(mockFetch, testCase.name).toHaveBeenCalledWith(
+          expect.stringContaining(testCase.path),
+          expect.objectContaining({
+            method: testCase.method,
+            ...(testCase.body === undefined
+              ? {}
+              : { body: JSON.stringify(testCase.body) }),
+          }),
+        );
+      }
+    });
   });
 
   describe("Payroll Endpoints", () => {
@@ -4457,6 +5476,66 @@ describe("API Client - Core Functionality", () => {
       );
     });
 
+    it("should skip tenant context when no browser window is available", async () => {
+      const originalWindow = globalThis.window;
+      vi.stubGlobal("window", undefined);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+
+      try {
+        await api.getPluginPermissions();
+      } finally {
+        vi.stubGlobal("window", originalWindow);
+      }
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/admin/plugins/permissions"),
+        expect.objectContaining({
+          headers: expect.not.objectContaining({
+            "X-Tenant-ID": expect.any(String),
+          }),
+        }),
+      );
+    });
+
+    it("should skip tenant context when the current browser URL is malformed", async () => {
+      const OriginalURL = globalThis.URL;
+      vi.stubGlobal(
+        "URL",
+        class {
+          static createObjectURL = OriginalURL.createObjectURL;
+          static revokeObjectURL = OriginalURL.revokeObjectURL;
+
+          constructor() {
+            throw new Error("bad URL");
+          }
+        },
+      );
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+
+      try {
+        await api.getPluginPermissions();
+      } finally {
+        vi.stubGlobal("URL", OriginalURL);
+      }
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/admin/plugins/permissions"),
+        expect.objectContaining({
+          headers: expect.not.objectContaining({
+            "X-Tenant-ID": expect.any(String),
+          }),
+        }),
+      );
+    });
+
     it("should install plugin", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -4717,6 +5796,32 @@ describe("API Client - Core Functionality", () => {
       await expect(
         api.downloadInvoicePDF("tenant-123", "inv-1", "INV-001"),
       ).rejects.toThrow("Failed to download PDF");
+    });
+
+    it("should throw API errors from shared quote PDF downloads", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "Quote PDF unavailable" }),
+      });
+
+      await expect(
+        api.downloadQuotePDF("tenant-123", "quote-missing", "QUO-404"),
+      ).rejects.toThrow("Quote PDF unavailable");
+    });
+
+    it("should throw fallback errors from shared order PDF downloads", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => {
+          throw new Error("not json");
+        },
+      });
+
+      await expect(
+        api.downloadOrderPDF("tenant-123", "order-1", "ORD-001"),
+      ).rejects.toThrow("Failed to download order PDF");
     });
 
     it("should download KMD XML", async () => {
@@ -5034,6 +6139,122 @@ describe("API Client - Core Functionality", () => {
       expect(result.lines[0].inventory_value).toBeInstanceOf(Decimal);
       expect(result.lines[0].inventory_value.toString()).toBe("52.5");
     });
+  });
+
+  describe("Default Query Parameters", () => {
+    beforeEach(() => {
+      api.setTokens("valid-token", "refresh-token");
+    });
+
+    const defaultQueryCases: Array<[string, () => Promise<unknown>, string]> = [
+      [
+        "account balance without as-of date",
+        () => api.getAccountBalance("tenant-123", "acc-1"),
+        "/api/v1/tenants/tenant-123/reports/account-balance/acc-1",
+      ],
+      [
+        "balance sheet without as-of date",
+        () => api.getBalanceSheet("tenant-123"),
+        "/api/v1/tenants/tenant-123/reports/balance-sheet",
+      ],
+      [
+        "fixed assets without filters",
+        () => api.listAssets("tenant-123"),
+        "/api/v1/tenants/tenant-123/assets",
+      ],
+      [
+        "products without filters",
+        () => api.listProducts("tenant-123"),
+        "/api/v1/tenants/tenant-123/products",
+      ],
+      [
+        "warehouses without active-only filtering",
+        () => api.listWarehouses("tenant-123"),
+        "/api/v1/tenants/tenant-123/warehouses",
+      ],
+      [
+        "inventory valuation without options",
+        () => api.getInventoryValuation("tenant-123"),
+        "/api/v1/tenants/tenant-123/inventory/valuation",
+      ],
+      [
+        "inventory subledger reconciliation without options",
+        () => api.getInventorySubledgerReconciliation("tenant-123"),
+        "/api/v1/tenants/tenant-123/inventory/subledger-reconciliation",
+      ],
+      [
+        "bank accounts without active-only filtering",
+        () => api.listBankAccounts("tenant-123"),
+        "/api/v1/tenants/tenant-123/bank-accounts",
+      ],
+      [
+        "bank transactions without filters",
+        () => api.listBankTransactions("tenant-123", "bank-1"),
+        "/api/v1/tenants/tenant-123/bank-accounts/bank-1/transactions",
+      ],
+      [
+        "cost centers without active-only filtering",
+        () => api.listCostCenters("tenant-123"),
+        "/api/v1/tenants/tenant-123/cost-centers",
+      ],
+      [
+        "cost center report without dates",
+        () => api.getCostCenterReport("tenant-123"),
+        "/api/v1/tenants/tenant-123/cost-centers/report",
+      ],
+      [
+        "employees without active-only filtering",
+        () => api.listEmployees("tenant-123"),
+        "/api/v1/tenants/tenant-123/employees",
+      ],
+      [
+        "payroll runs without year filtering",
+        () => api.listPayrollRuns("tenant-123"),
+        "/api/v1/tenants/tenant-123/payroll-runs",
+      ],
+      [
+        "TSD declarations without year filtering",
+        () => api.listTSD("tenant-123"),
+        "/api/v1/tenants/tenant-123/tsd",
+      ],
+      [
+        "absence types without active-only filtering",
+        () => api.listAbsenceTypes("tenant-123"),
+        "/api/v1/tenants/tenant-123/absence-types",
+      ],
+      [
+        "leave balances without year filtering",
+        () => api.listLeaveBalances("tenant-123", "emp-1"),
+        "/api/v1/tenants/tenant-123/employees/emp-1/leave-balances",
+      ],
+      [
+        "leave records without filters",
+        () => api.listLeaveRecords("tenant-123"),
+        "/api/v1/tenants/tenant-123/leave-records",
+      ],
+      [
+        "tenant plugin enablement without settings",
+        () => api.enableTenantPlugin("tenant-123", "plugin-1"),
+        "/api/v1/tenants/tenant-123/plugins/plugin-1/enable",
+      ],
+    ];
+
+    it.each(defaultQueryCases)(
+      "should call %s without a query string",
+      async (_name, request, expectedPath) => {
+        mockJsonResponse({});
+
+        await request();
+
+        const [url, requestInit] = mockFetch.mock.calls[0] as [
+          string,
+          RequestInit,
+        ];
+        expect(url).toContain(expectedPath);
+        expect(url).not.toContain("?");
+        expect(requestInit.method).toMatch(/GET|POST/);
+      },
+    );
   });
 
   describe("Token Refresh Flow", () => {

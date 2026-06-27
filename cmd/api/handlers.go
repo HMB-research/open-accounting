@@ -44,6 +44,10 @@ import (
 	"github.com/HMB-research/open-accounting/internal/webhooks"
 )
 
+var sendBulkRemindersWithService = func(ctx context.Context, service *invoicing.ReminderService, tenantID, schemaName string, req *invoicing.SendBulkRemindersRequest, companyName string) (*invoicing.BulkReminderResult, error) {
+	return service.SendBulkReminders(ctx, tenantID, schemaName, req, companyName)
+}
+
 // Handlers contains all HTTP handlers
 type Handlers struct {
 	tokenService             *auth.TokenService
@@ -116,6 +120,18 @@ type interestManager interface {
 type demoResetter interface {
 	Reset(ctx context.Context, users []demo.ResetUser, userNums []int) error
 }
+
+var (
+	generateAccessToken = func(tokenService *auth.TokenService, userID, email, tenantID, role string) (string, error) {
+		return tokenService.GenerateAccessToken(userID, email, tenantID, role)
+	}
+	generateRefreshToken = func(tokenService *auth.TokenService, userID string) (string, error) {
+		return tokenService.GenerateRefreshToken(userID)
+	}
+	validateRefreshTokenClaims = func(tokenService *auth.TokenService, refreshToken string) (*auth.RefreshClaims, error) {
+		return tokenService.ValidateRefreshTokenClaims(refreshToken)
+	}
+)
 
 // getSchemaName returns the schema name for a tenant
 func (h *Handlers) getSchemaName(ctx context.Context, tenantID string) string {
@@ -367,7 +383,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		role = membership.Role
 	}
 
-	accessToken, err := h.tokenService.GenerateAccessToken(user.ID, user.Email, tenantID, role)
+	accessToken, err := generateAccessToken(h.tokenService, user.ID, user.Email, tenantID, role)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate token")
 		return
@@ -470,7 +486,7 @@ func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
 		role = membership.Role
 	}
 
-	accessToken, err := h.tokenService.GenerateAccessToken(user.ID, user.Email, tenantID, role)
+	accessToken, err := generateAccessToken(h.tokenService, user.ID, user.Email, tenantID, role)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate token")
 		return
@@ -1034,11 +1050,11 @@ func (h *Handlers) ListSecurityAuditEvents(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handlers) generateRefreshTokenWithClaims(userID string) (string, *auth.RefreshClaims, error) {
-	refreshToken, err := h.tokenService.GenerateRefreshToken(userID)
+	refreshToken, err := generateRefreshToken(h.tokenService, userID)
 	if err != nil {
 		return "", nil, err
 	}
-	refreshClaims, err := h.tokenService.ValidateRefreshTokenClaims(refreshToken)
+	refreshClaims, err := validateRefreshTokenClaims(h.tokenService, refreshToken)
 	if err != nil {
 		return "", nil, err
 	}
@@ -2154,7 +2170,7 @@ func (h *Handlers) GetTrialBalance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if format == "csv" {
-		content, err := trialBalanceCSV(tb)
+		content, err := exportTrialBalanceCSV(tb)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export trial balance CSV")
 			return
@@ -2163,7 +2179,7 @@ func (h *Handlers) GetTrialBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "xlsx" {
-		content, err := trialBalanceXLSX(tb)
+		content, err := exportTrialBalanceXLSX(tb)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export trial balance XLSX")
 			return
@@ -2172,7 +2188,7 @@ func (h *Handlers) GetTrialBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "pdf" {
-		content, err := trialBalancePDF(tb, asOfDate)
+		content, err := exportTrialBalancePDF(tb, asOfDate)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export trial balance PDF")
 			return
@@ -2229,7 +2245,7 @@ func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 	balanceText := balance.String()
 
 	if format == "csv" {
-		content, err := accountBalanceCSV(accountID, asOfDateText, balanceText)
+		content, err := exportAccountBalanceCSV(accountID, asOfDateText, balanceText)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export account balance CSV")
 			return
@@ -2238,7 +2254,7 @@ func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "xlsx" {
-		content, err := accountBalanceXLSX(accountID, asOfDateText, balanceText)
+		content, err := exportAccountBalanceXLSX(accountID, asOfDateText, balanceText)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export account balance XLSX")
 			return
@@ -2247,7 +2263,7 @@ func (h *Handlers) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "pdf" {
-		content, err := accountBalancePDF(accountID, asOfDateText, balanceText)
+		content, err := exportAccountBalancePDF(accountID, asOfDateText, balanceText)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export account balance PDF")
 			return
@@ -2304,7 +2320,7 @@ func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if format == "csv" {
-		content, err := balanceSheetCSV(bs)
+		content, err := exportBalanceSheetCSV(bs)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export balance sheet CSV")
 			return
@@ -2313,7 +2329,7 @@ func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "xlsx" {
-		content, err := balanceSheetXLSX(bs)
+		content, err := exportBalanceSheetXLSX(bs)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export balance sheet XLSX")
 			return
@@ -2322,7 +2338,7 @@ func (h *Handlers) GetBalanceSheet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "pdf" {
-		content, err := balanceSheetPDF(bs, asOfDate)
+		content, err := exportBalanceSheetPDF(bs, asOfDate)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export balance sheet PDF")
 			return
@@ -2390,7 +2406,7 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if format == "csv" {
-		content, err := incomeStatementCSV(is)
+		content, err := exportIncomeStatementCSV(is)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export income statement CSV")
 			return
@@ -2399,7 +2415,7 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "xlsx" {
-		content, err := incomeStatementXLSX(is)
+		content, err := exportIncomeStatementXLSX(is)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export income statement XLSX")
 			return
@@ -2408,7 +2424,7 @@ func (h *Handlers) GetIncomeStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "pdf" {
-		content, err := incomeStatementPDF(is, startDate, endDate)
+		content, err := exportIncomeStatementPDF(is, startDate, endDate)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export income statement PDF")
 			return
@@ -2635,10 +2651,6 @@ func (h *Handlers) GetAnnualReport(w http.ResponseWriter, r *http.Request) {
 		respondYearEndCloseError(w, err)
 		return
 	}
-	if pack.Status == nil {
-		respondError(w, http.StatusInternalServerError, "Failed to generate annual report")
-		return
-	}
 	if err := h.attachYearEndCloseEvidenceStatus(r.Context(), routeCtx.schemaName, routeCtx.tenantID, pack.Status); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to evaluate close-pack evidence")
 		return
@@ -2751,7 +2763,7 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if format == "csv" {
-		content, err := cashFlowStatementCSV(result)
+		content, err := exportCashFlowStatementCSV(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export cash flow CSV")
 			return
@@ -2760,7 +2772,7 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if format == "xlsx" {
-		content, err := cashFlowStatementXLSX(result)
+		content, err := exportCashFlowStatementXLSX(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export cash flow XLSX")
 			return
@@ -2769,7 +2781,7 @@ func (h *Handlers) GetCashFlowStatement(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if format == "pdf" {
-		content, err := cashFlowStatementPDF(result)
+		content, err := exportCashFlowStatementPDF(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export cash flow PDF")
 			return
@@ -2918,7 +2930,7 @@ func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.
 	}
 
 	if format == "csv" {
-		content, err := balanceConfirmationSummaryCSV(result)
+		content, err := exportBalanceConfirmationSummaryCSV(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmations CSV")
 			return
@@ -2927,7 +2939,7 @@ func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.
 		return
 	}
 	if format == "xlsx" {
-		content, err := balanceConfirmationSummaryXLSX(result)
+		content, err := exportBalanceConfirmationSummaryXLSX(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmations XLSX")
 			return
@@ -2936,7 +2948,7 @@ func (h *Handlers) GetBalanceConfirmationSummary(w http.ResponseWriter, r *http.
 		return
 	}
 	if format == "pdf" {
-		content, err := balanceConfirmationSummaryPDF(result)
+		content, err := exportBalanceConfirmationSummaryPDF(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmations PDF")
 			return
@@ -3013,7 +3025,7 @@ func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request
 	}
 
 	if format == "csv" {
-		content, err := balanceConfirmationCSV(result)
+		content, err := exportBalanceConfirmationCSV(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmation CSV")
 			return
@@ -3022,7 +3034,7 @@ func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if format == "xlsx" {
-		content, err := balanceConfirmationXLSX(result)
+		content, err := exportBalanceConfirmationXLSX(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmation XLSX")
 			return
@@ -3031,7 +3043,7 @@ func (h *Handlers) GetBalanceConfirmation(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if format == "pdf" {
-		content, err := balanceConfirmationPDF(result)
+		content, err := exportBalanceConfirmationPDF(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export balance confirmation PDF")
 			return
@@ -3085,7 +3097,7 @@ func (h *Handlers) GetContactStatement(w http.ResponseWriter, r *http.Request) {
 
 	fileStem := fmt.Sprintf("contact-statement-%s-%s-%s", contactID, req.StartDate, req.EndDate)
 	if format == "csv" {
-		content, err := contactStatementCSV(result)
+		content, err := exportContactStatementCSV(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export contact statement CSV")
 			return
@@ -3094,7 +3106,7 @@ func (h *Handlers) GetContactStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "xlsx" {
-		content, err := contactStatementXLSX(result)
+		content, err := exportContactStatementXLSX(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export contact statement XLSX")
 			return
@@ -3103,7 +3115,7 @@ func (h *Handlers) GetContactStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if format == "pdf" {
-		content, err := contactStatementPDF(result)
+		content, err := exportContactStatementPDF(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export contact statement PDF")
 			return
@@ -3217,7 +3229,7 @@ func (h *Handlers) getSalesMarginLikeReport(w http.ResponseWriter, r *http.Reque
 
 	fileStem := fmt.Sprintf("%s-%s-%s", fileStemPrefix, req.StartDate, req.EndDate)
 	if format == "csv" {
-		content, err := salesMarginCSV(result)
+		content, err := exportSalesMarginCSV(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to export %s CSV", reportName))
 			return
@@ -3226,7 +3238,7 @@ func (h *Handlers) getSalesMarginLikeReport(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if format == "xlsx" {
-		content, err := salesMarginXLSX(result)
+		content, err := exportSalesMarginXLSX(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to export %s XLSX", reportName))
 			return
@@ -3235,7 +3247,7 @@ func (h *Handlers) getSalesMarginLikeReport(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if format == "pdf" {
-		content, err := salesMarginPDF(result)
+		content, err := exportSalesMarginPDF(result)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to export %s PDF", reportName))
 			return
@@ -3381,7 +3393,7 @@ func (h *Handlers) SendBulkPaymentReminders(w http.ResponseWriter, r *http.Reque
 		companyName = t.Name
 	}
 
-	result, err := h.reminderService.SendBulkReminders(r.Context(), tenantID, schemaName, &req, companyName)
+	result, err := sendBulkRemindersWithService(r.Context(), h.reminderService, tenantID, schemaName, &req, companyName)
 	if err != nil {
 		log.Error().Err(err).Str("tenant", tenantID).Msg("Failed to send bulk payment reminders")
 		respondError(w, http.StatusInternalServerError, "Failed to send bulk payment reminders")
@@ -3850,7 +3862,7 @@ func (h *Handlers) writeCostCenterBudgetReport(w http.ResponseWriter, r *http.Re
 	}
 
 	if format == "csv" {
-		content, err := costCenterReportCSV(report)
+		content, err := exportCostCenterReportCSV(report)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export cost center report CSV")
 			return
@@ -3859,7 +3871,7 @@ func (h *Handlers) writeCostCenterBudgetReport(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if format == "xlsx" {
-		content, err := costCenterReportXLSX(report)
+		content, err := exportCostCenterReportXLSX(report)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export cost center report XLSX")
 			return
@@ -3868,7 +3880,7 @@ func (h *Handlers) writeCostCenterBudgetReport(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if format == "pdf" {
-		content, err := costCenterReportPDF(report)
+		content, err := exportCostCenterReportPDF(report)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to export cost center report PDF")
 			return

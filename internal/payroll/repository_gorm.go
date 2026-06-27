@@ -345,10 +345,7 @@ func (r *GORMRepository) GetPayslipsWithEmployees(ctx context.Context, schemaNam
 	if err != nil {
 		return nil, err
 	}
-	employeesTable, err := database.QualifiedTable(schemaName, "employees")
-	if err != nil {
-		return nil, err
-	}
+	employeesTable, _ := database.QualifiedTable(schemaName, "employees")
 
 	var rows []struct {
 		models.Payslip

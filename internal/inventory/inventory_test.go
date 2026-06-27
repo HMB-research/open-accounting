@@ -28,18 +28,36 @@ func inventoryStockLevelKey(productID, warehouseID string) string {
 
 // MockRepository is a mock implementation of Repository for testing
 type MockRepository struct {
-	mu              sync.RWMutex
-	Products        map[string]*Product
-	Categories      map[string]*ProductCategory
-	Warehouses      map[string]*Warehouse
-	StockLevels     map[string]*StockLevel // key: productID-warehouseID
-	Movements       map[string][]InventoryMovement
-	LotReservations map[string]*InventoryLotReservation
-	ProductCodeSeq  int
-	ErrOnCreate     bool
-	ErrOnGet        bool
-	ErrOnUpdate     bool
-	ErrOnDelete     bool
+	mu                         sync.RWMutex
+	Products                   map[string]*Product
+	Categories                 map[string]*ProductCategory
+	Warehouses                 map[string]*Warehouse
+	StockLevels                map[string]*StockLevel // key: productID-warehouseID
+	Movements                  map[string][]InventoryMovement
+	LotReservations            map[string]*InventoryLotReservation
+	ProductCodeSeq             int
+	ErrOnCreate                bool
+	ErrOnGenerate              bool
+	ErrOnGet                   bool
+	ErrOnGetWarehouse          bool
+	ErrOnUpdate                bool
+	ErrOnDelete                bool
+	ErrOnListProducts          bool
+	ErrOnListCategories        bool
+	ErrOnListWarehouses        bool
+	ErrOnCreateCategory        bool
+	ErrOnCreateWarehouse       bool
+	ErrOnUpdateWarehouse       bool
+	ErrOnDeleteCategory        bool
+	ErrOnDeleteWarehouse       bool
+	ErrOnGetStockLevels        bool
+	ErrOnUpsertStockLevel      bool
+	ErrOnCreateMovement        bool
+	ErrOnListMovements         bool
+	ErrOnUpdateProductStock    bool
+	ErrOnListLotReservations   bool
+	ErrOnUpsertLotReservation  bool
+	ErrOnReleaseLotReservation bool
 }
 
 // NewMockRepository creates a new mock repository
@@ -152,6 +170,9 @@ func (r *MockRepository) GetProductByID(ctx context.Context, schemaName, tenantI
 }
 
 func (r *MockRepository) ListProducts(ctx context.Context, schemaName, tenantID string, filter *ProductFilter) ([]Product, error) {
+	if r.ErrOnListProducts {
+		return nil, fmt.Errorf("mock error on list products")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []Product
@@ -209,6 +230,9 @@ func (r *MockRepository) DeleteProduct(ctx context.Context, schemaName, tenantID
 }
 
 func (r *MockRepository) GenerateCode(ctx context.Context, schemaName, tenantID string) (string, error) {
+	if r.ErrOnGenerate {
+		return "", fmt.Errorf("mock error on generate code")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ProductCodeSeq++
@@ -217,6 +241,9 @@ func (r *MockRepository) GenerateCode(ctx context.Context, schemaName, tenantID 
 
 // Categories
 func (r *MockRepository) CreateCategory(ctx context.Context, schemaName string, category *ProductCategory) error {
+	if r.ErrOnCreateCategory {
+		return fmt.Errorf("mock error on create category")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Categories[category.ID] = category
@@ -234,6 +261,9 @@ func (r *MockRepository) GetCategoryByID(ctx context.Context, schemaName, tenant
 }
 
 func (r *MockRepository) ListCategories(ctx context.Context, schemaName, tenantID string) ([]ProductCategory, error) {
+	if r.ErrOnListCategories {
+		return nil, fmt.Errorf("mock error on list categories")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []ProductCategory
@@ -246,6 +276,9 @@ func (r *MockRepository) ListCategories(ctx context.Context, schemaName, tenantI
 }
 
 func (r *MockRepository) DeleteCategory(ctx context.Context, schemaName, tenantID, categoryID string) error {
+	if r.ErrOnDeleteCategory {
+		return fmt.Errorf("mock error on delete category")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	c, exists := r.Categories[categoryID]
@@ -258,6 +291,9 @@ func (r *MockRepository) DeleteCategory(ctx context.Context, schemaName, tenantI
 
 // Warehouses
 func (r *MockRepository) CreateWarehouse(ctx context.Context, schemaName string, warehouse *Warehouse) error {
+	if r.ErrOnCreateWarehouse {
+		return fmt.Errorf("mock error on create warehouse")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Warehouses[warehouse.ID] = warehouse
@@ -265,6 +301,9 @@ func (r *MockRepository) CreateWarehouse(ctx context.Context, schemaName string,
 }
 
 func (r *MockRepository) GetWarehouseByID(ctx context.Context, schemaName, tenantID, warehouseID string) (*Warehouse, error) {
+	if r.ErrOnGetWarehouse {
+		return nil, fmt.Errorf("mock error on get warehouse")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	w, exists := r.Warehouses[warehouseID]
@@ -276,6 +315,9 @@ func (r *MockRepository) GetWarehouseByID(ctx context.Context, schemaName, tenan
 }
 
 func (r *MockRepository) ListWarehouses(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]Warehouse, error) {
+	if r.ErrOnListWarehouses {
+		return nil, fmt.Errorf("mock error on list warehouses")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []Warehouse
@@ -292,6 +334,9 @@ func (r *MockRepository) ListWarehouses(ctx context.Context, schemaName, tenantI
 }
 
 func (r *MockRepository) UpdateWarehouse(ctx context.Context, schemaName string, warehouse *Warehouse) error {
+	if r.ErrOnUpdateWarehouse {
+		return fmt.Errorf("mock error on update warehouse")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.Warehouses[warehouse.ID]; !exists {
@@ -302,6 +347,9 @@ func (r *MockRepository) UpdateWarehouse(ctx context.Context, schemaName string,
 }
 
 func (r *MockRepository) DeleteWarehouse(ctx context.Context, schemaName, tenantID, warehouseID string) error {
+	if r.ErrOnDeleteWarehouse {
+		return fmt.Errorf("mock error on delete warehouse")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	w, exists := r.Warehouses[warehouseID]
@@ -325,6 +373,9 @@ func (r *MockRepository) GetStockLevel(ctx context.Context, schemaName, tenantID
 }
 
 func (r *MockRepository) GetStockLevelsByProduct(ctx context.Context, schemaName, tenantID, productID string) ([]StockLevel, error) {
+	if r.ErrOnGetStockLevels {
+		return nil, fmt.Errorf("mock error on get stock levels")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []StockLevel
@@ -337,6 +388,9 @@ func (r *MockRepository) GetStockLevelsByProduct(ctx context.Context, schemaName
 }
 
 func (r *MockRepository) UpsertStockLevel(ctx context.Context, schemaName string, level *StockLevel) error {
+	if r.ErrOnUpsertStockLevel {
+		return fmt.Errorf("mock error on upsert stock level")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := level.ProductID + "-" + level.WarehouseID
@@ -355,6 +409,9 @@ func inventoryLotReservationKey(productID, warehouseID, lotNumber, serialNumber,
 }
 
 func (r *MockRepository) ListLotReservations(ctx context.Context, schemaName, tenantID, productID, warehouseID string) ([]InventoryLotReservation, error) {
+	if r.ErrOnListLotReservations {
+		return nil, fmt.Errorf("mock error on list lot reservations")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []InventoryLotReservation
@@ -370,6 +427,9 @@ func (r *MockRepository) ListLotReservations(ctx context.Context, schemaName, te
 }
 
 func (r *MockRepository) UpsertLotReservation(ctx context.Context, schemaName string, reservation *InventoryLotReservation) error {
+	if r.ErrOnUpsertLotReservation {
+		return fmt.Errorf("mock error on upsert lot reservation")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := inventoryLotReservationKey(reservation.ProductID, reservation.WarehouseID, reservation.LotNumber, reservation.SerialNumber, reservation.ExpiryDate)
@@ -387,6 +447,9 @@ func (r *MockRepository) UpsertLotReservation(ctx context.Context, schemaName st
 }
 
 func (r *MockRepository) ReleaseLotReservation(ctx context.Context, schemaName, tenantID, productID, warehouseID, lotNumber, serialNumber, expiryDate string, quantity decimal.Decimal, reason, releasedBy string) (*InventoryLotReservation, error) {
+	if r.ErrOnReleaseLotReservation {
+		return nil, fmt.Errorf("mock error on release lot reservation")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := inventoryLotReservationKey(productID, warehouseID, lotNumber, serialNumber, expiryDate)
@@ -404,6 +467,9 @@ func (r *MockRepository) ReleaseLotReservation(ctx context.Context, schemaName, 
 
 // Movements
 func (r *MockRepository) CreateMovement(ctx context.Context, schemaName string, movement *InventoryMovement) error {
+	if r.ErrOnCreateMovement {
+		return fmt.Errorf("mock error on create movement")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Movements[movement.ProductID] = append(r.Movements[movement.ProductID], *movement)
@@ -411,6 +477,9 @@ func (r *MockRepository) CreateMovement(ctx context.Context, schemaName string, 
 }
 
 func (r *MockRepository) ListMovements(ctx context.Context, schemaName, tenantID, productID string) ([]InventoryMovement, error) {
+	if r.ErrOnListMovements {
+		return nil, fmt.Errorf("mock error on list movements")
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	movements := r.Movements[productID]
@@ -425,6 +494,9 @@ func (r *MockRepository) ListMovements(ctx context.Context, schemaName, tenantID
 
 // Stock updates
 func (r *MockRepository) UpdateProductStock(ctx context.Context, schemaName, tenantID, productID string, newStock decimal.Decimal) error {
+	if r.ErrOnUpdateProductStock {
+		return fmt.Errorf("mock error on update product stock")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p, exists := r.Products[productID]
@@ -768,17 +840,25 @@ func newTestService() *testService {
 
 type fakeInventoryAccountLister struct {
 	accounts []accounting.Account
+	err      error
 }
 
 func (f fakeInventoryAccountLister) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return f.accounts, nil
 }
 
 type fakeInventoryContactLister struct {
 	contacts []contacts.Contact
+	err      error
 }
 
 func (f fakeInventoryContactLister) List(_ context.Context, _, _ string, _ *contacts.ContactFilter) ([]contacts.Contact, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return f.contacts, nil
 }
 
@@ -807,15 +887,23 @@ func (f *fakeInventoryLedger) PostJournalEntry(_ context.Context, _, _, entryID,
 }
 
 type fakeInventoryBalancer struct {
-	accounts []accounting.Account
-	balances map[string]decimal.Decimal
+	accounts   []accounting.Account
+	balances   map[string]decimal.Decimal
+	listErr    error
+	balanceErr error
 }
 
 func (f fakeInventoryBalancer) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	return f.accounts, nil
 }
 
 func (f fakeInventoryBalancer) GetAccountBalance(_ context.Context, _, _, accountID string, _ time.Time) (decimal.Decimal, error) {
+	if f.balanceErr != nil {
+		return decimal.Zero, f.balanceErr
+	}
 	if balance, ok := f.balances[accountID]; ok {
 		return balance, nil
 	}
@@ -3981,4 +4069,717 @@ func TestNewServiceWithRepository(t *testing.T) {
 	svc := NewServiceWithRepository(repo)
 	assert.NotNil(t, svc)
 	assert.Equal(t, repo, svc.repo)
+}
+
+func TestService_ProductCategoryWarehouseErrorEdges(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("create product parses optional decimals and repository errors", func(t *testing.T) {
+		ts := newTestService()
+		product, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", &CreateProductRequest{
+			Name:          "Widget",
+			SalesPrice:    "12.50",
+			PurchasePrice: "6.25",
+			VATRate:       "20",
+			MinStockLevel: "2",
+			ReorderPoint:  "5",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, ProductTypeGoods, product.ProductType)
+		assert.Equal(t, "pcs", product.Unit)
+		assert.True(t, product.PurchasePrice.Equal(decimal.RequireFromString("6.25")))
+		assert.True(t, product.VATRate.Equal(decimal.NewFromInt(20)))
+		assert.True(t, product.MinStockLevel.Equal(decimal.NewFromInt(2)))
+		assert.True(t, product.ReorderPoint.Equal(decimal.NewFromInt(5)))
+
+		for _, tt := range []struct {
+			name    string
+			req     CreateProductRequest
+			mutate  func(*MockRepository)
+			wantErr string
+		}{
+			{name: "invalid purchase price", req: CreateProductRequest{Name: "Widget", SalesPrice: "12.50", PurchasePrice: "bad"}, wantErr: "invalid purchase price"},
+			{name: "invalid VAT rate", req: CreateProductRequest{Name: "Widget", SalesPrice: "12.50", VATRate: "bad"}, wantErr: "invalid VAT rate"},
+			{name: "generate code error", req: CreateProductRequest{Name: "Widget", SalesPrice: "12.50"}, mutate: func(repo *MockRepository) { repo.ErrOnGenerate = true }, wantErr: "generate code"},
+			{name: "create product error", req: CreateProductRequest{Name: "Widget", SalesPrice: "12.50", Code: "SKU-1"}, mutate: func(repo *MockRepository) { repo.ErrOnCreate = true }, wantErr: "create product"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				ts := newTestService()
+				if tt.mutate != nil {
+					tt.mutate(ts.repo)
+				}
+				_, err := ts.svc.CreateProduct(ctx, "tenant-1", "test_schema", &tt.req)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			})
+		}
+	})
+
+	t.Run("list products wraps repository error", func(t *testing.T) {
+		ts := newTestService()
+		ts.repo.ErrOnListProducts = true
+		_, err := ts.svc.ListProducts(ctx, "tenant-1", "test_schema", nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list products")
+	})
+
+	t.Run("update product parses optional decimals and repository errors", func(t *testing.T) {
+		ts := newTestService()
+		ts.repo.Products["p1"] = &Product{ID: "p1", TenantID: "tenant-1", Name: "Original", ProductType: ProductTypeGoods, SalesPrice: decimal.NewFromInt(10)}
+		updated, err := ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", &UpdateProductRequest{
+			Name:          "Updated",
+			Unit:          "kg",
+			PurchasePrice: "3.25",
+			SalesPrice:    "7.50",
+			VATRate:       "9",
+			MinStockLevel: "1",
+			ReorderPoint:  "4",
+			IsActive:      true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "kg", updated.Unit)
+		assert.True(t, updated.PurchasePrice.Equal(decimal.RequireFromString("3.25")))
+		assert.True(t, updated.VATRate.Equal(decimal.NewFromInt(9)))
+		assert.True(t, updated.MinStockLevel.Equal(decimal.NewFromInt(1)))
+		assert.True(t, updated.ReorderPoint.Equal(decimal.NewFromInt(4)))
+
+		ts.repo.ErrOnGet = true
+		_, err = ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", &UpdateProductRequest{Name: "Updated", IsActive: true})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get product")
+
+		ts = newTestService()
+		ts.repo.Products["p1"] = &Product{ID: "p1", TenantID: "tenant-1", Name: "Original", ProductType: ProductTypeGoods, SalesPrice: decimal.NewFromInt(10)}
+		ts.repo.ErrOnUpdate = true
+		_, err = ts.svc.UpdateProduct(ctx, "tenant-1", "test_schema", "p1", &UpdateProductRequest{Name: "Updated", IsActive: true})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update product")
+	})
+
+	for _, tt := range []struct {
+		name    string
+		call    func(*Service) error
+		mutate  func(*MockRepository)
+		wantErr string
+	}{
+		{name: "delete product", call: func(s *Service) error { return s.DeleteProduct(ctx, "tenant-1", "test_schema", "p1") }, mutate: func(repo *MockRepository) { repo.ErrOnDelete = true }, wantErr: "delete product"},
+		{name: "create category", call: func(s *Service) error {
+			_, err := s.CreateCategory(ctx, "tenant-1", "test_schema", &CreateCategoryRequest{Name: "Parts"})
+			return err
+		}, mutate: func(repo *MockRepository) { repo.ErrOnCreateCategory = true }, wantErr: "create category"},
+		{name: "get category", call: func(s *Service) error {
+			_, err := s.GetCategoryByID(ctx, "tenant-1", "test_schema", "missing")
+			return err
+		}, wantErr: "get category"},
+		{name: "list categories", call: func(s *Service) error { _, err := s.ListCategories(ctx, "tenant-1", "test_schema"); return err }, mutate: func(repo *MockRepository) { repo.ErrOnListCategories = true }, wantErr: "list categories"},
+		{name: "delete category", call: func(s *Service) error { return s.DeleteCategory(ctx, "tenant-1", "test_schema", "cat-1") }, mutate: func(repo *MockRepository) { repo.ErrOnDeleteCategory = true }, wantErr: "delete category"},
+		{name: "create warehouse", call: func(s *Service) error {
+			_, err := s.CreateWarehouse(ctx, "tenant-1", "test_schema", &CreateWarehouseRequest{Code: "MAIN", Name: "Main"})
+			return err
+		}, mutate: func(repo *MockRepository) { repo.ErrOnCreateWarehouse = true }, wantErr: "create warehouse"},
+		{name: "get warehouse", call: func(s *Service) error {
+			_, err := s.GetWarehouseByID(ctx, "tenant-1", "test_schema", "missing")
+			return err
+		}, wantErr: "get warehouse"},
+		{name: "list warehouses", call: func(s *Service) error { _, err := s.ListWarehouses(ctx, "tenant-1", "test_schema", false); return err }, mutate: func(repo *MockRepository) { repo.ErrOnListWarehouses = true }, wantErr: "list warehouses"},
+		{name: "update warehouse get", call: func(s *Service) error {
+			_, err := s.UpdateWarehouse(ctx, "tenant-1", "test_schema", "missing", &UpdateWarehouseRequest{Name: "Main"})
+			return err
+		}, wantErr: "get warehouse"},
+		{name: "update warehouse save", call: func(s *Service) error {
+			_, err := s.UpdateWarehouse(ctx, "tenant-1", "test_schema", "wh-1", &UpdateWarehouseRequest{Name: "Main"})
+			return err
+		}, mutate: func(repo *MockRepository) {
+			repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Name: "Main"}
+			repo.ErrOnUpdateWarehouse = true
+		}, wantErr: "update warehouse"},
+		{name: "delete warehouse", call: func(s *Service) error { return s.DeleteWarehouse(ctx, "tenant-1", "test_schema", "wh-1") }, mutate: func(repo *MockRepository) { repo.ErrOnDeleteWarehouse = true }, wantErr: "delete warehouse"},
+	} {
+		t.Run(tt.name+" repository error", func(t *testing.T) {
+			ts := newTestService()
+			ts.repo.Products["p1"] = &Product{ID: "p1", TenantID: "tenant-1", Name: "Widget"}
+			ts.repo.Categories["cat-1"] = &ProductCategory{ID: "cat-1", TenantID: "tenant-1", Name: "Parts"}
+			ts.repo.Warehouses["wh-1"] = &Warehouse{ID: "wh-1", TenantID: "tenant-1", Name: "Main"}
+			if tt.mutate != nil {
+				tt.mutate(ts.repo)
+			}
+			err := tt.call(ts.svc)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestService_StockOperationErrorEdges(t *testing.T) {
+	ctx := context.Background()
+
+	seed := func(ts *testService) {
+		ts.repo.Products[inventoryStockProductID] = &Product{
+			ID:             inventoryStockProductID,
+			TenantID:       "tenant-1",
+			Name:           "Widget",
+			ProductType:    ProductTypeGoods,
+			PurchasePrice:  decimal.NewFromInt(7),
+			CurrentStock:   decimal.NewFromInt(10),
+			TrackInventory: true,
+		}
+		ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+		ts.repo.Warehouses[inventoryStockWarehouseID2] = &Warehouse{ID: inventoryStockWarehouseID2, TenantID: "tenant-1", Name: "Branch", IsActive: true}
+		ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+			ID:           "sl-1",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			Quantity:     decimal.NewFromInt(10),
+			ReservedQty:  decimal.NewFromInt(3),
+			AvailableQty: decimal.NewFromInt(7),
+		}
+		ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID2)] = &StockLevel{
+			ID:           "sl-2",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID2,
+			Quantity:     decimal.NewFromInt(0),
+			ReservedQty:  decimal.Zero,
+			AvailableQty: decimal.Zero,
+		}
+	}
+	adjustReq := func(quantity string) *AdjustStockRequest {
+		return &AdjustStockRequest{ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, Quantity: quantity, UnitCost: "2.50", UserID: "user-1"}
+	}
+
+	for _, tt := range []struct {
+		name    string
+		req     *AdjustStockRequest
+		mutate  func(*MockRepository)
+		wantErr string
+	}{
+		{name: "invalid unit cost", req: &AdjustStockRequest{ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, Quantity: "1", UnitCost: "bad"}, wantErr: "invalid unit cost"},
+		{name: "get product", req: adjustReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnGet = true }, wantErr: "get product"},
+		{name: "get warehouse", req: adjustReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnGetWarehouse = true }, wantErr: "get warehouse"},
+		{name: "get stock level", req: adjustReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnGetStockLevels = true }, wantErr: "get stock level"},
+		{name: "below reserved", req: adjustReq("-8"), wantErr: "below reserved quantity"},
+		{name: "product stock negative", req: adjustReq("-11"), mutate: func(repo *MockRepository) {
+			level := repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
+			level.Quantity = decimal.NewFromInt(20)
+			level.ReservedQty = decimal.Zero
+			level.AvailableQty = decimal.NewFromInt(20)
+		}, wantErr: "product stock negative"},
+		{name: "create movement", req: adjustReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnCreateMovement = true }, wantErr: "create movement"},
+		{name: "update product stock", req: adjustReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnUpdateProductStock = true }, wantErr: "update product stock"},
+		{name: "upsert stock level", req: adjustReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnUpsertStockLevel = true }, wantErr: "update stock level"},
+	} {
+		t.Run("adjust stock "+tt.name, func(t *testing.T) {
+			ts := newTestService()
+			seed(ts)
+			if tt.mutate != nil {
+				tt.mutate(ts.repo)
+			}
+			_, err := ts.svc.AdjustStock(ctx, "tenant-1", "test_schema", tt.req)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+
+	transferReq := func() *TransferStockRequest {
+		return &TransferStockRequest{ProductID: inventoryStockProductID, FromWarehouseID: inventoryStockWarehouseID, ToWarehouseID: inventoryStockWarehouseID2, Quantity: "1", UserID: "user-1"}
+	}
+	for _, tt := range []struct {
+		name    string
+		req     *TransferStockRequest
+		mutate  func(*MockRepository)
+		wantErr string
+	}{
+		{name: "invalid quantity", req: &TransferStockRequest{ProductID: inventoryStockProductID, FromWarehouseID: inventoryStockWarehouseID, ToWarehouseID: inventoryStockWarehouseID2, Quantity: "bad"}, wantErr: "invalid quantity"},
+		{name: "nonpositive quantity", req: &TransferStockRequest{ProductID: inventoryStockProductID, FromWarehouseID: inventoryStockWarehouseID, ToWarehouseID: inventoryStockWarehouseID2, Quantity: "0"}, wantErr: "quantity must be positive"},
+		{name: "same warehouse", req: &TransferStockRequest{ProductID: inventoryStockProductID, FromWarehouseID: inventoryStockWarehouseID, ToWarehouseID: inventoryStockWarehouseID, Quantity: "1"}, wantErr: "must differ"},
+		{name: "get product", req: transferReq(), mutate: func(repo *MockRepository) { repo.ErrOnGet = true }, wantErr: "get product"},
+		{name: "get source warehouse", req: transferReq(), mutate: func(repo *MockRepository) { repo.ErrOnGetWarehouse = true }, wantErr: "get source warehouse"},
+		{name: "get source stock level", req: transferReq(), mutate: func(repo *MockRepository) { repo.ErrOnGetStockLevels = true }, wantErr: "get source stock level"},
+		{name: "insufficient available", req: &TransferStockRequest{ProductID: inventoryStockProductID, FromWarehouseID: inventoryStockWarehouseID, ToWarehouseID: inventoryStockWarehouseID2, Quantity: "8"}, wantErr: "insufficient available stock"},
+		{name: "list movements", req: transferReq(), mutate: func(repo *MockRepository) { repo.ErrOnListMovements = true }, wantErr: "list movements for transfer costing"},
+		{name: "tracked lot unavailable", req: &TransferStockRequest{ProductID: inventoryStockProductID, FromWarehouseID: inventoryStockWarehouseID, ToWarehouseID: inventoryStockWarehouseID2, Quantity: "1", LotNumber: "missing"}, wantErr: "insufficient tracked lot stock"},
+		{name: "create out movement", req: transferReq(), mutate: func(repo *MockRepository) { repo.ErrOnCreateMovement = true }, wantErr: "create out movement"},
+		{name: "update source stock level", req: transferReq(), mutate: func(repo *MockRepository) { repo.ErrOnUpsertStockLevel = true }, wantErr: "update source stock level"},
+	} {
+		t.Run("transfer stock "+tt.name, func(t *testing.T) {
+			ts := newTestService()
+			seed(ts)
+			if tt.mutate != nil {
+				tt.mutate(ts.repo)
+			}
+			err := ts.svc.TransferStock(ctx, "tenant-1", "test_schema", tt.req)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+
+	t.Run("get stock levels wraps repository error", func(t *testing.T) {
+		ts := newTestService()
+		ts.repo.ErrOnGetStockLevels = true
+		_, err := ts.svc.GetStockLevels(ctx, "tenant-1", "test_schema", inventoryStockProductID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get stock levels")
+	})
+	t.Run("get movements wraps repository error", func(t *testing.T) {
+		ts := newTestService()
+		ts.repo.ErrOnListMovements = true
+		_, err := ts.svc.GetMovements(ctx, "tenant-1", "test_schema", inventoryStockProductID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list movements")
+	})
+}
+
+func TestService_ImportEntrypointErrorEdges(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("product import repository and resolver errors", func(t *testing.T) {
+		ts := newTestService()
+		ts.repo.ErrOnListProducts = true
+		_, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+			CSVContent: "name,sales_price\nWidget,12.50\n",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list existing products")
+
+		ts = newTestService()
+		ts.repo.ErrOnListCategories = true
+		_, err = ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+			CSVContent: "name,sales_price\nWidget,12.50\n",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list product categories")
+
+		ts = newTestService()
+		ts.svc.accounts = fakeInventoryAccountLister{err: fmt.Errorf("accounts unavailable")}
+		_, err = ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+			CSVContent: "name,sales_price,sale_account_code\nWidget,12.50,4000\n",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list accounts for product import")
+
+		ts = newTestService()
+		ts.svc.contacts = fakeInventoryContactLister{err: fmt.Errorf("contacts unavailable")}
+		_, err = ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+			CSVContent: "name,sales_price,supplier_code\nWidget,12.50,SUP-1\n",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list contacts for product import")
+
+		ts = newTestService()
+		ts.repo.ErrOnGenerate = true
+		result, err := ts.svc.ImportProductsCSV(ctx, "tenant-1", "test_schema", &ImportProductsRequest{
+			CSVContent: "name,sales_price\nWidget,12.50\n",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "generate code")
+	})
+
+	t.Run("category warehouse and stock import repository errors", func(t *testing.T) {
+		ts := newTestService()
+		ts.repo.ErrOnListCategories = true
+		_, err := ts.svc.ImportProductCategoriesCSV(ctx, "tenant-1", "test_schema", &ImportProductCategoriesRequest{
+			CSVContent: "category_name\nParts\n",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list existing product categories")
+
+		ts = newTestService()
+		ts.repo.ErrOnCreateCategory = true
+		categoryResult, err := ts.svc.ImportProductCategoriesCSV(ctx, "tenant-1", "test_schema", &ImportProductCategoriesRequest{
+			CSVContent: "category_name\nParts\n",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 1, categoryResult.RowsSkipped)
+		require.Len(t, categoryResult.Errors, 1)
+		assert.Contains(t, categoryResult.Errors[0].Message, "mock error on create category")
+
+		ts = newTestService()
+		ts.repo.ErrOnListWarehouses = true
+		_, err = ts.svc.ImportWarehousesCSV(ctx, "tenant-1", "test_schema", &ImportWarehousesRequest{
+			CSVContent: "warehouse_code,warehouse_name\nMAIN,Main\n",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list existing warehouses")
+
+		ts = newTestService()
+		ts.repo.ErrOnCreateWarehouse = true
+		warehouseResult, err := ts.svc.ImportWarehousesCSV(ctx, "tenant-1", "test_schema", &ImportWarehousesRequest{
+			CSVContent: "warehouse_code,warehouse_name\nMAIN,Main\n",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 1, warehouseResult.RowsSkipped)
+		require.Len(t, warehouseResult.Errors, 1)
+		assert.Contains(t, warehouseResult.Errors[0].Message, "mock error on create warehouse")
+
+		ts = newTestService()
+		ts.repo.ErrOnListProducts = true
+		_, err = ts.svc.ImportStockAdjustmentsCSV(ctx, "tenant-1", "test_schema", &ImportStockAdjustmentsRequest{
+			CSVContent: "product_code,warehouse_code,quantity\nSKU-1,MAIN,1\n",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list products")
+
+		ts = newTestService()
+		ts.repo.ErrOnListWarehouses = true
+		_, err = ts.svc.ImportStockAdjustmentsCSV(ctx, "tenant-1", "test_schema", &ImportStockAdjustmentsRequest{
+			CSVContent: "product_code,warehouse_code,quantity\nSKU-1,MAIN,1\n",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list warehouses")
+	})
+}
+
+func TestService_IssueAndReservationErrorEdges(t *testing.T) {
+	ctx := context.Background()
+
+	seed := func(ts *testService) {
+		ts.repo.Products[inventoryStockProductID] = &Product{
+			ID:                 inventoryStockProductID,
+			TenantID:           "tenant-1",
+			Name:               "Widget",
+			ProductType:        ProductTypeGoods,
+			PurchasePrice:      decimal.NewFromInt(7),
+			CurrentStock:       decimal.NewFromInt(10),
+			TrackInventory:     true,
+			InventoryAccountID: "55555555-5555-4555-8555-555555555555",
+		}
+		ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Name: "Main", IsActive: true}
+		ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+			ID:           "sl-1",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			Quantity:     decimal.NewFromInt(10),
+			ReservedQty:  decimal.NewFromInt(2),
+			AvailableQty: decimal.NewFromInt(8),
+		}
+		ts.repo.Movements[inventoryStockProductID] = []InventoryMovement{
+			{
+				ID:           "mov-lot",
+				TenantID:     "tenant-1",
+				ProductID:    inventoryStockProductID,
+				WarehouseID:  inventoryStockWarehouseID,
+				MovementType: MovementTypeIn,
+				Quantity:     decimal.NewFromInt(5),
+				UnitCost:     decimal.NewFromInt(8),
+				TotalCost:    decimal.NewFromInt(40),
+				LotNumber:    "LOT-1",
+				MovementDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+			},
+		}
+	}
+	issueReq := func(quantity string) *IssueStockRequest {
+		return &IssueStockRequest{ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, Quantity: quantity, UserID: "user-1"}
+	}
+
+	for _, tt := range []struct {
+		name    string
+		req     *IssueStockRequest
+		mutate  func(*testService)
+		wantErr string
+	}{
+		{name: "invalid quantity", req: &IssueStockRequest{ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, Quantity: "bad"}, wantErr: "invalid quantity"},
+		{name: "invalid product id", req: &IssueStockRequest{ProductID: "legacy-product", WarehouseID: inventoryStockWarehouseID, Quantity: "1"}, wantErr: "product_id must be a valid UUID"},
+		{name: "invalid warehouse id", req: &IssueStockRequest{ProductID: inventoryStockProductID, WarehouseID: "legacy-warehouse", Quantity: "1"}, wantErr: "warehouse_id must be a valid UUID"},
+		{name: "invalid source id", req: &IssueStockRequest{ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, Quantity: "1", SourceID: "legacy-source"}, wantErr: "source_id must be a valid UUID"},
+		{name: "invalid expiry", req: &IssueStockRequest{ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, Quantity: "1", ExpiryDate: "31-01-2027"}, wantErr: "expiry_date must use YYYY-MM-DD"},
+		{name: "get product", req: issueReq("1"), mutate: func(ts *testService) { ts.repo.ErrOnGet = true }, wantErr: "get product"},
+		{name: "get warehouse", req: issueReq("1"), mutate: func(ts *testService) { ts.repo.ErrOnGetWarehouse = true }, wantErr: "get warehouse"},
+		{name: "get stock level", req: issueReq("1"), mutate: func(ts *testService) { ts.repo.ErrOnGetStockLevels = true }, wantErr: "get stock level"},
+		{name: "insufficient available", req: issueReq("9"), wantErr: "insufficient available stock"},
+		{name: "insufficient product", req: issueReq("11"), mutate: func(ts *testService) {
+			level := ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)]
+			level.Quantity = decimal.NewFromInt(20)
+			level.AvailableQty = decimal.NewFromInt(20)
+		}, wantErr: "insufficient product stock"},
+		{name: "list movements", req: issueReq("1"), mutate: func(ts *testService) { ts.repo.ErrOnListMovements = true }, wantErr: "list movements for issue costing"},
+		{name: "list reservations", req: issueReq("1"), mutate: func(ts *testService) { ts.repo.ErrOnListLotReservations = true }, wantErr: "list lot reservations"},
+		{name: "tracked lot unavailable", req: &IssueStockRequest{ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, Quantity: "6", LotNumber: "LOT-1"}, wantErr: "insufficient available tracked lot stock"},
+		{name: "create issue movement", req: issueReq("1"), mutate: func(ts *testService) { ts.repo.ErrOnCreateMovement = true }, wantErr: "create issue movement"},
+		{name: "update issue product stock", req: issueReq("1"), mutate: func(ts *testService) { ts.repo.ErrOnUpdateProductStock = true }, wantErr: "update product stock"},
+		{name: "update issue stock level", req: issueReq("1"), mutate: func(ts *testService) { ts.repo.ErrOnUpsertStockLevel = true }, wantErr: "update stock level"},
+	} {
+		t.Run("issue stock "+tt.name, func(t *testing.T) {
+			ts := newTestService()
+			seed(ts)
+			if tt.mutate != nil {
+				tt.mutate(ts)
+			}
+			_, err := ts.svc.IssueStock(ctx, "tenant-1", "test_schema", tt.req)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+
+	t.Run("post to ledger without transaction ledger fails early", func(t *testing.T) {
+		ts := newTestService()
+		seed(ts)
+		_, err := ts.svc.IssueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+			ProductID:                inventoryStockProductID,
+			WarehouseID:              inventoryStockWarehouseID,
+			Quantity:                 "1",
+			CostOfGoodsSoldAccountID: "44444444-4444-4444-8444-444444444444",
+			PostToLedger:             true,
+			UserID:                   "user-1",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "accounting transaction is unavailable")
+	})
+
+	t.Run("issue account validation branches", func(t *testing.T) {
+		ts := newTestService()
+		seed(ts)
+		_, err := ts.svc.issueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			Quantity:     "1",
+			PostToLedger: true,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user id is required")
+
+		ts = newTestService()
+		seed(ts)
+		_, err = ts.svc.issueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+			ProductID:                inventoryStockProductID,
+			WarehouseID:              inventoryStockWarehouseID,
+			Quantity:                 "1",
+			CostOfGoodsSoldAccountID: "bad-account",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cost_of_goods_sold_account_id must be a valid UUID")
+
+		ts = newTestService()
+		seed(ts)
+		ts.repo.Products[inventoryStockProductID].InventoryAccountID = ""
+		_, err = ts.svc.issueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+			ProductID:                inventoryStockProductID,
+			WarehouseID:              inventoryStockWarehouseID,
+			Quantity:                 "1",
+			CostOfGoodsSoldAccountID: "44444444-4444-4444-8444-444444444444",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "both required")
+
+		ts = newTestService()
+		seed(ts)
+		ts.svc.accounts = fakeInventoryAccountLister{err: fmt.Errorf("accounts unavailable")}
+		_, err = ts.svc.issueStock(ctx, "tenant-1", "test_schema", &IssueStockRequest{
+			ProductID:                inventoryStockProductID,
+			WarehouseID:              inventoryStockWarehouseID,
+			Quantity:                 "1",
+			CostOfGoodsSoldAccountID: "44444444-4444-4444-8444-444444444444",
+			InventoryAccountID:       "55555555-5555-4555-8555-555555555555",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list accounts for issue accounting")
+	})
+
+	reservationReq := func(quantity string) *StockReservationRequest {
+		return &StockReservationRequest{ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, Quantity: quantity, UserID: "user-1"}
+	}
+	for _, tt := range []struct {
+		name    string
+		call    func(*Service, *StockReservationRequest) (*StockLevel, error)
+		req     *StockReservationRequest
+		mutate  func(*MockRepository)
+		wantErr string
+	}{
+		{name: "reserve get product", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReserveStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnGet = true }, wantErr: "get product"},
+		{name: "reserve get warehouse", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReserveStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnGetWarehouse = true }, wantErr: "get warehouse"},
+		{name: "reserve get stock level", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReserveStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnGetStockLevels = true }, wantErr: "get stock level"},
+		{name: "reserve insufficient available", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReserveStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("9"), wantErr: "insufficient available stock"},
+		{name: "reserve list movements", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReserveStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnListMovements = true }, wantErr: "list movements for product"},
+		{name: "reserve upsert stock level", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReserveStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnUpsertStockLevel = true }, wantErr: "update stock level"},
+		{name: "release get product", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReleaseStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnGet = true }, wantErr: "get product"},
+		{name: "release get warehouse", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReleaseStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnGetWarehouse = true }, wantErr: "get warehouse"},
+		{name: "release get stock level", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReleaseStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnGetStockLevels = true }, wantErr: "get stock level"},
+		{name: "release too much", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReleaseStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("3"), wantErr: "cannot release more than reserved stock"},
+		{name: "release list reservations", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReleaseStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnListLotReservations = true }, wantErr: "list lot reservations"},
+		{name: "release upsert stock level", call: func(s *Service, req *StockReservationRequest) (*StockLevel, error) {
+			return s.ReleaseStock(ctx, "tenant-1", "test_schema", req)
+		}, req: reservationReq("1"), mutate: func(repo *MockRepository) { repo.ErrOnUpsertStockLevel = true }, wantErr: "update stock level"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := newTestService()
+			seed(ts)
+			if tt.mutate != nil {
+				tt.mutate(ts.repo)
+			}
+			_, err := tt.call(ts.svc, tt.req)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestService_ReportAndCostingEdgeBranches(t *testing.T) {
+	ctx := context.Background()
+
+	seedReportData := func(ts *testService) {
+		ts.repo.Products[inventoryStockProductID] = &Product{
+			ID:                 inventoryStockProductID,
+			TenantID:           "tenant-1",
+			Code:               "SKU-1",
+			Name:               "Widget",
+			ProductType:        ProductTypeGoods,
+			PurchasePrice:      decimal.NewFromInt(7),
+			CurrentStock:       decimal.NewFromInt(5),
+			TrackInventory:     true,
+			InventoryAccountID: "55555555-5555-4555-8555-555555555555",
+		}
+		ts.repo.Products["service-1"] = &Product{ID: "service-1", TenantID: "tenant-1", Code: "SVC", Name: "Service", ProductType: ProductTypeService, TrackInventory: false}
+		ts.repo.Warehouses[inventoryStockWarehouseID] = &Warehouse{ID: inventoryStockWarehouseID, TenantID: "tenant-1", Code: "MAIN", Name: "Main", IsActive: true}
+		ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID)] = &StockLevel{
+			ID:           "sl-1",
+			TenantID:     "tenant-1",
+			ProductID:    inventoryStockProductID,
+			WarehouseID:  inventoryStockWarehouseID,
+			Quantity:     decimal.NewFromInt(5),
+			ReservedQty:  decimal.NewFromInt(1),
+			AvailableQty: decimal.NewFromInt(4),
+		}
+		ts.repo.StockLevels[inventoryStockLevelKey(inventoryStockProductID, "other-tenant-warehouse")] = &StockLevel{
+			ID:          "sl-other",
+			TenantID:    "tenant-other",
+			ProductID:   inventoryStockProductID,
+			WarehouseID: "other-tenant-warehouse",
+			Quantity:    decimal.NewFromInt(99),
+		}
+		ts.repo.Movements[inventoryStockProductID] = []InventoryMovement{
+			{ID: "out", TenantID: "tenant-1", ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, MovementType: MovementTypeOut, Quantity: decimal.NewFromInt(1), UnitCost: decimal.NewFromInt(99)},
+			{ID: "zero-qty", TenantID: "tenant-1", ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, MovementType: MovementTypeIn, Quantity: decimal.Zero, UnitCost: decimal.NewFromInt(5)},
+			{ID: "zero-cost", TenantID: "tenant-1", ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, MovementType: MovementTypeIn, Quantity: decimal.NewFromInt(1), UnitCost: decimal.Zero, TotalCost: decimal.Zero},
+			{ID: "other-tenant", TenantID: "tenant-other", ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, MovementType: MovementTypeIn, Quantity: decimal.NewFromInt(1), UnitCost: decimal.NewFromInt(100)},
+			{ID: "receipt", TenantID: "tenant-1", ProductID: inventoryStockProductID, WarehouseID: inventoryStockWarehouseID, MovementType: MovementTypeIn, Quantity: decimal.NewFromInt(5), UnitCost: decimal.NewFromInt(8), MovementDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)},
+		}
+	}
+
+	for _, tt := range []struct {
+		name        string
+		method      string
+		warehouseID string
+		mutate      func(*testService)
+		wantErr     string
+	}{
+		{name: "warehouse lookup", warehouseID: inventoryStockWarehouseID, mutate: func(ts *testService) { ts.repo.ErrOnGetWarehouse = true }, wantErr: "get warehouse"},
+		{name: "list products", mutate: func(ts *testService) { ts.repo.ErrOnListProducts = true }, wantErr: "list products"},
+		{name: "list warehouses", mutate: func(ts *testService) { ts.repo.ErrOnListWarehouses = true }, wantErr: "list warehouses"},
+		{name: "stock levels", mutate: func(ts *testService) { ts.repo.ErrOnGetStockLevels = true }, wantErr: "get stock levels"},
+		{name: "cost movements", method: InventoryValuationMethodWeightedAverage, mutate: func(ts *testService) { ts.repo.ErrOnListMovements = true }, wantErr: "list movements"},
+	} {
+		t.Run("valuation error "+tt.name, func(t *testing.T) {
+			ts := newTestService()
+			seedReportData(ts)
+			if tt.mutate != nil {
+				tt.mutate(ts)
+			}
+			_, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", tt.warehouseID, tt.method)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+
+	t.Run("valuation weighted average skips unusable movement layers", func(t *testing.T) {
+		ts := newTestService()
+		seedReportData(ts)
+		report, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "", InventoryValuationMethodWeightedAverage)
+		require.NoError(t, err)
+		require.Len(t, report.Lines, 1)
+		assert.True(t, report.Lines[0].UnitCost.Equal(decimal.NewFromInt(8)))
+		assert.True(t, report.TotalQuantity.Equal(decimal.NewFromInt(5)))
+	})
+
+	t.Run("valuation falls back to unassigned stock without levels", func(t *testing.T) {
+		ts := newTestService()
+		seedReportData(ts)
+		delete(ts.repo.StockLevels, inventoryStockLevelKey(inventoryStockProductID, inventoryStockWarehouseID))
+		delete(ts.repo.StockLevels, inventoryStockLevelKey(inventoryStockProductID, "other-tenant-warehouse"))
+		report, err := ts.svc.GetInventoryValuation(ctx, "tenant-1", "test_schema", "", InventoryValuationMethodStandardCost)
+		require.NoError(t, err)
+		require.Len(t, report.Lines, 1)
+		assert.Equal(t, "UNASSIGNED", report.Lines[0].WarehouseCode)
+	})
+
+	t.Run("fifo helper covers fallback and created-at ordering", func(t *testing.T) {
+		product := Product{ID: "p1", PurchasePrice: decimal.NewFromInt(7)}
+		assert.True(t, fifoInventoryUnitCost(product, nil, "tenant-1", decimal.Zero).Equal(decimal.NewFromInt(7)))
+		got := fifoInventoryUnitCost(product, []InventoryMovement{
+			{TenantID: "tenant-other", MovementType: MovementTypeIn, Quantity: decimal.NewFromInt(1), UnitCost: decimal.NewFromInt(100)},
+			{TenantID: "tenant-1", MovementType: MovementTypeOut, Quantity: decimal.NewFromInt(1), UnitCost: decimal.NewFromInt(100)},
+			{TenantID: "tenant-1", MovementType: MovementTypeIn, Quantity: decimal.NewFromInt(1), UnitCost: decimal.Zero, TotalCost: decimal.Zero},
+			{TenantID: "tenant-1", MovementType: MovementTypeIn, Quantity: decimal.NewFromInt(2), UnitCost: decimal.Zero, TotalCost: decimal.NewFromInt(20), CreatedAt: time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)},
+		}, "tenant-1", decimal.NewFromInt(3))
+		assert.True(t, got.Equal(decimal.NewFromInt(9)))
+	})
+
+	t.Run("subledger configured errors", func(t *testing.T) {
+		ts := newTestService()
+		seedReportData(ts)
+		ts.svc.accounts = fakeInventoryBalancer{accounts: []accounting.Account{}, listErr: fmt.Errorf("accounts down")}
+		_, err := ts.svc.GetInventorySubledgerReconciliation(ctx, "tenant-1", "test_schema", "", InventoryValuationMethodStandardCost, time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "list accounts")
+
+		ts = newTestService()
+		seedReportData(ts)
+		ts.svc.accounts = fakeInventoryBalancer{
+			accounts:   []accounting.Account{{ID: "55555555-5555-4555-8555-555555555555", Code: "1400", Name: "Inventory", AccountType: accounting.AccountTypeAsset}},
+			balances:   map[string]decimal.Decimal{},
+			balanceErr: fmt.Errorf("balance down"),
+		}
+		_, err = ts.svc.GetInventorySubledgerReconciliation(ctx, "tenant-1", "test_schema", "", InventoryValuationMethodStandardCost, time.Time{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get account balance")
+	})
+
+	for _, tt := range []struct {
+		name        string
+		productID   string
+		warehouseID string
+		mutate      func(*testService)
+		wantErr     string
+	}{
+		{name: "warehouse lookup", warehouseID: inventoryStockWarehouseID, mutate: func(ts *testService) { ts.repo.ErrOnGetWarehouse = true }, wantErr: "get warehouse"},
+		{name: "specific product lookup", productID: inventoryStockProductID, mutate: func(ts *testService) { ts.repo.ErrOnGet = true }, wantErr: "get product"},
+		{name: "list products", mutate: func(ts *testService) { ts.repo.ErrOnListProducts = true }, wantErr: "list products"},
+		{name: "list warehouses", mutate: func(ts *testService) { ts.repo.ErrOnListWarehouses = true }, wantErr: "list warehouses"},
+		{name: "list movements", mutate: func(ts *testService) { ts.repo.ErrOnListMovements = true }, wantErr: "list movements"},
+	} {
+		t.Run("lot report error "+tt.name, func(t *testing.T) {
+			ts := newTestService()
+			seedReportData(ts)
+			if tt.mutate != nil {
+				tt.mutate(ts)
+			}
+			_, err := ts.svc.GetInventoryLotReport(ctx, "tenant-1", "test_schema", tt.productID, tt.warehouseID, false)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
 }

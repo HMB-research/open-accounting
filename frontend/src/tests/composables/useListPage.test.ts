@@ -35,6 +35,20 @@ describe("useListPage", () => {
     expect(listPage.error).toBe("");
   });
 
+  it("loads items with an empty default filter when no initial filter is configured", async () => {
+    const fetchItems = vi.fn().mockResolvedValue([{ id: "item-0" }]);
+
+    const listPage = useListPage({
+      fetchItems,
+    });
+
+    await listPage.loadData("tenant-1");
+
+    expect(fetchItems).toHaveBeenCalledWith("tenant-1", {});
+    expect(listPage.filter).toEqual({});
+    expect(listPage.items).toEqual([{ id: "item-0" }]);
+  });
+
   it("surfaces fetch errors and clears the loading state", async () => {
     const fetchItems = vi.fn().mockRejectedValue(new Error("boom"));
 
@@ -93,6 +107,12 @@ describe("useListPage", () => {
     listPage.setActionLoading(true);
     listPage.setError("broken");
     listPage.clearError();
+    listPage.setSuccess("first");
+    listPage.setSuccess("second");
+    listPage.clearSuccess();
+
+    expect(listPage.success).toBe("");
+
     listPage.setSuccess("saved");
 
     expect(listPage.items).toEqual([{ id: "item-9" }]);

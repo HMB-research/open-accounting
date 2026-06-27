@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -72,6 +73,50 @@ var defaultDevelopmentOrigins = []string{"http://localhost:5173", "http://localh
 
 const developmentJWTSecret = "development-only-insecure-jwt-secret" //nolint:gosec // Explicitly development-only fallback rejected in production mode.
 
+type apiPool interface {
+	Ping(ctx context.Context) error
+	Close()
+}
+
+type apiScheduler interface {
+	Start() error
+	Stop() context.Context
+}
+
+type apiHTTPServer interface {
+	ListenAndServe() error
+	Shutdown(ctx context.Context) error
+}
+
+type apiPluginLoader interface {
+	LoadEnabledPlugins(ctx context.Context) error
+}
+
+type apiApplication struct {
+	handlers      *Handlers
+	tokenService  *auth.TokenService
+	scheduler     apiScheduler
+	pluginLoader  apiPluginLoader
+	schedulerConf scheduler.Config
+}
+
+type apiMainDeps struct {
+	getenv           func(string) string
+	loadConfig       func() *Config
+	newPool          func(context.Context, string) (apiPool, error)
+	buildApplication func(context.Context, *Config, apiPool, scheduler.Config) (*apiApplication, error)
+	newServer        func(*Config, *apiApplication) apiHTTPServer
+	signalNotify     func(chan<- os.Signal, ...os.Signal)
+}
+
+var (
+	newDemoStatusReader = demo.NewStatusReader
+	newDemoResetService = demo.NewResetService
+	mainDepsProvider    = defaultAPIMainDeps
+	apiMainExit         = os.Exit
+	configFatalExit     = os.Exit
+)
+
 // healthCheck returns the API health status.
 // @Summary Health check
 // @Description Return OK when the API process is accepting requests
@@ -84,12 +129,45 @@ func healthCheck(w http.ResponseWriter, _ *http.Request) {
 }
 
 func main() {
+	if err := runAPI(context.Background(), mainDepsProvider()); err != nil {
+		log.WithLevel(zerolog.FatalLevel).Err(err).Msg("API failed")
+		apiMainExit(1)
+	}
+}
+
+func configFatal(err error, message string) {
+	log.WithLevel(zerolog.FatalLevel).Err(err).Msg(message)
+	configFatalExit(1)
+}
+
+func defaultAPIMainDeps() apiMainDeps {
+	return apiMainDeps{
+		getenv:     os.Getenv,
+		loadConfig: loadConfig,
+		newPool: func(ctx context.Context, databaseURL string) (apiPool, error) {
+			return pgxpool.New(ctx, databaseURL)
+		},
+		buildApplication: buildProductionAPIApplication,
+		newServer: func(cfg *Config, app *apiApplication) apiHTTPServer {
+			return &http.Server{
+				Addr:         ":" + cfg.Port,
+				Handler:      setupRouter(cfg, app.handlers, app.tokenService),
+				ReadTimeout:  15 * time.Second,
+				WriteTimeout: 15 * time.Second,
+				IdleTimeout:  60 * time.Second,
+			}
+		},
+		signalNotify: signal.Notify,
+	}
+}
+
+func runAPI(ctx context.Context, deps apiMainDeps) error {
 	// Configure logging
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Set log level from environment (default: info)
 	// Valid levels: trace, debug, info, warn, error, fatal, panic
-	logLevel := os.Getenv("LOG_LEVEL")
+	logLevel := deps.getenv("LOG_LEVEL")
 	if logLevel == "" {
 		logLevel = "info"
 	}
@@ -102,112 +180,103 @@ func main() {
 	log.Info().Str("level", level.String()).Msg("Log level configured")
 
 	// Load configuration
-	cfg := loadConfig()
+	cfg := deps.loadConfig()
 
 	// Connect to database
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	pool, err := deps.newPool(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to connect to database")
+		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer pool.Close()
 
 	if err := pool.Ping(ctx); err != nil {
-		log.Fatal().Err(err).Msg("Failed to ping database")
+		return fmt.Errorf("failed to ping database: %w", err)
 	}
 	log.Info().Msg("Connected to database")
 
-	// Initialize services
-	tokenService := auth.NewTokenService(cfg.JWTSecret, cfg.AccessExpiry, cfg.RefreshExpiry)
-	refreshSessionService := auth.NewRefreshSessionService(pool)
-	passwordResetService := auth.NewPasswordResetService(pool)
-	securityAuditService := auth.NewSecurityAuditService(pool)
-	apiTokenService := apitoken.NewService(pool)
-	tokenService.SetAPITokenValidator(apiTokenService)
-	tenantService := tenant.NewService(pool)
-	accountingService := accounting.NewService(pool)
-	contactsService := contacts.NewService(pool)
-	documentStore, err := documents.NewLocalStore(cfg.DocumentsDir)
+	schedulerConfig := loadSchedulerConfig(deps.getenv)
+	app, err := deps.buildApplication(ctx, cfg, pool, schedulerConfig)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize document storage")
-	}
-	documentsService := documents.NewService(documents.NewRepository(pool), documentStore)
-	invoicingService := invoicing.NewService(pool, accountingService)
-	paymentsService := payments.NewService(pool, invoicingService)
-	pdfService := pdf.NewService()
-	analyticsService := analytics.NewService(pool)
-	emailService := email.NewService(pool)
-	recurringService := recurring.NewService(pool, invoicingService, emailService, pdfService, tenantService, contactsService)
-	bankingService := banking.NewService(pool)
-	taxService := tax.NewService(pool)
-	payrollService := payroll.NewService(pool)
-	absenceService := payroll.NewAbsenceServiceWithPoolAndEvidence(pool, documentsService)
-	pluginService := plugin.NewService(pool, "./plugins")
-	quotesService := quotes.NewService(pool)
-	ordersService := orders.NewService(pool)
-	assetsService := assets.NewService(pool)
-	reportsService := reports.NewService(pool)
-	inventoryService := inventory.NewService(pool)
-	reminderService := invoicing.NewReminderService(pool, emailService)
-	automatedReminderService := invoicing.NewAutomatedReminderService(pool, emailService)
-	costCenterService := accounting.NewCostCenterService(pool)
-	interestService := invoicing.NewInterestService(pool)
-	webhookService := webhooks.NewService(pool)
-	webhookService.RegisterPluginHooks(pluginService.GetHookRegistry())
-	expensesService := expenses.NewService(pool, documentsService)
-	migrationRunStore := cutover.NewMigrationExecutionRunRepository(pool)
-	demoStatusReader, err := demo.NewStatusReader(pool)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize demo status reader")
-	}
-	demoResetService, err := demo.NewResetService(ctx, pool, demo.SeedSQLForUsers)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize demo reset service")
+		return err
 	}
 
 	// Load enabled plugins on startup
-	if err := pluginService.LoadEnabledPlugins(ctx); err != nil {
+	if err := app.pluginLoader.LoadEnabledPlugins(ctx); err != nil {
 		log.Warn().Err(err).Msg("Failed to load some plugins")
 	}
 
-	// Initialize and start scheduler for recurring work
-	schedulerConfig := scheduler.DefaultConfig()
-	if schedule := os.Getenv("RECURRING_INVOICE_SCHEDULE"); schedule != "" {
-		schedulerConfig.RecurringInvoiceSchedule = schedule
-	}
-	if schedule := os.Getenv("RECURRING_JOURNAL_ENTRY_SCHEDULE"); schedule != "" {
-		schedulerConfig.RecurringJournalEntrySchedule = schedule
-	}
-	if schedule := os.Getenv("DOCUMENT_RETENTION_REMINDER_SCHEDULE"); schedule != "" {
-		schedulerConfig.DocumentRetentionReminderSchedule = schedule
-	}
-	if horizon := os.Getenv("DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS"); horizon != "" {
-		parsed, err := strconv.Atoi(horizon)
-		if err != nil || parsed < 0 {
-			log.Warn().Str("horizon_days", horizon).Msg("Invalid DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS, using default")
-		} else {
-			schedulerConfig.DocumentRetentionReminderHorizonDays = parsed
-		}
-	}
-	if includeMissing := os.Getenv("DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING"); includeMissing != "" {
-		parsed, err := strconv.ParseBool(includeMissing)
-		if err != nil {
-			log.Warn().Str("include_missing", includeMissing).Msg("Invalid DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING, using default")
-		} else {
-			schedulerConfig.DocumentRetentionReminderIncludeMissing = parsed
-		}
-	}
-	if os.Getenv("SCHEDULER_ENABLED") == "false" {
-		schedulerConfig.Enabled = false
-	}
-	documentRetentionReminderPolicy := loadDocumentRetentionReminderPolicy()
-	documentRetentionReminderService := documents.NewRetentionReminderServiceWithPolicy(documentsService, emailService, documentRetentionReminderPolicy)
-	appScheduler := scheduler.NewScheduler(pool, recurringService, automatedReminderService, schedulerConfig)
-	appScheduler.SetRecurringJournalEntryService(accountingService)
-	appScheduler.SetDocumentRetentionReminderService(documentRetentionReminderService)
-	if err := appScheduler.Start(); err != nil {
+	if err := app.scheduler.Start(); err != nil {
 		log.Warn().Err(err).Msg("Failed to start scheduler")
 	}
+
+	srv := deps.newServer(cfg, app)
+	startShutdownListener(deps.signalNotify, app.scheduler, srv)
+
+	log.Info().Str("port", cfg.Port).Msg("Starting server")
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		return fmt.Errorf("server failed: %w", err)
+	}
+	return nil
+}
+
+func buildProductionAPIApplication(ctx context.Context, cfg *Config, pool apiPool, schedulerConfig scheduler.Config) (*apiApplication, error) {
+	pgxPool, ok := pool.(*pgxpool.Pool)
+	if !ok {
+		return nil, fmt.Errorf("production API requires a pgx pool")
+	}
+
+	documentStore, err := documents.NewLocalStore(cfg.DocumentsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize document storage: %w", err)
+	}
+	demoStatusReader, err := newDemoStatusReader(pgxPool)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize demo status reader: %w", err)
+	}
+	demoResetService, err := newDemoResetService(ctx, pgxPool, demo.SeedSQLForUsers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize demo reset service: %w", err)
+	}
+
+	tokenService := auth.NewTokenService(cfg.JWTSecret, cfg.AccessExpiry, cfg.RefreshExpiry)
+	refreshSessionService := auth.NewRefreshSessionService(pgxPool)
+	passwordResetService := auth.NewPasswordResetService(pgxPool)
+	securityAuditService := auth.NewSecurityAuditService(pgxPool)
+	apiTokenService := apitoken.NewService(pgxPool)
+	tokenService.SetAPITokenValidator(apiTokenService)
+	tenantService := tenant.NewService(pgxPool)
+	accountingService := accounting.NewService(pgxPool)
+	contactsService := contacts.NewService(pgxPool)
+	documentsService := documents.NewService(documents.NewRepository(pgxPool), documentStore)
+	invoicingService := invoicing.NewService(pgxPool, accountingService)
+	paymentsService := payments.NewService(pgxPool, invoicingService)
+	pdfService := pdf.NewService()
+	analyticsService := analytics.NewService(pgxPool)
+	emailService := email.NewService(pgxPool)
+	recurringService := recurring.NewService(pgxPool, invoicingService, emailService, pdfService, tenantService, contactsService)
+	bankingService := banking.NewService(pgxPool)
+	taxService := tax.NewService(pgxPool)
+	payrollService := payroll.NewService(pgxPool)
+	absenceService := payroll.NewAbsenceServiceWithPoolAndEvidence(pgxPool, documentsService)
+	pluginService := plugin.NewService(pgxPool, "./plugins")
+	quotesService := quotes.NewService(pgxPool)
+	ordersService := orders.NewService(pgxPool)
+	assetsService := assets.NewService(pgxPool)
+	reportsService := reports.NewService(pgxPool)
+	inventoryService := inventory.NewService(pgxPool)
+	reminderService := invoicing.NewReminderService(pgxPool, emailService)
+	automatedReminderService := invoicing.NewAutomatedReminderService(pgxPool, emailService)
+	costCenterService := accounting.NewCostCenterService(pgxPool)
+	interestService := invoicing.NewInterestService(pgxPool)
+	webhookService := webhooks.NewService(pgxPool)
+	webhookService.RegisterPluginHooks(pluginService.GetHookRegistry())
+	expensesService := expenses.NewService(pgxPool, documentsService)
+	migrationRunStore := cutover.NewMigrationExecutionRunRepository(pgxPool)
+	documentRetentionReminderPolicy := loadDocumentRetentionReminderPolicy()
+	documentRetentionReminderService := documents.NewRetentionReminderServiceWithPolicy(documentsService, emailService, documentRetentionReminderPolicy)
+	appScheduler := scheduler.NewScheduler(pgxPool, recurringService, automatedReminderService, schedulerConfig)
+	appScheduler.SetRecurringJournalEntryService(accountingService)
+	appScheduler.SetDocumentRetentionReminderService(documentRetentionReminderService)
 
 	// Create handlers
 	handlers := &Handlers{
@@ -252,22 +321,52 @@ func main() {
 		demoStatusReader:         demoStatusReader,
 	}
 
-	// Setup router
-	r := setupRouter(cfg, handlers, tokenService)
+	return &apiApplication{
+		handlers:      handlers,
+		tokenService:  tokenService,
+		scheduler:     appScheduler,
+		pluginLoader:  pluginService,
+		schedulerConf: schedulerConfig,
+	}, nil
+}
 
-	// Start server
-	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+func loadSchedulerConfig(getenv func(string) string) scheduler.Config {
+	schedulerConfig := scheduler.DefaultConfig()
+	if schedule := getenv("RECURRING_INVOICE_SCHEDULE"); schedule != "" {
+		schedulerConfig.RecurringInvoiceSchedule = schedule
 	}
+	if schedule := getenv("RECURRING_JOURNAL_ENTRY_SCHEDULE"); schedule != "" {
+		schedulerConfig.RecurringJournalEntrySchedule = schedule
+	}
+	if schedule := getenv("DOCUMENT_RETENTION_REMINDER_SCHEDULE"); schedule != "" {
+		schedulerConfig.DocumentRetentionReminderSchedule = schedule
+	}
+	if horizon := getenv("DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS"); horizon != "" {
+		parsed, err := strconv.Atoi(horizon)
+		if err != nil || parsed < 0 {
+			log.Warn().Str("horizon_days", horizon).Msg("Invalid DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS, using default")
+		} else {
+			schedulerConfig.DocumentRetentionReminderHorizonDays = parsed
+		}
+	}
+	if includeMissing := getenv("DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING"); includeMissing != "" {
+		parsed, err := strconv.ParseBool(includeMissing)
+		if err != nil {
+			log.Warn().Str("include_missing", includeMissing).Msg("Invalid DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING, using default")
+		} else {
+			schedulerConfig.DocumentRetentionReminderIncludeMissing = parsed
+		}
+	}
+	if getenv("SCHEDULER_ENABLED") == "false" {
+		schedulerConfig.Enabled = false
+	}
+	return schedulerConfig
+}
 
-	// Graceful shutdown
+func startShutdownListener(signalNotify func(chan<- os.Signal, ...os.Signal), appScheduler apiScheduler, srv apiHTTPServer) {
 	go func() {
 		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		signalNotify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
 
 		log.Info().Msg("Shutting down server...")
@@ -283,11 +382,6 @@ func main() {
 			log.Error().Err(err).Msg("Server shutdown error")
 		}
 	}()
-
-	log.Info().Str("port", cfg.Port).Msg("Starting server")
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatal().Err(err).Msg("Server failed")
-	}
 }
 
 func loadConfig() *Config {
@@ -298,14 +392,14 @@ func loadConfig() *Config {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		log.Fatal().Msg("DATABASE_URL environment variable required")
+		configFatal(nil, "DATABASE_URL environment variable required")
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	production := isProductionEnvironment()
 	resolvedJWTSecret, err := resolveJWTSecret(jwtSecret, production)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Invalid JWT_SECRET configuration")
+		configFatal(err, "Invalid JWT_SECRET configuration")
 	}
 	if strings.TrimSpace(jwtSecret) == "" {
 		log.Warn().Msg("Using development-only JWT_SECRET; set JWT_SECRET for shared or production deployments")
@@ -316,7 +410,7 @@ func loadConfig() *Config {
 	origins := os.Getenv("ALLOWED_ORIGINS")
 	allowedOrigins, err := resolveAllowedOrigins(origins, production)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Invalid ALLOWED_ORIGINS configuration")
+		configFatal(err, "Invalid ALLOWED_ORIGINS configuration")
 	}
 	log.Info().Strs("allowed_origins", allowedOrigins).Msg("CORS configuration")
 

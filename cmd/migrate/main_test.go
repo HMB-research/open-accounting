@@ -187,7 +187,7 @@ func TestMainRejectsInvalidDirection(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected invalid direction helper to fail, output: %s", string(out))
 	}
-	if !strings.Contains(string(out), "Invalid direction") {
+	if !strings.Contains(string(out), "invalid direction") {
 		t.Fatalf("expected invalid direction error, got: %s", string(out))
 	}
 }
@@ -199,7 +199,7 @@ func TestMainRequiresDatabaseURL(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected helper to fail without db url, output: %s", string(out))
 	}
-	if !strings.Contains(string(out), "Database URL required") {
+	if !strings.Contains(string(out), "missing database URL") {
 		t.Fatalf("expected missing database error, got: %s", string(out))
 	}
 }

@@ -385,6 +385,62 @@ func TestFormatPaymentNumber(t *testing.T) {
 	}
 }
 
+func TestNextPaymentNumberSequence(t *testing.T) {
+	tests := []struct {
+		name           string
+		paymentNumbers []string
+		paymentType    PaymentType
+		expected       int
+	}{
+		{
+			name: "increments highest received sequence",
+			paymentNumbers: []string{
+				"PMT-00001",
+				"PMT-00009-adjusted",
+				"OUT-00020",
+				"PMT-adjusted",
+				" PMT-00003 ",
+			},
+			paymentType: PaymentTypeReceived,
+			expected:    10,
+		},
+		{
+			name: "increments highest outgoing sequence",
+			paymentNumbers: []string{
+				"PMT-00099",
+				"OUT-00007",
+				"OUT-adjusted",
+				"OUT-00008-reversal",
+			},
+			paymentType: PaymentTypeMade,
+			expected:    9,
+		},
+		{
+			name: "starts at one when none match",
+			paymentNumbers: []string{
+				"PMT-00099",
+				"OUT-adjusted",
+				"",
+			},
+			paymentType: PaymentTypeMade,
+			expected:    1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, NextPaymentNumberSequence(tt.paymentNumbers, tt.paymentType))
+		})
+	}
+}
+
+func TestPaymentNumberSequenceRejectsOverflow(t *testing.T) {
+	sequence, ok := paymentNumberSequence("PMT-999999999999999999999999999999999999", "PMT")
+
+	assert.Zero(t, sequence)
+	assert.False(t, ok)
+}
+
 func TestMockRepository_Create(t *testing.T) {
 	repo := NewMockRepository()
 	ctx := context.Background()
@@ -1038,6 +1094,87 @@ func TestService_ReverseRejectsInvalidRequests(t *testing.T) {
 		service := NewServiceWithRepository(repo, nil)
 		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-reversal", &ReversePaymentRequest{Reason: "Duplicate"})
 		require.ErrorIs(t, err, ErrPaymentReversalNotAllowed)
+	})
+
+	t.Run("payment lookup fails", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.getErr = errors.New("lookup failed")
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{Reason: "Duplicate"})
+
+		require.ErrorContains(t, err, "get payment: lookup failed")
+	})
+
+	t.Run("sequence generation fails", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.getNextNumErr = errors.New("sequence failed")
+		repo.payments["pay-1"] = &Payment{
+			ID:            "pay-1",
+			TenantID:      "tenant-1",
+			PaymentNumber: "PMT-00001",
+			PaymentType:   PaymentTypeReceived,
+			Amount:        decimal.NewFromInt(10),
+			Currency:      "EUR",
+			ExchangeRate:  decimal.NewFromInt(1),
+			BaseAmount:    decimal.NewFromInt(10),
+		}
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{Reason: "Duplicate"})
+
+		require.ErrorContains(t, err, "generate reversal payment number: sequence failed")
+	})
+
+	t.Run("create reversal fails", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.createReversalErr = errors.New("write failed")
+		repo.payments["pay-1"] = &Payment{
+			ID:            "pay-1",
+			TenantID:      "tenant-1",
+			PaymentNumber: "OUT-00001",
+			PaymentType:   PaymentTypeMade,
+			Amount:        decimal.NewFromInt(10),
+			Currency:      "EUR",
+			ExchangeRate:  decimal.NewFromInt(1),
+			BaseAmount:    decimal.NewFromInt(10),
+		}
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{
+			Reason:    "Duplicate",
+			Reference: "CUSTOM-REF",
+			Notes:     "Custom reversal note",
+		})
+
+		require.ErrorContains(t, err, "create payment reversal: write failed")
+	})
+
+	t.Run("invoice reversal update fails", func(t *testing.T) {
+		repo := NewMockRepository()
+		invoiceSvc := &MockInvoiceService{recordPaymentErr: errors.New("invoice update failed")}
+		repo.payments["pay-1"] = &Payment{
+			ID:            "pay-1",
+			TenantID:      "tenant-1",
+			PaymentNumber: "PMT-00001",
+			PaymentType:   PaymentTypeReceived,
+			Amount:        decimal.NewFromInt(10),
+			Currency:      "EUR",
+			ExchangeRate:  decimal.NewFromInt(1),
+			BaseAmount:    decimal.NewFromInt(10),
+		}
+		repo.allocations["pay-1"] = []PaymentAllocation{{
+			ID:        "alloc-1",
+			TenantID:  "tenant-1",
+			PaymentID: "pay-1",
+			InvoiceID: "inv-1",
+			Amount:    decimal.NewFromInt(10),
+		}}
+		service := NewServiceWithRepository(repo, invoiceSvc)
+
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{Reason: "Duplicate"})
+
+		require.ErrorContains(t, err, "reverse invoice allocation inv-1: invoice update failed")
 	})
 }
 

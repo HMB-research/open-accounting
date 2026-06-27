@@ -14,12 +14,27 @@ import (
 	"github.com/HMB-research/open-accounting/internal/reports"
 )
 
+var (
+	exportAgingReportCSV                 = agingReportCSV
+	exportAgingReportXLSX                = agingReportXLSX
+	exportBalanceConfirmationSummaryCSV  = balanceConfirmationSummaryCSV
+	exportBalanceConfirmationSummaryXLSX = balanceConfirmationSummaryXLSX
+	exportBalanceConfirmationCSV         = balanceConfirmationCSV
+	exportBalanceConfirmationXLSX        = balanceConfirmationXLSX
+	exportContactStatementCSV            = contactStatementCSV
+	exportContactStatementXLSX           = contactStatementXLSX
+	exportSalesMarginCSV                 = salesMarginCSV
+	exportSalesMarginXLSX                = salesMarginXLSX
+	exportCostCenterReportCSV            = costCenterReportCSV
+	exportCostCenterReportXLSX           = costCenterReportXLSX
+)
+
 func agingReportCSV(report *analytics.AgingReport) ([]byte, error) {
 	return rowsToCSV(agingReportRows(report))
 }
 
 func agingReportXLSX(report *analytics.AgingReport) ([]byte, error) {
-	return reportRowsXLSX("Aging", agingReportRows(report))
+	return exportReportRowsXLSX("Aging", agingReportRows(report))
 }
 
 func balanceConfirmationSummaryCSV(report *reports.BalanceConfirmationSummary) ([]byte, error) {
@@ -27,7 +42,7 @@ func balanceConfirmationSummaryCSV(report *reports.BalanceConfirmationSummary) (
 }
 
 func balanceConfirmationSummaryXLSX(report *reports.BalanceConfirmationSummary) ([]byte, error) {
-	return reportRowsXLSX("Balance Confirmations", balanceConfirmationSummaryRows(report))
+	return exportReportRowsXLSX("Balance Confirmations", balanceConfirmationSummaryRows(report))
 }
 
 func balanceConfirmationCSV(report *reports.BalanceConfirmation) ([]byte, error) {
@@ -35,7 +50,7 @@ func balanceConfirmationCSV(report *reports.BalanceConfirmation) ([]byte, error)
 }
 
 func balanceConfirmationXLSX(report *reports.BalanceConfirmation) ([]byte, error) {
-	return reportRowsXLSX("Balance Confirmation", balanceConfirmationRows(report))
+	return exportReportRowsXLSX("Balance Confirmation", balanceConfirmationRows(report))
 }
 
 func contactStatementCSV(report *reports.ContactStatement) ([]byte, error) {
@@ -43,7 +58,7 @@ func contactStatementCSV(report *reports.ContactStatement) ([]byte, error) {
 }
 
 func contactStatementXLSX(report *reports.ContactStatement) ([]byte, error) {
-	return reportRowsXLSX("Contact Statement", contactStatementRows(report))
+	return exportReportRowsXLSX("Contact Statement", contactStatementRows(report))
 }
 
 func salesMarginCSV(report *reports.SalesMarginReport) ([]byte, error) {
@@ -51,7 +66,7 @@ func salesMarginCSV(report *reports.SalesMarginReport) ([]byte, error) {
 }
 
 func salesMarginXLSX(report *reports.SalesMarginReport) ([]byte, error) {
-	return reportRowsXLSX("Sales Margin", salesMarginRows(report))
+	return exportReportRowsXLSX("Sales Margin", salesMarginRows(report))
 }
 
 func costCenterReportCSV(report *accounting.CostCenterReport) ([]byte, error) {
@@ -59,19 +74,18 @@ func costCenterReportCSV(report *accounting.CostCenterReport) ([]byte, error) {
 }
 
 func costCenterReportXLSX(report *accounting.CostCenterReport) ([]byte, error) {
-	return reportRowsXLSX("Cost Center Report", costCenterReportRows(report))
+	return exportReportRowsXLSX("Cost Center Report", costCenterReportRows(report))
 }
 
 func rowsToCSV(rows [][]string) ([]byte, error) {
 	buffer := &bytes.Buffer{}
 	writer := csv.NewWriter(buffer)
 	for _, row := range rows {
-		if err := writer.Write(row); err != nil {
+		if err := reportCSVWriteRecord(writer, row); err != nil {
 			return nil, err
 		}
 	}
-	writer.Flush()
-	if err := writer.Error(); err != nil {
+	if err := reportCSVFlush(writer); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil

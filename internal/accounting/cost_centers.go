@@ -190,7 +190,7 @@ func NewCostCenterRepository(db *pgxpool.Pool) *CostCenterGORMRepository {
 	if db == nil {
 		return &CostCenterGORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create cost center GORM repository: %w", err))
 	}
@@ -303,14 +303,22 @@ func (r *CostCenterGORMRepository) Update(ctx context.Context, schemaName string
 
 // Delete deletes a cost center
 func (r *CostCenterGORMRepository) Delete(ctx context.Context, schemaName, tenantID, costCenterID string) error {
-	childrenTable, err := r.tenantTable(ctx, schemaName, "cost_centers")
-	if err != nil {
-		return fmt.Errorf("qualify cost centers table: %w", err)
+	if r.db == nil {
+		return fmt.Errorf("cost center repository database is not configured")
 	}
+
+	quotedSchema, err := database.QuoteIdentifier(schemaName)
+	if err != nil {
+		return fmt.Errorf("qualify cost center tables: %w", err)
+	}
+	costCentersTable := quotedSchema + `."cost_centers"`
+	costAllocationsTable := quotedSchema + `."cost_allocations"`
+	childrenTable := r.db.WithContext(ctx).Session(&gorm.Session{NewDB: true}).Table(costCentersTable)
+	allocationsTable := r.db.WithContext(ctx).Session(&gorm.Session{NewDB: true}).Table(costAllocationsTable)
 
 	// First check if there are any child cost centers
 	var childCount int64
-	if err := childrenTable.Model(&models.CostCenter{}).
+	if err := childrenTable.
 		Where("parent_id = ? AND tenant_id = ?", costCenterID, tenantID).
 		Count(&childCount).Error; err != nil {
 		return fmt.Errorf("check children: %w", err)
@@ -319,14 +327,9 @@ func (r *CostCenterGORMRepository) Delete(ctx context.Context, schemaName, tenan
 		return fmt.Errorf("cannot delete cost center with %d children", childCount)
 	}
 
-	allocationsTable, err := r.tenantTable(ctx, schemaName, "cost_allocations")
-	if err != nil {
-		return fmt.Errorf("qualify cost allocations table: %w", err)
-	}
-
 	// Check for allocations
 	var allocationCount int64
-	if err := allocationsTable.Model(&models.CostAllocation{}).
+	if err := allocationsTable.
 		Where("cost_center_id = ? AND tenant_id = ?", costCenterID, tenantID).
 		Count(&allocationCount).Error; err != nil {
 		return fmt.Errorf("check allocations: %w", err)
@@ -335,11 +338,7 @@ func (r *CostCenterGORMRepository) Delete(ctx context.Context, schemaName, tenan
 		return fmt.Errorf("cannot delete cost center with %d allocations", allocationCount)
 	}
 
-	costCentersTable, err := r.tenantTable(ctx, schemaName, "cost_centers")
-	if err != nil {
-		return fmt.Errorf("qualify cost centers table: %w", err)
-	}
-	result := costCentersTable.Where("id = ? AND tenant_id = ?", costCenterID, tenantID).Delete(&models.CostCenter{})
+	result := childrenTable.Exec("DELETE FROM "+costCentersTable+" WHERE id = ? AND tenant_id = ?", costCenterID, tenantID)
 	if result.Error != nil {
 		return fmt.Errorf("delete cost center: %w", result.Error)
 	}
@@ -392,10 +391,7 @@ func (r *CostCenterGORMRepository) ListAllocations(ctx context.Context, schemaNa
 	if err != nil {
 		return nil, fmt.Errorf("qualify cost allocations table: %w", err)
 	}
-	costCentersTable, err := database.QualifiedTable(schemaName, "cost_centers")
-	if err != nil {
-		return nil, fmt.Errorf("qualify cost centers table: %w", err)
-	}
+	costCentersTable, _ := database.QualifiedTable(schemaName, "cost_centers")
 
 	query := allocationsTable.
 		Select("cost_allocations.*, cost_centers.code AS cost_center_code, cost_centers.name AS cost_center_name").

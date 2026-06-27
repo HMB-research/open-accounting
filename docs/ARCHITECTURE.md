@@ -7,13 +7,13 @@ This document describes the high-level architecture of Open Accounting.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Clients                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │   Web App    │  │  Mobile App  │  │  API Client  │          │
-│  │  (SvelteKit) │  │   (Future)   │  │  (REST/JSON) │          │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
-└─────────┼─────────────────┼─────────────────┼───────────────────┘
-          │                 │                 │
-          └────────────────┬┴─────────────────┘
+│  ┌──────────────┐                    ┌──────────────┐          │
+│  │   Web App    │                    │  API Client  │          │
+│  │  (SvelteKit) │                    │  (REST/JSON) │          │
+│  └──────┬───────┘                    └──────┬───────┘          │
+└─────────┼────────────────────────────────────┼───────────────────┘
+          │                                    │
+          └────────────────┬───────────────────┘
                            │
                     ┌──────▼──────┐
                     │   Nginx /   │
@@ -235,7 +235,7 @@ The frontend is built with **SvelteKit** and **Svelte 5** using the new runes re
 
 ### Technology Stack
 - **Framework**: SvelteKit 2.x with Svelte 5
-- **Styling**: Tailwind CSS
+- **Styling**: CSS custom properties plus component-scoped styles
 - **Build Tool**: Vite
 - **Type Safety**: TypeScript
 
@@ -335,8 +335,8 @@ Vitest with jsdom environment for unit and integration tests:
 ```bash
 cd frontend
 
-# Run all tests
-bun test
+# Run prepared unit tests
+bun run test:prepared
 
 # Watch mode
 bun run test:watch

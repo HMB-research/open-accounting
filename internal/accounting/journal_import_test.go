@@ -496,6 +496,30 @@ func TestService_ImportJournalEntriesCSV(t *testing.T) {
 		assert.Contains(t, result.Errors[0].Message, "row cannot contain both debit and credit amounts")
 		assert.Contains(t, result.Errors[1].Message, "exchange_rate cannot be negative")
 	})
+
+	t.Run("records VAT and VAT inclusive validation errors", func(t *testing.T) {
+		repo := newJournalImportMockRepository(tenantID)
+		svc := NewServiceWithRepository(repo)
+
+		result, err := svc.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &ImportJournalEntriesRequest{
+			UserID: "user-1",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit,vat_rate,is_vat_inclusive\n" +
+				"BAD-VAT-FORMAT,2026-03-31,1000,10,0,abc,false\n" +
+				"BAD-VAT-FORMAT,2026-03-31,4000,0,10,0,false\n" +
+				"BAD-VAT-NEG,2026-03-31,1000,10,0,-1,false\n" +
+				"BAD-VAT-NEG,2026-03-31,4000,0,10,0,false\n" +
+				"BAD-BOOL,2026-03-31,1000,10,0,0,maybe\n" +
+				"BAD-BOOL,2026-03-31,4000,0,10,0,false\n",
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, result.EntriesCreated)
+		assert.Equal(t, 6, result.RowsSkipped)
+		require.Len(t, result.Errors, 3)
+		assert.Contains(t, result.Errors[0].Message, "invalid vat_rate")
+		assert.Contains(t, result.Errors[1].Message, "vat_rate cannot be negative")
+		assert.Contains(t, result.Errors[2].Message, "is_vat_inclusive must be true or false")
+	})
 }
 
 func TestParseJournalImportRows(t *testing.T) {

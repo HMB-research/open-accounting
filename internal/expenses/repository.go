@@ -24,11 +24,13 @@ type GORMRepository struct {
 	db *gorm.DB
 }
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 func NewRepository(db *pgxpool.Pool) *GORMRepository {
 	if db == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create expenses GORM repository: %w", err))
 	}
@@ -40,6 +42,9 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 }
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName string) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("expenses repository database is not configured")
+	}
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, "expenses")
 }
 

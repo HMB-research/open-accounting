@@ -20,17 +20,21 @@ const (
 	tokenPrefix = "oa_"
 )
 
+var tokenRandomRead = rand.Read
+
 // Service manages tenant-scoped API tokens.
 type Service struct {
 	repo Repository
 }
+
+var newGormDBFromPool = database.NewGormDBFromPool
 
 // NewService creates a new API token service.
 func NewService(db *pgxpool.Pool) *Service {
 	if db == nil {
 		return &Service{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create API token GORM repository: %w", err))
 	}
@@ -46,12 +50,19 @@ func NewServiceWithRepository(repo Repository) *Service {
 
 // CreateToken creates and persists a new API token, returning the raw token once.
 func (s *Service) CreateToken(ctx context.Context, userID, tenantID string, req *CreateRequest) (*CreateResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("create request is required")
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
 	if req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now()) {
 		return nil, fmt.Errorf("expires_at must be in the future")
+	}
+	repo, err := s.repository()
+	if err != nil {
+		return nil, err
 	}
 
 	rawToken, prefix, tokenHash, err := generateTokenMaterial()
@@ -69,7 +80,7 @@ func (s *Service) CreateToken(ctx context.Context, userID, tenantID string, req 
 		CreatedAt:   time.Now(),
 	}
 
-	if err := s.repo.CreateToken(ctx, token, tokenHash); err != nil {
+	if err := repo.CreateToken(ctx, token, tokenHash); err != nil {
 		return nil, err
 	}
 
@@ -81,7 +92,11 @@ func (s *Service) CreateToken(ctx context.Context, userID, tenantID string, req 
 
 // ListTokens returns active API tokens for a user within a tenant.
 func (s *Service) ListTokens(ctx context.Context, userID, tenantID string) ([]APIToken, error) {
-	return s.repo.ListTokens(ctx, userID, tenantID)
+	repo, err := s.repository()
+	if err != nil {
+		return nil, err
+	}
+	return repo.ListTokens(ctx, userID, tenantID)
 }
 
 // RevokeToken revokes an active API token owned by the current user.
@@ -89,7 +104,11 @@ func (s *Service) RevokeToken(ctx context.Context, userID, tenantID, tokenID str
 	if strings.TrimSpace(tokenID) == "" {
 		return fmt.Errorf("token id is required")
 	}
-	if err := s.repo.RevokeToken(ctx, userID, tenantID, tokenID, time.Now()); err != nil {
+	repo, err := s.repository()
+	if err != nil {
+		return err
+	}
+	if err := repo.RevokeToken(ctx, userID, tenantID, tokenID, time.Now()); err != nil {
 		if err == ErrTokenNotFound {
 			return fmt.Errorf("api token not found")
 		}
@@ -100,8 +119,12 @@ func (s *Service) RevokeToken(ctx context.Context, userID, tenantID, tokenID str
 
 // ValidateAPIToken validates a raw API token and returns auth claims for middleware use.
 func (s *Service) ValidateAPIToken(ctx context.Context, rawToken string) (*auth.Claims, error) {
+	repo, err := s.repository()
+	if err != nil {
+		return nil, err
+	}
 	tokenHash := hashToken(rawToken)
-	record, err := s.repo.GetValidationRecord(ctx, tokenHash, time.Now())
+	record, err := repo.GetValidationRecord(ctx, tokenHash, time.Now())
 	if err != nil {
 		if err == ErrTokenNotFound {
 			return nil, fmt.Errorf("api token not found")
@@ -109,7 +132,7 @@ func (s *Service) ValidateAPIToken(ctx context.Context, rawToken string) (*auth.
 		return nil, err
 	}
 
-	if err := s.repo.TouchToken(ctx, record.ID, time.Now()); err != nil {
+	if err := repo.TouchToken(ctx, record.ID, time.Now()); err != nil {
 		return nil, err
 	}
 
@@ -122,9 +145,16 @@ func (s *Service) ValidateAPIToken(ctx context.Context, rawToken string) (*auth.
 	}, nil
 }
 
+func (s *Service) repository() (Repository, error) {
+	if s == nil || s.repo == nil {
+		return nil, fmt.Errorf("api token repository is not configured")
+	}
+	return s.repo, nil
+}
+
 func generateTokenMaterial() (rawToken string, prefix string, tokenHash string, err error) {
 	secret := make([]byte, 32)
-	if _, err = rand.Read(secret); err != nil {
+	if _, err = tokenRandomRead(secret); err != nil {
 		return "", "", "", fmt.Errorf("generate api token: %w", err)
 	}
 

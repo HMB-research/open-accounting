@@ -4,6 +4,7 @@ package accounting
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,6 +142,11 @@ func TestCostCenterRepository_CRUDAndReportData(t *testing.T) {
 
 	if err := repo.Delete(ctx, tenant.SchemaName, tenant.ID, cc.ID); err == nil {
 		t.Fatal("expected delete to fail while allocations exist")
+	} else if !strings.Contains(err.Error(), "allocations") {
+		t.Fatalf("Delete with allocations error = %v, want allocations guard", err)
+	}
+	if _, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, cc.ID); err != nil {
+		t.Fatalf("cost center should remain after guarded delete: %v", err)
 	}
 
 	allocationsTableName, err := database.QualifiedTable(tenant.SchemaName, "cost_allocations")
@@ -149,6 +155,9 @@ func TestCostCenterRepository_CRUDAndReportData(t *testing.T) {
 	}
 	if _, err := pool.Exec(ctx, "DELETE FROM "+allocationsTableName+" WHERE tenant_id = $1 AND cost_center_id = $2", tenant.ID, cc.ID); err != nil {
 		t.Fatalf("failed to remove test allocations: %v", err)
+	}
+	if _, err := repo.GetByID(ctx, tenant.SchemaName, tenant.ID, cc.ID); err != nil {
+		t.Fatalf("cost center should remain after allocation cleanup: %v", err)
 	}
 
 	if err := repo.Delete(ctx, tenant.SchemaName, tenant.ID, cc.ID); err != nil {

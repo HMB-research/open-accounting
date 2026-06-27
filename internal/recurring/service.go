@@ -56,6 +56,8 @@ type Service struct {
 	contacts  ContactsService
 }
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // NewService creates a new recurring invoice service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool, invoicingService *invoicing.Service, emailService *email.Service, pdfService *pdf.Service, tenantService *tenant.Service, contactsService *contacts.Service) *Service {
 	if db == nil {
@@ -67,7 +69,7 @@ func NewService(db *pgxpool.Pool, invoicingService *invoicing.Service, emailServ
 			contacts:  contactsService,
 		}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create recurring GORM repository: %w", err))
 	}

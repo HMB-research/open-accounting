@@ -2,7 +2,7 @@
 
 This document maps features from [Merit Aktiva](https://www.merit.ee/en/) and [SmartAccounts](https://www.smartaccounts.eu/en/) to Open Accounting, identifying implementation status, gaps, and blockers.
 
-This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline, including the last full local baseline and current branch revalidation dates, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). For the concise current cap/gap summary before full product parity, use [CURRENT_PRODUCT_LIMITS.md](./CURRENT_PRODUCT_LIMITS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
+This is a competitive-gap document, not the authoritative current-state status page. For the verified repository baseline and current branch gate summary, use [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md). For the concise current cap/gap summary before full product parity, use [CURRENT_PRODUCT_LIMITS.md](./CURRENT_PRODUCT_LIMITS.md). Statuses here evaluate parity depth, not just whether some feature exists in code.
 
 ## Executive Summary
 
@@ -16,7 +16,7 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Tax & Compliance | 5 | 6 | Export-centric today, direct submissions missing |
 | Integrations | 4 | 5 | Plugin foundation exists, partner integrations missing |
 
-**Overall breadth:** roughly 60-70% of the combined feature surface exists in some form, but production depth and accountant workflow completeness are materially lower than that headline number.
+**Overall breadth:** Open Accounting covers many incumbent feature families, but production depth and accountant workflow completeness vary by workflow. Treat this file as dated vendor research; use [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md) for the concise current gap list.
 
 ---
 
@@ -266,18 +266,6 @@ These features cannot be implemented without external dependencies or significan
 
 ---
 
-## Priority Themes
-
-This document's older quarter-based priorities have been superseded by the 2026 roadmap. The current priority order is:
-
-1. Reliability and truthful status reporting
-2. Imports, close controls, and attachments
-3. Server-side reporting depth and accountant workflow improvements
-4. Security and operational hardening
-5. Partner-dependent integrations such as e-invoice, bank feeds, and automatic tax submission
-
----
-
 ## Verification Note
 
 Testing and coverage status changed materially after this comparison was first drafted. For the current verified baseline, see [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md) and the CI workflow rather than relying on historical coverage percentages in this file.
@@ -292,14 +280,14 @@ Merit uses a REST API with:
 - Unix timestamp validation
 - Specific endpoints for invoices, contacts, etc.
 
-**Recommendation**: Create Merit-compatible API adapter plugin
+Open Accounting does not currently provide a Merit-compatible API adapter.
 
 ### SmartAccounts API Compatibility
 SmartAccounts API features:
 - REST endpoints
 - Integration with Envoice, WooCommerce, ShopRoller
 
-**Recommendation**: Create SmartAccounts import/export adapter
+Open Accounting does not currently provide a SmartAccounts import/export adapter.
 
 ---
 

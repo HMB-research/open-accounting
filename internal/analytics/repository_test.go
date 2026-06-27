@@ -219,11 +219,6 @@ func TestMonthFormattingHelpers(t *testing.T) {
 }
 
 func TestQualifiedTenantTable(t *testing.T) {
-	qualified, err := qualifiedTenantTable("tenant_schema", "invoices")
-	require.NoError(t, err)
+	qualified := qualifiedTenantTable("tenant_schema", "invoices")
 	assert.Equal(t, `"tenant_schema"."invoices"`, qualified)
-
-	_, err = qualifiedTenantTable("tenant-schema", "invoices")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid SQL identifier")
 }

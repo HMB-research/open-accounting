@@ -23,18 +23,25 @@ type Service struct {
 	accounts accountingLister
 }
 
+var (
+	newGormDBFromPool        = database.NewGormDBFromPool
+	newBankingAccountService = func(db *pgxpool.Pool) accountingLister {
+		return accounting.NewService(db)
+	}
+)
+
 // NewService creates a new banking service
 func NewService(db *pgxpool.Pool) *Service {
 	if db == nil {
 		return &Service{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create banking GORM repository: %w", err))
 	}
 	return &Service{
 		repo:     NewGORMRepository(gormDB),
-		accounts: accounting.NewService(db),
+		accounts: newBankingAccountService(db),
 	}
 }
 

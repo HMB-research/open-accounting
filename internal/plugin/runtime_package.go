@@ -28,6 +28,15 @@ const (
 	packageRuntimeLogLimit        = 4096
 )
 
+var (
+	packageRuntimeAfter          = time.After
+	packageRuntimeCommandContext = exec.CommandContext
+	packageRuntimeListen         = new(net.ListenConfig).Listen
+	packageRuntimeProcessKill    = (*os.Process).Kill
+	packageRuntimeProcessSignal  = (*os.Process).Signal
+	pluginRel                    = filepath.Rel
+)
+
 type pluginBackendRuntime interface {
 	invokeHook(ctx context.Context, pluginID uuid.UUID, pluginName string, hook HookConfig, event Event) error
 	invokeRoute(ctx context.Context, pluginID uuid.UUID, tenantID uuid.UUID, route RouteConfig, method string, requestPath string, rawQuery string, sourceHeader http.Header, body io.Reader) (*RuntimeRouteResponse, error)
@@ -108,7 +117,7 @@ func (s *Service) startPackageBackendRuntimeWithStats(plugin *Plugin, manifest *
 	}
 
 	output := newRuntimeProcessLogBuffer(packageRuntimeLogLimit)
-	cmd := exec.CommandContext(context.Background(), executablePath)
+	cmd := packageRuntimeCommandContext(context.Background(), executablePath)
 	cmd.Dir = backendDir
 	cmd.Env = packageRuntimeEnvironment(plugin, listenAddr, baseURL.String())
 	cmd.Stdout = output
@@ -168,7 +177,7 @@ var packageRuntimeAllowedHostEnvironment = map[string]struct{}{
 func packageRuntimeEnvironment(plugin *Plugin, listenAddr, baseURL string) []string {
 	env := make([]string, 0, len(packageRuntimeAllowedHostEnvironment)+5)
 	seen := make(map[string]struct{}, len(packageRuntimeAllowedHostEnvironment)+5)
-	for _, kv := range os.Environ() {
+	for _, kv := range pluginEnviron() {
 		key, _, ok := strings.Cut(kv, "=")
 		if !ok {
 			continue
@@ -193,7 +202,7 @@ func packageRuntimeEnvironment(plugin *Plugin, listenAddr, baseURL string) []str
 }
 
 func resolvePackageRuntimeExecutable(pluginRoot string, backend *BackendConfig) (string, string, error) {
-	absPluginRoot, err := filepath.Abs(pluginRoot)
+	absPluginRoot, err := pluginAbs(pluginRoot)
 	if err != nil {
 		return "", "", fmt.Errorf("invalid plugin path: %w", err)
 	}
@@ -220,7 +229,7 @@ func resolvePackageRuntimeExecutable(pluginRoot string, backend *BackendConfig) 
 		return "", "", fmt.Errorf("backend.executable must stay within the plugin package")
 	}
 
-	info, err := os.Stat(realExecutablePath)
+	info, err := pluginStat(realExecutablePath)
 	if err != nil {
 		return "", "", fmt.Errorf("%w: backend.executable %q is not accessible: %v", ErrPluginRuntimeUnavailable, backend.Executable, err)
 	}
@@ -235,7 +244,7 @@ func resolvePackageRuntimeExecutable(pluginRoot string, backend *BackendConfig) 
 }
 
 func pathWithinDir(parent, child string, allowEqual bool) bool {
-	rel, err := filepath.Rel(parent, child)
+	rel, err := pluginRel(parent, child)
 	if err != nil {
 		return false
 	}
@@ -246,7 +255,7 @@ func pathWithinDir(parent, child string, allowEqual bool) bool {
 }
 
 func reserveLoopbackRuntimeAddress() (string, error) {
-	listener, err := new(net.ListenConfig).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	listener, err := packageRuntimeListen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", err
 	}
@@ -279,7 +288,7 @@ func (r *packageRuntimeProcess) waitForReady(ctx context.Context) error {
 		default:
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+		req, err := newRuntimeHTTPRequest(ctx, http.MethodGet, healthURL, nil)
 		if err != nil {
 			return err
 		}
@@ -327,10 +336,10 @@ func (r *packageRuntimeProcess) stop(ctx context.Context) error {
 	r.markIntentionalStop()
 	signaled := false
 	if r.cmd.Process != nil {
-		if err := r.cmd.Process.Signal(os.Interrupt); err == nil {
+		if err := packageRuntimeProcessSignal(r.cmd.Process, os.Interrupt); err == nil {
 			signaled = true
 		} else if !errors.Is(err, os.ErrProcessDone) {
-			_ = r.cmd.Process.Kill()
+			_ = packageRuntimeProcessKill(r.cmd.Process)
 		}
 	}
 
@@ -342,11 +351,11 @@ func (r *packageRuntimeProcess) stop(ctx context.Context) error {
 		return r.getExitErr()
 	case <-ctx.Done():
 		if r.cmd.Process != nil {
-			_ = r.cmd.Process.Kill()
+			_ = packageRuntimeProcessKill(r.cmd.Process)
 		}
 		select {
 		case <-r.exited:
-		case <-time.After(packageRuntimeShutdownTimeout):
+		case <-packageRuntimeAfter(packageRuntimeShutdownTimeout):
 		}
 		return ctx.Err()
 	}
@@ -382,9 +391,6 @@ func (r *packageRuntimeProcess) requireRunning() error {
 		return nil
 	}
 	message := status.Message
-	if message == "" {
-		message = string(status.State)
-	}
 	if status.BackoffUntil != nil {
 		return fmt.Errorf("%w: package runtime for plugin %q is %s until %s", ErrPluginRuntimeUnavailable, r.pluginName, message, status.BackoffUntil.Format(time.RFC3339))
 	}

@@ -387,14 +387,8 @@ func (s *Service) GetYearEndClosePack(ctx context.Context, schemaName, tenantID 
 		return nil, fmt.Errorf("period end date must match the fiscal year end")
 	}
 
-	fiscalYearStartDate, err := time.Parse(yearEndDateLayout, status.FiscalYearStartDate)
-	if err != nil {
-		return nil, fmt.Errorf("parse fiscal year start date: %w", err)
-	}
-	fiscalYearEndDate, err := time.Parse(yearEndDateLayout, status.FiscalYearEndDate)
-	if err != nil {
-		return nil, fmt.Errorf("parse fiscal year end date: %w", err)
-	}
+	fiscalYearStartDate, _ := parseYearEndStatusDate("fiscal year start", status.FiscalYearStartDate)
+	fiscalYearEndDate, _ := parseYearEndStatusDate("fiscal year end", status.FiscalYearEndDate)
 
 	trialBalance, err := s.GetTrialBalance(ctx, schemaName, tenantID, fiscalYearEndDate)
 	if err != nil {
@@ -443,14 +437,8 @@ func (s *Service) CreateYearEndCarryForward(ctx context.Context, schemaName, ten
 		return nil, fmt.Errorf("carry-forward already exists for fiscal year ending %s", status.FiscalYearEndDate)
 	}
 
-	fiscalYearEndDate, err := time.Parse(yearEndDateLayout, status.FiscalYearEndDate)
-	if err != nil {
-		return nil, fmt.Errorf("parse fiscal year end date: %w", err)
-	}
-	fiscalYearStartDate, err := time.Parse(yearEndDateLayout, status.FiscalYearStartDate)
-	if err != nil {
-		return nil, fmt.Errorf("parse fiscal year start date: %w", err)
-	}
+	fiscalYearEndDate, _ := parseYearEndStatusDate("fiscal year end", status.FiscalYearEndDate)
+	fiscalYearStartDate, _ := parseYearEndStatusDate("fiscal year start", status.FiscalYearStartDate)
 
 	periodBalances, err := s.repo.GetPeriodBalances(ctx, schemaName, tenantID, fiscalYearStartDate, fiscalYearEndDate)
 	if err != nil {
@@ -614,11 +602,22 @@ func buildYearEndCarryForwardLines(periodBalances []AccountBalance, retainedEarn
 		lines = append(lines, retainedLine)
 	}
 
-	if !totalDebits.Equal(totalCredits) {
-		return nil, fmt.Errorf("carry-forward journal entry does not balance")
-	}
+	return lines, ensureYearEndCarryForwardBalances(totalDebits, totalCredits)
+}
 
-	return lines, nil
+func parseYearEndStatusDate(label, value string) (time.Time, error) {
+	parsed, err := time.Parse(yearEndDateLayout, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse %s date: %w", label, err)
+	}
+	return parsed, nil
+}
+
+func ensureYearEndCarryForwardBalances(totalDebits, totalCredits decimal.Decimal) error {
+	if !totalDebits.Equal(totalCredits) {
+		return fmt.Errorf("carry-forward journal entry does not balance")
+	}
+	return nil
 }
 
 func carryForwardDiff(periodBalances []AccountBalance) decimal.Decimal {

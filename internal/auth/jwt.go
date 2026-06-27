@@ -114,21 +114,7 @@ func (s *TokenService) ValidateAccessToken(tokenString string) (*Claims, error) 
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
 
-	claims, ok := token.Claims.(*Claims)
-	if !ok || !token.Valid {
-		return nil, fmt.Errorf("invalid token claims")
-	}
-	if claims.TokenKind != TokenKindAccessToken {
-		return nil, fmt.Errorf("invalid token kind")
-	}
-	if claims.UserID == "" || claims.Subject == "" || claims.Subject != claims.UserID {
-		return nil, fmt.Errorf("invalid token subject")
-	}
-	if claims.ExpiresAt == nil {
-		return nil, fmt.Errorf("invalid token expiry")
-	}
-
-	return claims, nil
+	return validateParsedAccessToken(token)
 }
 
 // ValidateRefreshToken validates a refresh token and returns the user ID
@@ -152,6 +138,27 @@ func (s *TokenService) ValidateRefreshTokenClaims(tokenString string) (*RefreshC
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
 
+	return validateParsedRefreshToken(token)
+}
+
+func validateParsedAccessToken(token *jwt.Token) (*Claims, error) {
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid token claims")
+	}
+	if claims.TokenKind != TokenKindAccessToken {
+		return nil, fmt.Errorf("invalid token kind")
+	}
+	if claims.UserID == "" || claims.Subject == "" || claims.Subject != claims.UserID {
+		return nil, fmt.Errorf("invalid token subject")
+	}
+	if claims.ExpiresAt == nil {
+		return nil, fmt.Errorf("invalid token expiry")
+	}
+	return claims, nil
+}
+
+func validateParsedRefreshToken(token *jwt.Token) (*RefreshClaims, error) {
 	claims, ok := token.Claims.(*RefreshClaims)
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token claims")
@@ -165,7 +172,6 @@ func (s *TokenService) ValidateRefreshTokenClaims(tokenString string) (*RefreshC
 	if claims.ExpiresAt == nil {
 		return nil, fmt.Errorf("invalid token expiry")
 	}
-
 	return claims, nil
 }
 

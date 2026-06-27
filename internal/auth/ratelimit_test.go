@@ -71,6 +71,23 @@ func TestRateLimiter_BlocksExcessRequests(t *testing.T) {
 	}
 }
 
+func TestRateLimiterRejectsImpossibleReservation(t *testing.T) {
+	rl := NewRateLimiter(1, 0)
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusTooManyRequests)
+	}
+}
+
 func TestRateLimiter_SeparatesClientsByIP(t *testing.T) {
 	rl := NewRateLimiter(1, 1) // 1 req/sec, burst 1
 
@@ -277,6 +294,171 @@ func TestLoginAttemptLimiterRecordsCredentialAwareFailures(t *testing.T) {
 	}
 }
 
+func TestLoginAttemptLimiterNilAndBlockedRecordFailureBranches(t *testing.T) {
+	var nilLimiter *LoginAttemptLimiter
+	if result := nilLimiter.RecordFailure("user@example.com", "192.0.2.1"); result.Limited || result.Remaining != 0 {
+		t.Fatalf("nil limiter RecordFailure = %#v, want zero result", result)
+	}
+	nilLimiter.Reset("user@example.com", "192.0.2.1")
+
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	limiter := &LoginAttemptLimiter{
+		attempts:    make(map[string]*loginAttempt),
+		maxFailures: 2,
+		window:      time.Minute,
+		lockout:     5 * time.Minute,
+		now:         func() time.Time { return now },
+	}
+	key := loginAttemptKey("blocked@example.com", "192.0.2.1")
+	limiter.attempts[key] = &loginAttempt{
+		firstFailure: now.Add(-30 * time.Second),
+		lastSeen:     now.Add(-30 * time.Second),
+		failures:     3,
+		blockedUntil: now.Add(2 * time.Minute),
+	}
+
+	result := limiter.RecordFailure("blocked@example.com", "192.0.2.1")
+	if !result.Limited || result.RetryAfter != 2*time.Minute || result.Remaining != 0 {
+		t.Fatalf("blocked RecordFailure = %#v, want limited with 2m retry", result)
+	}
+}
+
+func TestLoginAttemptLimiterConstructors(t *testing.T) {
+	custom := NewLoginAttemptLimiter(3, 2*time.Minute, 4*time.Minute)
+	if custom == nil {
+		t.Fatal("NewLoginAttemptLimiter returned nil")
+	}
+	if custom.maxFailures != 3 {
+		t.Fatalf("maxFailures = %d, want 3", custom.maxFailures)
+	}
+	if custom.window != 2*time.Minute {
+		t.Fatalf("window = %s, want 2m", custom.window)
+	}
+	if custom.lockout != 4*time.Minute {
+		t.Fatalf("lockout = %s, want 4m", custom.lockout)
+	}
+	if custom.cleanup != 6*time.Minute {
+		t.Fatalf("cleanup = %s, want 6m", custom.cleanup)
+	}
+
+	defaulted := NewLoginAttemptLimiter(0, 0, 0)
+	if defaulted.maxFailures != 5 {
+		t.Fatalf("default maxFailures = %d, want 5", defaulted.maxFailures)
+	}
+	if defaulted.window != 15*time.Minute {
+		t.Fatalf("default window = %s, want 15m", defaulted.window)
+	}
+	if defaulted.lockout != 15*time.Minute {
+		t.Fatalf("default lockout = %s, want 15m", defaulted.lockout)
+	}
+
+	minCleanup := NewLoginAttemptLimiter(1, time.Nanosecond, time.Nanosecond)
+	if minCleanup.cleanup != time.Second {
+		t.Fatalf("minimum cleanup = %s, want 1s", minCleanup.cleanup)
+	}
+
+	production := DefaultLoginAttemptLimiter()
+	if production == nil || production.maxFailures != 5 || production.window != 15*time.Minute || production.lockout != 15*time.Minute {
+		t.Fatalf("DefaultLoginAttemptLimiter returned unexpected config: %#v", production)
+	}
+}
+
+func TestLoginAttemptLimiterCheckBranches(t *testing.T) {
+	var nilLimiter *LoginAttemptLimiter
+	if result := nilLimiter.Check("user@example.com", "192.0.2.1"); result.Limited || result.Remaining != 0 {
+		t.Fatalf("nil limiter check = %#v, want zero result", result)
+	}
+
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	limiter := &LoginAttemptLimiter{
+		attempts:    make(map[string]*loginAttempt),
+		maxFailures: 2,
+		window:      time.Minute,
+		lockout:     5 * time.Minute,
+		now:         func() time.Time { return now },
+	}
+
+	blockedKey := loginAttemptKey("blocked@example.com", "192.0.2.1")
+	limiter.attempts[blockedKey] = &loginAttempt{
+		firstFailure: now.Add(-30 * time.Second),
+		lastSeen:     now.Add(-30 * time.Second),
+		failures:     3,
+		blockedUntil: now.Add(time.Minute),
+	}
+	result := limiter.Check("blocked@example.com", "192.0.2.1")
+	if !result.Limited || result.Remaining != 0 || result.RetryAfter != time.Minute {
+		t.Fatalf("blocked check = %#v, want limited with 1m retry", result)
+	}
+
+	expiredKey := loginAttemptKey("expired@example.com", "192.0.2.2")
+	limiter.attempts[expiredKey] = &loginAttempt{
+		firstFailure: now.Add(-2 * time.Minute),
+		lastSeen:     now.Add(-2 * time.Minute),
+		failures:     1,
+	}
+	result = limiter.Check("expired@example.com", "192.0.2.2")
+	if result.Limited || result.Remaining != 2 {
+		t.Fatalf("expired-window check = %#v, want reset budget", result)
+	}
+	if _, ok := limiter.attempts[expiredKey]; ok {
+		t.Fatal("expired attempt was not deleted")
+	}
+
+	overBudgetKey := loginAttemptKey("over@example.com", "192.0.2.3")
+	limiter.attempts[overBudgetKey] = &loginAttempt{
+		firstFailure: now,
+		lastSeen:     now,
+		failures:     5,
+	}
+	result = limiter.Check("over@example.com", "192.0.2.3")
+	if result.Limited || result.Remaining != 0 {
+		t.Fatalf("over-budget check = %#v, want remaining 0 without lockout", result)
+	}
+}
+
+func TestLoginAttemptKeyDefaults(t *testing.T) {
+	if got := loginAttemptKey(" User@Example.COM ", " 192.0.2.20 "); got != "user@example.com|192.0.2.20" {
+		t.Fatalf("loginAttemptKey normalized = %q", got)
+	}
+	if got := loginAttemptKey(" ", " "); got != "<blank>|<unknown>" {
+		t.Fatalf("loginAttemptKey blank defaults = %q", got)
+	}
+}
+
+func TestLoginAttemptLimiterCleanupRemovesStaleEntries(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	limiter := &LoginAttemptLimiter{
+		attempts:    make(map[string]*loginAttempt),
+		maxFailures: 2,
+		window:      time.Millisecond,
+		lockout:     time.Millisecond,
+		cleanup:     5 * time.Millisecond,
+		now:         func() time.Time { return now },
+	}
+	staleKey := loginAttemptKey("stale@example.com", "192.0.2.10")
+	freshKey := loginAttemptKey("fresh@example.com", "192.0.2.11")
+	limiter.attempts[staleKey] = &loginAttempt{firstFailure: now.Add(-time.Hour), lastSeen: now.Add(-time.Hour)}
+	limiter.attempts[freshKey] = &loginAttempt{firstFailure: now, lastSeen: now}
+
+	go limiter.cleanupLoginAttempts()
+
+	deadline := time.After(200 * time.Millisecond)
+	for {
+		limiter.mu.Lock()
+		_, staleExists := limiter.attempts[staleKey]
+		_, freshExists := limiter.attempts[freshKey]
+		limiter.mu.Unlock()
+		if !staleExists && freshExists {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("stale login attempt was not removed by cleanup")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
 func TestRateLimiter_TokensNegativeHandled(t *testing.T) {
 	// Test that negative token count is handled correctly
 	// This can happen when requests come in faster than tokens refill
@@ -374,6 +556,16 @@ func TestGetClientIP(t *testing.T) {
 				t.Errorf("getClientIP() = %q, want %q", got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestClientIPWrapper(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.Header.Set("X-Real-IP", "203.0.113.9")
+
+	if got := ClientIP(req); got != "203.0.113.9" {
+		t.Fatalf("ClientIP() = %q, want %q", got, "203.0.113.9")
 	}
 }
 

@@ -92,6 +92,26 @@ func TestInvoiceLine_Calculate(t *testing.T) {
 		assert.True(t, line.LineTotal.Equal(decimal.NewFromFloat(200)))
 		assert.True(t, line.ReverseChargeVAT().Equal(decimal.NewFromFloat(44)))
 	})
+
+	t.Run("non reverse charge reports no self assessed VAT", func(t *testing.T) {
+		line := InvoiceLine{
+			LineSubtotal: decimal.NewFromFloat(100),
+			VATRate:      decimal.NewFromInt(22),
+			VATTreatment: VATTreatmentStandard,
+		}
+
+		assert.True(t, line.ReverseChargeVAT().IsZero())
+	})
+
+	t.Run("invalid VAT treatment defaults for reporting helpers", func(t *testing.T) {
+		line := InvoiceLine{
+			LineSubtotal: decimal.NewFromFloat(100),
+			VATRate:      decimal.NewFromInt(22),
+			VATTreatment: VATTreatment("OUTSIDE_SCOPE"),
+		}
+
+		assert.True(t, line.ReverseChargeVAT().IsZero())
+	})
 }
 
 func TestInvoice_Calculate(t *testing.T) {

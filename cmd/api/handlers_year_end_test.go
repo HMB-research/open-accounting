@@ -1026,3 +1026,114 @@ func TestReopenPeriodRejectsYearEndCarryForward(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, resp["error"], "cannot reopen a fiscal year")
 }
+
+func TestRespondYearEndCloseErrorMapsKnownErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name:       "approved evidence required",
+			err:        errApprovedClosePackEvidenceRequired,
+			wantStatus: http.StatusConflict,
+			wantBody:   errApprovedClosePackEvidenceRequired.Error(),
+		},
+		{
+			name:       "period end date validation",
+			err:        errors.New("period end date is required"),
+			wantStatus: http.StatusBadRequest,
+			wantBody:   "period end date is required",
+		},
+		{
+			name:       "invalid valuation method",
+			err:        errors.New("invalid valuation method fifo"),
+			wantStatus: http.StatusBadRequest,
+			wantBody:   "invalid valuation method fifo",
+		},
+		{
+			name:       "fiscal year end mismatch",
+			err:        errors.New("period must match the fiscal year end"),
+			wantStatus: http.StatusBadRequest,
+			wantBody:   "period must match the fiscal year end",
+		},
+		{
+			name:       "missing user",
+			err:        errors.New("user_id is required"),
+			wantStatus: http.StatusBadRequest,
+			wantBody:   "user_id is required",
+		},
+		{
+			name:       "missing reason",
+			err:        errors.New("reason is required"),
+			wantStatus: http.StatusBadRequest,
+			wantBody:   "reason is required",
+		},
+		{
+			name:       "closed fiscal year required",
+			err:        errors.New("fiscal year must be closed first"),
+			wantStatus: http.StatusConflict,
+			wantBody:   "fiscal year must be closed first",
+		},
+		{
+			name:       "carry forward already exists",
+			err:        errors.New("carry-forward already exists"),
+			wantStatus: http.StatusConflict,
+			wantBody:   "carry-forward already exists",
+		},
+		{
+			name:       "carry forward missing",
+			err:        errors.New("carry-forward does not exist"),
+			wantStatus: http.StatusConflict,
+			wantBody:   "carry-forward does not exist",
+		},
+		{
+			name:       "current status conflict",
+			err:        errors.New("current status does not allow reversal"),
+			wantStatus: http.StatusConflict,
+			wantBody:   "current status does not allow reversal",
+		},
+		{
+			name:       "posted status conflict",
+			err:        errors.New("journal entry not in posted status"),
+			wantStatus: http.StatusConflict,
+			wantBody:   "journal entry not in posted status",
+		},
+		{
+			name:       "retained earnings missing",
+			err:        errors.New("retained earnings account is required"),
+			wantStatus: http.StatusConflict,
+			wantBody:   "retained earnings account is required",
+		},
+		{
+			name:       "no activity",
+			err:        errors.New("no revenue or expense activity found"),
+			wantStatus: http.StatusConflict,
+			wantBody:   "no revenue or expense activity found",
+		},
+		{
+			name:       "inventory costing review",
+			err:        errors.New("inventory costing review has blocking exceptions"),
+			wantStatus: http.StatusConflict,
+			wantBody:   "inventory costing review has blocking exceptions",
+		},
+		{
+			name:       "unknown error is sanitized",
+			err:        errors.New("database password leaked"),
+			wantStatus: http.StatusInternalServerError,
+			wantBody:   "Failed to process year-end close workflow",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+
+			respondYearEndCloseError(rr, tt.err)
+
+			assert.Equal(t, tt.wantStatus, rr.Code)
+			assert.Contains(t, rr.Body.String(), tt.wantBody)
+		})
+	}
+}

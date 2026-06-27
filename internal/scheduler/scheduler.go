@@ -82,6 +82,8 @@ type Scheduler struct {
 	mu                sync.Mutex
 }
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // NewScheduler creates a new scheduler instance
 func NewScheduler(db *pgxpool.Pool, recurringService *recurring.Service, reminderService *invoicing.AutomatedReminderService, config Config) *Scheduler {
 	if db == nil {
@@ -92,7 +94,7 @@ func NewScheduler(db *pgxpool.Pool, recurringService *recurring.Service, reminde
 			config:    config,
 		}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create scheduler GORM repository: %w", err))
 	}

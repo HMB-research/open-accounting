@@ -27,4 +27,14 @@ func TestParseTransactionsRequiresCoreFields(t *testing.T) {
 	_, err := ParseTransactions("date;amount\n2026-03-15;100.00\n")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires date, amount, and description")
+
+	_, err = ParseTransactions(" ")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bank transaction CSV is empty")
+}
+
+func TestParseTransactionsRejectsEmptyRows(t *testing.T) {
+	_, err := ParseTransactions("date;amount;description\n ; ; \n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "contains no transactions")
 }

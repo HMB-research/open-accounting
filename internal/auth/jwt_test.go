@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -629,6 +630,54 @@ func TestValidateAccessToken_InvalidClaims(t *testing.T) {
 	assert.Contains(t, err.Error(), "parse token")
 }
 
+func TestValidateAccessTokenRejectsMalformedValidlySignedClaims(t *testing.T) {
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	tests := []struct {
+		name    string
+		claims  *Claims
+		wantErr string
+	}{
+		{
+			name: "subject mismatch",
+			claims: &Claims{
+				UserID:    "user-123",
+				Email:     "test@example.com",
+				TokenKind: TokenKindAccessToken,
+				RegisteredClaims: jwt.RegisteredClaims{
+					Subject:   "other-user",
+					ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+				},
+			},
+			wantErr: "invalid token subject",
+		},
+		{
+			name: "missing expiry",
+			claims: &Claims{
+				UserID:    "user-123",
+				Email:     "test@example.com",
+				TokenKind: TokenKindAccessToken,
+				RegisteredClaims: jwt.RegisteredClaims{
+					Subject: "user-123",
+				},
+			},
+			wantErr: "invalid token expiry",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, tt.claims)
+			tokenString, err := token.SignedString(service.secretKey)
+			require.NoError(t, err)
+
+			_, err = service.ValidateAccessToken(tokenString)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
 func TestValidateRefreshToken_InvalidClaims(t *testing.T) {
 	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
 
@@ -640,4 +689,49 @@ func TestValidateRefreshToken_InvalidClaims(t *testing.T) {
 	_, err = service.ValidateRefreshToken(expiredToken)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "parse token")
+}
+
+func TestValidateRefreshTokenRejectsMalformedValidlySignedClaims(t *testing.T) {
+	service := NewTokenService("test-secret", 15*time.Minute, 7*24*time.Hour)
+
+	tests := []struct {
+		name    string
+		claims  *RefreshClaims
+		wantErr string
+	}{
+		{
+			name: "missing id",
+			claims: &RefreshClaims{
+				TokenKind: TokenKindRefreshToken,
+				RegisteredClaims: jwt.RegisteredClaims{
+					Subject:   "user-123",
+					ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+				},
+			},
+			wantErr: "invalid token subject",
+		},
+		{
+			name: "missing expiry",
+			claims: &RefreshClaims{
+				TokenKind: TokenKindRefreshToken,
+				RegisteredClaims: jwt.RegisteredClaims{
+					ID:      "refresh-1",
+					Subject: "user-123",
+				},
+			},
+			wantErr: "invalid token expiry",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, tt.claims)
+			tokenString, err := token.SignedString(service.secretKey)
+			require.NoError(t, err)
+
+			_, err = service.ValidateRefreshTokenClaims(tokenString)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
 }

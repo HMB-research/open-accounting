@@ -27,12 +27,14 @@ type RepositoryInterface interface {
 	VoidJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string, reversal *JournalEntry) error
 }
 
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // NewRepository creates an ORM-backed accounting repository.
 func NewRepository(db *pgxpool.Pool) *GORMRepository {
 	if db == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create accounting GORM repository: %w", err))
 	}

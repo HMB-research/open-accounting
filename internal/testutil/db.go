@@ -1,3 +1,5 @@
+//go:build integration
+
 // Package testutil provides test utilities for integration tests.
 package testutil
 

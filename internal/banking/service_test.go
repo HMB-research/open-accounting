@@ -40,12 +40,15 @@ type MockRepository struct {
 	MatchTransactionFn               func(ctx context.Context, schemaName, tenantID, transactionID, paymentID string) error
 	UnmatchTransactionFn             func(ctx context.Context, schemaName, tenantID, transactionID string) error
 	UpdateTransactionReviewFn        func(ctx context.Context, schemaName, tenantID, transactionID string, update TransactionReviewUpdate) (*BankTransaction, error)
+	CreateTransactionFn              func(ctx context.Context, schemaName string, transaction *BankTransaction) error
 	CreatePaymentFromTransactionFn   func(ctx context.Context, schemaName, tenantID, userID string, transaction *BankTransaction) (string, error)
+	IsTransactionDuplicateFn         func(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error)
 	CreateReconciliationFn           func(ctx context.Context, schemaName string, r *BankReconciliation) error
 	GetReconciliationFn              func(ctx context.Context, schemaName, tenantID, reconciliationID string) (*BankReconciliation, error)
 	ListReconciliationsFn            func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankReconciliation, error)
 	CompleteReconciliationFn         func(ctx context.Context, schemaName, tenantID, reconciliationID string) error
 	AddTransactionToReconciliationFn func(ctx context.Context, schemaName, tenantID, transactionID, reconciliationID string) error
+	CreateImportRecordFn             func(ctx context.Context, schemaName string, imp *BankStatementImport) error
 	IncrementLatestImportMatchedFn   func(ctx context.Context, schemaName, tenantID, bankAccountID string, matchedCount int) error
 	GetImportHistoryFn               func(ctx context.Context, schemaName, tenantID, bankAccountID string) ([]BankStatementImport, error)
 }
@@ -62,9 +65,13 @@ func NewMockRepository() *MockRepository {
 
 type fakeBankingAccountLister struct {
 	accounts []accounting.Account
+	err      error
 }
 
 func (f fakeBankingAccountLister) ListAccounts(_ context.Context, _, _ string, _ bool) ([]accounting.Account, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return f.accounts, nil
 }
 
@@ -321,6 +328,9 @@ func (m *MockRepository) UpdateTransactionReview(ctx context.Context, schemaName
 }
 
 func (m *MockRepository) CreateTransaction(ctx context.Context, schemaName string, t *BankTransaction) error {
+	if m.CreateTransactionFn != nil {
+		return m.CreateTransactionFn(ctx, schemaName, t)
+	}
 	m.transactions[t.ID] = t
 	return nil
 }
@@ -346,6 +356,9 @@ func (m *MockRepository) CreatePaymentFromTransaction(ctx context.Context, schem
 }
 
 func (m *MockRepository) IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error) {
+	if m.IsTransactionDuplicateFn != nil {
+		return m.IsTransactionDuplicateFn(ctx, schemaName, tenantID, bankAccountID, date, amount, externalID)
+	}
 	for _, t := range m.transactions {
 		if t.TenantID == tenantID && t.BankAccountID == bankAccountID {
 			if externalID != "" && t.ExternalID == externalID {
@@ -416,6 +429,9 @@ func (m *MockRepository) AddTransactionToReconciliation(ctx context.Context, sch
 }
 
 func (m *MockRepository) CreateImportRecord(ctx context.Context, schemaName string, imp *BankStatementImport) error {
+	if m.CreateImportRecordFn != nil {
+		return m.CreateImportRecordFn(ctx, schemaName, imp)
+	}
 	m.imports[imp.ID] = imp
 	return nil
 }
@@ -542,6 +558,146 @@ func TestService_ImportTransactionsRejectsMismatchedStatementAccountOrCurrency(t
 	}
 }
 
+func TestService_ImportTransactionsValidationDuplicateAndInsertEdges(t *testing.T) {
+	repo := NewMockRepository()
+	service := NewServiceWithRepository(repo)
+	ctx := context.Background()
+	repo.accounts["acc-1"] = &BankAccount{
+		ID:            "acc-1",
+		TenantID:      testTenantID,
+		AccountNumber: "EE457700771000676899",
+		Currency:      "EUR",
+	}
+	repo.IsTransactionDuplicateFn = func(_ context.Context, _, _, _ string, _ time.Time, _ decimal.Decimal, externalID string) (bool, error) {
+		switch externalID {
+		case "duplicate":
+			return true, nil
+		case "dup-error":
+			return false, errors.New("duplicate lookup failed")
+		default:
+			return false, nil
+		}
+	}
+	repo.CreateTransactionFn = func(_ context.Context, _ string, transaction *BankTransaction) error {
+		if transaction.ExternalID == "insert-fail" {
+			return errors.New("insert failed")
+		}
+		repo.transactions[transaction.ID] = transaction
+		return nil
+	}
+
+	result, err := service.ImportTransactions(ctx, testSchemaName, testTenantID, "acc-1", &ImportCSVRequest{
+		FileName:       "edge.csv",
+		SkipDuplicates: true,
+		Transactions: []CSVTransactionRow{
+			{Date: "bad-date", Amount: "10.00", Currency: "EUR", ExternalID: "bad-date"},
+			{Date: "2026-03-16", Amount: "bad-amount", Currency: "EUR", ExternalID: "bad-amount"},
+			{Date: "2026-03-17", Amount: "25.00", Currency: "EUR", ExternalID: "duplicate"},
+			{Date: "2026-03-18", Amount: "30.00", Currency: "EUR", ExternalID: "dup-error"},
+			{Date: "2026-03-19", Amount: "35.00", Currency: "EUR", ExternalID: "insert-fail"},
+			{Date: "2026-03-20", ValueDate: "not-a-date", Amount: "40.00", Description: "Blank account and currency", ExternalID: "invalid-value-date"},
+			{Date: "2026-03-21", ValueDate: "2026-03-22", Amount: "-45.00", Currency: " eur ", SourceAccount: " EE45 7700 7710 0067 6899 ", Description: "Valid outgoing", ExternalID: "valid-value-date"},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("ImportTransactions() error = %v", err)
+	}
+	if result.TransactionsImported != 2 {
+		t.Fatalf("imported = %d, want 2", result.TransactionsImported)
+	}
+	if result.DuplicatesSkipped != 1 {
+		t.Fatalf("duplicates skipped = %d, want 1", result.DuplicatesSkipped)
+	}
+	if len(result.Errors) != 4 {
+		t.Fatalf("errors = %#v, want 4 row errors", result.Errors)
+	}
+	for _, want := range []string{"invalid date", "invalid amount", "duplicate check failed", "insert failed"} {
+		found := false
+		for _, rowErr := range result.Errors {
+			if strings.Contains(rowErr, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected row error containing %q in %#v", want, result.Errors)
+		}
+	}
+	if len(repo.transactions) != 2 {
+		t.Fatalf("persisted transactions = %d, want 2", len(repo.transactions))
+	}
+	var sawNilValueDate, sawParsedValueDate bool
+	for _, transaction := range repo.transactions {
+		if transaction.ExternalID == "invalid-value-date" && transaction.ValueDate == nil {
+			sawNilValueDate = true
+		}
+		if transaction.ExternalID == "valid-value-date" && transaction.ValueDate != nil && transaction.ValueDate.Format("2006-01-02") == "2026-03-22" {
+			sawParsedValueDate = true
+		}
+	}
+	if !sawNilValueDate || !sawParsedValueDate {
+		t.Fatalf("unexpected value date mapping in transactions: %#v", repo.transactions)
+	}
+}
+
+func TestService_ImportTransactionsRepositoryErrors(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("bank account lookup", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo)
+
+		result, err := service.ImportTransactions(ctx, testSchemaName, testTenantID, "missing-account", &ImportCSVRequest{})
+
+		if result != nil {
+			t.Fatalf("result = %#v, want nil", result)
+		}
+		if err == nil || !strings.Contains(err.Error(), "get bank account") {
+			t.Fatalf("expected bank account lookup error, got %v", err)
+		}
+	})
+
+	t.Run("import record", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo)
+		repo.accounts["acc-1"] = &BankAccount{ID: "acc-1", TenantID: testTenantID, AccountNumber: "EE1", Currency: "EUR"}
+		repo.CreateImportRecordFn = func(context.Context, string, *BankStatementImport) error {
+			return errors.New("record failed")
+		}
+
+		result, err := service.ImportTransactions(ctx, testSchemaName, testTenantID, "acc-1", &ImportCSVRequest{FileName: "empty.csv"})
+
+		if result != nil {
+			t.Fatalf("result = %#v, want nil", result)
+		}
+		if err == nil || !strings.Contains(err.Error(), "record import") {
+			t.Fatalf("expected record import error, got %v", err)
+		}
+	})
+}
+
+func TestBankStatementMatchHelpers(t *testing.T) {
+	if !bankStatementAccountMatches("", "EE123") {
+		t.Fatal("blank source account should be accepted")
+	}
+	if !bankStatementAccountMatches(" ee 123 ", "EE123") {
+		t.Fatal("source account should match after trimming spaces and case")
+	}
+	if bankStatementAccountMatches("EE999", "EE123") {
+		t.Fatal("different source account should not match")
+	}
+	if !bankStatementCurrencyMatches("", "EUR") {
+		t.Fatal("blank row currency should be accepted")
+	}
+	if !bankStatementCurrencyMatches(" eur ", "EUR") {
+		t.Fatal("row currency should match after trimming and case normalization")
+	}
+	if bankStatementCurrencyMatches("USD", "EUR") {
+		t.Fatal("different row currency should not match")
+	}
+}
+
 func TestService_CreateBankAccount(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -647,6 +803,142 @@ func TestService_CreateBankAccount_RepositoryError(t *testing.T) {
 	}
 }
 
+func TestParseBankAccountCSVRows(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		check   func(t *testing.T, rows []CSVBankAccountRow)
+	}{
+		{
+			name: "comma separated aliases and blank rows",
+			content: strings.Join([]string{
+				"Account Name,IBAN,Bank,BIC,Currency,Cash Account Code,Default,Active",
+				"Main bank, EE471000001020145685 ,LHV,lhvbee22,eur,1000,yes,no",
+				",,,,,,,",
+			}, "\n"),
+			check: func(t *testing.T, rows []CSVBankAccountRow) {
+				if len(rows) != 1 {
+					t.Fatalf("expected 1 row, got %d", len(rows))
+				}
+				row := rows[0]
+				if row.Name != "Main bank" || row.AccountNumber != "EE471000001020145685" {
+					t.Fatalf("unexpected parsed row: %#v", row)
+				}
+				if row.BankName != "LHV" || row.SwiftCode != "lhvbee22" || row.Currency != "eur" {
+					t.Fatalf("unexpected bank metadata: %#v", row)
+				}
+				if row.GLAccountCode != "1000" || row.IsDefault != "yes" || row.IsActive != "no" {
+					t.Fatalf("unexpected import metadata: %#v", row)
+				}
+			},
+		},
+		{
+			name: "semicolon separated ledger account id",
+			content: strings.Join([]string{
+				"bank-account-name;account_no;bank_name;swift_code;currency;ledger_account_id;is_default;is_active",
+				"Savings;EE222;SEB;EEUHEE2X;usd;11111111-1111-1111-1111-111111111111;false;true",
+			}, "\n"),
+			check: func(t *testing.T, rows []CSVBankAccountRow) {
+				if len(rows) != 1 {
+					t.Fatalf("expected 1 row, got %d", len(rows))
+				}
+				row := rows[0]
+				if row.Name != "Savings" || row.AccountNumber != "EE222" {
+					t.Fatalf("unexpected parsed row: %#v", row)
+				}
+				if row.GLAccountID != testGLAccountID || row.IsDefault != "false" || row.IsActive != "true" {
+					t.Fatalf("unexpected import metadata: %#v", row)
+				}
+			},
+		},
+		{
+			name: "tab separated account alias",
+			content: strings.Join([]string{
+				"name\taccount\tledger_account_code",
+				"Cash\tEE333\t1000",
+			}, "\n"),
+			check: func(t *testing.T, rows []CSVBankAccountRow) {
+				if len(rows) != 1 {
+					t.Fatalf("expected 1 row, got %d", len(rows))
+				}
+				row := rows[0]
+				if row.Name != "Cash" || row.AccountNumber != "EE333" || row.GLAccountCode != "1000" {
+					t.Fatalf("unexpected parsed row: %#v", row)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows, err := ParseBankAccountCSVRows(tt.content)
+			if err != nil {
+				t.Fatalf("ParseBankAccountCSVRows() error = %v", err)
+			}
+			tt.check(t, rows)
+		})
+	}
+}
+
+func TestParseBankAccountCSVRowsRejectsInvalidInput(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{
+			name:    "empty content",
+			content: " \n\t ",
+			wantErr: "bank account CSV is empty",
+		},
+		{
+			name:    "bad header",
+			content: `"name,account_number`,
+			wantErr: "read bank account CSV header",
+		},
+		{
+			name: "bad row",
+			content: strings.Join([]string{
+				"name,account_number",
+				`"Main bank,EE471000001020145685`,
+			}, "\n"),
+			wantErr: "read bank account CSV row 2",
+		},
+		{
+			name: "header only",
+			content: strings.Join([]string{
+				"name,account_number",
+			}, "\n"),
+			wantErr: "bank account CSV contains no accounts",
+		},
+		{
+			name: "blank rows only",
+			content: strings.Join([]string{
+				"name,account_number",
+				",",
+			}, "\n"),
+			wantErr: "bank account CSV contains no accounts",
+		},
+		{
+			name: "missing required fields",
+			content: strings.Join([]string{
+				"name,account_number",
+				"Main bank,",
+			}, "\n"),
+			wantErr: "bank account CSV row 2 requires name and account_number",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseBankAccountCSVRows(tt.content)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestService_ImportBankAccounts(t *testing.T) {
 	repo := NewMockRepository()
 	repo.accounts["existing"] = &BankAccount{
@@ -742,6 +1034,91 @@ func TestService_ImportBankAccounts(t *testing.T) {
 	}
 	if closed.Currency != "USD" {
 		t.Errorf("expected uppercase currency USD, got %q", closed.Currency)
+	}
+}
+
+func TestService_ImportBankAccountsReportsRowValidationAndRepositoryErrors(t *testing.T) {
+	repo := NewMockRepository()
+	repo.CreateBankAccountFn = func(ctx context.Context, schemaName string, account *BankAccount) error {
+		return errors.New("create failed")
+	}
+	service := NewServiceWithRepository(repo)
+
+	result, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
+		FileName: " ",
+		Rows: []CSVBankAccountRow{
+			{Name: "Missing account number"},
+			{Name: "Bad default", AccountNumber: "EE111", IsDefault: "maybe"},
+			{Name: "Bad active", AccountNumber: "EE222", IsActive: "unknown"},
+			{Name: "Create fails", AccountNumber: "EE333"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportBankAccounts() error = %v", err)
+	}
+	if result.FileName != "bank_accounts_import.csv" {
+		t.Fatalf("expected default file name, got %q", result.FileName)
+	}
+	if result.RowsProcessed != 4 || result.RowsSkipped != 4 || result.AccountsImported != 0 {
+		t.Fatalf("unexpected import result: %#v", result)
+	}
+	expectedErrors := []string{
+		"Row 1: account_number is required",
+		`Row 2: invalid is_default: expected boolean, got "maybe"`,
+		`Row 3: invalid is_active: expected boolean, got "unknown"`,
+		"Row 4: create bank account failed: create failed",
+	}
+	if len(result.Errors) != len(expectedErrors) {
+		t.Fatalf("expected %d errors, got %#v", len(expectedErrors), result.Errors)
+	}
+	for i, expected := range expectedErrors {
+		if result.Errors[i] != expected {
+			t.Fatalf("expected error %d to be %q, got %q", i, expected, result.Errors[i])
+		}
+	}
+}
+
+func TestService_ImportBankAccountsReturnsListError(t *testing.T) {
+	repo := NewMockRepository()
+	repo.ListBankAccountsFn = func(ctx context.Context, schemaName, tenantID string, filter *BankAccountFilter) ([]BankAccount, error) {
+		return nil, errors.New("list failed")
+	}
+	service := NewServiceWithRepository(repo)
+
+	_, err := service.ImportBankAccounts(context.Background(), testSchemaName, testTenantID, &ImportBankAccountsRequest{
+		Rows: []CSVBankAccountRow{{Name: "Main bank", AccountNumber: "EE471000001020145685"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "list bank accounts before import: list failed") {
+		t.Fatalf("expected list error, got %v", err)
+	}
+}
+
+func TestService_BankAccountImportAccountIDsByCodeReportsAccountingErrors(t *testing.T) {
+	rows := []CSVBankAccountRow{{Name: "Main bank", AccountNumber: "EE471000001020145685", GLAccountCode: "1000"}}
+
+	service := NewServiceWithRepository(NewMockRepository())
+	_, err := service.bankAccountImportAccountIDsByCode(context.Background(), testSchemaName, testTenantID, rows)
+	if err == nil || !strings.Contains(err.Error(), "accounting service is required") {
+		t.Fatalf("expected missing accounting service error, got %v", err)
+	}
+
+	service = NewServiceWithRepositoryAndAccounting(NewMockRepository(), fakeBankingAccountLister{err: errors.New("account list failed")})
+	_, err = service.bankAccountImportAccountIDsByCode(context.Background(), testSchemaName, testTenantID, rows)
+	if err == nil || !strings.Contains(err.Error(), "list accounts for bank account import: account list failed") {
+		t.Fatalf("expected account list error, got %v", err)
+	}
+}
+
+func TestResolveOptionalBankAccountImportAccountIDPrefersExplicitID(t *testing.T) {
+	accountID, err := resolveOptionalBankAccountImportAccountID(CSVBankAccountRow{
+		GLAccountID:   testGLAccountID,
+		GLAccountCode: "missing-code",
+	}, map[string]string{})
+	if err != nil {
+		t.Fatalf("resolveOptionalBankAccountImportAccountID() error = %v", err)
+	}
+	if accountID == nil || *accountID != testGLAccountID {
+		t.Fatalf("expected explicit GL account id %s, got %v", testGLAccountID, accountID)
 	}
 }
 

@@ -128,6 +128,18 @@ func TestYearEndCarryForwardHelpers(t *testing.T) {
 		assert.True(t, lines[2].DebitAmount.Equal(decimal.NewFromInt(60)))
 	})
 
+	t.Run("credits retained earnings for net profit carry-forward", func(t *testing.T) {
+		lines, err := buildYearEndCarryForwardLines([]AccountBalance{
+			{AccountID: "revenue", AccountType: AccountTypeRevenue, NetBalance: decimal.NewFromInt(250)},
+			{AccountID: "expense", AccountType: AccountTypeExpense, NetBalance: decimal.NewFromInt(90)},
+		}, retained)
+
+		require.NoError(t, err)
+		require.Len(t, lines, 3)
+		assert.Equal(t, "retained", lines[2].AccountID)
+		assert.True(t, lines[2].CreditAmount.Equal(decimal.NewFromInt(160)))
+	})
+
 	t.Run("requires retained earnings account when carry-forward is imbalanced", func(t *testing.T) {
 		lines, err := buildYearEndCarryForwardLines([]AccountBalance{
 			{AccountID: "revenue", AccountType: AccountTypeRevenue, NetBalance: decimal.NewFromInt(100)},

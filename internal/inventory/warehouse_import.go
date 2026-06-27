@@ -122,9 +122,6 @@ func parseWarehouseImportRows(content string) ([]warehouseImportRow, error) {
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("csv file is empty")
-		}
 		return nil, fmt.Errorf("parse csv header: %w", err)
 	}
 

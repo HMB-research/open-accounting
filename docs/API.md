@@ -3840,7 +3840,7 @@ POST /tenants/{tenantId}/tax/kmd/{year}/{month}/submit
 Authorization: Bearer <token>
 ```
 
-Marks an existing KMD declaration as submitted to e-MTA and records the current server timestamp in `submitted_at`. Marking a KMD declaration submitted requires an approved `tax_support` or `supporting_document` attached to the `kmd_declaration` entity with the declaration ID as `entity_id`. Missing or pending evidence returns `409 Conflict` and leaves the declaration in draft status. Returns `{ "status": "submitted" }` when the transition succeeds.
+Records that an existing KMD declaration was manually submitted through the external e-MTA workflow and stores the current server timestamp in `submitted_at`. This endpoint does not submit the declaration, poll e-MTA, or retrieve feedback. Marking a KMD declaration submitted requires an approved `tax_support` or `supporting_document` attached to the `kmd_declaration` entity with the declaration ID as `entity_id`. Missing or pending evidence returns `409 Conflict` and leaves the declaration in draft status. Returns `{ "status": "submitted" }` when the transition succeeds.
 
 ### Mark KMD Accepted
 
@@ -3849,7 +3849,7 @@ POST /tenants/{tenantId}/tax/kmd/{year}/{month}/accept
 Authorization: Bearer <token>
 ```
 
-Marks an existing KMD declaration as accepted by e-MTA. Marking a KMD declaration accepted requires an approved `tax_support` or `supporting_document` attached to the `kmd_declaration` entity with the declaration ID as `entity_id`. Missing or pending evidence returns `409 Conflict` and leaves the declaration status unchanged. Returns `{ "status": "accepted" }` when the transition succeeds and powers the accountant workspace KMD acceptance assignment action.
+Records that an existing KMD declaration was accepted through the external e-MTA workflow. This endpoint does not poll e-MTA or retrieve acceptance feedback. Marking a KMD declaration accepted requires an approved `tax_support` or `supporting_document` attached to the `kmd_declaration` entity with the declaration ID as `entity_id`. Missing or pending evidence returns `409 Conflict` and leaves the declaration status unchanged. Returns `{ "status": "accepted" }` when the transition succeeds and powers the accountant workspace KMD acceptance assignment action.
 
 ### Generate EU VAT OSS Report
 

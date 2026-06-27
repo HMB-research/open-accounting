@@ -295,10 +295,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			reservation.CancelAt(now)
 
 			// Calculate when the limiter will have tokens again
-			retryAfter := int(delay.Seconds()) + 1
-			if retryAfter < 1 {
-				retryAfter = 1
-			}
+			retryAfter := retryAfterSeconds(delay)
 
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
@@ -311,10 +308,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		}
 
 		// Add rate limit headers
-		tokens := int(limiter.Tokens())
-		if tokens < 0 {
-			tokens = 0
-		}
+		tokens := nonNegativeTokenCount(limiter.Tokens())
 		w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.b))
 		w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(tokens))
 
@@ -326,4 +320,20 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 // 100 requests per minute with a burst of 10
 func DefaultRateLimiter() *RateLimiter {
 	return NewRateLimiter(100.0/60.0, 10) // ~1.67 requests/sec, burst 10
+}
+
+func retryAfterSeconds(delay time.Duration) int {
+	retryAfter := int(delay.Seconds()) + 1
+	if retryAfter < 1 {
+		return 1
+	}
+	return retryAfter
+}
+
+func nonNegativeTokenCount(tokens float64) int {
+	remaining := int(tokens)
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
 }

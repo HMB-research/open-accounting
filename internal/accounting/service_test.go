@@ -895,6 +895,22 @@ func TestService_CreateJournalEntry(t *testing.T) {
 		assert.Contains(t, err.Error(), "exchange_rate must be positive")
 	})
 
+	t.Run("rejects negative VAT rate", func(t *testing.T) {
+		req := &CreateJournalEntryRequest{
+			EntryDate:   time.Now(),
+			Description: "Bad VAT entry",
+			Lines: []CreateJournalEntryLineReq{
+				{AccountID: "acc-1", DebitAmount: decimal.NewFromFloat(100), VATRate: decimal.NewFromInt(-1)},
+				{AccountID: "acc-2", CreditAmount: decimal.NewFromFloat(100)},
+			},
+			UserID: "user-1",
+		}
+
+		_, err := svc.CreateJournalEntry(ctx, schemaName, "tenant-1", req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "vat_rate cannot be negative")
+	})
+
 	t.Run("rejects invalid journal line ID", func(t *testing.T) {
 		req := &CreateJournalEntryRequest{
 			EntryDate:   time.Now(),

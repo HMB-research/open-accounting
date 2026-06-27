@@ -1,12 +1,167 @@
 package webhooks
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/lib/pq"
 )
+
+func TestGORMRepositoryNilDatabaseGuards(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+	endpoint := &Endpoint{
+		ID:        "endpoint-1",
+		TenantID:  "tenant-1",
+		Name:      "Billing Events",
+		URL:       "https://example.com/webhooks",
+		Events:    []string{"invoice.created"},
+		Secret:    "secret",
+		IsActive:  true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	delivery := &Delivery{
+		ID:            "delivery-1",
+		TenantID:      "tenant-1",
+		EndpointID:    "endpoint-1",
+		EventID:       "event-1",
+		EventType:     "invoice.created",
+		Status:        DeliveryStatusSucceeded,
+		StatusCode:    204,
+		AttemptNumber: 1,
+		RequestBody:   []byte(`{"id":"event-1"}`),
+		ResponseBody:  "accepted",
+		DeliveredAt:   now,
+		CreatedAt:     now,
+	}
+
+	repositories := []struct {
+		name string
+		repo *GORMRepository
+	}{
+		{name: "nil receiver"},
+		{name: "nil database", repo: NewGORMRepository(nil)},
+	}
+
+	tests := []struct {
+		name string
+		run  func(t *testing.T, repo *GORMRepository) error
+	}{
+		{
+			name: "dbWithContext",
+			run: func(t *testing.T, repo *GORMRepository) error {
+				db, err := repo.dbWithContext(ctx)
+				if db != nil {
+					t.Fatalf("dbWithContext() db = %#v, want nil", db)
+				}
+				return err
+			},
+		},
+		{
+			name: "ListEndpoints",
+			run: func(t *testing.T, repo *GORMRepository) error {
+				endpoints, err := repo.ListEndpoints(ctx, "tenant-1", true)
+				if endpoints != nil {
+					t.Fatalf("ListEndpoints() endpoints = %#v, want nil", endpoints)
+				}
+				return err
+			},
+		},
+		{
+			name: "GetEndpoint",
+			run: func(t *testing.T, repo *GORMRepository) error {
+				got, err := repo.GetEndpoint(ctx, "tenant-1", "endpoint-1")
+				if got != nil {
+					t.Fatalf("GetEndpoint() endpoint = %#v, want nil", got)
+				}
+				return err
+			},
+		},
+		{
+			name: "CreateEndpoint",
+			run: func(t *testing.T, repo *GORMRepository) error {
+				return repo.CreateEndpoint(ctx, endpoint)
+			},
+		},
+		{
+			name: "UpdateEndpoint",
+			run: func(t *testing.T, repo *GORMRepository) error {
+				return repo.UpdateEndpoint(ctx, endpoint)
+			},
+		},
+		{
+			name: "DeleteEndpoint",
+			run: func(t *testing.T, repo *GORMRepository) error {
+				rows, err := repo.DeleteEndpoint(ctx, "tenant-1", "endpoint-1")
+				if rows != 0 {
+					t.Fatalf("DeleteEndpoint() rows = %d, want 0", rows)
+				}
+				return err
+			},
+		},
+		{
+			name: "CreateDelivery",
+			run: func(t *testing.T, repo *GORMRepository) error {
+				return repo.CreateDelivery(ctx, delivery)
+			},
+		},
+		{
+			name: "ListDeliveries",
+			run: func(t *testing.T, repo *GORMRepository) error {
+				deliveries, err := repo.ListDeliveries(ctx, "tenant-1", "endpoint-1", 10)
+				if deliveries != nil {
+					t.Fatalf("ListDeliveries() deliveries = %#v, want nil", deliveries)
+				}
+				return err
+			},
+		},
+		{
+			name: "UpdateEndpointLastDelivery",
+			run: func(t *testing.T, repo *GORMRepository) error {
+				return repo.UpdateEndpointLastDelivery(ctx, "tenant-1", "endpoint-1", now)
+			},
+		},
+	}
+
+	for _, repository := range repositories {
+		t.Run(repository.name, func(t *testing.T) {
+			if repository.name == "nil database" {
+				if repository.repo == nil {
+					t.Fatal("NewGORMRepository(nil) returned nil")
+				}
+				if repository.repo.db != nil {
+					t.Fatalf("NewGORMRepository(nil).db = %#v, want nil", repository.repo.db)
+				}
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					err := tt.run(t, repository.repo)
+					if err == nil {
+						t.Fatal("expected error")
+					}
+					if !strings.Contains(err.Error(), "webhook repository database is not configured") {
+						t.Fatalf("error = %q, want webhook repository database is not configured", err)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestNewGORMRepository(t *testing.T) {
+	repo := NewGORMRepository(nil)
+	if repo == nil {
+		t.Fatal("expected repository")
+	}
+	if repo.db != nil {
+		t.Fatal("expected repository to store nil db")
+	}
+}
 
 func TestWebhookEndpointModelMappings(t *testing.T) {
 	lastDeliveryAt := time.Date(2026, 6, 11, 9, 15, 0, 0, time.UTC)

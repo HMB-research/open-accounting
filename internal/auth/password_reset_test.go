@@ -333,6 +333,18 @@ func TestPasswordResetHelpersUnit(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, decoded, defaultPasswordResetTokenEntropy)
 
+	randomErr := errors.New("random unavailable")
+	originalRandomRead := passwordResetRandomRead
+	passwordResetRandomRead = func([]byte) (int, error) {
+		return 0, randomErr
+	}
+	t.Cleanup(func() {
+		passwordResetRandomRead = originalRandomRead
+	})
+	token, err = generatePasswordResetToken()
+	assert.Empty(t, token)
+	assert.ErrorIs(t, err, randomErr)
+
 	assert.Equal(t, "audit", truncateAuditField(" audit "))
 	assert.Len(t, truncateAuditField(strings.Repeat("a", 600)), 512)
 
