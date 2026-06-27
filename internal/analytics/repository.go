@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
@@ -12,6 +13,8 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
+
+var migrationSettlementPaymentMethods = []string{"CUTOVER_SETTLEMENT", "MIGRATION_SETTLEMENT"}
 
 // Repository defines the contract for analytics data access
 type Repository interface {
@@ -262,6 +265,7 @@ func (r *GORMRepository) GetMonthlyCashFlow(ctx context.Context, schemaName stri
 			COALESCE(SUM(CASE WHEN p.payment_type = ? THEN p.base_amount ELSE 0 END), 0) AS outflows
 		`, models.PaymentTypeReceived, models.PaymentTypeMade).
 		Where("p.payment_date >= ? AND p.payment_date < ?", monthStarts[0], monthStarts[len(monthStarts)-1].AddDate(0, 1, 0)).
+		Where("COALESCE(NULLIF(UPPER(TRIM(p.payment_method)), ''), '') NOT IN ?", migrationSettlementPaymentMethods).
 		Group("date_trunc('month', p.payment_date)").
 		Order("month ASC").
 		Scan(&rows).Error; err != nil {
@@ -635,4 +639,14 @@ func monthKey(month time.Time) string {
 
 func monthLabel(month time.Time) string {
 	return month.Format("Jan 2006")
+}
+
+func IsMigrationSettlementPaymentMethod(method string) bool {
+	normalized := strings.ToUpper(strings.TrimSpace(method))
+	for _, candidate := range migrationSettlementPaymentMethods {
+		if normalized == candidate {
+			return true
+		}
+	}
+	return false
 }

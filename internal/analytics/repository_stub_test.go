@@ -135,7 +135,7 @@ func TestGORMRepositoryScansMonthlyQueries(t *testing.T) {
 
 	t.Run("cash flow fills missing months", func(t *testing.T) {
 		repo, stub := newAnalyticsStubRepository(t, analyticsStubQuery{
-			contains: []string{`FROM "tenant_schema"."payments" AS p`, "date_trunc('month', p.payment_date)"},
+			contains: []string{`FROM "tenant_schema"."payments" AS p`, "date_trunc('month', p.payment_date)", "p.payment_method", "NOT IN"},
 			columns:  []string{"month", "inflows", "outflows"},
 			rows:     [][]driver.Value{{monthStarts[2], "450.00", "120.00"}},
 		})
@@ -155,6 +155,13 @@ func TestGORMRepositoryScansMonthlyQueries(t *testing.T) {
 		assert.True(t, data[2].Outflows.Equal(decimal.RequireFromString("120.00")))
 		stub.requireExhausted(t)
 	})
+}
+
+func TestIsMigrationSettlementPaymentMethod(t *testing.T) {
+	assert.True(t, IsMigrationSettlementPaymentMethod("CUTOVER_SETTLEMENT"))
+	assert.True(t, IsMigrationSettlementPaymentMethod(" migration_settlement "))
+	assert.False(t, IsMigrationSettlementPaymentMethod("BANK_TRANSFER"))
+	assert.False(t, IsMigrationSettlementPaymentMethod(""))
 }
 
 func TestGORMRepositoryScansAgingAndTopCustomers(t *testing.T) {
