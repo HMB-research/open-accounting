@@ -111,6 +111,7 @@ func PrepareSmartAccountsSnapshot(opts SmartAccountsSnapshotOptions) (*SmartAcco
 		SourceCompanyName: strings.TrimSpace(opts.SourceCompanyName),
 		CutoverDate:       strings.TrimSpace(opts.CutoverDate),
 	}
+	report.Warnings = append(report.Warnings, smartAccountsGitWorktreeWarnings(sourceDir, outputDir)...)
 
 	csvSources := make([]smartAccountsCSVSource, 0)
 	xmlSources := make([]smartAccountsXMLSource, 0)
@@ -580,6 +581,44 @@ func smartAccountsValidationCommand(outputDir string, files []SmartAccountsSnaps
 	}
 	parts = append(parts, "--json")
 	return strings.Join(parts, " ")
+}
+
+func smartAccountsGitWorktreeWarnings(paths ...string) []string {
+	warnings := make([]string, 0)
+	seen := map[string]bool{}
+	for _, path := range paths {
+		root, ok := nearestGitWorktreeRoot(path)
+		if !ok || seen[root] {
+			continue
+		}
+		seen[root] = true
+		warnings = append(warnings, fmt.Sprintf("path %s is inside Git worktree %s; keep real SmartAccounts data outside public repositories or in a separate private repository", path, root))
+	}
+	return warnings
+}
+
+func nearestGitWorktreeRoot(path string) (string, bool) {
+	if strings.TrimSpace(path) == "" {
+		return "", false
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	info, err := os.Stat(absPath)
+	if err == nil && !info.IsDir() {
+		absPath = filepath.Dir(absPath)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(absPath, ".git")); err == nil {
+			return absPath, true
+		}
+		parent := filepath.Dir(absPath)
+		if parent == absPath {
+			return "", false
+		}
+		absPath = parent
+	}
 }
 
 func shellQuote(value string) string {

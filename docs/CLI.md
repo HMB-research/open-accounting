@@ -333,15 +333,15 @@ For SmartAccounts cutovers, prepare an auditable offline snapshot before validat
 
 ```bash
 go run ./cmd/smartaccounts-snapshot \
-  --source-dir ./private/smartaccounts-export \
-  --out-dir ./private/smartaccounts-prepared \
+  --source-dir /Users/clawdy/private/open-accounting-smartaccounts/export \
+  --out-dir /Users/clawdy/private/open-accounting-smartaccounts/prepared \
   --company-id 14369460 \
   --company-name "Hold My Beer OU" \
   --cutover-date 2026-01-01 \
   --json
 ```
 
-The snapshot tool does not call SmartAccounts or mutate Open Accounting. It classifies SmartAccounts CSV/XML exports, rewrites supported CSV headers through the `smartaccounts` provider preset, writes canonical bundle files under `bundle/`, records source and output SHA-256 hashes in `manifest.json`, and emits a rerunnable `migration validate --provider-preset smartaccounts` command. Unsupported files remain listed in the manifest for manual export/API follow-up.
+The snapshot tool does not call SmartAccounts or mutate Open Accounting. Use it with private local paths outside this public repository, or with a separate private repository dedicated to customer migration data; branches in a public GitHub repository are public. The tool classifies SmartAccounts CSV/XML exports, rewrites supported CSV headers through the `smartaccounts` provider preset, writes canonical bundle files under `bundle/`, records source and output SHA-256 hashes in `manifest.json`, and emits a rerunnable `migration validate --provider-preset smartaccounts` command. Unsupported files remain listed in the manifest for manual export/API follow-up.
 
 Stock-adjustment preflight rejects same-bundle `product_code` rows that point at service products or products with `track_inventory=false`; stock imports must target tracked `GOODS` products before mutating execution can run. Stock execution plans depend on product and warehouse masters only, because stock-import rows do not carry cost-center fields.
 

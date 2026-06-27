@@ -82,6 +82,24 @@ func TestPrepareSmartAccountsSnapshotHashIgnoresGeneratedAtAndOutputDir(t *testi
 	require.NotEqual(t, first.ValidationCommand, second.ValidationCommand)
 }
 
+func TestPrepareSmartAccountsSnapshotWarnsWhenUsingGitWorktree(t *testing.T) {
+	repoDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(repoDir, ".git"), 0o755))
+	sourceDir := filepath.Join(repoDir, "private", "smartaccounts-export")
+	outputDir := filepath.Join(repoDir, "private", "smartaccounts-prepared")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "clients.csv"), []byte("client_no,client_name\nC-1,Example OU\n"), 0o644))
+
+	report, err := PrepareSmartAccountsSnapshot(SmartAccountsSnapshotOptions{
+		SourceDir: sourceDir,
+		OutputDir: outputDir,
+	})
+	require.NoError(t, err)
+	require.Len(t, report.Warnings, 1)
+	require.Contains(t, report.Warnings[0], "inside Git worktree")
+	require.Contains(t, report.Warnings[0], "separate private repository")
+}
+
 func TestPrepareSmartAccountsSnapshotRejectsUnclassifiableDirectory(t *testing.T) {
 	sourceDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "unknown.csv"), []byte("only_one_column\nvalue\n"), 0o644))

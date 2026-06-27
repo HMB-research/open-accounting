@@ -295,7 +295,9 @@ go run ./cmd/smartaccounts-snapshot --source-dir <smartaccounts-export-dir> --ou
 
 The preparer produces a hashed `manifest.json` and canonical migration bundle files for the existing `migration validate --provider-preset smartaccounts`, `migration plan`, and `migration execute` flow. It is intentionally offline and does not use SmartAccounts web-login credentials.
 
-Open Accounting does not yet provide a signed live SmartAccounts API exporter. A live exporter must use SmartAccounts API key/secret credentials, respect API pagination and rate limits, keep raw payload snapshots for audit, and map unsupported files such as attachments, invoice PDFs, bank-statement variants, and report comparison exports into a separate reconciliation runbook.
+Run real SmartAccounts exports from private local storage outside this public repository or from a separate private repository dedicated to migration data. GitHub branches inherit repository visibility, so a branch in `HMB-research/open-accounting` is public.
+
+Open Accounting does not yet provide a signed live SmartAccounts API exporter. A live exporter must use SmartAccounts API key/secret credentials, respect API pagination and rate limits, keep raw payload snapshots for audit in private storage, and map unsupported files such as attachments, invoice PDFs, bank-statement variants, and report comparison exports into a separate reconciliation runbook.
 
 ---
 

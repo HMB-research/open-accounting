@@ -11,6 +11,8 @@ Use this with `open-accounting-development`, `open-accounting-import-mappers`, a
 
 - Treat SmartAccounts web-login credentials as UI credentials only. Do not assume they can export accounting data through the API.
 - For live API extraction, require SmartAccounts API key/secret from Settings / Connected services. Keep API credentials in environment variables or macOS Keychain, never in repo files.
+- Treat `HMB-research/open-accounting` as public. Branches in a public GitHub repository are public; real SmartAccounts exports must live outside this worktree or in a separate private repository/worktree dedicated to migration data.
+- Use repo-relative private paths only as an ignored local scratch fallback. Prefer `/Users/clawdy/private/open-accounting-smartaccounts/...` or a private repo path for real data.
 - Prefer the offline snapshot path first: SmartAccounts CSV/XML exports -> snapshot preparer -> canonical bundle -> `migration validate` -> `migration plan` -> non-confirming `migration execute` -> confirmed execution.
 - Keep SmartAccounts-specific parsing in cutover mapper/tooling. Do not duplicate domain import logic already owned by accounting, contacts, invoicing, payments, banking, inventory, assets, payroll, and recurring services.
 - Do not mutate imported posted history by replaying edited source rows. Corrections should use reversal, void, reopen, or adjustment flows.
@@ -21,8 +23,8 @@ Prepare a bundle from a directory of SmartAccounts exports:
 
 ```bash
 go run ./cmd/smartaccounts-snapshot \
-  --source-dir ./private/smartaccounts-export \
-  --out-dir ./private/smartaccounts-prepared \
+  --source-dir /Users/clawdy/private/open-accounting-smartaccounts/export \
+  --out-dir /Users/clawdy/private/open-accounting-smartaccounts/prepared \
   --company-id 14369460 \
   --company-name "Hold My Beer OU" \
   --cutover-date 2026-01-01 \
