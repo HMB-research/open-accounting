@@ -215,6 +215,29 @@ This is a competitive-gap document, not the authoritative current-state status p
 | Excel export | ✅ | ✅ | ✅ | Implemented for core financial statements, cash flow, aging, balance confirmations, contact statements, sales margin, budget-vs-actual, and cost-center budget reports |
 | Data migration tools | ✅ | ✅ | ⚠️ | Partial: CSV and XML imports cover setup data, invoices, Estonian e-invoices, payments, expenses, opening balances, employees, finalized payroll history, leave balances, historical TSD/KMD declarations, quotes, orders, recurring invoice templates, bank accounts, bank transactions including standard ISO 20022 camt.053 statements, cost centers, cost allocations, product categories, warehouses, products, stock adjustments with lot metadata, fixed assets, and historical journal entries; a migration bundle validator checks required columns, XML payloads, e-invoice supplier/customer party contact references by validation mode, opening-balance debit/credit totals, grouped historical-journal date/line/amount/base-currency balances, provider preset header aliases for generic, Merit, SmartAccounts, and Directo CSVs, and same-bundle references before import, but deeper incumbent-system templates and full cutover remain incomplete |
 
+### 7.3 SmartAccounts Migration Coverage Matrix
+
+| SmartAccounts export or entity | Current Open Accounting path | Status | Remaining proof or gap |
+|--------------------------------|------------------------------|--------|------------------------|
+| Chart of accounts | `smartaccounts-snapshot` -> `migration validate/plan/execute --accounts` | Supported | Needs tenant export validation before confirmed cutover |
+| Contacts/customers/suppliers | `smartaccounts-snapshot` -> `--contacts` | Supported | Needs duplicate/contact identity review against invoices and payments |
+| Sales and purchase invoices | CSV import and Estonian e-invoice XML import | Needs sample proof | Needs real SmartAccounts export samples for invoice status, totals, and allocation references |
+| Estonian e-invoice XML | `--e-invoices` with validation mode/type overrides | Supported | Attachments and invoice PDFs are separate proof/export artifacts |
+| Payments and allocations | `--payments` with same-bundle invoice checks | Needs sample proof | Needs SmartAccounts payment export sample and direction/currency review |
+| Bank accounts | `--bank-accounts` | Supported | Needs tenant bank account mapping review |
+| Bank transactions | `--bank-transactions` or bank-native statement import | Needs context | Requires Open Accounting bank account id and either supported bank statement format or SmartAccounts transaction export proof |
+| Opening balances | `--opening-balances` plus `--opening-balance-entry-date` | Needs context | Requires accountant-approved cutover date |
+| Historical journal | `--journal` | Supported | Needs source line balancing and account mapping review |
+| Cost centers and allocations | `--cost-centers`, `--cost-allocations` | Needs sample proof | Needs SmartAccounts export sample for allocation references and split totals |
+| Products, categories, warehouses, stock | Inventory import flags | Needs sample proof | Needs product type, tracking, lot, warehouse, and inventory value reconciliation |
+| Fixed assets | `--fixed-assets` | Needs sample proof | Needs purchase-source, depreciation, and register-total reconciliation |
+| Employees and payroll history | `--employees`, `--payroll-history`, `--leave-balances` | Needs sample proof | Needs finalized payroll period samples and employee identity review |
+| TSD and KMD history | `--tsd-history`, `--kmd-history` | Needs sample proof | Needs period summary comparison against SmartAccounts/e-MTA reports |
+| Quotes, orders, recurring invoices | Commercial-document and recurring-template imports | Needs sample proof | Needs SmartAccounts export shape and status mapping proof |
+| Attachments and invoice PDFs | Private export/runbook artifact | Gap | Not imported by snapshot preparer; retain in private evidence storage |
+| Reconciliation reports | Private proof artifact | Reconciliation-only | Trial balance, aging, VAT, payroll, inventory, fixed-asset, and bank reports are compared after import, not imported as entities |
+| Live SmartAccounts API export | Not implemented | Gap | Requires API key/secret, signed request client, pagination/rate-limit handling, raw payload hashing, and private storage |
+
 ---
 
 ## 8. Mobile Features
@@ -287,13 +310,13 @@ SmartAccounts API features:
 - REST endpoints
 - Integration with Envoice, WooCommerce, ShopRoller
 
-Open Accounting provides a SmartAccounts CSV/XML snapshot preparer:
+Open Accounting provides a SmartAccounts CSV/XML snapshot preparer and a public operator runbook in [SmartAccounts Migration](./SMARTACCOUNTS_MIGRATION.md):
 
 ```bash
 go run ./cmd/smartaccounts-snapshot --source-dir <smartaccounts-export-dir> --out-dir <prepared-dir> --json
 ```
 
-The preparer produces a hashed `manifest.json` and canonical migration bundle files for the existing `migration validate --provider-preset smartaccounts`, `migration plan`, and `migration execute` flow. It is intentionally offline and does not use SmartAccounts web-login credentials.
+The preparer produces a hashed `manifest.json` and canonical migration bundle files for the existing `migration validate --provider-preset smartaccounts`, `migration plan`, and `migration execute` flow. It is intentionally offline and does not use SmartAccounts web-login credentials. It refuses to write snapshots inside the public Open Accounting worktree.
 
 Run real SmartAccounts exports from private local storage outside this public repository or from a separate private repository dedicated to migration data. GitHub branches inherit repository visibility, so a branch in `HMB-research/open-accounting` is public.
 

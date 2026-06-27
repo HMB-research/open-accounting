@@ -23,11 +23,11 @@ Prepare a bundle from a directory of SmartAccounts exports:
 
 ```bash
 go run ./cmd/smartaccounts-snapshot \
-  --source-dir /Users/clawdy/private/open-accounting-smartaccounts/export \
-  --out-dir /Users/clawdy/private/open-accounting-smartaccounts/prepared \
-  --company-id 14369460 \
-  --company-name "Hold My Beer OU" \
-  --cutover-date 2026-01-01 \
+  --source-dir /path/to/private/smartaccounts/export \
+  --out-dir /path/to/private/smartaccounts/prepared \
+  --company-id 12345678 \
+  --company-name "Example Export OU" \
+  --cutover-date YYYY-MM-DD \
   --json
 ```
 

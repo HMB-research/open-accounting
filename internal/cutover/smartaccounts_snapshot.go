@@ -57,8 +57,10 @@ type SmartAccountsSnapshotPreparedFile struct {
 }
 
 type SmartAccountsSnapshotUnsupported struct {
-	SourcePath string `json:"source_path"`
-	Reason     string `json:"reason"`
+	SourcePath   string `json:"source_path"`
+	Reason       string `json:"reason"`
+	SourceSHA256 string `json:"source_sha256"`
+	SizeBytes    int64  `json:"size_bytes"`
 }
 
 type smartAccountsCSVSource struct {
@@ -93,6 +95,9 @@ func PrepareSmartAccountsSnapshot(opts SmartAccountsSnapshotOptions) (*SmartAcco
 	}
 	if !sourceInfo.IsDir() {
 		return nil, fmt.Errorf("source dir must be a directory")
+	}
+	if err := rejectSmartAccountsPublicWorktreePaths(sourceDir, outputDir); err != nil {
+		return nil, err
 	}
 	if opts.GeneratedAt.IsZero() {
 		opts.GeneratedAt = time.Now().UTC()
@@ -143,22 +148,19 @@ func PrepareSmartAccountsSnapshot(opts SmartAccountsSnapshotOptions) (*SmartAcco
 				return err
 			}
 			if reason != "" {
-				report.UnsupportedFiles = append(report.UnsupportedFiles, SmartAccountsSnapshotUnsupported{SourcePath: relPath, Reason: reason})
+				report.UnsupportedFiles = append(report.UnsupportedFiles, smartAccountsUnsupportedFile(relPath, reason, sourceHash, content))
 				return nil
 			}
 			csvSources = append(csvSources, source)
 		case ".xml":
 			source, reason := classifySmartAccountsXML(path, relPath, sourceHash, string(content))
 			if reason != "" {
-				report.UnsupportedFiles = append(report.UnsupportedFiles, SmartAccountsSnapshotUnsupported{SourcePath: relPath, Reason: reason})
+				report.UnsupportedFiles = append(report.UnsupportedFiles, smartAccountsUnsupportedFile(relPath, reason, sourceHash, content))
 				return nil
 			}
 			xmlSources = append(xmlSources, source)
 		default:
-			report.UnsupportedFiles = append(report.UnsupportedFiles, SmartAccountsSnapshotUnsupported{
-				SourcePath: relPath,
-				Reason:     "unsupported file extension; expected SmartAccounts CSV export or Estonian e-invoice XML",
-			})
+			report.UnsupportedFiles = append(report.UnsupportedFiles, smartAccountsUnsupportedFile(relPath, "unsupported file extension; expected SmartAccounts CSV export or Estonian e-invoice XML", sourceHash, content))
 		}
 		return nil
 	})
@@ -251,6 +253,15 @@ func classifySmartAccountsXML(path, relPath, sourceHash, content string) (smartA
 		content:        content,
 		classification: "xml-root",
 	}, ""
+}
+
+func smartAccountsUnsupportedFile(relPath, reason, sourceHash string, content []byte) SmartAccountsSnapshotUnsupported {
+	return SmartAccountsSnapshotUnsupported{
+		SourcePath:   relPath,
+		Reason:       reason,
+		SourceSHA256: sourceHash,
+		SizeBytes:    int64(len(content)),
+	}
 }
 
 func readSmartAccountsCSV(content string) ([]string, [][]string, error) {
@@ -523,6 +534,9 @@ func smartAccountsSnapshotHash(report *SmartAccountsSnapshotReport, csvSources [
 	for _, source := range xmlSources {
 		lines = append(lines, fmt.Sprintf("xml:%s:%s:%s", source.kind, source.relSourcePath, source.sourceHash))
 	}
+	for _, file := range report.UnsupportedFiles {
+		lines = append(lines, fmt.Sprintf("unsupported:%s:%d:%s:%s", file.SourcePath, file.SizeBytes, file.SourceSHA256, file.Reason))
+	}
 	sort.Strings(lines[5:])
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 	return hex.EncodeToString(sum[:])
@@ -568,6 +582,35 @@ func smartAccountsGitWorktreeWarnings(paths ...string) []string {
 		warnings = append(warnings, fmt.Sprintf("path %s is inside Git worktree %s; keep real SmartAccounts data outside public repositories or in a separate private repository", path, root))
 	}
 	return warnings
+}
+
+func rejectSmartAccountsPublicWorktreePaths(paths ...string) error {
+	seen := map[string]bool{}
+	for _, path := range paths {
+		root, ok := nearestGitWorktreeRoot(path)
+		if !ok || seen[root] {
+			continue
+		}
+		seen[root] = true
+		if isOpenAccountingPublicWorktree(root) {
+			return fmt.Errorf("SmartAccounts snapshot paths must not be inside public Open Accounting Git worktree %s; use a private directory or a separate private repository", root)
+		}
+	}
+	return nil
+}
+
+func isOpenAccountingPublicWorktree(root string) bool {
+	moduleFile, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err == nil && strings.Contains(string(moduleFile), "module github.com/HMB-research/open-accounting") {
+		return true
+	}
+	gitConfig, err := os.ReadFile(filepath.Join(root, ".git", "config"))
+	if err != nil {
+		return false
+	}
+	config := strings.ToLower(string(gitConfig))
+	return strings.Contains(config, "github.com/hmb-research/open-accounting") &&
+		!strings.Contains(config, "open-accounting-smartaccounts-migration-data")
 }
 
 func nearestGitWorktreeRoot(path string) (string, bool) {

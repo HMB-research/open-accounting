@@ -20,8 +20,8 @@ func TestRunOutputsJSONManifest(t *testing.T) {
 	err := run([]string{
 		"--source-dir", sourceDir,
 		"--out-dir", outputDir,
-		"--company-id", "14369460",
-		"--company-name", "Hold My Beer OU",
+		"--company-id", "12345678",
+		"--company-name", "Example Export OU",
 		"--cutover-date", "2026-01-01",
 		"--json",
 	}, &stdout, &stderr)

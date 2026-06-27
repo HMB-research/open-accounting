@@ -14,17 +14,17 @@ import (
 func TestPrepareSmartAccountsSnapshotCanonicalizesAndValidatesBundle(t *testing.T) {
 	sourceDir := t.TempDir()
 	outputDir := filepath.Join(t.TempDir(), "prepared")
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "chart_of_accounts.csv"), []byte("account_no;account_title;classification\n1000;Cash;ASSET\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "clients.csv"), []byte("client_no;client_name;registration_no;email_address\nC-1;Example OU;12345678;info@example.test\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "customers.csv"), []byte("client_no;client_name\nC-2;Second OU\n"), 0o644))
+	copySmartAccountsSnapshotFixture(t, sourceDir, "chart_of_accounts.csv")
+	copySmartAccountsSnapshotFixture(t, sourceDir, "clients.csv")
+	copySmartAccountsSnapshotFixture(t, sourceDir, "customers.csv")
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, ".ignored.csv"), []byte("client_no,client_name\nC-ignored,Ignored OU\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "notes.txt"), []byte("not part of migration"), 0o644))
 
 	report, err := PrepareSmartAccountsSnapshot(SmartAccountsSnapshotOptions{
 		SourceDir:         sourceDir,
 		OutputDir:         outputDir,
-		SourceCompanyID:   "14369460",
-		SourceCompanyName: "Hold My Beer OU",
+		SourceCompanyID:   "12345678",
+		SourceCompanyName: "Example Export OU",
 		CutoverDate:       "2026-01-01",
 		GeneratedAt:       time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
 	})
@@ -33,6 +33,8 @@ func TestPrepareSmartAccountsSnapshotCanonicalizesAndValidatesBundle(t *testing.
 	require.Equal(t, MigrationProviderPresetSmartAccounts, report.Provider)
 	require.Len(t, report.PreparedFiles, 3)
 	require.Len(t, report.UnsupportedFiles, 1)
+	require.Equal(t, int64(len("not part of migration")), report.UnsupportedFiles[0].SizeBytes)
+	require.NotEmpty(t, report.UnsupportedFiles[0].SourceSHA256)
 	require.NotEmpty(t, report.SnapshotHash)
 	require.FileExists(t, filepath.Join(outputDir, "manifest.json"))
 	require.FileExists(t, filepath.Join(outputDir, "bundle", "accounts.csv"))
@@ -138,7 +140,7 @@ func TestPrepareSmartAccountsSnapshotHashIgnoresGeneratedAtAndOutputDir(t *testi
 	first, err := PrepareSmartAccountsSnapshot(SmartAccountsSnapshotOptions{
 		SourceDir:       sourceDir,
 		OutputDir:       filepath.Join(t.TempDir(), "first"),
-		SourceCompanyID: "14369460",
+		SourceCompanyID: "12345678",
 		GeneratedAt:     time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
 	})
 	require.NoError(t, err)
@@ -146,7 +148,7 @@ func TestPrepareSmartAccountsSnapshotHashIgnoresGeneratedAtAndOutputDir(t *testi
 	second, err := PrepareSmartAccountsSnapshot(SmartAccountsSnapshotOptions{
 		SourceDir:       sourceDir,
 		OutputDir:       filepath.Join(t.TempDir(), "second"),
-		SourceCompanyID: "14369460",
+		SourceCompanyID: "12345678",
 		GeneratedAt:     time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC),
 	})
 	require.NoError(t, err)
@@ -171,6 +173,22 @@ func TestPrepareSmartAccountsSnapshotWarnsWhenUsingGitWorktree(t *testing.T) {
 	require.Len(t, report.Warnings, 1)
 	require.Contains(t, report.Warnings[0], "inside Git worktree")
 	require.Contains(t, report.Warnings[0], "separate private repository")
+}
+
+func TestPrepareSmartAccountsSnapshotRejectsPublicOpenAccountingWorktree(t *testing.T) {
+	repoDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(repoDir, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "go.mod"), []byte("module github.com/HMB-research/open-accounting\n"), 0o644))
+	sourceDir := filepath.Join(repoDir, "private", "smartaccounts-export")
+	outputDir := filepath.Join(repoDir, "private", "smartaccounts-prepared")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "clients.csv"), []byte("client_no,client_name\nC-1,Example OU\n"), 0o644))
+
+	_, err := PrepareSmartAccountsSnapshot(SmartAccountsSnapshotOptions{
+		SourceDir: sourceDir,
+		OutputDir: outputDir,
+	})
+	require.ErrorContains(t, err, "must not be inside public Open Accounting Git worktree")
 }
 
 func TestSmartAccountsSnapshotHelperEdges(t *testing.T) {
@@ -235,6 +253,20 @@ func TestSmartAccountsSnapshotHelperEdges(t *testing.T) {
 	require.Equal(t, repoDir, root)
 	warnings := smartAccountsGitWorktreeWarnings(filepath.Join(repoDir, "a"), filepath.Join(repoDir, "b"))
 	require.Len(t, warnings, 1)
+
+	configRepoDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(configRepoDir, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(configRepoDir, ".git", "config"), []byte("[remote \"origin\"]\n\turl = https://github.com/HMB-research/open-accounting.git\n"), 0o644))
+	require.True(t, isOpenAccountingPublicWorktree(configRepoDir))
+	require.NoError(t, os.WriteFile(filepath.Join(configRepoDir, ".git", "config"), []byte("[remote \"origin\"]\n\turl = https://github.com/HMB-research/open-accounting-smartaccounts-migration-data.git\n"), 0o644))
+	require.False(t, isOpenAccountingPublicWorktree(configRepoDir))
+}
+
+func copySmartAccountsSnapshotFixture(t *testing.T, destDir, name string) {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join("testdata", "smartaccounts", name))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(destDir, name), content, 0o644))
 }
 
 func TestSmartAccountsSnapshotDirectWriteErrors(t *testing.T) {
