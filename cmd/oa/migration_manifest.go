@@ -91,10 +91,7 @@ func resolveMigrationManifestOutputPath(manifestDir, outputPath string) (string,
 		return filepath.Clean(outputPath), nil
 	}
 	target := filepath.Clean(filepath.Join(manifestDir, outputPath))
-	rel, err := filepath.Rel(manifestDir, target)
-	if err != nil {
-		return "", fmt.Errorf("resolve manifest bundle file %s: %w", outputPath, err)
-	}
+	rel, _ := filepath.Rel(manifestDir, target)
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("migration manifest bundle file %s escapes manifest directory", outputPath)
 	}

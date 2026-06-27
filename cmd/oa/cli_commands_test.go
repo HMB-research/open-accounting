@@ -5322,6 +5322,12 @@ func TestCLIMigrationExecuteSavesDryRunAndRequiresReadyPlan(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Migration execution: needs_confirmation")
 	assert.Contains(t, stdout.String(), "PLANNED")
 
+	stdout.Reset()
+	err = app.run(context.Background(), []string{"migration", "execute", "--accounts", accountsFile, "--json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"id": "run-dry"`)
+	assert.Contains(t, stdout.String(), `"status": "needs_confirmation"`)
+
 	blockedPlan = true
 	stdout.Reset()
 	err = app.run(context.Background(), []string{"migration", "execute", "--accounts", accountsFile, "--confirm"})
@@ -5388,6 +5394,31 @@ func TestMigrationManifestBundleLoader(t *testing.T) {
 	manifestPath := filepath.Join(manifestDir, "manifest.json")
 	require.NoError(t, os.WriteFile(manifestPath, []byte(mustJSON(t, manifest)), 0o644))
 
+	_, err := buildMigrationBundleFilesWithManifest(filepath.Join(manifestDir, "missing.json"), nil)
+	require.ErrorContains(t, err, "read migration manifest")
+
+	badJSONPath := filepath.Join(manifestDir, "bad.json")
+	require.NoError(t, os.WriteFile(badJSONPath, []byte(`{`), 0o644))
+	_, err = readMigrationBundleFilesFromManifest(badJSONPath)
+	require.ErrorContains(t, err, "parse migration manifest")
+
+	absoluteOutput, err := resolveMigrationManifestOutputPath(manifestDir, filepath.Join(manifestDir, "bundle", "accounts.csv"))
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(manifestDir, "bundle", "accounts.csv"), absoluteOutput)
+
+	edgeManifestPath := filepath.Join(manifestDir, "edge-manifest.json")
+	edgeManifest := cutover.SmartAccountsSnapshotReport{
+		PreparedFiles: []cutover.SmartAccountsSnapshotPreparedFile{{Kind: cutover.KindAccounts}},
+	}
+	require.NoError(t, os.WriteFile(edgeManifestPath, []byte(mustJSON(t, edgeManifest)), 0o644))
+	_, err = readMigrationBundleFilesFromManifest(edgeManifestPath)
+	require.ErrorContains(t, err, "missing output_path")
+
+	edgeManifest.PreparedFiles[0].OutputPath = "bundle/missing.csv"
+	require.NoError(t, os.WriteFile(edgeManifestPath, []byte(mustJSON(t, edgeManifest)), 0o644))
+	_, err = readMigrationBundleFilesFromManifest(edgeManifestPath)
+	require.ErrorContains(t, err, "read manifest bundle file")
+
 	files, err := readMigrationBundleFilesFromManifest(manifestPath)
 	require.NoError(t, err)
 	require.Len(t, files, 3)
@@ -5434,6 +5465,11 @@ func TestMigrationExecutionRunHelperBranches(t *testing.T) {
 			Status:     cutover.MigrationExecutionStepReady,
 		}},
 	}
+	run, err = executeMigrationRun(context.Background(), nil, "tenant-1", nil, plan, migrationExecuteOptions{Confirm: false})
+	require.NoError(t, err)
+	assert.Equal(t, "needs_confirmation", run.Summary.Status)
+	assert.Equal(t, "Pass --confirm to run this import.", run.Steps[0].Message)
+
 	run, err = executeMigrationRun(context.Background(), nil, "tenant-1", nil, plan, migrationExecuteOptions{Confirm: true})
 	require.Error(t, err)
 	assert.Equal(t, "failed", run.Summary.Status)

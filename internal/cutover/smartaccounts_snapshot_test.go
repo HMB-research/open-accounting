@@ -303,6 +303,118 @@ func TestSmartAccountsSnapshotHelperEdges(t *testing.T) {
 	require.False(t, isOpenAccountingPublicWorktree(configRepoDir))
 }
 
+func TestSmartAccountsSnapshotRequiresCutoverDateForOpeningBalances(t *testing.T) {
+	sourceDir := t.TempDir()
+	outputDir := filepath.Join(t.TempDir(), "prepared")
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "opening-balances.csv"), []byte("account_code,debit,credit\n1000,100,0\n3000,0,100\n"), 0o644))
+
+	report, err := PrepareSmartAccountsSnapshot(SmartAccountsSnapshotOptions{
+		SourceDir:   sourceDir,
+		OutputDir:   outputDir,
+		GeneratedAt: time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+	require.Contains(t, report.Warnings, "cutover date is required before executing opening balance or historical journal imports")
+}
+
+func TestSmartAccountsSnapshotCSVHeaderAndCanonicalizeEdges(t *testing.T) {
+	_, _, err := readSmartAccountsCSV(",,\n,,\n")
+	require.ErrorContains(t, err, "read header")
+
+	records := make([][]string, 21)
+	for i := range records {
+		records[i] = []string{""}
+	}
+	require.Equal(t, -1, smartAccountsCSVHeaderIndex(records, KindContacts, true))
+
+	_, err = CanonicalizeBundleFileCSV(BundleFile{
+		Kind:       KindAccounts,
+		FileName:   "accounts.csv",
+		CSVContent: `"`,
+	}, MigrationProviderPresetSmartAccounts)
+	require.ErrorContains(t, err, "read row")
+}
+
+func TestSmartAccountsSnapshotNormalizesLocalizedValuesAndDerivedTypes(t *testing.T) {
+	headers, rows, transformations := normalizeSmartAccountsSourceRows(KindContacts, "hankijad.csv", []string{"code", "name"}, [][]string{{"S-1", "Supplier OU"}})
+	require.Equal(t, []string{"code", "name", "contact_type"}, headers)
+	require.Equal(t, "SUPPLIER", rows[0][2])
+	require.Contains(t, transformations, "derived contact_type from SmartAccounts source export")
+
+	headers, rows, transformations = normalizeSmartAccountsSourceRows(KindInvoices, "ostuarved.csv", []string{"invoice_number", "amount"}, [][]string{{"P-1", "1,00"}})
+	require.Equal(t, []string{"invoice_number", "amount", "invoice_type"}, headers)
+	require.Equal(t, []string{"P-1", "1.00", "PURCHASE"}, rows[0])
+	require.Contains(t, transformations, "derived invoice_type from SmartAccounts source export")
+
+	headers, rows, _ = normalizeSmartAccountsSourceRows(KindInvoices, "müügiarved.csv", []string{"invoice_number"}, [][]string{{"S-1"}})
+	require.Equal(t, []string{"invoice_number", "invoice_type"}, headers)
+	require.Equal(t, "SALES", rows[0][1])
+
+	headers, rows, transformations = normalizeSmartAccountsSourceRows(KindPayments, "payments.csv", []string{"amount", "payment_date"}, [][]string{
+		{"-1 234,50", "27.06.2026"},
+		{"2,50", ""},
+	})
+	require.Equal(t, []string{"amount", "payment_date", "payment_type"}, headers)
+	require.Equal(t, []string{"1234.50", "2026-06-27", "MADE"}, rows[0])
+	require.Equal(t, []string{"2.50", "", "RECEIVED"}, rows[1])
+	require.Contains(t, transformations, "derived payment_type from SmartAccounts amount sign")
+	require.Contains(t, transformations, "normalized SmartAccounts localized dates, decimals, and enum values")
+
+	shortRow := []string{"27.06.2026"}
+	require.True(t, normalizeSmartAccountsRowValues(KindInvoices, []string{"issue_date", "due_date"}, shortRow))
+	require.Equal(t, []string{"2026-06-27"}, shortRow)
+
+	productRow := []string{"", "teenus"}
+	require.True(t, normalizeSmartAccountsRowValues(KindProducts, []string{"sales_price", "product_type"}, productRow))
+	require.Equal(t, []string{"0", "SERVICE"}, productRow)
+
+	require.Equal(t, "", normalizeSmartAccountsDateValue(" "))
+	require.Equal(t, "2026/01/02", normalizeSmartAccountsDateValue("2026/01/02"))
+	require.Equal(t, "", normalizeSmartAccountsDecimalValue(" "))
+	require.Equal(t, "0", normalizeSmartAccountsDecimalValue("KM vaba"))
+	require.Equal(t, "", normalizeSmartAccountsDecimalValue("jah"))
+	require.Equal(t, "1234.50", normalizeSmartAccountsDecimalValue("1 234,50%"))
+
+	require.Equal(t, "LIABILITY", normalizeSmartAccountsAccountType("Kohustus", "2000"))
+	require.Equal(t, "EQUITY", normalizeSmartAccountsAccountType("Omakapital", ""))
+	require.Equal(t, "REVENUE", normalizeSmartAccountsAccountType("Tulu", ""))
+	require.Equal(t, "EXPENSE", normalizeSmartAccountsAccountType("Kulu", ""))
+	require.Equal(t, "REVENUE", normalizeSmartAccountsAccountType("", "4000"))
+	require.Equal(t, "fallback", normalizeSmartAccountsAccountType("fallback", ""))
+	require.Equal(t, "ASSET", inferSmartAccountsAccountTypeFromCode("1000", "fallback"))
+	require.Equal(t, "LIABILITY", inferSmartAccountsAccountTypeFromCode("2000", "fallback"))
+	require.Equal(t, "EQUITY", inferSmartAccountsAccountTypeFromCode("3000", "fallback"))
+	require.Equal(t, "REVENUE", inferSmartAccountsAccountTypeFromCode("4000", "fallback"))
+	require.Equal(t, "EXPENSE", inferSmartAccountsAccountTypeFromCode("5000", "fallback"))
+	require.Equal(t, "fallback", inferSmartAccountsAccountTypeFromCode("0000", "fallback"))
+
+	require.Equal(t, "GOODS", normalizeSmartAccountsProductType("kaup"))
+	require.Equal(t, "custom", normalizeSmartAccountsProductType("custom"))
+}
+
+func TestSmartAccountsSnapshotContactDedupeBranches(t *testing.T) {
+	headers := []string{"code", "name", "reg_code", "vat_number", "contact_type", "email"}
+	rows := [][]string{
+		{"C-0", "", "", "", "CUSTOMER", ""},
+		{"C-1", "Example OU", "12345678", "", "CUSTOMER", ""},
+		{"S-1", "Example OU", "", "", "SUPPLIER", "supplier@example.com"},
+	}
+
+	normalized, changed := dedupeSmartAccountsContactRows(headers, rows)
+	require.True(t, changed)
+	require.Len(t, normalized, 2)
+	require.Equal(t, "BOTH", normalized[1][4])
+	require.Equal(t, "supplier@example.com", normalized[1][5])
+
+	mergedRows, transformations := normalizeSmartAccountsMergedRows(KindContacts, headers, rows)
+	require.Len(t, mergedRows, 2)
+	require.Contains(t, transformations, "merged duplicate SmartAccounts client/vendor contacts by registry, VAT, or name")
+
+	mergeSmartAccountsContactRow([]string{"code", "name"}, []string{"C-2"}, []string{"", "Filled"})
+	require.Equal(t, "", valueAtHeader([]string{"name"}, []string{"Example OU"}, "missing"))
+	require.Equal(t, []string{"a"}, uniqueStrings([]string{"", "a", "a"}))
+}
+
 func copySmartAccountsSnapshotFixture(t *testing.T, destDir, name string) {
 	t.Helper()
 	content, err := os.ReadFile(filepath.Join("testdata", "smartaccounts", name))
