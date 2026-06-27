@@ -1,0 +1,70 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.26.x"
+  BUN_VERSION: "1.3.5"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run exact backend coverage gate
+        run: make test-backend-coverage
+
+      - name: Upload backend coverage profile
+        uses: actions/upload-artifact@v6
+        with:
+          name: backend-coverage-profile
+          path: coverage.out
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Bun
+        shell: bash
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s -- "bun-v${{ env.BUN_VERSION }}"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          "$HOME/.bun/bin/bun" --version
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      - name: Run frontend coverage
+        working-directory: frontend
+        run: bun run test:coverage
+
+      - name: Upload frontend coverage report
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-coverage-report
+          path: frontend/coverage
