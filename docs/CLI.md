@@ -329,6 +329,20 @@ go run ./cmd/oa migration validate --provider-preset directo --invoices ./direct
 
 `migration presets` lists the supported cutover provider presets, file-kind coverage, total vendor alias counts, required column groups, and sample header mappings. Use it before `migration validate` when an operator needs to confirm whether a Merit, SmartAccounts, or Directo export header is already mapped to the canonical Open Accounting import field.
 
+For SmartAccounts cutovers, prepare an auditable offline snapshot before validation:
+
+```bash
+go run ./cmd/smartaccounts-snapshot \
+  --source-dir ./private/smartaccounts-export \
+  --out-dir ./private/smartaccounts-prepared \
+  --company-id 14369460 \
+  --company-name "Hold My Beer OU" \
+  --cutover-date 2026-01-01 \
+  --json
+```
+
+The snapshot tool does not call SmartAccounts or mutate Open Accounting. It classifies SmartAccounts CSV/XML exports, rewrites supported CSV headers through the `smartaccounts` provider preset, writes canonical bundle files under `bundle/`, records source and output SHA-256 hashes in `manifest.json`, and emits a rerunnable `migration validate --provider-preset smartaccounts` command. Unsupported files remain listed in the manifest for manual export/API follow-up.
+
 Stock-adjustment preflight rejects same-bundle `product_code` rows that point at service products or products with `track_inventory=false`; stock imports must target tracked `GOODS` products before mutating execution can run. Stock execution plans depend on product and warehouse masters only, because stock-import rows do not carry cost-center fields.
 
 Cost-allocation preflight rejects same-bundle allocation totals that exceed the referenced historical journal line debit or credit amount, allocation percentage totals above 100 percent for one journal line, and rows whose `amount` disagrees with `allocation_percentage` for that journal line amount.
