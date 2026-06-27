@@ -383,8 +383,30 @@ func migrationStepResponse(value any, err error) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	payload, _ := json.Marshal(value)
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("marshal migration import response: %w", err)
+	}
+	if err := migrationImportResponseError(payload); err != nil {
+		return payload, err
+	}
 	return payload, nil
+}
+
+func migrationImportResponseError(payload json.RawMessage) error {
+	var decoded struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil || len(decoded.Errors) == 0 {
+		return nil
+	}
+	firstMessage := strings.TrimSpace(decoded.Errors[0].Message)
+	if firstMessage == "" {
+		firstMessage = "see import response for details"
+	}
+	return fmt.Errorf("import completed with %d row errors; first: %s", len(decoded.Errors), firstMessage)
 }
 
 func openingBalanceExecutionReference(entryDate string) string {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -5545,6 +5546,31 @@ func TestPrintMigrationExecutionRunBranches(t *testing.T) {
 		},
 	})
 	assert.Contains(t, buf.String(), "4\tsnapshot\t-\t-\t5%\t-\t-")
+}
+
+func TestMigrationStepResponseRejectsImportRowErrors(t *testing.T) {
+	payload, err := migrationStepResponse(map[string]any{
+		"errors": []map[string]any{{"message": "row failed"}},
+	}, nil)
+	require.ErrorContains(t, err, "import completed with 1 row errors; first: row failed")
+	assert.Contains(t, string(payload), "row failed")
+
+	payload, err = migrationStepResponse(map[string]any{
+		"errors": []map[string]any{{"message": ""}, {"message": "second"}},
+	}, nil)
+	require.ErrorContains(t, err, "import completed with 2 row errors; first: see import response for details")
+	assert.Contains(t, string(payload), "second")
+
+	payload, err = migrationStepResponse(map[string]any{"errors": []map[string]any{}}, nil)
+	require.NoError(t, err)
+	assert.Contains(t, string(payload), `"errors":[]`)
+
+	_, err = migrationStepResponse(make(chan int), nil)
+	require.ErrorContains(t, err, "marshal migration import response")
+
+	payload, err = migrationStepResponse(nil, errors.New("boom"))
+	require.ErrorContains(t, err, "boom")
+	assert.Nil(t, payload)
 }
 
 func migrationExecuteTestFiles(t *testing.T) map[cutover.FileKind]string {
