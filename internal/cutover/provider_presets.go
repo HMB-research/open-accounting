@@ -938,10 +938,7 @@ func buildMigrationProviderPresetInfo(preset MigrationProviderPreset) MigrationP
 		Description: migrationProviderPresetDescription(preset),
 	}
 	for _, kind := range migrationPresetCatalogFileKinds() {
-		spec, ok := fileSpecs[kind]
-		if !ok {
-			continue
-		}
+		spec := fileSpecs[kind]
 		presetAliases := providerPresetAliases[preset][kind]
 		kindInfo := MigrationProviderPresetKindInfo{
 			Kind:                 kind,

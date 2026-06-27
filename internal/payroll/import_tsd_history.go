@@ -182,9 +182,6 @@ func (s *Service) ImportTSDHistoryCSV(
 
 	for _, key := range groupKeys {
 		group := groups[key]
-		if len(group.records) == 0 {
-			continue
-		}
 
 		existing, err := s.repo.GetTSD(ctx, schemaName, tenantID, group.periodYear, group.periodMonth)
 		if err != nil && !errors.Is(err, ErrTSDDeclarationNotFound) {
@@ -248,9 +245,6 @@ func parseTSDHistoryImportRows(content string) ([]tsdHistoryImportRow, error) {
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("csv file is empty")
-		}
 		return nil, fmt.Errorf("parse csv header: %w", err)
 	}
 

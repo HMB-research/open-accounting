@@ -46,12 +46,15 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 }
 
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("email repository database is not configured")
+	}
 	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
 }
 
 // GetTenantSettings retrieves tenant settings JSON from public schema
 func (r *GORMRepository) GetTenantSettings(ctx context.Context, tenantID string) ([]byte, error) {
-	db, err := database.TenantTable(r.db.WithContext(ctx), "public", "tenants")
+	db, err := r.tenantTable(ctx, "public", "tenants")
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +77,7 @@ func (r *GORMRepository) GetTenantSettings(ctx context.Context, tenantID string)
 
 // UpdateTenantSettings updates tenant settings in public schema
 func (r *GORMRepository) UpdateTenantSettings(ctx context.Context, tenantID string, settingsJSON []byte) error {
-	db, err := database.TenantTable(r.db.WithContext(ctx), "public", "tenants")
+	db, err := r.tenantTable(ctx, "public", "tenants")
 	if err != nil {
 		return err
 	}

@@ -21,9 +21,7 @@
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
 >
-> Current product caps and gaps are summarized in [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md). Detailed feature status and validation evidence live in [Development Status](docs/DEVELOPMENT_STATUS.md), and use-case-level coverage lives in [Use Case Coverage](docs/USE_CASE_COVERAGE.md).
-> The `cmd/oa` CLI package is held at 100.0% statement coverage by `make test-backend-coverage` in the backend CI gate and `make test-cli-coverage` for focused CLI changes. Local seeded smoke plus full demo E2E shards are CI gates. The optional remote hosted-demo E2E job remains informational.
-> Production hardening, deeper historical cutover tooling, broader accountant-workspace execution, remaining payroll/document/evidence-policy edges, and broader workflow-level policy enforcement are still in progress.
+> Start with the [documentation index](docs/README.md). Current caps and gaps live in [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md), detailed status and gate evidence live in [Development Status](docs/DEVELOPMENT_STATUS.md), and workflow-level proof lives in [Use Case Coverage](docs/USE_CASE_COVERAGE.md).
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 
@@ -31,9 +29,7 @@ CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API
 
 ## 🎮 Demo
 
-The previous hosted Railway demo is currently offline.
-
-For a resettable local demo instead:
+For a resettable local demo:
 
 ```bash
 docker-compose up -d db
@@ -140,7 +136,7 @@ It is not yet a full SmartAccounts/Merit replacement or a production-hardened em
 | **Historical TSD Import**      | CSV import of prior TSD declarations and Annex 1 rows through API and CLI                                                                                                                   |
 | **Leave Balance Import**       | CSV import of employee leave balances for migration cutovers through API, web UI, and CLI                                                                                                   |
 | **Leave Evidence**             | Approved supporting documents can be required before approving documented leave/absence records                                                                                             |
-| **Migration Preflight**        | Non-mutating CSV/XML bundle validation for required columns, duplicate identifiers and history keys, account, contact, employee, payroll-history, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, bank-transaction, opening-balance, and historical-journal row values, grouped document and preserved-ID consistency, provider-style aliases for Merit, SmartAccounts, and Directo CSVs including payment currency aliases, cross-file references before cutover imports, and guarded CLI plus server-side API execution for fully ready plans with resume snapshots for interrupted runs, including e-invoice XML, expenses, expense/product/fixed-asset/bank-account GL/recurring-invoice account types, commercial history, inventory, banking, tax, cost allocations, payment bank-account default-currency checks, bank-transaction source-account omitted-currency and description-source checks, payment allocation dates against imported invoice issue dates, journal-line references, totals, percentages, and amount/percentage agreement, and fixed assets |
+| **Migration Preflight**        | Non-mutating CSV/XML bundle validation for required columns, duplicate identifiers, provider aliases, cross-file references, and guarded execution readiness before cutover imports. See [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md) for remaining migration gaps. |
 
 ### Estonian Compliance
 
@@ -297,8 +293,8 @@ open-accounting/
 | [CLI Guide](docs/CLI.md)                                              | API-token bootstrap, token management, and import examples for the `oa` CLI |
 | [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md)               | Concise current caps and gaps before full product parity                    |
 | [Use Case Coverage Matrix](docs/USE_CASE_COVERAGE.md)                 | Current use-case status, evidence gates, and remaining gaps                 |
-| [Deployment](docs/DEPLOYMENT.md)                                      | Production deployment guide                                                 |
-| [EMTA Integration](docs/EMTA_INTEGRATION.md)                          | Estonian Tax Board integration guide                                        |
+| [Deployment](docs/DEPLOYMENT.md)                                      | Deployment and operations guide                                             |
+| [EMTA Integration](docs/EMTA_INTEGRATION.md)                          | Manual export and blocked automatic e-MTA submission notes                  |
 | [Plugins](docs/PLUGINS.md)                                            | Plugin development and marketplace guide                                    |
 | [E2E Testing](docs/demo-e2e-testing.md)                               | End-to-end testing architecture                                             |
 | [Swagger UI](/swagger/)                                               | Interactive API explorer (when server is running)                           |
@@ -325,77 +321,6 @@ open-accounting/
 | `DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING` | Include documents missing retention metadata in reminder digests | `true`                                       |
 | `DOCUMENT_RETENTION_REMINDER_MAX_ATTEMPTS` | Retry failed retention reminder delivery attempts before reporting failure | `3`                                          |
 | `DOCUMENT_RETENTION_REMINDER_ESCALATE_AFTER_ATTEMPTS` | Mark failed retention reminder delivery as escalated after this many attempts | `3`                                          |
-
----
-
-## 🗺 Roadmap
-
-### Working in repo
-
-- Feature presence only; not a claim of production parity or operational maturity.
-
-- [x] Double-entry bookkeeping with journal entries
-- [x] Multi-tenant architecture with schema isolation
-- [x] User authentication and RBAC
-- [x] Invoicing with PDF generation
-- [x] Payment recording and allocation
-- [x] Bank transaction import, reconciliation, and accountant remediation actions
-- [x] Estonian KMD/VAT compliance
-- [x] User invitation system
-- [x] Dashboard analytics with charts
-- [x] Email notifications
-- [x] Webhook notifications
-- [x] Recurring invoice automation
-- [x] Balance sheet and income statement reports
-- [x] Payroll module with Estonian TSD declarations
-- [x] API rate limiting
-- [x] Plugin marketplace system
-- [x] Internationalization (English/Estonian) with Paraglide-JS
-- [x] Mobile-responsive frontend with touch-friendly UI
-- [x] Report exports (Excel, CSV, PDF)
-- [x] Quotes with quote-to-order conversion
-- [x] Order management with delivered order-to-invoice conversion
-- [x] Fixed assets with depreciation tracking
-- [x] Receipt-backed expense tracking with remediation actions, approval, and posting
-- [x] Tenant-scoped API token auth and Go CLI
-- [x] Access/refresh JWT purpose separation
-- [x] Revocable, single-use refresh token sessions
-- [x] CLI/API refresh-session listing and revocation
-- [x] One-time password reset flow with expiring tokens, request throttling, and refresh-session revocation
-- [x] Auth security audit events for login success/failure, logout, password, session, API-token, and tenant-access actions with credential-aware failed-login throttling
-- [x] Tenant audit events for organization settings changes
-- [x] Tenant admin controls for member refresh-session inspection and revocation
-- [x] Tenant admin controls for member API-token inspection and revocation
-- [x] Tenant admin security-event visibility for member auth activity
-- [x] Tenant admin suspension/restoration of member tenant access with session revocation and audit events
-- [x] Tenant-scoped API tokens blocked from creating new tenant organizations outside their tenant boundary
-- [x] CSV import for chart of accounts with optional preserved UUIDs, contacts, employees, invoices, quotes, orders, and recurring invoice templates with contact identity lookup including VAT numbers, payments and expenses with contact identity lookup, bank accounts, bank transactions, cost centers, cost allocations, product categories/warehouses/products/stock, fixed assets with supplier identity lookup, payroll/TSD tax history, opening balances, and historical journals with optional preserved line IDs
-- [x] Migration bundle validation for cutover imports with API and CLI coverage across e-invoice XML, expenses, commercial history, inventory, banking, payroll/TSD tax history, cost allocations, and fixed assets, including duplicate identifiers and history keys, account, contact, employee, payroll-history, commercial-document, inventory, fixed-asset, cost-center/allocation, expense, payment, bank-account, and bank-transaction row values, expense employee-ID UUID and currency code checks, payment currency code checks, expense, product, fixed-asset, bank-account GL, and recurring-invoice line account-type consistency, commercial-document and payment/expense contact identity references, order quote-contact consistency, payment bank-account default-currency consistency, bank-transaction source-account omitted-currency and description-source consistency, invoice paid-amount consistency, combined invoice paid/allocation totals, payment allocation totals, currencies, payment direction, payment invoice-contact consistency and payment date ordering against imported invoices and e-invoices, fixed-asset source-invoice purchase-type, supplier identity field, purchase-date, and amount-total consistency, stock-adjustment product stockability, recurring line account references, cost-allocation journal-line references plus amount and percentage total consistency and amount/percentage agreement, and grouped document/preserved-ID consistency
-- [x] Migration execution plans with ordered API/CLI import steps, dependency hints, and missing-context markers for bank-transaction and opening-balance cutover imports
-- [x] Guarded CLI and server-side migration execution that validates, plans, requires explicit confirmation, includes the provider execution CSV canonicalization stage, and runs ready cutover import steps through the existing tenant-scoped APIs and import services
-- [x] Dashboard migration workbench for cutover bundle assembly, provider preset catalog discovery, validation, execution planning, saved dry runs, confirmed execution, saved-run monitoring with live event streams, progress/active-step/duration telemetry, saved-run event stream API/CLI access, resume-by-ID selection, and accountant-workspace assignment handoff into deep-linked saved runs
-- [x] Tenant period lock on core write paths
-- [x] Close/reopen workflow with audit trail in API and company settings
-- [x] Fiscal-year close readiness and retained-earnings carry-forward workflow
-- [x] Document attachments with review, retention dates, retention-year calculation, audited lifecycle states for replacement/archive/disposal decisions, retention review, reminder actions, evidence-policy approval assignments, scheduled retention reminder digests, configurable reminder retry/escalation controls, and approved-evidence workflow blockers with structured remediation for invoices, journal entries, payments, bank transactions, fixed assets, expenses, quotes, orders, year-end close packs, leave records, TSD declarations, and KMD declarations
-- [x] TSD/KMD submission and acceptance evidence blockers requiring approved tax/support documents before declarations can be marked submitted or accepted
-- [x] Document evidence policy evaluation through API and CLI
-- [x] Optional approved evidence blockers for quote send and order confirmation
-- [x] Purchase-invoice send/email, quote/order send/email/confirmation, and fixed-asset activation/disposal evidence enforcement with structured evidence-policy remediation in 409 responses
-- [x] Reconciliation completion blocks bank transactions marked as requiring evidence until approved evidence is attached
-- [x] Backup creation, offsite sync, health-check, restore-drill, CLI offsite/restore preflight parity, offline host preflight, and systemd schedule template scripts for self-hosted operations
-
-### Still missing for reliable production use
-
-The concise source of truth for current product caps is
-[docs/CURRENT_PRODUCT_LIMITS.md](docs/CURRENT_PRODUCT_LIMITS.md). In summary:
-
-- [ ] Remaining mutating migration cutover orchestration beyond the guarded CLI/server-side execution, resume-snapshot, saved-run list/get/event-stream paths, provider preset catalog discovery for Merit, SmartAccounts, and Directo, dashboard workbench live streaming, saved-run progress/duration telemetry, accountant-workspace launch handoff, saved-bundle workspace execution, and KMD VAT-history execution dependency plus same-bundle VAT support reconciliation, especially further provider-specific cutover depth, cross-file validation outside payroll/TSD history and KMD VAT support, and deeper dashboard-side cutover controls
-- [ ] Remaining payroll/document/evidence-policy edges and deeper accountant-workspace execution beyond the current assignment queue, direct bank follow-up, reminder actions, pending-document assignment approval, document-retention date setting, evidence/missing-document upload and replacement including evidence-policy violation upload, unapproved-evidence approval, payroll-run calculation/recalculation, payment-date setting and approval, payroll TSD assignment generation, payroll paid-run TSD follow-up generation, declared payroll archive XML export, TSD declaration XML export and acceptance marking, KMD assignment regeneration/export/acceptance marking, KMD INF/EU VAT OSS report generation, expense submit/approve/post assignment completion, fiscal-year close/carry-forward assignment completion, and migration saved-run handoff, especially remaining document evidence-policy follow-up
-- [ ] Automated document policy enforcement in remaining workflow blockers
-- [ ] Remaining auth hardening beyond the current API/CLI/settings controls for tenant member status, sessions, API tokens, tenant-creation boundaries, audit visibility, failed-login audit, and credential-aware failed-login throttling
-- [ ] Broader plugin production hardening beyond the current loopback HTTP runtime, supervised package runtime startup/proxy/shutdown/status/manual restart/automatic crash restart, allowlisted package runtime process environment, and safe operator-bundled frontend component registry, especially OS-level sandboxing and broader resource isolation
-- [ ] Direct e-invoice operator send/receive, direct bank feeds, SEPA initiation, and automatic e-MTA submission
 
 ---
 

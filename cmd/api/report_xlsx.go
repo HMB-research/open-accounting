@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -14,8 +15,28 @@ import (
 	"github.com/HMB-research/open-accounting/internal/reports"
 )
 
+var (
+	exportTrialBalanceXLSX      = trialBalanceXLSX
+	exportBalanceSheetXLSX      = balanceSheetXLSX
+	exportIncomeStatementXLSX   = incomeStatementXLSX
+	exportCashFlowStatementXLSX = cashFlowStatementXLSX
+	exportAccountBalanceXLSX    = accountBalanceXLSX
+	exportReportRowsXLSX        = reportRowsXLSX
+
+	reportXLSXWritePart = writeXLSXPart
+	reportXLSXClose     = func(writer *zip.Writer) error {
+		return writer.Close()
+	}
+	reportXLSXCreatePart = func(writer *zip.Writer, name string) (io.Writer, error) {
+		return writer.Create(name)
+	}
+	reportXLSXWritePartContent = func(part io.Writer, content string) (int, error) {
+		return part.Write([]byte(content))
+	}
+)
+
 func trialBalanceXLSX(report *accounting.TrialBalance) ([]byte, error) {
-	content, err := trialBalanceCSV(report)
+	content, err := exportTrialBalanceCSV(report)
 	if err != nil {
 		return nil, err
 	}
@@ -23,7 +44,7 @@ func trialBalanceXLSX(report *accounting.TrialBalance) ([]byte, error) {
 }
 
 func balanceSheetXLSX(report *accounting.BalanceSheet) ([]byte, error) {
-	content, err := balanceSheetCSV(report)
+	content, err := exportBalanceSheetCSV(report)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +52,7 @@ func balanceSheetXLSX(report *accounting.BalanceSheet) ([]byte, error) {
 }
 
 func incomeStatementXLSX(report *accounting.IncomeStatement) ([]byte, error) {
-	content, err := incomeStatementCSV(report)
+	content, err := exportIncomeStatementCSV(report)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +60,7 @@ func incomeStatementXLSX(report *accounting.IncomeStatement) ([]byte, error) {
 }
 
 func cashFlowStatementXLSX(report *reports.CashFlowStatement) ([]byte, error) {
-	content, err := cashFlowStatementCSV(report)
+	content, err := exportCashFlowStatementCSV(report)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +68,7 @@ func cashFlowStatementXLSX(report *reports.CashFlowStatement) ([]byte, error) {
 }
 
 func accountBalanceXLSX(accountID, asOfDate, balance string) ([]byte, error) {
-	content, err := accountBalanceCSV(accountID, asOfDate, balance)
+	content, err := exportAccountBalanceCSV(accountID, asOfDate, balance)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +80,7 @@ func reportCSVBytesToXLSX(sheetName string, content []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return reportRowsXLSX(sheetName, rows)
+	return exportReportRowsXLSX(sheetName, rows)
 }
 
 func reportRowsXLSX(sheetName string, rows [][]string) ([]byte, error) {
@@ -87,23 +108,23 @@ func reportRowsXLSX(sheetName string, rows [][]string) ([]byte, error) {
 		"xl/workbook.xml",
 		"xl/worksheets/sheet1.xml",
 	} {
-		if err := writeXLSXPart(writer, name, files[name]); err != nil {
+		if err := reportXLSXWritePart(writer, name, files[name]); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := writer.Close(); err != nil {
+	if err := reportXLSXClose(writer); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
 }
 
 func writeXLSXPart(writer *zip.Writer, name, content string) error {
-	part, err := writer.Create(name)
+	part, err := reportXLSXCreatePart(writer, name)
 	if err != nil {
 		return err
 	}
-	_, err = part.Write([]byte(content))
+	_, err = reportXLSXWritePartContent(part, content)
 	return err
 }
 

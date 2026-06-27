@@ -43,11 +43,23 @@ type Service struct {
 	now        func() time.Time
 }
 
+var (
+	newExpenseAccountingService = func(db *pgxpool.Pool) accountingPoster {
+		return accounting.NewService(db)
+	}
+	newExpenseContactService = func(db *pgxpool.Pool) contactLister {
+		return contacts.NewService(db)
+	}
+	newExpensePayrollService = func(db *pgxpool.Pool) employeeLister {
+		return payroll.NewService(db)
+	}
+)
+
 func NewService(db *pgxpool.Pool, evidence evidenceEvaluator) *Service {
-	service := NewServiceWithRepository(NewRepository(db), accounting.NewService(db), evidence)
-	service.contacts = contacts.NewService(db)
+	service := NewServiceWithRepository(NewRepository(db), newExpenseAccountingService(db), evidence)
+	service.contacts = newExpenseContactService(db)
 	if db != nil {
-		service.employees = payroll.NewService(db)
+		service.employees = newExpensePayrollService(db)
 	}
 	return service
 }

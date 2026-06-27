@@ -61,6 +61,26 @@ func setupEmailHandlers() (*Handlers, *emailHandlerRepository, *emailHandlerMail
 	return h, repo, mailer
 }
 
+func configureEmailHandlerService(h *Handlers, tenantID string) (*emailHandlerRepository, *emailHandlerMailer) {
+	repo := &emailHandlerRepository{
+		settings:  make(map[string][]byte),
+		templates: make(map[string]email.EmailTemplate),
+		logs:      []email.EmailLog{},
+	}
+	repo.settings[tenantID] = []byte(`{
+		"smtp_host":"smtp.example.com",
+		"smtp_port":587,
+		"smtp_username":"user@example.com",
+		"smtp_password":"secret",
+		"smtp_from_email":"billing@example.com",
+		"smtp_from_name":"Billing",
+		"smtp_use_tls":true
+	}`)
+	mailer := &emailHandlerMailer{}
+	h.emailService = email.NewServiceWithRepository(repo, mailer)
+	return repo, mailer
+}
+
 func TestEmailHandlersSettingsTemplatesAndLogs(t *testing.T) {
 	h, repo, mailer := setupEmailHandlers()
 	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
@@ -146,9 +166,10 @@ func TestEmailHandlersSettingsTemplatesAndLogs(t *testing.T) {
 }
 
 type emailHandlerRepository struct {
-	settings  map[string][]byte
-	templates map[string]email.EmailTemplate
-	logs      []email.EmailLog
+	settings       map[string][]byte
+	templates      map[string]email.EmailTemplate
+	logs           []email.EmailLog
+	getTemplateErr error
 }
 
 func (r *emailHandlerRepository) GetTenantSettings(_ context.Context, tenantID string) ([]byte, error) {
@@ -164,6 +185,9 @@ func (r *emailHandlerRepository) UpdateTenantSettings(_ context.Context, tenantI
 }
 
 func (r *emailHandlerRepository) GetTemplate(_ context.Context, _, tenantID string, templateType email.TemplateType) (*email.EmailTemplate, error) {
+	if r.getTemplateErr != nil {
+		return nil, r.getTemplateErr
+	}
 	template, ok := r.templates[emailTemplateKey(tenantID, templateType)]
 	if !ok {
 		return nil, email.ErrTemplateNotFound

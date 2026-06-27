@@ -195,8 +195,8 @@ func TestParseCAMTTransactionsFromOfficialLHVSamples(t *testing.T) {
   </BkToCstmrStmt>
 </Document>`
 
-	assert.True(t, DetectCAMTTransactions(content))
-	rows, err := ParseCAMTTransactions(content)
+	assert.True(t, DetectTransactions(content))
+	rows, err := ParseTransactions(content)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, "2021-08-03", rows[0].Date)
@@ -234,4 +234,83 @@ func TestParseCAMTTransactionsFromCurrentLHVDocsStatementDataSample(t *testing.T
 	assert.Equal(t, "GB12LHVB04031312345679", rows[1].SourceAccount)
 	assert.Equal(t, "EUR payment", rows[1].Description)
 	assert.Equal(t, "7CAC8F3C708940C1AF9F0B3E4EB64478", rows[1].ExternalID)
+}
+
+func TestDetectTransactionsRejectsUnknownContent(t *testing.T) {
+	assert.False(t, DetectTransactions("date,amount\n2026-03-15,10"))
+	assert.False(t, DetectCSVTransactions(" "))
+	assert.False(t, DetectCSVTransactions("date,amount\n2026-03-15,10"))
+}
+
+func TestParseCSVTransactionsValidationBranches(t *testing.T) {
+	_, err := ParseTransactions(" ")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "LHV bank transaction CSV is empty")
+
+	_, err = ParseCSVTransactions("date;amount\n2026-03-15;10\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "headers not recognized")
+
+	header := "Client account;Document number;Date;Debit/Credit (D/C);Amount;Account service provider's reference\n"
+	_, err = ParseCSVTransactions(header + "EE123;1;bad-date;C;10;REF\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid date")
+
+	_, err = ParseCSVTransactions(header + "EE123;1;2026-03-15;C;bad;REF\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid amount")
+
+	_, err = ParseCSVTransactions(header + "EE123;1;;C;10;REF\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires date and amount")
+
+	_, err = ParseCSVTransactions(header + " ; ; ; ; ; \n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "contains no transactions")
+}
+
+func TestParseCSVTransactionsFallbackDescriptionAndReferences(t *testing.T) {
+	header := "Client account;Document number;Date;Debit/Credit (D/C);Amount;Account service provider's reference;Entry reference;Archival ID\n"
+
+	rows, err := ParseCSVTransactions(header + "EE123;DOC-1;2026-03-15;K;-12.50;;ENTRY-1;ARCH-1\n")
+
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "DOC-1", rows[0].Description)
+	assert.Equal(t, "12.5", rows[0].Amount)
+	assert.Equal(t, "ENTRY-1", rows[0].ExternalID)
+
+	rows, err = ParseCSVTransactions(header + "EE123;;2026-03-16;C;5.00;;;ARCH-2\n")
+
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "LHV account statement entry", rows[0].Description)
+	assert.Equal(t, "ARCH-2", rows[0].ExternalID)
+}
+
+func TestLHVNormalizationBranches(t *testing.T) {
+	amount, err := normalizeAmount("", "D")
+	require.NoError(t, err)
+	assert.Equal(t, "", amount)
+
+	amount, err = normalizeAmount("1 234,56", "DEEBET")
+	require.NoError(t, err)
+	assert.Equal(t, "-1234.56", amount)
+
+	amount, err = normalizeAmount("-10", "KREEDIT")
+	require.NoError(t, err)
+	assert.Equal(t, "10", amount)
+
+	_, err = normalizeAmount("not-number", "C")
+	require.Error(t, err)
+
+	date, err := normalizeDate("")
+	require.NoError(t, err)
+	assert.Equal(t, "", date)
+
+	_, err = normalizeDate("not-a-date")
+	require.Error(t, err)
+
+	assert.Equal(t, "first", firstNonEmpty(" ", " first ", "second"))
+	assert.Equal(t, "", firstNonEmpty(" ", ""))
 }

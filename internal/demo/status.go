@@ -46,7 +46,7 @@ func NewStatusReader(pool *pgxpool.Pool) (StatusReader, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("database pool is not configured")
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		return nil, fmt.Errorf("create demo status GORM reader: %w", err)
 	}
@@ -55,37 +55,73 @@ func NewStatusReader(pool *pgxpool.Pool) (StatusReader, error) {
 
 func (r *gormStatusReader) ReadDemoStatus(ctx context.Context, schema string, userNum int) (StatusResponse, error) {
 	response := StatusResponse{User: userNum}
-	var err error
+	if r == nil || r.db == nil {
+		return response, fmt.Errorf("demo status reader is not configured")
+	}
 
-	if response.Accounts, err = r.entityStatus(ctx, schema, "accounts", "name"); err != nil {
-		return response, fmt.Errorf("read accounts status: %w", err)
+	steps := []struct {
+		label  string
+		read   func() (EntityStatus, error)
+		assign func(EntityStatus)
+	}{
+		{
+			label:  "accounts",
+			read:   func() (EntityStatus, error) { return r.entityStatus(ctx, schema, "accounts", "name") },
+			assign: func(status EntityStatus) { response.Accounts = status },
+		},
+		{
+			label:  "contacts",
+			read:   func() (EntityStatus, error) { return r.entityStatus(ctx, schema, "contacts", "name") },
+			assign: func(status EntityStatus) { response.Contacts = status },
+		},
+		{
+			label:  "invoices",
+			read:   func() (EntityStatus, error) { return r.entityStatus(ctx, schema, "invoices", "invoice_number") },
+			assign: func(status EntityStatus) { response.Invoices = status },
+		},
+		{
+			label:  "employees",
+			read:   func() (EntityStatus, error) { return r.employeeStatus(ctx, schema) },
+			assign: func(status EntityStatus) { response.Employees = status },
+		},
+		{
+			label:  "payments",
+			read:   func() (EntityStatus, error) { return r.entityStatus(ctx, schema, "payments", "payment_number") },
+			assign: func(status EntityStatus) { response.Payments = status },
+		},
+		{
+			label:  "journal entries",
+			read:   func() (EntityStatus, error) { return r.entityStatus(ctx, schema, "journal_entries", "entry_number") },
+			assign: func(status EntityStatus) { response.JournalEntries = status },
+		},
+		{
+			label:  "bank accounts",
+			read:   func() (EntityStatus, error) { return r.entityStatus(ctx, schema, "bank_accounts", "name") },
+			assign: func(status EntityStatus) { response.BankAccounts = status },
+		},
+		{
+			label:  "recurring invoices",
+			read:   func() (EntityStatus, error) { return r.entityStatus(ctx, schema, "recurring_invoices", "name") },
+			assign: func(status EntityStatus) { response.RecurringInvoices = status },
+		},
+		{
+			label:  "payroll runs",
+			read:   func() (EntityStatus, error) { return r.periodStatus(ctx, schema, "payroll_runs") },
+			assign: func(status EntityStatus) { response.PayrollRuns = status },
+		},
+		{
+			label:  "TSD declarations",
+			read:   func() (EntityStatus, error) { return r.periodStatus(ctx, schema, "tsd_declarations") },
+			assign: func(status EntityStatus) { response.TsdDeclarations = status },
+		},
 	}
-	if response.Contacts, err = r.entityStatus(ctx, schema, "contacts", "name"); err != nil {
-		return response, fmt.Errorf("read contacts status: %w", err)
-	}
-	if response.Invoices, err = r.entityStatus(ctx, schema, "invoices", "invoice_number"); err != nil {
-		return response, fmt.Errorf("read invoices status: %w", err)
-	}
-	if response.Employees, err = r.employeeStatus(ctx, schema); err != nil {
-		return response, fmt.Errorf("read employees status: %w", err)
-	}
-	if response.Payments, err = r.entityStatus(ctx, schema, "payments", "payment_number"); err != nil {
-		return response, fmt.Errorf("read payments status: %w", err)
-	}
-	if response.JournalEntries, err = r.entityStatus(ctx, schema, "journal_entries", "entry_number"); err != nil {
-		return response, fmt.Errorf("read journal entries status: %w", err)
-	}
-	if response.BankAccounts, err = r.entityStatus(ctx, schema, "bank_accounts", "name"); err != nil {
-		return response, fmt.Errorf("read bank accounts status: %w", err)
-	}
-	if response.RecurringInvoices, err = r.entityStatus(ctx, schema, "recurring_invoices", "name"); err != nil {
-		return response, fmt.Errorf("read recurring invoices status: %w", err)
-	}
-	if response.PayrollRuns, err = r.periodStatus(ctx, schema, "payroll_runs"); err != nil {
-		return response, fmt.Errorf("read payroll runs status: %w", err)
-	}
-	if response.TsdDeclarations, err = r.periodStatus(ctx, schema, "tsd_declarations"); err != nil {
-		return response, fmt.Errorf("read TSD declarations status: %w", err)
+
+	for _, step := range steps {
+		status, err := step.read()
+		if err != nil {
+			return response, fmt.Errorf("read %s status: %w", step.label, err)
+		}
+		step.assign(status)
 	}
 
 	return response, nil
@@ -169,6 +205,9 @@ func (r *gormStatusReader) periodStatus(ctx context.Context, schema, table strin
 }
 
 func (r *gormStatusReader) tenantTable(ctx context.Context, schema, table string) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("demo status reader is not configured")
+	}
 	qualifiedTable, err := database.QualifiedTable(schema, table)
 	if err != nil {
 		return nil, err

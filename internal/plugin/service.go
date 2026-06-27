@@ -34,6 +34,8 @@ type Service struct {
 	runtimeRestartBackoff time.Duration
 }
 
+var newPluginGormDBFromPool = database.NewGormDBFromPool
+
 // LoadedPlugin represents a plugin loaded into memory
 type LoadedPlugin struct {
 	Plugin   *Plugin
@@ -52,7 +54,7 @@ func NewService(pool *pgxpool.Pool, pluginDir string) *Service {
 			runtimeRestartBackoff: packageRuntimeCrashBackoff,
 		}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newPluginGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create plugin GORM repository: %w", err))
 	}
@@ -476,10 +478,6 @@ func (s *Service) loadPluginWithRuntimeStats(plugin *Plugin, manifest *Manifest,
 	// Register hooks if any
 	if manifest.Backend != nil {
 		for _, hook := range manifest.Backend.Hooks {
-			if runtime == nil {
-				s.hooks.registerPluginHook(plugin.ID, hook.Event, hook.Handler)
-				continue
-			}
 			hook := hook
 			s.hooks.registerPluginHookHandler(plugin.ID, hook.Event, hook.Handler, func(ctx context.Context, event Event) error {
 				return runtime.invokeHook(ctx, plugin.ID, plugin.Name, hook, event)
@@ -563,16 +561,13 @@ func (s *Service) backendRuntimeForPluginWithStats(plugin *Plugin, manifest *Man
 	if !errors.Is(err, ErrPluginRuntimeUnavailable) {
 		return nil, err
 	}
-	switch {
-	case hasHooks && hasRoutes:
+	if hasHooks && hasRoutes {
 		return nil, fmt.Errorf("backend hooks and routes are declared but plugin backend runtime execution is not implemented")
-	case hasHooks:
-		return nil, fmt.Errorf("backend hooks are declared but plugin backend runtime execution is not implemented")
-	case hasRoutes:
-		return nil, fmt.Errorf("backend routes are declared but plugin backend runtime execution is not implemented")
-	default:
-		return nil, nil
 	}
+	if hasHooks {
+		return nil, fmt.Errorf("backend hooks are declared but plugin backend runtime execution is not implemented")
+	}
+	return nil, fmt.Errorf("backend routes are declared but plugin backend runtime execution is not implemented")
 }
 
 func (s *Service) InvokeTenantPluginRoute(
@@ -612,9 +607,6 @@ func (s *Service) InvokeTenantPluginRoute(
 	runtime, err := s.runtimeForTenantPluginRoute(plugin, &manifest)
 	if err != nil {
 		return nil, err
-	}
-	if runtime == nil {
-		return nil, ErrPluginRuntimeUnavailable
 	}
 	if body == nil {
 		body = strings.NewReader("")

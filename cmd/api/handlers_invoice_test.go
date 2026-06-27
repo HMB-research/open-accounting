@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/contacts"
 	"github.com/HMB-research/open-accounting/internal/documents"
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/pdf"
 	"github.com/HMB-research/open-accounting/internal/tenant"
@@ -31,6 +34,8 @@ type mockInvoicingRepository struct {
 	// Error injection
 	createErr        error
 	getErr           error
+	getErrAfterCalls int
+	getCalls         int
 	listErr          error
 	updateStatusErr  error
 	updatePaymentErr error
@@ -53,7 +58,8 @@ func (m *mockInvoicingRepository) Create(ctx context.Context, schemaName string,
 }
 
 func (m *mockInvoicingRepository) GetByID(ctx context.Context, schemaName, tenantID, invoiceID string) (*invoicing.Invoice, error) {
-	if m.getErr != nil {
+	m.getCalls++
+	if m.getErr != nil && (m.getErrAfterCalls == 0 || m.getCalls > m.getErrAfterCalls) {
 		return nil, m.getErr
 	}
 	inv, ok := m.invoices[invoiceID]
@@ -1072,6 +1078,212 @@ func TestEmailPurchaseInvoiceRequiresApprovedEvidence(t *testing.T) {
 
 	assertPurchaseInvoiceEvidenceConflict(t, w, "bill-1")
 	assert.Equal(t, invoicing.StatusDraft, invoiceRepo.invoices["bill-1"].Status)
+}
+
+func TestEmailInvoiceSendsAttachmentAndMarksDraftSent(t *testing.T) {
+	h, tenantRepo, invoiceRepo := setupInvoiceTestHandlers()
+	h.pdfService = pdf.NewService()
+	emailRepo, mailer := configureEmailHandlerService(h, "tenant-1")
+
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+	tenantRecord.Settings.RegCode = "12345678"
+	invoice := invoiceRepo.addTestInvoice("inv-email", "tenant-1", "contact-1", invoicing.InvoiceTypeSales, invoicing.StatusDraft)
+	invoice.InvoiceNumber = "INV-EMAIL-001"
+	invoice.Contact = &contacts.Contact{
+		ID:          "contact-1",
+		Name:        "Acme OU",
+		Email:       "billing@example.com",
+		CountryCode: "EE",
+	}
+	invoice.IssueDate = time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	invoice.DueDate = time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)
+	invoice.Subtotal = decimal.NewFromInt(100)
+	invoice.VATAmount = decimal.NewFromInt(22)
+	invoice.Total = decimal.NewFromInt(122)
+	invoice.Lines = []invoicing.InvoiceLine{{
+		ID:           "line-1",
+		TenantID:     "tenant-1",
+		InvoiceID:    "inv-email",
+		LineNumber:   1,
+		Description:  "Consulting",
+		Quantity:     decimal.NewFromInt(1),
+		Unit:         "hour",
+		UnitPrice:    decimal.NewFromInt(100),
+		VATRate:      decimal.NewFromInt(22),
+		VATTreatment: invoicing.VATTreatmentStandard,
+		LineSubtotal: decimal.NewFromInt(100),
+		LineVAT:      decimal.NewFromInt(22),
+		LineTotal:    decimal.NewFromInt(122),
+	}}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/inv-email/email", email.SendInvoiceRequest{
+		RecipientEmail: "customer@example.com",
+		RecipientName:  "Customer",
+		Subject:        "Custom invoice subject",
+		Message:        "Please review this invoice.",
+		AttachPDF:      true,
+	}, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invoiceID": "inv-email"})
+	rr := httptest.NewRecorder()
+
+	h.EmailInvoice(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var result email.EmailSentResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&result))
+	assert.True(t, result.Success)
+	assert.Equal(t, 1, mailer.sentCount)
+	assert.Equal(t, invoicing.StatusSent, invoiceRepo.invoices["inv-email"].Status)
+	require.Len(t, emailRepo.logs, 1)
+	assert.Equal(t, string(email.TemplateInvoiceSend), emailRepo.logs[0].EmailType)
+	assert.Equal(t, "inv-email", emailRepo.logs[0].RelatedID)
+	assert.Equal(t, "Custom invoice subject", emailRepo.logs[0].Subject)
+	assert.Equal(t, email.StatusSent, emailRepo.logs[0].Status)
+}
+
+func TestEmailInvoiceValidationAndErrorBranches(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       any
+		rawBody    string
+		setup      func(*Handlers, *mockTenantRepository, *mockInvoicingRepository)
+		wantStatus int
+		wantError  string
+	}{
+		{
+			name:       "invalid JSON",
+			rawBody:    "{",
+			wantStatus: http.StatusBadRequest,
+			wantError:  "Invalid request body",
+		},
+		{
+			name:       "missing recipient",
+			body:       email.SendInvoiceRequest{},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "recipient email is required",
+		},
+		{
+			name: "invoice not found",
+			body: email.SendInvoiceRequest{RecipientEmail: "customer@example.com"},
+			setup: func(_ *Handlers, tenantRepo *mockTenantRepository, _ *mockInvoicingRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+			},
+			wantStatus: http.StatusNotFound,
+			wantError:  "Invoice not found",
+		},
+		{
+			name: "evidence guard invoice lookup failure",
+			body: email.SendInvoiceRequest{RecipientEmail: "customer@example.com"},
+			setup: func(_ *Handlers, tenantRepo *mockTenantRepository, invoiceRepo *mockInvoicingRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				invoiceRepo.addTestInvoice("inv-email", "tenant-1", "contact-1", invoicing.InvoiceTypeSales, invoicing.StatusSent)
+				invoiceRepo.getErr = invoicing.ErrInvoiceNotFound
+				invoiceRepo.getErrAfterCalls = 1
+			},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "get invoice",
+		},
+		{
+			name: "purchase evidence required without document service",
+			body: email.SendInvoiceRequest{RecipientEmail: "supplier@example.com"},
+			setup: func(_ *Handlers, tenantRepo *mockTenantRepository, invoiceRepo *mockInvoicingRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				invoiceRepo.addTestInvoice("inv-email", "tenant-1", "supplier-1", invoicing.InvoiceTypePurchase, invoicing.StatusDraft)
+			},
+			wantStatus: http.StatusConflict,
+			wantError:  "approved purchase-invoice evidence is required",
+		},
+		{
+			name: "purchase evidence evaluation failure",
+			body: email.SendInvoiceRequest{RecipientEmail: "supplier@example.com"},
+			setup: func(h *Handlers, tenantRepo *mockTenantRepository, invoiceRepo *mockInvoicingRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				invoiceRepo.addTestInvoice("inv-email", "tenant-1", "supplier-1", invoicing.InvoiceTypePurchase, invoicing.StatusDraft)
+				docRepo := newMockDocumentRepository()
+				docRepo.listDocumentsErr = errors.New("document repository unavailable")
+				h.documentsService = documents.NewService(docRepo, nil)
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "evaluate purchase invoice evidence",
+		},
+		{
+			name: "tenant lookup failure",
+			body: email.SendInvoiceRequest{RecipientEmail: "customer@example.com"},
+			setup: func(_ *Handlers, _ *mockTenantRepository, invoiceRepo *mockInvoicingRepository) {
+				invoiceRepo.addTestInvoice("inv-email", "tenant-1", "contact-1", invoicing.InvoiceTypeSales, invoicing.StatusSent)
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "Failed to get tenant",
+		},
+		{
+			name: "template lookup failure",
+			body: email.SendInvoiceRequest{RecipientEmail: "customer@example.com"},
+			setup: func(h *Handlers, tenantRepo *mockTenantRepository, invoiceRepo *mockInvoicingRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				invoiceRepo.addTestInvoice("inv-email", "tenant-1", "contact-1", invoicing.InvoiceTypeSales, invoicing.StatusSent)
+				emailRepo, _ := configureEmailHandlerService(h, "tenant-1")
+				emailRepo.getTemplateErr = errors.New("template repository unavailable")
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "Failed to get email template",
+		},
+		{
+			name: "template render failure",
+			body: email.SendInvoiceRequest{RecipientEmail: "customer@example.com"},
+			setup: func(h *Handlers, tenantRepo *mockTenantRepository, invoiceRepo *mockInvoicingRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				invoiceRepo.addTestInvoice("inv-email", "tenant-1", "contact-1", invoicing.InvoiceTypeSales, invoicing.StatusSent)
+				emailRepo, _ := configureEmailHandlerService(h, "tenant-1")
+				emailRepo.templates[emailTemplateKey("tenant-1", email.TemplateInvoiceSend)] = email.EmailTemplate{
+					TenantID:     "tenant-1",
+					TemplateType: email.TemplateInvoiceSend,
+					Subject:      "{{",
+					BodyHTML:     "<p>Invoice</p>",
+					IsActive:     true,
+				}
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "Failed to render email template",
+		},
+		{
+			name: "send failure",
+			body: email.SendInvoiceRequest{RecipientEmail: "customer@example.com"},
+			setup: func(h *Handlers, tenantRepo *mockTenantRepository, invoiceRepo *mockInvoicingRepository) {
+				tenantRepo.addTestTenant("tenant-1", "Test Tenant", "test-tenant")
+				invoiceRepo.addTestInvoice("inv-email", "tenant-1", "contact-1", invoicing.InvoiceTypeSales, invoicing.StatusSent)
+				emailRepo, _ := configureEmailHandlerService(h, "tenant-1")
+				emailRepo.settings["tenant-1"] = []byte(`{}`)
+			},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "SMTP is not configured",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, tenantRepo, invoiceRepo := setupInvoiceTestHandlers()
+			if tt.setup != nil {
+				tt.setup(h, tenantRepo, invoiceRepo)
+			}
+
+			var req *http.Request
+			if tt.rawBody != "" {
+				req = httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/invoices/inv-email/email", strings.NewReader(tt.rawBody))
+				req.Header.Set("Content-Type", "application/json")
+			} else {
+				req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/invoices/inv-email/email", tt.body, createTestClaims("user-1", "test@example.com", "tenant-1", "owner"))
+			}
+			req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "invoiceID": "inv-email"})
+			rr := httptest.NewRecorder()
+
+			h.EmailInvoice(rr, req)
+
+			require.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
+			var body map[string]string
+			require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
+			assert.Contains(t, body["error"], tt.wantError)
+		})
+	}
 }
 
 func assertPurchaseInvoiceEvidenceConflict(t *testing.T, w *httptest.ResponseRecorder, invoiceID string) {

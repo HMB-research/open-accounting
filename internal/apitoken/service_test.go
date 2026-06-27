@@ -2,10 +2,12 @@ package apitoken
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -118,11 +120,30 @@ func TestService_CreateToken(t *testing.T) {
 	assert.True(t, strings.HasPrefix(result.Token, tokenPrefix))
 }
 
+func TestNewServiceWithNilPoolLeavesRepositoryUnconfigured(t *testing.T) {
+	service := NewService(nil)
+	require.NotNil(t, service)
+	assert.Nil(t, service.repo)
+}
+
+func TestNewServicePanicsWhenPoolCannotPing(t *testing.T) {
+	pool := newUnreachableAPITokenPool(t)
+	defer pool.Close()
+
+	assert.Panics(t, func() {
+		NewService(pool)
+	})
+}
+
 func TestService_CreateTokenRejectsBadInput(t *testing.T) {
 	repo := newMockRepository()
 	service := NewServiceWithRepository(repo)
 
-	_, err := service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{})
+	_, err := service.CreateToken(context.Background(), "user-1", "tenant-1", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create request is required")
+
+	_, err = service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "name is required")
 
@@ -133,6 +154,47 @@ func TestService_CreateTokenRejectsBadInput(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expires_at")
+}
+
+func TestService_CreateTokenReturnsRepositoryError(t *testing.T) {
+	repo := newMockRepository()
+	repo.createErr = assert.AnError
+	service := NewServiceWithRepository(repo)
+
+	_, err := service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{
+		Name: "CLI token",
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func TestService_CreateTokenReturnsRandomGenerationError(t *testing.T) {
+	randomErr := errors.New("random unavailable")
+	originalRandomRead := tokenRandomRead
+	tokenRandomRead = func([]byte) (int, error) {
+		return 0, randomErr
+	}
+	t.Cleanup(func() {
+		tokenRandomRead = originalRandomRead
+	})
+
+	repo := newMockRepository()
+	service := NewServiceWithRepository(repo)
+
+	result, err := service.CreateToken(context.Background(), "user-1", "tenant-1", &CreateRequest{
+		Name: "CLI token",
+	})
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, randomErr)
+	assert.Contains(t, err.Error(), "generate api token")
+
+	rawToken, prefix, tokenHash, err := generateTokenMaterial()
+	require.Error(t, err)
+	assert.Empty(t, rawToken)
+	assert.Empty(t, prefix)
+	assert.Empty(t, tokenHash)
+	assert.ErrorIs(t, err, randomErr)
 }
 
 func TestService_ValidateAPIToken(t *testing.T) {
@@ -182,6 +244,17 @@ func TestService_ListTokens(t *testing.T) {
 	assert.ElementsMatch(t, []string{first.APIToken.ID, second.APIToken.ID}, []string{tokens[0].ID, tokens[1].ID})
 }
 
+func TestService_ListTokensReturnsRepositoryError(t *testing.T) {
+	repo := newMockRepository()
+	repo.listErr = assert.AnError
+	service := NewServiceWithRepository(repo)
+
+	tokens, err := service.ListTokens(context.Background(), "user-1", "tenant-1")
+	require.Error(t, err)
+	assert.Nil(t, tokens)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
 func TestService_RevokeTokenRejectsMissingIDAndNotFound(t *testing.T) {
 	repo := newMockRepository()
 	service := NewServiceWithRepository(repo)
@@ -193,6 +266,50 @@ func TestService_RevokeTokenRejectsMissingIDAndNotFound(t *testing.T) {
 	err = service.RevokeToken(context.Background(), "user-1", "tenant-1", "missing")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "api token not found")
+}
+
+func TestService_RevokeTokenReturnsRepositoryError(t *testing.T) {
+	repo := newMockRepository()
+	repo.revokeErr = assert.AnError
+	service := NewServiceWithRepository(repo)
+
+	err := service.RevokeToken(context.Background(), "user-1", "tenant-1", "token-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func TestService_MethodsRequireConfiguredRepository(t *testing.T) {
+	ctx := context.Background()
+	services := []struct {
+		name    string
+		service *Service
+	}{
+		{name: "nil service"},
+		{name: "nil repository", service: NewServiceWithRepository(nil)},
+	}
+
+	for _, tt := range services {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tt.service.CreateToken(ctx, "user-1", "tenant-1", &CreateRequest{Name: "CLI token"})
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.Contains(t, err.Error(), "api token repository is not configured")
+
+			tokens, err := tt.service.ListTokens(ctx, "user-1", "tenant-1")
+			require.Error(t, err)
+			assert.Nil(t, tokens)
+			assert.Contains(t, err.Error(), "api token repository is not configured")
+
+			err = tt.service.RevokeToken(ctx, "user-1", "tenant-1", "token-1")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "api token repository is not configured")
+
+			claims, err := tt.service.ValidateAPIToken(ctx, "oa_anything")
+			require.Error(t, err)
+			assert.Nil(t, claims)
+			assert.Contains(t, err.Error(), "api token repository is not configured")
+		})
+	}
 }
 
 func TestService_ValidateAPITokenReturnsErrors(t *testing.T) {
@@ -210,4 +327,26 @@ func TestService_ValidateAPITokenReturnsErrors(t *testing.T) {
 	_, err = service.ValidateAPIToken(context.Background(), result.Token)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func TestService_ValidateAPITokenReturnsValidationRepositoryError(t *testing.T) {
+	repo := newMockRepository()
+	repo.validationErr = assert.AnError
+	service := NewServiceWithRepository(repo)
+
+	_, err := service.ValidateAPIToken(context.Background(), "oa_anything")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func newUnreachableAPITokenPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+
+	config, err := pgxpool.ParseConfig("postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
+	require.NoError(t, err)
+	config.ConnConfig.ConnectTimeout = 10 * time.Millisecond
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	require.NoError(t, err)
+	return pool
 }

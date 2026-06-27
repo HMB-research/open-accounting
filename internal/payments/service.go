@@ -31,19 +31,26 @@ type Service struct {
 	contacts  contactLister
 }
 
+var (
+	newGormDBFromPool         = database.NewGormDBFromPool
+	newPaymentsContactService = func(db *pgxpool.Pool) contactLister {
+		return contacts.NewService(db)
+	}
+)
+
 // NewService creates a new payments service with an ORM-backed repository.
 func NewService(db *pgxpool.Pool, invoicingService *invoicing.Service) *Service {
 	if db == nil {
 		return &Service{invoicing: invoicingService}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create payments GORM repository: %w", err))
 	}
 	return &Service{
 		repo:      NewGORMRepository(gormDB),
 		invoicing: invoicingService,
-		contacts:  contacts.NewService(db),
+		contacts:  newPaymentsContactService(db),
 	}
 }
 

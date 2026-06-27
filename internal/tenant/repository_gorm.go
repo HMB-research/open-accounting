@@ -22,9 +22,21 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("tenant repository database is not configured")
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 // CreateTenant creates a new tenant with its schema
 func (r *GORMRepository) CreateTenant(ctx context.Context, tenant *Tenant, settingsJSON []byte, ownerID string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
 		// Insert tenant record
 		tenantModel := &models.Tenant{
 			ID:                  tenant.ID,
@@ -71,8 +83,13 @@ func (r *GORMRepository) CreateTenant(ctx context.Context, tenant *Tenant, setti
 
 // GetTenant retrieves a tenant by ID
 func (r *GORMRepository) GetTenant(ctx context.Context, tenantID string) (*Tenant, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var tenantModel models.Tenant
-	if err := r.db.WithContext(ctx).Where("id = ?", tenantID).First(&tenantModel).Error; err != nil {
+	if err := db.Where("id = ?", tenantID).First(&tenantModel).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, ErrTenantNotFound
 		}
@@ -84,8 +101,13 @@ func (r *GORMRepository) GetTenant(ctx context.Context, tenantID string) (*Tenan
 
 // GetTenantBySlug retrieves a tenant by slug
 func (r *GORMRepository) GetTenantBySlug(ctx context.Context, slug string) (*Tenant, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var tenantModel models.Tenant
-	if err := r.db.WithContext(ctx).Where("slug = ?", slug).First(&tenantModel).Error; err != nil {
+	if err := db.Where("slug = ?", slug).First(&tenantModel).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, ErrTenantNotFound
 		}
@@ -97,7 +119,12 @@ func (r *GORMRepository) GetTenantBySlug(ctx context.Context, slug string) (*Ten
 
 // UpdateTenant updates a tenant's name and/or settings
 func (r *GORMRepository) UpdateTenant(ctx context.Context, tenantID, name string, settingsJSON []byte, updatedAt time.Time) error {
-	if err := r.db.WithContext(ctx).Model(&models.Tenant{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Model(&models.Tenant{}).
 		Where("id = ?", tenantID).
 		Updates(map[string]interface{}{
 			"name":       name,
@@ -111,11 +138,16 @@ func (r *GORMRepository) UpdateTenant(ctx context.Context, tenantID, name string
 
 // DeleteTenant deletes a tenant and its schema
 func (r *GORMRepository) DeleteTenant(ctx context.Context, tenantID, schemaName string) error {
-	if err := r.db.WithContext(ctx).Exec("SELECT drop_tenant_schema(?)", schemaName).Error; err != nil {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Exec("SELECT drop_tenant_schema(?)", schemaName).Error; err != nil {
 		return fmt.Errorf("drop tenant schema: %w", err)
 	}
 
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
 		// Remove all tenant users
 		if err := tx.Where("tenant_id = ?", tenantID).Delete(&models.TenantUserModel{}).Error; err != nil {
 			return fmt.Errorf("delete tenant users: %w", err)
@@ -132,7 +164,12 @@ func (r *GORMRepository) DeleteTenant(ctx context.Context, tenantID, schemaName 
 
 // CompleteOnboarding marks the tenant's onboarding as completed
 func (r *GORMRepository) CompleteOnboarding(ctx context.Context, tenantID string) error {
-	if err := r.db.WithContext(ctx).Model(&models.Tenant{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Model(&models.Tenant{}).
 		Where("id = ?", tenantID).
 		Updates(map[string]interface{}{
 			"onboarding_completed": true,
@@ -145,13 +182,14 @@ func (r *GORMRepository) CompleteOnboarding(ctx context.Context, tenantID string
 
 // CreateTenantAuditEvent records a tenant administration audit event.
 func (r *GORMRepository) CreateTenantAuditEvent(ctx context.Context, event *TenantAuditEvent) error {
-	metadataJSON, err := json.Marshal(event.Metadata)
+	db, err := r.dbWithContext(ctx)
 	if err != nil {
-		return fmt.Errorf("marshal audit metadata: %w", err)
+		return err
 	}
 
+	metadataJSON, _ := json.Marshal(event.Metadata)
 	eventModel := tenantAuditEventToModel(event, metadataJSON)
-	if err := r.db.WithContext(ctx).Create(eventModel).Error; err != nil {
+	if err := db.Create(eventModel).Error; err != nil {
 		return fmt.Errorf("create tenant audit event: %w", err)
 	}
 	return nil
@@ -159,6 +197,11 @@ func (r *GORMRepository) CreateTenantAuditEvent(ctx context.Context, event *Tena
 
 // ListTenantAuditEvents returns recent tenant administration audit events.
 func (r *GORMRepository) ListTenantAuditEvents(ctx context.Context, tenantID string, limit int) ([]TenantAuditEvent, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	if limit <= 0 {
 		limit = 50
 	}
@@ -167,7 +210,7 @@ func (r *GORMRepository) ListTenantAuditEvents(ctx context.Context, tenantID str
 	}
 
 	var eventModels []models.TenantAuditEvent
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Where("tenant_id = ?", tenantID).
 		Order("created_at DESC").
 		Limit(limit).
@@ -190,6 +233,11 @@ func (r *GORMRepository) ListTenantAuditEvents(ctx context.Context, tenantID str
 
 // AddUserToTenant adds a user to a tenant with a specified role
 func (r *GORMRepository) AddUserToTenant(ctx context.Context, tenantID, userID, role string) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
 	membership := &models.TenantUserModel{
 		TenantID:  tenantID,
 		UserID:    userID,
@@ -198,7 +246,7 @@ func (r *GORMRepository) AddUserToTenant(ctx context.Context, tenantID, userID, 
 		IsActive:  true,
 		CreatedAt: time.Now(),
 	}
-	if err := r.upsertTenantUser(ctx, r.db, membership); err != nil {
+	if err := r.upsertTenantUser(ctx, db, membership); err != nil {
 		return fmt.Errorf("add user to tenant: %w", err)
 	}
 	return nil
@@ -206,7 +254,12 @@ func (r *GORMRepository) AddUserToTenant(ctx context.Context, tenantID, userID, 
 
 // RemoveUserFromTenant removes a user from a tenant
 func (r *GORMRepository) RemoveUserFromTenant(ctx context.Context, tenantID, userID string) error {
-	result := r.db.WithContext(ctx).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	result := db.
 		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
 		Delete(&models.TenantUserModel{})
 	if result.Error != nil {
@@ -220,8 +273,13 @@ func (r *GORMRepository) RemoveUserFromTenant(ctx context.Context, tenantID, use
 
 // GetUserRole returns the user's role in a tenant
 func (r *GORMRepository) GetUserRole(ctx context.Context, tenantID, userID string) (string, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	var role string
-	err := r.db.WithContext(ctx).Model(&models.TenantUserModel{}).
+	err = db.Model(&models.TenantUserModel{}).
 		Select("role").
 		Where("tenant_id = ? AND user_id = ? AND COALESCE(is_active, true) = true", tenantID, userID).
 		Scan(&role).Error
@@ -236,8 +294,13 @@ func (r *GORMRepository) GetUserRole(ctx context.Context, tenantID, userID strin
 
 // GetTenantUser returns one tenant membership, including inactive memberships.
 func (r *GORMRepository) GetTenantUser(ctx context.Context, tenantID, userID string) (*TenantUser, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var tu models.TenantUserModel
-	err := r.db.WithContext(ctx).
+	err = db.
 		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
 		First(&tu).Error
 	if err == gorm.ErrRecordNotFound {
@@ -258,13 +321,18 @@ func (r *GORMRepository) GetTenantUser(ctx context.Context, tenantID, userID str
 
 // ListUserTenants retrieves all tenants a user belongs to
 func (r *GORMRepository) ListUserTenants(ctx context.Context, userID string) ([]TenantMembership, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var results []struct {
 		models.Tenant
 		Role      string
 		IsDefault bool
 	}
 
-	err := r.db.WithContext(ctx).
+	err = db.
 		Model(&models.Tenant{}).
 		Select("tenants.*, tu.role, tu.is_default").
 		Joins("JOIN tenant_users tu ON tu.tenant_id = tenants.id").
@@ -289,8 +357,13 @@ func (r *GORMRepository) ListUserTenants(ctx context.Context, userID string) ([]
 
 // ListTenantUsers lists all users in a tenant
 func (r *GORMRepository) ListTenantUsers(ctx context.Context, tenantID string) ([]TenantUser, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var tuModels []models.TenantUserModel
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Where("tenant_id = ?", tenantID).
 		Order("created_at").
 		Find(&tuModels).Error; err != nil {
@@ -314,7 +387,12 @@ func (r *GORMRepository) ListTenantUsers(ctx context.Context, tenantID string) (
 
 // UpdateTenantUserRole updates a user's role in a tenant
 func (r *GORMRepository) UpdateTenantUserRole(ctx context.Context, tenantID, userID, newRole string) error {
-	if err := r.db.WithContext(ctx).Model(&models.TenantUserModel{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Model(&models.TenantUserModel{}).
 		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
 		Update("role", newRole).Error; err != nil {
 		return fmt.Errorf("update role: %w", err)
@@ -324,7 +402,12 @@ func (r *GORMRepository) UpdateTenantUserRole(ctx context.Context, tenantID, use
 
 // SetTenantUserActive updates a tenant membership active flag.
 func (r *GORMRepository) SetTenantUserActive(ctx context.Context, tenantID, userID string, active bool) error {
-	result := r.db.WithContext(ctx).Model(&models.TenantUserModel{}).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	result := db.Model(&models.TenantUserModel{}).
 		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
 		Update("is_active", active)
 	if result.Error != nil {
@@ -338,7 +421,12 @@ func (r *GORMRepository) SetTenantUserActive(ctx context.Context, tenantID, user
 
 // RemoveTenantUser removes a user from a tenant
 func (r *GORMRepository) RemoveTenantUser(ctx context.Context, tenantID, userID string) error {
-	if err := r.db.WithContext(ctx).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := db.
 		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
 		Delete(&models.TenantUserModel{}).Error; err != nil {
 		return fmt.Errorf("remove user: %w", err)
@@ -348,6 +436,11 @@ func (r *GORMRepository) RemoveTenantUser(ctx context.Context, tenantID, userID 
 
 // CreateUser creates a new user
 func (r *GORMRepository) CreateUser(ctx context.Context, user *User) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
 	userModel := &models.User{
 		ID:           user.ID,
 		Email:        user.Email,
@@ -358,7 +451,7 @@ func (r *GORMRepository) CreateUser(ctx context.Context, user *User) error {
 		UpdatedAt:    user.UpdatedAt,
 	}
 
-	if err := r.db.WithContext(ctx).Create(userModel).Error; err != nil {
+	if err := db.Create(userModel).Error; err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
 			return ErrEmailExists
 		}
@@ -369,8 +462,13 @@ func (r *GORMRepository) CreateUser(ctx context.Context, user *User) error {
 
 // GetUserByEmail retrieves a user by email
 func (r *GORMRepository) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var userModel models.User
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Where("email = ?", strings.ToLower(strings.TrimSpace(email))).
 		First(&userModel).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -384,8 +482,13 @@ func (r *GORMRepository) GetUserByEmail(ctx context.Context, email string) (*Use
 
 // GetUserByID retrieves a user by ID
 func (r *GORMRepository) GetUserByID(ctx context.Context, userID string) (*User, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var userModel models.User
-	if err := r.db.WithContext(ctx).Where("id = ?", userID).First(&userModel).Error; err != nil {
+	if err := db.Where("id = ?", userID).First(&userModel).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, ErrUserNotFound
 		}
@@ -397,7 +500,12 @@ func (r *GORMRepository) GetUserByID(ctx context.Context, userID string) (*User,
 
 // UpdateUserPassword updates a user's password hash.
 func (r *GORMRepository) UpdateUserPassword(ctx context.Context, userID, passwordHash string, updatedAt time.Time) error {
-	result := r.db.WithContext(ctx).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	result := db.
 		Model(&models.User{}).
 		Where("id = ?", userID).
 		Updates(map[string]interface{}{
@@ -415,8 +523,13 @@ func (r *GORMRepository) UpdateUserPassword(ctx context.Context, userID, passwor
 
 // CreateInvitation creates a new user invitation
 func (r *GORMRepository) CreateInvitation(ctx context.Context, inv *UserInvitation) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
 	invModel := userInvitationToModel(inv)
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "tenant_id"}, {Name: "email"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
@@ -435,8 +548,13 @@ func (r *GORMRepository) CreateInvitation(ctx context.Context, inv *UserInvitati
 
 // GetInvitationByToken retrieves an invitation by its token
 func (r *GORMRepository) GetInvitationByToken(ctx context.Context, token string) (*UserInvitation, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var invModel models.UserInvitation
-	err := r.db.WithContext(ctx).
+	err = db.
 		Preload("Tenant").
 		Where("token = ?", token).
 		First(&invModel).Error
@@ -456,7 +574,12 @@ func (r *GORMRepository) GetInvitationByToken(ctx context.Context, token string)
 
 // AcceptInvitation accepts an invitation and adds the user to the tenant
 func (r *GORMRepository) AcceptInvitation(ctx context.Context, inv *UserInvitation, userID string, password string, name string, createUser bool) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
 		if createUser {
 			userModel := &models.User{
 				ID:           userID,
@@ -500,8 +623,13 @@ func (r *GORMRepository) AcceptInvitation(ctx context.Context, inv *UserInvitati
 
 // ListInvitations lists pending invitations for a tenant
 func (r *GORMRepository) ListInvitations(ctx context.Context, tenantID string) ([]UserInvitation, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var invModels []models.UserInvitation
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Where("tenant_id = ? AND accepted_at IS NULL AND expires_at > ?", tenantID, time.Now()).
 		Order("created_at DESC").
 		Find(&invModels).Error; err != nil {
@@ -518,7 +646,12 @@ func (r *GORMRepository) ListInvitations(ctx context.Context, tenantID string) (
 
 // RevokeInvitation revokes a pending invitation
 func (r *GORMRepository) RevokeInvitation(ctx context.Context, tenantID, invitationID string) error {
-	result := r.db.WithContext(ctx).
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	result := db.
 		Where("id = ? AND tenant_id = ? AND accepted_at IS NULL", invitationID, tenantID).
 		Delete(&models.UserInvitation{})
 	if result.Error != nil {
@@ -532,8 +665,13 @@ func (r *GORMRepository) RevokeInvitation(ctx context.Context, tenantID, invitat
 
 // CheckUserIsMember checks if a user is already a member of a tenant
 func (r *GORMRepository) CheckUserIsMember(ctx context.Context, tenantID, email string) (bool, error) {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return false, err
+	}
+
 	var count int64
-	err := r.db.WithContext(ctx).
+	err = db.
 		Model(&models.TenantUserModel{}).
 		Joins("JOIN users u ON u.id = tenant_users.user_id").
 		Where("tenant_users.tenant_id = ? AND LOWER(u.email) = ?", tenantID, strings.ToLower(email)).

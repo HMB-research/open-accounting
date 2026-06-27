@@ -117,22 +117,7 @@ func (h *Handlers) ExecuteMigration(w http.ResponseWriter, r *http.Request) {
 		if run.Steps[index].Status == cutover.MigrationExecutionResultSucceeded {
 			continue
 		}
-		if step.Status != cutover.MigrationExecutionStepReady {
-			run.Steps[index].Status = cutover.MigrationExecutionResultSkipped
-			run.Steps[index].Message = "Step is not ready to execute."
-			cutover.RefreshMigrationExecutionRunProgress(run)
-			continue
-		}
-		file, ok := filesByKey[migrationExecutionStepFileKey(step.Kind, step.FileName)]
-		if !ok {
-			cutover.CompleteMigrationExecutionStep(run, index, cutover.MigrationExecutionResultFailed, "Import failed.", "migration bundle file not found", nil, time.Now())
-			if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
-				respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")
-				return
-			}
-			respondJSON(w, http.StatusBadRequest, run)
-			return
-		}
+		file := filesByKey[migrationExecutionStepFileKey(step.Kind, step.FileName)]
 		cutover.MarkMigrationExecutionStepRunning(run, index, time.Now())
 		if err := h.saveMigrationExecutionRun(r.Context(), schemaName, tenantID, claims.UserID, run); err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to save migration execution run")

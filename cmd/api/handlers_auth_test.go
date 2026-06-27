@@ -10,9 +10,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wneessen/go-mail"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
 
@@ -544,6 +546,31 @@ func (m *mockPasswordResetService) ResetPassword(ctx context.Context, resetToken
 		return "", auth.ErrPasswordResetTokenInvalid
 	}
 	return userID, nil
+}
+
+type passwordResetDeliveryMailer struct {
+	calls      int
+	lastConfig *email.SMTPConfig
+	lastMsg    *mail.Msg
+	err        error
+	started    chan struct{}
+	release    chan struct{}
+}
+
+func (m *passwordResetDeliveryMailer) SendMail(config *email.SMTPConfig, msg *mail.Msg) error {
+	m.calls++
+	m.lastConfig = config
+	m.lastMsg = msg
+	if m.started != nil {
+		select {
+		case m.started <- struct{}{}:
+		default:
+		}
+	}
+	if m.release != nil {
+		<-m.release
+	}
+	return m.err
 }
 
 type mockSecurityAuditService struct {
@@ -1269,6 +1296,209 @@ func TestBuildPasswordResetURL(t *testing.T) {
 
 	_, err = buildPasswordResetURL("app.example.com/reset", "reset-token")
 	require.Error(t, err)
+
+	_, err = buildPasswordResetURL("%", "reset-token")
+	require.Error(t, err)
+}
+
+func TestDeliverPasswordResetSkipsWhenUnconfigured(t *testing.T) {
+	validConfig := passwordResetSMTPConfig()
+	validResult := passwordResetRequestResult(nil)
+
+	tests := []struct {
+		name    string
+		mailer  *passwordResetDeliveryMailer
+		config  *email.SMTPConfig
+		baseURL string
+		result  *auth.PasswordResetRequestResult
+	}{
+		{
+			name:    "nil mailer",
+			config:  validConfig,
+			baseURL: "https://app.example.com",
+			result:  validResult,
+		},
+		{
+			name:    "nil smtp config",
+			mailer:  &passwordResetDeliveryMailer{},
+			baseURL: "https://app.example.com",
+			result:  validResult,
+		},
+		{
+			name:    "incomplete smtp config",
+			mailer:  &passwordResetDeliveryMailer{},
+			config:  &email.SMTPConfig{Host: "smtp.example.com"},
+			baseURL: "https://app.example.com",
+			result:  validResult,
+		},
+		{
+			name:    "blank base url",
+			mailer:  &passwordResetDeliveryMailer{},
+			config:  validConfig,
+			baseURL: " ",
+			result:  validResult,
+		},
+		{
+			name:    "blank token",
+			mailer:  &passwordResetDeliveryMailer{},
+			config:  validConfig,
+			baseURL: "https://app.example.com",
+			result: &auth.PasswordResetRequestResult{
+				Email: "user@example.com",
+			},
+		},
+		{
+			name:    "blank email",
+			mailer:  &passwordResetDeliveryMailer{},
+			config:  validConfig,
+			baseURL: "https://app.example.com",
+			result: &auth.PasswordResetRequestResult{
+				Token: "reset-token",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var mailer email.MailSender
+			if tt.mailer != nil {
+				mailer = tt.mailer
+			}
+			h := &Handlers{
+				passwordResetMailer:     mailer,
+				passwordResetSMTPConfig: tt.config,
+				passwordResetBaseURL:    tt.baseURL,
+			}
+
+			require.NoError(t, h.deliverPasswordReset(context.Background(), tt.result))
+			if tt.mailer != nil {
+				assert.Zero(t, tt.mailer.calls)
+			}
+		})
+	}
+}
+
+func TestDeliverPasswordResetSendsMail(t *testing.T) {
+	expiresAt := time.Date(2026, 6, 24, 10, 30, 0, 0, time.UTC)
+	config := passwordResetSMTPConfig()
+	mailer := &passwordResetDeliveryMailer{}
+	h := &Handlers{
+		passwordResetMailer:     mailer,
+		passwordResetSMTPConfig: config,
+		passwordResetBaseURL:    "https://app.example.com/account/recover?source=email",
+	}
+
+	require.NoError(t, h.deliverPasswordReset(context.Background(), passwordResetRequestResult(&expiresAt)))
+
+	require.Equal(t, 1, mailer.calls)
+	assert.Same(t, config, mailer.lastConfig)
+	require.NotNil(t, mailer.lastMsg)
+	require.Len(t, mailer.lastMsg.GetTo(), 1)
+	assert.Equal(t, "user@example.com", mailer.lastMsg.GetTo()[0].Address)
+	assert.Equal(t, []string{"Open Accounting password reset"}, mailer.lastMsg.GetGenHeader(mail.HeaderSubject))
+
+	parts := mailer.lastMsg.GetParts()
+	require.Len(t, parts, 1)
+	content, err := parts[0].GetContent()
+	require.NoError(t, err)
+	body := string(content)
+	assert.Contains(t, body, "https://app.example.com/account/recover?source=email&token=reset-token")
+	assert.Contains(t, body, expiresAt.Format(time.RFC3339))
+}
+
+func TestDeliverPasswordResetReturnsBuildMailerAndContextErrors(t *testing.T) {
+	config := passwordResetSMTPConfig()
+
+	h := &Handlers{
+		passwordResetMailer:     &passwordResetDeliveryMailer{},
+		passwordResetSMTPConfig: config,
+		passwordResetBaseURL:    "app.example.com/reset",
+	}
+	err := h.deliverPasswordReset(context.Background(), passwordResetRequestResult(nil))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "password reset base URL")
+
+	invalidFromConfig := *config
+	invalidFromConfig.FromEmail = "not an address"
+	h = &Handlers{
+		passwordResetMailer:     &passwordResetDeliveryMailer{},
+		passwordResetSMTPConfig: &invalidFromConfig,
+		passwordResetBaseURL:    "https://app.example.com",
+	}
+	require.Error(t, h.deliverPasswordReset(context.Background(), passwordResetRequestResult(nil)))
+
+	invalidFromWithoutNameConfig := invalidFromConfig
+	invalidFromWithoutNameConfig.FromName = ""
+	h = &Handlers{
+		passwordResetMailer:     &passwordResetDeliveryMailer{},
+		passwordResetSMTPConfig: &invalidFromWithoutNameConfig,
+		passwordResetBaseURL:    "https://app.example.com",
+	}
+	require.Error(t, h.deliverPasswordReset(context.Background(), passwordResetRequestResult(nil)))
+
+	invalidRecipient := passwordResetRequestResult(nil)
+	invalidRecipient.Email = "not a recipient"
+	h = &Handlers{
+		passwordResetMailer:     &passwordResetDeliveryMailer{},
+		passwordResetSMTPConfig: config,
+		passwordResetBaseURL:    "https://app.example.com",
+	}
+	require.Error(t, h.deliverPasswordReset(context.Background(), invalidRecipient))
+
+	configWithoutName := *config
+	configWithoutName.FromName = ""
+	mailer := &passwordResetDeliveryMailer{err: assert.AnError}
+	h = &Handlers{
+		passwordResetMailer:     mailer,
+		passwordResetSMTPConfig: &configWithoutName,
+		passwordResetBaseURL:    "https://app.example.com",
+	}
+	require.ErrorIs(t, h.deliverPasswordReset(context.Background(), passwordResetRequestResult(nil)), assert.AnError)
+	assert.Equal(t, 1, mailer.calls)
+
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	blockingMailer := &passwordResetDeliveryMailer{started: started, release: release}
+	h = &Handlers{
+		passwordResetMailer:     blockingMailer,
+		passwordResetSMTPConfig: config,
+		passwordResetBaseURL:    "https://app.example.com",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- h.deliverPasswordReset(ctx, passwordResetRequestResult(nil))
+	}()
+	require.Eventually(t, func() bool {
+		select {
+		case <-started:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	cancel()
+	require.ErrorIs(t, <-done, context.Canceled)
+	close(release)
+}
+
+func passwordResetSMTPConfig() *email.SMTPConfig {
+	return &email.SMTPConfig{
+		Host:      "smtp.example.com",
+		Port:      587,
+		FromEmail: "no-reply@example.com",
+		FromName:  "Open Accounting",
+	}
+}
+
+func passwordResetRequestResult(expiresAt *time.Time) *auth.PasswordResetRequestResult {
+	return &auth.PasswordResetRequestResult{
+		Email:     "user@example.com",
+		UserID:    "user-1",
+		Issued:    true,
+		Token:     "reset-token",
+		ExpiresAt: expiresAt,
+	}
 }
 
 func TestListSecurityAuditEvents(t *testing.T) {

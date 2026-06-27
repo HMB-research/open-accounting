@@ -59,12 +59,14 @@ type GORMRepository struct {
 	db *gorm.DB
 }
 
+var newInventoryGormDBFromPool = database.NewGormDBFromPool
+
 // NewGORMRepository creates an ORM-backed inventory repository.
 func NewGORMRepository(pool *pgxpool.Pool) Repository {
 	if pool == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newInventoryGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create inventory GORM repository: %w", err))
 	}

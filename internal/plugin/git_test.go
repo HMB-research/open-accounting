@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -789,6 +790,21 @@ plugins:
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to parse registry index")
 	})
+
+	t.Run("returns body read errors", func(t *testing.T) {
+		withPluginHTTPTransport(t, func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       failingReadCloser{},
+				Header:     make(http.Header),
+			}, nil
+		})
+
+		_, err := service.FetchRegistryIndex(ctx, "https://github.com/acme/registry")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read registry index")
+	})
 }
 
 func TestService_SyncRegistryAndSearchPlugins_WithHTTPIndex(t *testing.T) {
@@ -939,6 +955,26 @@ func TestService_SearchPlugins_NoActiveRegistries(t *testing.T) {
 	assert.Empty(t, results)
 }
 
+func TestService_SearchPlugins_SkipsRegistryFetchErrors(t *testing.T) {
+	ctx := t.Context()
+	repo := NewMockRepository()
+	repo.registries[uuid.New()] = &Registry{
+		ID:       uuid.New(),
+		Name:     "Broken Registry",
+		URL:      "https://github.com/acme/broken",
+		IsActive: true,
+	}
+	service := NewServiceWithRepository(repo, nil, "/tmp/plugins")
+	withPluginHTTPTransport(t, func(req *http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf("registry offline")
+	})
+
+	results, err := service.SearchPlugins(ctx, "invoice")
+
+	require.NoError(t, err)
+	assert.Empty(t, results)
+}
+
 // TestService_CloneRepository_InvalidURL tests cloneRepository with invalid URL
 func TestService_CloneRepository_InvalidURL(t *testing.T) {
 	ctx := t.Context()
@@ -1073,6 +1109,16 @@ func pluginHTTPResponse(status int, body string) *http.Response {
 		Body:       io.NopCloser(strings.NewReader(body)),
 		Header:     make(http.Header),
 	}
+}
+
+type failingReadCloser struct{}
+
+func (failingReadCloser) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+func (failingReadCloser) Close() error {
+	return nil
 }
 
 func installFakePluginGit(t *testing.T) {

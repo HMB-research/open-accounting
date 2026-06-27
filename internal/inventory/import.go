@@ -199,9 +199,6 @@ func parseProductImportRows(content string) ([]productImportRow, error) {
 
 	headers, err := reader.Read()
 	if err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("csv file is empty")
-		}
 		return nil, fmt.Errorf("parse csv header: %w", err)
 	}
 
@@ -381,11 +378,7 @@ func buildProductFromImportRow(
 		UpdatedAt:          now,
 	}
 
-	if err := product.Validate(); err != nil {
-		return nil, err
-	}
-
-	return product, nil
+	return product, product.Validate()
 }
 
 func (s *Service) productImportAccountIDsByCode(ctx context.Context, schemaName, tenantID string, rows []productImportRow) (map[string]string, error) {

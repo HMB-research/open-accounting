@@ -2,14 +2,17 @@ package invoicing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/contacts"
+	einvoicemapper "github.com/HMB-research/open-accounting/internal/invoicing/mappers/einvoice"
 )
 
 func TestService_ImportEInvoiceXML(t *testing.T) {
@@ -113,6 +116,150 @@ func TestService_ImportEInvoiceXML(t *testing.T) {
 		assert.Contains(t, result.Errors[0].Message, "period locked through 2026-03-31")
 		assert.Empty(t, repo.invoices)
 	})
+}
+
+func TestService_ImportEInvoiceXMLEdges(t *testing.T) {
+	ctx := context.Background()
+	schemaName := "tenant_test"
+	tenantID := "tenant-1"
+
+	t.Run("requires XML content", func(t *testing.T) {
+		service := NewServiceWithRepository(NewMockRepository(), nil)
+
+		_, err := service.ImportEInvoiceXML(ctx, tenantID, schemaName, nil, &ImportEInvoiceRequest{XMLContent: " \n\t "}, nil)
+
+		require.EqualError(t, err, "xml_content is required")
+	})
+
+	t.Run("returns parser errors before repository access", func(t *testing.T) {
+		service := NewServiceWithRepository(NewMockRepository(), nil)
+
+		_, err := service.ImportEInvoiceXML(ctx, tenantID, schemaName, nil, &ImportEInvoiceRequest{XMLContent: "<E_Invoice>"}, nil)
+
+		require.Error(t, err)
+	})
+
+	t.Run("wraps repository list errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.ListFn = func(ctx context.Context, schemaName, tenantID string, filter *InvoiceFilter) ([]Invoice, error) {
+			return nil, errors.New("list failed")
+		}
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.ImportEInvoiceXML(ctx, tenantID, schemaName, nil, &ImportEInvoiceRequest{XMLContent: sampleEInvoiceXML()}, nil)
+
+		require.EqualError(t, err, "list existing invoices: list failed")
+	})
+
+	t.Run("skips rows when requested invoice type is invalid", func(t *testing.T) {
+		service := NewServiceWithRepository(NewMockRepository(), nil)
+
+		result, err := service.ImportEInvoiceXML(ctx, tenantID, schemaName, nil, &ImportEInvoiceRequest{
+			XMLContent:  sampleEInvoiceXML(),
+			InvoiceType: InvoiceType("REFUND"),
+			FileName:    "bad-type.xml",
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, "bad-type.xml", result.FileName)
+		assert.Equal(t, 1, result.RowsProcessed)
+		assert.Zero(t, result.InvoicesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, `invalid invoice_type "REFUND"`)
+	})
+
+	t.Run("skips rows when contact cannot be resolved", func(t *testing.T) {
+		service := NewServiceWithRepository(NewMockRepository(), nil)
+
+		result, err := service.ImportEInvoiceXML(ctx, tenantID, schemaName, nil, &ImportEInvoiceRequest{XMLContent: sampleEInvoiceXML()}, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.RowsProcessed)
+		assert.Zero(t, result.InvoicesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "contact_reg_code")
+	})
+
+	t.Run("records repository create failures as skipped rows", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.CreateFn = func(ctx context.Context, schemaName string, invoice *Invoice) error {
+			return errors.New("insert failed")
+		}
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportEInvoiceXML(ctx, tenantID, schemaName, []contacts.Contact{{
+			ID:          "supplier-1",
+			TenantID:    tenantID,
+			Name:        "Supplier OÜ",
+			RegCode:     "12345678",
+			ContactType: contacts.ContactTypeSupplier,
+			IsActive:    true,
+		}}, &ImportEInvoiceRequest{XMLContent: sampleEInvoiceXML()}, nil)
+
+		require.NoError(t, err)
+		assert.Zero(t, result.InvoicesCreated)
+		assert.Equal(t, 1, result.RowsSkipped)
+		require.Len(t, result.Errors, 1)
+		assert.Equal(t, "insert failed", result.Errors[0].Message)
+	})
+
+	t.Run("uses buyer party when import is requested as sales invoice", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := NewServiceWithRepository(repo, nil)
+
+		result, err := service.ImportEInvoiceXML(ctx, tenantID, schemaName, []contacts.Contact{{
+			ID:          "buyer-1",
+			TenantID:    tenantID,
+			Name:        "Buyer OÜ",
+			RegCode:     "87654321",
+			ContactType: contacts.ContactTypeCustomer,
+			IsActive:    true,
+		}}, &ImportEInvoiceRequest{
+			XMLContent:  sampleEInvoiceXML(),
+			InvoiceType: InvoiceTypeSales,
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.InvoicesCreated)
+		require.Len(t, repo.invoices, 1)
+		for _, invoice := range repo.invoices {
+			assert.Equal(t, InvoiceTypeSales, invoice.InvoiceType)
+			assert.Equal(t, "buyer-1", invoice.ContactID)
+		}
+	})
+}
+
+func TestEInvoiceImportHelpers(t *testing.T) {
+	issueDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	sourceInvoice := "INV-100"
+
+	group, err := mappedEInvoiceToImportGroup(einvoicemapper.Invoice{
+		Number:        "CN-100",
+		Type:          "CRE",
+		IssueDate:     issueDate,
+		Currency:      "",
+		Reference:     "RF100",
+		SourceInvoice: sourceInvoice,
+		Seller:        einvoicemapper.Party{Name: "Supplier", RegNumber: "123"},
+		Lines: []einvoicemapper.Line{{
+			Description: "Credit",
+			Quantity:    decimal.NewFromInt(1),
+			UnitPrice:   decimal.NewFromInt(10),
+			VATRate:     decimal.NewFromInt(22),
+		}},
+	}, "")
+	require.NoError(t, err)
+
+	assert.Equal(t, InvoiceTypeCreditNote, group.header.invoiceType)
+	assert.Equal(t, "EUR", group.header.currency)
+	assert.Equal(t, "Source invoice: "+sourceInvoice, group.header.notes)
+	require.Len(t, group.lines, 1)
+
+	notes := eInvoiceNotes(einvoicemapper.Invoice{Notes: "Base note", SourceInvoice: sourceInvoice})
+	assert.Equal(t, "Base note\nSource invoice: "+sourceInvoice, notes)
+	assert.Empty(t, firstNonEmptyImportValue(" ", "\t"))
 }
 
 func sampleEInvoiceXML() string {

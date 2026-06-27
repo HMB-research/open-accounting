@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -70,7 +69,7 @@ func NewAbsenceServiceWithPoolAndEvidence(pool *pgxpool.Pool, evidence leaveEvid
 			evidence: evidence,
 		}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create absence GORM repository: %w", err))
 	}

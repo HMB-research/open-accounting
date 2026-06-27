@@ -17,7 +17,8 @@ If GitHub reports merge conflicts or the branch cannot be merged cleanly, load `
 4. If GitHub reports conflicts or `mergeable` is not clean, load `open-accounting-pr-conflict-recovery` and resolve that before starting more feature work.
 5. If the branch may already include the requested work, inspect files and PR state before creating new churn.
 6. Select the next weak surface from current evidence, not memory alone:
-   - `docs/UI_ISSUES_REPORT.md` for demo/UI workflow gaps.
+   - `frontend/e2e/demo/*.spec.ts` and `docs/demo-e2e-testing.md` for demo workflow evidence.
+   - `docs/USE_CASE_COVERAGE.md` and `docs/DEVELOPMENT_STATUS.md` for current UI/product gaps.
    - `make test-cli-coverage` for missing CLI/API/docs parity.
    - `docs/api_route_coverage_test.go` failures for API Markdown or Swagger gaps.
    - `internal/*/mappers/**` and import docs for provider-specific import parity gaps.

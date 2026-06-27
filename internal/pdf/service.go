@@ -96,6 +96,10 @@ func (s *Service) PDFSettingsFromTenant(t *tenant.Tenant) PDFSettings {
 // Service handles PDF generation
 type Service struct{}
 
+var generateMarotoPDF = func(m core.Maroto) (core.Document, error) {
+	return m.Generate()
+}
+
 // NewService creates a new PDF service
 func NewService() *Service {
 	return &Service{}
@@ -134,7 +138,7 @@ func (s *Service) GenerateInvoicePDF(invoice *invoicing.Invoice, t *tenant.Tenan
 	// Payment details and notes
 	s.addFooter(m, invoice, pdfSettings)
 
-	doc, err := m.Generate()
+	doc, err := generateMarotoPDF(m)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate PDF: %w", err)
 	}
@@ -240,7 +244,7 @@ func (s *Service) generateCommercialDocumentPDF(doc commercialDocumentPDF, t *te
 	s.addCommercialDocumentTotals(m, doc)
 	s.addCommercialDocumentFooter(m, doc, pdfSettings)
 
-	generated, err := m.Generate()
+	generated, err := generateMarotoPDF(m)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate PDF: %w", err)
 	}
@@ -266,7 +270,7 @@ func (s *Service) GeneratePayslipPDF(payslip *payroll.Payslip, run *payroll.Payr
 	s.addPayslipEmployee(m, payslip)
 	s.addPayslipAmounts(m, payslip)
 
-	doc, err := m.Generate()
+	doc, err := generateMarotoPDF(m)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate payslip PDF: %w", err)
 	}

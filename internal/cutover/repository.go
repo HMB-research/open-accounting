@@ -43,12 +43,14 @@ type migrationExecutionRunRecordPayload struct {
 	ExecutionRequest *ExecuteMigrationRequest `json:"execution_request,omitempty"`
 }
 
+var newMigrationExecutionRunGormDBFromPool = database.NewGormDBFromPool
+
 // NewMigrationExecutionRunRepository creates a migration execution run repository from the shared pgx pool.
 func NewMigrationExecutionRunRepository(pool *pgxpool.Pool) *GORMMigrationExecutionRunRepository {
 	if pool == nil {
 		return &GORMMigrationExecutionRunRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newMigrationExecutionRunGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create migration execution run repository: %w", err))
 	}

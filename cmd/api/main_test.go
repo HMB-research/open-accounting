@@ -1,18 +1,135 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/HMB-research/open-accounting/internal/auth"
+	"github.com/HMB-research/open-accounting/internal/demo"
+	"github.com/HMB-research/open-accounting/internal/scheduler"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 )
+
+type fakeAPIPool struct {
+	pingErr error
+	closed  bool
+}
+
+func (p *fakeAPIPool) Ping(context.Context) error {
+	return p.pingErr
+}
+
+func (p *fakeAPIPool) Close() {
+	p.closed = true
+}
+
+type fakeAPIScheduler struct {
+	startErr error
+	started  bool
+	stopped  bool
+}
+
+func (s *fakeAPIScheduler) Start() error {
+	s.started = true
+	return s.startErr
+}
+
+func (s *fakeAPIScheduler) Stop() context.Context {
+	s.stopped = true
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+type fakeAPIPluginLoader struct {
+	err   error
+	calls int
+}
+
+func (l *fakeAPIPluginLoader) LoadEnabledPlugins(context.Context) error {
+	l.calls++
+	return l.err
+}
+
+type fakeAPIServer struct {
+	listenErr       error
+	shutdownErr     error
+	waitForShutdown bool
+	listenCalled    bool
+	shutdownCalled  bool
+	shutdownCh      chan struct{}
+	shutdownOnce    sync.Once
+}
+
+func (s *fakeAPIServer) ListenAndServe() error {
+	s.listenCalled = true
+	if s.waitForShutdown {
+		<-s.shutdownCh
+		return http.ErrServerClosed
+	}
+	return s.listenErr
+}
+
+func (s *fakeAPIServer) Shutdown(context.Context) error {
+	s.shutdownCalled = true
+	if s.shutdownCh != nil {
+		s.shutdownOnce.Do(func() {
+			close(s.shutdownCh)
+		})
+	}
+	return s.shutdownErr
+}
+
+type fakeDemoStatusReader struct{}
+
+func (fakeDemoStatusReader) ReadDemoStatus(context.Context, string, int) (demo.StatusResponse, error) {
+	return demo.StatusResponse{}, nil
+}
+
+type fakeDemoResetRepository struct{}
+
+func (fakeDemoResetRepository) ResetDemoData(context.Context, []demo.ResetUser, string) error {
+	return nil
+}
+
+func newRunAPITestDeps(
+	env map[string]string,
+	cfg *Config,
+	pool apiPool,
+	app *apiApplication,
+	server apiHTTPServer,
+) apiMainDeps {
+	return apiMainDeps{
+		getenv: func(key string) string {
+			return env[key]
+		},
+		loadConfig: func() *Config {
+			return cfg
+		},
+		newPool: func(context.Context, string) (apiPool, error) {
+			return pool, nil
+		},
+		buildApplication: func(context.Context, *Config, apiPool, scheduler.Config) (*apiApplication, error) {
+			return app, nil
+		},
+		newServer: func(*Config, *apiApplication) apiHTTPServer {
+			return server
+		},
+		signalNotify: func(chan<- os.Signal, ...os.Signal) {},
+	}
+}
 
 func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://db")
@@ -68,6 +185,295 @@ func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
 	assert.Equal(t, "no-reply@example.com", cfg.PasswordReset.SMTPConfig.FromEmail)
 	assert.Equal(t, "Open Accounting", cfg.PasswordReset.SMTPConfig.FromName)
 	assert.True(t, cfg.PasswordReset.SMTPConfig.UseTLS)
+}
+
+func TestRunAPIWithInjectedDependencies(t *testing.T) {
+	env := map[string]string{
+		"LOG_LEVEL":                                   "debug",
+		"RECURRING_INVOICE_SCHEDULE":                  "0 1 * * *",
+		"RECURRING_JOURNAL_ENTRY_SCHEDULE":            "0 2 * * *",
+		"DOCUMENT_RETENTION_REMINDER_SCHEDULE":        "0 3 * * *",
+		"DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS":    "45",
+		"DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING": "true",
+		"SCHEDULER_ENABLED":                           "false",
+	}
+	cfg := &Config{Port: "8080", DatabaseURL: "postgres://unit", JWTSecret: "secret"}
+	pool := &fakeAPIPool{}
+	fakeScheduler := &fakeAPIScheduler{}
+	pluginLoader := &fakeAPIPluginLoader{}
+	server := &fakeAPIServer{listenErr: http.ErrServerClosed}
+	var gotDatabaseURL string
+	var gotSchedulerConfig scheduler.Config
+
+	deps := newRunAPITestDeps(env, cfg, pool, &apiApplication{
+		scheduler:    fakeScheduler,
+		pluginLoader: pluginLoader,
+	}, server)
+	deps.newPool = func(_ context.Context, databaseURL string) (apiPool, error) {
+		gotDatabaseURL = databaseURL
+		return pool, nil
+	}
+	deps.buildApplication = func(_ context.Context, gotCfg *Config, gotPool apiPool, schedulerConfig scheduler.Config) (*apiApplication, error) {
+		require.Same(t, cfg, gotCfg)
+		require.Same(t, pool, gotPool)
+		gotSchedulerConfig = schedulerConfig
+		return &apiApplication{scheduler: fakeScheduler, pluginLoader: pluginLoader}, nil
+	}
+
+	err := runAPI(context.Background(), deps)
+
+	require.NoError(t, err)
+	assert.Equal(t, "postgres://unit", gotDatabaseURL)
+	assert.True(t, pool.closed)
+	assert.True(t, fakeScheduler.started)
+	assert.False(t, fakeScheduler.stopped)
+	assert.Equal(t, 1, pluginLoader.calls)
+	assert.True(t, server.listenCalled)
+	assert.Equal(t, "0 1 * * *", gotSchedulerConfig.RecurringInvoiceSchedule)
+	assert.Equal(t, "0 2 * * *", gotSchedulerConfig.RecurringJournalEntrySchedule)
+	assert.Equal(t, "0 3 * * *", gotSchedulerConfig.DocumentRetentionReminderSchedule)
+	assert.Equal(t, 45, gotSchedulerConfig.DocumentRetentionReminderHorizonDays)
+	assert.True(t, gotSchedulerConfig.DocumentRetentionReminderIncludeMissing)
+	assert.False(t, gotSchedulerConfig.Enabled)
+}
+
+func TestRunAPIErrorBranches(t *testing.T) {
+	baseConfig := &Config{Port: "8080", DatabaseURL: "postgres://unit", JWTSecret: "secret"}
+
+	t.Run("connect error", func(t *testing.T) {
+		deps := newRunAPITestDeps(nil, baseConfig, nil, nil, nil)
+		deps.newPool = func(context.Context, string) (apiPool, error) {
+			return nil, errors.New("connect failed")
+		}
+
+		err := runAPI(context.Background(), deps)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to connect to database")
+	})
+
+	t.Run("ping error closes pool", func(t *testing.T) {
+		pool := &fakeAPIPool{pingErr: errors.New("ping failed")}
+		deps := newRunAPITestDeps(nil, baseConfig, pool, nil, nil)
+
+		err := runAPI(context.Background(), deps)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to ping database")
+		assert.True(t, pool.closed)
+	})
+
+	t.Run("build application error closes pool", func(t *testing.T) {
+		pool := &fakeAPIPool{}
+		deps := newRunAPITestDeps(nil, baseConfig, pool, nil, nil)
+		deps.buildApplication = func(context.Context, *Config, apiPool, scheduler.Config) (*apiApplication, error) {
+			return nil, errors.New("build failed")
+		}
+
+		err := runAPI(context.Background(), deps)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "build failed")
+		assert.True(t, pool.closed)
+	})
+
+	t.Run("plugin and scheduler warnings do not stop serving", func(t *testing.T) {
+		pool := &fakeAPIPool{}
+		fakeScheduler := &fakeAPIScheduler{startErr: errors.New("scheduler failed")}
+		pluginLoader := &fakeAPIPluginLoader{err: errors.New("plugins failed")}
+		server := &fakeAPIServer{listenErr: http.ErrServerClosed}
+		deps := newRunAPITestDeps(
+			map[string]string{"LOG_LEVEL": "not-a-level"},
+			baseConfig,
+			pool,
+			&apiApplication{scheduler: fakeScheduler, pluginLoader: pluginLoader},
+			server,
+		)
+
+		err := runAPI(context.Background(), deps)
+
+		require.NoError(t, err)
+		assert.True(t, fakeScheduler.started)
+		assert.Equal(t, 1, pluginLoader.calls)
+		assert.True(t, server.listenCalled)
+		assert.True(t, pool.closed)
+	})
+
+	t.Run("listen error is returned", func(t *testing.T) {
+		pool := &fakeAPIPool{}
+		server := &fakeAPIServer{listenErr: errors.New("listen failed")}
+		deps := newRunAPITestDeps(
+			nil,
+			baseConfig,
+			pool,
+			&apiApplication{scheduler: &fakeAPIScheduler{}, pluginLoader: &fakeAPIPluginLoader{}},
+			server,
+		)
+
+		err := runAPI(context.Background(), deps)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "server failed")
+	})
+
+	t.Run("signal shuts down scheduler and server", func(t *testing.T) {
+		pool := &fakeAPIPool{}
+		fakeScheduler := &fakeAPIScheduler{}
+		server := &fakeAPIServer{waitForShutdown: true, shutdownCh: make(chan struct{})}
+		deps := newRunAPITestDeps(
+			nil,
+			baseConfig,
+			pool,
+			&apiApplication{scheduler: fakeScheduler, pluginLoader: &fakeAPIPluginLoader{}},
+			server,
+		)
+		deps.signalNotify = func(ch chan<- os.Signal, _ ...os.Signal) {
+			ch <- syscall.SIGTERM
+		}
+
+		err := runAPI(context.Background(), deps)
+
+		require.NoError(t, err)
+		assert.True(t, fakeScheduler.stopped)
+		assert.True(t, server.shutdownCalled)
+	})
+
+	t.Run("shutdown error is logged and server close still succeeds", func(t *testing.T) {
+		pool := &fakeAPIPool{}
+		fakeScheduler := &fakeAPIScheduler{}
+		server := &fakeAPIServer{
+			waitForShutdown: true,
+			shutdownCh:      make(chan struct{}),
+			shutdownErr:     errors.New("shutdown failed"),
+		}
+		deps := newRunAPITestDeps(
+			nil,
+			baseConfig,
+			pool,
+			&apiApplication{scheduler: fakeScheduler, pluginLoader: &fakeAPIPluginLoader{}},
+			server,
+		)
+		deps.signalNotify = func(ch chan<- os.Signal, _ ...os.Signal) {
+			ch <- syscall.SIGTERM
+		}
+
+		err := runAPI(context.Background(), deps)
+
+		require.NoError(t, err)
+		assert.True(t, fakeScheduler.stopped)
+		assert.True(t, server.shutdownCalled)
+	})
+}
+
+func TestBuildProductionAPIApplicationBranches(t *testing.T) {
+	cfg := &Config{
+		Port:          "8080",
+		DatabaseURL:   "postgres://unit",
+		JWTSecret:     "secret",
+		AccessExpiry:  time.Minute,
+		RefreshExpiry: time.Hour,
+		DocumentsDir:  t.TempDir(),
+	}
+
+	t.Run("rejects non pgx pool", func(t *testing.T) {
+		app, err := buildProductionAPIApplication(context.Background(), cfg, &fakeAPIPool{}, scheduler.DefaultConfig())
+		require.Error(t, err)
+		assert.Nil(t, app)
+		assert.Contains(t, err.Error(), "pgx pool")
+	})
+
+	t.Run("document storage error", func(t *testing.T) {
+		badConfig := *cfg
+		badConfig.DocumentsDir = ""
+
+		app, err := buildProductionAPIApplication(context.Background(), &badConfig, (*pgxpool.Pool)(nil), scheduler.DefaultConfig())
+
+		require.Error(t, err)
+		assert.Nil(t, app)
+		assert.Contains(t, err.Error(), "document storage")
+	})
+
+	t.Run("demo status reader error", func(t *testing.T) {
+		app, err := buildProductionAPIApplication(context.Background(), cfg, (*pgxpool.Pool)(nil), scheduler.DefaultConfig())
+
+		require.Error(t, err)
+		assert.Nil(t, app)
+		assert.Contains(t, err.Error(), "demo status reader")
+	})
+
+	t.Run("demo reset service error", func(t *testing.T) {
+		oldStatusReader := newDemoStatusReader
+		oldResetService := newDemoResetService
+		defer func() {
+			newDemoStatusReader = oldStatusReader
+			newDemoResetService = oldResetService
+		}()
+		newDemoStatusReader = func(*pgxpool.Pool) (demo.StatusReader, error) {
+			return fakeDemoStatusReader{}, nil
+		}
+		newDemoResetService = func(context.Context, *pgxpool.Pool, demo.SeedScriptFunc) (*demo.ResetService, error) {
+			return nil, errors.New("reset failed")
+		}
+
+		app, err := buildProductionAPIApplication(context.Background(), cfg, (*pgxpool.Pool)(nil), scheduler.DefaultConfig())
+
+		require.Error(t, err)
+		assert.Nil(t, app)
+		assert.Contains(t, err.Error(), "demo reset service")
+	})
+
+	t.Run("db backed services still require usable pool", func(t *testing.T) {
+		oldStatusReader := newDemoStatusReader
+		oldResetService := newDemoResetService
+		defer func() {
+			newDemoStatusReader = oldStatusReader
+			newDemoResetService = oldResetService
+		}()
+		newDemoStatusReader = func(*pgxpool.Pool) (demo.StatusReader, error) {
+			return fakeDemoStatusReader{}, nil
+		}
+		newDemoResetService = func(_ context.Context, _ *pgxpool.Pool, seed demo.SeedScriptFunc) (*demo.ResetService, error) {
+			return demo.NewResetServiceWithRepository(fakeDemoResetRepository{}, seed), nil
+		}
+
+		schedulerConfig := scheduler.DefaultConfig()
+		schedulerConfig.Enabled = false
+		assert.Panics(t, func() {
+			_, _ = buildProductionAPIApplication(context.Background(), cfg, (*pgxpool.Pool)(nil), schedulerConfig)
+		})
+	})
+}
+
+func TestLoadSchedulerConfigBranches(t *testing.T) {
+	cfg := loadSchedulerConfig(func(key string) string {
+		values := map[string]string{
+			"RECURRING_INVOICE_SCHEDULE":                  "0 4 * * *",
+			"RECURRING_JOURNAL_ENTRY_SCHEDULE":            "0 5 * * *",
+			"DOCUMENT_RETENTION_REMINDER_SCHEDULE":        "0 6 * * *",
+			"DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS":    "60",
+			"DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING": "true",
+			"SCHEDULER_ENABLED":                           "false",
+		}
+		return values[key]
+	})
+	assert.Equal(t, "0 4 * * *", cfg.RecurringInvoiceSchedule)
+	assert.Equal(t, "0 5 * * *", cfg.RecurringJournalEntrySchedule)
+	assert.Equal(t, "0 6 * * *", cfg.DocumentRetentionReminderSchedule)
+	assert.Equal(t, 60, cfg.DocumentRetentionReminderHorizonDays)
+	assert.True(t, cfg.DocumentRetentionReminderIncludeMissing)
+	assert.False(t, cfg.Enabled)
+
+	defaults := scheduler.DefaultConfig()
+	cfg = loadSchedulerConfig(func(key string) string {
+		values := map[string]string{
+			"DOCUMENT_RETENTION_REMINDER_HORIZON_DAYS":    "-1",
+			"DOCUMENT_RETENTION_REMINDER_INCLUDE_MISSING": "not-bool",
+		}
+		return values[key]
+	})
+	assert.Equal(t, defaults.DocumentRetentionReminderHorizonDays, cfg.DocumentRetentionReminderHorizonDays)
+	assert.Equal(t, defaults.DocumentRetentionReminderIncludeMissing, cfg.DocumentRetentionReminderIncludeMissing)
+	assert.Equal(t, defaults.Enabled, cfg.Enabled)
 }
 
 func TestLoadDocumentRetentionReminderPolicy(t *testing.T) {

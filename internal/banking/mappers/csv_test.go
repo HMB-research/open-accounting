@@ -50,10 +50,22 @@ func TestParseCSVRejectsEmptyAndMalformedContent(t *testing.T) {
 	_, err = ParseCSV("date,amount\n2026-03-15,\"10", "statement")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "read statement CSV row 2")
+
+	_, err = ParseCSV("\"date", "statement")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read statement CSV header")
 }
 
 func TestNormalizeHeaderRemovesPunctuationAndRepeatedSeparators(t *testing.T) {
 	assert.Equal(t, "beneficiarys_remitters_account", NormalizeHeader(" Beneficiary’s/remitter's account "))
 	assert.Equal(t, "debit_credit_d_c", NormalizeHeader("Debit/Credit (D/C)"))
 	assert.Equal(t, "konto_teenusepakkuja_viide", NormalizeHeader("Konto teenusepakkuja viide"))
+	assert.Equal(t, "account_ref", NormalizeHeader(" `Account´ -- Ref. "))
+}
+
+func TestFieldIgnoresMissingAndShortRecords(t *testing.T) {
+	index := BuildHeaderIndex([]string{"date", "description"})
+
+	assert.Equal(t, "", Field([]string{"2026-03-15"}, index, "description"))
+	assert.Equal(t, "", Field([]string{"2026-03-15"}, index, "missing"))
 }

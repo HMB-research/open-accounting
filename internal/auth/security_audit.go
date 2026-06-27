@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -49,9 +48,11 @@ type SecurityAuditService struct {
 	now func() time.Time
 }
 
+var marshalSecurityAuditMetadata = json.Marshal
+
 // NewSecurityAuditService creates a PostgreSQL-backed security audit service.
 func NewSecurityAuditService(pool *pgxpool.Pool) *SecurityAuditService {
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create security audit GORM repository: %w", err))
 	}
@@ -79,7 +80,7 @@ func (s *SecurityAuditService) RecordEvent(ctx context.Context, event *SecurityA
 	if event.Metadata == nil {
 		event.Metadata = map[string]string{}
 	}
-	metadataJSON, err := json.Marshal(event.Metadata)
+	metadataJSON, err := marshalSecurityAuditMetadata(event.Metadata)
 	if err != nil {
 		return fmt.Errorf("marshal security audit metadata: %w", err)
 	}

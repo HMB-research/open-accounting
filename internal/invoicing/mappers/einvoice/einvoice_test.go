@@ -99,9 +99,19 @@ func TestParseRejectsInvalidDocuments(t *testing.T) {
 			want:    "InvoiceDate must use YYYY-MM-DD",
 		},
 		{
+			name:    "missing invoice date",
+			content: minimalEInvoice("INV-MISSING-DATE", "", validInvoiceItemXML(), ""),
+			want:    "InvoiceDate must use YYYY-MM-DD",
+		},
+		{
 			name:    "invalid due date",
 			content: minimalEInvoice("INV-BAD-DUE", "<InvoiceDate>2026-03-15</InvoiceDate><DueDate>bad</DueDate>", validInvoiceItemXML(), ""),
 			want:    "DueDate must use YYYY-MM-DD",
+		},
+		{
+			name:    "invalid item entry",
+			content: minimalEInvoice("INV-BAD-LINE", "<InvoiceDate>2026-03-15</InvoiceDate>", "<InvoiceItem><InvoiceItemGroup><ItemEntry></ItemEntry></InvoiceItemGroup></InvoiceItem>", ""),
+			want:    "Description is required",
 		},
 		{
 			name:    "invalid payment due date",
@@ -230,6 +240,29 @@ func TestNormalizeLineDerivesPriceAndDiscount(t *testing.T) {
 	assert.True(t, line.UnitPrice.Equal(decimal.RequireFromString("99.99")))
 	assert.True(t, line.DiscountPercent.Equal(decimal.NewFromInt(10)))
 	assert.True(t, line.VATRate.Equal(decimal.NewFromInt(20)))
+}
+
+func TestNormalizeLineDerivesNetPriceFromItemTotal(t *testing.T) {
+	line, err := normalizeLine(itemEntryXML{
+		Description: "Total only",
+		Details:     []detailInfoXML{{Amount: "2"}},
+		ItemTotal:   "244.00",
+		VAT:         vatXML{Rate: "22"},
+	}, "INV-TOTAL")
+
+	require.NoError(t, err)
+	assert.True(t, line.UnitPrice.Equal(decimal.NewFromInt(100)))
+	assert.True(t, line.Quantity.Equal(decimal.NewFromInt(2)))
+}
+
+func TestAdditionalInfoNotesKeepsNamelessContent(t *testing.T) {
+	notes := additionalInfoNotes([]extensionXML{
+		{Name: " Memo ", Content: " First "},
+		{Content: " Second "},
+		{Name: "Ignored"},
+	})
+
+	assert.Equal(t, "Memo: First\nSecond", notes)
 }
 
 func TestNormalizeCurrencyFallbacks(t *testing.T) {

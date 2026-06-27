@@ -18,6 +18,7 @@ const (
 )
 
 var bicPattern = regexp.MustCompile(`^[A-Z0-9]{8}([A-Z0-9]{3})?$`)
+var marshalSEPAXML = xml.MarshalIndent
 
 // SEPACreditTransferLine is one outgoing SEPA credit transfer in a payment file.
 type SEPACreditTransferLine struct {
@@ -155,7 +156,7 @@ func BuildSEPAExport(req *SEPAExportRequest) (*SEPAExportResult, error) {
 		},
 	}
 
-	payload, err := xml.MarshalIndent(doc, "", "  ")
+	payload, err := marshalSEPAXML(doc, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal SEPA XML: %w", err)
 	}

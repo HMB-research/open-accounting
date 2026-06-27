@@ -19,6 +19,7 @@ import (
 var (
 	errApprovedKMDSubmissionEvidenceRequired = errors.New("approved KMD submission evidence is required")
 	errApprovedKMDAcceptanceEvidenceRequired = errors.New("approved KMD acceptance evidence is required")
+	exportKMDToXML                           = tax.ExportKMDToXML
 )
 
 // HandleGenerateKMD generates a KMD declaration for a period
@@ -380,7 +381,7 @@ func (h *Handlers) HandleExportKMD(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	xmlBytes, err := tax.ExportKMDToXML(decl, currentTenant.Settings.RegCode)
+	xmlBytes, err := exportKMDToXML(decl, currentTenant.Settings.RegCode)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

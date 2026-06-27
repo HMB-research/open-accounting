@@ -29,6 +29,10 @@ type Repository interface {
 // ErrQuoteNotFound is returned when a quote is not found
 var ErrQuoteNotFound = fmt.Errorf("quote not found")
 
+var errQuotesRepositoryDatabaseNotConfigured = errors.New("quotes repository database is not configured")
+
+var newGormDBFromPool = database.NewGormDBFromPool
+
 // GORMRepository implements Repository with the shared ORM layer.
 type GORMRepository struct {
 	db *gorm.DB
@@ -38,7 +42,7 @@ func NewRepository(db *pgxpool.Pool) *GORMRepository {
 	if db == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), db)
+	gormDB, err := newGormDBFromPool(context.Background(), db)
 	if err != nil {
 		panic(fmt.Errorf("create quotes GORM repository: %w", err))
 	}
@@ -49,13 +53,28 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) dbWithContext(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, errQuotesRepositoryDatabaseNotConfigured
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
 }
 
 // Create inserts a new quote with its lines
 func (r *GORMRepository) Create(ctx context.Context, schemaName string, quote *Quote) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
 		quotesTable, err := database.TenantTable(tx, schemaName, "quotes")
 		if err != nil {
 			return fmt.Errorf("qualify quotes table: %w", err)
@@ -68,10 +87,7 @@ func (r *GORMRepository) Create(ctx context.Context, schemaName string, quote *Q
 			return nil
 		}
 
-		linesTable, err := database.TenantTable(tx, schemaName, "quote_lines")
-		if err != nil {
-			return fmt.Errorf("qualify quote lines table: %w", err)
-		}
+		linesTable, _ := database.TenantTable(tx, schemaName, "quote_lines")
 		lineModels := make([]models.QuoteLine, len(quote.Lines))
 		for i := range quote.Lines {
 			quote.Lines[i].QuoteID = quote.ID
@@ -152,7 +168,11 @@ func (r *GORMRepository) List(ctx context.Context, schemaName, tenantID string, 
 
 // Update updates a quote and its lines
 func (r *GORMRepository) Update(ctx context.Context, schemaName string, quote *Quote) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	db, err := r.dbWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
 		quotesTable, err := database.TenantTable(tx, schemaName, "quotes")
 		if err != nil {
 			return fmt.Errorf("qualify quotes table: %w", err)
@@ -177,10 +197,7 @@ func (r *GORMRepository) Update(ctx context.Context, schemaName string, quote *Q
 			return ErrQuoteNotFound
 		}
 
-		linesTable, err := database.TenantTable(tx, schemaName, "quote_lines")
-		if err != nil {
-			return fmt.Errorf("qualify quote lines table: %w", err)
-		}
+		linesTable, _ := database.TenantTable(tx, schemaName, "quote_lines")
 		if err := linesTable.Where("quote_id = ?", quote.ID).Delete(&models.QuoteLine{}).Error; err != nil {
 			return fmt.Errorf("delete quote lines: %w", err)
 		}

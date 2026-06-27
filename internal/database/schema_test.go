@@ -39,6 +39,16 @@ func TestQuoteIdentifier(t *testing.T) {
 	}
 }
 
+func TestQuoteIdentifierRejectsInvalidIdentifier(t *testing.T) {
+	quoted, err := QuoteIdentifier("tenant-demo")
+	if err == nil {
+		t.Fatal("expected invalid identifier error")
+	}
+	if quoted != "" {
+		t.Fatalf("expected empty quoted identifier on error, got %q", quoted)
+	}
+}
+
 func TestQualifiedTable(t *testing.T) {
 	qualified, err := QualifiedTable("tenant_demo1", "contacts")
 	if err != nil {
@@ -46,5 +56,25 @@ func TestQualifiedTable(t *testing.T) {
 	}
 	if qualified != `"tenant_demo1"."contacts"` {
 		t.Fatalf("unexpected qualified table: %s", qualified)
+	}
+}
+
+func TestQualifiedTableRejectsInvalidSchema(t *testing.T) {
+	qualified, err := QualifiedTable("tenant-demo", "contacts")
+	if err == nil {
+		t.Fatal("expected invalid schema error")
+	}
+	if qualified != "" {
+		t.Fatalf("expected empty qualified table on error, got %q", qualified)
+	}
+}
+
+func TestQualifiedTableRejectsInvalidTable(t *testing.T) {
+	qualified, err := QualifiedTable("tenant_demo", "bad-table")
+	if err == nil {
+		t.Fatal("expected invalid table error")
+	}
+	if qualified != "" {
+		t.Fatalf("expected empty qualified table on error, got %q", qualified)
 	}
 }

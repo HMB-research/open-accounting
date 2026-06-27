@@ -16,13 +16,35 @@ type GORMRepository struct {
 	db *gorm.DB
 }
 
+var errRepositoryDatabaseNotConfigured = errors.New("payments repository database is not configured")
+
 // NewGORMRepository creates a new GORM payments repository
 func NewGORMRepository(db *gorm.DB) *GORMRepository {
 	return &GORMRepository{db: db}
 }
 
+func (r *GORMRepository) gormDB(ctx context.Context) (*gorm.DB, error) {
+	if r == nil || r.db == nil {
+		return nil, errRepositoryDatabaseNotConfigured
+	}
+	return r.db.WithContext(ctx), nil
+}
+
 func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName string) (*gorm.DB, error) {
-	return database.TenantTable(r.db.WithContext(ctx), schemaName, tableName)
+	db, err := r.gormDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.TenantTable(db, schemaName, tableName)
+}
+
+func qualifiedTableAfterSchemaValidated(schemaName, tableName string) string {
+	qualifiedTable, _ := database.QualifiedTable(schemaName, tableName)
+	return qualifiedTable
+}
+
+func tenantTableAfterSchemaValidated(db *gorm.DB, schemaName, tableName string) *gorm.DB {
+	return db.Session(&gorm.Session{NewDB: true}).Table(qualifiedTableAfterSchemaValidated(schemaName, tableName))
 }
 
 // Create inserts a new payment
@@ -47,14 +69,9 @@ func (r *GORMRepository) CreateReversal(ctx context.Context, schemaName string, 
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		paymentsDB, err := database.TenantTable(tx.WithContext(ctx), schemaName, "payments")
-		if err != nil {
-			return err
-		}
-		allocationsDB, err := database.TenantTable(tx.WithContext(ctx), schemaName, "payment_allocations")
-		if err != nil {
-			return err
-		}
+		tx = tx.WithContext(ctx)
+		paymentsDB := tenantTableAfterSchemaValidated(tx, schemaName, "payments")
+		allocationsDB := tenantTableAfterSchemaValidated(tx, schemaName, "payment_allocations")
 
 		if err := paymentsDB.Create(paymentToModel(reversal)).Error; err != nil {
 			return fmt.Errorf("create reversal payment: %w", err)
@@ -66,10 +83,7 @@ func (r *GORMRepository) CreateReversal(ctx context.Context, schemaName string, 
 			}
 		}
 
-		paymentsUpdateDB, err := database.TenantTable(tx.WithContext(ctx), schemaName, "payments")
-		if err != nil {
-			return err
-		}
+		paymentsUpdateDB := tenantTableAfterSchemaValidated(tx, schemaName, "payments")
 		result := paymentsUpdateDB.
 			Model(&models.Payment{}).
 			Where("id = ? AND tenant_id = ? AND reversed_by_payment_id IS NULL", originalPaymentID, reversal.TenantID).
@@ -208,22 +222,24 @@ func (r *GORMRepository) GetNextPaymentNumber(ctx context.Context, schemaName, t
 
 // GetUnallocatedPayments returns payments with unallocated amounts
 func (r *GORMRepository) GetUnallocatedPayments(ctx context.Context, schemaName, tenantID string, paymentType PaymentType) ([]Payment, error) {
+	db, err := r.gormDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	paymentsTable, err := database.QualifiedTable(schemaName, "payments")
 	if err != nil {
 		return nil, err
 	}
-	allocationsTable, err := database.QualifiedTable(schemaName, "payment_allocations")
-	if err != nil {
-		return nil, err
-	}
+	allocationsTable := qualifiedTableAfterSchemaValidated(schemaName, "payment_allocations")
 
 	var paymentModels []models.Payment
-	allocatedAmount := r.db.WithContext(ctx).
+	allocatedAmount := db.
 		Table(allocationsTable + " AS pa").
 		Select("SUM(pa.amount)").
 		Where("pa.payment_id = p.id")
 
-	err = r.db.WithContext(ctx).
+	err = db.
 		Table(paymentsTable+" AS p").
 		Select("p.*").
 		Where("p.tenant_id = ? AND p.payment_type = ?", tenantID, paymentType).

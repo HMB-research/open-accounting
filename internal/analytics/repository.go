@@ -54,11 +54,13 @@ type GORMRepository struct {
 	db *gorm.DB
 }
 
+var newAnalyticsGormDBFromPool = database.NewGormDBFromPool
+
 func NewRepository(pool *pgxpool.Pool) *GORMRepository {
 	if pool == nil {
 		return &GORMRepository{}
 	}
-	gormDB, err := database.NewGormDBFromPool(context.Background(), pool)
+	gormDB, err := newAnalyticsGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create analytics GORM repository: %w", err))
 	}
@@ -83,8 +85,10 @@ func (r *GORMRepository) tenantTable(ctx context.Context, schemaName, tableName,
 	return r.db.WithContext(ctx).Table(qualifiedTable), nil
 }
 
-func qualifiedTenantTable(schemaName, tableName string) (string, error) {
-	return database.QualifiedTable(schemaName, tableName)
+func qualifiedTenantTable(schemaName, tableName string) string {
+	quotedSchema, _ := database.QuoteIdentifier(schemaName)
+	quotedTable, _ := database.QuoteIdentifier(tableName)
+	return quotedSchema + "." + quotedTable
 }
 
 // GetRevenueExpenses retrieves revenue and expenses for a period
@@ -93,14 +97,8 @@ func (r *GORMRepository) GetRevenueExpenses(ctx context.Context, schemaName stri
 	if err != nil {
 		return decimal.Zero, decimal.Zero, fmt.Errorf("qualify journal entry lines table: %w", err)
 	}
-	journalEntriesTable, err := qualifiedTenantTable(schemaName, "journal_entries")
-	if err != nil {
-		return decimal.Zero, decimal.Zero, fmt.Errorf("qualify journal entries table: %w", err)
-	}
-	accountsTable, err := qualifiedTenantTable(schemaName, "accounts")
-	if err != nil {
-		return decimal.Zero, decimal.Zero, fmt.Errorf("qualify accounts table: %w", err)
-	}
+	journalEntriesTable := qualifiedTenantTable(schemaName, "journal_entries")
+	accountsTable := qualifiedTenantTable(schemaName, "accounts")
 
 	var row struct {
 		Revenue  decimal.Decimal
@@ -196,14 +194,8 @@ func (r *GORMRepository) GetMonthlyRevenueExpenses(ctx context.Context, schemaNa
 	if err != nil {
 		return nil, fmt.Errorf("qualify journal entry lines table: %w", err)
 	}
-	journalEntriesTable, err := qualifiedTenantTable(schemaName, "journal_entries")
-	if err != nil {
-		return nil, fmt.Errorf("qualify journal entries table: %w", err)
-	}
-	accountsTable, err := qualifiedTenantTable(schemaName, "accounts")
-	if err != nil {
-		return nil, fmt.Errorf("qualify accounts table: %w", err)
-	}
+	journalEntriesTable := qualifiedTenantTable(schemaName, "journal_entries")
+	accountsTable := qualifiedTenantTable(schemaName, "accounts")
 
 	var rows []struct {
 		Month    time.Time
@@ -302,10 +294,7 @@ func (r *GORMRepository) GetAgingByContact(ctx context.Context, schemaName, invo
 	if err != nil {
 		return nil, fmt.Errorf("qualify invoices table: %w", err)
 	}
-	contactsTable, err := qualifiedTenantTable(schemaName, "contacts")
-	if err != nil {
-		return nil, fmt.Errorf("qualify contacts table: %w", err)
-	}
+	contactsTable := qualifiedTenantTable(schemaName, "contacts")
 
 	var rows []struct {
 		ContactID   string
@@ -363,10 +352,7 @@ func (r *GORMRepository) GetTopCustomers(ctx context.Context, schemaName string,
 	if err != nil {
 		return nil, fmt.Errorf("qualify contacts table: %w", err)
 	}
-	invoicesTable, err := qualifiedTenantTable(schemaName, "invoices")
-	if err != nil {
-		return nil, fmt.Errorf("qualify invoices table: %w", err)
-	}
+	invoicesTable := qualifiedTenantTable(schemaName, "invoices")
 
 	var items []TopItem
 	if err := db.
@@ -432,10 +418,7 @@ func (r *GORMRepository) recentInvoiceActivity(ctx context.Context, schemaName s
 	if err != nil {
 		return nil, fmt.Errorf("qualify invoices table: %w", err)
 	}
-	contactsTable, err := qualifiedTenantTable(schemaName, "contacts")
-	if err != nil {
-		return nil, fmt.Errorf("qualify contacts table: %w", err)
-	}
+	contactsTable := qualifiedTenantTable(schemaName, "contacts")
 
 	var rows []struct {
 		ID            string
@@ -489,10 +472,7 @@ func (r *GORMRepository) recentPaymentActivity(ctx context.Context, schemaName s
 	if err != nil {
 		return nil, fmt.Errorf("qualify payments table: %w", err)
 	}
-	contactsTable, err := qualifiedTenantTable(schemaName, "contacts")
-	if err != nil {
-		return nil, fmt.Errorf("qualify contacts table: %w", err)
-	}
+	contactsTable := qualifiedTenantTable(schemaName, "contacts")
 
 	var rows []struct {
 		ID          string
@@ -542,10 +522,7 @@ func (r *GORMRepository) recentJournalEntryActivity(ctx context.Context, schemaN
 	if err != nil {
 		return nil, fmt.Errorf("qualify journal entries table: %w", err)
 	}
-	linesTable, err := qualifiedTenantTable(schemaName, "journal_entry_lines")
-	if err != nil {
-		return nil, fmt.Errorf("qualify journal entry lines table: %w", err)
-	}
+	linesTable := qualifiedTenantTable(schemaName, "journal_entry_lines")
 
 	var rows []struct {
 		ID        string

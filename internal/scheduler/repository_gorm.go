@@ -33,6 +33,10 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository {
 
 // ListActiveTenants returns all active tenants for scheduled job processing
 func (r *GORMRepository) ListActiveTenants(ctx context.Context) ([]TenantInfo, error) {
+	if r.db == nil {
+		return nil, fmt.Errorf("scheduler repository database is not configured")
+	}
+
 	var tenants []tenantModel
 	err := r.db.WithContext(ctx).
 		Where("is_active = ?", true).

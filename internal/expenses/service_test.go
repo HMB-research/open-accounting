@@ -44,6 +44,7 @@ func TestNewService(t *testing.T) {
 	assert.NotNil(t, service)
 	assert.NotNil(t, service.repo)
 	assert.NotNil(t, service.accounting)
+	assert.WithinDuration(t, time.Now().UTC(), service.now(), time.Second)
 }
 
 func TestServiceCreateExpenseDefaultsAndValidation(t *testing.T) {
@@ -280,6 +281,19 @@ func TestBuildExpenseRemediationActions(t *testing.T) {
 	assert.Nil(t, BuildExpenseRemediationActions(nil))
 }
 
+func TestBuildExpenseRemediationActionsFallbackIdentifiers(t *testing.T) {
+	actions := BuildExpenseRemediationActions(&Expense{
+		Status:          StatusDraft,
+		RequiresReceipt: false,
+	})
+
+	require.Len(t, actions, 1)
+	assert.Equal(t, "expense_submit_for_approval", actions[0].Code)
+	assert.Equal(t, "/expenses", actions[0].UIPath)
+	assert.Contains(t, actions[0].Message, "<expense-id>")
+	assert.Contains(t, actions[0].CLICommand, "<expense-id>")
+}
+
 func TestServicePostExpenseCreatesAndPostsBalancedJournalEntry(t *testing.T) {
 	repo := newMemoryRepository()
 	accountingSvc := newFakeAccountingPoster()
@@ -305,6 +319,25 @@ func TestServicePostExpenseCreatesAndPostsBalancedJournalEntry(t *testing.T) {
 	require.Len(t, accountingSvc.createdRequest.Lines, 2)
 	assert.True(t, accountingSvc.createdRequest.Lines[0].DebitAmount.Equal(decimal.RequireFromString("120.50")))
 	assert.True(t, accountingSvc.createdRequest.Lines[1].CreditAmount.Equal(decimal.RequireFromString("120.50")))
+}
+
+func TestServicePostExpenseUsesFallbackJournalDescription(t *testing.T) {
+	repo := newMemoryRepository()
+	accountingSvc := newFakeAccountingPoster()
+	service := NewServiceWithRepository(repo, accountingSvc, &fakeEvidenceEvaluator{compliant: true})
+	service.now = fixedExpenseNow
+	expense := approvedTestExpense(t, service)
+	expense.Description = " "
+	require.NoError(t, repo.Update(context.Background(), "tenant_acme", expense))
+
+	_, err := service.PostExpense(context.Background(), "tenant_acme", "tenant-1", expense.ID, &ExpenseActionRequest{UserID: "user-3"})
+
+	require.NoError(t, err)
+	require.NotNil(t, accountingSvc.createdRequest)
+	assert.Equal(t, "Expense EXP-00001 - Office Store", accountingSvc.createdRequest.Description)
+	require.Len(t, accountingSvc.createdRequest.Lines, 2)
+	assert.Equal(t, "Expense EXP-00001 - Office Store", accountingSvc.createdRequest.Lines[0].Description)
+	assert.Equal(t, "Expense EXP-00001 - Office Store", accountingSvc.createdRequest.Lines[1].Description)
 }
 
 func TestServicePostExpenseErrors(t *testing.T) {
@@ -413,6 +446,31 @@ func TestServicePostExpenseValidatesAccountTypes(t *testing.T) {
 
 	_, err = service.PostExpense(context.Background(), "tenant_acme", "tenant-1", expense.ID, &ExpenseActionRequest{UserID: "user-3"})
 	require.ErrorIs(t, err, ErrExpenseAccountingInvalid)
+}
+
+func TestServicePostExpenseValidatesPaymentAccountTypes(t *testing.T) {
+	repo := newMemoryRepository()
+	accountingSvc := newFakeAccountingPoster()
+	accountingSvc.accounts["cash-account"] = &accounting.Account{ID: "cash-account", AccountType: accounting.AccountTypeExpense}
+	service := NewServiceWithRepository(repo, accountingSvc, &fakeEvidenceEvaluator{compliant: true})
+	service.now = fixedExpenseNow
+	expense := approvedTestExpense(t, service)
+
+	_, err := service.PostExpense(context.Background(), "tenant_acme", "tenant-1", expense.ID, &ExpenseActionRequest{UserID: "user-3"})
+
+	require.ErrorIs(t, err, ErrExpenseAccountingInvalid)
+	assert.Contains(t, err.Error(), "payment account must be ASSET or LIABILITY")
+}
+
+func TestServiceActionRequiresRequest(t *testing.T) {
+	service := NewServiceWithRepository(newMemoryRepository(), newFakeAccountingPoster(), nil)
+	service.now = fixedExpenseNow
+	expense := createTestExpense(t, service)
+
+	_, err := service.SubmitExpense(context.Background(), "tenant_acme", "tenant-1", expense.ID, nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "action request is required")
 }
 
 func TestServiceReceiptPolicyErrors(t *testing.T) {

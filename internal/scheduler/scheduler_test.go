@@ -11,15 +11,18 @@ import (
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/recurring"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // MockRepository implements Repository for testing
 type MockRepository struct {
-	tenants              []TenantInfo
-	listActiveTenantsErr error
+	tenants                []TenantInfo
+	listActiveTenantsErr   error
+	listActiveTenantsCalls int
 }
 
 func (m *MockRepository) ListActiveTenants(ctx context.Context) ([]TenantInfo, error) {
+	m.listActiveTenantsCalls++
 	if m.listActiveTenantsErr != nil {
 		return nil, m.listActiveTenantsErr
 	}
@@ -181,6 +184,18 @@ func TestNewScheduler(t *testing.T) {
 	}
 }
 
+func TestNewSchedulerPanicsWhenPoolCannotPing(t *testing.T) {
+	pool := newUnreachableSchedulerPool(t)
+	defer pool.Close()
+
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("NewScheduler did not panic")
+		}
+	}()
+	NewScheduler(pool, nil, nil, DefaultConfig())
+}
+
 func TestScheduler_IsRunning_Initially(t *testing.T) {
 	config := DefaultConfig()
 	scheduler := NewScheduler(nil, nil, nil, config)
@@ -223,6 +238,32 @@ func TestScheduler_StartEnabled(t *testing.T) {
 
 	// Cleanup
 	scheduler.Stop()
+}
+
+func TestScheduler_StartRegistersOptionalJobs(t *testing.T) {
+	config := DefaultConfig()
+	mockRepo := &MockRepository{}
+	scheduler := NewSchedulerWithRepository(
+		mockRepo,
+		NewMockRecurringService(),
+		NewMockReminderService(),
+		config,
+	)
+	scheduler.SetRecurringJournalEntryService(NewMockJournalEntryService())
+	scheduler.SetDocumentRetentionReminderService(NewMockDocumentRetentionReminderService())
+
+	err := scheduler.Start()
+	if err != nil {
+		t.Fatalf("Start() returned error: %v", err)
+	}
+	defer scheduler.Stop()
+
+	if !scheduler.IsRunning() {
+		t.Fatal("scheduler should be running after Start()")
+	}
+	if entries := scheduler.cron.Entries(); len(entries) != 4 {
+		t.Fatalf("expected recurring invoice, journal, reminder, and retention jobs, got %d", len(entries))
+	}
 }
 
 func TestScheduler_StartTwice(t *testing.T) {
@@ -419,6 +460,45 @@ func TestScheduler_InvalidScheduleFormat(t *testing.T) {
 	}
 }
 
+func TestScheduler_InvalidReminderScheduleFormat(t *testing.T) {
+	config := DefaultConfig()
+	config.ReminderSchedule = "invalid cron expression"
+	scheduler := NewSchedulerWithRepository(
+		&MockRepository{},
+		NewMockRecurringService(),
+		NewMockReminderService(),
+		config,
+	)
+
+	err := scheduler.Start()
+	if err == nil {
+		t.Fatal("Start() should return error for invalid reminder cron expression")
+	}
+	if !strings.Contains(err.Error(), "reminder job") {
+		t.Fatalf("expected reminder job error, got %v", err)
+	}
+}
+
+func TestScheduler_InvalidDocumentRetentionReminderScheduleFormat(t *testing.T) {
+	config := DefaultConfig()
+	config.DocumentRetentionReminderSchedule = "invalid cron expression"
+	scheduler := NewSchedulerWithRepository(
+		&MockRepository{},
+		NewMockRecurringService(),
+		NewMockReminderService(),
+		config,
+	)
+	scheduler.SetDocumentRetentionReminderService(NewMockDocumentRetentionReminderService())
+
+	err := scheduler.Start()
+	if err == nil {
+		t.Fatal("Start() should return error for invalid document retention reminder cron expression")
+	}
+	if !strings.Contains(err.Error(), "document retention reminder job") {
+		t.Fatalf("expected document retention reminder job error, got %v", err)
+	}
+}
+
 func TestScheduler_ConcurrentAccess(t *testing.T) {
 	config := DefaultConfig()
 	scheduler := NewScheduler(nil, nil, nil, config)
@@ -465,6 +545,22 @@ func TestScheduler_StopMultipleTimes(t *testing.T) {
 	if ctx2 == nil {
 		t.Error("second Stop() returned nil context")
 	}
+}
+
+func newUnreachableSchedulerPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+
+	config, err := pgxpool.ParseConfig("postgres://open_accounting:open_accounting@127.0.0.1:1/open_accounting?sslmode=disable")
+	if err != nil {
+		t.Fatalf("parse pgxpool config: %v", err)
+	}
+	config.ConnConfig.ConnectTimeout = 10 * time.Millisecond
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		t.Fatalf("create pgxpool: %v", err)
+	}
+	return pool
 }
 
 func TestScheduler_ScheduleFormatWithSeconds(t *testing.T) {
@@ -753,10 +849,12 @@ func TestScheduler_RunDocumentRetentionRemindersNow_ContinuesOnTenantError(t *te
 	mockRetention := NewMockDocumentRetentionReminderService()
 	mockRetention.errors["tenant-1"] = errors.New("retention repository unavailable")
 	mockRetention.results["tenant-2"] = documents.RetentionReminderDeliveryResult{
-		TenantID:     "tenant-2",
-		ActionsFound: 1,
-		Failed:       true,
-		ErrorMessage: "smtp unavailable",
+		TenantID:         "tenant-2",
+		ActionsFound:     1,
+		Failed:           true,
+		Escalated:        true,
+		EscalationReason: "document owner has no deliverable email address",
+		ErrorMessage:     "smtp unavailable",
 	}
 
 	scheduler := NewSchedulerWithRepository(mockRepo, nil, nil, DefaultConfig())
@@ -765,6 +863,19 @@ func TestScheduler_RunDocumentRetentionRemindersNow_ContinuesOnTenantError(t *te
 
 	if len(mockRetention.calls) != 2 {
 		t.Fatalf("expected both tenants to be processed, got %d calls", len(mockRetention.calls))
+	}
+}
+
+func TestScheduler_RunJournalEntriesNow_NoService(t *testing.T) {
+	mockRepo := &MockRepository{
+		tenants: []TenantInfo{{ID: "tenant-1", SchemaName: "tenant_1"}},
+	}
+	scheduler := NewSchedulerWithRepository(mockRepo, nil, nil, DefaultConfig())
+
+	scheduler.RunJournalEntriesNow()
+
+	if mockRepo.listActiveTenantsCalls != 0 {
+		t.Fatalf("expected no repository calls without journal service, got %d", mockRepo.listActiveTenantsCalls)
 	}
 }
 
@@ -810,6 +921,17 @@ func TestScheduler_RunJournalEntriesNow_WithTenantResults(t *testing.T) {
 	}
 	if mockJournal.calls[1].periodLockDate != nil {
 		t.Fatalf("expected no lock date for second tenant, got %#v", mockJournal.calls[1].periodLockDate)
+	}
+}
+
+func TestParseTenantPeriodLockDate_InvalidDate(t *testing.T) {
+	lockDate := parseTenantPeriodLockDate(TenantInfo{
+		ID:             "tenant-1",
+		PeriodLockDate: "2026-02-31",
+	})
+
+	if lockDate != nil {
+		t.Fatalf("expected invalid period lock date to be ignored, got %v", lockDate)
 	}
 }
 

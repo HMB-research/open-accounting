@@ -24,6 +24,11 @@ func TestSanitize_HidesInternalDetails(t *testing.T) {
 			expected: "An internal error occurred",
 		},
 		{
+			name:     "generic read path",
+			input:    "read /mnt/backups/company.dump: permission denied",
+			expected: "An internal error occurred",
+		},
+		{
 			name:     "safe validation error",
 			input:    "name is required",
 			expected: "name is required",

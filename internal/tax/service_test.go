@@ -167,6 +167,26 @@ func TestService_MarkKMDStatusTransitionsErrors(t *testing.T) {
 	require.ErrorContains(t, err, "status failed")
 }
 
+func TestService_MarkKMDAcceptedLookupErrors(t *testing.T) {
+	t.Run("invalid period", func(t *testing.T) {
+		service := NewServiceWithRepository(&MockRepository{})
+
+		err := service.MarkKMDAccepted(context.Background(), "tenant-1", "tenant_schema", "bad-year", "3")
+
+		require.ErrorContains(t, err, "invalid year")
+	})
+
+	t.Run("repository lookup error", func(t *testing.T) {
+		service := NewServiceWithRepository(&MockRepository{
+			getDeclarationErr: errors.New("lookup failed"),
+		})
+
+		err := service.MarkKMDAccepted(context.Background(), "tenant-1", "tenant_schema", "2026", "3")
+
+		require.ErrorContains(t, err, "lookup failed")
+	})
+}
+
 func TestMapVATRateToKMDCode(t *testing.T) {
 	tests := []struct {
 		rate     decimal.Decimal
@@ -612,6 +632,43 @@ func TestService_GenerateKMDINF_Success(t *testing.T) {
 	assert.Equal(t, "tax_reports", report.RemediationActions[0].WorkspaceQueue)
 }
 
+func TestSummarizeKMDINFRowsIncludesUnknownParts(t *testing.T) {
+	summaries := summarizeKMDINFRows([]KMDINFReportRow{
+		{
+			Part:          KMDINFPartSales,
+			ContactID:     "contact-1",
+			TaxableAmount: decimal.NewFromInt(100),
+			VATAmount:     decimal.NewFromInt(22),
+			TotalAmount:   decimal.NewFromInt(122),
+		},
+		{
+			Part:          KMDINFPartSales,
+			ContactID:     "contact-1",
+			TaxableAmount: decimal.NewFromInt(50),
+			VATAmount:     decimal.NewFromInt(11),
+			TotalAmount:   decimal.NewFromInt(61),
+		},
+		{
+			Part:          KMDINFPart("C"),
+			ContactID:     "contact-2",
+			TaxableAmount: decimal.NewFromInt(25),
+			VATAmount:     decimal.NewFromInt(5),
+			TotalAmount:   decimal.NewFromInt(30),
+		},
+	})
+
+	require.Len(t, summaries, 3)
+	assert.Equal(t, KMDINFPartSales, summaries[0].Part)
+	assert.Equal(t, 1, summaries[0].PartnerCount)
+	assert.Equal(t, 2, summaries[0].InvoiceCount)
+	assert.True(t, summaries[0].TaxableAmount.Equal(decimal.NewFromInt(150)))
+	assert.Equal(t, KMDINFPartPurchases, summaries[1].Part)
+	assert.Equal(t, 0, summaries[1].PartnerCount)
+	assert.Equal(t, KMDINFPart("C"), summaries[2].Part)
+	assert.Equal(t, 1, summaries[2].PartnerCount)
+	assert.True(t, summaries[2].VATAmount.Equal(decimal.NewFromInt(5)))
+}
+
 func TestService_GenerateKMDINF_ValidationAndRepositoryErrors(t *testing.T) {
 	svc := NewServiceWithRepository(&MockRepository{})
 
@@ -695,6 +752,32 @@ func TestService_GenerateEUVATOSS_Success(t *testing.T) {
 	require.Len(t, report.RemediationActions, 1)
 	assert.Equal(t, "eu_vat_oss_review_required", report.RemediationActions[0].Code)
 	assert.Equal(t, "tax_reports", report.RemediationActions[0].WorkspaceQueue)
+}
+
+func TestNormalizeEUVATOSSRowsSortsRatesAndNamesCountries(t *testing.T) {
+	rows := normalizeEUVATOSSRows([]EUVATOSSReportRow{
+		{
+			CountryCode: " zz ",
+			VATRate:     decimal.NewFromInt(20),
+		},
+		{
+			CountryCode: "de",
+			VATRate:     decimal.NewFromInt(19),
+		},
+		{
+			CountryCode: "DE",
+			VATRate:     decimal.NewFromInt(7),
+		},
+	})
+
+	require.Len(t, rows, 3)
+	assert.Equal(t, "DE", rows[0].CountryCode)
+	assert.Equal(t, "Germany", rows[0].CountryName)
+	assert.True(t, rows[0].VATRate.Equal(decimal.NewFromInt(7)))
+	assert.Equal(t, "DE", rows[1].CountryCode)
+	assert.True(t, rows[1].VATRate.Equal(decimal.NewFromInt(19)))
+	assert.Equal(t, "ZZ", rows[2].CountryCode)
+	assert.Equal(t, "ZZ", rows[2].CountryName)
 }
 
 func TestService_GenerateEUVATOSS_ValidationAndRepositoryErrors(t *testing.T) {
