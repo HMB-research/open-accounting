@@ -17,7 +17,7 @@ func TestInventoryWave4ReleaseLotAllocationsSpansMultipleReservations(t *testing
 	req := &StockReservationRequest{
 		ProductID:   inventoryStockProductID,
 		WarehouseID: inventoryStockWarehouseID,
-		Reason:      "customer order cancelled",
+		Reason:      "customer order canceled",
 		UserID:      "user-1",
 	}
 	repo.LotReservations[inventoryLotReservationKey(inventoryStockProductID, inventoryStockWarehouseID, "LOT-1", "", "")] = &InventoryLotReservation{

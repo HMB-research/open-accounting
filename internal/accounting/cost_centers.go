@@ -303,14 +303,22 @@ func (r *CostCenterGORMRepository) Update(ctx context.Context, schemaName string
 
 // Delete deletes a cost center
 func (r *CostCenterGORMRepository) Delete(ctx context.Context, schemaName, tenantID, costCenterID string) error {
-	childrenTable, err := r.tenantTable(ctx, schemaName, "cost_centers")
-	if err != nil {
-		return fmt.Errorf("qualify cost centers table: %w", err)
+	if r.db == nil {
+		return fmt.Errorf("cost center repository database is not configured")
 	}
+
+	quotedSchema, err := database.QuoteIdentifier(schemaName)
+	if err != nil {
+		return fmt.Errorf("qualify cost center tables: %w", err)
+	}
+	costCentersTable := quotedSchema + `."cost_centers"`
+	costAllocationsTable := quotedSchema + `."cost_allocations"`
+	childrenTable := r.db.WithContext(ctx).Session(&gorm.Session{NewDB: true}).Table(costCentersTable)
+	allocationsTable := r.db.WithContext(ctx).Session(&gorm.Session{NewDB: true}).Table(costAllocationsTable)
 
 	// First check if there are any child cost centers
 	var childCount int64
-	if err := childrenTable.Model(&models.CostCenter{}).
+	if err := childrenTable.
 		Where("parent_id = ? AND tenant_id = ?", costCenterID, tenantID).
 		Count(&childCount).Error; err != nil {
 		return fmt.Errorf("check children: %w", err)
@@ -319,11 +327,9 @@ func (r *CostCenterGORMRepository) Delete(ctx context.Context, schemaName, tenan
 		return fmt.Errorf("cannot delete cost center with %d children", childCount)
 	}
 
-	allocationsTable, _ := r.tenantTable(ctx, schemaName, "cost_allocations")
-
 	// Check for allocations
 	var allocationCount int64
-	if err := allocationsTable.Model(&models.CostAllocation{}).
+	if err := allocationsTable.
 		Where("cost_center_id = ? AND tenant_id = ?", costCenterID, tenantID).
 		Count(&allocationCount).Error; err != nil {
 		return fmt.Errorf("check allocations: %w", err)
@@ -332,7 +338,7 @@ func (r *CostCenterGORMRepository) Delete(ctx context.Context, schemaName, tenan
 		return fmt.Errorf("cannot delete cost center with %d allocations", allocationCount)
 	}
 
-	result := childrenTable.Where("id = ? AND tenant_id = ?", costCenterID, tenantID).Delete(&models.CostCenter{})
+	result := childrenTable.Exec("DELETE FROM "+costCentersTable+" WHERE id = ? AND tenant_id = ?", costCenterID, tenantID)
 	if result.Error != nil {
 		return fmt.Errorf("delete cost center: %w", result.Error)
 	}

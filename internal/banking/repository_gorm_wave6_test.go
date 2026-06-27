@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -145,14 +144,7 @@ func TestGORMRepositoryWave6TransactionDuplicateBranches(t *testing.T) {
 	accountID := "22222222-2222-4222-8222-222222222222"
 	txDate := time.Date(2026, time.June, 20, 0, 0, 0, 0, time.UTC)
 	repo := NewGORMRepository(newBankingDryRunDB(t, withBankingDryRunFixtures(bankingDryRunFixtures{
-		counts: []int64{0},
-		transactions: []models.BankTransaction{{
-			ID:              "transaction-1",
-			TenantID:        tenantID,
-			BankAccountID:   accountID,
-			TransactionDate: txDate,
-			Amount:          models.NewDecimal(decimal.RequireFromString("12.34")),
-		}},
+		counts: []int64{0, 1},
 	})))
 
 	duplicate, err := repo.IsTransactionDuplicate(ctx, "tenant_banking", tenantID, accountID, txDate, decimal.RequireFromString("12.34"), "external-1")

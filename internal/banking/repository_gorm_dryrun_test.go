@@ -786,15 +786,7 @@ func TestGORMRepositoryDryRunIsTransactionDuplicate(t *testing.T) {
 
 	t.Run("date and amount match", func(t *testing.T) {
 		repo := NewGORMRepository(newBankingDryRunDB(t, withBankingDryRunFixtures(bankingDryRunFixtures{
-			transactions: []models.BankTransaction{
-				{
-					ID:              "33333333-3333-3333-3333-333333333333",
-					TenantID:        tenantID,
-					BankAccountID:   accountID,
-					TransactionDate: date,
-					Amount:          models.Decimal{Decimal: decimal.NewFromInt(100)},
-				},
-			},
+			counts: []int64{1},
 		})))
 
 		duplicate, err := repo.IsTransactionDuplicate(ctx, schemaName, tenantID, accountID, date, decimal.NewFromInt(100), "")
@@ -803,17 +795,20 @@ func TestGORMRepositoryDryRunIsTransactionDuplicate(t *testing.T) {
 		assert.True(t, duplicate)
 	})
 
+	t.Run("external id miss falls back to date and amount", func(t *testing.T) {
+		repo := NewGORMRepository(newBankingDryRunDB(t, withBankingDryRunFixtures(bankingDryRunFixtures{
+			counts: []int64{0, 1},
+		})))
+
+		duplicate, err := repo.IsTransactionDuplicate(ctx, schemaName, tenantID, accountID, date, decimal.NewFromInt(100), "external-2")
+
+		require.NoError(t, err)
+		assert.True(t, duplicate)
+	})
+
 	t.Run("no match", func(t *testing.T) {
 		repo := NewGORMRepository(newBankingDryRunDB(t, withBankingDryRunFixtures(bankingDryRunFixtures{
-			transactions: []models.BankTransaction{
-				{
-					ID:              "33333333-3333-3333-3333-333333333333",
-					TenantID:        tenantID,
-					BankAccountID:   accountID,
-					TransactionDate: date.AddDate(0, 0, -1),
-					Amount:          models.Decimal{Decimal: decimal.NewFromInt(99)},
-				},
-			},
+			counts: []int64{0},
 		})))
 
 		duplicate, err := repo.IsTransactionDuplicate(ctx, schemaName, tenantID, accountID, date, decimal.NewFromInt(100), "")
