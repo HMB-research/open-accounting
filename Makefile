@@ -1,4 +1,4 @@
-.PHONY: all build run test test-coverage test-affected test-backend-coverage test-integration test-integration-coverage test-cli-coverage verify-cli-coverage clean docker-build docker-up docker-down migrate help
+.PHONY: all build run test test-coverage test-affected test-backend-coverage test-integration test-integration-coverage test-cli-coverage verify-cli-coverage verify-total-coverage clean docker-build docker-up docker-down migrate help
 
 # Variables
 BINARY_API=api
@@ -39,10 +39,11 @@ test-coverage:
 test-affected:
 	scripts/run-affected-tests.sh
 
-# Run the backend gate once and enforce the operator CLI coverage invariant
+# Run the backend gate once and enforce exact backend plus operator CLI coverage
 # from the same profile. This avoids rerunning cmd/oa after the full test pass.
 test-backend-coverage:
 	$(GO) test -v -race -coverprofile=$(COVERAGE_PROFILE) ./...
+	scripts/verify-total-coverage.sh $(COVERAGE_PROFILE)
 	scripts/verify-cli-coverage.sh $(COVERAGE_PROFILE)
 
 # Run DB-backed integration tests. Packages are discovered from tracked build-tagged tests
@@ -70,6 +71,9 @@ test-cli-coverage:
 
 verify-cli-coverage:
 	scripts/verify-cli-coverage.sh $(COVERAGE_PROFILE)
+
+verify-total-coverage:
+	scripts/verify-total-coverage.sh $(COVERAGE_PROFILE)
 
 # Lint code
 lint:
@@ -168,7 +172,7 @@ help:
 	@echo "  make test           - Run tests"
 	@echo "  make test-coverage  - Run tests with coverage report"
 	@echo "  make test-affected  - Run tests selected from changed files"
-	@echo "  make test-backend-coverage - Run backend tests and enforce CLI coverage"
+	@echo "  make test-backend-coverage - Run backend tests and enforce exact backend plus CLI coverage"
 	@echo "  make test-cli-coverage - Enforce 100% cmd/oa coverage"
 	@echo "  make lint           - Run linter"
 	@echo "  make fmt            - Format code"

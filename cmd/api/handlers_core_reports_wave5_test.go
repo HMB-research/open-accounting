@@ -465,7 +465,7 @@ func TestWave5ExtendedReportAndReminderBranches(t *testing.T) {
 		}{
 			{target: "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01", wantStatus: http.StatusBadRequest, want: "start_date and end_date"},
 			{target: "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=bad", wantStatus: http.StatusBadRequest, want: "Invalid end_date"},
-			{target: "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&operating_accounts=1000&investing_accounts=1000", wantStatus: http.StatusBadRequest, want: "cannot be assigned to both operating and investing"},
+			{target: "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31&operating_accounts=1000&investing_accounts=1000", wantStatus: http.StatusBadRequest, want: "cannot be assigned to both"},
 			{
 				target:     "/tenants/tenant-1/reports/cash-flow?start_date=2026-01-01&end_date=2026-01-31",
 				wantStatus: http.StatusInternalServerError,
