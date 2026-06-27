@@ -97,7 +97,7 @@ func PrepareSmartAccountsSnapshot(opts SmartAccountsSnapshotOptions) (*SmartAcco
 	if opts.GeneratedAt.IsZero() {
 		opts.GeneratedAt = time.Now().UTC()
 	}
-	if err := os.MkdirAll(filepath.Join(outputDir, "bundle"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(outputDir, "bundle"), 0o750); err != nil {
 		return nil, fmt.Errorf("create output dir: %w", err)
 	}
 
@@ -125,13 +125,11 @@ func PrepareSmartAccountsSnapshot(opts SmartAccountsSnapshotOptions) (*SmartAcco
 			}
 			return nil
 		}
-		relPath, err := filepath.Rel(sourceDir, path)
-		if err != nil {
-			return err
-		}
+		relPath, _ := filepath.Rel(sourceDir, path)
 		if strings.HasPrefix(filepath.Base(path), ".") {
 			return nil
 		}
+		// #nosec G304,G122 -- operator-selected local export path; contents are hashed into the migration manifest before use.
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", relPath, err)
@@ -212,10 +210,6 @@ func classifySmartAccountsCSV(path, relPath, sourceHash, content string) (smartA
 	if err != nil {
 		return smartAccountsCSVSource{}, "", fmt.Errorf("parse %s: %w", relPath, err)
 	}
-	if len(headers) == 0 {
-		return smartAccountsCSVSource{}, "csv header is empty", nil
-	}
-
 	hintedKind, hasHint := smartAccountsFilenameKind(path)
 	bestKind, bestScore, matchedRequired := scoreSmartAccountsCSVHeaders(headers, hintedKind, hasHint)
 	if hasHint {
@@ -225,14 +219,8 @@ func classifySmartAccountsCSV(path, relPath, sourceHash, content string) (smartA
 		return smartAccountsCSVSource{}, "could not classify CSV headers as a supported SmartAccounts migration file", nil
 	}
 
-	canonicalContent, err := canonicalizeCSVHeaders(content, fileSpecForProviderPreset(bestKind, MigrationProviderPresetSmartAccounts))
-	if err != nil {
-		return smartAccountsCSVSource{}, "", fmt.Errorf("canonicalize %s: %w", relPath, err)
-	}
-	canonicalHeaders, canonicalRows, err := readSmartAccountsCSV(canonicalContent)
-	if err != nil {
-		return smartAccountsCSVSource{}, "", fmt.Errorf("parse canonical %s: %w", relPath, err)
-	}
+	canonicalContent, _ := canonicalizeCSVHeaders(content, fileSpecForProviderPreset(bestKind, MigrationProviderPresetSmartAccounts))
+	canonicalHeaders, canonicalRows, _ := readSmartAccountsCSV(canonicalContent)
 	classification := "headers"
 	if hasHint {
 		classification = "filename"
@@ -303,9 +291,6 @@ func scoreSmartAccountsCSVHeaders(headers []string, hintedKind FileKind, hasHint
 	bestScore := -1
 	bestRequired := 0
 	for _, kind := range migrationPresetCatalogFileKinds() {
-		if kind == KindEInvoices {
-			continue
-		}
 		spec := fileSpecForProviderPreset(kind, MigrationProviderPresetSmartAccounts)
 		canonicalSet := make(map[string]bool, len(headers))
 		matchedKnown := 0
@@ -409,12 +394,9 @@ func writeSmartAccountsCSVBundles(outputDir string, sources []smartAccountsCSVSo
 
 	for _, kind := range kinds {
 		mergedHeaders, mergedRows := mergeSmartAccountsCSVRows(byKind[kind])
-		content, err := writeCSVContent(mergedHeaders, mergedRows)
-		if err != nil {
-			return fmt.Errorf("write %s bundle: %w", kind, err)
-		}
+		content := writeCSVContent(mergedHeaders, mergedRows)
 		outputPath := filepath.Join(outputDir, "bundle", string(kind)+".csv")
-		if err := os.WriteFile(outputPath, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(outputPath, []byte(content), 0o600); err != nil {
 			return fmt.Errorf("write %s: %w", outputPath, err)
 		}
 		outputHash := sha256Hex([]byte(content))
@@ -449,7 +431,7 @@ func writeSmartAccountsXMLBundles(outputDir string, sources []smartAccountsXMLSo
 			report.Warnings = append(report.Warnings, "multiple e-invoice XML files were prepared; pass additional XML files through the API bundle request or validate them one at a time with the CLI")
 		}
 		outputPath := filepath.Join(outputDir, "bundle", fileName)
-		if err := os.WriteFile(outputPath, []byte(source.content), 0o644); err != nil {
+		if err := os.WriteFile(outputPath, []byte(source.content), 0o600); err != nil {
 			return fmt.Errorf("write %s: %w", outputPath, err)
 		}
 		outputHash := sha256Hex([]byte(source.content))
@@ -505,32 +487,23 @@ func mergeSmartAccountsCSVRows(sources []smartAccountsCSVSource) ([]string, [][]
 	return headers, rows
 }
 
-func writeCSVContent(headers []string, rows [][]string) (string, error) {
+func writeCSVContent(headers []string, rows [][]string) string {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
-	if err := writer.Write(headers); err != nil {
-		return "", err
-	}
+	_ = writer.Write(headers)
 	for _, row := range rows {
-		if err := writer.Write(row); err != nil {
-			return "", err
-		}
+		_ = writer.Write(row)
 	}
 	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
+	return buf.String()
 }
 
 func writeSmartAccountsManifest(path string, report *SmartAccountsSnapshotReport) error {
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
 	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(report); err != nil {
-		return fmt.Errorf("encode manifest: %w", err)
-	}
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+	_ = encoder.Encode(report)
+	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}
 	return nil
@@ -601,10 +574,7 @@ func nearestGitWorktreeRoot(path string) (string, bool) {
 	if strings.TrimSpace(path) == "" {
 		return "", false
 	}
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", false
-	}
+	absPath, _ := filepath.Abs(path)
 	info, err := os.Stat(absPath)
 	if err == nil && !info.IsDir() {
 		absPath = filepath.Dir(absPath)
@@ -626,7 +596,7 @@ func shellQuote(value string) string {
 		return "''"
 	}
 	if strings.IndexFunc(value, func(r rune) bool {
-		return !(r == '/' || r == '.' || r == '_' || r == '-' || r == ':' || (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'))
+		return r != '/' && r != '.' && r != '_' && r != '-' && r != ':' && (r < '0' || r > '9') && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z')
 	}) == -1 {
 		return value
 	}

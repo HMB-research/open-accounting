@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -11,16 +12,23 @@ import (
 	"github.com/HMB-research/open-accounting/internal/cutover"
 )
 
+var (
+	commandArgs             = func() []string { return os.Args[1:] }
+	commandStdout io.Writer = os.Stdout
+	commandStderr io.Writer = os.Stderr
+	exitProcess             = os.Exit
+)
+
 func main() {
-	if err := run(os.Args[1:]); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
+	if err := run(commandArgs(), commandStdout, commandStderr); err != nil {
+		_, _ = fmt.Fprintln(commandStderr, "Error:", err)
+		exitProcess(1)
 	}
 }
 
-func run(args []string) error {
+func run(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("smartaccounts-snapshot", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(stderr)
 	sourceDir := fs.String("source-dir", "", "Directory containing SmartAccounts CSV/XML exports")
 	outputDir := fs.String("out-dir", "", "Directory where manifest.json and bundle files are written")
 	companyID := fs.String("company-id", "", "Source company registry or SmartAccounts company id")
@@ -47,23 +55,23 @@ func run(args []string) error {
 	}
 
 	if *asJSON {
-		encoder := json.NewEncoder(os.Stdout)
+		encoder := json.NewEncoder(stdout)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(report)
 	}
 
-	fmt.Printf("SmartAccounts snapshot prepared\n")
-	fmt.Printf("Manifest: %s\n", report.ManifestPath)
-	fmt.Printf("Snapshot hash: %s\n", report.SnapshotHash)
-	fmt.Printf("Prepared files: %d\n", len(report.PreparedFiles))
+	_, _ = fmt.Fprintf(stdout, "SmartAccounts snapshot prepared\n")
+	_, _ = fmt.Fprintf(stdout, "Manifest: %s\n", report.ManifestPath)
+	_, _ = fmt.Fprintf(stdout, "Snapshot hash: %s\n", report.SnapshotHash)
+	_, _ = fmt.Fprintf(stdout, "Prepared files: %d\n", len(report.PreparedFiles))
 	if len(report.UnsupportedFiles) > 0 {
-		fmt.Printf("Unsupported files: %d\n", len(report.UnsupportedFiles))
+		_, _ = fmt.Fprintf(stdout, "Unsupported files: %d\n", len(report.UnsupportedFiles))
 	}
 	if len(report.Warnings) > 0 {
-		fmt.Printf("Warnings: %d\n", len(report.Warnings))
+		_, _ = fmt.Fprintf(stdout, "Warnings: %d\n", len(report.Warnings))
 	}
 	if report.ValidationCommand != "" {
-		fmt.Printf("\nValidate bundle:\n%s\n", report.ValidationCommand)
+		_, _ = fmt.Fprintf(stdout, "\nValidate bundle:\n%s\n", report.ValidationCommand)
 	}
 	return nil
 }
