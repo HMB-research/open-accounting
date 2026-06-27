@@ -203,12 +203,12 @@ func withAccountingDryRunUpdateError(expectedErr error) accountingDryRunDBOption
 	}
 }
 
-func withAccountingDryRunDeleteRows(rows ...int64) accountingDryRunDBOption {
+func withAccountingDryRunExecRows(rows ...int64) accountingDryRunDBOption {
 	return func(t *testing.T, db *gorm.DB) {
 		t.Helper()
 
 		var index int
-		err := db.Callback().Delete().After("gorm:delete").Register(accountingDryRunCallbackName("delete_rows"), func(tx *gorm.DB) {
+		err := db.Callback().Raw().After("gorm:raw").Register(accountingDryRunCallbackName("exec_rows"), func(tx *gorm.DB) {
 			rowCount := int64(0)
 			if len(rows) > 0 {
 				rowCount = rows[len(rows)-1]
@@ -223,12 +223,23 @@ func withAccountingDryRunDeleteRows(rows ...int64) accountingDryRunDBOption {
 	}
 }
 
-func withAccountingDryRunDeleteError(expectedErr error) accountingDryRunDBOption {
+func withAccountingDryRunExecError(expectedErr error) accountingDryRunDBOption {
 	return func(t *testing.T, db *gorm.DB) {
 		t.Helper()
 
-		err := db.Callback().Delete().Before("gorm:delete").Register(accountingDryRunCallbackName("delete_error"), func(tx *gorm.DB) {
+		err := db.Callback().Raw().Before("gorm:raw").Register(accountingDryRunCallbackName("exec_error"), func(tx *gorm.DB) {
 			tx.AddError(expectedErr)
+		})
+		require.NoError(t, err)
+	}
+}
+
+func withAccountingDryRunCapturedQueries(queries *[]string) accountingDryRunDBOption {
+	return func(t *testing.T, db *gorm.DB) {
+		t.Helper()
+
+		err := db.Callback().Query().After("gorm:query").Register(accountingDryRunCallbackName("capture_query_sql"), func(tx *gorm.DB) {
+			*queries = append(*queries, tx.Statement.SQL.String())
 		})
 		require.NoError(t, err)
 	}
@@ -992,7 +1003,7 @@ func TestCostCenterGORMRepositoryDryRunOperations(t *testing.T) {
 			counts: []accountingCountResult{{value: 0}, {value: 0}},
 		}),
 		withAccountingDryRunUpdateRows(1),
-		withAccountingDryRunDeleteRows(1),
+		withAccountingDryRunExecRows(1),
 	))
 
 	costCenter, err := repo.GetByID(ctx, "tenant_schema", "tenant-1", "cc-1")
@@ -1156,6 +1167,14 @@ func TestCostCenterGORMRepositoryDryRunErrors(t *testing.T) {
 		assert.Contains(t, err.Error(), "cannot delete cost center with 2 children")
 	})
 
+	t.Run("delete rejects invalid schema", func(t *testing.T) {
+		repo := NewCostCenterGORMRepository(newAccountingDryRunDB(t))
+		err := repo.Delete(ctx, "bad.schema", "tenant-1", "cc-1")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "qualify cost center tables")
+		assert.Contains(t, err.Error(), "invalid SQL identifier")
+	})
+
 	t.Run("delete wraps child count error", func(t *testing.T) {
 		repo := NewCostCenterGORMRepository(newAccountingDryRunDB(t, withAccountingDryRunFixtures(accountingDryRunFixture{
 			counts: []accountingCountResult{{err: assert.AnError}},
@@ -1177,18 +1196,22 @@ func TestCostCenterGORMRepositoryDryRunErrors(t *testing.T) {
 	})
 
 	t.Run("delete rejects allocations", func(t *testing.T) {
+		var queries []string
 		repo := NewCostCenterGORMRepository(newAccountingDryRunDB(t, withAccountingDryRunFixtures(accountingDryRunFixture{
 			counts: []accountingCountResult{{value: 0}, {value: 3}},
-		})))
+		}), withAccountingDryRunCapturedQueries(&queries)))
 		err := repo.Delete(ctx, "tenant_schema", "tenant-1", "cc-1")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cannot delete cost center with 3 allocations")
+		require.Len(t, queries, 2)
+		assert.Contains(t, queries[0], `FROM "tenant_schema"."cost_centers"`)
+		assert.Contains(t, queries[1], `FROM "tenant_schema"."cost_allocations"`)
 	})
 
 	t.Run("delete wraps delete error", func(t *testing.T) {
 		repo := NewCostCenterGORMRepository(newAccountingDryRunDB(t,
 			withAccountingDryRunFixtures(accountingDryRunFixture{counts: []accountingCountResult{{value: 0}, {value: 0}}}),
-			withAccountingDryRunDeleteError(assert.AnError),
+			withAccountingDryRunExecError(assert.AnError),
 		))
 		err := repo.Delete(ctx, "tenant_schema", "tenant-1", "cc-1")
 		require.Error(t, err)
@@ -1199,7 +1222,7 @@ func TestCostCenterGORMRepositoryDryRunErrors(t *testing.T) {
 	t.Run("delete reports missing cost center", func(t *testing.T) {
 		repo := NewCostCenterGORMRepository(newAccountingDryRunDB(t,
 			withAccountingDryRunFixtures(accountingDryRunFixture{counts: []accountingCountResult{{value: 0}, {value: 0}}}),
-			withAccountingDryRunDeleteRows(0),
+			withAccountingDryRunExecRows(0),
 		))
 		err := repo.Delete(ctx, "tenant_schema", "tenant-1", "cc-1")
 		require.Error(t, err)

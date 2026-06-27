@@ -379,7 +379,7 @@ func TestMainRequiresDatabaseURLUnit(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected helper to fail without db url, output: %s", string(out))
 	}
-	if !strings.Contains(string(out), "Database URL required") {
+	if !strings.Contains(string(out), "missing database URL") {
 		t.Fatalf("expected missing database error, got: %s", string(out))
 	}
 }
@@ -434,7 +434,7 @@ func TestMainReportsMigrationErrorUnit(t *testing.T) {
 		if recovered != "fatal migration error" {
 			t.Fatalf("recover() = %v, want fatal migration error", recovered)
 		}
-		if gotErr == nil || !strings.Contains(gotErr.Error(), "Database URL required") {
+		if gotErr == nil || !strings.Contains(gotErr.Error(), "missing database URL") {
 			t.Fatalf("fatal error = %v, want missing database URL", gotErr)
 		}
 	}()

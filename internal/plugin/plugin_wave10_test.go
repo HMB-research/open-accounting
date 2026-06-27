@@ -276,6 +276,9 @@ func TestPluginWave10GitAndRegistryEdges(t *testing.T) {
 		if err != nil {
 			t.Fatalf("createDemoInstallFixtureRepository() error = %v", err)
 		}
+		if cloneURL == "" {
+			t.Fatal("cloneURL should not be empty")
+		}
 		if cleanup == nil {
 			t.Fatal("cleanup should not be nil")
 		}

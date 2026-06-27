@@ -72,7 +72,7 @@ func runMigrationCLI(ctx context.Context, args []string, getenv func(string) str
 		databaseURL = getenv("DATABASE_URL")
 	}
 	if databaseURL == "" {
-		return fmt.Errorf("Database URL required. Use -db flag or set DATABASE_URL env")
+		return fmt.Errorf("missing database URL: use -db flag or set DATABASE_URL env")
 	}
 
 	// Connect to database

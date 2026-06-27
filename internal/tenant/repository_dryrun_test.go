@@ -605,7 +605,7 @@ func TestGORMRepositoryDryRunTenantOperations(t *testing.T) {
 				tenantModel.Name,
 				tenantModel.Slug,
 				tenantModel.SchemaName,
-				[]byte(settingsJSON),
+				settingsJSON,
 				true,
 				true,
 				tenantModel.CreatedAt,

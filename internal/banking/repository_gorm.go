@@ -601,15 +601,21 @@ func (r *GORMRepository) CreatePaymentFromTransaction(ctx context.Context, schem
 
 // IsTransactionDuplicate checks if a transaction is a duplicate
 func (r *GORMRepository) IsTransactionDuplicate(ctx context.Context, schemaName, tenantID, bankAccountID string, date time.Time, amount decimal.Decimal, externalID string) (bool, error) {
-	db, err := r.tenantTable(ctx, schemaName, "bank_transactions")
+	if r.db == nil {
+		return false, fmt.Errorf("banking repository database is not configured")
+	}
+	tableName, err := database.QualifiedTable(schemaName, "bank_transactions")
 	if err != nil {
 		return false, err
+	}
+	newTransactionsDB := func() *gorm.DB {
+		return r.db.WithContext(ctx).Session(&gorm.Session{NewDB: true}).Table(tableName)
 	}
 
 	// First check by external ID if provided
 	if externalID != "" {
 		var count int64
-		err := db.Where("tenant_id = ? AND bank_account_id = ? AND external_id = ?", tenantID, bankAccountID, externalID).
+		err := newTransactionsDB().Where("tenant_id = ? AND bank_account_id = ? AND external_id = ?", tenantID, bankAccountID, externalID).
 			Count(&count).Error
 		if err != nil {
 			return false, fmt.Errorf("check duplicate: %w", err)
@@ -619,20 +625,17 @@ func (r *GORMRepository) IsTransactionDuplicate(ctx context.Context, schemaName,
 		}
 	}
 
-	// Check by date and amount. Compare decimal values after loading matching
-	// date rows so numeric scale differences do not affect duplicate detection.
-	var candidates []models.BankTransaction
-	if err := db.Where("tenant_id = ? AND bank_account_id = ?", tenantID, bankAccountID).
-		Find(&candidates).Error; err != nil {
+	var count int64
+	if err := newTransactionsDB().Where(
+		"tenant_id = ? AND bank_account_id = ? AND transaction_date = ? AND amount = ?",
+		tenantID,
+		bankAccountID,
+		date.Format("2006-01-02"),
+		amount.String(),
+	).Count(&count).Error; err != nil {
 		return false, fmt.Errorf("check duplicate: %w", err)
 	}
-	for _, candidate := range candidates {
-		if candidate.TransactionDate.Format("2006-01-02") == date.Format("2006-01-02") &&
-			candidate.Amount.Equal(amount) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return count > 0, nil
 }
 
 // CreateReconciliation inserts a new reconciliation
