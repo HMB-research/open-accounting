@@ -13,13 +13,30 @@ Use this with `open-accounting-development`, `open-accounting-import-mappers`, a
 - For live API extraction, require SmartAccounts API key/secret from Settings / Connected services. Keep API credentials in environment variables or macOS Keychain, never in repo files.
 - Treat `HMB-research/open-accounting` as public. Branches in a public GitHub repository are public; real SmartAccounts exports must live outside this worktree or in a separate private repository/worktree dedicated to migration data.
 - Use repo-relative private paths only as an ignored local scratch fallback. Prefer `/Users/clawdy/private/open-accounting-smartaccounts/...` or a private repo path for real data.
-- Prefer the offline snapshot path first: SmartAccounts CSV/XML exports -> snapshot preparer -> canonical bundle -> `migration validate` -> `migration plan` -> non-confirming `migration execute` -> confirmed execution.
+- Prefer the one-command offline sync path first: SmartAccounts CSV/XML exports -> `oa migration smartaccounts-sync` -> private operator report and saved dry run -> accountant review -> rerun with `--confirm`. Use the lower-level snapshot preparer -> `migration validate` -> `migration plan` -> non-confirming `migration execute` flow only when debugging a specific stage.
 - Keep SmartAccounts-specific parsing in cutover mapper/tooling. Do not duplicate domain import logic already owned by accounting, contacts, invoicing, payments, banking, inventory, assets, payroll, and recurring services.
 - Do not mutate imported posted history by replaying edited source rows. Corrections should use reversal, void, reopen, or adjustment flows.
 
 ## Snapshot Workflow
 
-Prepare a bundle from a directory of SmartAccounts exports:
+Prepare, validate, plan, and save a dry run from a directory of SmartAccounts exports:
+
+```bash
+go run ./cmd/oa migration smartaccounts-sync \
+  --source-dir /path/to/private/smartaccounts/export \
+  --out-dir /path/to/private/smartaccounts/prepared \
+  --company-id 12345678 \
+  --company-name "Example Export OU" \
+  --cutover-date YYYY-MM-DD \
+  --bank-transaction-account-id <oa-bank-account-id> \
+  --opening-balance-entry-date YYYY-MM-DD
+```
+
+The command writes a private `smartaccounts-sync-report.json` under `--out-dir`.
+Add `--confirm` only after accountant review. If `--opening-balance-entry-date`
+is omitted, it defaults to `--cutover-date`.
+
+For manual stage debugging, prepare a bundle from a directory of SmartAccounts exports:
 
 ```bash
 go run ./cmd/smartaccounts-snapshot \
@@ -92,6 +109,7 @@ For tooling changes, run:
 ```bash
 go test -count=1 ./internal/cutover
 go test -count=1 ./cmd/smartaccounts-snapshot
+go test -count=1 ./cmd/oa -run TestCLIMigrationSmartAccountsSyncCommand
 go run ./cmd/smartaccounts-snapshot --source-dir <sample-dir> --out-dir <tmp-out> --json
 go test -timeout=3m ./docs -count=1
 ```

@@ -332,6 +332,21 @@ go run ./cmd/oa migration validate --provider-preset directo --invoices ./direct
 For SmartAccounts cutovers, prepare an auditable offline snapshot before validation:
 
 ```bash
+go run ./cmd/oa migration smartaccounts-sync \
+  --source-dir /path/to/private/smartaccounts/export \
+  --out-dir /path/to/private/smartaccounts/prepared \
+  --company-id 12345678 \
+  --company-name "Example Export OU" \
+  --cutover-date YYYY-MM-DD \
+  --bank-transaction-account-id bank-account-id \
+  --opening-balance-entry-date YYYY-MM-DD
+```
+
+`migration smartaccounts-sync` is the preferred next-sync operator command. It prepares a hashed snapshot, validates the prepared bundle with the SmartAccounts provider preset, builds the execution plan, saves a non-mutating dry run through the configured Open Accounting API, writes the full private `smartaccounts-sync-report.json` under `--out-dir`, includes reconciliation targets for the major SmartAccounts proof reports, and prints only aggregate status, hashes, paths, and next action guidance. It refuses public-worktree snapshot paths through the same snapshot guard. Add `--confirm` only after accountant signoff; confirmed sync executes the prepared imports against the configured tenant. If `--opening-balance-entry-date` is omitted, it defaults to `--cutover-date`. Use `--json` for a public-safe aggregate summary.
+
+The lower-level snapshot tool remains available for debugging or custom manual runbooks:
+
+```bash
 go run ./cmd/smartaccounts-snapshot \
   --source-dir /path/to/private/smartaccounts/export \
   --out-dir /path/to/private/smartaccounts/prepared \

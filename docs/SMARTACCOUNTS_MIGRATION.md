@@ -8,8 +8,8 @@ This runbook covers the safe Open Accounting path for SmartAccounts CSV/XML cuto
 - Do not push tenant data to a public GitHub repository or a branch in a public repository.
 - Keep SmartAccounts web-login, API key, and API secret values in macOS Keychain or environment variables.
 - Treat SmartAccounts web-login credentials as UI credentials only. API extraction requires SmartAccounts API key/secret credentials from connected services.
-- Run `smartaccounts-snapshot` with private `--source-dir` and `--out-dir` paths. The tool refuses to write snapshots inside the public Open Accounting worktree.
-- Run `oa migration validate/plan/execute` against a local or otherwise private Open Accounting API target. Bundle payloads are sent to the configured API, and saved dry runs persist replay payloads server-side for review/resume.
+- Run `oa migration smartaccounts-sync` with private `--source-dir` and `--out-dir` paths. The snapshot layer refuses to write prepared bundles inside the public Open Accounting worktree.
+- Run migration sync, validation, planning, and execution against a local or otherwise private Open Accounting API target. Bundle payloads are sent to the configured API, and saved dry runs persist replay payloads server-side for review/resume.
 
 ## Local Setup
 
@@ -29,7 +29,50 @@ cd /path/to/open-accounting
 git status --short --branch
 ```
 
-## Snapshot
+## One-Command Next Sync
+
+For the next sync, use the one-command operator path first:
+
+```bash
+go run ./cmd/oa migration smartaccounts-sync \
+  --source-dir /path/to/private/smartaccounts/export \
+  --out-dir /path/to/private/smartaccounts/prepared \
+  --company-id 12345678 \
+  --company-name "Example Export OU" \
+  --cutover-date YYYY-MM-DD \
+  --bank-transaction-account-id <open-accounting-bank-account-id> \
+  --opening-balance-entry-date YYYY-MM-DD
+```
+
+By default this command:
+
+- prepares a hashed SmartAccounts snapshot and `manifest.json`;
+- validates the prepared bundle with the `smartaccounts` provider preset;
+- builds the migration execution plan;
+- saves a non-mutating dry run through the configured Open Accounting API;
+- writes a full private operator report to `smartaccounts-sync-report.json` under `--out-dir`;
+- includes private reconciliation targets for trial balance, AR/AP, revenue/expense, bank, VAT/tax, payroll/TSD, and inventory/fixed assets;
+- prints only aggregate counts, paths, hashes, and next action guidance.
+
+Only add `--confirm` after accountant signoff. Confirmed execution uses the same prepared bundle and context, but mutates the configured Open Accounting tenant:
+
+```bash
+go run ./cmd/oa migration smartaccounts-sync \
+  --source-dir /path/to/private/smartaccounts/export \
+  --out-dir /path/to/private/smartaccounts/prepared \
+  --company-id 12345678 \
+  --company-name "Example Export OU" \
+  --cutover-date YYYY-MM-DD \
+  --bank-transaction-account-id <open-accounting-bank-account-id> \
+  --opening-balance-entry-date YYYY-MM-DD \
+  --confirm
+```
+
+If `--opening-balance-entry-date` is omitted, it defaults to `--cutover-date`. Only include `--bank-transaction-account-id` when bank transactions are present. Use `--json` when an automation needs the public-safe aggregate summary; the full private report remains in `--out-dir`.
+
+## Manual Snapshot
+
+Use the lower-level commands when debugging one stage of the sync or when preparing a custom bundle.
 
 Prepare a canonical bundle from private SmartAccounts exports:
 
@@ -114,6 +157,22 @@ Use SmartAccounts reports as private proof artifacts rather than importable enti
 - invoice/payment exception lists.
 
 Compare those reports against Open Accounting reports after import and keep reconciliation evidence in private storage.
+
+Do not use the dashboard as the only reconciliation surface. Dashboard totals mix accounting bases:
+
+- receivables and payables come from invoice subledger balances;
+- revenue and expenses come from posted general-ledger journal lines;
+- dashboard cash flow is payment-subledger based.
+
+For large discrepancies, compare each basis separately:
+
+- SmartAccounts aged receivables/payables against Open Accounting aging and balance-confirmation reports;
+- SmartAccounts trial balance against Open Accounting trial balance, balance sheet, and account-balance reports;
+- SmartAccounts revenue/expense period reports against Open Accounting income statement for the same dates;
+- SmartAccounts bank balances/reconciliations against both Open Accounting bank-transaction balances and GL bank/cash account balances;
+- VAT/KMD and payroll/TSD reports against the matching Open Accounting tax reports and GL tax accounts.
+
+Confirm whether the cutover strategy is `opening balances plus open subledger` or `full historical GL plus subledger`. Mixing both without a clear cutover date can double count, while omitting opening balances can leave the GL baseline absent.
 
 ## Retry And Rollback
 
