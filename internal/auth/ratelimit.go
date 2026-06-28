@@ -316,10 +316,16 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// DefaultRateLimiter returns a rate limiter with default settings
-// 100 requests per minute with a burst of 10
+const (
+	defaultRateLimitRequestsPerMinute = 600.0
+	defaultRateLimitBurst             = 120
+)
+
+// DefaultRateLimiter returns a rate limiter with default settings.
+// The burst budget must tolerate one authenticated workspace page load, which
+// can fan out across dashboard, banking, review, and reporting endpoints.
 func DefaultRateLimiter() *RateLimiter {
-	return NewRateLimiter(100.0/60.0, 10) // ~1.67 requests/sec, burst 10
+	return NewRateLimiter(defaultRateLimitRequestsPerMinute/60.0, defaultRateLimitBurst)
 }
 
 func retryAfterSeconds(delay time.Duration) int {
