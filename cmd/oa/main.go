@@ -230,6 +230,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks deliveries       List webhook deliveries")
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks test             Send a test webhook delivery")
 	_, _ = fmt.Fprintln(a.stdout, "  migration presets         List migration provider presets")
+	_, _ = fmt.Fprintln(a.stdout, "  migration smartaccounts-sync  Prepare, validate, plan, and dry-run a SmartAccounts cutover")
 	_, _ = fmt.Fprintln(a.stdout, "  migration validate        Validate CSV/XML migration bundle references")
 	_, _ = fmt.Fprintln(a.stdout, "  migration plan            Plan ordered cutover import execution")
 	_, _ = fmt.Fprintln(a.stdout, "  migration execute         Execute ready cutover imports in planned order")
@@ -2098,6 +2099,9 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		printMigrationProviderPresets(a.stdout, presets)
 		return nil
 
+	case "smartaccounts-sync":
+		return a.runMigrationSmartAccountsSync(ctx, cfg, client, args[1:])
+
 	case "validate":
 		fs := flag.NewFlagSet("migration validate", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
@@ -2110,6 +2114,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
 		eInvoiceInvoiceType := fs.String("e-invoice-invoice-type", "", "Override e-invoice invoice type for validation: SALES, PURCHASE, or CREDIT_NOTE")
 		providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, smartaccounts, or directo")
+		manifestFile := fs.String("manifest", "", "Snapshot manifest.json produced by smartaccounts-snapshot")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
 		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
 		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
@@ -2138,7 +2143,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			return err
 		}
 
-		files, err := buildMigrationBundleFiles([]migrationFileInput{
+		files, err := buildMigrationBundleFilesWithManifest(*manifestFile, []migrationFileInput{
 			{kind: cutover.KindAccounts, path: *accountsFile},
 			{kind: cutover.KindContacts, path: *contactsFile},
 			{kind: cutover.KindEmployees, path: *employeesFile},
@@ -2199,6 +2204,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
 		eInvoiceInvoiceType := fs.String("e-invoice-invoice-type", "", "Override e-invoice invoice type for validation: SALES, PURCHASE, or CREDIT_NOTE")
 		providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, smartaccounts, or directo")
+		manifestFile := fs.String("manifest", "", "Snapshot manifest.json produced by smartaccounts-snapshot")
 		paymentsFile := fs.String("payments", "", "Payments CSV file")
 		bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
 		bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
@@ -2229,7 +2235,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			return err
 		}
 
-		files, err := buildMigrationBundleFiles([]migrationFileInput{
+		files, err := buildMigrationBundleFilesWithManifest(*manifestFile, []migrationFileInput{
 			{kind: cutover.KindAccounts, path: *accountsFile},
 			{kind: cutover.KindContacts, path: *contactsFile},
 			{kind: cutover.KindEmployees, path: *employeesFile},

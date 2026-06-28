@@ -1,0 +1,4 @@
+interface:
+  display_name: "Open Accounting SmartAccounts Migration"
+  short_description: "Prepare SmartAccounts migration snapshots"
+  default_prompt: "Use $open-accounting-smartaccounts-migration to prepare and validate a SmartAccounts export snapshot for Open Accounting."

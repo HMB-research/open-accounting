@@ -83,7 +83,7 @@ func TestGORMRepositoryDryRunQueries(t *testing.T) {
 	assert.Nil(t, revenueExpenses)
 
 	cashFlow, err := repo.GetMonthlyCashFlow(ctx, schemaName, 2)
-	requireDryRunScanError(t, err, "get monthly cash flow")
+	requireDryRunScanError(t, err, "get monthly bank cash flow")
 	assert.Nil(t, cashFlow)
 
 	aging, err := repo.GetAgingByContact(ctx, schemaName, string(models.InvoiceTypeSales))

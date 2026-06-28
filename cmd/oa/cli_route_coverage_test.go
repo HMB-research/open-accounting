@@ -621,6 +621,7 @@ func collectKnownCLICommandPaths(t *testing.T) map[string]bool {
 		"ops backup restore-drill":      true,
 		"ops backup schedule-systemd":   true,
 		"migration execute":             true,
+		"migration smartaccounts-sync":  true,
 		"payroll import-leave-balances": true,
 	}
 	for _, route := range collectAPIRoutesFromSource(t) {
