@@ -249,8 +249,15 @@ func TestWave5AccountAndJournalHandlerBranches(t *testing.T) {
 		h.CreateJournalEntry(rr, req)
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 
+		req = badJSONRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/je-1/post", claims)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": "je-1"})
+		rr = httptest.NewRecorder()
+		h.PostJournalEntry(rr, req)
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		assert.Contains(t, rr.Body.String(), "invalid request body")
+
 		accountingRepo.getJournalErr = errors.New("lookup failed")
-		req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/je-1/post", nil, claims)
+		req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/je-1/post", map[string]string{"reason": "Reviewed closeout"}, claims)
 		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": "je-1"})
 		rr = httptest.NewRecorder()
 		h.PostJournalEntry(rr, req)
@@ -258,8 +265,15 @@ func TestWave5AccountAndJournalHandlerBranches(t *testing.T) {
 		assert.Contains(t, rr.Body.String(), "lookup failed")
 		accountingRepo.getJournalErr = nil
 
+		req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/je-1/post", map[string]string{"reason": " "}, claims)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": "je-1"})
+		rr = httptest.NewRecorder()
+		h.PostJournalEntry(rr, req)
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		assert.Contains(t, rr.Body.String(), "post reason is required")
+
 		accountingRepo.updateJournalErr = errors.New("post failed")
-		req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/je-1/post", nil, claims)
+		req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/je-1/post", map[string]string{"reason": "Reviewed closeout"}, claims)
 		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": "je-1"})
 		rr = httptest.NewRecorder()
 		h.PostJournalEntry(rr, req)

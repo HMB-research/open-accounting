@@ -26,7 +26,7 @@ type accountingBalancer interface {
 type accountingPoster interface {
 	accountingLister
 	CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error)
-	PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID string) error
+	PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string) error
 }
 
 type contactLister interface {
@@ -1830,7 +1830,7 @@ func (s *Service) postInventoryIssueAccounting(
 	if err != nil {
 		return fmt.Errorf("create inventory issue journal entry: %w", err)
 	}
-	if err := s.ledger.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, userID); err != nil {
+	if err := s.ledger.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, userID, "Inventory issue ledger posting"); err != nil {
 		return fmt.Errorf("post inventory issue journal entry: %w", err)
 	}
 	issueAccounting.Posted = true

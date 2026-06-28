@@ -76,7 +76,7 @@ type wave11ExpenseAccounting struct {
 	postErr error
 }
 
-func (a *wave11ExpenseAccounting) PostJournalEntry(context.Context, string, string, string, string) error {
+func (a *wave11ExpenseAccounting) PostJournalEntry(context.Context, string, string, string, string, string) error {
 	return a.postErr
 }
 

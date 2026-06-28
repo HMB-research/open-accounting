@@ -555,8 +555,10 @@ func TestPrintOutputEdgeBranches(t *testing.T) {
 		EntryDate:   now,
 		Status:      accounting.StatusVoided,
 		Description: "Voided entry",
+		PostReason:  "approved closeout",
 		VoidReason:  "correction",
 	})
+	assert.Contains(t, buf.String(), "Post reason: approved closeout")
 	assert.Contains(t, buf.String(), "Void reason: correction")
 }
 
@@ -3012,6 +3014,7 @@ func TestPrintJournalEntries(t *testing.T) {
 		Reference:        "ACC-1",
 		RequiresEvidence: true,
 		Status:           accounting.StatusDraft,
+		PostReason:       "Reviewed accrual",
 		Lines: []accounting.JournalEntryLine{
 			{
 				AccountID:   "acc-1",
@@ -3040,6 +3043,7 @@ func TestPrintJournalEntries(t *testing.T) {
 	var entryBuf bytes.Buffer
 	printJournalEntry(&entryBuf, &entry)
 	assert.Contains(t, entryBuf.String(), "Requires evidence: true")
+	assert.Contains(t, entryBuf.String(), "Post reason: Reviewed accrual")
 	assert.Contains(t, entryBuf.String(), "Balanced: true")
 	assert.Contains(t, entryBuf.String(), "6000 Expenses")
 

@@ -262,11 +262,12 @@ func TestJournalEntryHandlers_CreatePostVoidAndGet(t *testing.T) {
 	h.GetJournalEntry(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/"+created.ID+"/post", nil, claims)
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/"+created.ID+"/post", map[string]string{"reason": "Reviewed manual journal"}, claims)
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": created.ID})
 	rr = httptest.NewRecorder()
 	h.PostJournalEntry(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "Reviewed manual journal", accountingRepo.journalEntries[created.ID].PostReason)
 
 	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/"+created.ID+"/void", map[string]string{
 		"reason": "reverse entry",
@@ -395,7 +396,7 @@ func TestPostJournalEntryRequiresApprovedEvidence(t *testing.T) {
 	accountingRepo.journalEntries[entry.ID] = entry
 
 	claims := &auth.Claims{UserID: "user-1", TenantID: "tenant-1", Role: tenant.RoleOwner}
-	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/"+entry.ID+"/post", nil, claims)
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/"+entry.ID+"/post", map[string]string{"reason": "Evidence reviewed"}, claims)
 	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": entry.ID})
 	rr := httptest.NewRecorder()
 
@@ -432,6 +433,8 @@ func TestPostJournalEntryRequiresApprovedEvidence(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/"+entry.ID+"/post", map[string]string{"reason": "Evidence reviewed"}, claims)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": entry.ID})
 	h.PostJournalEntry(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())

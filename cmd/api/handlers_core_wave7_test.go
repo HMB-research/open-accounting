@@ -186,7 +186,7 @@ func TestWave7CoreImportAndJournalBranches(t *testing.T) {
 		h.CreateJournalEntry(rr, req)
 		require.Equal(t, http.StatusConflict, rr.Code, rr.Body.String())
 
-		req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/je-locked/post", nil, claims)
+		req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/je-locked/post", map[string]string{"reason": "Locked period review"}, claims)
 		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": "je-locked"})
 		rr = httptest.NewRecorder()
 		h.PostJournalEntry(rr, req)
@@ -208,7 +208,7 @@ func TestWave7CoreImportAndJournalBranches(t *testing.T) {
 		docRepo.listDocumentsErr = errors.New("document store unavailable")
 		h.documentsService = documents.NewService(docRepo, nil)
 
-		req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/je-evidence-error/post", nil, claims)
+		req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/je-evidence-error/post", map[string]string{"reason": "Evidence reviewed"}, claims)
 		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": entry.ID})
 		rr := httptest.NewRecorder()
 
@@ -223,7 +223,7 @@ func TestWave7CoreImportAndJournalBranches(t *testing.T) {
 		entry := wave7JournalEntry("je-evidence-missing-service", time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC), true)
 		accountingRepo.journalEntries[entry.ID] = entry
 
-		req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/"+entry.ID+"/post", nil, claims)
+		req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/journal-entries/"+entry.ID+"/post", map[string]string{"reason": "Evidence reviewed"}, claims)
 		req = withURLParams(req, map[string]string{"tenantID": "tenant-1", "entryID": entry.ID})
 		rr := httptest.NewRecorder()
 

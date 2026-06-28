@@ -20,7 +20,7 @@ type RepositoryInterface interface {
 	GetJournalEntryByID(ctx context.Context, schemaName, tenantID, entryID string) (*JournalEntry, error)
 	GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*JournalEntry, error)
 	CreateJournalEntry(ctx context.Context, schemaName string, je *JournalEntry) error
-	UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string) error
+	UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string, reason ...string) error
 	GetAccountBalance(ctx context.Context, schemaName, tenantID, accountID string, asOfDate time.Time) (decimal.Decimal, error)
 	GetTrialBalance(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]AccountBalance, error)
 	GetPeriodBalances(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]AccountBalance, error)

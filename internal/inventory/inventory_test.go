@@ -878,7 +878,7 @@ func (f *fakeInventoryLedger) CreateJournalEntry(_ context.Context, _, tenantID 
 	return &accounting.JournalEntry{ID: "journal-1", TenantID: tenantID, EntryNumber: "JE-00001", Status: accounting.StatusDraft}, nil
 }
 
-func (f *fakeInventoryLedger) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
+func (f *fakeInventoryLedger) PostJournalEntry(_ context.Context, _, _, entryID, _, _ string) error {
 	if f.postErr != nil {
 		return f.postErr
 	}

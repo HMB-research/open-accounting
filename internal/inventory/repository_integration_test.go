@@ -982,7 +982,7 @@ func TestRepository_WithInventoryLedgerTransactionRollsBackInventoryAndLedger(t 
 		if err != nil {
 			return err
 		}
-		if err := ledger.PostJournalEntry(ctx, tenant.SchemaName, tenant.ID, entry.ID, userID); err != nil {
+		if err := ledger.PostJournalEntry(ctx, tenant.SchemaName, tenant.ID, entry.ID, userID, "Inventory integration test posting"); err != nil {
 			return err
 		}
 		return fmt.Errorf("force rollback after inventory and ledger writes")

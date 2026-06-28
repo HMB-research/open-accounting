@@ -65,7 +65,7 @@ func (p inventoryWave9Poster) CreateJournalEntry(context.Context, string, string
 	return &accounting.JournalEntry{ID: "journal-1"}, nil
 }
 
-func (p inventoryWave9Poster) PostJournalEntry(context.Context, string, string, string, string) error {
+func (p inventoryWave9Poster) PostJournalEntry(context.Context, string, string, string, string, string) error {
 	return nil
 }
 

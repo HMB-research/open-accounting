@@ -36,7 +36,7 @@ func (f *inventoryWave7Ledger) CreateJournalEntry(_ context.Context, _, tenantID
 	return &accounting.JournalEntry{ID: "journal-1", TenantID: tenantID, EntryNumber: "JE-1"}, nil
 }
 
-func (f *inventoryWave7Ledger) PostJournalEntry(_ context.Context, _, _, _, _ string) error {
+func (f *inventoryWave7Ledger) PostJournalEntry(_ context.Context, _, _, _, _, _ string) error {
 	return f.postErr
 }
 
