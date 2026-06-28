@@ -1255,7 +1255,7 @@ go run ./cmd/oa journal create \
   --line "account_id=<expense-account-id>,description=Expense,debit=100.00,currency=USD,exchange_rate=0.92" \
   --line "account_id=<accrual-account-id>,description=Accrual,credit=100.00,currency=USD,exchange_rate=0.92"
 go run ./cmd/oa journal get --id <journal-entry-id>
-go run ./cmd/oa journal post --id <journal-entry-id>
+go run ./cmd/oa journal post --id <journal-entry-id> --reason "Reviewed and approved"
 go run ./cmd/oa journal void --id <journal-entry-id> --reason "Duplicate entry"
 go run ./cmd/oa journal import --file ./journal-entries.csv --source-type LEGACY_GL --post
 go run ./cmd/oa journal templates list --active-only

@@ -1772,6 +1772,7 @@ func (h *Handlers) CreateJournalEntry(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param entryID path string true "Journal Entry ID"
+// @Param request body accounting.PostJournalEntryRequest true "Post reason"
 // @Success 200 {object} object{status=string}
 // @Failure 400 {object} object{error=string}
 // @Failure 409 {object} object{error=string,evidence_policy_results=[]documents.EvidencePolicyResult,remediation_actions=[]documents.DocumentRemediationAction}
@@ -1781,6 +1782,11 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	entryID := chi.URLParam(r, "entryID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+	var req accounting.PostJournalEntryRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
 
 	entry, err := h.accountingService.GetJournalEntry(r.Context(), schemaName, tenantID, entryID)
 	if err != nil {
@@ -1806,7 +1812,7 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.accountingService.PostJournalEntry(r.Context(), schemaName, tenantID, entryID, claims.UserID)
+	err = h.accountingService.PostJournalEntry(r.Context(), schemaName, tenantID, entryID, claims.UserID, req.Reason)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return

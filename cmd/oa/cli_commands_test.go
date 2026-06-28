@@ -13963,6 +13963,9 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1":
 			_ = json.NewEncoder(w).Encode(journalEntryPayload("je-1", "JE-2026-001", accounting.StatusDraft))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1/post":
+			var req accounting.PostJournalEntryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Reviewed manual journal", req.Reason)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "posted"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-1/void":
 			var req map[string]string
@@ -14062,7 +14065,7 @@ func TestCLIJournalEntryCommands(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Balanced: true")
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"journal", "post", "--id", "je-1"})
+	err = app.run(context.Background(), []string{"journal", "post", "--id", "je-1", "--reason", "Reviewed manual journal"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Posted journal entry je-1")
 
@@ -14150,6 +14153,7 @@ func TestCLIJournalBranches(t *testing.T) {
 			want: "source-id must be a valid UUID",
 		},
 		{name: "missing post id", args: []string{"journal", "post", "--id", " "}, want: "id is required"},
+		{name: "missing post reason", args: []string{"journal", "post", "--id", "je-1", "--reason", " "}, want: "reason is required"},
 		{name: "missing void id", args: []string{"journal", "void", "--id", " ", "--reason", "Duplicate"}, want: "id is required"},
 		{name: "missing void reason", args: []string{"journal", "void", "--id", "je-1", "--reason", " "}, want: "reason is required"},
 		{name: "opening balance missing file", args: []string{"journal", "import-opening-balances", "--entry-date", "2026-01-01"}, want: "file is required"},
@@ -14202,6 +14206,9 @@ func TestCLIJournalBranches(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-branch":
 			_ = json.NewEncoder(w).Encode(journalEntryPayload("je-branch", "JE-2026-010", accounting.StatusDraft))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-branch/post":
+			var req accounting.PostJournalEntryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Reviewed branch journal", req.Reason)
 			_ = json.NewEncoder(w).Encode(map[string]string{"id": "je-branch", "status": "posted"})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-branch/void":
 			var req map[string]string
@@ -14279,7 +14286,7 @@ func TestCLIJournalBranches(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"id": "je-branch"`)
 
 	stdout.Reset()
-	err = app.run(context.Background(), []string{"journal", "post", "--id", " je-branch ", "--json"})
+	err = app.run(context.Background(), []string{"journal", "post", "--id", " je-branch ", "--reason", " Reviewed branch journal ", "--json"})
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"status": "posted"`)
 
@@ -14381,6 +14388,9 @@ func TestCLIJournalAuthFlagsAndAPIErrorBranches(t *testing.T) {
 			assert.Nil(t, req.SourceID)
 			require.Len(t, req.Lines, 2)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-error/post":
+			var req accounting.PostJournalEntryRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "Reviewed error branch", req.Reason)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tenants/tenant-1/journal-entries/je-error/void":
 			var req map[string]string
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -14416,7 +14426,7 @@ func TestCLIJournalAuthFlagsAndAPIErrorBranches(t *testing.T) {
 		{name: "list API error", args: []string{"journal", "list", "--limit", "25"}},
 		{name: "get API error", args: []string{"journal", "get", "--id", "je-error"}},
 		{name: "create API error", args: []string{"journal", "create", "--entry-date", "2026-04-01", "--description", "Error branch accrual", "--reference", "ERR-1", "--source-type", "MANUAL", "--line", "account_id=acc-1,debit=20.00", "--line", "account_id=acc-2,credit=20.00"}},
-		{name: "post API error", args: []string{"journal", "post", "--id", "je-error"}},
+		{name: "post API error", args: []string{"journal", "post", "--id", "je-error", "--reason", "Reviewed error branch"}},
 		{name: "void API error", args: []string{"journal", "void", "--id", "je-error", "--reason", "Duplicate"}},
 		{name: "opening balances API error", args: []string{"journal", "import-opening-balances", "--file", openingBalancesFile, "--entry-date", "2026-01-01"}},
 		{name: "journal import API error", args: []string{"journal", "import", "--file", journalImportFile, "--source-type", "HISTORICAL", "--post"}},

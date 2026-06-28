@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -200,7 +201,7 @@ func (m *mockAccountingRepository) UpdateJournalEntryTemplateAfterGeneration(ctx
 	return nil
 }
 
-func (m *mockAccountingRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status accounting.JournalEntryStatus, userID string) error {
+func (m *mockAccountingRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status accounting.JournalEntryStatus, userID string, reason ...string) error {
 	if m.updateJournalErr != nil {
 		return m.updateJournalErr
 	}
@@ -213,6 +214,9 @@ func (m *mockAccountingRepository) UpdateJournalEntryStatus(ctx context.Context,
 		now := time.Now()
 		entry.PostedAt = &now
 		entry.PostedBy = &userID
+		if len(reason) > 0 {
+			entry.PostReason = strings.TrimSpace(reason[0])
+		}
 	}
 	return nil
 }

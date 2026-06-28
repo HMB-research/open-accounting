@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/HMB-research/open-accounting/internal/database"
@@ -513,21 +514,26 @@ func (r *GORMRepository) createJournalEntryInTx(ctx context.Context, tx *gorm.DB
 }
 
 // UpdateJournalEntryStatus updates the status of a journal entry
-func (r *GORMRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string) error {
+func (r *GORMRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string, reason ...string) error {
 	db, err := r.tenantTable(ctx, schemaName, "journal_entries")
 	if err != nil {
 		return err
 	}
 
 	now := time.Now()
+	postReason := ""
+	if len(reason) > 0 {
+		postReason = strings.TrimSpace(reason[0])
+	}
 
 	switch status {
 	case StatusPosted:
 		result := db.Where("id = ? AND tenant_id = ? AND status = ?", entryID, tenantID, StatusDraft).
 			Updates(map[string]interface{}{
-				"status":    status,
-				"posted_at": now,
-				"posted_by": userID,
+				"status":      status,
+				"posted_at":   now,
+				"posted_by":   userID,
+				"post_reason": postReason,
 			})
 		if result.Error != nil {
 			return fmt.Errorf("update journal entry status: %w", result.Error)
@@ -772,6 +778,7 @@ func modelToJournalEntry(m *models.JournalEntry) *JournalEntry {
 		Status:           JournalEntryStatus(m.Status),
 		PostedAt:         m.PostedAt,
 		PostedBy:         m.PostedBy,
+		PostReason:       m.PostReason,
 		VoidedAt:         m.VoidedAt,
 		VoidedBy:         m.VoidedBy,
 		VoidReason:       m.VoidReason,
@@ -794,6 +801,7 @@ func journalEntryToModel(je *JournalEntry) *models.JournalEntry {
 		Status:           models.JournalEntryStatus(je.Status),
 		PostedAt:         je.PostedAt,
 		PostedBy:         je.PostedBy,
+		PostReason:       je.PostReason,
 		VoidedAt:         je.VoidedAt,
 		VoidedBy:         je.VoidedBy,
 		VoidReason:       je.VoidReason,

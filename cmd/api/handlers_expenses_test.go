@@ -273,7 +273,7 @@ func (a *expenseHandlerAccounting) CreateJournalEntry(_ context.Context, _, tena
 	}}, nil
 }
 
-func (a *expenseHandlerAccounting) PostJournalEntry(_ context.Context, _, _, _, _ string) error {
+func (a *expenseHandlerAccounting) PostJournalEntry(_ context.Context, _, _, _, _, _ string) error {
 	return nil
 }
 

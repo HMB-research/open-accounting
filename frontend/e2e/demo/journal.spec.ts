@@ -146,6 +146,7 @@ test.describe("Demo Journal Entries", () => {
     const { accounts, entries } = await openJournalPage(page, testInfo);
     const description = `E2E journal lifecycle ${Date.now()}`;
     const reference = `E2E-${Date.now()}`;
+    const postReason = "E2E reviewed manual entry";
     const voidReason = "E2E void after lifecycle verification";
 
     expect(accounts.length).toBeGreaterThan(0);
@@ -266,6 +267,7 @@ test.describe("Demo Journal Entries", () => {
       formatAmount(createdEntry.lines[1].credit_amount),
     );
 
+    page.once("dialog", (prompt) => prompt.accept(postReason));
     const [postedResponse] = await Promise.all([
       page.waitForResponse((response) =>
         journalEntryActionResponse(response, createdEntry.id, "post"),

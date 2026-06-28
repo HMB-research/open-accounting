@@ -516,7 +516,7 @@ func (s *Service) ApplyJournalEntryTemplate(ctx context.Context, schemaName, ten
 	if !req.Post {
 		return entry, nil
 	}
-	if err := s.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, req.UserID); err != nil {
+	if err := s.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, req.UserID, "Journal template applied with post flag"); err != nil {
 		return nil, err
 	}
 	return s.GetJournalEntry(ctx, schemaName, tenantID, entry.ID)
@@ -738,7 +738,12 @@ func normalizeJournalTemplateDate(value time.Time) time.Time {
 }
 
 // PostJournalEntry posts a draft journal entry
-func (s *Service) PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID string) error {
+func (s *Service) PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return errors.New("post reason is required")
+	}
+
 	// Get the entry to verify it exists and is in draft status
 	entry, err := s.repo.GetJournalEntryByID(ctx, schemaName, tenantID, entryID)
 	if err != nil {
@@ -754,7 +759,7 @@ func (s *Service) PostJournalEntry(ctx context.Context, schemaName, tenantID, en
 		return fmt.Errorf("entry validation failed: %w", err)
 	}
 
-	return s.repo.UpdateJournalEntryStatus(ctx, schemaName, tenantID, entryID, StatusPosted, userID)
+	return s.repo.UpdateJournalEntryStatus(ctx, schemaName, tenantID, entryID, StatusPosted, userID, reason)
 }
 
 // VoidJournalEntry voids a posted journal entry by creating a reversing entry

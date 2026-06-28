@@ -790,6 +790,7 @@
   "journal_difference": "Erinevus:",
   "journal_voidReason": "Tühistamise põhjus:",
   "journal_voidReasonPrompt": "Sisesta tühistamise põhjus:",
+  "journal_postReasonPrompt": "Sisesta konteerimise põhjus:",
   "journal_descriptionPlaceholder": "Tehingu kirjeldus",
   "journal_referencePlaceholder": "ARV-001 vms.",
   "journal_debitsMustEqualCredits": "Deebetid ja kreeditid peavad olema võrdsed",

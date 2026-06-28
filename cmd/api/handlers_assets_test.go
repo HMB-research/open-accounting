@@ -279,7 +279,7 @@ func (a *assetHandlerAccounting) CreateJournalEntry(_ context.Context, _, tenant
 	return &accounting.JournalEntry{ID: "asset-je-1", TenantID: tenantID, Status: accounting.StatusDraft}, nil
 }
 
-func (a *assetHandlerAccounting) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
+func (a *assetHandlerAccounting) PostJournalEntry(_ context.Context, _, _, entryID, _, _ string) error {
 	a.postedIDs = append(a.postedIDs, entryID)
 	return nil
 }

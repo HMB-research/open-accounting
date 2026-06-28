@@ -278,7 +278,7 @@ func (s *Service) buildJournalEntryFromImportGroup(
 		return entry, totalDebit, totalCredit, nil
 	}
 
-	if err := s.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, req.UserID); err != nil {
+	if err := s.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, req.UserID, "Journal CSV import requested immediate post"); err != nil {
 		return nil, decimal.Zero, decimal.Zero, fmt.Errorf("post imported journal entry: %w", err)
 	}
 	postedEntry, err := s.GetJournalEntry(ctx, schemaName, tenantID, entry.ID)

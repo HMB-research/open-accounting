@@ -1229,10 +1229,11 @@ class ApiClient {
     );
   }
 
-  async postJournalEntry(tenantId: string, entryId: string) {
+  async postJournalEntry(tenantId: string, entryId: string, reason: string) {
     return this.request<{ status: string }>(
       "POST",
       `/api/v1/tenants/${tenantId}/journal-entries/${entryId}/post`,
+      { reason },
     );
   }
 

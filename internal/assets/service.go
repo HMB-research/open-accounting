@@ -18,7 +18,7 @@ type accountingPoster interface {
 	ListAccounts(ctx context.Context, schemaName, tenantID string, activeOnly bool) ([]accounting.Account, error)
 	GetAccount(ctx context.Context, schemaName, tenantID, accountID string) (*accounting.Account, error)
 	CreateJournalEntry(ctx context.Context, schemaName, tenantID string, req *accounting.CreateJournalEntryRequest) (*accounting.JournalEntry, error)
-	PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID string) error
+	PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string) error
 }
 
 type contactLister interface {
@@ -512,7 +512,7 @@ func (s *Service) recordDepreciationJournal(ctx context.Context, schemaName, ten
 	if err != nil {
 		return nil, fmt.Errorf("create depreciation journal: %w", err)
 	}
-	if err := s.ledger.PostJournalEntry(ctx, schemaName, tenantID, journalEntry.ID, userID); err != nil {
+	if err := s.ledger.PostJournalEntry(ctx, schemaName, tenantID, journalEntry.ID, userID, "Fixed asset depreciation posting"); err != nil {
 		return nil, fmt.Errorf("post depreciation journal: %w", err)
 	}
 
@@ -621,7 +621,7 @@ func (s *Service) recordDisposalJournal(ctx context.Context, schemaName, tenantI
 	if err != nil {
 		return nil, fmt.Errorf("create disposal journal: %w", err)
 	}
-	if err := s.ledger.PostJournalEntry(ctx, schemaName, tenantID, journalEntry.ID, userID); err != nil {
+	if err := s.ledger.PostJournalEntry(ctx, schemaName, tenantID, journalEntry.ID, userID, "Fixed asset disposal posting"); err != nil {
 		return nil, fmt.Errorf("post disposal journal: %w", err)
 	}
 

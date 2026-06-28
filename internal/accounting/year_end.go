@@ -468,7 +468,7 @@ func (s *Service) CreateYearEndCarryForward(ctx context.Context, schemaName, ten
 		return nil, fmt.Errorf("create carry-forward journal entry: %w", err)
 	}
 
-	if err := s.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, req.UserID); err != nil {
+	if err := s.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, req.UserID, "Year-end carry-forward posting"); err != nil {
 		return nil, fmt.Errorf("post carry-forward journal entry: %w", err)
 	}
 

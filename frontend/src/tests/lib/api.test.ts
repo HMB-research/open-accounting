@@ -2855,9 +2855,22 @@ describe("API Client - Core Functionality", () => {
         json: async () => ({ status: "POSTED" }),
       });
 
-      const result = await api.postJournalEntry("tenant-123", "je-1");
+      const result = await api.postJournalEntry(
+        "tenant-123",
+        "je-1",
+        "Reviewed manual entry",
+      );
 
       expect(result.status).toBe("POSTED");
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/journal-entries/je-1/post",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ reason: "Reviewed manual entry" }),
+        }),
+      );
     });
 
     it("should void journal entry", async () => {

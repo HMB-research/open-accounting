@@ -442,6 +442,98 @@ func TestTenantFeatureMigrationsHandlePartialSchemas(t *testing.T) {
 	}
 }
 
+func TestJournalEntryPostReasonMigrationUpdatesTenantBootstrap(t *testing.T) {
+	pool := setupMigrationTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	if err := ensureMigrationsTable(ctx, pool); err != nil {
+		t.Fatalf("ensureMigrationsTable failed: %v", err)
+	}
+
+	execSQL(t, ctx, pool, `
+		CREATE SCHEMA tenant_existing_post_reason;
+		CREATE TABLE tenant_existing_post_reason.journal_entries (
+			id UUID PRIMARY KEY
+		);
+
+		CREATE OR REPLACE FUNCTION create_accounting_tables(schema_name TEXT) RETURNS VOID AS $$
+		BEGIN
+			EXECUTE format('CREATE TABLE IF NOT EXISTS %I.journal_entries (id UUID PRIMARY KEY)', schema_name);
+		END;
+		$$ LANGUAGE plpgsql;
+
+		DO $$
+		DECLARE
+			bootstrap_function TEXT;
+		BEGIN
+			FOREACH bootstrap_function IN ARRAY ARRAY[
+				'add_vat_columns_to_journal_lines',
+				'add_payment_reversal_columns',
+				'add_reconciliation_tables_to_schema',
+				'add_recurring_tables_to_schema',
+				'add_quotes_and_orders_tables',
+				'add_fixed_assets_tables',
+				'add_fixed_asset_disposal_journal_links',
+				'create_inventory_tables',
+				'add_inventory_movement_tracking_metadata',
+				'add_inventory_lot_reservations',
+				'add_payroll_tables',
+				'add_leave_management_tables',
+				'create_email_tables_only',
+				'add_kmd_tables_to_schema',
+				'fix_email_log_schema',
+				'add_reminder_rules_to_schema',
+				'sync_email_template_type_constraint',
+				'add_interest_tables',
+				'add_document_tables',
+				'add_document_review_workflow',
+				'add_bank_transaction_review_columns',
+				'add_close_pack_document_entity',
+				'add_order_stock_reservations',
+				'add_journal_entry_evidence_requirement',
+				'add_journal_entry_templates',
+				'add_journal_entry_template_recurrence',
+				'add_bank_match_rules',
+				'add_invoice_vat_treatment',
+				'add_expense_tables',
+				'add_commercial_document_entities',
+				'add_leave_record_document_entity',
+				'add_tax_declaration_document_entities',
+				'add_document_lifecycle_workflow',
+				'add_document_legal_hold_workflow',
+				'add_document_lifecycle_integrity',
+				'add_cost_center_tables',
+				'add_migration_execution_run_tables'
+			]
+			LOOP
+				EXECUTE format(
+					'CREATE OR REPLACE FUNCTION %I(schema_name TEXT) RETURNS VOID AS $fn$ BEGIN END; $fn$ LANGUAGE plpgsql',
+					bootstrap_function
+				);
+			END LOOP;
+		END $$;
+	`)
+
+	dir := t.TempDir()
+	copyRepositoryMigration(t, dir, "061_journal_entry_post_reason.up.sql")
+	copyRepositoryMigration(t, dir, "061_journal_entry_post_reason.down.sql")
+
+	if err := migrateUp(ctx, pool, dir, 0); err != nil {
+		t.Fatalf("migrateUp failed: %v", err)
+	}
+
+	if !schemaColumnExists(t, ctx, pool, "tenant_existing_post_reason", "journal_entries", "post_reason") {
+		t.Fatalf("expected existing tenant journal_entries to receive post_reason")
+	}
+
+	execSQL(t, ctx, pool, `SELECT create_tenant_schema('tenant_future_post_reason')`)
+
+	if !schemaColumnExists(t, ctx, pool, "tenant_future_post_reason", "journal_entries", "post_reason") {
+		t.Fatalf("expected future tenant bootstrap journal_entries to receive post_reason")
+	}
+}
+
 func TestEmailTemplateTypeMigrationAllowsQuoteAndOrderTemplates(t *testing.T) {
 	pool := setupMigrationTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -667,6 +759,19 @@ func schemaTableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, sc
 		WHERE table_schema = $1 AND table_name = $2
 	)`, schemaName, tableName).Scan(&exists); err != nil {
 		t.Fatalf("failed to check schema table existence: %v", err)
+	}
+	return exists
+}
+
+func schemaColumnExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, schemaName, tableName, columnName string) bool {
+	t.Helper()
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1
+		FROM information_schema.columns
+		WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+	)`, schemaName, tableName, columnName).Scan(&exists); err != nil {
+		t.Fatalf("failed to check schema column existence: %v", err)
 	}
 	return exists
 }
