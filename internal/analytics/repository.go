@@ -248,17 +248,37 @@ func (r *GORMRepository) GetMonthlyCashFlow(ctx context.Context, schemaName stri
 		return []MonthlyCashFlowData{}, nil
 	}
 
-	db, err := r.tenantTable(ctx, schemaName, "payments", "p")
+	bankDB, err := r.tenantTable(ctx, schemaName, "bank_transactions", "bt")
 	if err != nil {
-		return nil, fmt.Errorf("qualify payments table: %w", err)
+		return nil, fmt.Errorf("qualify bank transactions table: %w", err)
 	}
 
-	var rows []struct {
+	type monthlyCashFlowRow struct {
 		Month    time.Time
 		Inflows  decimal.Decimal
 		Outflows decimal.Decimal
 	}
-	if err := db.
+	var bankRows []monthlyCashFlowRow
+	if err := bankDB.
+		Select(`
+			date_trunc('month', bt.transaction_date)::date AS month,
+			COALESCE(SUM(CASE WHEN bt.amount > 0 THEN bt.amount ELSE 0 END), 0) AS inflows,
+			COALESCE(SUM(CASE WHEN bt.amount < 0 THEN -bt.amount ELSE 0 END), 0) AS outflows
+		`).
+		Where("bt.transaction_date >= ? AND bt.transaction_date < ?", monthStarts[0], monthStarts[len(monthStarts)-1].AddDate(0, 1, 0)).
+		Group("date_trunc('month', bt.transaction_date)").
+		Order("month ASC").
+		Scan(&bankRows).Error; err != nil {
+		return nil, fmt.Errorf("get monthly bank cash flow: %w", err)
+	}
+
+	paymentsDB, err := r.tenantTable(ctx, schemaName, "payments", "p")
+	if err != nil {
+		return nil, fmt.Errorf("qualify payments table: %w", err)
+	}
+
+	var paymentRows []monthlyCashFlowRow
+	if err := paymentsDB.
 		Select(`
 			date_trunc('month', p.payment_date)::date AS month,
 			COALESCE(SUM(CASE WHEN p.payment_type = ? THEN p.base_amount ELSE 0 END), 0) AS inflows,
@@ -268,12 +288,19 @@ func (r *GORMRepository) GetMonthlyCashFlow(ctx context.Context, schemaName stri
 		Where("COALESCE(NULLIF(UPPER(TRIM(p.payment_method)), ''), '') NOT IN ?", migrationSettlementPaymentMethods).
 		Group("date_trunc('month', p.payment_date)").
 		Order("month ASC").
-		Scan(&rows).Error; err != nil {
+		Scan(&paymentRows).Error; err != nil {
 		return nil, fmt.Errorf("get monthly cash flow: %w", err)
 	}
 
-	byMonth := make(map[string]MonthlyCashFlowData, len(rows))
-	for _, row := range rows {
+	byMonth := make(map[string]MonthlyCashFlowData, len(bankRows)+len(paymentRows))
+	for _, row := range paymentRows {
+		byMonth[monthKey(row.Month)] = MonthlyCashFlowData{
+			Label:    monthLabel(row.Month),
+			Inflows:  row.Inflows,
+			Outflows: row.Outflows,
+		}
+	}
+	for _, row := range bankRows {
 		byMonth[monthKey(row.Month)] = MonthlyCashFlowData{
 			Label:    monthLabel(row.Month),
 			Inflows:  row.Inflows,
