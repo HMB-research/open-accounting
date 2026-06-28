@@ -272,10 +272,7 @@ func (r *GORMRepository) GetMonthlyCashFlow(ctx context.Context, schemaName stri
 		return nil, fmt.Errorf("get monthly bank cash flow: %w", err)
 	}
 
-	paymentsDB, err := r.tenantTable(ctx, schemaName, "payments", "p")
-	if err != nil {
-		return nil, fmt.Errorf("qualify payments table: %w", err)
-	}
+	paymentsDB := r.db.WithContext(ctx).Table(qualifiedTenantTable(schemaName, "payments") + " AS p")
 
 	var paymentRows []monthlyCashFlowRow
 	if err := paymentsDB.

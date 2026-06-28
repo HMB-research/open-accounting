@@ -162,6 +162,26 @@ func TestGORMRepositoryScansMonthlyQueries(t *testing.T) {
 		assert.True(t, data[2].Outflows.Equal(decimal.RequireFromString("120.00")))
 		stub.requireExhausted(t)
 	})
+
+	t.Run("cash flow propagates payment query errors", func(t *testing.T) {
+		repo, stub := newAnalyticsStubRepository(t,
+			analyticsStubQuery{
+				contains: []string{`FROM "tenant_schema"."bank_transactions" AS bt`, "date_trunc('month', bt.transaction_date)"},
+				columns:  []string{"month", "inflows", "outflows"},
+			},
+			analyticsStubQuery{
+				contains: []string{`FROM "tenant_schema"."payments" AS p`, "date_trunc('month', p.payment_date)"},
+				err:      errors.New("payment query failed"),
+			},
+		)
+
+		data, err := repo.GetMonthlyCashFlow(ctx, schema, 3)
+
+		require.Error(t, err)
+		assert.Nil(t, data)
+		assert.Contains(t, err.Error(), "get monthly cash flow")
+		stub.requireExhausted(t)
+	})
 }
 
 func TestIsMigrationSettlementPaymentMethod(t *testing.T) {
