@@ -10206,6 +10206,7 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("journal post", flag.ContinueOnError)
 		fs.SetOutput(a.stderr)
 		entryID := fs.String("id", "", "Journal entry id")
+		reason := fs.String("reason", "", "Reason for posting")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -10213,8 +10214,11 @@ func (a *cliApp) runJournal(ctx context.Context, args []string) error {
 		if strings.TrimSpace(*entryID) == "" {
 			return errors.New("id is required")
 		}
+		if strings.TrimSpace(*reason) == "" {
+			return errors.New("reason is required")
+		}
 
-		result, err := client.postJournalEntry(ctx, cfg.TenantID, strings.TrimSpace(*entryID))
+		result, err := client.postJournalEntry(ctx, cfg.TenantID, strings.TrimSpace(*entryID), strings.TrimSpace(*reason))
 		if err != nil {
 			return err
 		}

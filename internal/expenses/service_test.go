@@ -668,7 +668,7 @@ func (f *fakeAccountingPoster) CreateJournalEntry(_ context.Context, _, tenantID
 	return &accounting.JournalEntry{ID: "je-1", TenantID: tenantID, Status: accounting.StatusDraft}, nil
 }
 
-func (f *fakeAccountingPoster) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
+func (f *fakeAccountingPoster) PostJournalEntry(_ context.Context, _, _, entryID, _, _ string) error {
 	if f.postErr != nil {
 		return f.postErr
 	}

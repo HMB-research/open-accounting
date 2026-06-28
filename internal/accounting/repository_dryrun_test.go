@@ -705,7 +705,7 @@ func TestGORMRepositoryDryRunJournalEntryOperations(t *testing.T) {
 	err = repo.CreateJournalEntry(ctx, "tenant_schema", newEntry)
 	requireAccountingDryRunScanError(t, err, "generate entry number")
 
-	require.NoError(t, repo.UpdateJournalEntryStatus(ctx, "tenant_schema", "tenant-1", "entry-1", StatusPosted, "user-1"))
+	require.NoError(t, repo.UpdateJournalEntryStatus(ctx, "tenant_schema", "tenant-1", "entry-1", StatusPosted, "user-1", "Dry-run posting reason"))
 }
 
 func TestGORMRepositoryDryRunJournalEntryErrors(t *testing.T) {

@@ -158,7 +158,7 @@ func (s *Service) ImportOpeningBalancesCSV(ctx context.Context, schemaName, tena
 		return nil, fmt.Errorf("create opening-balance journal entry: %w", err)
 	}
 
-	if err := s.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, req.UserID); err != nil {
+	if err := s.PostJournalEntry(ctx, schemaName, tenantID, entry.ID, req.UserID, "Opening balance import"); err != nil {
 		return nil, fmt.Errorf("post opening-balance journal entry: %w", err)
 	}
 

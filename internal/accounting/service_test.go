@@ -3,6 +3,7 @@ package accounting
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -229,7 +230,7 @@ func (m *MockRepository) UpdateJournalEntryTemplateAfterGeneration(ctx context.C
 	return nil
 }
 
-func (m *MockRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string) error {
+func (m *MockRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status JournalEntryStatus, userID string, reason ...string) error {
 	if m.updateStatusErr != nil {
 		return m.updateStatusErr
 	}
@@ -238,6 +239,9 @@ func (m *MockRepository) UpdateJournalEntryStatus(ctx context.Context, schemaNam
 		return errors.New("entry not found or invalid status transition")
 	}
 	je.Status = status
+	if len(reason) > 0 {
+		je.PostReason = strings.TrimSpace(reason[0])
+	}
 	return nil
 }
 
@@ -1687,9 +1691,16 @@ func TestService_PostJournalEntry(t *testing.T) {
 		}
 		repo.journalEntries[entry.ID] = entry
 
-		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-1", "user-1")
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-1", "user-1", "Imported journal closeout")
 		require.NoError(t, err)
 		assert.Equal(t, StatusPosted, entry.Status)
+		assert.Equal(t, "Imported journal closeout", entry.PostReason)
+	})
+
+	t.Run("requires post reason", func(t *testing.T) {
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-1", "user-1", " ")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "post reason is required")
 	})
 
 	t.Run("rejects non-draft entry", func(t *testing.T) {
@@ -1704,13 +1715,13 @@ func TestService_PostJournalEntry(t *testing.T) {
 		}
 		repo.journalEntries[entry.ID] = entry
 
-		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-2", "user-1")
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-2", "user-1", "Reviewed and approved")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "only draft entries can be posted")
 	})
 
 	t.Run("returns error when entry not found", func(t *testing.T) {
-		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "nonexistent", "user-1")
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "nonexistent", "user-1", "Reviewed and approved")
 		assert.Error(t, err)
 	})
 
@@ -1727,7 +1738,7 @@ func TestService_PostJournalEntry(t *testing.T) {
 		repo.journalEntries[entry.ID] = entry
 		repo.updateStatusErr = errors.New("database error")
 
-		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-3", "user-1")
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-3", "user-1", "Reviewed and approved")
 		assert.Error(t, err)
 		repo.updateStatusErr = nil
 	})
@@ -1744,7 +1755,7 @@ func TestService_PostJournalEntry(t *testing.T) {
 		}
 		repo.journalEntries[entry.ID] = entry
 
-		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-4", "user-1")
+		err := svc.PostJournalEntry(ctx, schemaName, "tenant-1", "je-4", "user-1", "Reviewed and approved")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "entry validation failed")
 	})

@@ -2792,11 +2792,11 @@ func (f *assetLedgerWithErrors) CreateJournalEntry(ctx context.Context, schemaNa
 	return f.fakeAssetAccountingPoster.CreateJournalEntry(ctx, schemaName, tenantID, req)
 }
 
-func (f *assetLedgerWithErrors) PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID string) error {
+func (f *assetLedgerWithErrors) PostJournalEntry(ctx context.Context, schemaName, tenantID, entryID, userID, reason string) error {
 	if f.postErr != nil {
 		return f.postErr
 	}
-	return f.fakeAssetAccountingPoster.PostJournalEntry(ctx, schemaName, tenantID, entryID, userID)
+	return f.fakeAssetAccountingPoster.PostJournalEntry(ctx, schemaName, tenantID, entryID, userID, reason)
 }
 
 type fakeAssetAccountingPoster struct {
@@ -2843,7 +2843,7 @@ func (f *fakeAssetAccountingPoster) CreateJournalEntry(_ context.Context, _, ten
 	return &accounting.JournalEntry{ID: "je-1", TenantID: tenantID, Status: accounting.StatusDraft}, nil
 }
 
-func (f *fakeAssetAccountingPoster) PostJournalEntry(_ context.Context, _, _, entryID, _ string) error {
+func (f *fakeAssetAccountingPoster) PostJournalEntry(_ context.Context, _, _, entryID, _, _ string) error {
 	f.postedIDs = append(f.postedIDs, entryID)
 	return nil
 }

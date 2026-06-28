@@ -66,6 +66,7 @@ type JournalEntry struct {
 	Status           JournalEntryStatus `gorm:"size:20;not null;default:'DRAFT'" json:"status"`
 	PostedAt         *time.Time         `gorm:"" json:"posted_at,omitempty"`
 	PostedBy         *string            `gorm:"type:uuid" json:"posted_by,omitempty"`
+	PostReason       string             `gorm:"type:text" json:"post_reason,omitempty"`
 	VoidedAt         *time.Time         `gorm:"" json:"voided_at,omitempty"`
 	VoidedBy         *string            `gorm:"type:uuid" json:"voided_by,omitempty"`
 	VoidReason       string             `gorm:"type:text" json:"void_reason,omitempty"`

@@ -233,6 +233,7 @@ func TestGORMJournalEntryModelMappingRoundTrip(t *testing.T) {
 		Status:           StatusVoided,
 		PostedAt:         &postedAt,
 		PostedBy:         &postedBy,
+		PostReason:       "Imported journal reviewed for posting",
 		VoidedAt:         &voidedAt,
 		VoidedBy:         &voidedBy,
 		VoidReason:       "Replaced by corrected import",

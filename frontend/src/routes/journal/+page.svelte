@@ -387,8 +387,11 @@
   }
 
   async function postEntry(entry: JournalEntry) {
+    const reason = prompt(m.journal_postReasonPrompt());
+    if (!reason) return;
+
     try {
-      await api.postJournalEntry(tenantId, entry.id);
+      await api.postJournalEntry(tenantId, entry.id, reason);
       entry.status = "POSTED";
       entries = [...entries];
     } catch (err) {
@@ -482,7 +485,7 @@
     </div>
   {:else}
     <div class="entries-list">
-      {#each entries as entry}
+      {#each entries as entry (entry.id)}
         <div class="card entry-card">
           <div class="entry-header">
             <div class="entry-info">

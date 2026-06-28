@@ -141,6 +141,7 @@ BEGIN
             status VARCHAR(20) NOT NULL DEFAULT ''DRAFT'' CHECK (status IN (''DRAFT'', ''POSTED'', ''VOIDED'')),
             posted_at TIMESTAMPTZ,
             posted_by UUID,
+            post_reason TEXT,
             voided_at TIMESTAMPTZ,
             voided_by UUID,
             void_reason TEXT,

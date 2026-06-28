@@ -790,6 +790,7 @@
   "journal_difference": "Difference:",
   "journal_voidReason": "Void reason:",
   "journal_voidReasonPrompt": "Enter reason for voiding:",
+  "journal_postReasonPrompt": "Enter reason for posting:",
   "journal_descriptionPlaceholder": "Description of this transaction",
   "journal_referencePlaceholder": "INV-001, etc.",
   "journal_debitsMustEqualCredits": "Debits must equal credits",

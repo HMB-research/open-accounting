@@ -139,6 +139,11 @@ type ImportJournalEntriesResult struct {
 	Errors         []ImportJournalEntriesRowError `json:"errors,omitempty"`
 }
 
+// PostJournalEntryRequest records why a draft journal entry is being finalized.
+type PostJournalEntryRequest struct {
+	Reason string `json:"reason"`
+}
+
 // ImportJournalEntriesRowError describes a journal import group or row failure.
 type ImportJournalEntriesRowError struct {
 	Row            int    `json:"row"`
@@ -161,6 +166,7 @@ type JournalEntry struct {
 	Lines            []JournalEntryLine `json:"lines"`
 	PostedAt         *time.Time         `json:"posted_at,omitempty"`
 	PostedBy         *string            `json:"posted_by,omitempty"`
+	PostReason       string             `json:"post_reason,omitempty"`
 	VoidedAt         *time.Time         `json:"voided_at,omitempty"`
 	VoidedBy         *string            `json:"voided_by,omitempty"`
 	VoidReason       string             `json:"void_reason,omitempty"`

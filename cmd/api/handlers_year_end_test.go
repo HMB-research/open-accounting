@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,7 +119,7 @@ func (m *mockYearEndAccountingRepository) CreateJournalEntry(ctx context.Context
 	return nil
 }
 
-func (m *mockYearEndAccountingRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status accounting.JournalEntryStatus, userID string) error {
+func (m *mockYearEndAccountingRepository) UpdateJournalEntryStatus(ctx context.Context, schemaName, tenantID, entryID string, status accounting.JournalEntryStatus, userID string, reason ...string) error {
 	if m.updateStatusErr != nil {
 		return m.updateStatusErr
 	}
@@ -127,6 +128,9 @@ func (m *mockYearEndAccountingRepository) UpdateJournalEntryStatus(ctx context.C
 		return errors.New("journal entry not found")
 	}
 	entry.Status = status
+	if len(reason) > 0 {
+		entry.PostReason = strings.TrimSpace(reason[0])
+	}
 	return nil
 }
 

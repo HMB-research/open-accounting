@@ -2087,6 +2087,9 @@ func printJournalEntry(w io.Writer, entry *accounting.JournalEntry) {
 	_, _ = fmt.Fprintf(w, "Total debits: %s\n", entry.TotalDebits().String())
 	_, _ = fmt.Fprintf(w, "Total credits: %s\n", entry.TotalCredits().String())
 	_, _ = fmt.Fprintf(w, "Balanced: %t\n", entry.IsBalanced())
+	if strings.TrimSpace(entry.PostReason) != "" {
+		_, _ = fmt.Fprintf(w, "Post reason: %s\n", entry.PostReason)
+	}
 	if strings.TrimSpace(entry.VoidReason) != "" {
 		_, _ = fmt.Fprintf(w, "Void reason: %s\n", entry.VoidReason)
 	}
