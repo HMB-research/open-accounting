@@ -60,6 +60,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 	eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
 	eInvoiceInvoiceType := fs.String("e-invoice-invoice-type", "", "Override executed e-invoice type: SALES, PURCHASE, or CREDIT_NOTE")
 	providerPreset := fs.String("provider-preset", string(cutover.MigrationProviderPresetGeneric), "Migration CSV provider preset: generic, merit, smartaccounts, or directo")
+	manifestFile := fs.String("manifest", "", "Snapshot manifest.json produced by smartaccounts-snapshot")
 	paymentsFile := fs.String("payments", "", "Payments CSV file")
 	bankAccountsFile := fs.String("bank-accounts", "", "Bank accounts CSV file")
 	bankTransactionsFile := fs.String("bank-transactions", "", "Bank transactions CSV file")
@@ -94,7 +95,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 	if err != nil {
 		return err
 	}
-	files, err := buildMigrationBundleFiles([]migrationFileInput{
+	files, err := buildMigrationBundleFilesWithManifest(*manifestFile, []migrationFileInput{
 		{kind: cutover.KindAccounts, path: *accountsFile},
 		{kind: cutover.KindContacts, path: *contactsFile},
 		{kind: cutover.KindEmployees, path: *employeesFile},
@@ -133,6 +134,28 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 	}
 	resumeFromRun, err := readMigrationExecutionRunFile(*resumeRunFile)
 	if err != nil {
+		return err
+	}
+
+	if !*confirm {
+		req := &cutover.ExecuteMigrationRequest{
+			Files:                    files,
+			Confirm:                  false,
+			ResumeFromRun:            resumeFromRun,
+			ResumeFromRunID:          trimmedResumeRunID,
+			EInvoiceContactMode:      cutover.EInvoiceContactMode(strings.TrimSpace(*eInvoiceContactMode)),
+			EInvoiceInvoiceType:      string(invoiceType),
+			ProviderPreset:           cutover.MigrationProviderPreset(strings.TrimSpace(*providerPreset)),
+			BankTransactionAccountID: strings.TrimSpace(*bankTransactionAccountID),
+			BankTransactionFormat:    strings.TrimSpace(*bankTransactionFormat),
+			OpeningBalanceEntryDate:  strings.TrimSpace(*openingBalanceEntryDate),
+		}
+		run, err := client.executeMigration(ctx, cfg.TenantID, req)
+		if *asJSON {
+			_ = printJSON(a.stdout, run)
+		} else {
+			printMigrationExecutionRun(a.stdout, run)
+		}
 		return err
 	}
 
@@ -209,7 +232,7 @@ func executeMigrationRun(ctx context.Context, client *apiClient, tenantID string
 		return run, errors.New("migration execution plan is not ready")
 	}
 	if !opts.Confirm {
-		return run, errors.New("migration execute requires --confirm")
+		return run, nil
 	}
 
 	filesByKey := migrationFilesByStepKey(files)
@@ -360,8 +383,30 @@ func migrationStepResponse(value any, err error) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	payload, _ := json.Marshal(value)
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("marshal migration import response: %w", err)
+	}
+	if err := migrationImportResponseError(payload); err != nil {
+		return payload, err
+	}
 	return payload, nil
+}
+
+func migrationImportResponseError(payload json.RawMessage) error {
+	var decoded struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil || len(decoded.Errors) == 0 {
+		return nil
+	}
+	firstMessage := strings.TrimSpace(decoded.Errors[0].Message)
+	if firstMessage == "" {
+		firstMessage = "see import response for details"
+	}
+	return fmt.Errorf("import completed with %d row errors; first: %s", len(decoded.Errors), firstMessage)
 }
 
 func openingBalanceExecutionReference(entryDate string) string {

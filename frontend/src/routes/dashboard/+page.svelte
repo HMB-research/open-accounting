@@ -18,6 +18,7 @@
 	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
 	import AccountantPortfolioPanel from '$lib/components/AccountantPortfolioPanel.svelte';
 	import AccountantReviewPanel from '$lib/components/AccountantReviewPanel.svelte';
+	import DashboardFinancialSignals from '$lib/components/DashboardFinancialSignals.svelte';
 	import SetupCenter from '$lib/components/SetupCenter.svelte';
 	import * as m from '$lib/paraglide/messages.js';
 
@@ -447,24 +448,7 @@
 				<div class="workspace-side">
 					<section class="workspace-panel workspace-panel-primary">
 						<div class="workspace-panel-kicker">{m.dashboard_invoiceStatus()}</div>
-						<div class="workspace-signal-grid">
-							<div class="workspace-signal">
-								<span>{m.dashboard_receivables()}</span>
-								<strong>{summary ? formatCurrency(summary.total_receivables) : '--'}</strong>
-							</div>
-							<div class="workspace-signal">
-								<span>{m.dashboard_netIncome()}</span>
-								<strong>{summary ? formatCurrency(summary.net_income) : '--'}</strong>
-							</div>
-							<div class="workspace-signal">
-								<span>{m.invoices_overdue()}</span>
-								<strong>{summary ? summary.overdue_invoices : '--'}</strong>
-							</div>
-							<div class="workspace-signal">
-								<span>{m.dashboard_pending()}</span>
-								<strong>{summary ? summary.pending_invoices : '--'}</strong>
-							</div>
-						</div>
+						<DashboardFinancialSignals {summary} />
 					</section>
 
 					<section class="workspace-panel">
@@ -511,6 +495,15 @@
 						{#if Number(summary.overdue_receivables) > 0}
 							<div class="summary-change negative">
 								{formatCurrency(summary.overdue_receivables)} {m.dashboard_overdue()}
+							</div>
+						{/if}
+					</div>
+					<div class="summary-card">
+						<div class="summary-label">{m.dashboard_payables()}</div>
+						<div class="summary-value">{formatCurrency(summary.total_payables)}</div>
+						{#if Number(summary.overdue_payables) > 0}
+							<div class="summary-change negative">
+								{formatCurrency(summary.overdue_payables)} {m.dashboard_overdue()}
 							</div>
 						{/if}
 					</div>
@@ -824,34 +817,6 @@
 		color: rgba(248, 246, 241, 0.72);
 	}
 
-	.workspace-signal-grid {
-		display: grid;
-		min-width: 0;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.85rem;
-	}
-
-	.workspace-signal {
-		min-width: 0;
-		padding: 0.85rem;
-		border-radius: 1rem;
-		background: rgba(255, 255, 255, 0.08);
-	}
-
-	.workspace-signal span {
-		display: block;
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.07em;
-		color: rgba(248, 246, 241, 0.68);
-		margin-bottom: 0.3rem;
-	}
-
-	.workspace-signal strong {
-		font-size: 1.05rem;
-		line-height: 1.1;
-	}
-
 	.workspace-chip-row {
 		display: flex;
 		min-width: 0;
@@ -976,10 +941,6 @@
 
 		.workspace-meta {
 			align-items: flex-start;
-		}
-
-		.workspace-signal-grid {
-			grid-template-columns: 1fr;
 		}
 
 		h1 {

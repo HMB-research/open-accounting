@@ -231,27 +231,34 @@ func TestPackageRuntimeWave7StopAndExitBranches(t *testing.T) {
 	runtimeURL := &url.URL{Scheme: "http", Host: "127.0.0.1:4567"}
 
 	t.Run("close returns nil after interrupting running process", func(t *testing.T) {
-		cmd := exec.Command("sh", "-c", "sleep 10")
+		restorePluginWave10Seams(t)
 		runtime := &packageRuntimeProcess{
 			runtimeHTTPClient: &runtimeHTTPClient{baseURL: runtimeURL},
 			pluginName:        "sleepy-runtime",
-			cmd:               cmd,
+			cmd:               &exec.Cmd{Process: &os.Process{Pid: 12345}},
 			output:            newRuntimeProcessLogBuffer(64),
 			exited:            make(chan struct{}),
 		}
-		require.NoError(t, cmd.Start())
-		go runtime.wait()
-		t.Cleanup(func() {
-			if cmd.Process != nil {
-				_ = cmd.Process.Kill()
-			}
-		})
+		signalCount := 0
+		packageRuntimeProcessSignal = func(process *os.Process, signal os.Signal) error {
+			assert.Equal(t, runtime.cmd.Process, process)
+			assert.Equal(t, os.Interrupt, signal)
+			signalCount++
+			runtime.markExited(nil)
+			close(runtime.exited)
+			return nil
+		}
+		packageRuntimeProcessKill = func(*os.Process) error {
+			t.Fatal("runtime close should not kill a process that exits after interrupt")
+			return nil
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		err := runtime.close(ctx)
 
 		require.NoError(t, err)
+		assert.Equal(t, 1, signalCount)
 		assert.Equal(t, RuntimeStateStopped, runtime.status().State)
 	})
 

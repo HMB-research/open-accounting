@@ -61,7 +61,16 @@ async function expectDashboardShell(page: Page) {
 		expect(await nav.getByRole('link').count()).toBeGreaterThan(0);
 	}).toPass({ timeout: 15000 });
 
-	await expect(page.locator('.summary-grid .summary-card')).toHaveCount(4);
+	const summaryCards = page.locator('.summary-grid .summary-card');
+	await expect(async () => {
+		expect(await summaryCards.count()).toBeGreaterThanOrEqual(5);
+	}).toPass({ timeout: 5000 });
+	const summaryGrid = page.locator('.summary-grid').first();
+	await expect(summaryGrid.getByText(/Revenue|Tulu/i).first()).toBeVisible();
+	await expect(summaryGrid.getByText(/Expenses|Kulud/i).first()).toBeVisible();
+	await expect(summaryGrid.getByText(/Net Income|Puhaskasum/i).first()).toBeVisible();
+	await expect(summaryGrid.getByText(/Receivables|Nõuded/i).first()).toBeVisible();
+	await expect(summaryGrid.getByText(/Payables|Kohustused/i).first()).toBeVisible();
 	await expect(page.getByText(/Cash Flow|rahavoog/i).first()).toBeVisible();
 	await expect(page.getByText(/Recent Activity|viimased tegevused/i).first()).toBeVisible();
 	await expect(page.getByText(/Revenue vs Expenses|Tulud vs Kulud/i).first()).toBeVisible();

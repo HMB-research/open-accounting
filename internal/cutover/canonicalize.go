@@ -21,6 +21,24 @@ func CanonicalizeBundleFileCSV(file BundleFile, providerPreset MigrationProvider
 	if !isSupportedBundleKind(file.Kind) {
 		return file, fmt.Errorf("unsupported migration file kind %q", file.Kind)
 	}
+	if preset == MigrationProviderPresetSmartAccounts {
+		hintedKind, hasHint := smartAccountsFilenameKind(file.FileName)
+		if !hasHint {
+			hintedKind = file.Kind
+			hasHint = true
+		}
+		headers, rows, err := readSmartAccountsCSVWithHint(file.CSVContent, hintedKind, hasHint)
+		if err != nil {
+			return file, err
+		}
+		spec := fileSpecForProviderPreset(file.Kind, preset)
+		for i, header := range headers {
+			headers[i] = canonicalHeader(spec.aliases, header)
+		}
+		headers, rows, _ = normalizeSmartAccountsSourceRows(file.Kind, file.FileName, headers, rows)
+		file.CSVContent = writeCSVContent(headers, rows)
+		return file, nil
+	}
 
 	canonicalContent, err := canonicalizeCSVHeaders(file.CSVContent, fileSpecForProviderPreset(file.Kind, preset))
 	if err != nil {

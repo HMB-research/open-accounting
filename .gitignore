@@ -72,3 +72,13 @@ frontend/test-results/
 *.sqlite
 data/
 frontend/.auth/
+
+# Private migration/customer data
+# Keep real accounting exports outside this public repo. These ignores are a
+# last-resort guard for local scratch paths and must not be treated as approval
+# to store customer data in the public worktree.
+private/
+.private/
+migration-private/
+smartaccounts-export*/
+smartaccounts-prepared*/

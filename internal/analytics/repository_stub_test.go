@@ -134,11 +134,18 @@ func TestGORMRepositoryScansMonthlyQueries(t *testing.T) {
 	})
 
 	t.Run("cash flow fills missing months", func(t *testing.T) {
-		repo, stub := newAnalyticsStubRepository(t, analyticsStubQuery{
-			contains: []string{`FROM "tenant_schema"."payments" AS p`, "date_trunc('month', p.payment_date)"},
-			columns:  []string{"month", "inflows", "outflows"},
-			rows:     [][]driver.Value{{monthStarts[2], "450.00", "120.00"}},
-		})
+		repo, stub := newAnalyticsStubRepository(t,
+			analyticsStubQuery{
+				contains: []string{`FROM "tenant_schema"."bank_transactions" AS bt`, "date_trunc('month', bt.transaction_date)", "bt.amount > 0", "bt.amount < 0"},
+				columns:  []string{"month", "inflows", "outflows"},
+				rows:     [][]driver.Value{{monthStarts[2], "450.00", "120.00"}},
+			},
+			analyticsStubQuery{
+				contains: []string{`FROM "tenant_schema"."payments" AS p`, "date_trunc('month', p.payment_date)", "p.payment_method", "NOT IN"},
+				columns:  []string{"month", "inflows", "outflows"},
+				rows:     [][]driver.Value{{monthStarts[1], "50.00", "10.00"}, {monthStarts[2], "999.00", "999.00"}},
+			},
+		)
 
 		data, err := repo.GetMonthlyCashFlow(ctx, schema, 3)
 
@@ -148,13 +155,40 @@ func TestGORMRepositoryScansMonthlyQueries(t *testing.T) {
 		assert.True(t, data[0].Inflows.IsZero())
 		assert.True(t, data[0].Outflows.IsZero())
 		assert.Equal(t, monthLabel(monthStarts[1]), data[1].Label)
-		assert.True(t, data[1].Inflows.IsZero())
-		assert.True(t, data[1].Outflows.IsZero())
+		assert.True(t, data[1].Inflows.Equal(decimal.RequireFromString("50.00")))
+		assert.True(t, data[1].Outflows.Equal(decimal.RequireFromString("10.00")))
 		assert.Equal(t, monthLabel(monthStarts[2]), data[2].Label)
 		assert.True(t, data[2].Inflows.Equal(decimal.RequireFromString("450.00")))
 		assert.True(t, data[2].Outflows.Equal(decimal.RequireFromString("120.00")))
 		stub.requireExhausted(t)
 	})
+
+	t.Run("cash flow propagates payment query errors", func(t *testing.T) {
+		repo, stub := newAnalyticsStubRepository(t,
+			analyticsStubQuery{
+				contains: []string{`FROM "tenant_schema"."bank_transactions" AS bt`, "date_trunc('month', bt.transaction_date)"},
+				columns:  []string{"month", "inflows", "outflows"},
+			},
+			analyticsStubQuery{
+				contains: []string{`FROM "tenant_schema"."payments" AS p`, "date_trunc('month', p.payment_date)"},
+				err:      errors.New("payment query failed"),
+			},
+		)
+
+		data, err := repo.GetMonthlyCashFlow(ctx, schema, 3)
+
+		require.Error(t, err)
+		assert.Nil(t, data)
+		assert.Contains(t, err.Error(), "get monthly cash flow")
+		stub.requireExhausted(t)
+	})
+}
+
+func TestIsMigrationSettlementPaymentMethod(t *testing.T) {
+	assert.True(t, IsMigrationSettlementPaymentMethod("CUTOVER_SETTLEMENT"))
+	assert.True(t, IsMigrationSettlementPaymentMethod(" migration_settlement "))
+	assert.False(t, IsMigrationSettlementPaymentMethod("BANK_TRANSFER"))
+	assert.False(t, IsMigrationSettlementPaymentMethod(""))
 }
 
 func TestGORMRepositoryScansAgingAndTopCustomers(t *testing.T) {

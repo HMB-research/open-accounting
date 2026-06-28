@@ -27,6 +27,9 @@ current facts into one of the canonical documents below instead.
 - [Deployment](./DEPLOYMENT.md) covers local, Docker, and production operation.
 - [EMTA Integration](./EMTA_INTEGRATION.md) covers Estonian authority export and
   filing boundaries.
+- [SmartAccounts Migration](./SMARTACCOUNTS_MIGRATION.md) covers private
+  SmartAccounts CSV/XML snapshot, validation, planning, execution, and
+  reconciliation workflow.
 - [Merit And SmartAccounts Mapping](./FEATURE_MAPPING_MERIT_SMARTACCOUNTS.md)
   records incumbent-system feature and migration mapping.
 
