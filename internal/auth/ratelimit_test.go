@@ -234,14 +234,32 @@ func TestDefaultRateLimiter(t *testing.T) {
 		t.Fatal("DefaultRateLimiter should not return nil")
 	}
 
-	if rl.b != 10 {
-		t.Errorf("Expected burst of 10, got %d", rl.b)
+	if rl.b != defaultRateLimitBurst {
+		t.Errorf("Expected burst of %d, got %d", defaultRateLimitBurst, rl.b)
 	}
 
-	// Rate should be approximately 100/60 = 1.67 req/sec
-	expectedRate := 100.0 / 60.0
+	expectedRate := defaultRateLimitRequestsPerMinute / 60.0
 	if float64(rl.r) < expectedRate-0.01 || float64(rl.r) > expectedRate+0.01 {
 		t.Errorf("Expected rate of ~%.2f, got %.2f", expectedRate, float64(rl.r))
+	}
+}
+
+func TestDefaultRateLimiterAllowsWorkspaceLoadFanout(t *testing.T) {
+	rl := DefaultRateLimiter()
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for i := 0; i < 60; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/tenant-1/dashboard", nil)
+		req.RemoteAddr = "100.69.65.108:12345"
+		rr := httptest.NewRecorder()
+
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("workspace fanout request %d: status = %d, want %d", i+1, rr.Code, http.StatusOK)
+		}
 	}
 }
 
