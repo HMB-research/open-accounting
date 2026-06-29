@@ -583,12 +583,12 @@ func (r *GORMRepository) GetAccountBalance(ctx context.Context, schemaName, tena
 
 // GetTrialBalance retrieves all account balances as of a date
 func (r *GORMRepository) GetTrialBalance(ctx context.Context, schemaName, tenantID string, asOfDate time.Time) ([]AccountBalance, error) {
-	accountsDB, err := r.tenantTableAlias(ctx, schemaName, "accounts", "a")
+	entriesDB, err := r.tenantTableAlias(ctx, schemaName, "journal_entries", "je")
 	if err != nil {
 		return nil, err
 	}
 	linesTable := qualifiedTableAfterSchemaValidated(schemaName, "journal_entry_lines")
-	entriesTable := qualifiedTableAfterSchemaValidated(schemaName, "journal_entries")
+	accountsTable := qualifiedTableAfterSchemaValidated(schemaName, "accounts")
 
 	var results []struct {
 		AccountID    string
@@ -600,7 +600,7 @@ func (r *GORMRepository) GetTrialBalance(ctx context.Context, schemaName, tenant
 		NetBalance   models.Decimal
 	}
 
-	err = accountsDB.
+	err = entriesDB.
 		Select(`
 			a.id AS account_id,
 			a.code AS account_code,
@@ -613,10 +613,10 @@ func (r *GORMRepository) GetTrialBalance(ctx context.Context, schemaName, tenant
 				ELSE COALESCE(SUM(jel.credit_amount), 0) - COALESCE(SUM(jel.debit_amount), 0)
 			END AS net_balance
 		`).
-		Joins(fmt.Sprintf("LEFT JOIN %s AS jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id", linesTable)).
-		Joins(fmt.Sprintf("LEFT JOIN %s AS je ON je.id = jel.journal_entry_id", entriesTable)).
-		Where("a.tenant_id = ?", tenantID).
-		Where("(je.id IS NULL OR (je.entry_date <= ? AND je.status = ?))", asOfDate, StatusPosted).
+		Joins(fmt.Sprintf("JOIN %s AS jel ON jel.journal_entry_id = je.id AND jel.tenant_id = je.tenant_id", linesTable)).
+		Joins(fmt.Sprintf("JOIN %s AS a ON a.id = jel.account_id AND a.tenant_id = jel.tenant_id", accountsTable)).
+		Where("je.tenant_id = ?", tenantID).
+		Where("je.entry_date <= ? AND je.status = ?", asOfDate, StatusPosted).
 		Group("a.id, a.code, a.name, a.account_type").
 		Having("COALESCE(SUM(jel.debit_amount), 0) != 0 OR COALESCE(SUM(jel.credit_amount), 0) != 0").
 		Order("a.code").
@@ -642,12 +642,12 @@ func (r *GORMRepository) GetTrialBalance(ctx context.Context, schemaName, tenant
 
 // GetPeriodBalances retrieves account activity for a specific period (not cumulative)
 func (r *GORMRepository) GetPeriodBalances(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]AccountBalance, error) {
-	accountsDB, err := r.tenantTableAlias(ctx, schemaName, "accounts", "a")
+	entriesDB, err := r.tenantTableAlias(ctx, schemaName, "journal_entries", "je")
 	if err != nil {
 		return nil, err
 	}
 	linesTable := qualifiedTableAfterSchemaValidated(schemaName, "journal_entry_lines")
-	entriesTable := qualifiedTableAfterSchemaValidated(schemaName, "journal_entries")
+	accountsTable := qualifiedTableAfterSchemaValidated(schemaName, "accounts")
 
 	var results []struct {
 		AccountID    string
@@ -659,7 +659,7 @@ func (r *GORMRepository) GetPeriodBalances(ctx context.Context, schemaName, tena
 		NetBalance   models.Decimal
 	}
 
-	err = accountsDB.
+	err = entriesDB.
 		Select(`
 			a.id AS account_id,
 			a.code AS account_code,
@@ -672,10 +672,10 @@ func (r *GORMRepository) GetPeriodBalances(ctx context.Context, schemaName, tena
 				ELSE COALESCE(SUM(jel.credit_amount), 0) - COALESCE(SUM(jel.debit_amount), 0)
 			END AS net_balance
 		`).
-		Joins(fmt.Sprintf("LEFT JOIN %s AS jel ON jel.account_id = a.id AND jel.tenant_id = a.tenant_id", linesTable)).
-		Joins(fmt.Sprintf("LEFT JOIN %s AS je ON je.id = jel.journal_entry_id", entriesTable)).
-		Where("a.tenant_id = ?", tenantID).
-		Where("(je.id IS NULL OR (je.entry_date >= ? AND je.entry_date <= ? AND je.status = ? AND COALESCE(je.source_type, '') NOT IN ?))",
+		Joins(fmt.Sprintf("JOIN %s AS jel ON jel.journal_entry_id = je.id AND jel.tenant_id = je.tenant_id", linesTable)).
+		Joins(fmt.Sprintf("JOIN %s AS a ON a.id = jel.account_id AND a.tenant_id = jel.tenant_id", accountsTable)).
+		Where("je.tenant_id = ?", tenantID).
+		Where("je.entry_date >= ? AND je.entry_date <= ? AND je.status = ? AND COALESCE(je.source_type, '') NOT IN ?",
 			startDate, endDate, StatusPosted, []string{SourceTypeYearEndCarryForward, SourceTypeYearEndCarryForwardReversal}).
 		Where("a.account_type IN ?", []string{string(AccountTypeRevenue), string(AccountTypeExpense)}).
 		Group("a.id, a.code, a.name, a.account_type").
