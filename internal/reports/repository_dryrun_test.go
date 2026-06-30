@@ -255,6 +255,51 @@ func newReportsDryRunSQLRows(t *testing.T, rowSet reportsDryRunRowSet) *sql.Rows
 	return rows
 }
 
+func TestGORMRepositoryDryRunCashFlowQueriesUseTenantQualifiedJoins(t *testing.T) {
+	ctx := context.Background()
+	startDate := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)
+	recorder := &reportsDryRunRecorder{}
+	repo := &GORMRepository{db: newReportsDryRunDB(t,
+		withReportsDryRunRowRecorder(recorder),
+		withReportsDryRunScanRows(
+			reportsDryRunRowSet{
+				columns: []string{"id", "entry_date", "description", "account_code", "account_name", "account_type", "debit", "credit"},
+			},
+			reportsDryRunRowSet{
+				columns: []string{"total"},
+				values:  [][]driver.Value{{"0"}},
+			},
+		),
+	)}
+
+	entries, err := repo.GetJournalEntriesForPeriod(ctx, "tenant_schema", "tenant-1", startDate, endDate)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+
+	balance, err := repo.GetCashAccountBalance(ctx, "tenant_schema", "tenant-1", endDate)
+	require.NoError(t, err)
+	assert.True(t, balance.IsZero())
+
+	require.Len(t, recorder.rows, 2)
+	periodQuery := recorder.rows[0]
+	assert.Contains(t, periodQuery, `FROM "tenant_schema"."journal_entries" AS je`)
+	assert.Contains(t, periodQuery, `JOIN "tenant_schema"."journal_entry_lines" AS jl ON je.id = jl.journal_entry_id AND jl.tenant_id = je.tenant_id`)
+	assert.Contains(t, periodQuery, `JOIN "tenant_schema"."accounts" AS a ON jl.account_id = a.id AND a.tenant_id = jl.tenant_id`)
+	assert.Contains(t, periodQuery, `je.entry_date >=`)
+	assert.Contains(t, periodQuery, `je.entry_date <=`)
+	assert.Contains(t, periodQuery, `je.status =`)
+	assert.NotContains(t, periodQuery, `LEFT JOIN`)
+
+	balanceQuery := recorder.rows[1]
+	assert.Contains(t, balanceQuery, `FROM "tenant_schema"."journal_entries" AS je`)
+	assert.Contains(t, balanceQuery, `JOIN "tenant_schema"."journal_entry_lines" AS jl ON je.id = jl.journal_entry_id AND jl.tenant_id = je.tenant_id`)
+	assert.Contains(t, balanceQuery, `JOIN "tenant_schema"."accounts" AS a ON jl.account_id = a.id AND a.tenant_id = jl.tenant_id`)
+	assert.Contains(t, balanceQuery, `je.entry_date <=`)
+	assert.Contains(t, balanceQuery, `je.status =`)
+	assert.NotContains(t, balanceQuery, `LEFT JOIN`)
+}
+
 type reportsDryRunRowsDriver struct{}
 
 func (reportsDryRunRowsDriver) Open(name string) (driver.Conn, error) {
