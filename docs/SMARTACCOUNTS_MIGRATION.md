@@ -100,7 +100,7 @@ go run ./cmd/oa migration smartaccounts-proof-plan \
 This writes two private files:
 
 - `smartaccounts-proof-plan.json`: manifest of checklist areas, required Open Accounting evidence, generated command lines, output paths, missing context, and next action.
-- `open-accounting-proof-commands.sh`: executable shell script that runs the Open Accounting report commands and writes JSON/CSV/XML artifacts under `--out-dir`.
+- `open-accounting-proof-commands.sh`: private shell script that runs the Open Accounting report commands and writes JSON/CSV/XML artifacts under `--out-dir`; run it with `sh /path/to/private/smartaccounts/proof/open-accounting-proof-commands.sh`.
 
 The proof-plan command refuses output inside this public Open Accounting worktree. The generated artifacts are Open Accounting evidence only; they still need to be compared with private SmartAccounts proof reports before any checklist item can be marked passed. If the plan reports missing context, supply that context and regenerate the plan before running the script.
 

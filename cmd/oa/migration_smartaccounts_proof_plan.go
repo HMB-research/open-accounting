@@ -371,7 +371,7 @@ func writeSmartAccountsProofScript(path string, plan *smartAccountsProofPlan) er
 	builder.WriteString(smartAccountsProofShellQuote("Proof artifacts written to " + plan.OutputDir))
 	builder.WriteByte('\n')
 
-	if err := os.WriteFile(path, []byte(builder.String()), 0o700); err != nil {
+	if err := os.WriteFile(path, []byte(builder.String()), 0o600); err != nil {
 		return fmt.Errorf("write SmartAccounts proof script: %w", err)
 	}
 	return nil

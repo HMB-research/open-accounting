@@ -342,7 +342,7 @@ git push origin feature/your-feature
 ### Contributors
 
 Contributor attribution is normalized through [`.mailmap`](.mailmap).
-Use `git shortlog -sne --all` for the canonical contributor list.
+Use `make verify-contributors` to verify the canonical contributor list.
 
 ---
 

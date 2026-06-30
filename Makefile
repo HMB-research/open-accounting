@@ -1,4 +1,4 @@
-.PHONY: all build run test test-coverage test-affected test-backend-coverage test-integration test-integration-coverage test-cli-coverage verify-cli-coverage verify-total-coverage clean docker-build docker-up docker-down migrate help
+.PHONY: all build run test test-coverage test-affected test-backend-coverage test-integration test-integration-coverage test-cli-coverage verify-cli-coverage verify-total-coverage verify-contributors clean docker-build docker-up docker-down migrate help
 
 # Variables
 BINARY_API=api
@@ -75,8 +75,11 @@ verify-cli-coverage:
 verify-total-coverage:
 	scripts/verify-total-coverage.sh $(COVERAGE_PROFILE)
 
+verify-contributors:
+	scripts/verify-contributor-attribution.sh
+
 # Lint code
-lint:
+lint: verify-contributors
 	$(GOLANGCI_LINT) run
 
 # Format code
@@ -174,6 +177,7 @@ help:
 	@echo "  make test-affected  - Run tests selected from changed files"
 	@echo "  make test-backend-coverage - Run backend tests and enforce exact backend plus CLI coverage"
 	@echo "  make test-cli-coverage - Enforce 100% cmd/oa coverage"
+	@echo "  make verify-contributors - Verify mailmapped contributor attribution"
 	@echo "  make lint           - Run linter"
 	@echo "  make fmt            - Format code"
 	@echo "  make clean          - Clean build artifacts"

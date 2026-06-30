@@ -150,6 +150,6 @@ For real tenant cutovers, also verify:
   `readiness` checks except the final private reconciliation gate before
   confirmation.
 - `migration smartaccounts-proof-plan` has generated a private proof manifest
-  and executable Open Accounting report script for the selected as-of and period.
+  and Open Accounting report script for the selected as-of and period.
 - Every `parity_checklist` area is reconciled against private SmartAccounts
   proof reports and marked pass/fail in private evidence before cutover closure.
