@@ -161,7 +161,7 @@ func TestPrepareSmartAccountsSnapshotHandlesXMLAndUnsupportedXML(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, report.UnsupportedFiles, 2)
-	require.Contains(t, report.Warnings, "multiple e-invoice XML files were prepared; pass additional XML files through the API bundle request or validate them one at a time with the CLI")
+	require.Contains(t, report.Warnings, "multiple e-invoice XML files were prepared as separate bundle files; keep the manifest-driven flow so every XML file is validated and planned together")
 	require.FileExists(t, filepath.Join(outputDir, "bundle", "e_invoices.xml"))
 	require.FileExists(t, filepath.Join(outputDir, "bundle", "e_invoices-2.xml"))
 	require.Contains(t, report.SnapshotHash, "")
