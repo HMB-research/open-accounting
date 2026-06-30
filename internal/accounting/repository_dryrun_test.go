@@ -245,6 +245,17 @@ func withAccountingDryRunCapturedQueries(queries *[]string) accountingDryRunDBOp
 	}
 }
 
+func withAccountingDryRunCapturedRows(rows *[]string) accountingDryRunDBOption {
+	return func(t *testing.T, db *gorm.DB) {
+		t.Helper()
+
+		err := db.Callback().Row().After("gorm:row").Register(accountingDryRunCallbackName("capture_row_sql"), func(tx *gorm.DB) {
+			*rows = append(*rows, tx.Statement.SQL.String())
+		})
+		require.NoError(t, err)
+	}
+}
+
 func accountingDryRunCallbackName(suffix string) string {
 	id := atomic.AddUint64(&accountingDryRunCallbackID, 1)
 	return fmt.Sprintf("accounting_dryrun:%d:%s", id, suffix)
@@ -906,6 +917,40 @@ func TestGORMRepositoryDryRunBalances(t *testing.T) {
 	periodBalances, err := repo.GetPeriodBalances(ctx, "tenant_schema", "tenant-1", asOfDate.AddDate(0, -1, 0), asOfDate)
 	requireAccountingDryRunScanError(t, err, "get period balances")
 	assert.Nil(t, periodBalances)
+}
+
+func TestGORMRepositoryReportBalanceQueriesStartFromPostedJournalEntries(t *testing.T) {
+	ctx := context.Background()
+	asOfDate := time.Date(2026, time.June, 30, 0, 0, 0, 0, time.UTC)
+	rowQueries := []string{}
+	repo := NewGORMRepository(newAccountingDryRunDB(t, withAccountingDryRunCapturedRows(&rowQueries)))
+
+	trialBalance, err := repo.GetTrialBalance(ctx, "tenant_schema", "tenant-1", asOfDate)
+	requireAccountingDryRunScanError(t, err, "get trial balance")
+	assert.Nil(t, trialBalance)
+	require.NotEmpty(t, rowQueries)
+	trialQuery := rowQueries[len(rowQueries)-1]
+	assert.Contains(t, trialQuery, `FROM "tenant_schema"."journal_entries" AS "je"`)
+	assert.Contains(t, trialQuery, `JOIN "tenant_schema"."journal_entry_lines" AS jel ON jel.journal_entry_id = je.id AND jel.tenant_id = je.tenant_id`)
+	assert.Contains(t, trialQuery, `JOIN "tenant_schema"."accounts" AS a ON a.id = jel.account_id AND a.tenant_id = jel.tenant_id`)
+	assert.Contains(t, trialQuery, `je.entry_date <=`)
+	assert.Contains(t, trialQuery, `je.status =`)
+	assert.NotContains(t, trialQuery, `LEFT JOIN`)
+	assert.NotContains(t, trialQuery, `je.id IS NULL`)
+
+	periodBalances, err := repo.GetPeriodBalances(ctx, "tenant_schema", "tenant-1", asOfDate.AddDate(0, -1, 0), asOfDate)
+	requireAccountingDryRunScanError(t, err, "get period balances")
+	assert.Nil(t, periodBalances)
+	require.Len(t, rowQueries, 2)
+	periodQuery := rowQueries[len(rowQueries)-1]
+	assert.Contains(t, periodQuery, `FROM "tenant_schema"."journal_entries" AS "je"`)
+	assert.Contains(t, periodQuery, `JOIN "tenant_schema"."journal_entry_lines" AS jel ON jel.journal_entry_id = je.id AND jel.tenant_id = je.tenant_id`)
+	assert.Contains(t, periodQuery, `JOIN "tenant_schema"."accounts" AS a ON a.id = jel.account_id AND a.tenant_id = jel.tenant_id`)
+	assert.Contains(t, periodQuery, `je.entry_date >=`)
+	assert.Contains(t, periodQuery, `je.entry_date <=`)
+	assert.Contains(t, periodQuery, `je.status =`)
+	assert.NotContains(t, periodQuery, `LEFT JOIN`)
+	assert.NotContains(t, periodQuery, `je.id IS NULL`)
 }
 
 func TestGORMRepositoryDryRunBalanceErrors(t *testing.T) {
