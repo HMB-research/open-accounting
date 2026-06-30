@@ -4856,6 +4856,7 @@ func TestCLIMigrationSmartAccountsProofResultCommandBlockedAndErrors(t *testing.
 		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "proof result status must be passed")
 		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "missing proof result item")
 		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "Open Accounting artifact SHA-256 mismatch")
+		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "discrepancy note: investigate account-level delta")
 	})
 
 	t.Run("require ready fails on blockers", func(t *testing.T) {
@@ -4949,7 +4950,7 @@ func TestSmartAccountsProofResultValidationHelpers(t *testing.T) {
 		ReviewedAt: "not-a-date",
 		Items: []smartAccountsProofResultItem{
 			{Area: "", Status: smartAccountsProofStatusPassed},
-			{Area: "trial_balance", Status: "pending", SmartAccountsArtifact: saPath, SmartAccountsSHA256: saHash, OpenAccountingArtifact: oaPath, OpenAccountingSHA256: oaHash, ReviewedAt: "bad-date"},
+			{Area: "trial_balance", Status: "pending", SmartAccountsArtifact: saPath, SmartAccountsSHA256: saHash, OpenAccountingArtifact: oaPath, OpenAccountingSHA256: oaHash, ReviewedAt: "bad-date", DiscrepancyNote: "target report is not ready"},
 			{Area: "trial_balance", Status: smartAccountsProofStatusPassed, SmartAccountsArtifact: saPath, SmartAccountsSHA256: saHash, OpenAccountingArtifact: oaPath, OpenAccountingSHA256: oaHash},
 			{Area: "unplanned", Status: smartAccountsProofStatusPassed, SmartAccountsArtifact: saPath, SmartAccountsSHA256: saHash, OpenAccountingArtifact: oaPath, OpenAccountingSHA256: oaHash},
 			{Area: "bank", Status: smartAccountsProofStatusPassed, SmartAccountsArtifact: "artifacts/bank-sa.json", SmartAccountsSHA256: "not-a-hash", OpenAccountingArtifact: filepath.Join(privateRoot, "missing-oa.json"), OpenAccountingSHA256: bankOAHash},
@@ -4967,6 +4968,7 @@ func TestSmartAccountsProofResultValidationHelpers(t *testing.T) {
 	assert.Contains(t, blockers, "duplicate proof result item for area trial_balance")
 	assert.Contains(t, blockers, "proof result contains unplanned area unplanned")
 	assert.Contains(t, blockers, "trial_balance status must be passed")
+	assert.Contains(t, blockers, "trial_balance discrepancy note: target report is not ready")
 	assert.Contains(t, blockers, "trial_balance reviewed_at must be RFC3339 or YYYY-MM-DD")
 	assert.Contains(t, blockers, "bank SmartAccounts artifact SHA-256 must be 64 hex characters")
 	assert.Contains(t, blockers, "bank Open Accounting artifact hash check failed")

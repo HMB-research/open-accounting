@@ -235,6 +235,9 @@ func smartAccountsProofResultItemBlockers(area string, item smartAccountsProofRe
 	var blockers []string
 	if normalizeProofStatus(item.Status) != smartAccountsProofStatusPassed {
 		blockers = append(blockers, fmt.Sprintf("%s status must be passed", area))
+		if note := strings.TrimSpace(item.DiscrepancyNote); note != "" {
+			blockers = append(blockers, fmt.Sprintf("%s discrepancy note: %s", area, note))
+		}
 	}
 	reviewer := smartAccountsProofFirstNonEmpty(item.Reviewer, resultReviewer)
 	if reviewer == "" {
