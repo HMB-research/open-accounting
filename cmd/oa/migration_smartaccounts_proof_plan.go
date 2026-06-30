@@ -378,10 +378,20 @@ func writeSmartAccountsProofScript(path string, plan *smartAccountsProofPlan) er
 }
 
 func rejectSmartAccountsProofPublicWorktreePath(path string) error {
+	return rejectSmartAccountsProofPublicWorktreePathWithLabel(path, "output")
+}
+
+func rejectSmartAccountsProofPublicWorktreePathWithLabel(path, label string) error {
 	absPath, _ := filepath.Abs(path)
-	root, ok := smartAccountsProofOpenAccountingRootForPath(absPath)
-	if ok && pathWithin(absPath, root) {
-		return fmt.Errorf("SmartAccounts proof output must not be inside public Open Accounting Git worktree %s; use a private directory or separate private repository", root)
+	candidatePaths := []string{absPath}
+	if realPath, err := filepath.EvalSymlinks(absPath); err == nil {
+		candidatePaths = append(candidatePaths, realPath)
+	}
+	for _, candidatePath := range uniqueNonEmptyStrings(candidatePaths) {
+		root, ok := smartAccountsProofOpenAccountingRootForPath(candidatePath)
+		if ok && pathWithin(candidatePath, root) {
+			return fmt.Errorf("SmartAccounts proof %s must not be inside public Open Accounting Git worktree %s; use a private directory or separate private repository", label, root)
+		}
 	}
 	return nil
 }

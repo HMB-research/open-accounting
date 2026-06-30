@@ -360,6 +360,18 @@ go run ./cmd/oa migration smartaccounts-proof-plan \
 
 `migration smartaccounts-proof-plan` reads the private sync report's `parity_checklist` and writes `smartaccounts-proof-plan.json` plus `open-accounting-proof-commands.sh` under the private `--out-dir`. The generated script collects Open Accounting proof artifacts for trial balance, balance sheet, AR/AP aging and confirmations, income statement, cash flow, bank accounts/transactions/reconciliations, KMD/INF, payroll/TSD, inventory valuation/subledger reconciliation, and fixed assets. The command refuses proof output inside this public Open Accounting worktree. It marks missing context, such as a bank account id needed for bank transaction and reconciliation proof, but it does not mark any parity item as passed; compare the generated artifacts against private SmartAccounts proof reports before updating the private checklist.
 
+After the private comparison is complete, validate the private proof result before claiming parity:
+
+```bash
+go run ./cmd/oa migration smartaccounts-proof-result \
+  --plan /path/to/private/smartaccounts/proof/smartaccounts-proof-plan.json \
+  --result /path/to/private/smartaccounts/proof/smartaccounts-proof-result.json \
+  --require-ready \
+  --json
+```
+
+`migration smartaccounts-proof-result` is read-only. It validates that every area in the private proof plan has a passed proof result item, reviewer and review timestamp, SmartAccounts artifact path and SHA-256, Open Accounting artifact path and SHA-256, and local artifact hash matches. It refuses plan or result files inside the public Open Accounting worktree and blocks artifact references that point back into this public repository. Keep validator JSON, paths, hashes, tenant identifiers, amounts, and source-row details in the private migration workspace only.
+
 The lower-level snapshot tool remains available for debugging or custom manual runbooks:
 
 ```bash

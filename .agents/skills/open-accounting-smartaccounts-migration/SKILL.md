@@ -62,6 +62,24 @@ parity as passed; compare the generated artifacts with private SmartAccounts
 proof reports first. If the plan reports missing context, supply it and
 regenerate the plan before running the script.
 
+After private comparison, validate the private proof result before treating
+parity as ready:
+
+```bash
+go run ./cmd/oa migration smartaccounts-proof-result \
+  --plan /path/to/private/smartaccounts/proof/smartaccounts-proof-plan.json \
+  --result /path/to/private/smartaccounts/proof/smartaccounts-proof-result.json \
+  --require-ready \
+  --json
+```
+
+The proof result and validator output are private evidence. They must remain
+outside the public Open Accounting worktree and should contain one passed item
+for every plan area, reviewer evidence, review timestamp, SmartAccounts and Open
+Accounting artifact paths, SHA-256 hashes, basis, and period. The validator is
+read-only, recomputes local artifact hashes, rejects public-worktree evidence
+paths, and reports blockers until every planned parity area is proven.
+
 For manual stage debugging, prepare a bundle from a directory of SmartAccounts exports:
 
 ```bash
@@ -135,7 +153,7 @@ For tooling changes, run:
 ```bash
 go test -count=1 ./internal/cutover
 go test -count=1 ./cmd/smartaccounts-snapshot
-go test -count=1 ./cmd/oa -run 'TestCLIMigrationSmartAccounts(Sync|ProofPlan)Command|TestSmartAccountsSyncHelpers'
+go test -count=1 ./cmd/oa -run 'TestCLIMigrationSmartAccounts(Sync|ProofPlan|ProofResult)Command|TestSmartAccounts(Sync|ProofPlan|ProofResult)Helpers'
 go run ./cmd/smartaccounts-snapshot --source-dir <sample-dir> --out-dir <tmp-out> --json
 go test -timeout=3m ./docs -count=1
 ```
@@ -153,3 +171,7 @@ For real tenant cutovers, also verify:
   and Open Accounting report script for the selected as-of and period.
 - Every `parity_checklist` area is reconciled against private SmartAccounts
   proof reports and marked pass/fail in private evidence before cutover closure.
+- `migration smartaccounts-proof-result --require-ready` passes against the
+  private proof plan and private proof result without copying validator JSON,
+  hashes, paths, tenant identifiers, amounts, or source-row details into this
+  public repository.

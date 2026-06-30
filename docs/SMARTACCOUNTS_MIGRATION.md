@@ -104,6 +104,18 @@ This writes two private files:
 
 The proof-plan command refuses output inside this public Open Accounting worktree. The generated artifacts are Open Accounting evidence only; they still need to be compared with private SmartAccounts proof reports before any checklist item can be marked passed. If the plan reports missing context, supply that context and regenerate the plan before running the script.
 
+After private SmartAccounts proof reports have been compared with the generated Open Accounting artifacts, validate the private proof result:
+
+```bash
+go run ./cmd/oa migration smartaccounts-proof-result \
+  --plan /path/to/private/smartaccounts/proof/smartaccounts-proof-plan.json \
+  --result /path/to/private/smartaccounts/proof/smartaccounts-proof-result.json \
+  --require-ready \
+  --json
+```
+
+The proof result file must stay in the private migration workspace. It records one `passed` item for every area in `smartaccounts-proof-plan.json`, with reviewer evidence, review timestamp, SmartAccounts artifact path and SHA-256, Open Accounting artifact path and SHA-256, accounting basis, and proof period. The validator is read-only: it checks that files are outside the public Open Accounting worktree, recomputes local artifact hashes, reports blockers, and only returns ready when every planned parity area is proven. Do not copy validator JSON, hashes, private paths, tenant identifiers, amounts, or source-row details into this public repository.
+
 ## Manual Snapshot
 
 Use the lower-level commands when debugging one stage of the sync or when preparing a custom bundle.

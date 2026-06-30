@@ -4772,6 +4772,267 @@ func TestCLIMigrationSmartAccountsProofPlanCommandMissingContextAndErrors(t *tes
 	})
 }
 
+func TestCLIMigrationSmartAccountsProofResultCommand(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	privateRoot := t.TempDir()
+	planPath, plan := writeSmartAccountsProofPlanFixture(t, privateRoot)
+	resultPath := filepath.Join(privateRoot, "proof-result", "proof-result.json")
+	result := newSmartAccountsProofResultFixture(t, &plan, resultPath)
+	writeJSONFile(t, resultPath, result)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{
+		"migration", "smartaccounts-proof-result",
+		"--plan", planPath,
+		"--result", resultPath,
+		"--require-ready",
+		"--json",
+	})
+	require.NoError(t, err)
+
+	var validation smartAccountsProofResultValidation
+	require.NoError(t, json.Unmarshal([]byte(stdout.String()), &validation))
+	assert.True(t, validation.Ready)
+	assert.Equal(t, smartAccountsProofStatusPassed, validation.Status)
+	assert.Equal(t, smartAccountsProofPlanAreas(&plan), validation.RequiredAreas)
+	assert.Equal(t, validation.RequiredAreas, validation.PassedAreas)
+	assert.Empty(t, validation.Blockers)
+
+	app, stdout, _ = newTestCLIApp()
+	err = app.run(context.Background(), []string{
+		"migration", "smartaccounts-proof-validate",
+		"--plan", planPath,
+		"--result", resultPath,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "SmartAccounts proof result validation")
+	assert.Contains(t, stdout.String(), "Ready: true")
+	assert.Contains(t, stdout.String(), "Areas: passed=7 required=7")
+}
+
+func TestCLIMigrationSmartAccountsProofResultCommandBlockedAndErrors(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	privateRoot := t.TempDir()
+	planPath, plan := writeSmartAccountsProofPlanFixture(t, privateRoot)
+	resultPath := filepath.Join(privateRoot, "proof-result", "proof-result.json")
+
+	t.Run("blocked result returns validation", func(t *testing.T) {
+		result := newSmartAccountsProofResultFixture(t, &plan, resultPath)
+		result.Status = "blocked"
+		result.Items = result.Items[:len(result.Items)-1]
+		result.Items[0].Status = "pending"
+		result.Items[0].OpenAccountingSHA256 = strings.Repeat("0", 64)
+		result.Items[0].DiscrepancyNote = "investigate account-level delta"
+		writeJSONFile(t, resultPath, result)
+
+		app, stdout, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof-result",
+			"--plan", planPath,
+			"--result", resultPath,
+			"--json",
+		})
+		require.NoError(t, err)
+		var validation smartAccountsProofResultValidation
+		require.NoError(t, json.Unmarshal([]byte(stdout.String()), &validation))
+		assert.False(t, validation.Ready)
+		assert.Equal(t, smartAccountsProofStatusBlocked, validation.Status)
+		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "proof result status must be passed")
+		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "missing proof result item")
+		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "Open Accounting artifact SHA-256 mismatch")
+	})
+
+	t.Run("require ready fails on blockers", func(t *testing.T) {
+		result := newSmartAccountsProofResultFixture(t, &plan, resultPath)
+		result.Items[0].SmartAccountsArtifact = filepath.Join(privateRoot, "missing-smartaccounts.csv")
+		writeJSONFile(t, resultPath, result)
+
+		app, _, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof-result",
+			"--plan", planPath,
+			"--result", resultPath,
+			"--require-ready",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "SmartAccounts proof result is not ready")
+	})
+
+	t.Run("error paths", func(t *testing.T) {
+		badPlanPath := filepath.Join(privateRoot, "bad-plan.json")
+		require.NoError(t, os.WriteFile(badPlanPath, []byte("{"), 0o600))
+		wrongProviderPlanPath := filepath.Join(privateRoot, "wrong-provider-plan.json")
+		writeJSONFile(t, wrongProviderPlanPath, smartAccountsProofPlan{Provider: cutover.MigrationProviderPresetMerit})
+		badResultPath := filepath.Join(privateRoot, "bad-result.json")
+		require.NoError(t, os.WriteFile(badResultPath, []byte("{"), 0o600))
+
+		for _, tc := range []struct {
+			name string
+			args []string
+			want string
+		}{
+			{name: "invalid flag", args: []string{"migration", "smartaccounts-proof-result", "--bogus"}, want: "flag provided but not defined"},
+			{name: "missing required flags", args: []string{"migration", "smartaccounts-proof-result"}, want: "plan and result are required"},
+			{name: "reject public plan", args: []string{"migration", "smartaccounts-proof-result", "--plan", filepath.Join(".", "smartaccounts-proof-plan.json"), "--result", resultPath}, want: "proof plan must not be inside public Open Accounting Git worktree"},
+			{name: "reject public result", args: []string{"migration", "smartaccounts-proof-result", "--plan", planPath, "--result", filepath.Join(".", "smartaccounts-proof-result.json")}, want: "proof result must not be inside public Open Accounting Git worktree"},
+			{name: "read plan", args: []string{"migration", "smartaccounts-proof-result", "--plan", filepath.Join(privateRoot, "missing-plan.json"), "--result", resultPath}, want: "read SmartAccounts proof plan"},
+			{name: "decode plan", args: []string{"migration", "smartaccounts-proof-result", "--plan", badPlanPath, "--result", resultPath}, want: "decode SmartAccounts proof plan"},
+			{name: "wrong plan provider", args: []string{"migration", "smartaccounts-proof-result", "--plan", wrongProviderPlanPath, "--result", resultPath}, want: "proof plan provider must be"},
+			{name: "read result", args: []string{"migration", "smartaccounts-proof-result", "--plan", planPath, "--result", filepath.Join(privateRoot, "missing-result.json")}, want: "read SmartAccounts proof result"},
+			{name: "decode result", args: []string{"migration", "smartaccounts-proof-result", "--plan", planPath, "--result", badResultPath}, want: "decode SmartAccounts proof result"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				app, _, _ := newTestCLIApp()
+				err := app.run(context.Background(), tc.args)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.want)
+			})
+		}
+	})
+
+	t.Run("json output write failure", func(t *testing.T) {
+		result := newSmartAccountsProofResultFixture(t, &plan, resultPath)
+		writeJSONFile(t, resultPath, result)
+		app := &cliApp{stdout: failingWriter{}, stderr: io.Discard}
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof-result",
+			"--plan", planPath,
+			"--result", resultPath,
+			"--json",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "write failed")
+	})
+}
+
+func TestSmartAccountsProofResultValidationHelpers(t *testing.T) {
+	privateRoot := t.TempDir()
+	plan := smartAccountsProofPlan{
+		Provider: cutover.MigrationProviderPresetSmartAccounts,
+		Items: []smartAccountsProofPlanItem{
+			{Area: "trial_balance"},
+			{Area: ""},
+			{Area: "trial_balance"},
+			{Area: "bank"},
+		},
+	}
+	planPath := filepath.Join(privateRoot, "smartaccounts-proof-plan.json")
+	resultPath := filepath.Join(privateRoot, "proof-result", "proof-result.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(resultPath), 0o700))
+
+	saPath, saHash := writeSmartAccountsProofArtifact(t, filepath.Dir(resultPath), filepath.Join("artifacts", "trial-sa.json"), "smartaccounts trial")
+	oaPath, oaHash := writeSmartAccountsProofArtifact(t, filepath.Dir(resultPath), filepath.Join("artifacts", "trial-oa.json"), "open accounting trial")
+	_, _ = writeSmartAccountsProofArtifact(t, filepath.Dir(resultPath), filepath.Join("artifacts", "bank-sa.json"), "smartaccounts bank")
+	bankOAPath, bankOAHash := writeSmartAccountsProofArtifact(t, filepath.Dir(resultPath), filepath.Join("artifacts", "bank-oa.json"), "open accounting bank")
+
+	result := smartAccountsProofResult{
+		Provider:   cutover.MigrationProviderPresetMerit,
+		Status:     "failed",
+		PlanPath:   filepath.Join(privateRoot, "other-plan.json"),
+		Reviewer:   "",
+		ReviewedAt: "not-a-date",
+		Items: []smartAccountsProofResultItem{
+			{Area: "", Status: smartAccountsProofStatusPassed},
+			{Area: "trial_balance", Status: "pending", SmartAccountsArtifact: saPath, SmartAccountsSHA256: saHash, OpenAccountingArtifact: oaPath, OpenAccountingSHA256: oaHash, ReviewedAt: "bad-date"},
+			{Area: "trial_balance", Status: smartAccountsProofStatusPassed, SmartAccountsArtifact: saPath, SmartAccountsSHA256: saHash, OpenAccountingArtifact: oaPath, OpenAccountingSHA256: oaHash},
+			{Area: "unplanned", Status: smartAccountsProofStatusPassed, SmartAccountsArtifact: saPath, SmartAccountsSHA256: saHash, OpenAccountingArtifact: oaPath, OpenAccountingSHA256: oaHash},
+			{Area: "bank", Status: smartAccountsProofStatusPassed, SmartAccountsArtifact: "artifacts/bank-sa.json", SmartAccountsSHA256: "not-a-hash", OpenAccountingArtifact: filepath.Join(privateRoot, "missing-oa.json"), OpenAccountingSHA256: bankOAHash},
+		},
+	}
+	validation := validateSmartAccountsProofResult(&plan, &result, planPath, resultPath)
+	assert.False(t, validation.Ready)
+	blockers := strings.Join(validation.Blockers, "\n")
+	assert.Contains(t, blockers, `proof result provider must be "smartaccounts"`)
+	assert.Contains(t, blockers, "proof result status must be passed")
+	assert.Contains(t, blockers, "proof result plan_path does not match --plan")
+	assert.Contains(t, blockers, "proof result reviewer is required")
+	assert.Contains(t, blockers, "proof result reviewed_at must be RFC3339 or YYYY-MM-DD")
+	assert.Contains(t, blockers, "proof result item area is required")
+	assert.Contains(t, blockers, "duplicate proof result item for area trial_balance")
+	assert.Contains(t, blockers, "proof result contains unplanned area unplanned")
+	assert.Contains(t, blockers, "trial_balance status must be passed")
+	assert.Contains(t, blockers, "trial_balance reviewed_at must be RFC3339 or YYYY-MM-DD")
+	assert.Contains(t, blockers, "bank SmartAccounts artifact SHA-256 must be 64 hex characters")
+	assert.Contains(t, blockers, "bank Open Accounting artifact hash check failed")
+
+	emptyPlanValidation := validateSmartAccountsProofResult(
+		&smartAccountsProofPlan{Provider: cutover.MigrationProviderPresetSmartAccounts},
+		&smartAccountsProofResult{
+			Provider:   cutover.MigrationProviderPresetSmartAccounts,
+			Status:     smartAccountsProofStatusPassed,
+			Reviewer:   "Reviewer",
+			ReviewedAt: "",
+		},
+		planPath,
+		resultPath,
+	)
+	emptyPlanBlockers := strings.Join(emptyPlanValidation.Blockers, "\n")
+	assert.Contains(t, emptyPlanBlockers, "proof plan does not contain any parity areas")
+	assert.Contains(t, emptyPlanBlockers, "proof result plan_path is required")
+	assert.Contains(t, emptyPlanBlockers, "proof result reviewed_at is required")
+
+	itemReviewedAtBlockers := smartAccountsProofResultItemBlockers("bank", smartAccountsProofResultItem{
+		Status:                 smartAccountsProofStatusPassed,
+		SmartAccountsArtifact:  "artifacts/bank-sa.json",
+		SmartAccountsSHA256:    bankOAHash,
+		OpenAccountingArtifact: "artifacts/bank-oa.json",
+		OpenAccountingSHA256:   bankOAHash,
+	}, "Reviewer", "", filepath.Dir(resultPath))
+	assert.Contains(t, strings.Join(itemReviewedAtBlockers, "\n"), "bank reviewed_at is required")
+
+	currentDir, err := os.Getwd()
+	require.NoError(t, err)
+	publicArtifact := filepath.Join(currentDir, "..", "..", "go.mod")
+	publicHash, err := smartAccountsProofFileSHA256(publicArtifact)
+	require.NoError(t, err)
+	publicBlockers := smartAccountsProofArtifactBlockers("bank", "Open Accounting", publicArtifact, publicHash, filepath.Dir(resultPath))
+	assert.Contains(t, strings.Join(publicBlockers, "\n"), "must not be inside public Open Accounting Git worktree")
+	publicSymlink := filepath.Join(privateRoot, "public-go-mod-link")
+	if err := os.Symlink(publicArtifact, publicSymlink); err == nil {
+		publicSymlinkHash, err := smartAccountsProofFileSHA256(publicSymlink)
+		require.NoError(t, err)
+		publicSymlinkBlockers := smartAccountsProofArtifactBlockers("bank", "Open Accounting", publicSymlink, publicSymlinkHash, filepath.Dir(resultPath))
+		assert.Contains(t, strings.Join(publicSymlinkBlockers, "\n"), "must not be inside public Open Accounting Git worktree")
+		err = rejectSmartAccountsProofPublicWorktreePathWithLabel(publicSymlink, "result")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "proof result must not be inside public Open Accounting Git worktree")
+	}
+
+	emptyBlockers := smartAccountsProofArtifactBlockers("bank", "SmartAccounts", "", "", filepath.Dir(resultPath))
+	assert.Contains(t, strings.Join(emptyBlockers, "\n"), "artifact path is required")
+	assert.Contains(t, strings.Join(emptyBlockers, "\n"), "artifact SHA-256 is required")
+
+	mismatchBlockers := smartAccountsProofArtifactBlockers("bank", "Open Accounting", bankOAPath, strings.Repeat("0", 64), filepath.Dir(resultPath))
+	assert.Contains(t, strings.Join(mismatchBlockers, "\n"), "artifact SHA-256 mismatch")
+
+	_, err = smartAccountsProofFileSHA256(t.TempDir())
+	require.Error(t, err)
+	assert.True(t, smartAccountsProofReviewedAtLooksValid("2026-06-30"))
+	assert.True(t, smartAccountsProofReviewedAtLooksValid("2026-06-30T12:00:00Z"))
+	assert.False(t, smartAccountsProofReviewedAtLooksValid("30.06.2026"))
+	assert.True(t, smartAccountsProofLooksSHA256(saHash))
+	assert.False(t, smartAccountsProofLooksSHA256("not-a-hash"))
+	assert.False(t, smartAccountsProofLooksSHA256(strings.Repeat("g", 64)))
+	absoluteSAPath := filepath.Join(filepath.Dir(resultPath), saPath)
+	assert.Equal(t, filepath.Clean(absoluteSAPath), smartAccountsProofResolveArtifactPath(filepath.Dir(resultPath), absoluteSAPath))
+}
+
 func TestSmartAccountsProofPlanHelpers(t *testing.T) {
 	assert.Equal(t, "''", smartAccountsProofShellQuote(""))
 	assert.Equal(t, "/tmp/plain", smartAccountsProofShellQuote("/tmp/plain"))
@@ -4813,6 +5074,89 @@ func TestSmartAccountsProofPlanHelpers(t *testing.T) {
 	assert.False(t, ok)
 	assert.Empty(t, root)
 	require.NoError(t, rejectSmartAccountsProofPublicWorktreePath(filepath.Join(t.TempDir(), "proof")))
+}
+
+func writeSmartAccountsProofPlanFixture(t *testing.T, privateRoot string) (string, smartAccountsProofPlan) {
+	t.Helper()
+
+	reportPath := filepath.Join(privateRoot, smartAccountsSyncReportName)
+	syncReport := newSmartAccountsSyncHelperReport(true, false)
+	syncReport.ParityChecklist = smartAccountsSyncParityChecklist(syncReport)
+	writeJSONFile(t, reportPath, syncReport)
+
+	outputDir := filepath.Join(privateRoot, "proof")
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{
+		"migration", "smartaccounts-proof-plan",
+		"--report", reportPath,
+		"--out-dir", outputDir,
+		"--as-of", "2026-03-31",
+		"--start", "2026-01-01",
+		"--end", "2026-03-31",
+		"--bank-account-id", "bank-1",
+		"--inventory-method", "fifo",
+		"--warehouse-id", "warehouse-1",
+		"--json",
+	})
+	require.NoError(t, err)
+	var plan smartAccountsProofPlan
+	require.NoError(t, json.Unmarshal([]byte(stdout.String()), &plan))
+	return filepath.Join(outputDir, smartAccountsProofPlanName), plan
+}
+
+func newSmartAccountsProofResultFixture(t *testing.T, plan *smartAccountsProofPlan, resultPath string) smartAccountsProofResult {
+	t.Helper()
+
+	resultDir := filepath.Dir(resultPath)
+	require.NoError(t, os.MkdirAll(resultDir, 0o700))
+	result := smartAccountsProofResult{
+		Provider:   cutover.MigrationProviderPresetSmartAccounts,
+		PlanPath:   plan.PlanPath,
+		Status:     smartAccountsProofStatusPassed,
+		Reviewer:   "Migration Reviewer",
+		ReviewedAt: "2026-06-30T12:00:00Z",
+		Items:      make([]smartAccountsProofResultItem, 0, len(plan.Items)),
+	}
+	for _, item := range plan.Items {
+		saRel, saHash := writeSmartAccountsProofArtifact(t, resultDir, filepath.Join("artifacts", item.Area+"-smartaccounts.json"), "smartaccounts "+item.Area)
+		oaRel, oaHash := writeSmartAccountsProofArtifact(t, resultDir, filepath.Join("artifacts", item.Area+"-open-accounting.json"), "open accounting "+item.Area)
+		result.Items = append(result.Items, smartAccountsProofResultItem{
+			Area:                   item.Area,
+			Status:                 smartAccountsProofStatusPassed,
+			SmartAccountsArtifact:  saRel,
+			SmartAccountsSHA256:    saHash,
+			OpenAccountingArtifact: oaRel,
+			OpenAccountingSHA256:   oaHash,
+			Basis:                  "accrual",
+			Period:                 "2026-01-01..2026-03-31",
+		})
+	}
+	result.Summary = smartAccountsProofResultSummary{
+		RequiredAreas: len(plan.Items),
+		PassedAreas:   len(plan.Items),
+	}
+	return result
+}
+
+func writeSmartAccountsProofArtifact(t *testing.T, baseDir, relativePath, content string) (string, string) {
+	t.Helper()
+
+	path := filepath.Join(baseDir, relativePath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	hash, err := smartAccountsProofFileSHA256(path)
+	require.NoError(t, err)
+	return relativePath, hash
+}
+
+func writeJSONFile(t *testing.T, path string, value any) {
+	t.Helper()
+
+	payload, err := json.MarshalIndent(value, "", "  ")
+	require.NoError(t, err)
+	payload = append(payload, '\n')
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, payload, 0o600))
 }
 
 func TestCLIMigrationSmartAccountsSyncErrorPaths(t *testing.T) {
