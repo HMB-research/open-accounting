@@ -106,6 +106,10 @@ func qualifiedTenantTableAfterSchemaValidated(schemaName, tableName string) stri
 	return qualifiedTable
 }
 
+func cashAccountCodeCondition(alias string) (string, []interface{}) {
+	return fmt.Sprintf("(%s.code LIKE ? OR %s.code LIKE ?)", alias, alias), []interface{}{"10%", "11%"}
+}
+
 // GetJournalEntriesForPeriod retrieves journal entries within a date range
 func (r *GORMRepository) GetJournalEntriesForPeriod(ctx context.Context, schemaName, tenantID string, startDate, endDate time.Time) ([]JournalEntryWithLines, error) {
 	journalEntries, err := r.tenantTable(ctx, schemaName, "journal_entries", "je")
@@ -176,6 +180,7 @@ func (r *GORMRepository) GetCashAccountBalance(ctx context.Context, schemaName, 
 	}
 	journalLinesTable := qualifiedTenantTableAfterSchemaValidated(schemaName, "journal_entry_lines")
 	accountsTable := qualifiedTenantTableAfterSchemaValidated(schemaName, "accounts")
+	cashCondition, cashArgs := cashAccountCodeCondition("a")
 
 	var row decimalRow
 	if err := journalEntries.
@@ -185,7 +190,7 @@ func (r *GORMRepository) GetCashAccountBalance(ctx context.Context, schemaName, 
 		Where("je.tenant_id = ?", tenantID).
 		Where("je.entry_date <= ?", asOfDate).
 		Where("je.status = ?", models.JournalStatusPosted).
-		Where("a.code LIKE ?", "10%").
+		Where(cashCondition, cashArgs...).
 		Scan(&row).Error; err != nil {
 		return decimal.Zero, fmt.Errorf("query cash balance: %w", err)
 	}

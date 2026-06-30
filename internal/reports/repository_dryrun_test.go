@@ -461,12 +461,20 @@ func TestGORMRepositoryDryRunScanQueriesBuildTenantSQLAndWrapRowErrors(t *testin
 		`FROM "tenant_reports"."journal_entries" AS je`,
 		`JOIN "tenant_reports"."journal_entry_lines" AS jl ON je.id = jl.journal_entry_id`,
 		`JOIN "tenant_reports"."accounts" AS a ON jl.account_id = a.id`,
+		`(a.code LIKE $4 OR a.code LIKE $5)`,
 		`FROM "tenant_reports"."invoices" AS i`,
 		`JOIN "tenant_reports"."contacts" AS c ON i.contact_id = c.id AND i.tenant_id = c.tenant_id`,
 		`FROM "tenant_reports"."payments" AS p`,
 		`JOIN "tenant_reports"."invoice_lines" AS il ON il.invoice_id = i.id AND il.tenant_id = i.tenant_id`,
 		`LEFT JOIN "tenant_reports"."products" AS p ON p.id = il.product_id AND p.tenant_id = i.tenant_id`,
 	)
+}
+
+func TestCashAccountCodeConditionMatchesCashFlowClassifierPrefixes(t *testing.T) {
+	condition, args := cashAccountCodeCondition("a")
+
+	assert.Equal(t, "(a.code LIKE ? OR a.code LIKE ?)", condition)
+	assert.Equal(t, []interface{}{"10%", "11%"}, args)
 }
 
 func TestGORMRepositoryDryRunScanQueriesReturnGormDryRunError(t *testing.T) {

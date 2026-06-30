@@ -535,7 +535,7 @@ func writeSmartAccountsXMLBundles(outputDir string, sources []smartAccountsXMLSo
 		fileName := string(KindEInvoices) + ".xml"
 		if i > 0 {
 			fileName = fmt.Sprintf("%s-%d.xml", KindEInvoices, i+1)
-			report.Warnings = append(report.Warnings, "multiple e-invoice XML files were prepared; pass additional XML files through the API bundle request or validate them one at a time with the CLI")
+			report.Warnings = append(report.Warnings, "multiple e-invoice XML files were prepared as separate bundle files; keep the manifest-driven flow so every XML file is validated and planned together")
 		}
 		outputPath := filepath.Join(outputDir, "bundle", fileName)
 		if err := os.WriteFile(outputPath, []byte(source.content), 0o600); err != nil {
