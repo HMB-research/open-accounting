@@ -586,6 +586,60 @@ func TestPostgresRepository_GetTrialBalance(t *testing.T) {
 	}
 }
 
+func TestService_GetBalanceSheet_GeneratesFromPostedEntriesOnly(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	tenant := testutil.CreateTestTenant(t, pool)
+	userID := testutil.CreateTestUser(t, pool, "balance-sheet-"+uuid.New().String()[:8]+"@example.com")
+	testutil.AddUserToTenant(t, pool, tenant.ID, userID, "admin")
+	service := NewService(pool)
+	ctx := context.Background()
+	asOfDate := time.Date(2026, time.June, 30, 0, 0, 0, 0, time.UTC)
+
+	var cashAccountID, revenueAccountID string
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '1000' LIMIT 1
+	`).Scan(&cashAccountID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT id FROM `+tenant.SchemaName+`.accounts WHERE code = '4000' LIMIT 1
+	`).Scan(&revenueAccountID))
+
+	insertEntry := func(entryNumber string, entryDate time.Time, status JournalEntryStatus, amount decimal.Decimal) {
+		t.Helper()
+		entryID := uuid.New().String()
+		_, err := pool.Exec(ctx, `
+			INSERT INTO `+tenant.SchemaName+`.journal_entries
+			(id, tenant_id, entry_number, entry_date, description, status, created_by, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+		`, entryID, tenant.ID, entryNumber, entryDate, "Balance sheet generation test", status, userID)
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, `
+			INSERT INTO `+tenant.SchemaName+`.journal_entry_lines
+			(id, tenant_id, journal_entry_id, account_id, debit_amount, credit_amount, currency, exchange_rate, base_debit, base_credit)
+			VALUES ($1, $2, $3, $4, $5, 0, 'EUR', 1, $5, 0)
+		`, uuid.New().String(), tenant.ID, entryID, cashAccountID, amount)
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, `
+			INSERT INTO `+tenant.SchemaName+`.journal_entry_lines
+			(id, tenant_id, journal_entry_id, account_id, debit_amount, credit_amount, currency, exchange_rate, base_debit, base_credit)
+			VALUES ($1, $2, $3, $4, 0, $5, 'EUR', 1, 0, $5)
+		`, uuid.New().String(), tenant.ID, entryID, revenueAccountID, amount)
+		require.NoError(t, err)
+	}
+
+	insertEntry("BS-POSTED-001", asOfDate.AddDate(0, 0, -1), StatusPosted, decimal.NewFromInt(100))
+	insertEntry("BS-DRAFT-001", asOfDate.AddDate(0, 0, -1), StatusDraft, decimal.NewFromInt(900))
+	insertEntry("BS-FUTURE-001", asOfDate.AddDate(0, 0, 1), StatusPosted, decimal.NewFromInt(500))
+
+	balanceSheet, err := service.GetBalanceSheet(ctx, tenant.SchemaName, tenant.ID, asOfDate)
+	require.NoError(t, err)
+	require.NotNil(t, balanceSheet)
+	assert.True(t, decimal.NewFromInt(100).Equal(balanceSheet.TotalAssets), "total assets = %s", balanceSheet.TotalAssets)
+	assert.True(t, balanceSheet.TotalLiabilities.IsZero(), "total liabilities = %s", balanceSheet.TotalLiabilities)
+	assert.True(t, decimal.NewFromInt(100).Equal(balanceSheet.RetainedEarnings), "retained earnings = %s", balanceSheet.RetainedEarnings)
+	assert.True(t, decimal.NewFromInt(100).Equal(balanceSheet.TotalEquity), "total equity = %s", balanceSheet.TotalEquity)
+	assert.True(t, balanceSheet.IsBalanced)
+}
+
 func TestPostgresRepository_GetPeriodBalances(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	tenant := testutil.CreateTestTenant(t, pool)
