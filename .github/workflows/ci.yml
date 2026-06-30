@@ -107,6 +107,17 @@ jobs:
             echo "ci=$ci"
           } >> "$GITHUB_OUTPUT"
 
+  contributor-attribution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify contributor attribution
+        run: scripts/verify-contributor-attribution.sh
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 12
