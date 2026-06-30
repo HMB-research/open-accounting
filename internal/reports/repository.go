@@ -131,8 +131,8 @@ func (r *GORMRepository) GetJournalEntriesForPeriod(ctx context.Context, schemaN
 			jl.debit_amount AS debit,
 			jl.credit_amount AS credit
 		`).
-		Joins("JOIN "+journalLinesTable+" AS jl ON je.id = jl.journal_entry_id").
-		Joins("JOIN "+accountsTable+" AS a ON jl.account_id = a.id").
+		Joins("JOIN "+journalLinesTable+" AS jl ON je.id = jl.journal_entry_id AND jl.tenant_id = je.tenant_id").
+		Joins("JOIN "+accountsTable+" AS a ON jl.account_id = a.id AND a.tenant_id = jl.tenant_id").
 		Where("je.tenant_id = ?", tenantID).
 		Where("je.entry_date >= ? AND je.entry_date <= ?", startDate, endDate).
 		Where("je.status = ?", models.JournalStatusPosted).
@@ -185,8 +185,8 @@ func (r *GORMRepository) GetCashAccountBalance(ctx context.Context, schemaName, 
 	var row decimalRow
 	if err := journalEntries.
 		Select("COALESCE(SUM(jl.debit_amount - jl.credit_amount), 0) AS total").
-		Joins("JOIN "+journalLinesTable+" AS jl ON je.id = jl.journal_entry_id").
-		Joins("JOIN "+accountsTable+" AS a ON jl.account_id = a.id").
+		Joins("JOIN "+journalLinesTable+" AS jl ON je.id = jl.journal_entry_id AND jl.tenant_id = je.tenant_id").
+		Joins("JOIN "+accountsTable+" AS a ON jl.account_id = a.id AND a.tenant_id = jl.tenant_id").
 		Where("je.tenant_id = ?", tenantID).
 		Where("je.entry_date <= ?", asOfDate).
 		Where("je.status = ?", models.JournalStatusPosted).
