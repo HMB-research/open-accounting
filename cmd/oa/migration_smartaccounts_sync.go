@@ -103,7 +103,7 @@ func (a *cliApp) runMigrationSmartAccountsSync(ctx context.Context, cfg *cliConf
 	eInvoiceInvoiceType := fs.String("e-invoice-invoice-type", "", "Override e-invoice invoice type: SALES, PURCHASE, or CREDIT_NOTE")
 	openingBalanceEntryDate := fs.String("opening-balance-entry-date", "", "Opening balance journal entry date in YYYY-MM-DD; defaults to --cutover-date when omitted")
 	confirm := fs.Bool("confirm", false, "Execute imports after preparation, validation, and planning; default saves a dry run only")
-	asJSON := fs.Bool("json", false, "Output public-safe JSON summary")
+	asJSON := fs.Bool("json", false, "Output operator JSON summary; treat as private because it includes paths, hashes, and tenant context")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

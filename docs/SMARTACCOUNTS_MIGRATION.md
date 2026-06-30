@@ -68,7 +68,7 @@ go run ./cmd/oa migration smartaccounts-sync \
   --confirm
 ```
 
-If `--opening-balance-entry-date` is omitted, it defaults to `--cutover-date`. Only include `--bank-transaction-account-id` when bank transactions are present. Use `--json` when an automation needs the public-safe aggregate summary; the full private report remains in `--out-dir`.
+If `--opening-balance-entry-date` is omitted, it defaults to `--cutover-date`. Only include `--bank-transaction-account-id` when bank transactions are present. Use `--json` when an automation needs a machine-readable operator summary, but keep that output private because it can include tenant identifiers, private paths, hashes, and run artifact locations. The full private report remains in `--out-dir`.
 
 ## Manual Snapshot
 
