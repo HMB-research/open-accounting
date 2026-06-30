@@ -1598,6 +1598,14 @@ func parseBundleFileByKind(file BundleFile, providerPreset MigrationProviderPres
 		return parseEInvoiceBundleFile(file, eInvoiceInvoiceType)
 	}
 
+	if providerPreset == MigrationProviderPresetSmartAccounts {
+		canonicalized, err := CanonicalizeBundleFileCSV(file, providerPreset)
+		if err != nil {
+			return parsedFile{}, FileValidation{Kind: file.Kind, FileName: displayFileName(file)}, err
+		}
+		file = canonicalized
+	}
+
 	return parseBundleFile(file, fileSpecForProviderPreset(file.Kind, providerPreset))
 }
 

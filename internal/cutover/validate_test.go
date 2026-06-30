@@ -1145,6 +1145,64 @@ func TestValidateBundleAcceptsSmartAccountsPaymentAndBankProviderPresetAliases(t
 	assert.Contains(t, report.Files[5].Headers, "external_id")
 }
 
+func TestValidateBundleSmartAccountsNormalizesDistinctDuplicatePaymentNumbers(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{{
+			Kind:     KindPayments,
+			FileName: "smartaccounts-payments.csv",
+			CSVContent: "payment_no,payment_kind,payment_date,paid_amount,currency_code,reference_no\n" +
+				"PAY-7,RECEIVED,2026-06-01,100,EUR,REF-A\n" +
+				"PAY-7,RECEIVED,2026-06-02,50,EUR,REF-B\n",
+		}},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.True(t, report.Summary.Ready)
+	assert.Equal(t, 0, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 1)
+	assert.Contains(t, report.Files[0].Headers, "payment_number")
+}
+
+func TestValidateBundleSmartAccountsKeepsGroupedPaymentDuplicateNumbersBlocked(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{{
+			Kind:     KindPayments,
+			FileName: "smartaccounts-payments.csv",
+			CSVContent: "payment_no,payment_kind,payment_date,paid_amount,currency_code,reference_no\n" +
+				"PAY-7,RECEIVED,2026-06-01,100,EUR,REF-A\n" +
+				"PAY-7,RECEIVED,2026-06-01,50,EUR,REF-A\n",
+		}},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assertValidationIssue(t, report, KindPayments, "payment_number", "duplicates row")
+}
+
+func TestValidateBundleSmartAccountsReportsCanonicalizationErrors(t *testing.T) {
+	report, err := ValidateBundle(&ValidateBundleRequest{
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+		Files: []BundleFile{{
+			Kind:       KindPayments,
+			FileName:   "smartaccounts-payments.csv",
+			CSVContent: "\"unterminated",
+		}},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.Summary.Ready)
+	assert.Equal(t, 1, report.Summary.ErrorCount)
+	require.Len(t, report.Files, 1)
+	assert.Equal(t, KindPayments, report.Files[0].Kind)
+	assert.Equal(t, "smartaccounts-payments.csv", report.Files[0].FileName)
+	assertValidationIssue(t, report, KindPayments, "", "parse")
+}
+
 func TestValidateBundleAcceptsDirectoCommercialBankAndJournalProviderPresetAliases(t *testing.T) {
 	report, err := ValidateBundle(&ValidateBundleRequest{
 		ProviderPreset: MigrationProviderPresetDirecto,

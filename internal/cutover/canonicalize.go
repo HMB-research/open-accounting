@@ -36,6 +36,7 @@ func CanonicalizeBundleFileCSV(file BundleFile, providerPreset MigrationProvider
 			headers[i] = canonicalHeader(spec.aliases, header)
 		}
 		headers, rows, _ = normalizeSmartAccountsSourceRows(file.Kind, file.FileName, headers, rows)
+		rows, _ = normalizeSmartAccountsMergedRows(file.Kind, headers, rows)
 		file.CSVContent = writeCSVContent(headers, rows)
 		return file, nil
 	}
