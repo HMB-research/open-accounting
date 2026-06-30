@@ -41,6 +41,7 @@ type migrationExecuteOptions struct {
 	BankTransactionFormat    string
 	EInvoiceInvoiceType      invoicing.InvoiceType
 	OpeningBalanceEntryDate  string
+	PostJournalEntries       bool
 	ResumeFromRun            *migrationExecutionRun
 }
 
@@ -83,6 +84,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 	openingBalancesFile := fs.String("opening-balances", "", "Opening balances CSV file")
 	openingBalanceEntryDate := fs.String("opening-balance-entry-date", "", "Opening balance journal entry date in YYYY-MM-DD")
 	journalFile := fs.String("journal", "", "Historical journal CSV file")
+	postJournalEntries := fs.Bool("post-journal-entries", false, "Post imported historical journal entries during confirmed execution")
 	resumeRunFile := fs.String("resume-run", "", "Previous migration execution run JSON file to resume from")
 	resumeRunID := fs.String("resume-run-id", "", "Saved migration execution run id to resume from")
 	confirm := fs.Bool("confirm", false, "Execute the planned imports")
@@ -149,6 +151,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 			BankTransactionAccountID: strings.TrimSpace(*bankTransactionAccountID),
 			BankTransactionFormat:    strings.TrimSpace(*bankTransactionFormat),
 			OpeningBalanceEntryDate:  strings.TrimSpace(*openingBalanceEntryDate),
+			PostJournalEntries:       *postJournalEntries,
 		}
 		run, err := client.executeMigration(ctx, cfg.TenantID, req)
 		if *asJSON {
@@ -184,6 +187,9 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 		if useLocalExecutionDefaults || flagWasPassed(fs, "opening-balance-entry-date") {
 			req.OpeningBalanceEntryDate = strings.TrimSpace(*openingBalanceEntryDate)
 		}
+		if useLocalExecutionDefaults || flagWasPassed(fs, "post-journal-entries") {
+			req.PostJournalEntries = *postJournalEntries
+		}
 
 		run, err := client.executeMigration(ctx, cfg.TenantID, req)
 		if *asJSON {
@@ -200,7 +206,9 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 		EInvoiceInvoiceType:      string(invoiceType),
 		ProviderPreset:           cutover.MigrationProviderPreset(strings.TrimSpace(*providerPreset)),
 		BankTransactionAccountID: strings.TrimSpace(*bankTransactionAccountID),
+		BankTransactionFormat:    strings.TrimSpace(*bankTransactionFormat),
 		OpeningBalanceEntryDate:  strings.TrimSpace(*openingBalanceEntryDate),
+		PostJournalEntries:       *postJournalEntries,
 	})
 	if err != nil {
 		return err
@@ -213,6 +221,7 @@ func (a *cliApp) runMigrationExecute(ctx context.Context, cfg *cliConfig, client
 		BankTransactionFormat:    strings.TrimSpace(*bankTransactionFormat),
 		EInvoiceInvoiceType:      invoiceType,
 		OpeningBalanceEntryDate:  strings.TrimSpace(*openingBalanceEntryDate),
+		PostJournalEntries:       *postJournalEntries,
 		ResumeFromRun:            resumeFromRun,
 	})
 	if *asJSON {
@@ -373,7 +382,7 @@ func executeMigrationImportStep(ctx context.Context, client *apiClient, tenantID
 	case cutover.KindOpeningBalances:
 		return migrationStepResponse(client.importOpeningBalances(ctx, tenantID, &accounting.ImportOpeningBalancesRequest{CSVContent: file.CSVContent, FileName: file.FileName, EntryDate: opts.OpeningBalanceEntryDate, Description: "Opening balances", Reference: openingBalanceExecutionReference(opts.OpeningBalanceEntryDate)}))
 	case cutover.KindJournalEntries:
-		return migrationStepResponse(client.importJournalEntries(ctx, tenantID, &accounting.ImportJournalEntriesRequest{CSVContent: file.CSVContent, FileName: file.FileName}))
+		return migrationStepResponse(client.importJournalEntries(ctx, tenantID, &accounting.ImportJournalEntriesRequest{CSVContent: file.CSVContent, FileName: file.FileName, PostEntries: opts.PostJournalEntries}))
 	default:
 		return nil, fmt.Errorf("unsupported migration execution kind %q", step.Kind)
 	}

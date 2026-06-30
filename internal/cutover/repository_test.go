@@ -187,6 +187,7 @@ func TestMigrationExecutionRunRepositoryMappingRoundTripsPayload(t *testing.T) {
 		ProviderPreset:          MigrationProviderPresetDirecto,
 		BankTransactionFormat:   "lhv",
 		OpeningBalanceEntryDate: "2026-01-01",
+		PostJournalEntries:      true,
 		Confirm:                 true,
 		ResumeFromRunID:         "previous-run",
 	})
@@ -229,6 +230,7 @@ func TestMigrationExecutionRunRepositoryMappingRoundTripsPayload(t *testing.T) {
 	assert.Equal(t, MigrationProviderPresetDirecto, roundTripped.ExecutionRequest.ProviderPreset)
 	assert.Equal(t, "lhv", roundTripped.ExecutionRequest.BankTransactionFormat)
 	assert.Equal(t, "2026-01-01", roundTripped.ExecutionRequest.OpeningBalanceEntryDate)
+	assert.True(t, roundTripped.ExecutionRequest.PostJournalEntries)
 	assert.False(t, roundTripped.ExecutionRequest.Confirm)
 	assert.Empty(t, roundTripped.ExecutionRequest.ResumeFromRunID)
 

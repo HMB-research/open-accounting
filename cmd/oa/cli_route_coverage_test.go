@@ -612,17 +612,19 @@ func collectKnownCLICommandPaths(t *testing.T) map[string]bool {
 	t.Helper()
 
 	commands := map[string]bool{
-		"help":                          true,
-		"auth init":                     true,
-		"auth logout":                   true,
-		"ops backup create":             true,
-		"ops backup health":             true,
-		"ops backup offsite-sync":       true,
-		"ops backup restore-drill":      true,
-		"ops backup schedule-systemd":   true,
-		"migration execute":             true,
-		"migration smartaccounts-sync":  true,
-		"payroll import-leave-balances": true,
+		"help":                                 true,
+		"auth init":                            true,
+		"auth logout":                          true,
+		"ops backup create":                    true,
+		"ops backup health":                    true,
+		"ops backup offsite-sync":              true,
+		"ops backup restore-drill":             true,
+		"ops backup schedule-systemd":          true,
+		"migration execute":                    true,
+		"migration smartaccounts-proof-plan":   true,
+		"migration smartaccounts-proof-result": true,
+		"migration smartaccounts-sync":         true,
+		"payroll import-leave-balances":        true,
 	}
 	for _, route := range collectAPIRoutesFromSource(t) {
 		command, ok := cliCommandForRoute(route)

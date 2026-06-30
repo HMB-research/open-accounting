@@ -22,6 +22,7 @@ func TestExecuteMigrationRequestPlanRequestPreservesExecutionContext(t *testing.
 		BankTransactionAccountID: "bank-1",
 		BankTransactionFormat:    "lhv",
 		OpeningBalanceEntryDate:  "2026-01-01",
+		PostJournalEntries:       true,
 	}
 
 	planReq := req.PlanRequest()
@@ -34,6 +35,7 @@ func TestExecuteMigrationRequestPlanRequestPreservesExecutionContext(t *testing.
 	assert.Equal(t, "bank-1", planReq.BankTransactionAccountID)
 	assert.Equal(t, "lhv", planReq.BankTransactionFormat)
 	assert.Equal(t, "2026-01-01", planReq.OpeningBalanceEntryDate)
+	assert.True(t, planReq.PostJournalEntries)
 }
 
 func TestStoredMigrationExecutionRequestMergesSavedBundleContext(t *testing.T) {
@@ -49,6 +51,7 @@ func TestStoredMigrationExecutionRequestMergesSavedBundleContext(t *testing.T) {
 		BankTransactionAccountID: "bank-1",
 		BankTransactionFormat:    "lhv",
 		OpeningBalanceEntryDate:  "2026-01-01",
+		PostJournalEntries:       true,
 		Confirm:                  true,
 		ResumeFromRunID:          "run-1",
 	})
@@ -67,11 +70,39 @@ func TestStoredMigrationExecutionRequestMergesSavedBundleContext(t *testing.T) {
 	assert.Equal(t, "bank-1", req.BankTransactionAccountID)
 	assert.Equal(t, "lhv", req.BankTransactionFormat)
 	assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
+	assert.True(t, req.PostJournalEntries)
 	assert.True(t, req.Confirm)
 	assert.Equal(t, "run-1", req.ResumeFromRunID)
 
 	req.Files[0].CSVContent = "changed"
 	assert.Contains(t, saved.Files[0].CSVContent, "1000,Cash")
+}
+
+func TestStoredMigrationExecutionRequestDoesNotInheritPostingForReplacementFiles(t *testing.T) {
+	saved := NewStoredMigrationExecutionRequest(&ExecuteMigrationRequest{
+		Files: []BundleFile{{
+			Kind:       KindJournalEntries,
+			FileName:   "saved-journal.csv",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit\nSAVED,2026-01-01,1000,1,0\nSAVED,2026-01-01,3000,0,1\n",
+		}},
+		ProviderPreset:     MigrationProviderPresetSmartAccounts,
+		PostJournalEntries: true,
+	})
+	require.NotNil(t, saved)
+
+	req := &ExecuteMigrationRequest{
+		Files: []BundleFile{{
+			Kind:       KindJournalEntries,
+			FileName:   "replacement-journal.csv",
+			CSVContent: "entry_reference,entry_date,account_code,debit,credit\nLOCAL,2026-01-01,1000,1,0\nLOCAL,2026-01-01,3000,0,1\n",
+		}},
+	}
+	MergeSavedMigrationExecutionRequest(req, saved)
+
+	require.Len(t, req.Files, 1)
+	assert.Equal(t, "replacement-journal.csv", req.Files[0].FileName)
+	assert.False(t, req.PostJournalEntries)
+	assert.Equal(t, MigrationProviderPresetSmartAccounts, req.ProviderPreset)
 }
 
 func TestStoredMigrationExecutionRequestNilAndExplicitMergeValues(t *testing.T) {
@@ -92,6 +123,7 @@ func TestStoredMigrationExecutionRequestNilAndExplicitMergeValues(t *testing.T) 
 		BankTransactionAccountID: "bank-existing",
 		BankTransactionFormat:    "csv",
 		OpeningBalanceEntryDate:  "2026-02-01",
+		PostJournalEntries:       true,
 	}
 	saved := &ExecuteMigrationRequest{
 		Files: []BundleFile{{
@@ -105,6 +137,7 @@ func TestStoredMigrationExecutionRequestNilAndExplicitMergeValues(t *testing.T) 
 		BankTransactionAccountID: "bank-saved",
 		BankTransactionFormat:    "lhv",
 		OpeningBalanceEntryDate:  "2026-01-01",
+		PostJournalEntries:       true,
 	}
 
 	MergeSavedMigrationExecutionRequest(req, saved)
@@ -117,6 +150,7 @@ func TestStoredMigrationExecutionRequestNilAndExplicitMergeValues(t *testing.T) 
 	assert.Equal(t, "bank-existing", req.BankTransactionAccountID)
 	assert.Equal(t, "csv", req.BankTransactionFormat)
 	assert.Equal(t, "2026-02-01", req.OpeningBalanceEntryDate)
+	assert.True(t, req.PostJournalEntries)
 	assert.Nil(t, cloneMigrationBundleFiles(nil))
 	assert.Nil(t, cloneMigrationBundleFiles([]BundleFile{}))
 }

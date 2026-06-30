@@ -4465,6 +4465,8 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
 			assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
+			assert.Equal(t, "auto", req.BankTransactionFormat)
+			assert.True(t, req.PostJournalEntries)
 			require.Len(t, req.Files, 1)
 			_ = json.NewEncoder(w).Encode(cutover.MigrationExecutionPlan{
 				Summary: cutover.MigrationExecutionPlanSummary{ValidationReady: true, Ready: true, StepCount: 1, ReadyStepCount: 1},
@@ -4487,6 +4489,7 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 			assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
 			assert.Equal(t, "auto", req.BankTransactionFormat)
 			assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
+			assert.True(t, req.PostJournalEntries)
 			require.Len(t, req.Files, 1)
 			_ = json.NewEncoder(w).Encode(cutover.MigrationExecutionRun{
 				ID: "run-1",
@@ -4516,6 +4519,7 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 		"--company-id", "12345678",
 		"--company-name", "Example Export OU",
 		"--cutover-date", "2026-01-01",
+		"--post-journal-entries",
 	})
 	require.NoError(t, err)
 	assert.True(t, called["validate"])
@@ -4526,6 +4530,8 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Validation: ready=true")
 	assert.Contains(t, stdout.String(), "Plan: ready=true")
 	assert.Contains(t, stdout.String(), "Execution run: run-1")
+	assert.Contains(t, stdout.String(), "Readiness: ready=5, review_required=0, pending=1, blocked=0")
+	assert.Contains(t, stdout.String(), "Parity checklist: pending=7, blocked=0, ready_for_review=0")
 	assert.Contains(t, stdout.String(), "Reconciliation checks: 7")
 	assert.Contains(t, stdout.String(), "Next: Review the saved dry run")
 
@@ -4536,11 +4542,623 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 	assert.Contains(t, string(reportPayload), `"provider": "smartaccounts"`)
 	assert.Contains(t, string(reportPayload), `"execution_run"`)
 	assert.Contains(t, string(reportPayload), `"manifest_path"`)
+	assert.Contains(t, string(reportPayload), `"readiness"`)
 	assert.Contains(t, string(reportPayload), `"reconciliation"`)
+	assert.Contains(t, string(reportPayload), `"parity_checklist"`)
+	assert.Contains(t, string(reportPayload), `"private_report_reconciliation"`)
+	var privateReport smartAccountsSyncPrivateReport
+	require.NoError(t, json.Unmarshal(reportPayload, &privateReport))
+	require.Len(t, privateReport.Readiness, 6)
+	assert.Equal(t, "snapshot_inventory", privateReport.Readiness[0].Code)
+	assert.Equal(t, "ready", privateReport.Readiness[0].Status)
+	assert.Equal(t, "private_report_reconciliation", privateReport.Readiness[5].Code)
+	assert.Equal(t, "pending", privateReport.Readiness[5].Status)
+	require.Len(t, privateReport.ParityChecklist, 7)
+	assert.Equal(t, "trial_balance", privateReport.ParityChecklist[0].Area)
+	assert.Equal(t, "pending", privateReport.ParityChecklist[0].Status)
 
 	info, err := os.Stat(reportPath)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+func TestCLIMigrationSmartAccountsProofPlanCommand(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	privateRoot := t.TempDir()
+	reportPath := filepath.Join(privateRoot, smartAccountsSyncReportName)
+	syncReport := newSmartAccountsSyncHelperReport(true, false)
+	syncReport.ParityChecklist = smartAccountsSyncParityChecklist(syncReport)
+	reportPayload, err := json.Marshal(syncReport)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(reportPath, reportPayload, 0o600))
+
+	outputDir := filepath.Join(privateRoot, "proof")
+	app, stdout, _ := newTestCLIApp()
+	err = app.run(context.Background(), []string{
+		"migration", "smartaccounts-proof-plan",
+		"--report", reportPath,
+		"--out-dir", outputDir,
+		"--as-of", "2026-03-31",
+		"--start", "2026-01-01",
+		"--end", "2026-03-31",
+		"--bank-account-id", "bank-1",
+		"--inventory-method", "fifo",
+		"--warehouse-id", "warehouse-1",
+		"--json",
+	})
+	require.NoError(t, err)
+
+	var plan smartAccountsProofPlan
+	require.NoError(t, json.Unmarshal([]byte(stdout.String()), &plan))
+	assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, plan.Provider)
+	assert.Equal(t, "tenant-1", plan.TenantID)
+	assert.Equal(t, "2026-03-31", plan.AsOfDate)
+	assert.Equal(t, "2026-01-01", plan.StartDate)
+	assert.Equal(t, "2026-03-31", plan.EndDate)
+	assert.Equal(t, reports.CashFlowMethodIndirect, plan.CashFlowMethod)
+	assert.Equal(t, 2026, plan.KMDYear)
+	assert.Equal(t, 3, plan.KMDMonth)
+	assert.Equal(t, 2026, plan.TSDYear)
+	assert.Equal(t, 3, plan.TSDMonth)
+	assert.True(t, plan.ReadyForPrivateRun)
+	assert.Empty(t, plan.MissingContext)
+	require.Len(t, plan.Items, 7)
+	assert.NotZero(t, plan.RequiredCommands)
+	assert.FileExists(t, filepath.Join(outputDir, smartAccountsProofPlanName))
+	assert.FileExists(t, filepath.Join(outputDir, smartAccountsProofScriptName))
+
+	script, err := os.ReadFile(filepath.Join(outputDir, smartAccountsProofScriptName))
+	require.NoError(t, err)
+	scriptText := string(script)
+	assert.Contains(t, scriptText, "oa reports trial-balance --as-of 2026-03-31 --json")
+	assert.Contains(t, scriptText, "oa reports balance-sheet --as-of 2026-03-31 --csv --output")
+	assert.Contains(t, scriptText, "oa reports aging --type receivables --json")
+	assert.Contains(t, scriptText, "oa reports balance-confirmations --type RECEIVABLE --as-of 2026-03-31 --json")
+	assert.Contains(t, scriptText, "oa reports income-statement --start 2026-01-01 --end 2026-03-31 --json")
+	assert.Contains(t, scriptText, "oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --method indirect --json")
+	assert.Contains(t, scriptText, "oa banking transactions list --account-id bank-1 --from 2026-01-01 --to 2026-03-31 --json")
+	assert.Contains(t, scriptText, "oa banking reconciliations list --account-id bank-1 --json")
+	assert.Contains(t, scriptText, "oa tax kmd inf --year 2026 --month 3 --json")
+	assert.Contains(t, scriptText, "oa payroll runs list --year 2026 --json")
+	assert.Contains(t, scriptText, "oa tsd get --year 2026 --month 3 --json")
+	assert.Contains(t, scriptText, "oa inventory valuation --method fifo --json")
+	assert.Contains(t, scriptText, "oa inventory valuation --warehouse-id warehouse-1 --method fifo --json")
+	assert.Contains(t, scriptText, "oa assets list --json")
+
+	info, err := os.Stat(filepath.Join(outputDir, smartAccountsProofScriptName))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+func TestCLIMigrationSmartAccountsProofPlanCommandMissingContextAndErrors(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	privateRoot := t.TempDir()
+	reportPath := filepath.Join(privateRoot, smartAccountsSyncReportName)
+	syncReport := newSmartAccountsSyncHelperReport(true, false)
+	reportPayload, err := json.Marshal(syncReport)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(reportPath, reportPayload, 0o600))
+
+	t.Run("missing required flags", func(t *testing.T) {
+		app, _, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{"migration", "smartaccounts-proof-plan"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "report and out-dir are required")
+	})
+
+	t.Run("missing bank context", func(t *testing.T) {
+		outputDir := filepath.Join(privateRoot, "proof-missing-bank")
+		app, stdout, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof",
+			"--report", reportPath,
+			"--out-dir", outputDir,
+			"--as-of", "2026-03-31",
+			"--start", "2026-01-01",
+			"--end", "2026-03-31",
+			"--kmd-year", "2026",
+			"--kmd-month", "2",
+			"--tsd-year", "2026",
+			"--tsd-month", "2",
+		})
+		require.NoError(t, err)
+		assert.Contains(t, stdout.String(), "SmartAccounts proof plan written")
+		assert.Contains(t, stdout.String(), "Missing context: 1")
+
+		planPayload, err := os.ReadFile(filepath.Join(outputDir, smartAccountsProofPlanName))
+		require.NoError(t, err)
+		var plan smartAccountsProofPlan
+		require.NoError(t, json.Unmarshal(planPayload, &plan))
+		assert.False(t, plan.ReadyForPrivateRun)
+		assert.Equal(t, []string{"bank-account-id is required for bank transaction and reconciliation proof commands"}, plan.MissingContext)
+		assert.Equal(t, 2026, plan.KMDYear)
+		assert.Equal(t, 2, plan.KMDMonth)
+		assert.Equal(t, 2026, plan.TSDYear)
+		assert.Equal(t, 2, plan.TSDMonth)
+	})
+
+	t.Run("reject public worktree output", func(t *testing.T) {
+		app, _, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof-plan",
+			"--report", reportPath,
+			"--out-dir", filepath.Join(".", "tmp-smartaccounts-proof"),
+			"--as-of", "2026-03-31",
+			"--start", "2026-01-01",
+			"--end", "2026-03-31",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must not be inside public Open Accounting Git worktree")
+	})
+
+	t.Run("invalid period flags", func(t *testing.T) {
+		app, _, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof-plan",
+			"--report", reportPath,
+			"--out-dir", filepath.Join(privateRoot, "proof-invalid"),
+			"--as-of", "2026-03-31",
+			"--start", "2026-04-01",
+			"--end", "2026-03-31",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "end must be on or after start")
+	})
+
+	t.Run("error paths", func(t *testing.T) {
+		badJSONReport := filepath.Join(privateRoot, "bad-json-report.json")
+		require.NoError(t, os.WriteFile(badJSONReport, []byte("{"), 0o600))
+		wrongProviderReport := filepath.Join(privateRoot, "wrong-provider-report.json")
+		wrongProviderPayload, err := json.Marshal(&smartAccountsSyncPrivateReport{Provider: cutover.MigrationProviderPresetMerit})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(wrongProviderReport, wrongProviderPayload, 0o600))
+		fileOutputRoot := filepath.Join(privateRoot, "file-output-root")
+		require.NoError(t, os.WriteFile(fileOutputRoot, []byte("not a directory"), 0o600))
+		planDirectoryOutput := filepath.Join(privateRoot, "plan-directory-output")
+		require.NoError(t, os.MkdirAll(filepath.Join(planDirectoryOutput, smartAccountsProofPlanName), 0o700))
+		scriptDirectoryOutput := filepath.Join(privateRoot, "script-directory-output")
+		require.NoError(t, os.MkdirAll(filepath.Join(scriptDirectoryOutput, smartAccountsProofScriptName), 0o700))
+
+		baseArgs := []string{
+			"migration", "smartaccounts-proof-plan",
+			"--report", reportPath,
+			"--out-dir", filepath.Join(privateRoot, "proof-errors"),
+			"--as-of", "2026-03-31",
+			"--start", "2026-01-01",
+			"--end", "2026-03-31",
+		}
+		for _, tc := range []struct {
+			name string
+			args []string
+			want string
+		}{
+			{name: "invalid flag", args: []string{"migration", "smartaccounts-proof-plan", "--bogus"}, want: "flag provided but not defined"},
+			{name: "missing as of", args: []string{"migration", "smartaccounts-proof-plan", "--report", reportPath, "--out-dir", filepath.Join(privateRoot, "missing-as-of")}, want: "as-of is required"},
+			{name: "missing start", args: []string{"migration", "smartaccounts-proof-plan", "--report", reportPath, "--out-dir", filepath.Join(privateRoot, "missing-start"), "--as-of", "2026-03-31"}, want: "start is required"},
+			{name: "missing end", args: []string{"migration", "smartaccounts-proof-plan", "--report", reportPath, "--out-dir", filepath.Join(privateRoot, "missing-end"), "--as-of", "2026-03-31", "--start", "2026-01-01"}, want: "end is required"},
+			{name: "invalid cash flow method", args: append(append([]string{}, baseArgs...), "--cash-flow-method", "rolling"), want: "cash flow method"},
+			{name: "kmd partial period", args: append(append([]string{}, baseArgs...), "--kmd-year", "2026"), want: "kmd-year and kmd-month must be supplied together"},
+			{name: "tsd invalid month", args: append(append([]string{}, baseArgs...), "--tsd-year", "2026", "--tsd-month", "13"), want: "month must be between 1 and 12"},
+			{name: "read report", args: append(append([]string{}, baseArgs[:2]...), "--report", filepath.Join(privateRoot, "missing-report.json"), "--out-dir", filepath.Join(privateRoot, "missing-report-output"), "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "read SmartAccounts sync report"},
+			{name: "decode report", args: append(append([]string{}, baseArgs[:2]...), "--report", badJSONReport, "--out-dir", filepath.Join(privateRoot, "bad-json-output"), "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "decode SmartAccounts sync report"},
+			{name: "wrong provider", args: append(append([]string{}, baseArgs[:2]...), "--report", wrongProviderReport, "--out-dir", filepath.Join(privateRoot, "wrong-provider-output"), "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "sync report provider must be"},
+			{name: "mkdir output", args: append(append([]string{}, baseArgs[:2]...), "--report", reportPath, "--out-dir", filepath.Join(fileOutputRoot, "child"), "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "create proof output dir"},
+			{name: "write plan", args: append(append([]string{}, baseArgs[:2]...), "--report", reportPath, "--out-dir", planDirectoryOutput, "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "write SmartAccounts proof plan"},
+			{name: "write script", args: append(append([]string{}, baseArgs[:2]...), "--report", reportPath, "--out-dir", scriptDirectoryOutput, "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "write SmartAccounts proof script"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				app, _, _ := newTestCLIApp()
+				err := app.run(context.Background(), tc.args)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.want)
+			})
+		}
+	})
+}
+
+func TestCLIMigrationSmartAccountsProofResultCommand(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	privateRoot := t.TempDir()
+	planPath, plan := writeSmartAccountsProofPlanFixture(t, privateRoot)
+	resultPath := filepath.Join(privateRoot, "proof-result", "proof-result.json")
+	result := newSmartAccountsProofResultFixture(t, &plan, resultPath)
+	writeJSONFile(t, resultPath, result)
+
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{
+		"migration", "smartaccounts-proof-result",
+		"--plan", planPath,
+		"--result", resultPath,
+		"--require-ready",
+		"--json",
+	})
+	require.NoError(t, err)
+
+	var validation smartAccountsProofResultValidation
+	require.NoError(t, json.Unmarshal([]byte(stdout.String()), &validation))
+	assert.True(t, validation.Ready)
+	assert.Equal(t, smartAccountsProofStatusPassed, validation.Status)
+	assert.Equal(t, smartAccountsProofPlanAreas(&plan), validation.RequiredAreas)
+	assert.Equal(t, validation.RequiredAreas, validation.PassedAreas)
+	assert.Empty(t, validation.Blockers)
+
+	app, stdout, _ = newTestCLIApp()
+	err = app.run(context.Background(), []string{
+		"migration", "smartaccounts-proof-validate",
+		"--plan", planPath,
+		"--result", resultPath,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "SmartAccounts proof result validation")
+	assert.Contains(t, stdout.String(), "Ready: true")
+	assert.Contains(t, stdout.String(), "Areas: passed=7 required=7")
+}
+
+func TestCLIMigrationSmartAccountsProofResultCommandBlockedAndErrors(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	privateRoot := t.TempDir()
+	planPath, plan := writeSmartAccountsProofPlanFixture(t, privateRoot)
+	resultPath := filepath.Join(privateRoot, "proof-result", "proof-result.json")
+
+	t.Run("blocked result returns validation", func(t *testing.T) {
+		result := newSmartAccountsProofResultFixture(t, &plan, resultPath)
+		result.Status = "blocked"
+		result.Items = result.Items[:len(result.Items)-1]
+		result.Items[0].Status = "pending"
+		result.Items[0].OpenAccountingSHA256 = strings.Repeat("0", 64)
+		result.Items[0].DiscrepancyNote = "investigate account-level delta"
+		writeJSONFile(t, resultPath, result)
+
+		app, stdout, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof-result",
+			"--plan", planPath,
+			"--result", resultPath,
+			"--json",
+		})
+		require.NoError(t, err)
+		var validation smartAccountsProofResultValidation
+		require.NoError(t, json.Unmarshal([]byte(stdout.String()), &validation))
+		assert.False(t, validation.Ready)
+		assert.Equal(t, smartAccountsProofStatusBlocked, validation.Status)
+		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "proof result status must be passed")
+		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "missing proof result item")
+		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "Open Accounting artifact SHA-256 mismatch")
+		assert.Contains(t, strings.Join(validation.Blockers, "\n"), "discrepancy note: investigate account-level delta")
+	})
+
+	t.Run("require ready fails on blockers", func(t *testing.T) {
+		result := newSmartAccountsProofResultFixture(t, &plan, resultPath)
+		result.Items[0].SmartAccountsArtifact = filepath.Join(privateRoot, "missing-smartaccounts.csv")
+		writeJSONFile(t, resultPath, result)
+
+		app, _, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof-result",
+			"--plan", planPath,
+			"--result", resultPath,
+			"--require-ready",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "SmartAccounts proof result is not ready")
+	})
+
+	t.Run("error paths", func(t *testing.T) {
+		badPlanPath := filepath.Join(privateRoot, "bad-plan.json")
+		require.NoError(t, os.WriteFile(badPlanPath, []byte("{"), 0o600))
+		wrongProviderPlanPath := filepath.Join(privateRoot, "wrong-provider-plan.json")
+		writeJSONFile(t, wrongProviderPlanPath, smartAccountsProofPlan{Provider: cutover.MigrationProviderPresetMerit})
+		badResultPath := filepath.Join(privateRoot, "bad-result.json")
+		require.NoError(t, os.WriteFile(badResultPath, []byte("{"), 0o600))
+
+		for _, tc := range []struct {
+			name string
+			args []string
+			want string
+		}{
+			{name: "invalid flag", args: []string{"migration", "smartaccounts-proof-result", "--bogus"}, want: "flag provided but not defined"},
+			{name: "missing required flags", args: []string{"migration", "smartaccounts-proof-result"}, want: "plan and result are required"},
+			{name: "reject public plan", args: []string{"migration", "smartaccounts-proof-result", "--plan", filepath.Join(".", "smartaccounts-proof-plan.json"), "--result", resultPath}, want: "proof plan must not be inside public Open Accounting Git worktree"},
+			{name: "reject public result", args: []string{"migration", "smartaccounts-proof-result", "--plan", planPath, "--result", filepath.Join(".", "smartaccounts-proof-result.json")}, want: "proof result must not be inside public Open Accounting Git worktree"},
+			{name: "read plan", args: []string{"migration", "smartaccounts-proof-result", "--plan", filepath.Join(privateRoot, "missing-plan.json"), "--result", resultPath}, want: "read SmartAccounts proof plan"},
+			{name: "decode plan", args: []string{"migration", "smartaccounts-proof-result", "--plan", badPlanPath, "--result", resultPath}, want: "decode SmartAccounts proof plan"},
+			{name: "wrong plan provider", args: []string{"migration", "smartaccounts-proof-result", "--plan", wrongProviderPlanPath, "--result", resultPath}, want: "proof plan provider must be"},
+			{name: "read result", args: []string{"migration", "smartaccounts-proof-result", "--plan", planPath, "--result", filepath.Join(privateRoot, "missing-result.json")}, want: "read SmartAccounts proof result"},
+			{name: "decode result", args: []string{"migration", "smartaccounts-proof-result", "--plan", planPath, "--result", badResultPath}, want: "decode SmartAccounts proof result"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				app, _, _ := newTestCLIApp()
+				err := app.run(context.Background(), tc.args)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.want)
+			})
+		}
+	})
+
+	t.Run("json output write failure", func(t *testing.T) {
+		result := newSmartAccountsProofResultFixture(t, &plan, resultPath)
+		writeJSONFile(t, resultPath, result)
+		app := &cliApp{stdout: failingWriter{}, stderr: io.Discard}
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof-result",
+			"--plan", planPath,
+			"--result", resultPath,
+			"--json",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "write failed")
+	})
+}
+
+func TestSmartAccountsProofResultValidationHelpers(t *testing.T) {
+	privateRoot := t.TempDir()
+	plan := smartAccountsProofPlan{
+		Provider: cutover.MigrationProviderPresetSmartAccounts,
+		Items: []smartAccountsProofPlanItem{
+			{Area: "trial_balance"},
+			{Area: ""},
+			{Area: "trial_balance"},
+			{Area: "bank"},
+		},
+	}
+	planPath := filepath.Join(privateRoot, "smartaccounts-proof-plan.json")
+	resultPath := filepath.Join(privateRoot, "proof-result", "proof-result.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(resultPath), 0o700))
+
+	saPath, saHash := writeSmartAccountsProofArtifact(t, filepath.Dir(resultPath), filepath.Join("artifacts", "trial-sa.json"), "smartaccounts trial")
+	oaPath, oaHash := writeSmartAccountsProofArtifact(t, filepath.Dir(resultPath), filepath.Join("artifacts", "trial-oa.json"), "open accounting trial")
+	_, _ = writeSmartAccountsProofArtifact(t, filepath.Dir(resultPath), filepath.Join("artifacts", "bank-sa.json"), "smartaccounts bank")
+	bankOAPath, bankOAHash := writeSmartAccountsProofArtifact(t, filepath.Dir(resultPath), filepath.Join("artifacts", "bank-oa.json"), "open accounting bank")
+
+	result := smartAccountsProofResult{
+		Provider:   cutover.MigrationProviderPresetMerit,
+		Status:     "failed",
+		PlanPath:   filepath.Join(privateRoot, "other-plan.json"),
+		Reviewer:   "",
+		ReviewedAt: "not-a-date",
+		Items: []smartAccountsProofResultItem{
+			{Area: "", Status: smartAccountsProofStatusPassed},
+			{Area: "trial_balance", Status: "pending", SmartAccountsArtifact: saPath, SmartAccountsSHA256: saHash, OpenAccountingArtifact: oaPath, OpenAccountingSHA256: oaHash, ReviewedAt: "bad-date", DiscrepancyNote: "target report is not ready"},
+			{Area: "trial_balance", Status: smartAccountsProofStatusPassed, SmartAccountsArtifact: saPath, SmartAccountsSHA256: saHash, OpenAccountingArtifact: oaPath, OpenAccountingSHA256: oaHash},
+			{Area: "unplanned", Status: smartAccountsProofStatusPassed, SmartAccountsArtifact: saPath, SmartAccountsSHA256: saHash, OpenAccountingArtifact: oaPath, OpenAccountingSHA256: oaHash},
+			{Area: "bank", Status: smartAccountsProofStatusPassed, SmartAccountsArtifact: "artifacts/bank-sa.json", SmartAccountsSHA256: "not-a-hash", OpenAccountingArtifact: filepath.Join(privateRoot, "missing-oa.json"), OpenAccountingSHA256: bankOAHash},
+		},
+	}
+	validation := validateSmartAccountsProofResult(&plan, &result, planPath, resultPath)
+	assert.False(t, validation.Ready)
+	blockers := strings.Join(validation.Blockers, "\n")
+	assert.Contains(t, blockers, `proof result provider must be "smartaccounts"`)
+	assert.Contains(t, blockers, "proof result status must be passed")
+	assert.Contains(t, blockers, "proof result plan_path does not match --plan")
+	assert.Contains(t, blockers, "proof result reviewer is required")
+	assert.Contains(t, blockers, "proof result reviewed_at must be RFC3339 or YYYY-MM-DD")
+	assert.Contains(t, blockers, "proof result item area is required")
+	assert.Contains(t, blockers, "duplicate proof result item for area trial_balance")
+	assert.Contains(t, blockers, "proof result contains unplanned area unplanned")
+	assert.Contains(t, blockers, "trial_balance status must be passed")
+	assert.Contains(t, blockers, "trial_balance discrepancy note: target report is not ready")
+	assert.Contains(t, blockers, "trial_balance reviewed_at must be RFC3339 or YYYY-MM-DD")
+	assert.Contains(t, blockers, "bank SmartAccounts artifact SHA-256 must be 64 hex characters")
+	assert.Contains(t, blockers, "bank Open Accounting artifact hash check failed")
+
+	emptyPlanValidation := validateSmartAccountsProofResult(
+		&smartAccountsProofPlan{Provider: cutover.MigrationProviderPresetSmartAccounts},
+		&smartAccountsProofResult{
+			Provider:   cutover.MigrationProviderPresetSmartAccounts,
+			Status:     smartAccountsProofStatusPassed,
+			Reviewer:   "Reviewer",
+			ReviewedAt: "",
+		},
+		planPath,
+		resultPath,
+	)
+	emptyPlanBlockers := strings.Join(emptyPlanValidation.Blockers, "\n")
+	assert.Contains(t, emptyPlanBlockers, "proof plan does not contain any parity areas")
+	assert.Contains(t, emptyPlanBlockers, "proof result plan_path is required")
+	assert.Contains(t, emptyPlanBlockers, "proof result reviewed_at is required")
+
+	itemReviewedAtBlockers := smartAccountsProofResultItemBlockers("bank", smartAccountsProofResultItem{
+		Status:                 smartAccountsProofStatusPassed,
+		SmartAccountsArtifact:  "artifacts/bank-sa.json",
+		SmartAccountsSHA256:    bankOAHash,
+		OpenAccountingArtifact: "artifacts/bank-oa.json",
+		OpenAccountingSHA256:   bankOAHash,
+	}, "Reviewer", "", filepath.Dir(resultPath))
+	assert.Contains(t, strings.Join(itemReviewedAtBlockers, "\n"), "bank reviewed_at is required")
+
+	currentDir, err := os.Getwd()
+	require.NoError(t, err)
+	publicArtifact := filepath.Join(currentDir, "..", "..", "go.mod")
+	publicHash, err := smartAccountsProofFileSHA256(publicArtifact)
+	require.NoError(t, err)
+	publicBlockers := smartAccountsProofArtifactBlockers("bank", "Open Accounting", publicArtifact, publicHash, filepath.Dir(resultPath))
+	assert.Contains(t, strings.Join(publicBlockers, "\n"), "must not be inside public Open Accounting Git worktree")
+	publicSymlink := filepath.Join(privateRoot, "public-go-mod-link")
+	if err := os.Symlink(publicArtifact, publicSymlink); err == nil {
+		publicSymlinkHash, err := smartAccountsProofFileSHA256(publicSymlink)
+		require.NoError(t, err)
+		publicSymlinkBlockers := smartAccountsProofArtifactBlockers("bank", "Open Accounting", publicSymlink, publicSymlinkHash, filepath.Dir(resultPath))
+		assert.Contains(t, strings.Join(publicSymlinkBlockers, "\n"), "must not be inside public Open Accounting Git worktree")
+		err = rejectSmartAccountsProofPublicWorktreePathWithLabel(publicSymlink, "result")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "proof result must not be inside public Open Accounting Git worktree")
+	}
+
+	emptyBlockers := smartAccountsProofArtifactBlockers("bank", "SmartAccounts", "", "", filepath.Dir(resultPath))
+	assert.Contains(t, strings.Join(emptyBlockers, "\n"), "artifact path is required")
+	assert.Contains(t, strings.Join(emptyBlockers, "\n"), "artifact SHA-256 is required")
+
+	mismatchBlockers := smartAccountsProofArtifactBlockers("bank", "Open Accounting", bankOAPath, strings.Repeat("0", 64), filepath.Dir(resultPath))
+	assert.Contains(t, strings.Join(mismatchBlockers, "\n"), "artifact SHA-256 mismatch")
+
+	_, err = smartAccountsProofFileSHA256(t.TempDir())
+	require.Error(t, err)
+	assert.True(t, smartAccountsProofReviewedAtLooksValid("2026-06-30"))
+	assert.True(t, smartAccountsProofReviewedAtLooksValid("2026-06-30T12:00:00Z"))
+	assert.False(t, smartAccountsProofReviewedAtLooksValid("30.06.2026"))
+	assert.True(t, smartAccountsProofLooksSHA256(saHash))
+	assert.False(t, smartAccountsProofLooksSHA256("not-a-hash"))
+	assert.False(t, smartAccountsProofLooksSHA256(strings.Repeat("g", 64)))
+	absoluteSAPath := filepath.Join(filepath.Dir(resultPath), saPath)
+	assert.Equal(t, filepath.Clean(absoluteSAPath), smartAccountsProofResolveArtifactPath(filepath.Dir(resultPath), absoluteSAPath))
+}
+
+func TestSmartAccountsProofPlanHelpers(t *testing.T) {
+	assert.Equal(t, "''", smartAccountsProofShellQuote(""))
+	assert.Equal(t, "/tmp/plain", smartAccountsProofShellQuote("/tmp/plain"))
+	assert.Equal(t, "'/tmp/has spaces/it'\\''s.csv'", smartAccountsProofShellQuote("/tmp/has spaces/it's.csv"))
+	assert.Equal(t, []string{"a", "b"}, uniqueNonEmptyStrings([]string{"", "a", "a", " b "}))
+	assert.Equal(t, "", smartAccountsProofFirstNonEmpty("", " "))
+	assert.True(t, pathWithin("/tmp/example", "/tmp"))
+	assert.False(t, pathWithin("/tmp/example", "/var"))
+
+	year, month, err := smartAccountsProofPeriodFromFlags("kmd", "", "", time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	assert.Equal(t, 2026, year)
+	assert.Equal(t, 4, month)
+	_, _, err = smartAccountsProofPeriodFromFlags("kmd", "2026", "", time.Time{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "kmd-year and kmd-month must be supplied together")
+	_, _, err = smartAccountsProofPeriodFromFlags("kmd", "2026", "13", time.Time{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "month must be between 1 and 12")
+
+	plan := &smartAccountsProofPlan{OutputDir: t.TempDir()}
+	items := smartAccountsProofPlanItems(plan, []smartAccountsSyncParityChecklistItem{{Area: "unknown_area"}})
+	require.Len(t, items, 1)
+	assert.Contains(t, items[0].MissingContext[0], "no proof command mapping exists")
+
+	currentDir, err := os.Getwd()
+	require.NoError(t, err)
+	repoRoot, err := filepath.Abs(filepath.Join(currentDir, "..", ".."))
+	require.NoError(t, err)
+	root, ok := smartAccountsProofOpenAccountingRootForPath(filepath.Join(currentDir, "tmp-smartaccounts-proof"))
+	require.True(t, ok)
+	assert.Equal(t, repoRoot, root)
+	root, ok = smartAccountsProofOpenAccountingRootForPath(t.TempDir())
+	assert.False(t, ok)
+	assert.Empty(t, root)
+	tempFile := filepath.Join(t.TempDir(), "proof")
+	require.NoError(t, os.WriteFile(tempFile, []byte("not a dir"), 0o600))
+	root, ok = smartAccountsProofOpenAccountingRootForPath(tempFile)
+	assert.False(t, ok)
+	assert.Empty(t, root)
+	require.NoError(t, rejectSmartAccountsProofPublicWorktreePath(filepath.Join(t.TempDir(), "proof")))
+}
+
+func writeSmartAccountsProofPlanFixture(t *testing.T, privateRoot string) (string, smartAccountsProofPlan) {
+	t.Helper()
+
+	reportPath := filepath.Join(privateRoot, smartAccountsSyncReportName)
+	syncReport := newSmartAccountsSyncHelperReport(true, false)
+	syncReport.ParityChecklist = smartAccountsSyncParityChecklist(syncReport)
+	writeJSONFile(t, reportPath, syncReport)
+
+	outputDir := filepath.Join(privateRoot, "proof")
+	app, stdout, _ := newTestCLIApp()
+	err := app.run(context.Background(), []string{
+		"migration", "smartaccounts-proof-plan",
+		"--report", reportPath,
+		"--out-dir", outputDir,
+		"--as-of", "2026-03-31",
+		"--start", "2026-01-01",
+		"--end", "2026-03-31",
+		"--bank-account-id", "bank-1",
+		"--inventory-method", "fifo",
+		"--warehouse-id", "warehouse-1",
+		"--json",
+	})
+	require.NoError(t, err)
+	var plan smartAccountsProofPlan
+	require.NoError(t, json.Unmarshal([]byte(stdout.String()), &plan))
+	return filepath.Join(outputDir, smartAccountsProofPlanName), plan
+}
+
+func newSmartAccountsProofResultFixture(t *testing.T, plan *smartAccountsProofPlan, resultPath string) smartAccountsProofResult {
+	t.Helper()
+
+	resultDir := filepath.Dir(resultPath)
+	require.NoError(t, os.MkdirAll(resultDir, 0o700))
+	result := smartAccountsProofResult{
+		Provider:   cutover.MigrationProviderPresetSmartAccounts,
+		PlanPath:   plan.PlanPath,
+		Status:     smartAccountsProofStatusPassed,
+		Reviewer:   "Migration Reviewer",
+		ReviewedAt: "2026-06-30T12:00:00Z",
+		Items:      make([]smartAccountsProofResultItem, 0, len(plan.Items)),
+	}
+	for _, item := range plan.Items {
+		saRel, saHash := writeSmartAccountsProofArtifact(t, resultDir, filepath.Join("artifacts", item.Area+"-smartaccounts.json"), "smartaccounts "+item.Area)
+		oaRel, oaHash := writeSmartAccountsProofArtifact(t, resultDir, filepath.Join("artifacts", item.Area+"-open-accounting.json"), "open accounting "+item.Area)
+		result.Items = append(result.Items, smartAccountsProofResultItem{
+			Area:                   item.Area,
+			Status:                 smartAccountsProofStatusPassed,
+			SmartAccountsArtifact:  saRel,
+			SmartAccountsSHA256:    saHash,
+			OpenAccountingArtifact: oaRel,
+			OpenAccountingSHA256:   oaHash,
+			Basis:                  "accrual",
+			Period:                 "2026-01-01..2026-03-31",
+		})
+	}
+	result.Summary = smartAccountsProofResultSummary{
+		RequiredAreas: len(plan.Items),
+		PassedAreas:   len(plan.Items),
+	}
+	return result
+}
+
+func writeSmartAccountsProofArtifact(t *testing.T, baseDir, relativePath, content string) (string, string) {
+	t.Helper()
+
+	path := filepath.Join(baseDir, relativePath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	hash, err := smartAccountsProofFileSHA256(path)
+	require.NoError(t, err)
+	return relativePath, hash
+}
+
+func writeJSONFile(t *testing.T, path string, value any) {
+	t.Helper()
+
+	payload, err := json.MarshalIndent(value, "", "  ")
+	require.NoError(t, err)
+	payload = append(payload, '\n')
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, payload, 0o600))
 }
 
 func TestCLIMigrationSmartAccountsSyncErrorPaths(t *testing.T) {
@@ -4633,6 +5251,14 @@ func TestCLIMigrationSmartAccountsSyncErrorPaths(t *testing.T) {
 				assert.Contains(t, err.Error(), tc.want)
 				if tc.json {
 					assert.Contains(t, stdout.String(), `"error": "execute unavailable"`)
+					assert.Contains(t, stdout.String(), `"readiness"`)
+					assert.Contains(t, stdout.String(), `"parity"`)
+					assert.Contains(t, stdout.String(), `"blocked": 7`)
+					var summary smartAccountsSyncPublicSummary
+					require.NoError(t, json.Unmarshal([]byte(stdout.String()), &summary))
+					assert.Equal(t, "execute unavailable", summary.Execution.Error)
+					assert.Equal(t, smartAccountsSyncParityView{Blocked: 7}, summary.Parity)
+					assert.Contains(t, summary.NextAction, "execution/API error")
 				}
 				return
 			}
@@ -4689,15 +5315,230 @@ func TestSmartAccountsSyncHelpers(t *testing.T) {
 		Plan:       smartAccountsSyncPlanView{Ready: true},
 		Execution:  smartAccountsSyncExecutionView{Confirmed: true, FailedSteps: 1},
 	}), "failed confirmed run")
+	assert.Contains(t, smartAccountsSyncNextAction(smartAccountsSyncPublicSummary{
+		Validation: smartAccountsSyncValidationView{Ready: true},
+		Plan:       smartAccountsSyncPlanView{Ready: true},
+		Execution:  smartAccountsSyncExecutionView{Confirmed: true},
+		Parity:     smartAccountsSyncParityView{Failed: 1},
+	}), "failed parity checklist")
+	assert.Contains(t, smartAccountsSyncNextAction(smartAccountsSyncPublicSummary{
+		Validation: smartAccountsSyncValidationView{Ready: true},
+		Plan:       smartAccountsSyncPlanView{Ready: true},
+		Execution:  smartAccountsSyncExecutionView{Error: "execute unavailable"},
+	}), "execution/API error")
+	assert.Contains(t, smartAccountsSyncNextAction(smartAccountsSyncPublicSummary{
+		Validation: smartAccountsSyncValidationView{Ready: true},
+		Plan:       smartAccountsSyncPlanView{Ready: true},
+		Execution:  smartAccountsSyncExecutionView{Confirmed: true},
+		Parity:     smartAccountsSyncParityView{Blocked: 1},
+	}), "blocked parity checklist")
+
+	assert.Nil(t, smartAccountsSyncReadinessChecks(nil))
+	assert.Equal(t, smartAccountsSyncReadinessView{
+		Ready:          1,
+		ReviewRequired: 1,
+		Pending:        1,
+		Blocked:        1,
+	}, smartAccountsSyncReadinessSummary([]smartAccountsSyncReadinessCheck{
+		{Status: "ready"},
+		{Status: "review_required"},
+		{Status: "blocked"},
+		{Status: "unexpected"},
+	}))
+	assert.Nil(t, smartAccountsSyncParityChecklist(nil))
+	assert.Equal(t, smartAccountsSyncParityView{
+		Pending:        1,
+		Blocked:        1,
+		ReadyForReview: 1,
+		Passed:         1,
+		Failed:         1,
+	}, smartAccountsSyncParitySummary([]smartAccountsSyncParityChecklistItem{
+		{Status: "ready_for_review"},
+		{Status: "passed"},
+		{Status: "failed"},
+		{Status: "blocked"},
+		{Status: "unexpected"},
+	}))
+
+	confirmedReport := newSmartAccountsSyncHelperReport(true, false)
+	readiness := smartAccountsSyncReadinessSummary(smartAccountsSyncReadinessChecks(confirmedReport))
+	assert.Equal(t, smartAccountsSyncReadinessView{Ready: 5, Pending: 1}, readiness)
+	checklist := smartAccountsSyncParityChecklist(confirmedReport)
+	require.Len(t, checklist, 7)
+	assert.Equal(t, smartAccountsSyncParityView{ReadyForReview: 7}, smartAccountsSyncParitySummary(checklist))
+	assert.Equal(t, "ready_for_review", checklist[0].Status)
+	assert.NotEmpty(t, checklist[0].DiscrepancyRisk)
+
+	dryRunReport := newSmartAccountsSyncHelperReport(false, false)
+	assert.Equal(t, smartAccountsSyncParityView{Pending: 7}, smartAccountsSyncParitySummary(smartAccountsSyncParityChecklist(dryRunReport)))
+
+	draftJournalReport := newSmartAccountsSyncHelperReport(true, true)
+	assert.Equal(t, "pending", smartAccountsSyncJournalPostingReadiness(draftJournalReport).Status)
+	assert.Equal(t, smartAccountsSyncParityView{Blocked: 5, ReadyForReview: 2}, smartAccountsSyncParitySummary(smartAccountsSyncParityChecklist(draftJournalReport)))
+	summary := buildSmartAccountsSyncPublicSummary(draftJournalReport, "/private/smartaccounts/smartaccounts-sync-report.json")
+	assert.Contains(t, summary.NextAction, "blocked parity checklist")
+
+	postedJournalReport := newSmartAccountsSyncHelperReport(true, true)
+	postedJournalReport.Context.PostJournalEntries = true
+	assert.Equal(t, "ready", smartAccountsSyncJournalPostingReadiness(postedJournalReport).Status)
+	assert.Equal(t, smartAccountsSyncParityView{ReadyForReview: 7}, smartAccountsSyncParitySummary(smartAccountsSyncParityChecklist(postedJournalReport)))
+	dryRunPostingReport := newSmartAccountsSyncHelperReport(false, true)
+	dryRunPostingReport.Context.PostJournalEntries = true
+	assert.Equal(t, "review_required", smartAccountsSyncJournalPostingReadiness(dryRunPostingReport).Status)
+
+	assert.Equal(t, "pending", smartAccountsSyncSnapshotReadiness(&smartAccountsSyncPrivateReport{}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncSnapshotReadiness(&smartAccountsSyncPrivateReport{
+		Snapshot: &cutover.SmartAccountsSnapshotReport{UnsupportedFiles: []cutover.SmartAccountsSnapshotUnsupported{{SourcePath: "unknown.csv"}}},
+	}).Status)
+	assert.Equal(t, "review_required", smartAccountsSyncSnapshotReadiness(&smartAccountsSyncPrivateReport{
+		Snapshot: &cutover.SmartAccountsSnapshotReport{Warnings: []string{"summary-only invoice export"}},
+	}).Status)
+	assert.Equal(t, "pending", smartAccountsSyncValidationReadiness(&smartAccountsSyncPrivateReport{}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncValidationReadiness(&smartAccountsSyncPrivateReport{
+		Snapshot:       &cutover.SmartAccountsSnapshotReport{},
+		ExecutionError: "validation unavailable",
+	}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncValidationReadiness(&smartAccountsSyncPrivateReport{
+		Validation: &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: false}},
+	}).Status)
+	assert.Equal(t, "pending", smartAccountsSyncPlanReadiness(&smartAccountsSyncPrivateReport{}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncPlanReadiness(&smartAccountsSyncPrivateReport{
+		Validation:     &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+		ExecutionError: "plan unavailable",
+	}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncPlanReadiness(&smartAccountsSyncPrivateReport{
+		Plan: &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: false, BlockedStepCount: 1}},
+	}).Status)
+	assert.Equal(t, "pending", smartAccountsSyncPlanReadiness(&smartAccountsSyncPrivateReport{
+		Plan: &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: false}},
+	}).Status)
+	assert.Equal(t, "pending", smartAccountsSyncExecutionReadiness(&smartAccountsSyncPrivateReport{}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncExecutionReadiness(&smartAccountsSyncPrivateReport{
+		Plan:           &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+		ExecutionError: "execute unavailable",
+	}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncExecutionReadiness(&smartAccountsSyncPrivateReport{
+		ExecutionRun: &cutover.MigrationExecutionRun{Summary: cutover.MigrationExecutionRunSummary{FailedStepCount: 1}},
+	}).Status)
+	assert.False(t, smartAccountsSyncHasPreparedKind(nil, cutover.KindAccounts))
+	assert.False(t, smartAccountsSyncHasPreparedKind(&smartAccountsSyncPrivateReport{}, cutover.KindAccounts))
+	assert.False(t, smartAccountsSyncHasPreparedKind(confirmedReport, cutover.KindJournalEntries))
+
+	checklistWithDefaultTargets := smartAccountsSyncParityChecklist(&smartAccountsSyncPrivateReport{
+		Snapshot:     &cutover.SmartAccountsSnapshotReport{},
+		Validation:   &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+		Plan:         &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+		ExecutionRun: &cutover.MigrationExecutionRun{Summary: cutover.MigrationExecutionRunSummary{Confirmed: true}},
+	})
+	require.Len(t, checklistWithDefaultTargets, 7)
+
+	for _, tc := range []struct {
+		name       string
+		report     *smartAccountsSyncPrivateReport
+		wantStatus string
+		wantHint   string
+	}{
+		{
+			name: "unsupported snapshot files",
+			report: &smartAccountsSyncPrivateReport{
+				Snapshot: &cutover.SmartAccountsSnapshotReport{UnsupportedFiles: []cutover.SmartAccountsSnapshotUnsupported{{SourcePath: "unsupported.csv"}}},
+			},
+			wantStatus: "blocked",
+			wantHint:   "unsupported files",
+		},
+		{
+			name:       "validation missing",
+			report:     &smartAccountsSyncPrivateReport{Snapshot: &cutover.SmartAccountsSnapshotReport{}},
+			wantStatus: "pending",
+			wantHint:   "Run validation",
+		},
+		{
+			name:       "validation error",
+			report:     &smartAccountsSyncPrivateReport{Snapshot: &cutover.SmartAccountsSnapshotReport{}, ExecutionError: "validation unavailable"},
+			wantStatus: "blocked",
+			wantHint:   "validation/API error",
+		},
+		{
+			name:       "validation blocked",
+			report:     &smartAccountsSyncPrivateReport{Validation: &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: false}}},
+			wantStatus: "blocked",
+			wantHint:   "validation blockers",
+		},
+		{
+			name:       "plan missing",
+			report:     &smartAccountsSyncPrivateReport{Validation: &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}}},
+			wantStatus: "pending",
+			wantHint:   "Build an execution plan",
+		},
+		{
+			name: "plan error",
+			report: &smartAccountsSyncPrivateReport{
+				Validation:     &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+				ExecutionError: "plan unavailable",
+			},
+			wantStatus: "blocked",
+			wantHint:   "plan/API error",
+		},
+		{
+			name: "plan not ready",
+			report: &smartAccountsSyncPrivateReport{
+				Validation: &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+				Plan:       &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: false}},
+			},
+			wantStatus: "blocked",
+			wantHint:   "Resolve missing context",
+		},
+		{
+			name: "execution missing",
+			report: &smartAccountsSyncPrivateReport{
+				Validation: &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+				Plan:       &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+			},
+			wantStatus: "pending",
+			wantHint:   "Save a dry run",
+		},
+		{
+			name: "execution error",
+			report: &smartAccountsSyncPrivateReport{
+				Validation:     &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+				Plan:           &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+				ExecutionError: "execute unavailable",
+			},
+			wantStatus: "blocked",
+			wantHint:   "execution/API error",
+		},
+		{
+			name: "execution failed steps",
+			report: &smartAccountsSyncPrivateReport{
+				Validation:   &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+				Plan:         &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+				ExecutionRun: &cutover.MigrationExecutionRun{Summary: cutover.MigrationExecutionRunSummary{FailedStepCount: 1}},
+			},
+			wantStatus: "blocked",
+			wantHint:   "failed migration",
+		},
+		{name: "unconfirmed dry run", report: newSmartAccountsSyncHelperReport(false, false), wantStatus: "pending", wantHint: "Confirm the reviewed migration"},
+		{name: "confirmed run", report: newSmartAccountsSyncHelperReport(true, false), wantStatus: "ready_for_review", wantHint: "private SmartAccounts proof report"},
+	} {
+		t.Run("parity base "+tc.name, func(t *testing.T) {
+			status, _, nextAction := smartAccountsSyncParityBaseState(tc.report)
+			assert.Equal(t, tc.wantStatus, status)
+			assert.Contains(t, nextAction, tc.wantHint)
+		})
+	}
 
 	var buf strings.Builder
 	printSmartAccountsSyncSummary(&buf, smartAccountsSyncPublicSummary{
 		Validation: smartAccountsSyncValidationView{Ready: true},
 		Plan:       smartAccountsSyncPlanView{Ready: true},
 		Execution:  smartAccountsSyncExecutionView{Confirmed: true, Error: "boom"},
+		Readiness:  smartAccountsSyncReadinessView{Ready: 1, ReviewRequired: 2, Pending: 3, Blocked: 4},
+		Parity:     smartAccountsSyncParityView{Pending: 5, Blocked: 6, ReadyForReview: 7, Passed: 8, Failed: 9},
 	})
 	assert.Contains(t, buf.String(), "SmartAccounts sync: needs attention")
 	assert.Contains(t, buf.String(), "Execution error: boom")
+	assert.Contains(t, buf.String(), "Readiness: ready=1, review_required=2, pending=3, blocked=4")
+	assert.Contains(t, buf.String(), "Parity checklist: pending=5, blocked=6, ready_for_review=7, passed=8, failed=9")
 
 	err := writeSmartAccountsSyncReport(filepath.Join(t.TempDir(), "report.json"), &smartAccountsSyncPrivateReport{
 		ExecutionRun: &cutover.MigrationExecutionRun{
@@ -4706,6 +5547,24 @@ func TestSmartAccountsSyncHelpers(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "encode SmartAccounts sync report")
+}
+
+func newSmartAccountsSyncHelperReport(confirmed bool, includeDraftJournal bool) *smartAccountsSyncPrivateReport {
+	preparedFiles := []cutover.SmartAccountsSnapshotPreparedFile{{Kind: cutover.KindAccounts}}
+	if includeDraftJournal {
+		preparedFiles = append(preparedFiles, cutover.SmartAccountsSnapshotPreparedFile{Kind: cutover.KindJournalEntries})
+	}
+	return &smartAccountsSyncPrivateReport{
+		TenantID:        "tenant-1",
+		Confirmed:       confirmed,
+		Reconciliation:  smartAccountsSyncReconciliationTargets(),
+		Snapshot:        &cutover.SmartAccountsSnapshotReport{PreparedFiles: preparedFiles},
+		Validation:      &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+		Plan:            &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+		ExecutionRun:    &cutover.MigrationExecutionRun{Summary: cutover.MigrationExecutionRunSummary{Confirmed: confirmed}},
+		ExecutionError:  "",
+		ParityChecklist: nil,
+	}
 }
 
 func writeSmartAccountsSyncTestSource(t *testing.T) (string, string) {
@@ -4800,6 +5659,7 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number\nMain bank,EE471000001020145685\n")
 	bankFile := writeTempCSV(t, "bank.csv", "date,amount,description\n2026-05-31,100,Customer receipt\n")
 	openingFile := writeTempCSV(t, "opening.csv", "account_code,debit,credit\n1000,100,0\n3000,0,100\n")
+	journalFile := writeTempCSV(t, "journal.csv", "entry_reference,entry_date,account_code,debit,credit\nSA-1,2026-05-31,1000,100,0\nSA-1,2026-05-31,3000,0,100\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -4814,22 +5674,24 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 		assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
 		assert.Equal(t, "bank-1", req.BankTransactionAccountID)
 		assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
-		require.Len(t, req.Files, 4)
+		assert.True(t, req.PostJournalEntries)
+		require.Len(t, req.Files, 5)
 		assert.Equal(t, cutover.KindAccounts, req.Files[0].Kind)
 		assert.Equal(t, cutover.KindBankAccounts, req.Files[1].Kind)
 		assert.Equal(t, cutover.KindBankTransactions, req.Files[2].Kind)
 		assert.Equal(t, cutover.KindOpeningBalances, req.Files[3].Kind)
+		assert.Equal(t, cutover.KindJournalEntries, req.Files[4].Kind)
 
 		_ = json.NewEncoder(w).Encode(cutover.MigrationExecutionPlan{
 			Summary: cutover.MigrationExecutionPlanSummary{
 				ValidationReady:   true,
 				Ready:             false,
-				StepCount:         4,
-				ReadyStepCount:    3,
+				StepCount:         5,
+				ReadyStepCount:    4,
 				NeedsContextCount: 1,
 			},
 			Validation: cutover.BundleValidationReport{
-				Summary: cutover.BundleValidationSummary{FilesValidated: 4, RowsValidated: 6, Ready: true},
+				Summary: cutover.BundleValidationSummary{FilesValidated: 5, RowsValidated: 8, Ready: true},
 			},
 			Steps: []cutover.MigrationExecutionStep{
 				{
@@ -4868,6 +5730,15 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 					APIPath:    "/api/v1/tenants/{tenantID}/journal-entries/import-opening-balances",
 					CLICommand: "oa journal import-opening-balances --entry-date 2026-01-01 --file <opening.csv>",
 				},
+				{
+					StepNumber: 5,
+					Kind:       cutover.KindJournalEntries,
+					FileName:   "journal.csv",
+					Status:     cutover.MigrationExecutionStepReady,
+					DependsOn:  []cutover.FileKind{cutover.KindAccounts},
+					APIPath:    "/api/v1/tenants/{tenantID}/journal-entries/import",
+					CLICommand: "oa journal import --file <journal.csv> --post",
+				},
 			},
 			RemediationActions: []cutover.MigrationRemediationAction{{
 				Code:           "ready_to_import",
@@ -4892,6 +5763,8 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 		"--bank-transaction-account-id", "bank-1",
 		"--opening-balances", openingFile,
 		"--opening-balance-entry-date", "2026-01-01",
+		"--journal", journalFile,
+		"--post-journal-entries",
 		"--e-invoice-invoice-type", "purchase",
 		"--provider-preset", "smartaccounts",
 	})
@@ -4900,6 +5773,7 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), "NEEDS_CONTEXT")
 	assert.Contains(t, stdout.String(), "bank_transaction_account_id")
 	assert.Contains(t, stdout.String(), "oa journal import-opening-balances --entry-date 2026-01-01")
+	assert.Contains(t, stdout.String(), "oa journal import --file <journal.csv> --post")
 	assert.Contains(t, stdout.String(), "migration:ready-to-import:-:-:-:-")
 
 	stdout.Reset()
@@ -4911,6 +5785,8 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 		"--bank-transaction-account-id", "bank-1",
 		"--opening-balances", openingFile,
 		"--opening-balance-entry-date", "2026-01-01",
+		"--journal", journalFile,
+		"--post-journal-entries",
 		"--e-invoice-invoice-type", "purchase",
 		"--provider-preset", "smartaccounts",
 		"--json",
@@ -4974,7 +5850,9 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 			assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
 			assert.Equal(t, "PURCHASE", req.EInvoiceInvoiceType)
 			assert.Equal(t, "bank-1", req.BankTransactionAccountID)
+			assert.Equal(t, "generic", req.BankTransactionFormat)
 			assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
+			assert.True(t, req.PostJournalEntries)
 			require.Len(t, req.Files, len(expectedImportPaths))
 			_ = json.NewEncoder(w).Encode(migrationExecuteReadyPlan(req.Files))
 			return
@@ -5026,6 +5904,11 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "2026-01-01", req.EntryDate)
 			assert.Equal(t, "OB-2026", req.Reference)
+		case "/api/v1/tenants/tenant-1/journal-entries/import":
+			var req accounting.ImportJournalEntriesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "journal.csv", req.FileName)
+			assert.True(t, req.PostEntries)
 		default:
 			var req map[string]any
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -5069,6 +5952,7 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 		"--opening-balances", files[cutover.KindOpeningBalances],
 		"--opening-balance-entry-date", "2026-01-01",
 		"--journal", files[cutover.KindJournalEntries],
+		"--post-journal-entries",
 		"--provider-preset", "smartaccounts",
 		"--confirm",
 		"--json",

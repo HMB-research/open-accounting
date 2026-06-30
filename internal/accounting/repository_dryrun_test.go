@@ -923,12 +923,29 @@ func TestGORMRepositoryReportBalanceQueriesStartFromPostedJournalEntries(t *test
 	ctx := context.Background()
 	asOfDate := time.Date(2026, time.June, 30, 0, 0, 0, 0, time.UTC)
 	rowQueries := []string{}
-	repo := NewGORMRepository(newAccountingDryRunDB(t, withAccountingDryRunCapturedRows(&rowQueries)))
+	assetAccount := models.Account{ID: "asset-1", TenantID: "tenant-1", Code: "1000", Name: "Cash", AccountType: models.AccountTypeAsset, IsActive: true}
+	repo := NewGORMRepository(newAccountingDryRunDB(t,
+		withAccountingDryRunFixtures(accountingDryRunFixture{accounts: []models.Account{assetAccount}}),
+		withAccountingDryRunCapturedRows(&rowQueries),
+	))
+
+	balance, err := repo.GetAccountBalance(ctx, "tenant_schema", "tenant-1", "asset-1", asOfDate)
+	requireAccountingDryRunScanError(t, err, "get account balance")
+	assert.True(t, balance.IsZero())
+	require.NotEmpty(t, rowQueries)
+	accountBalanceQuery := rowQueries[len(rowQueries)-1]
+	assert.Contains(t, accountBalanceQuery, `FROM "tenant_schema"."journal_entry_lines" AS "jel"`)
+	assert.Contains(t, accountBalanceQuery, `JOIN "tenant_schema"."journal_entries" AS je ON je.id = jel.journal_entry_id AND je.tenant_id = jel.tenant_id`)
+	assert.Contains(t, accountBalanceQuery, `jel.account_id =`)
+	assert.Contains(t, accountBalanceQuery, `jel.tenant_id =`)
+	assert.Contains(t, accountBalanceQuery, `je.entry_date <=`)
+	assert.Contains(t, accountBalanceQuery, `je.status =`)
+	assert.NotContains(t, accountBalanceQuery, `LEFT JOIN`)
 
 	trialBalance, err := repo.GetTrialBalance(ctx, "tenant_schema", "tenant-1", asOfDate)
 	requireAccountingDryRunScanError(t, err, "get trial balance")
 	assert.Nil(t, trialBalance)
-	require.NotEmpty(t, rowQueries)
+	require.Len(t, rowQueries, 2)
 	trialQuery := rowQueries[len(rowQueries)-1]
 	assert.Contains(t, trialQuery, `FROM "tenant_schema"."journal_entries" AS "je"`)
 	assert.Contains(t, trialQuery, `JOIN "tenant_schema"."journal_entry_lines" AS jel ON jel.journal_entry_id = je.id AND jel.tenant_id = je.tenant_id`)
@@ -941,7 +958,7 @@ func TestGORMRepositoryReportBalanceQueriesStartFromPostedJournalEntries(t *test
 	periodBalances, err := repo.GetPeriodBalances(ctx, "tenant_schema", "tenant-1", asOfDate.AddDate(0, -1, 0), asOfDate)
 	requireAccountingDryRunScanError(t, err, "get period balances")
 	assert.Nil(t, periodBalances)
-	require.Len(t, rowQueries, 2)
+	require.Len(t, rowQueries, 3)
 	periodQuery := rowQueries[len(rowQueries)-1]
 	assert.Contains(t, periodQuery, `FROM "tenant_schema"."journal_entries" AS "je"`)
 	assert.Contains(t, periodQuery, `JOIN "tenant_schema"."journal_entry_lines" AS jel ON jel.journal_entry_id = je.id AND jel.tenant_id = je.tenant_id`)

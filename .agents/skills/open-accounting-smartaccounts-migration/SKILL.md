@@ -33,8 +33,52 @@ go run ./cmd/oa migration smartaccounts-sync \
 ```
 
 The command writes a private `smartaccounts-sync-report.json` under `--out-dir`.
-Add `--confirm` only after accountant review. If `--opening-balance-entry-date`
-is omitted, it defaults to `--cutover-date`.
+Review its `readiness` checks for run mechanics and its `parity_checklist`
+for report-by-report reconciliation status. Do not treat a migration as
+complete while any checklist item is `pending`, `blocked`, or `failed`.
+Add `--confirm` only after accountant review. Add `--post-journal-entries`
+only when reviewed historical journals should be posted immediately and included
+in GL-based reports. If `--opening-balance-entry-date` is omitted, it defaults
+to `--cutover-date`.
+
+After a private sync report exists, generate the Open Accounting proof bundle:
+
+```bash
+go run ./cmd/oa migration smartaccounts-proof-plan \
+  --report /path/to/private/smartaccounts/prepared/smartaccounts-sync-report.json \
+  --out-dir /path/to/private/smartaccounts/proof \
+  --as-of YYYY-MM-DD \
+  --start YYYY-MM-DD \
+  --end YYYY-MM-DD \
+  --bank-account-id <oa-bank-account-id> \
+  --inventory-method weighted-average
+```
+
+The proof-plan command writes a private `smartaccounts-proof-plan.json` and
+`open-accounting-proof-commands.sh`. It turns the sync report checklist into
+Open Accounting report commands for trial balance, AR/AP, income statement,
+bank/cash flow, KMD, payroll/TSD, inventory, and fixed assets. It does not mark
+parity as passed; compare the generated artifacts with private SmartAccounts
+proof reports first. If the plan reports missing context, supply it and
+regenerate the plan before running the script.
+
+After private comparison, validate the private proof result before treating
+parity as ready:
+
+```bash
+go run ./cmd/oa migration smartaccounts-proof-result \
+  --plan /path/to/private/smartaccounts/proof/smartaccounts-proof-plan.json \
+  --result /path/to/private/smartaccounts/proof/smartaccounts-proof-result.json \
+  --require-ready \
+  --json
+```
+
+The proof result and validator output are private evidence. They must remain
+outside the public Open Accounting worktree and should contain one passed item
+for every plan area, reviewer evidence, review timestamp, SmartAccounts and Open
+Accounting artifact paths, SHA-256 hashes, basis, and period. The validator is
+read-only, recomputes local artifact hashes, rejects public-worktree evidence
+paths, and reports blockers until every planned parity area is proven.
 
 For manual stage debugging, prepare a bundle from a directory of SmartAccounts exports:
 
@@ -109,7 +153,7 @@ For tooling changes, run:
 ```bash
 go test -count=1 ./internal/cutover
 go test -count=1 ./cmd/smartaccounts-snapshot
-go test -count=1 ./cmd/oa -run TestCLIMigrationSmartAccountsSyncCommand
+go test -count=1 ./cmd/oa -run 'TestCLIMigrationSmartAccounts(Sync|ProofPlan|ProofResult)Command|TestSmartAccounts(Sync|ProofPlan|ProofResult)Helpers'
 go run ./cmd/smartaccounts-snapshot --source-dir <sample-dir> --out-dir <tmp-out> --json
 go test -timeout=3m ./docs -count=1
 ```
@@ -120,3 +164,14 @@ For real tenant cutovers, also verify:
 - `migration validate` has no errors.
 - `migration plan` has no blocked steps and all `NEEDS_CONTEXT` fields are supplied.
 - Non-confirming `migration execute` is saved and reviewed before `--confirm`.
+- The private `smartaccounts-sync-report.json` has no blocked or pending
+  `readiness` checks except the final private reconciliation gate before
+  confirmation.
+- `migration smartaccounts-proof-plan` has generated a private proof manifest
+  and Open Accounting report script for the selected as-of and period.
+- Every `parity_checklist` area is reconciled against private SmartAccounts
+  proof reports and marked pass/fail in private evidence before cutover closure.
+- `migration smartaccounts-proof-result --require-ready` passes against the
+  private proof plan and private proof result without copying validator JSON,
+  hashes, paths, tenant identifiers, amounts, or source-row details into this
+  public repository.

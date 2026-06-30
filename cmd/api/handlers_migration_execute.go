@@ -557,7 +557,7 @@ func (e *handlerMigrationStepExecutor) ExecuteMigrationStep(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
-		return h.accountingService.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &accounting.ImportJournalEntriesRequest{CSVContent: file.CSVContent, FileName: file.FileName, UserID: userID, PeriodLockDate: lockDate})
+		return h.accountingService.ImportJournalEntriesCSV(ctx, schemaName, tenantID, &accounting.ImportJournalEntriesRequest{CSVContent: file.CSVContent, FileName: file.FileName, UserID: userID, PeriodLockDate: lockDate, PostEntries: req.PostJournalEntries})
 	default:
 		return nil, fmt.Errorf("unsupported migration execution kind %q", step.Kind)
 	}

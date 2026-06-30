@@ -567,7 +567,7 @@ func (r *GORMRepository) GetAccountBalance(ctx context.Context, schemaName, tena
 
 	err = linesDB.
 		Select("COALESCE(SUM(jel.debit_amount), 0) AS debit_sum, COALESCE(SUM(jel.credit_amount), 0) AS credit_sum").
-		Joins(fmt.Sprintf("JOIN %s AS je ON je.id = jel.journal_entry_id", entriesTable)).
+		Joins(fmt.Sprintf("JOIN %s AS je ON je.id = jel.journal_entry_id AND je.tenant_id = jel.tenant_id", entriesTable)).
 		Where("jel.account_id = ? AND jel.tenant_id = ?", accountID, tenantID).
 		Where("je.entry_date <= ? AND je.status = ?", asOfDate, StatusPosted).
 		Scan(&result).Error

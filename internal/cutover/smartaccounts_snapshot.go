@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -657,6 +658,11 @@ func normalizeSmartAccountsMergedRows(kind FileKind, headers []string, rows [][]
 		if changed {
 			return normalized, []string{"merged duplicate SmartAccounts client/vendor contacts by registry, VAT, or name"}
 		}
+	case KindPayments:
+		normalized, changed := normalizeDistinctSmartAccountsPaymentNumbers(headers, rows)
+		if changed {
+			return normalized, []string{"normalized distinct SmartAccounts duplicate payment_number values"}
+		}
 	}
 	return rows, nil
 }
@@ -850,6 +856,109 @@ func mergeSmartAccountsContactRow(headers []string, target, source []string) {
 			target[i] = "BOTH"
 		}
 	}
+}
+
+const smartAccountsPaymentNumberMaxLength = 50
+
+var smartAccountsPaymentDistinctKeyFields = []string{
+	"payment_type",
+	"payment_date",
+	"currency",
+	"exchange_rate",
+	"contact_id",
+	"contact_code",
+	"contact_reg_code",
+	"contact_vat_number",
+	"contact_email",
+	"contact_name",
+	"payment_method",
+	"bank_account",
+	"reference",
+}
+
+func normalizeDistinctSmartAccountsPaymentNumbers(headers []string, rows [][]string) ([][]string, bool) {
+	paymentNumber := headerIndex(headers, "payment_number")
+	if !paymentNumber.ok {
+		return rows, false
+	}
+
+	rowsByNumber := map[string][]int{}
+	for i, row := range rows {
+		if paymentNumber.index >= len(row) {
+			continue
+		}
+		number := strings.TrimSpace(row[paymentNumber.index])
+		if number == "" {
+			continue
+		}
+		rowsByNumber[normalizedValue(number)] = append(rowsByNumber[normalizedValue(number)], i)
+	}
+
+	changed := false
+	for _, rowIndexes := range rowsByNumber {
+		if len(rowIndexes) < 2 || smartAccountsPaymentDuplicateGroupHasSharedDistinctKey(headers, rows, rowIndexes) {
+			continue
+		}
+		digits := len(strconv.Itoa(len(rowIndexes)))
+		if digits < 2 {
+			digits = 2
+		}
+		for ordinal, rowIndex := range rowIndexes {
+			rows[rowIndex][paymentNumber.index] = suffixedSmartAccountsPaymentNumber(rows[rowIndex][paymentNumber.index], ordinal+1, digits)
+			changed = true
+		}
+	}
+	return rows, changed
+}
+
+func smartAccountsPaymentDuplicateGroupHasSharedDistinctKey(headers []string, rows [][]string, rowIndexes []int) bool {
+	seen := map[string]bool{}
+	for _, rowIndex := range rowIndexes {
+		key := smartAccountsPaymentDistinctKey(headers, rows[rowIndex])
+		if seen[key] {
+			return true
+		}
+		seen[key] = true
+	}
+	return false
+}
+
+func smartAccountsPaymentDistinctKey(headers []string, row []string) string {
+	parts := make([]string, 0, len(smartAccountsPaymentDistinctKeyFields))
+	for _, field := range smartAccountsPaymentDistinctKeyFields {
+		parts = append(parts, field+"="+normalizedHeader(valueAtHeader(headers, row, field)))
+	}
+	return strings.Join(parts, "\x1f")
+}
+
+func suffixedSmartAccountsPaymentNumber(number string, ordinal, digits int) string {
+	trimmed := strings.TrimSpace(number)
+	suffix := "~SA" + leftPadInt(ordinal, digits)
+	maxBaseLen := smartAccountsPaymentNumberMaxLength - len(suffix)
+	if maxBaseLen < 1 {
+		return suffix[:smartAccountsPaymentNumberMaxLength]
+	}
+	trimmed = firstRunes(trimmed, maxBaseLen)
+	return trimmed + suffix
+}
+
+func firstRunes(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
+}
+
+func leftPadInt(value, width int) string {
+	text := strconv.Itoa(value)
+	if len(text) >= width {
+		return text
+	}
+	return strings.Repeat("0", width-len(text)) + text
 }
 
 func valueAtHeader(headers []string, row []string, header string) string {

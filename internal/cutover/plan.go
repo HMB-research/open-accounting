@@ -23,6 +23,7 @@ type PlanMigrationExecutionRequest struct {
 	BankTransactionAccountID string                  `json:"bank_transaction_account_id,omitempty"`
 	BankTransactionFormat    string                  `json:"bank_transaction_format,omitempty"`
 	OpeningBalanceEntryDate  string                  `json:"opening_balance_entry_date,omitempty"`
+	PostJournalEntries       bool                    `json:"post_journal_entries,omitempty"`
 }
 
 type MigrationExecutionPlan struct {
@@ -338,11 +339,15 @@ func migrationExecutionStepSpec(kind FileKind, fileName string, req *PlanMigrati
 			message:       "Import opening balances after the chart of accounts.",
 		}
 	case KindJournalEntries:
+		postFlag := ""
+		if req.PostJournalEntries {
+			postFlag = " --post"
+		}
 		return migrationExecutionSpec{
 			apiPath:    tenantAPIPath("/journal-entries/import"),
-			cliCommand: "oa journal import --file " + fileRef,
+			cliCommand: "oa journal import --file " + fileRef + postFlag,
 			dependsOn:  []FileKind{KindAccounts},
-			message:    "Import historical journals after the chart of accounts.",
+			message:    "Import historical journals after the chart of accounts. Imported journals remain draft unless post_journal_entries is true.",
 		}
 	default:
 		return migrationExecutionSpec{

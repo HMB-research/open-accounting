@@ -632,6 +632,8 @@ definitions:
         items:
           $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryLine'
         type: array
+      post_reason:
+        type: string
       posted_at:
         type: string
       posted_by:
@@ -804,6 +806,11 @@ definitions:
       line_number:
         type: integer
       template_id:
+        type: string
+    type: object
+  github_com_HMB-research_open-accounting_internal_accounting.PostJournalEntryRequest:
+    properties:
+      reason:
         type: string
     type: object
   github_com_HMB-research_open-accounting_internal_accounting.ReverseYearEndCarryForwardRequest:
@@ -2176,6 +2183,8 @@ definitions:
         type: array
       opening_balance_entry_date:
         type: string
+      post_journal_entries:
+        type: boolean
       provider_preset:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset'
       resume_from_run:
@@ -2564,6 +2573,8 @@ definitions:
         type: array
       opening_balance_entry_date:
         type: string
+      post_journal_entries:
+        type: boolean
       provider_preset:
         $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset'
     type: object
@@ -14706,6 +14717,12 @@ paths:
         name: entryID
         required: true
         type: string
+      - description: Post reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_HMB-research_open-accounting_internal_accounting.PostJournalEntryRequest'
       produces:
       - application/json
       responses:

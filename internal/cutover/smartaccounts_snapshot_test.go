@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 )
@@ -413,6 +414,92 @@ func TestSmartAccountsSnapshotContactDedupeBranches(t *testing.T) {
 	mergeSmartAccountsContactRow([]string{"code", "name"}, []string{"C-2"}, []string{"", "Filled"})
 	require.Equal(t, "", valueAtHeader([]string{"name"}, []string{"Example OU"}, "missing"))
 	require.Equal(t, []string{"a"}, uniqueStrings([]string{"", "a", "a"}))
+}
+
+func TestSmartAccountsSnapshotNormalizesDistinctDuplicatePaymentNumbers(t *testing.T) {
+	headers := []string{
+		"payment_number",
+		"payment_type",
+		"payment_date",
+		"amount",
+		"currency",
+		"reference",
+		"invoice_number",
+		"allocation_amount",
+	}
+	rows := [][]string{
+		{"PAY-7", "RECEIVED", "2026-06-01", "100", "EUR", "REF-A", "INV-1", "100"},
+		{"PAY-7", "RECEIVED", "2026-06-02", "50", "EUR", "REF-B", "INV-2", "50"},
+	}
+
+	normalized, changed := normalizeDistinctSmartAccountsPaymentNumbers(headers, rows)
+	require.True(t, changed)
+	require.Equal(t, "PAY-7~SA01", normalized[0][0])
+	require.Equal(t, "PAY-7~SA02", normalized[1][0])
+
+	merged, transformations := normalizeSmartAccountsMergedRows(KindPayments, headers, [][]string{
+		{"PAY-7", "RECEIVED", "2026-06-01", "100", "EUR", "REF-A", "INV-1", "100"},
+		{"PAY-7", "RECEIVED", "2026-06-02", "50", "EUR", "REF-B", "INV-2", "50"},
+	})
+	require.Equal(t, normalized, merged)
+	require.Contains(t, transformations, "normalized distinct SmartAccounts duplicate payment_number values")
+}
+
+func TestSmartAccountsSnapshotKeepsGroupedPaymentDuplicateNumbersBlocked(t *testing.T) {
+	headers := []string{
+		"payment_number",
+		"payment_type",
+		"payment_date",
+		"amount",
+		"currency",
+		"reference",
+		"invoice_number",
+		"allocation_amount",
+	}
+	rows := [][]string{
+		{"PAY-7", "RECEIVED", "2026-06-01", "150", "EUR", "REF-A", "INV-1", "100"},
+		{"PAY-7", "RECEIVED", "2026-06-01", "150", "EUR", "REF-A", "INV-2", "50"},
+	}
+
+	normalized, changed := normalizeDistinctSmartAccountsPaymentNumbers(headers, rows)
+	require.False(t, changed)
+	require.Equal(t, "PAY-7", normalized[0][0])
+	require.Equal(t, "PAY-7", normalized[1][0])
+}
+
+func TestSmartAccountsSnapshotPaymentNumberNormalizationSkipsIncompleteRows(t *testing.T) {
+	rows := [][]string{{"PAY-7"}, {"PAY-7"}}
+	normalized, changed := normalizeDistinctSmartAccountsPaymentNumbers([]string{"reference"}, rows)
+	require.False(t, changed)
+	require.Equal(t, rows, normalized)
+
+	headers := []string{"payment_number", "payment_date"}
+	rows = [][]string{
+		{"PAY-7", "2026-06-01"},
+		{"", "2026-06-02"},
+		{"   ", "2026-06-03"},
+		{"PAY-8"},
+		{},
+	}
+	normalized, changed = normalizeDistinctSmartAccountsPaymentNumbers(headers, rows)
+	require.False(t, changed)
+	require.Equal(t, rows, normalized)
+}
+
+func TestSmartAccountsPaymentNumberSuffixRespectsDatabaseLimit(t *testing.T) {
+	number := strings.Repeat("A", 80)
+	got := suffixedSmartAccountsPaymentNumber(number, 12, 2)
+	require.Len(t, []rune(got), smartAccountsPaymentNumberMaxLength)
+	require.True(t, strings.HasSuffix(got, "~SA12"))
+
+	nonASCII := strings.Repeat("Õ", 80)
+	got = suffixedSmartAccountsPaymentNumber(nonASCII, 1, 2)
+	require.Len(t, []rune(got), smartAccountsPaymentNumberMaxLength)
+	require.True(t, strings.HasSuffix(got, "~SA01"))
+	require.True(t, utf8.ValidString(got))
+
+	require.Equal(t, "", firstRunes("PAY-7", 0))
+	require.Equal(t, "~SA"+strings.Repeat("0", smartAccountsPaymentNumberMaxLength-3), suffixedSmartAccountsPaymentNumber("PAY-7", 1, smartAccountsPaymentNumberMaxLength-2))
 }
 
 func copySmartAccountsSnapshotFixture(t *testing.T, destDir, name string) {

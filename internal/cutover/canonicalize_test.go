@@ -53,3 +53,35 @@ func TestCanonicalizeCSVHeadersNormalizesBOMAliasesAndRows(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse csv header")
 }
+
+func TestCanonicalizeBundleFileCSVSmartAccountsNormalizesDistinctDuplicatePayments(t *testing.T) {
+	file := BundleFile{
+		Kind:     KindPayments,
+		FileName: "smartaccounts-payments.csv",
+		CSVContent: "payment_no,payment_kind,payment_date,paid_amount,currency_code,reference_no,document_no,allocated_amount\n" +
+			"PAY-7,RECEIVED,2026-06-01,100,EUR,REF-A,INV-1,100\n" +
+			"PAY-7,RECEIVED,2026-06-02,50,EUR,REF-B,INV-2,50\n",
+	}
+
+	got, err := CanonicalizeBundleFileCSV(file, MigrationProviderPresetSmartAccounts)
+	require.NoError(t, err)
+	assert.Contains(t, got.CSVContent, "payment_number,payment_type,payment_date,amount,currency,reference,invoice_number,allocation_amount\n")
+	assert.Contains(t, got.CSVContent, "PAY-7~SA01,RECEIVED,2026-06-01,100,EUR,REF-A,INV-1,100\n")
+	assert.Contains(t, got.CSVContent, "PAY-7~SA02,RECEIVED,2026-06-02,50,EUR,REF-B,INV-2,50\n")
+}
+
+func TestCanonicalizeBundleFileCSVSmartAccountsKeepsGroupedPaymentDuplicates(t *testing.T) {
+	file := BundleFile{
+		Kind:     KindPayments,
+		FileName: "smartaccounts-payments.csv",
+		CSVContent: "payment_no,payment_kind,payment_date,paid_amount,currency_code,reference_no,document_no,allocated_amount\n" +
+			"PAY-7,RECEIVED,2026-06-01,150,EUR,REF-A,INV-1,100\n" +
+			"PAY-7,RECEIVED,2026-06-01,150,EUR,REF-A,INV-2,50\n",
+	}
+
+	got, err := CanonicalizeBundleFileCSV(file, MigrationProviderPresetSmartAccounts)
+	require.NoError(t, err)
+	assert.Contains(t, got.CSVContent, "PAY-7,RECEIVED,2026-06-01,150,EUR,REF-A,INV-1,100\n")
+	assert.Contains(t, got.CSVContent, "PAY-7,RECEIVED,2026-06-01,150,EUR,REF-A,INV-2,50\n")
+	assert.NotContains(t, got.CSVContent, "PAY-7~SA")
+}
