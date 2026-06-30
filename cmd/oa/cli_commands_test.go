@@ -4530,6 +4530,8 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Validation: ready=true")
 	assert.Contains(t, stdout.String(), "Plan: ready=true")
 	assert.Contains(t, stdout.String(), "Execution run: run-1")
+	assert.Contains(t, stdout.String(), "Readiness: ready=5, review_required=0, pending=1, blocked=0")
+	assert.Contains(t, stdout.String(), "Parity checklist: pending=7, blocked=0, ready_for_review=0")
 	assert.Contains(t, stdout.String(), "Reconciliation checks: 7")
 	assert.Contains(t, stdout.String(), "Next: Review the saved dry run")
 
@@ -4540,7 +4542,20 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 	assert.Contains(t, string(reportPayload), `"provider": "smartaccounts"`)
 	assert.Contains(t, string(reportPayload), `"execution_run"`)
 	assert.Contains(t, string(reportPayload), `"manifest_path"`)
+	assert.Contains(t, string(reportPayload), `"readiness"`)
 	assert.Contains(t, string(reportPayload), `"reconciliation"`)
+	assert.Contains(t, string(reportPayload), `"parity_checklist"`)
+	assert.Contains(t, string(reportPayload), `"private_report_reconciliation"`)
+	var privateReport smartAccountsSyncPrivateReport
+	require.NoError(t, json.Unmarshal(reportPayload, &privateReport))
+	require.Len(t, privateReport.Readiness, 6)
+	assert.Equal(t, "snapshot_inventory", privateReport.Readiness[0].Code)
+	assert.Equal(t, "ready", privateReport.Readiness[0].Status)
+	assert.Equal(t, "private_report_reconciliation", privateReport.Readiness[5].Code)
+	assert.Equal(t, "pending", privateReport.Readiness[5].Status)
+	require.Len(t, privateReport.ParityChecklist, 7)
+	assert.Equal(t, "trial_balance", privateReport.ParityChecklist[0].Area)
+	assert.Equal(t, "pending", privateReport.ParityChecklist[0].Status)
 
 	info, err := os.Stat(reportPath)
 	require.NoError(t, err)
@@ -4637,6 +4652,14 @@ func TestCLIMigrationSmartAccountsSyncErrorPaths(t *testing.T) {
 				assert.Contains(t, err.Error(), tc.want)
 				if tc.json {
 					assert.Contains(t, stdout.String(), `"error": "execute unavailable"`)
+					assert.Contains(t, stdout.String(), `"readiness"`)
+					assert.Contains(t, stdout.String(), `"parity"`)
+					assert.Contains(t, stdout.String(), `"blocked": 7`)
+					var summary smartAccountsSyncPublicSummary
+					require.NoError(t, json.Unmarshal([]byte(stdout.String()), &summary))
+					assert.Equal(t, "execute unavailable", summary.Execution.Error)
+					assert.Equal(t, smartAccountsSyncParityView{Blocked: 7}, summary.Parity)
+					assert.Contains(t, summary.NextAction, "execution/API error")
 				}
 				return
 			}
@@ -4693,15 +4716,230 @@ func TestSmartAccountsSyncHelpers(t *testing.T) {
 		Plan:       smartAccountsSyncPlanView{Ready: true},
 		Execution:  smartAccountsSyncExecutionView{Confirmed: true, FailedSteps: 1},
 	}), "failed confirmed run")
+	assert.Contains(t, smartAccountsSyncNextAction(smartAccountsSyncPublicSummary{
+		Validation: smartAccountsSyncValidationView{Ready: true},
+		Plan:       smartAccountsSyncPlanView{Ready: true},
+		Execution:  smartAccountsSyncExecutionView{Confirmed: true},
+		Parity:     smartAccountsSyncParityView{Failed: 1},
+	}), "failed parity checklist")
+	assert.Contains(t, smartAccountsSyncNextAction(smartAccountsSyncPublicSummary{
+		Validation: smartAccountsSyncValidationView{Ready: true},
+		Plan:       smartAccountsSyncPlanView{Ready: true},
+		Execution:  smartAccountsSyncExecutionView{Error: "execute unavailable"},
+	}), "execution/API error")
+	assert.Contains(t, smartAccountsSyncNextAction(smartAccountsSyncPublicSummary{
+		Validation: smartAccountsSyncValidationView{Ready: true},
+		Plan:       smartAccountsSyncPlanView{Ready: true},
+		Execution:  smartAccountsSyncExecutionView{Confirmed: true},
+		Parity:     smartAccountsSyncParityView{Blocked: 1},
+	}), "blocked parity checklist")
+
+	assert.Nil(t, smartAccountsSyncReadinessChecks(nil))
+	assert.Equal(t, smartAccountsSyncReadinessView{
+		Ready:          1,
+		ReviewRequired: 1,
+		Pending:        1,
+		Blocked:        1,
+	}, smartAccountsSyncReadinessSummary([]smartAccountsSyncReadinessCheck{
+		{Status: "ready"},
+		{Status: "review_required"},
+		{Status: "blocked"},
+		{Status: "unexpected"},
+	}))
+	assert.Nil(t, smartAccountsSyncParityChecklist(nil))
+	assert.Equal(t, smartAccountsSyncParityView{
+		Pending:        1,
+		Blocked:        1,
+		ReadyForReview: 1,
+		Passed:         1,
+		Failed:         1,
+	}, smartAccountsSyncParitySummary([]smartAccountsSyncParityChecklistItem{
+		{Status: "ready_for_review"},
+		{Status: "passed"},
+		{Status: "failed"},
+		{Status: "blocked"},
+		{Status: "unexpected"},
+	}))
+
+	confirmedReport := newSmartAccountsSyncHelperReport(true, false)
+	readiness := smartAccountsSyncReadinessSummary(smartAccountsSyncReadinessChecks(confirmedReport))
+	assert.Equal(t, smartAccountsSyncReadinessView{Ready: 5, Pending: 1}, readiness)
+	checklist := smartAccountsSyncParityChecklist(confirmedReport)
+	require.Len(t, checklist, 7)
+	assert.Equal(t, smartAccountsSyncParityView{ReadyForReview: 7}, smartAccountsSyncParitySummary(checklist))
+	assert.Equal(t, "ready_for_review", checklist[0].Status)
+	assert.NotEmpty(t, checklist[0].DiscrepancyRisk)
+
+	dryRunReport := newSmartAccountsSyncHelperReport(false, false)
+	assert.Equal(t, smartAccountsSyncParityView{Pending: 7}, smartAccountsSyncParitySummary(smartAccountsSyncParityChecklist(dryRunReport)))
+
+	draftJournalReport := newSmartAccountsSyncHelperReport(true, true)
+	assert.Equal(t, "pending", smartAccountsSyncJournalPostingReadiness(draftJournalReport).Status)
+	assert.Equal(t, smartAccountsSyncParityView{Blocked: 5, ReadyForReview: 2}, smartAccountsSyncParitySummary(smartAccountsSyncParityChecklist(draftJournalReport)))
+	summary := buildSmartAccountsSyncPublicSummary(draftJournalReport, "/private/smartaccounts/smartaccounts-sync-report.json")
+	assert.Contains(t, summary.NextAction, "blocked parity checklist")
+
+	postedJournalReport := newSmartAccountsSyncHelperReport(true, true)
+	postedJournalReport.Context.PostJournalEntries = true
+	assert.Equal(t, "ready", smartAccountsSyncJournalPostingReadiness(postedJournalReport).Status)
+	assert.Equal(t, smartAccountsSyncParityView{ReadyForReview: 7}, smartAccountsSyncParitySummary(smartAccountsSyncParityChecklist(postedJournalReport)))
+	dryRunPostingReport := newSmartAccountsSyncHelperReport(false, true)
+	dryRunPostingReport.Context.PostJournalEntries = true
+	assert.Equal(t, "review_required", smartAccountsSyncJournalPostingReadiness(dryRunPostingReport).Status)
+
+	assert.Equal(t, "pending", smartAccountsSyncSnapshotReadiness(&smartAccountsSyncPrivateReport{}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncSnapshotReadiness(&smartAccountsSyncPrivateReport{
+		Snapshot: &cutover.SmartAccountsSnapshotReport{UnsupportedFiles: []cutover.SmartAccountsSnapshotUnsupported{{SourcePath: "unknown.csv"}}},
+	}).Status)
+	assert.Equal(t, "review_required", smartAccountsSyncSnapshotReadiness(&smartAccountsSyncPrivateReport{
+		Snapshot: &cutover.SmartAccountsSnapshotReport{Warnings: []string{"summary-only invoice export"}},
+	}).Status)
+	assert.Equal(t, "pending", smartAccountsSyncValidationReadiness(&smartAccountsSyncPrivateReport{}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncValidationReadiness(&smartAccountsSyncPrivateReport{
+		Snapshot:       &cutover.SmartAccountsSnapshotReport{},
+		ExecutionError: "validation unavailable",
+	}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncValidationReadiness(&smartAccountsSyncPrivateReport{
+		Validation: &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: false}},
+	}).Status)
+	assert.Equal(t, "pending", smartAccountsSyncPlanReadiness(&smartAccountsSyncPrivateReport{}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncPlanReadiness(&smartAccountsSyncPrivateReport{
+		Validation:     &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+		ExecutionError: "plan unavailable",
+	}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncPlanReadiness(&smartAccountsSyncPrivateReport{
+		Plan: &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: false, BlockedStepCount: 1}},
+	}).Status)
+	assert.Equal(t, "pending", smartAccountsSyncPlanReadiness(&smartAccountsSyncPrivateReport{
+		Plan: &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: false}},
+	}).Status)
+	assert.Equal(t, "pending", smartAccountsSyncExecutionReadiness(&smartAccountsSyncPrivateReport{}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncExecutionReadiness(&smartAccountsSyncPrivateReport{
+		Plan:           &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+		ExecutionError: "execute unavailable",
+	}).Status)
+	assert.Equal(t, "blocked", smartAccountsSyncExecutionReadiness(&smartAccountsSyncPrivateReport{
+		ExecutionRun: &cutover.MigrationExecutionRun{Summary: cutover.MigrationExecutionRunSummary{FailedStepCount: 1}},
+	}).Status)
+	assert.False(t, smartAccountsSyncHasPreparedKind(nil, cutover.KindAccounts))
+	assert.False(t, smartAccountsSyncHasPreparedKind(&smartAccountsSyncPrivateReport{}, cutover.KindAccounts))
+	assert.False(t, smartAccountsSyncHasPreparedKind(confirmedReport, cutover.KindJournalEntries))
+
+	checklistWithDefaultTargets := smartAccountsSyncParityChecklist(&smartAccountsSyncPrivateReport{
+		Snapshot:     &cutover.SmartAccountsSnapshotReport{},
+		Validation:   &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+		Plan:         &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+		ExecutionRun: &cutover.MigrationExecutionRun{Summary: cutover.MigrationExecutionRunSummary{Confirmed: true}},
+	})
+	require.Len(t, checklistWithDefaultTargets, 7)
+
+	for _, tc := range []struct {
+		name       string
+		report     *smartAccountsSyncPrivateReport
+		wantStatus string
+		wantHint   string
+	}{
+		{
+			name: "unsupported snapshot files",
+			report: &smartAccountsSyncPrivateReport{
+				Snapshot: &cutover.SmartAccountsSnapshotReport{UnsupportedFiles: []cutover.SmartAccountsSnapshotUnsupported{{SourcePath: "unsupported.csv"}}},
+			},
+			wantStatus: "blocked",
+			wantHint:   "unsupported files",
+		},
+		{
+			name:       "validation missing",
+			report:     &smartAccountsSyncPrivateReport{Snapshot: &cutover.SmartAccountsSnapshotReport{}},
+			wantStatus: "pending",
+			wantHint:   "Run validation",
+		},
+		{
+			name:       "validation error",
+			report:     &smartAccountsSyncPrivateReport{Snapshot: &cutover.SmartAccountsSnapshotReport{}, ExecutionError: "validation unavailable"},
+			wantStatus: "blocked",
+			wantHint:   "validation/API error",
+		},
+		{
+			name:       "validation blocked",
+			report:     &smartAccountsSyncPrivateReport{Validation: &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: false}}},
+			wantStatus: "blocked",
+			wantHint:   "validation blockers",
+		},
+		{
+			name:       "plan missing",
+			report:     &smartAccountsSyncPrivateReport{Validation: &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}}},
+			wantStatus: "pending",
+			wantHint:   "Build an execution plan",
+		},
+		{
+			name: "plan error",
+			report: &smartAccountsSyncPrivateReport{
+				Validation:     &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+				ExecutionError: "plan unavailable",
+			},
+			wantStatus: "blocked",
+			wantHint:   "plan/API error",
+		},
+		{
+			name: "plan not ready",
+			report: &smartAccountsSyncPrivateReport{
+				Validation: &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+				Plan:       &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: false}},
+			},
+			wantStatus: "blocked",
+			wantHint:   "Resolve missing context",
+		},
+		{
+			name: "execution missing",
+			report: &smartAccountsSyncPrivateReport{
+				Validation: &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+				Plan:       &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+			},
+			wantStatus: "pending",
+			wantHint:   "Save a dry run",
+		},
+		{
+			name: "execution error",
+			report: &smartAccountsSyncPrivateReport{
+				Validation:     &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+				Plan:           &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+				ExecutionError: "execute unavailable",
+			},
+			wantStatus: "blocked",
+			wantHint:   "execution/API error",
+		},
+		{
+			name: "execution failed steps",
+			report: &smartAccountsSyncPrivateReport{
+				Validation:   &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+				Plan:         &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+				ExecutionRun: &cutover.MigrationExecutionRun{Summary: cutover.MigrationExecutionRunSummary{FailedStepCount: 1}},
+			},
+			wantStatus: "blocked",
+			wantHint:   "failed migration",
+		},
+		{name: "unconfirmed dry run", report: newSmartAccountsSyncHelperReport(false, false), wantStatus: "pending", wantHint: "Confirm the reviewed migration"},
+		{name: "confirmed run", report: newSmartAccountsSyncHelperReport(true, false), wantStatus: "ready_for_review", wantHint: "private SmartAccounts proof report"},
+	} {
+		t.Run("parity base "+tc.name, func(t *testing.T) {
+			status, _, nextAction := smartAccountsSyncParityBaseState(tc.report)
+			assert.Equal(t, tc.wantStatus, status)
+			assert.Contains(t, nextAction, tc.wantHint)
+		})
+	}
 
 	var buf strings.Builder
 	printSmartAccountsSyncSummary(&buf, smartAccountsSyncPublicSummary{
 		Validation: smartAccountsSyncValidationView{Ready: true},
 		Plan:       smartAccountsSyncPlanView{Ready: true},
 		Execution:  smartAccountsSyncExecutionView{Confirmed: true, Error: "boom"},
+		Readiness:  smartAccountsSyncReadinessView{Ready: 1, ReviewRequired: 2, Pending: 3, Blocked: 4},
+		Parity:     smartAccountsSyncParityView{Pending: 5, Blocked: 6, ReadyForReview: 7, Passed: 8, Failed: 9},
 	})
 	assert.Contains(t, buf.String(), "SmartAccounts sync: needs attention")
 	assert.Contains(t, buf.String(), "Execution error: boom")
+	assert.Contains(t, buf.String(), "Readiness: ready=1, review_required=2, pending=3, blocked=4")
+	assert.Contains(t, buf.String(), "Parity checklist: pending=5, blocked=6, ready_for_review=7, passed=8, failed=9")
 
 	err := writeSmartAccountsSyncReport(filepath.Join(t.TempDir(), "report.json"), &smartAccountsSyncPrivateReport{
 		ExecutionRun: &cutover.MigrationExecutionRun{
@@ -4710,6 +4948,24 @@ func TestSmartAccountsSyncHelpers(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "encode SmartAccounts sync report")
+}
+
+func newSmartAccountsSyncHelperReport(confirmed bool, includeDraftJournal bool) *smartAccountsSyncPrivateReport {
+	preparedFiles := []cutover.SmartAccountsSnapshotPreparedFile{{Kind: cutover.KindAccounts}}
+	if includeDraftJournal {
+		preparedFiles = append(preparedFiles, cutover.SmartAccountsSnapshotPreparedFile{Kind: cutover.KindJournalEntries})
+	}
+	return &smartAccountsSyncPrivateReport{
+		TenantID:        "tenant-1",
+		Confirmed:       confirmed,
+		Reconciliation:  smartAccountsSyncReconciliationTargets(),
+		Snapshot:        &cutover.SmartAccountsSnapshotReport{PreparedFiles: preparedFiles},
+		Validation:      &cutover.BundleValidationReport{Summary: cutover.BundleValidationSummary{Ready: true}},
+		Plan:            &cutover.MigrationExecutionPlan{Summary: cutover.MigrationExecutionPlanSummary{Ready: true}},
+		ExecutionRun:    &cutover.MigrationExecutionRun{Summary: cutover.MigrationExecutionRunSummary{Confirmed: confirmed}},
+		ExecutionError:  "",
+		ParityChecklist: nil,
+	}
 }
 
 func writeSmartAccountsSyncTestSource(t *testing.T) (string, string) {

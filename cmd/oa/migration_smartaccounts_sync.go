@@ -17,17 +17,19 @@ import (
 const smartAccountsSyncReportName = "smartaccounts-sync-report.json"
 
 type smartAccountsSyncPrivateReport struct {
-	Provider       cutover.MigrationProviderPreset         `json:"provider"`
-	GeneratedAt    string                                  `json:"generated_at"`
-	TenantID       string                                  `json:"tenant_id"`
-	Confirmed      bool                                    `json:"confirmed"`
-	Snapshot       *cutover.SmartAccountsSnapshotReport    `json:"snapshot,omitempty"`
-	Validation     *cutover.BundleValidationReport         `json:"validation,omitempty"`
-	Plan           *cutover.MigrationExecutionPlan         `json:"plan,omitempty"`
-	ExecutionRun   *cutover.MigrationExecutionRun          `json:"execution_run,omitempty"`
-	ExecutionError string                                  `json:"execution_error,omitempty"`
-	Context        smartAccountsSyncExecutionContext       `json:"context"`
-	Reconciliation []smartAccountsSyncReconciliationTarget `json:"reconciliation"`
+	Provider        cutover.MigrationProviderPreset         `json:"provider"`
+	GeneratedAt     string                                  `json:"generated_at"`
+	TenantID        string                                  `json:"tenant_id"`
+	Confirmed       bool                                    `json:"confirmed"`
+	Snapshot        *cutover.SmartAccountsSnapshotReport    `json:"snapshot,omitempty"`
+	Validation      *cutover.BundleValidationReport         `json:"validation,omitempty"`
+	Plan            *cutover.MigrationExecutionPlan         `json:"plan,omitempty"`
+	ExecutionRun    *cutover.MigrationExecutionRun          `json:"execution_run,omitempty"`
+	ExecutionError  string                                  `json:"execution_error,omitempty"`
+	Context         smartAccountsSyncExecutionContext       `json:"context"`
+	Readiness       []smartAccountsSyncReadinessCheck       `json:"readiness"`
+	Reconciliation  []smartAccountsSyncReconciliationTarget `json:"reconciliation"`
+	ParityChecklist []smartAccountsSyncParityChecklistItem  `json:"parity_checklist"`
 }
 
 type smartAccountsSyncExecutionContext struct {
@@ -46,6 +48,24 @@ type smartAccountsSyncReconciliationTarget struct {
 	DiscrepancyRisk        string `json:"discrepancy_risk"`
 }
 
+type smartAccountsSyncReadinessCheck struct {
+	Code                   string `json:"code"`
+	Status                 string `json:"status"`
+	PrivateEvidence        string `json:"private_evidence"`
+	OpenAccountingEvidence string `json:"open_accounting_evidence,omitempty"`
+	NextAction             string `json:"next_action"`
+}
+
+type smartAccountsSyncParityChecklistItem struct {
+	Area                   string `json:"area"`
+	Status                 string `json:"status"`
+	SmartAccountsEvidence  string `json:"smartaccounts_evidence"`
+	OpenAccountingEvidence string `json:"open_accounting_evidence"`
+	DiscrepancyRisk        string `json:"discrepancy_risk"`
+	BlockerReason          string `json:"blocker_reason,omitempty"`
+	NextAction             string `json:"next_action"`
+}
+
 type smartAccountsSyncPublicSummary struct {
 	Provider             cutover.MigrationProviderPreset `json:"provider"`
 	TenantID             string                          `json:"tenant_id"`
@@ -58,6 +78,8 @@ type smartAccountsSyncPublicSummary struct {
 	Validation           smartAccountsSyncValidationView `json:"validation"`
 	Plan                 smartAccountsSyncPlanView       `json:"plan"`
 	Execution            smartAccountsSyncExecutionView  `json:"execution"`
+	Readiness            smartAccountsSyncReadinessView  `json:"readiness"`
+	Parity               smartAccountsSyncParityView     `json:"parity"`
 	ReconciliationChecks int                             `json:"reconciliation_checks"`
 	NextAction           string                          `json:"next_action"`
 }
@@ -88,6 +110,21 @@ type smartAccountsSyncExecutionView struct {
 	FailedSteps     int    `json:"failed_steps"`
 	PlannedSteps    int    `json:"planned_steps"`
 	Error           string `json:"error,omitempty"`
+}
+
+type smartAccountsSyncReadinessView struct {
+	Ready          int `json:"ready"`
+	ReviewRequired int `json:"review_required"`
+	Pending        int `json:"pending"`
+	Blocked        int `json:"blocked"`
+}
+
+type smartAccountsSyncParityView struct {
+	Pending        int `json:"pending"`
+	Blocked        int `json:"blocked"`
+	ReadyForReview int `json:"ready_for_review"`
+	Passed         int `json:"passed"`
+	Failed         int `json:"failed"`
 }
 
 func (a *cliApp) runMigrationSmartAccountsSync(ctx context.Context, cfg *cliConfig, client *apiClient, args []string) error {
@@ -161,6 +198,7 @@ func (a *cliApp) runMigrationSmartAccountsSync(ctx context.Context, cfg *cliConf
 	})
 	if err != nil {
 		report.ExecutionError = err.Error()
+		refreshSmartAccountsSyncProgress(report)
 		_ = writeSmartAccountsSyncReport(reportPath, report)
 		return err
 	}
@@ -178,6 +216,7 @@ func (a *cliApp) runMigrationSmartAccountsSync(ctx context.Context, cfg *cliConf
 	})
 	if err != nil {
 		report.ExecutionError = err.Error()
+		refreshSmartAccountsSyncProgress(report)
 		_ = writeSmartAccountsSyncReport(reportPath, report)
 		return err
 	}
@@ -198,6 +237,7 @@ func (a *cliApp) runMigrationSmartAccountsSync(ctx context.Context, cfg *cliConf
 		report.ExecutionError = err.Error()
 	}
 	report.ExecutionRun = run
+	refreshSmartAccountsSyncProgress(report)
 	if writeErr := writeSmartAccountsSyncReport(reportPath, report); writeErr != nil {
 		if err != nil {
 			return fmt.Errorf("%w; additionally failed to write SmartAccounts sync report: %v", err, writeErr)
@@ -270,8 +310,314 @@ func buildSmartAccountsSyncPublicSummary(report *smartAccountsSyncPrivateReport,
 		}
 	}
 	summary.Execution.Error = report.ExecutionError
+	readiness := report.Readiness
+	if len(readiness) == 0 {
+		readiness = smartAccountsSyncReadinessChecks(report)
+	}
+	summary.Readiness = smartAccountsSyncReadinessSummary(readiness)
+	parityChecklist := report.ParityChecklist
+	if len(parityChecklist) == 0 {
+		parityChecklist = smartAccountsSyncParityChecklist(report)
+	}
+	summary.Parity = smartAccountsSyncParitySummary(parityChecklist)
 	summary.NextAction = smartAccountsSyncNextAction(summary)
 	return summary
+}
+
+func refreshSmartAccountsSyncProgress(report *smartAccountsSyncPrivateReport) {
+	if report != nil {
+		report.Readiness = smartAccountsSyncReadinessChecks(report)
+		report.ParityChecklist = smartAccountsSyncParityChecklist(report)
+	}
+}
+
+func smartAccountsSyncReadinessChecks(report *smartAccountsSyncPrivateReport) []smartAccountsSyncReadinessCheck {
+	if report == nil {
+		return nil
+	}
+	checks := []smartAccountsSyncReadinessCheck{
+		smartAccountsSyncSnapshotReadiness(report),
+		smartAccountsSyncValidationReadiness(report),
+		smartAccountsSyncPlanReadiness(report),
+		smartAccountsSyncExecutionReadiness(report),
+		smartAccountsSyncJournalPostingReadiness(report),
+		smartAccountsSyncPrivateReconciliationReadiness(report),
+	}
+	return checks
+}
+
+func smartAccountsSyncReadinessSummary(checks []smartAccountsSyncReadinessCheck) smartAccountsSyncReadinessView {
+	var view smartAccountsSyncReadinessView
+	for _, check := range checks {
+		switch check.Status {
+		case "ready":
+			view.Ready++
+		case "review_required":
+			view.ReviewRequired++
+		case "blocked":
+			view.Blocked++
+		default:
+			view.Pending++
+		}
+	}
+	return view
+}
+
+func smartAccountsSyncParityChecklist(report *smartAccountsSyncPrivateReport) []smartAccountsSyncParityChecklistItem {
+	if report == nil {
+		return nil
+	}
+	targets := report.Reconciliation
+	if len(targets) == 0 {
+		targets = smartAccountsSyncReconciliationTargets()
+	}
+	status, blocker, nextAction := smartAccountsSyncParityBaseState(report)
+	checklist := make([]smartAccountsSyncParityChecklistItem, 0, len(targets))
+	for _, target := range targets {
+		itemStatus, itemBlocker, itemNextAction := status, blocker, nextAction
+		if itemStatus == "ready_for_review" && smartAccountsSyncAreaNeedsPostedGL(target.Area) && smartAccountsSyncHasPreparedKind(report, cutover.KindJournalEntries) && !report.Context.PostJournalEntries {
+			itemStatus = "blocked"
+			itemBlocker = "Historical journals were imported as drafts and are excluded from posted-ledger reports."
+			itemNextAction = "Review and post historical journals before comparing GL-based reports for this area."
+		}
+		checklist = append(checklist, smartAccountsSyncParityChecklistItem{
+			Area:                   target.Area,
+			Status:                 itemStatus,
+			SmartAccountsEvidence:  target.SmartAccountsEvidence,
+			OpenAccountingEvidence: target.OpenAccountingEvidence,
+			DiscrepancyRisk:        target.DiscrepancyRisk,
+			BlockerReason:          itemBlocker,
+			NextAction:             itemNextAction,
+		})
+	}
+	return checklist
+}
+
+func smartAccountsSyncParityBaseState(report *smartAccountsSyncPrivateReport) (status, blocker, nextAction string) {
+	if report.Snapshot != nil && len(report.Snapshot.UnsupportedFiles) > 0 {
+		return "blocked", "Snapshot contains unsupported files.", "Review unsupported files before comparing report parity."
+	}
+	if report.Validation == nil {
+		if report.ExecutionError != "" && report.Snapshot != nil {
+			return "blocked", "Validation did not complete.", "Fix the validation/API error before comparing report parity."
+		}
+		return "pending", "", "Run validation before comparing report parity."
+	}
+	if !report.Validation.Summary.Ready {
+		return "blocked", "Validation has blockers.", "Fix validation blockers before comparing report parity."
+	}
+	if report.Plan == nil {
+		if report.ExecutionError != "" {
+			return "blocked", "Execution plan did not complete.", "Fix the plan/API error before comparing report parity."
+		}
+		return "pending", "", "Build an execution plan before comparing report parity."
+	}
+	if !report.Plan.Summary.Ready {
+		return "blocked", "Execution plan is not ready.", "Resolve missing context or blocked steps before comparing report parity."
+	}
+	if report.ExecutionRun == nil {
+		if report.ExecutionError != "" {
+			return "blocked", "Migration execution did not complete.", "Fix the execution/API error before comparing report parity."
+		}
+		return "pending", "", "Save a dry run and confirm execution before comparing report parity."
+	}
+	if report.ExecutionError != "" || report.ExecutionRun.Summary.FailedStepCount > 0 {
+		return "blocked", "Migration execution has failed steps.", "Resume or rerun the failed migration before comparing report parity."
+	}
+	if !report.ExecutionRun.Summary.Confirmed {
+		return "pending", "", "Confirm the reviewed migration run before comparing final report parity."
+	}
+	return "ready_for_review", "", "Compare the private SmartAccounts proof report against the matching Open Accounting report."
+}
+
+func smartAccountsSyncParitySummary(checklist []smartAccountsSyncParityChecklistItem) smartAccountsSyncParityView {
+	var view smartAccountsSyncParityView
+	for _, item := range checklist {
+		switch item.Status {
+		case "ready_for_review":
+			view.ReadyForReview++
+		case "passed":
+			view.Passed++
+		case "failed":
+			view.Failed++
+		case "blocked":
+			view.Blocked++
+		default:
+			view.Pending++
+		}
+	}
+	return view
+}
+
+func smartAccountsSyncAreaNeedsPostedGL(area string) bool {
+	switch area {
+	case "trial_balance", "revenue_expenses", "bank", "vat_tax", "inventory_fixed_assets":
+		return true
+	default:
+		return false
+	}
+}
+
+func smartAccountsSyncSnapshotReadiness(report *smartAccountsSyncPrivateReport) smartAccountsSyncReadinessCheck {
+	check := smartAccountsSyncReadinessCheck{
+		Code:            "snapshot_inventory",
+		Status:          "pending",
+		PrivateEvidence: "SmartAccounts source export inventory and snapshot manifest.",
+		NextAction:      "Prepare a SmartAccounts snapshot from the private export directory.",
+	}
+	if report.Snapshot == nil {
+		return check
+	}
+	check.PrivateEvidence = "Prepared manifest, snapshot hash, supported files, unsupported files, and snapshot warnings."
+	if len(report.Snapshot.UnsupportedFiles) > 0 {
+		check.Status = "blocked"
+		check.NextAction = "Review unsupported files in the private operator report and add missing exports or mapper support."
+		return check
+	}
+	if len(report.Snapshot.Warnings) > 0 {
+		check.Status = "review_required"
+		check.NextAction = "Review snapshot warnings and confirm the source inventory before execution."
+		return check
+	}
+	check.Status = "ready"
+	check.NextAction = "Snapshot inventory is ready for validation."
+	return check
+}
+
+func smartAccountsSyncValidationReadiness(report *smartAccountsSyncPrivateReport) smartAccountsSyncReadinessCheck {
+	check := smartAccountsSyncReadinessCheck{
+		Code:                   "bundle_validation",
+		Status:                 "pending",
+		PrivateEvidence:        "Migration validation report for the prepared SmartAccounts bundle.",
+		OpenAccountingEvidence: "Validation summary and remediation actions.",
+		NextAction:             "Run validation with the SmartAccounts provider preset.",
+	}
+	if report.Validation == nil {
+		if report.ExecutionError != "" && report.Snapshot != nil {
+			check.Status = "blocked"
+			check.NextAction = "Fix the validation/API error recorded in execution_error, then rerun the sync."
+		}
+		return check
+	}
+	if report.Validation.Summary.Ready {
+		check.Status = "ready"
+		check.NextAction = "Validation is ready; review warnings before confirming execution."
+		return check
+	}
+	check.Status = "blocked"
+	check.NextAction = "Fix validation blockers from the private operator report, then rerun the sync."
+	return check
+}
+
+func smartAccountsSyncPlanReadiness(report *smartAccountsSyncPrivateReport) smartAccountsSyncReadinessCheck {
+	check := smartAccountsSyncReadinessCheck{
+		Code:                   "execution_plan_context",
+		Status:                 "pending",
+		PrivateEvidence:        "Migration execution plan and required context fields.",
+		OpenAccountingEvidence: "Plan readiness summary and ordered import steps.",
+		NextAction:             "Build the execution plan after validation succeeds.",
+	}
+	if report.Plan == nil {
+		if report.Validation != nil && report.ExecutionError != "" {
+			check.Status = "blocked"
+			check.NextAction = "Fix the plan/API error recorded in execution_error, then rerun the sync."
+		}
+		return check
+	}
+	if report.Plan.Summary.Ready {
+		check.Status = "ready"
+		check.NextAction = "Execution plan is ready for dry-run review or confirmed execution."
+		return check
+	}
+	if report.Plan.Summary.BlockedStepCount > 0 {
+		check.Status = "blocked"
+		check.NextAction = "Resolve blocked migration steps from the private operator report."
+		return check
+	}
+	check.Status = "pending"
+	check.NextAction = "Supply missing context such as bank account id or opening balance entry date, then rerun the sync."
+	return check
+}
+
+func smartAccountsSyncExecutionReadiness(report *smartAccountsSyncPrivateReport) smartAccountsSyncReadinessCheck {
+	check := smartAccountsSyncReadinessCheck{
+		Code:                   "execution_run",
+		Status:                 "pending",
+		PrivateEvidence:        "Saved migration execution run.",
+		OpenAccountingEvidence: "Migration execution run status, step counts, and run id.",
+		NextAction:             "Save a non-mutating dry run before confirmed execution.",
+	}
+	if report.ExecutionRun == nil {
+		if report.Plan != nil && report.ExecutionError != "" {
+			check.Status = "blocked"
+			check.NextAction = "Fix the execution/API error recorded in execution_error, then rerun or resume."
+		}
+		return check
+	}
+	if report.ExecutionError != "" || report.ExecutionRun.Summary.FailedStepCount > 0 {
+		check.Status = "blocked"
+		check.NextAction = "Review the failed execution run and resume after correcting the blocker."
+		return check
+	}
+	check.Status = "ready"
+	if report.ExecutionRun.Summary.Confirmed {
+		check.NextAction = "Confirmed execution completed; run private report reconciliation before closing the cutover."
+	} else {
+		check.NextAction = "Dry run is saved; rerun with --confirm only after accountant signoff."
+	}
+	return check
+}
+
+func smartAccountsSyncJournalPostingReadiness(report *smartAccountsSyncPrivateReport) smartAccountsSyncReadinessCheck {
+	check := smartAccountsSyncReadinessCheck{
+		Code:                   "historical_journal_posting_decision",
+		Status:                 "ready",
+		PrivateEvidence:        "Prepared historical journal export and accountant posting decision.",
+		OpenAccountingEvidence: "Historical journal import plan and posted/draft journal status.",
+		NextAction:             "No historical journal file was prepared in this snapshot.",
+	}
+	if !smartAccountsSyncHasPreparedKind(report, cutover.KindJournalEntries) {
+		return check
+	}
+	if report.Context.PostJournalEntries {
+		if report.ExecutionRun != nil && report.ExecutionRun.Summary.Confirmed {
+			check.Status = "ready"
+			check.NextAction = "Historical journals were posted during confirmed execution; retain accountant signoff evidence for reconciliation."
+			return check
+		}
+		check.Status = "review_required"
+		check.NextAction = "Confirm private accountant signoff before posting imported historical journals."
+		return check
+	}
+	check.Status = "pending"
+	check.NextAction = "Historical journals will remain draft; review/post them before treating GL reports as final parity evidence."
+	return check
+}
+
+func smartAccountsSyncPrivateReconciliationReadiness(report *smartAccountsSyncPrivateReport) smartAccountsSyncReadinessCheck {
+	check := smartAccountsSyncReadinessCheck{
+		Code:                   "private_report_reconciliation",
+		Status:                 "pending",
+		PrivateEvidence:        "SmartAccounts proof reports for trial balance, AR/AP, income statement, bank, VAT/KMD, payroll/TSD, inventory, and fixed assets.",
+		OpenAccountingEvidence: "Open Accounting reports generated for the same dates and accounting basis.",
+		NextAction:             "Compare private SmartAccounts proof reports against Open Accounting outputs before marking the cutover complete.",
+	}
+	if report.ExecutionRun == nil || !report.ExecutionRun.Summary.Confirmed {
+		check.NextAction = "Run private reconciliation after confirmed execution succeeds."
+	}
+	return check
+}
+
+func smartAccountsSyncHasPreparedKind(report *smartAccountsSyncPrivateReport, kind cutover.FileKind) bool {
+	if report == nil || report.Snapshot == nil {
+		return false
+	}
+	for _, file := range report.Snapshot.PreparedFiles {
+		if file.Kind == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func smartAccountsSyncReconciliationTargets() []smartAccountsSyncReconciliationTarget {
@@ -335,7 +681,16 @@ func smartAccountsSyncNextAction(summary smartAccountsSyncPublicSummary) string 
 		if summary.Execution.FailedSteps > 0 || summary.Execution.Error != "" {
 			return "Review the failed confirmed run and resume after correcting the blocker."
 		}
+		if summary.Parity.Failed > 0 {
+			return "Resolve failed parity checklist items in the private operator report before closing the cutover."
+		}
+		if summary.Parity.Blocked > 0 {
+			return "Resolve blocked parity checklist items in the private operator report before comparing final reports."
+		}
 		return "Run private reconciliation reports against SmartAccounts totals before closing the cutover."
+	}
+	if summary.Execution.FailedSteps > 0 || summary.Execution.Error != "" {
+		return "Fix the migration execution/API error before reviewing or confirming the run."
 	}
 	return "Review the saved dry run and private operator report; rerun with --confirm only after accountant signoff."
 }
@@ -398,6 +753,23 @@ func printSmartAccountsSyncSummary(w io.Writer, summary smartAccountsSyncPublicS
 	if summary.Execution.Error != "" {
 		_, _ = fmt.Fprintf(w, "Execution error: %s\n", summary.Execution.Error)
 	}
+	_, _ = fmt.Fprintf(
+		w,
+		"Readiness: ready=%d, review_required=%d, pending=%d, blocked=%d\n",
+		summary.Readiness.Ready,
+		summary.Readiness.ReviewRequired,
+		summary.Readiness.Pending,
+		summary.Readiness.Blocked,
+	)
+	_, _ = fmt.Fprintf(
+		w,
+		"Parity checklist: pending=%d, blocked=%d, ready_for_review=%d, passed=%d, failed=%d\n",
+		summary.Parity.Pending,
+		summary.Parity.Blocked,
+		summary.Parity.ReadyForReview,
+		summary.Parity.Passed,
+		summary.Parity.Failed,
+	)
 	if summary.ReconciliationChecks > 0 {
 		_, _ = fmt.Fprintf(w, "Reconciliation checks: %d private proof targets in operator report\n", summary.ReconciliationChecks)
 	}

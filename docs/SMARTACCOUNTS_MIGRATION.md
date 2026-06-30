@@ -51,7 +51,8 @@ By default this command:
 - builds the migration execution plan;
 - saves a non-mutating dry run through the configured Open Accounting API;
 - writes a full private operator report to `smartaccounts-sync-report.json` under `--out-dir`;
-- includes private reconciliation targets for trial balance, AR/AP, revenue/expense, bank, VAT/tax, payroll/TSD, and inventory/fixed assets;
+- includes `readiness` checks for snapshot inventory, validation, execution plan context, execution status, journal posting decision, and private report reconciliation;
+- includes a `parity_checklist` for trial balance, AR/AP, revenue/expense, bank, VAT/tax, payroll/TSD, and inventory/fixed assets with required SmartAccounts evidence, matching Open Accounting evidence, discrepancy risk, blocker status, and next action;
 - prints only aggregate counts, paths, hashes, and next action guidance.
 
 Only add `--confirm` after accountant signoff. Confirmed execution uses the same prepared bundle and context, but mutates the configured Open Accounting tenant:
@@ -77,6 +78,7 @@ This public runbook does not record tenant amounts or private SmartAccounts file
 - The offline SmartAccounts snapshot path can prepare, validate, plan, save, resume, and execute supported CSV/XML bundles without storing private data in this public repository.
 - Confirmed migration execution is still review-gated. The dry run persists its bundle and execution context server-side so accountant workspace actions or `migration execute --resume-run-id` can confirm the reviewed run later.
 - Historical journal imports are intentionally draft-only unless `--post-journal-entries` is supplied. Draft imported journals will not appear in posted-ledger reports, so a Balance Sheet or income statement that returns zeros can mean imported GL history is still draft, not that the report endpoint failed.
+- Each `smartaccounts-sync-report.json` now records a machine-readable `readiness` section for the run mechanics and a `parity_checklist` section for report-by-report reconciliation status. Treat blocked, pending, or failed checklist items as unresolved migration work.
 - Full SmartAccounts parity remains unproven until private reconciliation compares SmartAccounts trial balance, aged AR/AP, income statement, bank, VAT/KMD, payroll/TSD, inventory, and fixed-asset proof reports against Open Accounting outputs at the same dates and accounting basis.
 - Do not mark a tenant migration complete while reconciliation differences remain or while any needed source export is only summary-level and lacks line-level accounting data.
 
@@ -174,6 +176,7 @@ Use SmartAccounts reports as private proof artifacts rather than importable enti
 - invoice/payment exception lists.
 
 Compare those reports against Open Accounting reports after import and keep reconciliation evidence in private storage.
+Use the private report `parity_checklist` as the canonical reconciliation worklist. Status values are `pending`, `blocked`, `ready_for_review`, `passed`, and `failed`. The sync command can mark a report area `ready_for_review` after confirmed execution, but it does not mark any area `passed`; only private comparison of SmartAccounts proof reports to Open Accounting outputs can do that.
 
 Do not use the dashboard as the only reconciliation surface. Dashboard totals mix accounting bases:
 

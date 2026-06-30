@@ -33,6 +33,9 @@ go run ./cmd/oa migration smartaccounts-sync \
 ```
 
 The command writes a private `smartaccounts-sync-report.json` under `--out-dir`.
+Review its `readiness` checks for run mechanics and its `parity_checklist`
+for report-by-report reconciliation status. Do not treat a migration as
+complete while any checklist item is `pending`, `blocked`, or `failed`.
 Add `--confirm` only after accountant review. Add `--post-journal-entries`
 only when reviewed historical journals should be posted immediately and included
 in GL-based reports. If `--opening-balance-entry-date` is omitted, it defaults
@@ -122,3 +125,8 @@ For real tenant cutovers, also verify:
 - `migration validate` has no errors.
 - `migration plan` has no blocked steps and all `NEEDS_CONTEXT` fields are supplied.
 - Non-confirming `migration execute` is saved and reviewed before `--confirm`.
+- The private `smartaccounts-sync-report.json` has no blocked or pending
+  `readiness` checks except the final private reconciliation gate before
+  confirmation.
+- Every `parity_checklist` area is reconciled against private SmartAccounts
+  proof reports and marked pass/fail in private evidence before cutover closure.
