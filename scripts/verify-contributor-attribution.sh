@@ -24,6 +24,14 @@ if printf '%s\n' "$raw_identities" | grep -E "$blocked_pattern" >/dev/null; then
   fail "raw author or committer identities still contain blocked generated identities"
 fi
 
+if [ -f .mailmap ]; then
+  mailmap_matches="$(grep -E "$blocked_pattern" .mailmap || true)"
+  if [ -n "$mailmap_matches" ]; then
+    printf '%s\n' "$mailmap_matches" >&2
+    fail ".mailmap must not hide blocked generated identities"
+  fi
+fi
+
 message_matches="$(git log "$ref" --format='%h %s' --regexp-ignore-case --grep='Co-authored-by:.*\(Claude\|anthropic\|claude-code\)' --grep='Generated with \[Claude Code\]' || true)"
 if [ -n "$message_matches" ]; then
   printf '%s\n' "$message_matches" >&2
