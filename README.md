@@ -341,9 +341,8 @@ git push origin feature/your-feature
 
 ### Contributors
 
-<a href="https://github.com/HMB-research/open-accounting/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=HMB-research/open-accounting" />
-</a>
+Contributor attribution is normalized through [`.mailmap`](.mailmap).
+Use `git shortlog -sne --all` for the canonical contributor list.
 
 ---
 
