@@ -9,36 +9,26 @@ fail() {
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || fail "not inside a git repository"
 cd "$repo_root"
 
-canonical_author="Martin Kask <martin@industrial.ninja>"
+ref="${1:-HEAD}"
 blocked_pattern='Claude|claude|anthropic|claude-code'
 
-shortlog="$(git shortlog -sne --all)"
+shortlog="$(git shortlog -sne "$ref")"
 if printf '%s\n' "$shortlog" | grep -E "$blocked_pattern" >/dev/null; then
   printf '%s\n' "$shortlog" >&2
-  fail "normalized contributor list still contains Claude or Anthropic identities"
+  fail "contributor list still contains blocked generated identities"
 fi
 
-mapped_identities="$(git log --all --format='%aN <%aE>%n%cN <%cE>' | sort -u)"
-if printf '%s\n' "$mapped_identities" | grep -E "$blocked_pattern" >/dev/null; then
-  printf '%s\n' "$mapped_identities" >&2
-  fail "mailmapped author or committer identities still contain Claude or Anthropic identities"
+raw_identities="$(git log --no-use-mailmap "$ref" --format='%aN <%aE>%n%cN <%cE>' | sort -u)"
+if printf '%s\n' "$raw_identities" | grep -E "$blocked_pattern" >/dev/null; then
+  printf '%s\n' "$raw_identities" >&2
+  fail "raw author or committer identities still contain blocked generated identities"
 fi
 
-aliases=(
-  "Claude <noreply@anthropic.com>"
-  "Claude <claude@anthropic.com>"
-  "Claude Opus 4.5 <noreply@anthropic.com>"
-  "<noreply@anthropic.com>"
-  "<claude@anthropic.com>"
-  "<158136808+claude-code@users.noreply.github.com>"
-)
-
-for alias in "${aliases[@]}"; do
-  mapped="$(git check-mailmap "$alias")"
-  if [ "$mapped" != "$canonical_author" ]; then
-    fail "mailmap maps '$alias' to '$mapped', expected '$canonical_author'"
-  fi
-done
+message_matches="$(git log "$ref" --format='%h %s' --regexp-ignore-case --grep='Co-authored-by:.*\(Claude\|anthropic\|claude-code\)' --grep='Generated with \[Claude Code\]' || true)"
+if [ -n "$message_matches" ]; then
+  printf '%s\n' "$message_matches" >&2
+  fail "commit messages still contain blocked generated attribution trailers"
+fi
 
 echo "Contributor attribution OK"
 printf '%s\n' "$shortlog"
