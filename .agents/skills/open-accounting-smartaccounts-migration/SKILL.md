@@ -41,6 +41,27 @@ only when reviewed historical journals should be posted immediately and included
 in GL-based reports. If `--opening-balance-entry-date` is omitted, it defaults
 to `--cutover-date`.
 
+After a private sync report exists, generate the Open Accounting proof bundle:
+
+```bash
+go run ./cmd/oa migration smartaccounts-proof-plan \
+  --report /path/to/private/smartaccounts/prepared/smartaccounts-sync-report.json \
+  --out-dir /path/to/private/smartaccounts/proof \
+  --as-of YYYY-MM-DD \
+  --start YYYY-MM-DD \
+  --end YYYY-MM-DD \
+  --bank-account-id <oa-bank-account-id> \
+  --inventory-method weighted-average
+```
+
+The proof-plan command writes a private `smartaccounts-proof-plan.json` and
+`open-accounting-proof-commands.sh`. It turns the sync report checklist into
+Open Accounting report commands for trial balance, AR/AP, income statement,
+bank/cash flow, KMD, payroll/TSD, inventory, and fixed assets. It does not mark
+parity as passed; compare the generated artifacts with private SmartAccounts
+proof reports first. If the plan reports missing context, supply it and
+regenerate the plan before running the script.
+
 For manual stage debugging, prepare a bundle from a directory of SmartAccounts exports:
 
 ```bash
@@ -114,7 +135,7 @@ For tooling changes, run:
 ```bash
 go test -count=1 ./internal/cutover
 go test -count=1 ./cmd/smartaccounts-snapshot
-go test -count=1 ./cmd/oa -run TestCLIMigrationSmartAccountsSyncCommand
+go test -count=1 ./cmd/oa -run 'TestCLIMigrationSmartAccounts(Sync|ProofPlan)Command|TestSmartAccountsSyncHelpers'
 go run ./cmd/smartaccounts-snapshot --source-dir <sample-dir> --out-dir <tmp-out> --json
 go test -timeout=3m ./docs -count=1
 ```
@@ -128,5 +149,7 @@ For real tenant cutovers, also verify:
 - The private `smartaccounts-sync-report.json` has no blocked or pending
   `readiness` checks except the final private reconciliation gate before
   confirmation.
+- `migration smartaccounts-proof-plan` has generated a private proof manifest
+  and executable Open Accounting report script for the selected as-of and period.
 - Every `parity_checklist` area is reconciled against private SmartAccounts
   proof reports and marked pass/fail in private evidence before cutover closure.

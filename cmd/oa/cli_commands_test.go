@@ -4562,6 +4562,259 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
+func TestCLIMigrationSmartAccountsProofPlanCommand(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	privateRoot := t.TempDir()
+	reportPath := filepath.Join(privateRoot, smartAccountsSyncReportName)
+	syncReport := newSmartAccountsSyncHelperReport(true, false)
+	syncReport.ParityChecklist = smartAccountsSyncParityChecklist(syncReport)
+	reportPayload, err := json.Marshal(syncReport)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(reportPath, reportPayload, 0o600))
+
+	outputDir := filepath.Join(privateRoot, "proof")
+	app, stdout, _ := newTestCLIApp()
+	err = app.run(context.Background(), []string{
+		"migration", "smartaccounts-proof-plan",
+		"--report", reportPath,
+		"--out-dir", outputDir,
+		"--as-of", "2026-03-31",
+		"--start", "2026-01-01",
+		"--end", "2026-03-31",
+		"--bank-account-id", "bank-1",
+		"--inventory-method", "fifo",
+		"--warehouse-id", "warehouse-1",
+		"--json",
+	})
+	require.NoError(t, err)
+
+	var plan smartAccountsProofPlan
+	require.NoError(t, json.Unmarshal([]byte(stdout.String()), &plan))
+	assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, plan.Provider)
+	assert.Equal(t, "tenant-1", plan.TenantID)
+	assert.Equal(t, "2026-03-31", plan.AsOfDate)
+	assert.Equal(t, "2026-01-01", plan.StartDate)
+	assert.Equal(t, "2026-03-31", plan.EndDate)
+	assert.Equal(t, reports.CashFlowMethodIndirect, plan.CashFlowMethod)
+	assert.Equal(t, 2026, plan.KMDYear)
+	assert.Equal(t, 3, plan.KMDMonth)
+	assert.Equal(t, 2026, plan.TSDYear)
+	assert.Equal(t, 3, plan.TSDMonth)
+	assert.True(t, plan.ReadyForPrivateRun)
+	assert.Empty(t, plan.MissingContext)
+	require.Len(t, plan.Items, 7)
+	assert.NotZero(t, plan.RequiredCommands)
+	assert.FileExists(t, filepath.Join(outputDir, smartAccountsProofPlanName))
+	assert.FileExists(t, filepath.Join(outputDir, smartAccountsProofScriptName))
+
+	script, err := os.ReadFile(filepath.Join(outputDir, smartAccountsProofScriptName))
+	require.NoError(t, err)
+	scriptText := string(script)
+	assert.Contains(t, scriptText, "oa reports trial-balance --as-of 2026-03-31 --json")
+	assert.Contains(t, scriptText, "oa reports balance-sheet --as-of 2026-03-31 --csv --output")
+	assert.Contains(t, scriptText, "oa reports aging --type receivables --json")
+	assert.Contains(t, scriptText, "oa reports balance-confirmations --type RECEIVABLE --as-of 2026-03-31 --json")
+	assert.Contains(t, scriptText, "oa reports income-statement --start 2026-01-01 --end 2026-03-31 --json")
+	assert.Contains(t, scriptText, "oa reports cash-flow --start 2026-01-01 --end 2026-03-31 --method indirect --json")
+	assert.Contains(t, scriptText, "oa banking transactions list --account-id bank-1 --from 2026-01-01 --to 2026-03-31 --json")
+	assert.Contains(t, scriptText, "oa banking reconciliations list --account-id bank-1 --json")
+	assert.Contains(t, scriptText, "oa tax kmd inf --year 2026 --month 3 --json")
+	assert.Contains(t, scriptText, "oa payroll runs list --year 2026 --json")
+	assert.Contains(t, scriptText, "oa tsd get --year 2026 --month 3 --json")
+	assert.Contains(t, scriptText, "oa inventory valuation --method fifo --json")
+	assert.Contains(t, scriptText, "oa inventory valuation --warehouse-id warehouse-1 --method fifo --json")
+	assert.Contains(t, scriptText, "oa assets list --json")
+
+	info, err := os.Stat(filepath.Join(outputDir, smartAccountsProofScriptName))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+}
+
+func TestCLIMigrationSmartAccountsProofPlanCommandMissingContextAndErrors(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+
+	privateRoot := t.TempDir()
+	reportPath := filepath.Join(privateRoot, smartAccountsSyncReportName)
+	syncReport := newSmartAccountsSyncHelperReport(true, false)
+	reportPayload, err := json.Marshal(syncReport)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(reportPath, reportPayload, 0o600))
+
+	t.Run("missing required flags", func(t *testing.T) {
+		app, _, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{"migration", "smartaccounts-proof-plan"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "report and out-dir are required")
+	})
+
+	t.Run("missing bank context", func(t *testing.T) {
+		outputDir := filepath.Join(privateRoot, "proof-missing-bank")
+		app, stdout, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof",
+			"--report", reportPath,
+			"--out-dir", outputDir,
+			"--as-of", "2026-03-31",
+			"--start", "2026-01-01",
+			"--end", "2026-03-31",
+			"--kmd-year", "2026",
+			"--kmd-month", "2",
+			"--tsd-year", "2026",
+			"--tsd-month", "2",
+		})
+		require.NoError(t, err)
+		assert.Contains(t, stdout.String(), "SmartAccounts proof plan written")
+		assert.Contains(t, stdout.String(), "Missing context: 1")
+
+		planPayload, err := os.ReadFile(filepath.Join(outputDir, smartAccountsProofPlanName))
+		require.NoError(t, err)
+		var plan smartAccountsProofPlan
+		require.NoError(t, json.Unmarshal(planPayload, &plan))
+		assert.False(t, plan.ReadyForPrivateRun)
+		assert.Equal(t, []string{"bank-account-id is required for bank transaction and reconciliation proof commands"}, plan.MissingContext)
+		assert.Equal(t, 2026, plan.KMDYear)
+		assert.Equal(t, 2, plan.KMDMonth)
+		assert.Equal(t, 2026, plan.TSDYear)
+		assert.Equal(t, 2, plan.TSDMonth)
+	})
+
+	t.Run("reject public worktree output", func(t *testing.T) {
+		app, _, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof-plan",
+			"--report", reportPath,
+			"--out-dir", filepath.Join(".", "tmp-smartaccounts-proof"),
+			"--as-of", "2026-03-31",
+			"--start", "2026-01-01",
+			"--end", "2026-03-31",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must not be inside public Open Accounting Git worktree")
+	})
+
+	t.Run("invalid period flags", func(t *testing.T) {
+		app, _, _ := newTestCLIApp()
+		err := app.run(context.Background(), []string{
+			"migration", "smartaccounts-proof-plan",
+			"--report", reportPath,
+			"--out-dir", filepath.Join(privateRoot, "proof-invalid"),
+			"--as-of", "2026-03-31",
+			"--start", "2026-04-01",
+			"--end", "2026-03-31",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "end must be on or after start")
+	})
+
+	t.Run("error paths", func(t *testing.T) {
+		badJSONReport := filepath.Join(privateRoot, "bad-json-report.json")
+		require.NoError(t, os.WriteFile(badJSONReport, []byte("{"), 0o600))
+		wrongProviderReport := filepath.Join(privateRoot, "wrong-provider-report.json")
+		wrongProviderPayload, err := json.Marshal(&smartAccountsSyncPrivateReport{Provider: cutover.MigrationProviderPresetMerit})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(wrongProviderReport, wrongProviderPayload, 0o600))
+		fileOutputRoot := filepath.Join(privateRoot, "file-output-root")
+		require.NoError(t, os.WriteFile(fileOutputRoot, []byte("not a directory"), 0o600))
+		planDirectoryOutput := filepath.Join(privateRoot, "plan-directory-output")
+		require.NoError(t, os.MkdirAll(filepath.Join(planDirectoryOutput, smartAccountsProofPlanName), 0o700))
+		scriptDirectoryOutput := filepath.Join(privateRoot, "script-directory-output")
+		require.NoError(t, os.MkdirAll(filepath.Join(scriptDirectoryOutput, smartAccountsProofScriptName), 0o700))
+
+		baseArgs := []string{
+			"migration", "smartaccounts-proof-plan",
+			"--report", reportPath,
+			"--out-dir", filepath.Join(privateRoot, "proof-errors"),
+			"--as-of", "2026-03-31",
+			"--start", "2026-01-01",
+			"--end", "2026-03-31",
+		}
+		for _, tc := range []struct {
+			name string
+			args []string
+			want string
+		}{
+			{name: "invalid flag", args: []string{"migration", "smartaccounts-proof-plan", "--bogus"}, want: "flag provided but not defined"},
+			{name: "missing as of", args: []string{"migration", "smartaccounts-proof-plan", "--report", reportPath, "--out-dir", filepath.Join(privateRoot, "missing-as-of")}, want: "as-of is required"},
+			{name: "missing start", args: []string{"migration", "smartaccounts-proof-plan", "--report", reportPath, "--out-dir", filepath.Join(privateRoot, "missing-start"), "--as-of", "2026-03-31"}, want: "start is required"},
+			{name: "missing end", args: []string{"migration", "smartaccounts-proof-plan", "--report", reportPath, "--out-dir", filepath.Join(privateRoot, "missing-end"), "--as-of", "2026-03-31", "--start", "2026-01-01"}, want: "end is required"},
+			{name: "invalid cash flow method", args: append(append([]string{}, baseArgs...), "--cash-flow-method", "rolling"), want: "cash flow method"},
+			{name: "kmd partial period", args: append(append([]string{}, baseArgs...), "--kmd-year", "2026"), want: "kmd-year and kmd-month must be supplied together"},
+			{name: "tsd invalid month", args: append(append([]string{}, baseArgs...), "--tsd-year", "2026", "--tsd-month", "13"), want: "month must be between 1 and 12"},
+			{name: "read report", args: append(append([]string{}, baseArgs[:2]...), "--report", filepath.Join(privateRoot, "missing-report.json"), "--out-dir", filepath.Join(privateRoot, "missing-report-output"), "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "read SmartAccounts sync report"},
+			{name: "decode report", args: append(append([]string{}, baseArgs[:2]...), "--report", badJSONReport, "--out-dir", filepath.Join(privateRoot, "bad-json-output"), "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "decode SmartAccounts sync report"},
+			{name: "wrong provider", args: append(append([]string{}, baseArgs[:2]...), "--report", wrongProviderReport, "--out-dir", filepath.Join(privateRoot, "wrong-provider-output"), "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "sync report provider must be"},
+			{name: "mkdir output", args: append(append([]string{}, baseArgs[:2]...), "--report", reportPath, "--out-dir", filepath.Join(fileOutputRoot, "child"), "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "create proof output dir"},
+			{name: "write plan", args: append(append([]string{}, baseArgs[:2]...), "--report", reportPath, "--out-dir", planDirectoryOutput, "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "write SmartAccounts proof plan"},
+			{name: "write script", args: append(append([]string{}, baseArgs[:2]...), "--report", reportPath, "--out-dir", scriptDirectoryOutput, "--as-of", "2026-03-31", "--start", "2026-01-01", "--end", "2026-03-31"), want: "write SmartAccounts proof script"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				app, _, _ := newTestCLIApp()
+				err := app.run(context.Background(), tc.args)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.want)
+			})
+		}
+	})
+}
+
+func TestSmartAccountsProofPlanHelpers(t *testing.T) {
+	assert.Equal(t, "''", smartAccountsProofShellQuote(""))
+	assert.Equal(t, "/tmp/plain", smartAccountsProofShellQuote("/tmp/plain"))
+	assert.Equal(t, "'/tmp/has spaces/it'\\''s.csv'", smartAccountsProofShellQuote("/tmp/has spaces/it's.csv"))
+	assert.Equal(t, []string{"a", "b"}, uniqueNonEmptyStrings([]string{"", "a", "a", " b "}))
+	assert.Equal(t, "", smartAccountsProofFirstNonEmpty("", " "))
+	assert.True(t, pathWithin("/tmp/example", "/tmp"))
+	assert.False(t, pathWithin("/tmp/example", "/var"))
+
+	year, month, err := smartAccountsProofPeriodFromFlags("kmd", "", "", time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	assert.Equal(t, 2026, year)
+	assert.Equal(t, 4, month)
+	_, _, err = smartAccountsProofPeriodFromFlags("kmd", "2026", "", time.Time{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "kmd-year and kmd-month must be supplied together")
+	_, _, err = smartAccountsProofPeriodFromFlags("kmd", "2026", "13", time.Time{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "month must be between 1 and 12")
+
+	plan := &smartAccountsProofPlan{OutputDir: t.TempDir()}
+	items := smartAccountsProofPlanItems(plan, []smartAccountsSyncParityChecklistItem{{Area: "unknown_area"}})
+	require.Len(t, items, 1)
+	assert.Contains(t, items[0].MissingContext[0], "no proof command mapping exists")
+
+	currentDir, err := os.Getwd()
+	require.NoError(t, err)
+	repoRoot, err := filepath.Abs(filepath.Join(currentDir, "..", ".."))
+	require.NoError(t, err)
+	root, ok := smartAccountsProofOpenAccountingRootForPath(filepath.Join(currentDir, "tmp-smartaccounts-proof"))
+	require.True(t, ok)
+	assert.Equal(t, repoRoot, root)
+	root, ok = smartAccountsProofOpenAccountingRootForPath(t.TempDir())
+	assert.False(t, ok)
+	assert.Empty(t, root)
+	tempFile := filepath.Join(t.TempDir(), "proof")
+	require.NoError(t, os.WriteFile(tempFile, []byte("not a dir"), 0o600))
+	root, ok = smartAccountsProofOpenAccountingRootForPath(tempFile)
+	assert.False(t, ok)
+	assert.Empty(t, root)
+	require.NoError(t, rejectSmartAccountsProofPublicWorktreePath(filepath.Join(t.TempDir(), "proof")))
+}
+
 func TestCLIMigrationSmartAccountsSyncErrorPaths(t *testing.T) {
 	configureCLIEnv(t)
 	require.NoError(t, saveConfig(&cliConfig{

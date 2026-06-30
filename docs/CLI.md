@@ -344,6 +344,22 @@ go run ./cmd/oa migration smartaccounts-sync \
 
 `migration smartaccounts-sync` is the preferred next-sync operator command. It prepares a hashed snapshot, validates the prepared bundle with the SmartAccounts provider preset, builds the execution plan, saves a non-mutating dry run through the configured Open Accounting API, writes the full private `smartaccounts-sync-report.json` under `--out-dir`, includes readiness checks plus a parity checklist for the major SmartAccounts proof reports, and prints aggregate status, hashes, paths, checklist counts, and next action guidance. The private report `readiness` section tracks run mechanics; `parity_checklist` tracks each report area with required SmartAccounts evidence, matching Open Accounting evidence, discrepancy risk, blocker status, and next action. It refuses public-worktree snapshot paths through the same snapshot guard. Add `--confirm` only after accountant signoff; confirmed sync executes the prepared imports against the configured tenant. Historical journal imports stay in draft by default; add `--post-journal-entries` only when the reviewed SmartAccounts journal file is complete and should immediately affect GL-based reports such as trial balance, balance sheet, income statement, and indirect cash flow. If `--opening-balance-entry-date` is omitted, it defaults to `--cutover-date`. Use `--json` for machine-readable operator output, and keep that output private because it may include tenant identifiers, private paths, hashes, and run artifact locations.
 
+After a confirmed or dry-run sync has written `smartaccounts-sync-report.json`, generate the private Open Accounting proof command bundle:
+
+```bash
+go run ./cmd/oa migration smartaccounts-proof-plan \
+  --report /path/to/private/smartaccounts/prepared/smartaccounts-sync-report.json \
+  --out-dir /path/to/private/smartaccounts/proof \
+  --as-of YYYY-MM-DD \
+  --start YYYY-MM-DD \
+  --end YYYY-MM-DD \
+  --bank-account-id bank-account-id \
+  --inventory-method weighted-average \
+  --json
+```
+
+`migration smartaccounts-proof-plan` reads the private sync report's `parity_checklist` and writes `smartaccounts-proof-plan.json` plus `open-accounting-proof-commands.sh` under the private `--out-dir`. The generated script collects Open Accounting proof artifacts for trial balance, balance sheet, AR/AP aging and confirmations, income statement, cash flow, bank accounts/transactions/reconciliations, KMD/INF, payroll/TSD, inventory valuation/subledger reconciliation, and fixed assets. The command refuses proof output inside this public Open Accounting worktree. It marks missing context, such as a bank account id needed for bank transaction and reconciliation proof, but it does not mark any parity item as passed; compare the generated artifacts against private SmartAccounts proof reports before updating the private checklist.
+
 The lower-level snapshot tool remains available for debugging or custom manual runbooks:
 
 ```bash

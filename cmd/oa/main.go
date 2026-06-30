@@ -231,6 +231,7 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  webhooks test             Send a test webhook delivery")
 	_, _ = fmt.Fprintln(a.stdout, "  migration presets         List migration provider presets")
 	_, _ = fmt.Fprintln(a.stdout, "  migration smartaccounts-sync  Prepare, validate, plan, and dry-run a SmartAccounts cutover")
+	_, _ = fmt.Fprintln(a.stdout, "  migration smartaccounts-proof-plan  Generate private Open Accounting proof commands from a SmartAccounts sync report")
 	_, _ = fmt.Fprintln(a.stdout, "  migration validate        Validate CSV/XML migration bundle references")
 	_, _ = fmt.Fprintln(a.stdout, "  migration plan            Plan ordered cutover import execution")
 	_, _ = fmt.Fprintln(a.stdout, "  migration execute         Execute ready cutover imports in planned order")
@@ -2101,6 +2102,9 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 
 	case "smartaccounts-sync":
 		return a.runMigrationSmartAccountsSync(ctx, cfg, client, args[1:])
+
+	case "smartaccounts-proof-plan", "smartaccounts-proof":
+		return a.runMigrationSmartAccountsProofPlan(cfg, args[1:])
 
 	case "validate":
 		fs := flag.NewFlagSet("migration validate", flag.ContinueOnError)

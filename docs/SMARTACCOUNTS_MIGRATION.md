@@ -82,6 +82,28 @@ This public runbook does not record tenant amounts or private SmartAccounts file
 - Full SmartAccounts parity remains unproven until private reconciliation compares SmartAccounts trial balance, aged AR/AP, income statement, bank, VAT/KMD, payroll/TSD, inventory, and fixed-asset proof reports against Open Accounting outputs at the same dates and accounting basis.
 - Do not mark a tenant migration complete while reconciliation differences remain or while any needed source export is only summary-level and lacks line-level accounting data.
 
+## Private Proof Plan
+
+Generate the Open Accounting proof command bundle from the private sync report:
+
+```bash
+go run ./cmd/oa migration smartaccounts-proof-plan \
+  --report /path/to/private/smartaccounts/prepared/smartaccounts-sync-report.json \
+  --out-dir /path/to/private/smartaccounts/proof \
+  --as-of YYYY-MM-DD \
+  --start YYYY-MM-DD \
+  --end YYYY-MM-DD \
+  --bank-account-id <open-accounting-bank-account-id> \
+  --inventory-method weighted-average
+```
+
+This writes two private files:
+
+- `smartaccounts-proof-plan.json`: manifest of checklist areas, required Open Accounting evidence, generated command lines, output paths, missing context, and next action.
+- `open-accounting-proof-commands.sh`: executable shell script that runs the Open Accounting report commands and writes JSON/CSV/XML artifacts under `--out-dir`.
+
+The proof-plan command refuses output inside this public Open Accounting worktree. The generated artifacts are Open Accounting evidence only; they still need to be compared with private SmartAccounts proof reports before any checklist item can be marked passed. If the plan reports missing context, supply that context and regenerate the plan before running the script.
+
 ## Manual Snapshot
 
 Use the lower-level commands when debugging one stage of the sync or when preparing a custom bundle.
