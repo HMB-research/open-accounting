@@ -96,6 +96,7 @@ func TestMigrationExecutionStepSpecAdditionalKinds(t *testing.T) {
 		BankTransactionAccountID: "bank-1",
 		BankTransactionFormat:    "lhv",
 		OpeningBalanceEntryDate:  "2026-01-01",
+		PostJournalEntries:       true,
 	}
 	tests := []struct {
 		name       string
@@ -119,7 +120,7 @@ func TestMigrationExecutionStepSpecAdditionalKinds(t *testing.T) {
 		{name: "warehouses", kind: KindWarehouses, wantPath: "/api/v1/tenants/{tenantID}/warehouses/import", wantCLI: "oa inventory warehouses import --file <warehouses.csv>"},
 		{name: "products", kind: KindProducts, wantPath: "/api/v1/tenants/{tenantID}/products/import", wantCLI: "oa inventory products import --file <products.csv>", wantDeps: []FileKind{KindProductCategories, KindContacts}},
 		{name: "fixed assets", kind: KindFixedAssets, wantPath: "/api/v1/tenants/{tenantID}/assets/import", wantCLI: "oa assets import --file <fixed_assets.csv>", wantDeps: []FileKind{KindAccounts, KindContacts, KindInvoices}},
-		{name: "journal entries", kind: KindJournalEntries, wantPath: "/api/v1/tenants/{tenantID}/journal-entries/import", wantCLI: "oa journal import --file <journal_entries.csv>", wantDeps: []FileKind{KindAccounts}},
+		{name: "journal entries", kind: KindJournalEntries, wantPath: "/api/v1/tenants/{tenantID}/journal-entries/import", wantCLI: "oa journal import --file <journal_entries.csv> --post", wantDeps: []FileKind{KindAccounts}},
 		{name: "bank transactions with account", kind: KindBankTransactions, wantPath: "/api/v1/tenants/{tenantID}/bank-accounts/bank-1/import", wantCLI: "oa banking transactions import --account-id bank-1 --file <bank_transactions.csv> --format lhv", wantDeps: []FileKind{KindBankAccounts}},
 		{name: "opening balances with date", kind: KindOpeningBalances, wantPath: "/api/v1/tenants/{tenantID}/journal-entries/import-opening-balances", wantCLI: "oa journal import-opening-balances --entry-date 2026-01-01 --file <opening_balances.csv>", wantDeps: []FileKind{KindAccounts}},
 	}
@@ -134,6 +135,11 @@ func TestMigrationExecutionStepSpecAdditionalKinds(t *testing.T) {
 			assert.NotEmpty(t, spec.message)
 		})
 	}
+
+	draftReq := *req
+	draftReq.PostJournalEntries = false
+	draftSpec := migrationExecutionStepSpec(KindJournalEntries, "journal_entries.csv", &draftReq)
+	assert.Equal(t, "oa journal import --file <journal_entries.csv>", draftSpec.cliCommand)
 }
 
 func TestBuildMigrationExecutionPlanRejectsInvalidOpeningBalanceEntryDate(t *testing.T) {

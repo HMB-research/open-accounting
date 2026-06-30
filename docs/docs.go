@@ -10977,6 +10977,15 @@ const docTemplate = `{
                         "name": "entryID",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Post reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.PostJournalEntryRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -24118,6 +24127,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_accounting.JournalEntryLine"
                     }
                 },
+                "post_reason": {
+                    "type": "string"
+                },
                 "posted_at": {
                     "type": "string"
                 },
@@ -24372,6 +24384,14 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "template_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_HMB-research_open-accounting_internal_accounting.PostJournalEntryRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
                     "type": "string"
                 }
             }
@@ -26435,6 +26455,9 @@ const docTemplate = `{
                 "opening_balance_entry_date": {
                     "type": "string"
                 },
+                "post_journal_entries": {
+                    "type": "boolean"
+                },
                 "provider_preset": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset"
                 },
@@ -26988,6 +27011,9 @@ const docTemplate = `{
                 },
                 "opening_balance_entry_date": {
                     "type": "string"
+                },
+                "post_journal_entries": {
+                    "type": "boolean"
                 },
                 "provider_preset": {
                     "$ref": "#/definitions/github_com_HMB-research_open-accounting_internal_cutover.MigrationProviderPreset"

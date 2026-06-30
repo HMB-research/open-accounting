@@ -33,8 +33,10 @@ go run ./cmd/oa migration smartaccounts-sync \
 ```
 
 The command writes a private `smartaccounts-sync-report.json` under `--out-dir`.
-Add `--confirm` only after accountant review. If `--opening-balance-entry-date`
-is omitted, it defaults to `--cutover-date`.
+Add `--confirm` only after accountant review. Add `--post-journal-entries`
+only when reviewed historical journals should be posted immediately and included
+in GL-based reports. If `--opening-balance-entry-date` is omitted, it defaults
+to `--cutover-date`.
 
 For manual stage debugging, prepare a bundle from a directory of SmartAccounts exports:
 

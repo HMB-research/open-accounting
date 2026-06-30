@@ -4465,6 +4465,8 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
 			assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
+			assert.Equal(t, "auto", req.BankTransactionFormat)
+			assert.True(t, req.PostJournalEntries)
 			require.Len(t, req.Files, 1)
 			_ = json.NewEncoder(w).Encode(cutover.MigrationExecutionPlan{
 				Summary: cutover.MigrationExecutionPlanSummary{ValidationReady: true, Ready: true, StepCount: 1, ReadyStepCount: 1},
@@ -4487,6 +4489,7 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 			assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
 			assert.Equal(t, "auto", req.BankTransactionFormat)
 			assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
+			assert.True(t, req.PostJournalEntries)
 			require.Len(t, req.Files, 1)
 			_ = json.NewEncoder(w).Encode(cutover.MigrationExecutionRun{
 				ID: "run-1",
@@ -4516,6 +4519,7 @@ func TestCLIMigrationSmartAccountsSyncCommand(t *testing.T) {
 		"--company-id", "12345678",
 		"--company-name", "Example Export OU",
 		"--cutover-date", "2026-01-01",
+		"--post-journal-entries",
 	})
 	require.NoError(t, err)
 	assert.True(t, called["validate"])
@@ -4800,6 +4804,7 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 	bankAccountsFile := writeTempCSV(t, "bank-accounts.csv", "name,account_number\nMain bank,EE471000001020145685\n")
 	bankFile := writeTempCSV(t, "bank.csv", "date,amount,description\n2026-05-31,100,Customer receipt\n")
 	openingFile := writeTempCSV(t, "opening.csv", "account_code,debit,credit\n1000,100,0\n3000,0,100\n")
+	journalFile := writeTempCSV(t, "journal.csv", "entry_reference,entry_date,account_code,debit,credit\nSA-1,2026-05-31,1000,100,0\nSA-1,2026-05-31,3000,0,100\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -4814,22 +4819,24 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 		assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
 		assert.Equal(t, "bank-1", req.BankTransactionAccountID)
 		assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
-		require.Len(t, req.Files, 4)
+		assert.True(t, req.PostJournalEntries)
+		require.Len(t, req.Files, 5)
 		assert.Equal(t, cutover.KindAccounts, req.Files[0].Kind)
 		assert.Equal(t, cutover.KindBankAccounts, req.Files[1].Kind)
 		assert.Equal(t, cutover.KindBankTransactions, req.Files[2].Kind)
 		assert.Equal(t, cutover.KindOpeningBalances, req.Files[3].Kind)
+		assert.Equal(t, cutover.KindJournalEntries, req.Files[4].Kind)
 
 		_ = json.NewEncoder(w).Encode(cutover.MigrationExecutionPlan{
 			Summary: cutover.MigrationExecutionPlanSummary{
 				ValidationReady:   true,
 				Ready:             false,
-				StepCount:         4,
-				ReadyStepCount:    3,
+				StepCount:         5,
+				ReadyStepCount:    4,
 				NeedsContextCount: 1,
 			},
 			Validation: cutover.BundleValidationReport{
-				Summary: cutover.BundleValidationSummary{FilesValidated: 4, RowsValidated: 6, Ready: true},
+				Summary: cutover.BundleValidationSummary{FilesValidated: 5, RowsValidated: 8, Ready: true},
 			},
 			Steps: []cutover.MigrationExecutionStep{
 				{
@@ -4868,6 +4875,15 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 					APIPath:    "/api/v1/tenants/{tenantID}/journal-entries/import-opening-balances",
 					CLICommand: "oa journal import-opening-balances --entry-date 2026-01-01 --file <opening.csv>",
 				},
+				{
+					StepNumber: 5,
+					Kind:       cutover.KindJournalEntries,
+					FileName:   "journal.csv",
+					Status:     cutover.MigrationExecutionStepReady,
+					DependsOn:  []cutover.FileKind{cutover.KindAccounts},
+					APIPath:    "/api/v1/tenants/{tenantID}/journal-entries/import",
+					CLICommand: "oa journal import --file <journal.csv> --post",
+				},
 			},
 			RemediationActions: []cutover.MigrationRemediationAction{{
 				Code:           "ready_to_import",
@@ -4892,6 +4908,8 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 		"--bank-transaction-account-id", "bank-1",
 		"--opening-balances", openingFile,
 		"--opening-balance-entry-date", "2026-01-01",
+		"--journal", journalFile,
+		"--post-journal-entries",
 		"--e-invoice-invoice-type", "purchase",
 		"--provider-preset", "smartaccounts",
 	})
@@ -4900,6 +4918,7 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 	assert.Contains(t, stdout.String(), "NEEDS_CONTEXT")
 	assert.Contains(t, stdout.String(), "bank_transaction_account_id")
 	assert.Contains(t, stdout.String(), "oa journal import-opening-balances --entry-date 2026-01-01")
+	assert.Contains(t, stdout.String(), "oa journal import --file <journal.csv> --post")
 	assert.Contains(t, stdout.String(), "migration:ready-to-import:-:-:-:-")
 
 	stdout.Reset()
@@ -4911,6 +4930,8 @@ func TestCLIMigrationExecutionPlanCommand(t *testing.T) {
 		"--bank-transaction-account-id", "bank-1",
 		"--opening-balances", openingFile,
 		"--opening-balance-entry-date", "2026-01-01",
+		"--journal", journalFile,
+		"--post-journal-entries",
 		"--e-invoice-invoice-type", "purchase",
 		"--provider-preset", "smartaccounts",
 		"--json",
@@ -4974,7 +4995,9 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 			assert.Equal(t, cutover.MigrationProviderPresetSmartAccounts, req.ProviderPreset)
 			assert.Equal(t, "PURCHASE", req.EInvoiceInvoiceType)
 			assert.Equal(t, "bank-1", req.BankTransactionAccountID)
+			assert.Equal(t, "generic", req.BankTransactionFormat)
 			assert.Equal(t, "2026-01-01", req.OpeningBalanceEntryDate)
+			assert.True(t, req.PostJournalEntries)
 			require.Len(t, req.Files, len(expectedImportPaths))
 			_ = json.NewEncoder(w).Encode(migrationExecuteReadyPlan(req.Files))
 			return
@@ -5026,6 +5049,11 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(t, "2026-01-01", req.EntryDate)
 			assert.Equal(t, "OB-2026", req.Reference)
+		case "/api/v1/tenants/tenant-1/journal-entries/import":
+			var req accounting.ImportJournalEntriesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "journal.csv", req.FileName)
+			assert.True(t, req.PostEntries)
 		default:
 			var req map[string]any
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -5069,6 +5097,7 @@ func TestCLIMigrationExecuteCommand(t *testing.T) {
 		"--opening-balances", files[cutover.KindOpeningBalances],
 		"--opening-balance-entry-date", "2026-01-01",
 		"--journal", files[cutover.KindJournalEntries],
+		"--post-journal-entries",
 		"--provider-preset", "smartaccounts",
 		"--confirm",
 		"--json",

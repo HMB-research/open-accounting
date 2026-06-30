@@ -586,7 +586,7 @@ func TestHandlerMigrationStepExecutorRepositoryBackedImportBranches(t *testing.T
 			name: "journal entries",
 			step: cutover.MigrationExecutionStep{Kind: cutover.KindJournalEntries},
 			file: cutover.BundleFile{Kind: cutover.KindJournalEntries, FileName: "journal.csv", CSVContent: "entry_reference,entry_date,entry_description,account_code,line_description,debit,credit\nJE-1,2026-03-31,Adjustment,1000,Cash,10,0\nJE-1,2026-03-31,Adjustment,3000,Equity,0,10\n"},
-			req:  &cutover.ExecuteMigrationRequest{},
+			req:  &cutover.ExecuteMigrationRequest{PostJournalEntries: true},
 		},
 	}
 
@@ -596,6 +596,12 @@ func TestHandlerMigrationStepExecutorRepositoryBackedImportBranches(t *testing.T
 
 			require.NoError(t, err)
 			assert.NotNil(t, result)
+			if tt.step.Kind == cutover.KindJournalEntries {
+				importResult, ok := result.(*accounting.ImportJournalEntriesResult)
+				require.True(t, ok)
+				require.Len(t, importResult.JournalEntries, 1)
+				assert.Equal(t, accounting.StatusPosted, importResult.JournalEntries[0].Status)
+			}
 		})
 	}
 }

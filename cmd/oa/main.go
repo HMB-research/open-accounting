@@ -2226,6 +2226,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 		openingBalancesFile := fs.String("opening-balances", "", "Opening balances CSV file")
 		openingBalanceEntryDate := fs.String("opening-balance-entry-date", "", "Opening balance journal entry date in YYYY-MM-DD")
 		journalFile := fs.String("journal", "", "Historical journal CSV file")
+		postJournalEntries := fs.Bool("post-journal-entries", false, "Post imported historical journal entries immediately instead of leaving them draft")
 		asJSON := fs.Bool("json", false, "Output JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -2276,6 +2277,7 @@ func (a *cliApp) runMigration(ctx context.Context, args []string) error {
 			ProviderPreset:           cutover.MigrationProviderPreset(strings.TrimSpace(*providerPreset)),
 			BankTransactionAccountID: strings.TrimSpace(*bankTransactionAccountID),
 			OpeningBalanceEntryDate:  strings.TrimSpace(*openingBalanceEntryDate),
+			PostJournalEntries:       *postJournalEntries,
 		})
 		if err != nil {
 			return err

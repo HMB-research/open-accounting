@@ -23,6 +23,7 @@ type ExecuteMigrationRequest struct {
 	BankTransactionAccountID string                  `json:"bank_transaction_account_id,omitempty"`
 	BankTransactionFormat    string                  `json:"bank_transaction_format,omitempty"`
 	OpeningBalanceEntryDate  string                  `json:"opening_balance_entry_date,omitempty"`
+	PostJournalEntries       bool                    `json:"post_journal_entries,omitempty"`
 	Confirm                  bool                    `json:"confirm,omitempty"`
 	ResumeFromRun            *MigrationExecutionRun  `json:"resume_from_run,omitempty"`
 	ResumeFromRunID          string                  `json:"resume_from_run_id,omitempty"`
@@ -41,6 +42,7 @@ func NewStoredMigrationExecutionRequest(req *ExecuteMigrationRequest) *ExecuteMi
 		BankTransactionAccountID: req.BankTransactionAccountID,
 		BankTransactionFormat:    req.BankTransactionFormat,
 		OpeningBalanceEntryDate:  req.OpeningBalanceEntryDate,
+		PostJournalEntries:       req.PostJournalEntries,
 	}
 }
 
@@ -49,6 +51,7 @@ func MergeSavedMigrationExecutionRequest(req *ExecuteMigrationRequest, saved *Ex
 	if req == nil || saved == nil {
 		return
 	}
+	hasRequestFiles := len(req.Files) > 0
 	if len(req.Files) == 0 && len(saved.Files) > 0 {
 		req.Files = cloneMigrationBundleFiles(saved.Files)
 	}
@@ -70,6 +73,9 @@ func MergeSavedMigrationExecutionRequest(req *ExecuteMigrationRequest, saved *Ex
 	if req.OpeningBalanceEntryDate == "" {
 		req.OpeningBalanceEntryDate = saved.OpeningBalanceEntryDate
 	}
+	if !hasRequestFiles && !req.PostJournalEntries {
+		req.PostJournalEntries = saved.PostJournalEntries
+	}
 }
 
 func cloneMigrationBundleFiles(files []BundleFile) []BundleFile {
@@ -90,6 +96,7 @@ func (r ExecuteMigrationRequest) PlanRequest() *PlanMigrationExecutionRequest {
 		BankTransactionAccountID: r.BankTransactionAccountID,
 		BankTransactionFormat:    r.BankTransactionFormat,
 		OpeningBalanceEntryDate:  r.OpeningBalanceEntryDate,
+		PostJournalEntries:       r.PostJournalEntries,
 	}
 }
 

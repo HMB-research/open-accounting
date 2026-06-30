@@ -36,6 +36,7 @@ type smartAccountsSyncExecutionContext struct {
 	EInvoiceContactMode      string `json:"e_invoice_contact_mode,omitempty"`
 	EInvoiceInvoiceType      string `json:"e_invoice_invoice_type,omitempty"`
 	OpeningBalanceEntryDate  string `json:"opening_balance_entry_date,omitempty"`
+	PostJournalEntries       bool   `json:"post_journal_entries,omitempty"`
 }
 
 type smartAccountsSyncReconciliationTarget struct {
@@ -102,6 +103,7 @@ func (a *cliApp) runMigrationSmartAccountsSync(ctx context.Context, cfg *cliConf
 	eInvoiceContactMode := fs.String("e-invoice-contact-mode", string(cutover.EInvoiceContactModeSupplier), "E-invoice contact validation mode: supplier, customer, or both")
 	eInvoiceInvoiceType := fs.String("e-invoice-invoice-type", "", "Override e-invoice invoice type: SALES, PURCHASE, or CREDIT_NOTE")
 	openingBalanceEntryDate := fs.String("opening-balance-entry-date", "", "Opening balance journal entry date in YYYY-MM-DD; defaults to --cutover-date when omitted")
+	postJournalEntries := fs.Bool("post-journal-entries", false, "Post imported historical journal entries during confirmed execution")
 	confirm := fs.Bool("confirm", false, "Execute imports after preparation, validation, and planning; default saves a dry run only")
 	asJSON := fs.Bool("json", false, "Output operator JSON summary; treat as private because it includes paths, hashes, and tenant context")
 	if err := fs.Parse(args); err != nil {
@@ -131,6 +133,7 @@ func (a *cliApp) runMigrationSmartAccountsSync(ctx context.Context, cfg *cliConf
 			EInvoiceContactMode:      strings.TrimSpace(*eInvoiceContactMode),
 			EInvoiceInvoiceType:      string(invoiceType),
 			OpeningBalanceEntryDate:  openingDate,
+			PostJournalEntries:       *postJournalEntries,
 		},
 		Reconciliation: smartAccountsSyncReconciliationTargets(),
 	}
@@ -169,7 +172,9 @@ func (a *cliApp) runMigrationSmartAccountsSync(ctx context.Context, cfg *cliConf
 		EInvoiceInvoiceType:      report.Context.EInvoiceInvoiceType,
 		ProviderPreset:           cutover.MigrationProviderPresetSmartAccounts,
 		BankTransactionAccountID: report.Context.BankTransactionAccountID,
+		BankTransactionFormat:    report.Context.BankTransactionFormat,
 		OpeningBalanceEntryDate:  report.Context.OpeningBalanceEntryDate,
+		PostJournalEntries:       report.Context.PostJournalEntries,
 	})
 	if err != nil {
 		report.ExecutionError = err.Error()
@@ -187,6 +192,7 @@ func (a *cliApp) runMigrationSmartAccountsSync(ctx context.Context, cfg *cliConf
 		BankTransactionAccountID: report.Context.BankTransactionAccountID,
 		BankTransactionFormat:    report.Context.BankTransactionFormat,
 		OpeningBalanceEntryDate:  report.Context.OpeningBalanceEntryDate,
+		PostJournalEntries:       report.Context.PostJournalEntries,
 	})
 	if err != nil {
 		report.ExecutionError = err.Error()
