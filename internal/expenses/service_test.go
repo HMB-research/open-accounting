@@ -263,10 +263,11 @@ func TestBuildExpenseRemediationActions(t *testing.T) {
 				assert.Equal(t, "expenses", action.Scope)
 				assert.Equal(t, "accountant", action.OwnerRole)
 				assert.Equal(t, "expense", action.EntityType)
+				assert.Equal(t, tt.exp.ID, action.EntityID)
 				assert.NotEmpty(t, action.Message)
 				assert.NotEmpty(t, action.Action)
 				assert.NotEmpty(t, action.CLICommand)
-				assert.Contains(t, action.UIPath, "/expenses")
+				assert.Equal(t, "/dashboard", action.UIPath)
 				assert.Equal(t, "expense_claims", action.WorkspaceQueue)
 				assert.NotEmpty(t, action.AssignmentKey)
 				assert.NotEmpty(t, action.Priority)
@@ -289,7 +290,8 @@ func TestBuildExpenseRemediationActionsFallbackIdentifiers(t *testing.T) {
 
 	require.Len(t, actions, 1)
 	assert.Equal(t, "expense_submit_for_approval", actions[0].Code)
-	assert.Equal(t, "/expenses", actions[0].UIPath)
+	assert.Equal(t, "/dashboard", actions[0].UIPath)
+	assert.Empty(t, actions[0].EntityID)
 	assert.Contains(t, actions[0].Message, "<expense-id>")
 	assert.Contains(t, actions[0].CLICommand, "<expense-id>")
 }

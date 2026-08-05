@@ -236,6 +236,83 @@ describe('review workspace helpers', () => {
 		);
 	});
 
+	it('includes journal evidence follow-ups for pending, rejected, and unapproved documents', async () => {
+		apiMock.listJournalEntries.mockResolvedValue([
+			{
+				id: 'je-pending',
+				entry_date: '2026-01-31',
+				status: 'DRAFT',
+				requires_evidence: true,
+			},
+			{
+				id: 'je-rejected',
+				entry_date: '2026-02-28',
+				status: 'DRAFT',
+				requires_evidence: true,
+			},
+			{
+				id: 'je-unapproved',
+				entry_date: '2026-03-31',
+				status: 'DRAFT',
+				requires_evidence: true,
+			},
+		]);
+		apiMock.listDocumentReviewSummaries.mockResolvedValue([
+			{
+				entity_type: 'journal_entry',
+				entity_id: 'je-pending',
+				total_count: 1,
+				pending_review_count: 1,
+				reviewed_count: 0,
+				approved_count: 1,
+				rejected_count: 0,
+				missing_evidence: false,
+				has_pending_review: true,
+				has_rejected: false,
+			},
+			{
+				entity_type: 'journal_entry',
+				entity_id: 'je-rejected',
+				total_count: 1,
+				pending_review_count: 0,
+				reviewed_count: 1,
+				approved_count: 1,
+				rejected_count: 1,
+				missing_evidence: false,
+				has_pending_review: false,
+				has_rejected: true,
+			},
+			{
+				entity_type: 'journal_entry',
+				entity_id: 'je-unapproved',
+				total_count: 1,
+				pending_review_count: 0,
+				reviewed_count: 1,
+				approved_count: 0,
+				rejected_count: 0,
+				missing_evidence: false,
+				has_pending_review: false,
+				has_rejected: false,
+			},
+		]);
+
+		const snapshot = await loadTenantReviewSnapshot({
+			id: 'tenant-1',
+			settings: { fiscal_year_start_month: 1 },
+		} as never);
+
+		expect(apiMock.listDocumentReviewSummaries).toHaveBeenCalledWith(
+			'tenant-1',
+			'journal_entry',
+			['je-pending', 'je-rejected', 'je-unapproved'],
+		);
+		expect(snapshot.journalEvidence.map((item) => item.entry.id)).toEqual([
+			'je-unapproved',
+			'je-rejected',
+			'je-pending',
+		]);
+	});
+
 	it('counts failed snapshot loaders without blocking the review workspace', async () => {
 		apiMock.getOverdueInvoices.mockRejectedValue(new Error('overdue unavailable'));
 		apiMock.listBankAccounts.mockRejectedValue(new Error('accounts unavailable'));
@@ -294,6 +371,14 @@ describe('review workspace helpers', () => {
 			{
 				id: 'expense-2',
 				remediation_actions: [
+					remediationAction({
+						code: 'expense_blocker_defaults',
+						severity: 'BLOCKER',
+						workspace_queue: 'expense_review',
+						assignment_key: 'expense:blocker',
+						message: 'Expense is blocked from posting.',
+						action: 'Resolve the expense blocker.'
+					}),
 					remediationAction({
 						code: 'expense_deferred_priority',
 						severity: 'WARN',
@@ -365,6 +450,11 @@ describe('review workspace helpers', () => {
 					code: 'expense_error_defaults',
 					priority: 'high',
 					dueInDays: 1
+				}),
+				expect.objectContaining({
+					code: 'expense_blocker_defaults',
+					priority: 'high',
+					dueInDays: 1,
 				}),
 				expect.objectContaining({
 					code: 'payroll_info_defaults',

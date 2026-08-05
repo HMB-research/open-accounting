@@ -111,6 +111,7 @@ test.describe("Demo Settings", () => {
     const expectedCardTargets = [
       "/settings/company",
       "/settings/email",
+      "/settings/reminders",
       "/settings/plugins",
       "/settings/interest",
       "/settings/audit",

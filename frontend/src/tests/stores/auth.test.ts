@@ -221,4 +221,25 @@ describe('authStore', () => {
 			expect(get(isAuthenticated)).toBe(false);
 		});
 	});
+
+	it('does not access browser storage during SSR', async () => {
+		vi.doMock('$app/environment', () => ({ browser: false }));
+
+		const { authStore } = await import('$lib/stores/auth');
+
+		authStore.setTokens('ssr-access', 'ssr-refresh', true);
+		authStore.updateAccessToken('ssr-updated');
+		authStore.clearTokens();
+
+		expect(localStorage.setItem).not.toHaveBeenCalled();
+		expect(localStorage.removeItem).not.toHaveBeenCalled();
+		expect(sessionStorage.setItem).not.toHaveBeenCalled();
+		expect(sessionStorage.removeItem).not.toHaveBeenCalled();
+		expect(get(authStore)).toEqual({
+			isAuthenticated: false,
+			accessToken: null,
+			refreshToken: null,
+			rememberMe: false,
+		});
+	});
 });

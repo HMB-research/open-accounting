@@ -1,18 +1,19 @@
 # Frontend Test Coverage Status
 
-> Last Updated: 2026-06-14
-> Unit Tests: 572 tests across 32 files
-> E2E Tests: 33 demo spec files plus 1 blocking smoke spec
+> Last Updated: 2026-08-05
+> Unit Tests: 681 tests across 34 files
+> E2E Tests: 65 demo spec files plus 1 blocking smoke spec
 
 ## Quick Stats
 
 | Metric | Current | Target |
 |--------|---------|--------|
-| Unit Test Files | 32 | Keep current with new shared UI and API-client behavior |
-| Unit Tests | 572 | Keep increasing with every frontend workflow change |
+| Unit Test Files | 34 | Keep current with new shared UI and API-client behavior |
+| Unit Tests | 681 | Keep increasing with every frontend workflow change |
 | Component Inventory | 20/20 shared components tested | Maintain |
 | Utility Coverage | dates, formatting, tenant tested | Maintain |
 | Store Coverage | auth store tested | Maintain |
+| Latest Vitest coverage | 100% statements/functions/lines, 96.70% branches | Keep branch gaps explicit |
 
 ## Unit Test Coverage
 
@@ -68,14 +69,19 @@ All tracked shared components currently have focused component tests.
 
 The local seeded demo suite is the authoritative UI workflow gate. Current inventory:
 
-- 33 files under `frontend/e2e/demo/*.spec.ts`
+- 65 files under `frontend/e2e/demo/*.spec.ts`
 - 1 blocking smoke file under `frontend/e2e/smoke/*.spec.ts`
 - `auth.setup.ts` prepares reusable demo-user auth state for demo and smoke projects
 - The full demo project is sharded across 4 CI workers
 
 Covered demo workflow files include:
 
-`absences`, `accounts`, `balance-confirmations`, `bank-import`, `banking`, `cash-flow`, `cash-payments`, `contacts`, `cost-centers`, `dashboard`, `data-verification`, `documents`, `email-settings`, `employees`, `fixed-assets`, `inventory`, `invoices`, `journal`, `mobile`, `orders`, `payment-reminders`, `payments`, `payroll`, `plugins-settings`, `quotes`, `recurring`, `reports`, `reset`, `salary-calculator`, `settings`, `tax-overview`, `tsd`, and `vat-returns`.
+`absences`, `accounts`, `accountant-workspace`, `balance-confirmations`, `bank-import`, `banking`, `cash-flow`, `cash-payments`, `contacts`, `cost-centers`, `dashboard`, `data-verification`, `documents`, `email-settings`, `employees`, `fixed-assets`, `inventory`, `invoices`, `journal`, `mobile`, `orders`, `payment-reminders`, `payments`, `payroll`, `plugins-settings`, `quotes`, `recurring`, `reports`, `reset`, `salary-calculator`, `settings`, `tax-overview`, `tsd`, and `vat-returns`.
+
+The dashboard's `/tax` entry point is a compatibility redirect to the canonical
+`/vat-returns` workflow. The accountant-workspace spec verifies the mounted
+assignment queue, tenant-scoped destinations, and that remediation links do not
+point at removed `/expenses` or `/tax/*` routes.
 
 ## Running Tests
 
@@ -105,6 +111,7 @@ Run Paraglide/SvelteKit-writing gates serially. `check`, `test`, and `build` can
 
 | Date | Change | Tests Added |
 |------|--------|-------------|
+| 2026-08-05 | Closed API/auth/review-workspace branch gaps, added dashboard accountant-workspace route coverage, and consolidated the legacy tax route into the canonical VAT workflow | Targeted cases |
 | 2026-06-10 | Completed shared component inventory coverage for activity feed, contact modal, generic modal, and line-item editor; removed non-reactive line-item bindings | 15 tests |
 | 2026-06-10 | Added shared UI control coverage for date ranges, periods, export, and status badges; fixed local-date range formatting | 10 tests |
 | 2026-06-10 | Refreshed frontend test inventory from the current tree | 0 |

@@ -341,8 +341,10 @@ git push origin feature/your-feature
 
 ### Contributors
 
-Contributor attribution is normalized through [`.mailmap`](.mailmap).
-Use `make verify-contributors` to verify the canonical contributor list.
+Contributor attribution is verified from raw commit metadata and commit messages;
+generated assistant identities must not appear in contributor history. Use
+`make verify-contributors` to verify the repository's contributor-attribution
+policy before pushing.
 
 ---
 
