@@ -444,3 +444,25 @@ func TestRunAffectedTestsScriptSelectsFrontendChangedTests(t *testing.T) {
 		t.Fatalf("unexpected frontend affected tests:\nwant: %s\ngot:\n%s", expected, output)
 	}
 }
+
+func TestRunAffectedTestsScriptUsesSerialFrontendLane(t *testing.T) {
+	script := readDoc(t, "../scripts/run-affected-tests.sh")
+
+	for _, snippet := range []string{
+		"frontend_commands=()",
+		"parallel_pids=()",
+		"status=0",
+		`if [[ "$command" == cd\ frontend\ \&\&\ * ]]; then`,
+		`frontend_commands+=("$command")`,
+		`run_command "$command" &`,
+		`for command in "${frontend_commands[@]}"; do`,
+		"status=1",
+		`for pid in "${parallel_pids[@]}"; do`,
+		`if ! wait "$pid"; then`,
+		`exit "$status"`,
+	} {
+		if !strings.Contains(script, snippet) {
+			t.Fatalf("affected-test runner missing lane-control snippet %q", snippet)
+		}
+	}
+}

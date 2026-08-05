@@ -284,7 +284,43 @@ if [ "$list_only" = true ]; then
 	exit 0
 fi
 
-while IFS= read -r command; do
+# Backend, documentation, migration, and coverage commands do not share the
+# frontend's generated files, so start them together. Keep every frontend
+# command in one serial lane because Paraglide and SvelteKit write shared
+# generated state.
+run_command() {
+	local command="$1"
 	echo "+ $command"
 	bash -lc "$command"
+}
+
+frontend_commands=()
+parallel_pids=()
+status=0
+
+while IFS= read -r command; do
+	[ -z "$command" ] && continue
+
+	if [[ "$command" == cd\ frontend\ \&\&\ * ]]; then
+		frontend_commands+=("$command")
+		continue
+	fi
+
+	run_command "$command" &
+	parallel_pids+=("$!")
 done < "$commands_tmp"
+
+for command in "${frontend_commands[@]}"; do
+	if ! run_command "$command"; then
+		status=1
+		break
+	fi
+done
+
+for pid in "${parallel_pids[@]}"; do
+	if ! wait "$pid"; then
+		status=1
+	fi
+done
+
+exit "$status"
