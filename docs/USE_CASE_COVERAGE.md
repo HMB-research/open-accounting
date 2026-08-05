@@ -17,12 +17,13 @@ Status values:
 
 ## Current Evidence Baseline
 
-- Latest verified baseline reviewed on 2026-08-05: backend coverage is 100.0% statements (`46539/46539`, zero missed statements), frontend coverage is 100.0% statements/functions/lines and 96.70% branches across 681 frontend tests in 34 files, and the docs gate is passing.
+- Latest verified CI baseline reviewed on 2026-08-05: backend coverage is 100.0% statements (`46630/46630`, zero missed statements), frontend coverage is 99.9% statements, 100% functions, 99.9% lines, and 96.97% branches across 686 frontend tests in 35 files, and the docs gate is passing.
 - The seeded demo inventory includes 65 workflow specs plus 1 blocking smoke spec. Accountant-workspace route contracts and the legacy `/tax` compatibility redirect are covered; mutating assignment execution still depends on the focused component/API tests and broader seeded data scenarios.
 - `make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.
 - `make test-backend-coverage` verifies the backend at 100.0% statement coverage and keeps the CLI package inside the same blocking coverage gate.
 - `go test -timeout=3m ./docs -count=1` keeps the documentation status, route coverage, and link checks active.
-- Broad workflow proof is summarized by matrix area instead of by per-stage pull-request history. The active broad gates remain lint, backend unit/race tests, integration shards, frontend lint/check/test/build, smoke E2E, and seeded demo E2E shards.
+- Broad workflow proof is summarized by matrix area instead of by per-stage pull-request history. The active broad gates remain lint, backend unit/race tests, integration shards, frontend lint/check/test/build, smoke E2E, and seeded demo E2E shards, all passing in [CI run 31005894159](https://github.com/HMB-research/open-accounting/actions/runs/31005894159); exact backend and frontend coverage gates passed in [coverage run 31005894127](https://github.com/HMB-research/open-accounting/actions/runs/31005894127).
+- Payment creation, import, allocation, and reversal are covered as atomic invoice paid-state workflows with row-locked concurrent invoice payment handling.
 
 ## Matrix
 
