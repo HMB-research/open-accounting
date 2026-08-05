@@ -4752,11 +4752,11 @@ func cutoverInvoiceIssueDateFromRow(row parsedRow) (time.Time, bool) {
 	if value == "" {
 		return time.Time{}, false
 	}
-	parsed, err := time.Parse("2006-01-02", value)
-	if err != nil {
+	parsed, ok := parseCutoverDateValue(value, "2006-01-02")
+	if !ok {
 		return time.Time{}, false
 	}
-	return normalizeCutoverDateOnly(parsed), true
+	return parsed, true
 }
 
 func groupedDocumentKey(row parsedRow, spec groupedDocumentSpec) (string, string, bool) {
@@ -4861,8 +4861,8 @@ func normalizeCutoverUpper(value string) string {
 
 func normalizeCutoverDate(value string) string {
 	trimmed := strings.TrimSpace(value)
-	parsed, err := time.Parse("2006-01-02", trimmed)
-	if err != nil {
+	parsed, ok := parseCutoverDateValue(trimmed, "2006-01-02")
+	if !ok {
 		return trimmed
 	}
 	return parsed.Format("2006-01-02")
@@ -5244,14 +5244,7 @@ func checkEmployeeDateValue(report *BundleValidationReport, file parsedFile, row
 }
 
 func parseEmployeeCutoverDate(value string) (time.Time, bool) {
-	trimmed := strings.TrimSpace(value)
-	for _, layout := range []string{"2006-01-02", time.RFC3339, "02.01.2006"} {
-		parsed, err := time.Parse(layout, trimmed)
-		if err == nil {
-			return normalizeCutoverDateOnly(parsed), true
-		}
-	}
-	return time.Time{}, false
+	return parseCutoverDateValue(value, "2006-01-02", time.RFC3339, "02.01.2006")
 }
 
 func checkPayrollHistoryRows(report *BundleValidationReport, file parsedFile) {
@@ -6169,8 +6162,8 @@ func checkCommercialRequiredDate(report *BundleValidationReport, file parsedFile
 		})
 		return time.Time{}, false
 	}
-	parsed, err := time.Parse("2006-01-02", value)
-	if err != nil {
+	parsed, ok := parseCutoverDateValue(value, "2006-01-02")
+	if !ok {
 		report.addIssue(ValidationIssue{
 			Severity: SeverityError,
 			Kind:     file.kind,
@@ -6182,7 +6175,7 @@ func checkCommercialRequiredDate(report *BundleValidationReport, file parsedFile
 		})
 		return time.Time{}, false
 	}
-	return normalizeCutoverDateOnly(parsed), true
+	return parsed, true
 }
 
 func checkCommercialOptionalDate(report *BundleValidationReport, file parsedFile, row parsedRow, field string) (time.Time, bool) {
@@ -6193,8 +6186,8 @@ func checkCommercialOptionalDate(report *BundleValidationReport, file parsedFile
 	if value == "" {
 		return time.Time{}, false
 	}
-	parsed, err := time.Parse("2006-01-02", value)
-	if err != nil {
+	parsed, ok := parseCutoverDateValue(value, "2006-01-02")
+	if !ok {
 		report.addIssue(ValidationIssue{
 			Severity: SeverityError,
 			Kind:     file.kind,
@@ -6206,7 +6199,7 @@ func checkCommercialOptionalDate(report *BundleValidationReport, file parsedFile
 		})
 		return time.Time{}, false
 	}
-	return normalizeCutoverDateOnly(parsed), true
+	return parsed, true
 }
 
 func checkCommercialStatus(
@@ -6691,7 +6684,7 @@ func checkCutoverOptionalDate(report *BundleValidationReport, file parsedFile, r
 		return
 	}
 	value := strings.TrimSpace(row.values[field])
-	if _, err := time.Parse("2006-01-02", value); err != nil {
+	if _, ok := parseCutoverDateValue(value, "2006-01-02"); !ok {
 		report.addIssue(ValidationIssue{
 			Severity: SeverityError,
 			Kind:     file.kind,
@@ -6970,12 +6963,8 @@ func checkFixedAssetOptionalDate(report *BundleValidationReport, file parsedFile
 }
 
 func isFixedAssetCutoverDate(value string) bool {
-	for _, layout := range []string{"2006-01-02", time.RFC3339, "2006-01-02 15:04:05"} {
-		if _, err := time.Parse(layout, value); err == nil {
-			return true
-		}
-	}
-	return false
+	_, ok := parseCutoverDateValue(value, "2006-01-02", time.RFC3339, "2006-01-02 15:04:05")
+	return ok
 }
 
 func checkFixedAssetDisposalMethod(report *BundleValidationReport, file parsedFile, row parsedRow) {
@@ -7148,7 +7137,7 @@ func checkCostAllocationDate(report *BundleValidationReport, file parsedFile, ro
 		})
 		return
 	}
-	if _, err := time.Parse("2006-01-02", value); err != nil {
+	if _, ok := parseCutoverDateValue(value, "2006-01-02"); !ok {
 		report.addIssue(ValidationIssue{
 			Severity: SeverityError,
 			Kind:     file.kind,
@@ -7430,14 +7419,7 @@ func checkPaymentDate(report *BundleValidationReport, file parsedFile, row parse
 }
 
 func parseCutoverDateOrRFC3339(value string) (time.Time, bool) {
-	trimmed := strings.TrimSpace(value)
-	if parsed, err := time.Parse("2006-01-02", trimmed); err == nil {
-		return normalizeCutoverDateOnly(parsed), true
-	}
-	if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
-		return normalizeCutoverDateOnly(parsed), true
-	}
-	return time.Time{}, false
+	return parseCutoverDateValue(value, "2006-01-02", time.RFC3339)
 }
 
 func checkPaymentExchangeRate(report *BundleValidationReport, file parsedFile, row parsedRow) {
@@ -7585,7 +7567,7 @@ func checkBankTransactionDate(report *BundleValidationReport, file parsedFile, r
 		})
 		return
 	}
-	if _, err := time.Parse("2006-01-02", value); err == nil {
+	if _, ok := parseCutoverDateValue(value, "2006-01-02"); ok {
 		return
 	}
 	report.addIssue(ValidationIssue{
@@ -7933,11 +7915,22 @@ func parseCutoverEntryDate(value string) (string, *cutoverAmountIssue) {
 	if trimmed == "" {
 		return "", &cutoverAmountIssue{field: "entry_date", message: "entry_date is required"}
 	}
-	parsed, err := time.Parse("2006-01-02", trimmed)
-	if err != nil {
+	parsed, ok := parseCutoverDateValue(trimmed, "2006-01-02")
+	if !ok {
 		return "", &cutoverAmountIssue{field: "entry_date", value: trimmed, message: "entry_date must be in YYYY-MM-DD format"}
 	}
 	return parsed.Format("2006-01-02"), nil
+}
+
+func parseCutoverDateValue(value string, layouts ...string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	for _, layout := range layouts {
+		parsed, err := time.Parse(layout, trimmed)
+		if err == nil {
+			return normalizeCutoverDateOnly(parsed), true
+		}
+	}
+	return time.Time{}, false
 }
 
 func cutoverAmountValidationIssue(file parsedFile, row parsedRow, amountIssue cutoverAmountIssue) ValidationIssue {
@@ -7980,13 +7973,8 @@ func normalizeCutoverImportDecimal(value string) string {
 }
 
 func isCutoverDateOrRFC3339(value string) bool {
-	if _, err := time.Parse("2006-01-02", value); err == nil {
-		return true
-	}
-	if _, err := time.Parse(time.RFC3339, value); err == nil {
-		return true
-	}
-	return false
+	_, ok := parseCutoverDateValue(value, "2006-01-02", time.RFC3339)
+	return ok
 }
 
 func normalizedCutoverStatus(value string) string {

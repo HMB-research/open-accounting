@@ -79,15 +79,30 @@ func TestSwaggerDocumentsAllSourceRoutes(t *testing.T) {
 func collectSourceRoutes(t *testing.T) []documentedRoute {
 	t.Helper()
 
-	sourcePath := filepath.Join("..", "cmd", "api", "main.go")
-	fileSet := token.NewFileSet()
-	file, err := parser.ParseFile(fileSet, sourcePath, nil, 0)
+	sourceDir := filepath.Join("..", "cmd", "api")
+	sourcePaths, err := filepath.Glob(filepath.Join(sourceDir, "routes_*.go"))
 	if err != nil {
-		t.Fatalf("parse API source: %v", err)
+		t.Fatalf("find API route sources: %v", err)
+	}
+	sourcePaths = append([]string{filepath.Join(sourceDir, "main.go")}, sourcePaths...)
+	fileSet := token.NewFileSet()
+	funcs := make(map[string]*ast.FuncDecl)
+	for _, sourcePath := range sourcePaths {
+		file, err := parser.ParseFile(fileSet, sourcePath, nil, 0)
+		if err != nil {
+			t.Fatalf("parse API source %s: %v", sourcePath, err)
+		}
+		for _, decl := range file.Decls {
+			funcDecl, ok := decl.(*ast.FuncDecl)
+			if ok && funcDecl.Recv == nil {
+				funcs[funcDecl.Name.Name] = funcDecl
+			}
+		}
 	}
 
 	var routes []documentedRoute
 	var walkBlock func(block *ast.BlockStmt, prefixes []string)
+	var walkFunc func(name string, prefixes []string)
 	walkBlock = func(block *ast.BlockStmt, prefixes []string) {
 		if block == nil {
 			return
@@ -99,6 +114,10 @@ func collectSourceRoutes(t *testing.T) []documentedRoute {
 			}
 			call, ok := exprStmt.X.(*ast.CallExpr)
 			if !ok {
+				continue
+			}
+			if ident, ok := call.Fun.(*ast.Ident); ok {
+				walkFunc(ident.Name, prefixes)
 				continue
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)
@@ -136,14 +155,12 @@ func collectSourceRoutes(t *testing.T) []documentedRoute {
 			}
 		}
 	}
-
-	for _, decl := range file.Decls {
-		funcDecl, ok := decl.(*ast.FuncDecl)
-		if !ok {
-			continue
+	walkFunc = func(name string, prefixes []string) {
+		if funcDecl := funcs[name]; funcDecl != nil {
+			walkBlock(funcDecl.Body, prefixes)
 		}
-		walkBlock(funcDecl.Body, nil)
 	}
+	walkFunc("setupRouter", nil)
 
 	sort.Slice(routes, func(i, j int) bool {
 		return routes[i].String() < routes[j].String()

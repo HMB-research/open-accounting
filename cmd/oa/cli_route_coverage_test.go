@@ -154,13 +154,26 @@ func TestAPIBoundCLICommandsHaveHTTPContractTests(t *testing.T) {
 func collectAPIRoutesFromSource(t *testing.T) []apiRoute {
 	t.Helper()
 
-	sourcePath := filepath.Join("..", "api", "main.go")
-	fileSet := token.NewFileSet()
-	file, err := parser.ParseFile(fileSet, sourcePath, nil, 0)
+	sourceDir := filepath.Join("..", "api")
+	sourcePaths, err := filepath.Glob(filepath.Join(sourceDir, "routes_*.go"))
 	require.NoError(t, err)
+	sourcePaths = append([]string{filepath.Join(sourceDir, "main.go")}, sourcePaths...)
+	fileSet := token.NewFileSet()
+	funcs := make(map[string]*ast.FuncDecl)
+	for _, sourcePath := range sourcePaths {
+		file, err := parser.ParseFile(fileSet, sourcePath, nil, 0)
+		require.NoError(t, err, "parse API source %s", sourcePath)
+		for _, decl := range file.Decls {
+			funcDecl, ok := decl.(*ast.FuncDecl)
+			if ok && funcDecl.Recv == nil {
+				funcs[funcDecl.Name.Name] = funcDecl
+			}
+		}
+	}
 
 	var routes []apiRoute
 	var walkBlock func(block *ast.BlockStmt, prefixes []string)
+	var walkFunc func(name string, prefixes []string)
 	walkBlock = func(block *ast.BlockStmt, prefixes []string) {
 		if block == nil {
 			return
@@ -172,6 +185,10 @@ func collectAPIRoutesFromSource(t *testing.T) []apiRoute {
 			}
 			call, ok := exprStmt.X.(*ast.CallExpr)
 			if !ok {
+				continue
+			}
+			if ident, ok := call.Fun.(*ast.Ident); ok {
+				walkFunc(ident.Name, prefixes)
 				continue
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)
@@ -200,14 +217,12 @@ func collectAPIRoutesFromSource(t *testing.T) []apiRoute {
 			}
 		}
 	}
-
-	for _, decl := range file.Decls {
-		funcDecl, ok := decl.(*ast.FuncDecl)
-		if !ok {
-			continue
+	walkFunc = func(name string, prefixes []string) {
+		if funcDecl := funcs[name]; funcDecl != nil {
+			walkBlock(funcDecl.Body, prefixes)
 		}
-		walkBlock(funcDecl.Body, nil)
 	}
+	walkFunc("setupRouter", nil)
 
 	sort.Slice(routes, func(i, j int) bool {
 		return routes[i].String() < routes[j].String()

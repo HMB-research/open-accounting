@@ -2,6 +2,20 @@ import { browser } from "$app/environment";
 import { env } from "$env/dynamic/public";
 import Decimal from "decimal.js";
 import { authStore } from "./stores/auth";
+import {
+  createApiTransport,
+  DEFAULT_RETRY_CONFIG,
+  getApiResponseError,
+} from "./api-request";
+import type { ApiTransport, RetryConfig } from "./api-request";
+
+export {
+  calculateBackoffDelay,
+  DEFAULT_RETRY_CONFIG,
+  isRetryableError,
+  TEST_RETRY_CONFIG,
+} from "./api-request";
+export type { RetryConfig } from "./api-request";
 
 /**
  * Get the API base URL.
@@ -93,74 +107,25 @@ interface ApiError {
   error: string;
 }
 
-export interface RetryConfig {
-  maxRetries: number;
-  baseDelayMs: number;
-  maxDelayMs: number;
-}
-
-export const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 3,
-  baseDelayMs: 1000,
-  maxDelayMs: 10000,
-};
-
-/**
- * Minimal retry config for testing - fast retries with minimal delay
- */
-export const TEST_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 3,
-  baseDelayMs: 10,
-  maxDelayMs: 50,
-};
-
-/**
- * Check if an error is retryable (network errors or server errors)
- */
-export function isRetryableError(error: unknown, status?: number): boolean {
-  // Network errors (fetch failed)
-  if (error instanceof TypeError && error.message.includes("fetch")) {
-    return true;
-  }
-
-  // Server errors (5xx) are retryable
-  if (status && status >= 500 && status <= 599) {
-    return true;
-  }
-
-  // Rate limiting (429) is retryable
-  if (status === 429) {
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Calculate delay with exponential backoff and jitter
- */
-export function calculateBackoffDelay(
-  attempt: number,
-  config: RetryConfig,
-): number {
-  // Exponential backoff: base * 2^attempt
-  const exponentialDelay = config.baseDelayMs * Math.pow(2, attempt);
-
-  // Add jitter (0-25% of delay) to prevent thundering herd
-  const jitter = exponentialDelay * 0.25 * Math.random();
-
-  // Cap at max delay
-  return Math.min(exponentialDelay + jitter, config.maxDelayMs);
-}
-
-/**
- * Sleep for specified milliseconds
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 class ApiClient {
+  private readonly transport: ApiTransport;
+
+  constructor() {
+    this.transport = createApiTransport({
+      getApiBase,
+      getAccessToken: () => this.accessToken,
+      getRefreshToken: () => this.refreshToken,
+      refreshAccessToken: () => this.refreshAccessToken(),
+      clearTokens: () => this.clearTokens(),
+      getTenantContext: getCurrentTenantContext,
+      onSessionExpired: () => {
+        if (browser) {
+          window.location.href = "/login";
+        }
+      },
+    });
+  }
+
   /**
    * Get the current access token from the auth store
    */
@@ -206,89 +171,11 @@ class ApiClient {
     skipAuth = false,
     retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG,
   ): Promise<T> {
-    const headers: Record<string, string> = {};
-
-    if (!skipAuth && this.accessToken) {
-      headers["Authorization"] = `Bearer ${this.accessToken}`;
-    }
-    if (!skipAuth && path.startsWith("/api/v1/admin/")) {
-      const tenantContext = getCurrentTenantContext();
-      if (tenantContext) {
-        headers["X-Tenant-ID"] = tenantContext;
-      }
-    }
-
-    const isFormData =
-      typeof FormData !== "undefined" && body instanceof FormData;
-    const requestBody = body
-      ? isFormData
-        ? body
-        : JSON.stringify(body)
-      : undefined;
-    if (body !== undefined && !isFormData) {
-      headers["Content-Type"] = "application/json";
-    }
-
-    let lastError: Error | null = null;
-    let lastStatus: number | undefined;
-
-    for (let attempt = 0; attempt <= retryConfig.maxRetries; attempt++) {
-      try {
-        const response = await fetch(`${getApiBase()}${path}`, {
-          method,
-          headers,
-          body: requestBody,
-        });
-
-        lastStatus = response.status;
-
-        // Handle token refresh on 401
-        if (response.status === 401 && !skipAuth) {
-          if (this.refreshToken) {
-            const refreshed = await this.refreshAccessToken();
-            if (refreshed) {
-              return this.request(method, path, body, false, retryConfig);
-            }
-          }
-          // Refresh failed or no refresh token - clear tokens and redirect to login
-          this.clearTokens();
-          if (browser) {
-            window.location.href = "/login";
-          }
-          throw new Error("Session expired. Please log in again.");
-        }
-
-        // Check if we should retry server errors
-        if (
-          isRetryableError(null, response.status) &&
-          attempt < retryConfig.maxRetries
-        ) {
-          const delay = calculateBackoffDelay(attempt, retryConfig);
-          await sleep(delay);
-          continue;
-        }
-
-        // Process response
-        return await this.processResponse<T>(response);
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        // Only retry on retryable errors
-        if (
-          isRetryableError(error, lastStatus) &&
-          attempt < retryConfig.maxRetries
-        ) {
-          const delay = calculateBackoffDelay(attempt, retryConfig);
-          await sleep(delay);
-          continue;
-        }
-
-        throw lastError;
-      }
-    }
-
-    // Should not reach here, but handle just in case
-    throw lastError || new Error("Request failed after retries");
+    const response = await this.transport.request(method, path, body, {
+      skipAuth,
+      retryConfig,
+    });
+    return this.processResponse<T>(response);
   }
 
   /**
@@ -322,16 +209,10 @@ class ApiClient {
     fileName: string,
     errorMessage: string,
   ) {
-    const response = await fetch(`${getApiBase()}${path}`, {
-      method: "GET",
-      headers: this.accessToken
-        ? { Authorization: `Bearer ${this.accessToken}` }
-        : {},
-    });
+    const response = await this.transport.requestOnce("GET", path);
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}) as ApiError);
-      throw new Error(error.error || errorMessage);
+      throw await getApiResponseError(response, errorMessage);
     }
 
     const blob = await response.blob();
@@ -854,45 +735,15 @@ class ApiClient {
     }
     const query = params.toString();
     const path = `/api/v1/tenants/${tenantId}/migration/execution-runs/${runId}/events${query ? `?${query}` : ""}`;
-    const headers: Record<string, string> = {
-      Accept: "text/event-stream",
-    };
-    if (this.accessToken) {
-      headers["Authorization"] = `Bearer ${this.accessToken}`;
-    }
-
-    let response = await fetch(`${getApiBase()}${path}`, {
-      method: "GET",
-      headers,
+    const response = await this.transport.requestOnce("GET", path, undefined, {
+      headers: { Accept: "text/event-stream" },
       signal: options.signal,
     });
 
-    if (response.status === 401) {
-      if (this.refreshToken) {
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed && this.accessToken) {
-          headers["Authorization"] = `Bearer ${this.accessToken}`;
-          response = await fetch(`${getApiBase()}${path}`, {
-            method: "GET",
-            headers,
-            signal: options.signal,
-          });
-        }
-      }
-      if (response.status === 401) {
-        this.clearTokens();
-        if (browser) {
-          window.location.href = "/login";
-        }
-        throw new Error("Session expired. Please log in again.");
-      }
-    }
-
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}) as ApiError);
-      throw new Error(
-        error.error ||
-          `Migration execution run stream failed with status ${response.status}`,
+      throw await getApiResponseError(
+        response,
+        `Migration execution run stream failed with status ${response.status}`,
       );
     }
 
@@ -1081,30 +932,11 @@ class ApiClient {
     documentId: string,
     fileName: string,
   ) {
-    const response = await fetch(
-      `${getApiBase()}/api/v1/tenants/${tenantId}/documents/${documentId}/download`,
-      {
-        method: "GET",
-        headers: this.accessToken
-          ? { Authorization: `Bearer ${this.accessToken}` }
-          : {},
-      },
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/documents/${documentId}/download`,
+      fileName,
+      "Failed to download document",
     );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}) as ApiError);
-      throw new Error(error.error || "Failed to download document");
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
   }
 
   async downloadYearEndCloseAuditArchive(
@@ -1116,32 +948,11 @@ class ApiClient {
       period_end_date: periodEndDate,
       inventory_valuation_method: inventoryValuationMethod,
     });
-    const response = await fetch(
-      `${getApiBase()}/api/v1/tenants/${tenantId}/year-end-close-audit-archive${query}`,
-      {
-        method: "GET",
-        headers: this.accessToken
-          ? { Authorization: `Bearer ${this.accessToken}` }
-          : {},
-      },
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/year-end-close-audit-archive${query}`,
+      `year-end-close-audit-${periodEndDate}.zip`,
+      "Failed to download year-end audit archive",
     );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}) as ApiError);
-      throw new Error(
-        error.error || "Failed to download year-end audit archive",
-      );
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `year-end-close-audit-${periodEndDate}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
   }
 
   // Account endpoints
@@ -1391,29 +1202,11 @@ class ApiClient {
     invoiceId: string,
     invoiceNumber: string,
   ) {
-    const headers: Record<string, string> = {};
-    if (this.accessToken) {
-      headers["Authorization"] = `Bearer ${this.accessToken}`;
-    }
-
-    const response = await fetch(
-      `${getApiBase()}/api/v1/tenants/${tenantId}/invoices/${invoiceId}/pdf`,
-      { headers },
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/invoices/${invoiceId}/pdf`,
+      `invoice-${invoiceNumber}.pdf`,
+      "Failed to download PDF",
     );
-
-    if (!response.ok) {
-      throw new Error("Failed to download PDF");
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `invoice-${invoiceNumber}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
   }
 
   // Payment endpoints
@@ -2551,29 +2344,11 @@ class ApiClient {
   }
 
   async downloadKMDXml(tenantId: string, year: number, month: number) {
-    const headers: Record<string, string> = {};
-    if (this.accessToken) {
-      headers["Authorization"] = `Bearer ${this.accessToken}`;
-    }
-
-    const response = await fetch(
-      `${getApiBase()}/api/v1/tenants/${tenantId}/tax/kmd/${year}/${month}/xml`,
-      { headers },
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/tax/kmd/${year}/${month}/xml`,
+      `KMD_${year}_${String(month).padStart(2, "0")}.xml`,
+      "Failed to download XML",
     );
-
-    if (!response.ok) {
-      throw new Error("Failed to download XML");
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `KMD_${year}_${String(month).padStart(2, "0")}.xml`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
   }
 
   // Cash Flow Statement endpoint
@@ -2940,55 +2715,19 @@ class ApiClient {
   }
 
   async downloadTSDXml(tenantId: string, year: number, month: number) {
-    const headers: Record<string, string> = {};
-    if (this.accessToken) {
-      headers["Authorization"] = `Bearer ${this.accessToken}`;
-    }
-
-    const response = await fetch(
-      `${getApiBase()}/api/v1/tenants/${tenantId}/tsd/${year}/${month}/xml`,
-      { headers },
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/tsd/${year}/${month}/xml`,
+      `TSD_${year}_${String(month).padStart(2, "0")}.xml`,
+      "Failed to download TSD XML",
     );
-
-    if (!response.ok) {
-      throw new Error("Failed to download TSD XML");
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `TSD_${year}_${String(month).padStart(2, "0")}.xml`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
   }
 
   async downloadTSDCsv(tenantId: string, year: number, month: number) {
-    const headers: Record<string, string> = {};
-    if (this.accessToken) {
-      headers["Authorization"] = `Bearer ${this.accessToken}`;
-    }
-
-    const response = await fetch(
-      `${getApiBase()}/api/v1/tenants/${tenantId}/tsd/${year}/${month}/csv`,
-      { headers },
+    return this.downloadFile(
+      `/api/v1/tenants/${tenantId}/tsd/${year}/${month}/csv`,
+      `TSD_${year}_${String(month).padStart(2, "0")}.csv`,
+      "Failed to download TSD CSV",
     );
-
-    if (!response.ok) {
-      throw new Error("Failed to download TSD CSV");
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `TSD_${year}_${String(month).padStart(2, "0")}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
   }
 
   async markTSDSubmitted(
