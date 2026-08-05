@@ -209,7 +209,9 @@ class ApiClient {
     fileName: string,
     errorMessage: string,
   ) {
-    const response = await this.transport.requestOnce("GET", path);
+    const response = await this.transport.requestOnce("GET", path, undefined, {
+      skipAuth: !this.accessToken,
+    });
 
     if (!response.ok) {
       throw await getApiResponseError(response, errorMessage);

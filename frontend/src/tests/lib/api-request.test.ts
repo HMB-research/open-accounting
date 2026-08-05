@@ -99,6 +99,26 @@ describe("API request transport", () => {
     );
   });
 
+  it("returns unauthorized responses when auth handling is explicitly skipped", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+    const clearTokens = vi.fn();
+    const onSessionExpired = vi.fn();
+    const transport = createApiTransport(
+      createDependencies({ clearTokens, onSessionExpired }),
+    );
+
+    const response = await transport.requestOnce(
+      "GET",
+      "/api/v1/tenants/tenant-1/documents/doc-1/download",
+      undefined,
+      { skipAuth: true },
+    );
+
+    expect(response.status).toBe(401);
+    expect(clearTokens).not.toHaveBeenCalled();
+    expect(onSessionExpired).not.toHaveBeenCalled();
+  });
+
   it("uses API error payloads and fallback messages consistently", async () => {
     const apiError = await getApiResponseError(
       {
