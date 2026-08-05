@@ -33,6 +33,7 @@ func TestService_RecordPaymentSerializesConcurrentUpdates(t *testing.T) {
 			Description: "Concurrent payment test",
 			Quantity:    decimal.NewFromInt(1),
 			UnitPrice:   decimal.NewFromInt(100),
+			VATRate:     decimal.NewFromInt(22),
 		}},
 	})
 	require.NoError(t, err)
