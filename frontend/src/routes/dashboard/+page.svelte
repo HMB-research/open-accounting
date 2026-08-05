@@ -457,7 +457,7 @@
 							<a href="/contacts?tenant={selectedTenant.id}" class="workspace-chip">{m.nav_contacts()}</a>
 							<a href="/journal?tenant={selectedTenant.id}" class="workspace-chip">{m.nav_journal()}</a>
 							<a href="/banking?tenant={selectedTenant.id}" class="workspace-chip">{m.nav_banking()}</a>
-							<a href="/tax?tenant={selectedTenant.id}" class="workspace-chip">{m.nav_tax()}</a>
+							<a href="/vat-returns?tenant={selectedTenant.id}" class="workspace-chip">{m.nav_tax()}</a>
 						</div>
 					</section>
 				</div>
@@ -587,7 +587,7 @@
 					<a href="/journal?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_journal()}</a>
 					<a href="/reports?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_reports()}</a>
 					<a href="/banking?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_banking()}</a>
-					<a href="/tax?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_tax()}</a>
+					<a href="/vat-returns?tenant={selectedTenant.id}" class="btn btn-secondary">{m.nav_tax()}</a>
 					<a href="/settings/email?tenant={selectedTenant.id}" class="btn btn-secondary">{m.settings_emailSettings()}</a>
 				</div>
 			</div>

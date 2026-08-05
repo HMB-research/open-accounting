@@ -2,7 +2,6 @@ package expenses
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/HMB-research/open-accounting/internal/workspace"
@@ -125,15 +124,8 @@ func BuildExpenseRemediationActions(expense *Expense) []ExpenseRemediationAction
 	return actions
 }
 
-func expenseRemediationUIPath(expense *Expense) string {
-	values := url.Values{}
-	if strings.TrimSpace(expense.ID) != "" {
-		values.Set("expense_id", strings.TrimSpace(expense.ID))
-	}
-	if encoded := values.Encode(); encoded != "" {
-		return "/expenses?" + encoded
-	}
-	return "/expenses"
+func expenseRemediationUIPath(_ *Expense) string {
+	return "/dashboard"
 }
 
 func expenseRemediationID(expense *Expense) string {

@@ -50,10 +50,10 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"[EMTA Integration](./EMTA_INTEGRATION.md)",
 		},
 		"DEVELOPMENT_STATUS.md": {
-			"> Last updated: 2026-06-27",
-			"latest verified local baseline reviewed on 2026-06-27",
-			"Backend coverage: 100.0% statements (`45097/45097`, zero missed statements).",
-			"Frontend coverage: 100.0% statements, 100.0% functions, 100.0% lines, and 94.27% branches.",
+			"> Last updated: 2026-08-05",
+			"latest verified local baseline reviewed on 2026-08-05",
+			"Backend coverage: 100.0% statements (`46539/46539`, zero missed statements).",
+			"Frontend coverage: 100.0% statements, 100.0% functions, 100.0% lines, and 96.70% branches across 681 tests in 34 files.",
 			"Documentation gate: `go test -timeout=3m ./docs -count=1` passing.",
 			"Historical pull-request logs belong in PRs and CI, not in this status page.",
 			"## Capability Matrix",
@@ -69,8 +69,8 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 			"Do not move an item out of the gaps table until there is authoritative code, test, and documentation evidence",
 		},
 		"USE_CASE_COVERAGE.md": {
-			"Last reviewed: 2026-06-27",
-			"Latest verified baseline reviewed on 2026-06-27",
+			"Last reviewed: 2026-08-05",
+			"Latest verified baseline reviewed on 2026-08-05",
 			"`make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.",
 			"`make test-backend-coverage` verifies the backend at 100.0% statement coverage",
 			"`go test -timeout=3m ./docs -count=1` keeps the documentation status, route coverage, and link checks active.",
@@ -238,7 +238,7 @@ func TestUseCaseCoverageMatrixDocumentsGoalEvidence(t *testing.T) {
 
 	for _, snippet := range []string{
 		"# Use Case Coverage Matrix",
-		"Latest verified baseline reviewed on 2026-06-27",
+		"Latest verified baseline reviewed on 2026-08-05",
 		"`make test-cli-coverage` verifies `cmd/oa` at 100.0% statement coverage.",
 		"`make test-backend-coverage` verifies the backend at 100.0% statement coverage",
 		"`go test -timeout=3m ./docs -count=1` keeps the documentation status, route coverage, and link checks active.",

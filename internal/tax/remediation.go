@@ -16,7 +16,7 @@ func BuildKMDRemediationActions(declaration *KMDDeclaration) []KMDRemediationAct
 	}
 
 	period := declaration.Period()
-	uiPath := fmt.Sprintf("/tax/kmd?year=%d&month=%d", declaration.Year, declaration.Month)
+	uiPath := "/vat-returns"
 	periodFlags := fmt.Sprintf("--year %d --month %d", declaration.Year, declaration.Month)
 	base := KMDRemediationAction{
 		Scope:      "tax",
@@ -143,7 +143,7 @@ func BuildKMDINFRemediationActions(report *KMDINFReport) []TaxReportRemediationA
 		Period:     period,
 		EntityType: "kmd_inf_report",
 		EntityID:   period,
-		UIPath:     fmt.Sprintf("/tax/kmd?year=%d&month=%d&view=inf", report.Year, report.Month),
+		UIPath:     "/reports",
 	}
 
 	if len(report.Rows) == 0 {
@@ -189,7 +189,7 @@ func BuildEUVATOSSRemediationActions(report *EUVATOSSReport) []TaxReportRemediat
 		Period:     period,
 		EntityType: "eu_vat_oss_report",
 		EntityID:   period,
-		UIPath:     fmt.Sprintf("/tax/oss?year=%d&quarter=%d", report.Year, report.Quarter),
+		UIPath:     "/reports",
 	}
 
 	if len(report.Rows) == 0 {

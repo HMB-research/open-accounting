@@ -1983,6 +1983,26 @@ describe("API Client - Core Functionality", () => {
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:doc-1");
     });
 
+    it("should omit the authorization header for unauthenticated document downloads", async () => {
+      api.clearTokens();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: "Authentication required" }),
+      });
+
+      await expect(
+        api.downloadDocument("tenant-123", "doc-1", "receipt.pdf"),
+      ).rejects.toThrow("Authentication required");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/documents/doc-1/download",
+        ),
+        expect.objectContaining({ headers: {} }),
+      );
+    });
+
     it("should throw the API error when document download fails", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
@@ -2045,6 +2065,26 @@ describe("API Client - Core Functionality", () => {
       expect(createObjectURL).toHaveBeenCalledWith(blob);
       expect(click).toHaveBeenCalledTimes(1);
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:year-end-audit");
+    });
+
+    it("should omit the authorization header for unauthenticated audit archive downloads", async () => {
+      api.clearTokens();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: "Authentication required" }),
+      });
+
+      await expect(
+        api.downloadYearEndCloseAuditArchive("tenant-123", "2025-12-31"),
+      ).rejects.toThrow("Authentication required");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/year-end-close-audit-archive",
+        ),
+        expect.objectContaining({ headers: {} }),
+      );
     });
 
     it("should throw the fallback error when year-end close audit archive download fails", async () => {
@@ -2414,6 +2454,26 @@ describe("API Client - Core Functionality", () => {
         );
       }
     });
+    it("should omit the authorization header for unauthenticated shared PDF downloads", async () => {
+      api.clearTokens();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "Quote PDF unavailable" }),
+      });
+
+      await expect(
+        api.downloadQuotePDF("tenant-123", "quote-1", "QUO-001"),
+      ).rejects.toThrow("Quote PDF unavailable");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/quotes/quote-1/pdf",
+        ),
+        expect.objectContaining({ headers: {} }),
+      );
+    });
+
   });
 
   describe("Asset and Inventory Catalog Endpoints", () => {
@@ -3831,6 +3891,23 @@ describe("API Client - Core Functionality", () => {
       expect(result).toHaveLength(1);
     });
 
+    it("should list active bank accounts only", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: "bank-1", name: "Main Account" }],
+      });
+
+      await api.listBankAccounts("tenant-123", true);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/bank-accounts?active_only=true",
+        ),
+        expect.any(Object),
+      );
+    });
+
     it("should create bank account", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -4658,6 +4735,23 @@ describe("API Client - Core Functionality", () => {
       const result = await api.listEmployees("tenant-123");
 
       expect(result).toHaveLength(1);
+    });
+
+    it("should list active employees only", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: "emp-1", first_name: "John" }],
+      });
+
+      await api.listEmployees("tenant-123", true);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-123/employees?active_only=true",
+        ),
+        expect.any(Object),
+      );
     });
 
     it("should create employee", async () => {
@@ -5742,6 +5836,68 @@ describe("API Client - Core Functionality", () => {
         expect.any(Object),
       );
       expect(mockClick).toHaveBeenCalled();
+    });
+
+    it("should omit authorization headers from direct downloads without a token", async () => {
+      api.clearTokens();
+
+      const anchor = {
+        href: "",
+        download: "",
+        click: vi.fn(),
+      } as unknown as HTMLAnchorElement;
+      vi.spyOn(document, "createElement").mockReturnValue(anchor);
+      vi.spyOn(document.body, "appendChild").mockImplementation((node) => node);
+      vi.spyOn(document.body, "removeChild").mockImplementation((node) => node);
+
+      const blob = new Blob(["download"]);
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          blob: async () => blob,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          blob: async () => blob,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          blob: async () => blob,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          blob: async () => blob,
+        });
+
+      await api.downloadInvoicePDF("tenant-123", "inv-1", "INV-001");
+      await api.downloadKMDXml("tenant-123", 2024, 1);
+      await api.downloadTSDXml("tenant-123", 2024, 1);
+      await api.downloadTSDCsv("tenant-123", 2024, 1);
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/invoices/inv-1/pdf"),
+        expect.objectContaining({ headers: {} }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/tax/kmd/2024/1/xml"),
+        expect.objectContaining({ headers: {} }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining("/tsd/2024/1/xml"),
+        expect.objectContaining({ headers: {} }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        4,
+        expect.stringContaining("/tsd/2024/1/csv"),
+        expect.objectContaining({ headers: {} }),
+      );
     });
 
     it("should download quote PDF", async () => {

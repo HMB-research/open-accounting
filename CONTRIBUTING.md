@@ -110,6 +110,13 @@ Pull requests must pass:
 - `cd frontend && bun run build` - Frontend production build
 - Codecov patch coverage threshold
 
+### Contributor Attribution
+
+Contributor history is checked from raw author and committer metadata, together
+with commit messages. Do not add generated assistant identities or attribution
+trailers to commits. Run `make verify-contributors` before opening a pull
+request.
+
 ## Pull Request Process
 
 1. Update documentation if needed

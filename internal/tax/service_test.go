@@ -498,7 +498,10 @@ func TestBuildKMDRemediationActions(t *testing.T) {
 				assert.Equal(t, "tax", action.Scope)
 				assert.Equal(t, "accountant", action.OwnerRole)
 				assert.NotEmpty(t, action.Period)
+				assert.Equal(t, tt.declaration.ID, action.EntityID)
+				assert.Equal(t, "/vat-returns", action.UIPath)
 				assert.NotEmpty(t, action.Action)
+				assert.NotEmpty(t, action.CLICommand)
 				assert.Equal(t, "kmd_declarations", action.WorkspaceQueue)
 				assert.NotEmpty(t, action.AssignmentKey)
 				assert.NotEmpty(t, action.Priority)
@@ -532,9 +535,12 @@ func TestBuildTaxReportRemediationActions(t *testing.T) {
 	require.Len(t, infActions, 1)
 	assert.Equal(t, []string{"kmd_inf_review_required"}, taxReportRemediationCodes(infActions))
 	assert.Equal(t, "tax_reports", infActions[0].WorkspaceQueue)
+	assert.Equal(t, "2026-03", infActions[0].EntityID)
+	assert.Equal(t, "/reports", infActions[0].UIPath)
 	assert.Equal(t, "high", infActions[0].Priority)
 	assert.Equal(t, 1, infActions[0].DueInDays)
 	assert.Contains(t, infActions[0].AssignmentKey, "kmd-inf-report")
+	assert.NotEmpty(t, infActions[0].CLICommand)
 	assert.Contains(t, infActions[0].CLICommand, "oa tax kmd inf --year 2026 --month 3 --threshold 1000 --json")
 
 	emptyINFActions := BuildKMDINFRemediationActions(&KMDINFReport{
@@ -544,6 +550,7 @@ func TestBuildTaxReportRemediationActions(t *testing.T) {
 	})
 	require.Len(t, emptyINFActions, 1)
 	assert.Equal(t, "kmd_inf_no_threshold_rows", emptyINFActions[0].Code)
+	assert.Equal(t, "/reports", emptyINFActions[0].UIPath)
 	assert.Equal(t, "normal", emptyINFActions[0].Priority)
 	assert.Equal(t, 3, emptyINFActions[0].DueInDays)
 
@@ -561,12 +568,15 @@ func TestBuildTaxReportRemediationActions(t *testing.T) {
 	require.Len(t, ossActions, 1)
 	assert.Equal(t, []string{"eu_vat_oss_review_required"}, taxReportRemediationCodes(ossActions))
 	assert.Equal(t, "tax_reports", ossActions[0].WorkspaceQueue)
+	assert.Equal(t, "2026-Q1", ossActions[0].EntityID)
+	assert.Equal(t, "/reports", ossActions[0].UIPath)
 	assert.Equal(t, "high", ossActions[0].Priority)
 	assert.Contains(t, ossActions[0].CLICommand, "--include-b2b")
 
 	emptyOSSActions := BuildEUVATOSSRemediationActions(&EUVATOSSReport{Year: 2026, Quarter: 2})
 	require.Len(t, emptyOSSActions, 1)
 	assert.Equal(t, "eu_vat_oss_no_rows", emptyOSSActions[0].Code)
+	assert.Equal(t, "/reports", emptyOSSActions[0].UIPath)
 	assert.Equal(t, "normal", emptyOSSActions[0].Priority)
 
 	assert.Nil(t, BuildKMDINFRemediationActions(nil))
