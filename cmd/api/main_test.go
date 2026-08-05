@@ -605,6 +605,17 @@ func TestSetupRouterRegistersCoreRoutes(t *testing.T) {
 	assert.Contains(t, routes, "GET /api/v1/admin/plugins/{id}/runtime")
 	assert.Contains(t, routes, "POST /api/v1/admin/plugins/{id}/runtime/restart")
 	assert.Contains(t, routes, "GET /swagger/*")
+}
+
+func TestTenantDetailRoutesAreNotShadowedByTenantScopedRoutes(t *testing.T) {
+	cfg := &Config{AllowedOrigins: []string{"http://localhost:5173"}}
+	tokenService := auth.NewTokenService("secret", time.Minute, time.Hour)
+
+	t.Setenv("CORS_DEBUG", "true")
+	t.Setenv("DEMO_MODE", "false")
+
+	router := setupRouter(cfg, &Handlers{}, tokenService)
+	require.NotNil(t, router)
 
 	for _, tt := range []struct {
 		method string
@@ -616,6 +627,7 @@ func TestSetupRouterRegistersCoreRoutes(t *testing.T) {
 		req := httptest.NewRequest(tt.method, tt.path, nil)
 		rr := httptest.NewRecorder()
 		router.ServeHTTP(rr, req)
+
 		assert.Equal(t, http.StatusUnauthorized, rr.Code, "%s %s should be protected, not missing", tt.method, tt.path)
 	}
 }
