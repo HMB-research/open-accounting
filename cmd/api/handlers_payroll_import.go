@@ -4,9 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-
-	"github.com/HMB-research/open-accounting/internal/auth"
 	"github.com/HMB-research/open-accounting/internal/payroll"
 )
 
@@ -23,12 +20,10 @@ import (
 // @Failure 400 {object} object{error=string}
 // @Router /tenants/{tenantID}/employees/import [post]
 func (h *Handlers) ImportEmployees(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
+	tenantCtx := h.tenantContextFromRequest(r)
 
 	var req payroll.ImportEmployeesRequest
-	if err := decodeJSON(r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request body")
+	if !decodeJSONRequest(w, r, &req) {
 		return
 	}
 
@@ -41,7 +36,7 @@ func (h *Handlers) ImportEmployees(w http.ResponseWriter, r *http.Request) {
 		req.FileName = "employees_import.csv"
 	}
 
-	result, err := h.payrollService.ImportEmployeesCSV(r.Context(), schemaName, tenantID, &req)
+	result, err := h.payrollService.ImportEmployeesCSV(r.Context(), tenantCtx.schemaName, tenantCtx.tenantID, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -63,13 +58,11 @@ func (h *Handlers) ImportEmployees(w http.ResponseWriter, r *http.Request) {
 // @Failure 400 {object} object{error=string}
 // @Router /tenants/{tenantID}/payroll-runs/import-history [post]
 func (h *Handlers) ImportPayrollHistory(w http.ResponseWriter, r *http.Request) {
-	claims, _ := auth.GetClaims(r.Context())
-	tenantID := chi.URLParam(r, "tenantID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
+	claims := userClaimsFromRequest(r)
+	tenantCtx := h.tenantContextFromRequest(r)
 
 	var req payroll.ImportPayrollHistoryRequest
-	if err := decodeJSON(r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request body")
+	if !decodeJSONRequest(w, r, &req) {
 		return
 	}
 
@@ -82,7 +75,7 @@ func (h *Handlers) ImportPayrollHistory(w http.ResponseWriter, r *http.Request) 
 		req.FileName = "payroll-history.csv"
 	}
 
-	result, err := h.payrollService.ImportPayrollHistoryCSV(r.Context(), schemaName, tenantID, claims.UserID, &req)
+	result, err := h.payrollService.ImportPayrollHistoryCSV(r.Context(), tenantCtx.schemaName, tenantCtx.tenantID, claims.UserID, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -104,12 +97,10 @@ func (h *Handlers) ImportPayrollHistory(w http.ResponseWriter, r *http.Request) 
 // @Failure 400 {object} object{error=string}
 // @Router /tenants/{tenantID}/tsd/import-history [post]
 func (h *Handlers) ImportTSDHistory(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
+	tenantCtx := h.tenantContextFromRequest(r)
 
 	var req payroll.ImportTSDHistoryRequest
-	if err := decodeJSON(r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request body")
+	if !decodeJSONRequest(w, r, &req) {
 		return
 	}
 
@@ -122,7 +113,7 @@ func (h *Handlers) ImportTSDHistory(w http.ResponseWriter, r *http.Request) {
 		req.FileName = "tsd-history.csv"
 	}
 
-	result, err := h.payrollService.ImportTSDHistoryCSV(r.Context(), schemaName, tenantID, &req)
+	result, err := h.payrollService.ImportTSDHistoryCSV(r.Context(), tenantCtx.schemaName, tenantCtx.tenantID, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -144,12 +135,10 @@ func (h *Handlers) ImportTSDHistory(w http.ResponseWriter, r *http.Request) {
 // @Failure 400 {object} object{error=string}
 // @Router /tenants/{tenantID}/leave-balances/import [post]
 func (h *Handlers) ImportLeaveBalances(w http.ResponseWriter, r *http.Request) {
-	tenantID := chi.URLParam(r, "tenantID")
-	schemaName := h.getSchemaName(r.Context(), tenantID)
+	tenantCtx := h.tenantContextFromRequest(r)
 
 	var req payroll.ImportLeaveBalancesRequest
-	if err := decodeJSON(r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request body")
+	if !decodeJSONRequest(w, r, &req) {
 		return
 	}
 
@@ -162,7 +151,7 @@ func (h *Handlers) ImportLeaveBalances(w http.ResponseWriter, r *http.Request) {
 		req.FileName = "leave-balances.csv"
 	}
 
-	result, err := h.absenceService.ImportLeaveBalancesCSV(r.Context(), schemaName, tenantID, &req)
+	result, err := h.absenceService.ImportLeaveBalancesCSV(r.Context(), tenantCtx.schemaName, tenantCtx.tenantID, &req)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return

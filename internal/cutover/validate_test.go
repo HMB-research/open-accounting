@@ -3,10 +3,61 @@ package cutover
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestParseCutoverDateValueTrimsNormalizesAndUsesAllowedLayouts(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		layouts []string
+		want    time.Time
+		ok      bool
+	}{
+		{
+			name:    "date only is trimmed and normalized",
+			value:   " 2026-06-15 ",
+			layouts: []string{"2006-01-02"},
+			want:    time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC),
+			ok:      true,
+		},
+		{
+			name:    "RFC3339 uses the UTC calendar date",
+			value:   "2026-06-15T23:30:00-02:00",
+			layouts: []string{"2006-01-02", time.RFC3339},
+			want:    time.Date(2026, time.June, 16, 0, 0, 0, 0, time.UTC),
+			ok:      true,
+		},
+		{
+			name:    "custom layout is opt in",
+			value:   "15.06.2026",
+			layouts: []string{"02.01.2006"},
+			want:    time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC),
+			ok:      true,
+		},
+		{
+			name:    "unsupported format is rejected",
+			value:   "15/06/2026",
+			layouts: []string{"2006-01-02", time.RFC3339},
+			ok:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parseCutoverDateValue(tt.value, tt.layouts...)
+			assert.Equal(t, tt.ok, ok)
+			if tt.ok {
+				assert.Equal(t, tt.want, got)
+			} else {
+				assert.True(t, got.IsZero())
+			}
+		})
+	}
+}
 
 const (
 	cutoverJournalLineID1 = "11111111-1111-4111-8111-111111111111"

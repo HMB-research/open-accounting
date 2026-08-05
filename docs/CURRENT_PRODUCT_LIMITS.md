@@ -1,18 +1,40 @@
 # Current Product Limits
 
-Last reviewed: 2026-06-25
+Last reviewed: 2026-08-05
 
-This is the short current-state gap document for Open Accounting. It is the
-place to check what still prevents the repository from being described as fully
-featured, production-ready accounting software.
+This is the short current-state gap document for Open Accounting. It separates
+what the current code and verification gates support from what still prevents
+the repository from being described as fully featured, production-ready
+accounting software.
+
+## Status Key
+
+- ✅ **Implemented and verified** — present in the current codebase and covered
+  by the documented test or CI evidence.
+- ⚠️ **Partial** — usable capabilities exist, but meaningful workflow or
+  product-depth gaps remain.
+- ☐ **Needs work** — still required for full product parity or operational
+  readiness.
+- 🚫 **Blocked** — requires external certification, partners, credentials, or
+  infrastructure before it can be completed locally.
 
 ## Current Verified Cap
 
 Open Accounting can honestly claim a broad self-hosted Estonian SMB/accountant
-workflow today: core double-entry accounting, invoicing, purchase invoices,
-payments, manual bank import and reconciliation, payroll, leave records, KMD/TSD
-export-oriented compliance, document evidence workflows, accountant review
-queues, a Go operator CLI, and a Svelte dashboard.
+workflow today:
+
+- ✅ Core double-entry accounting, invoicing, purchase invoices, quotes,
+  orders, recurring invoices, fixed assets, expenses, inventory, reports, and
+  payment workflows.
+- ✅ Manual bank import and reconciliation, SEPA payment-file export, payroll,
+  leave records, KMD/TSD export-oriented compliance, and manual Estonian
+  e-invoice XML import.
+- ✅ Evidence blockers, document lifecycle/retention workflows, accountant
+  review queues, migration validation/execution planning, and saved migration
+  runs with progress, events, and resume support.
+- ✅ A Go operator CLI, tenant-scoped API tokens, and a Svelte dashboard with
+  tenant settings, review, tax, banking, payroll, and migration workbench
+  flows.
 
 Current gate evidence is maintained in
 [Development Status](./DEVELOPMENT_STATUS.md). That evidence is not a
@@ -21,17 +43,19 @@ for the current branch.
 
 ## Gaps From A Full-Featured Product
 
-| Area | Current cap | What is still missing |
+| Area | ✅ Implemented / verified today | ☐ Needs work for full product parity |
 | --- | --- | --- |
-| Historical migration and cutover | Many CSV/XML imports, provider presets, validation, saved runs, live progress, guarded API/CLI execution, dashboard workbench flows, and KMD VAT-total reconciliation against same-bundle invoice/e-invoice/journal VAT support exist. | Deeper provider-specific mapping, more cross-file validation beyond the currently covered payroll/TSD, KMD VAT support, commercial document, payment, banking, inventory, fixed-asset, and allocation checks, and more dashboard-side mutating cutover controls. |
-| Accountant workspace execution | The review workspace can surface and execute many banking, expense, payroll, TSD, KMD, tax-report, document, close, and migration remediation actions. | It is not yet a complete accountant cockpit. Remaining payroll/document/evidence-policy edges and some close/migration follow-ups still need direct execution flows and stronger end-to-end proof. |
-| Document and evidence policy | Evidence blockers and structured remediation exist for many high-risk workflows, including invoices, journals, payments, bank reconciliation, fixed assets, expenses, quotes, orders, leave records, TSD/KMD declarations, and close packs. | Policy enforcement is not universal. Broader workflow-level policy controls, richer evidence follow-up, and remaining edge-case remediation still need implementation and tests. |
-| Tax and authority filing | KMD/TSD generation, export, history import, submission/acceptance status tracking, and evidence gates are implemented for manual filing workflows. | Automatic e-MTA submission remains blocked by external certification/integration work. Direct authority filing should not be described as locally complete. |
-| Banking and payments | Manual bank imports, matching, reconciliation, SEPA pain.001 export, and remediation queues exist. | Direct bank feeds and direct SEPA initiation remain blocked by external bank/partner integration work. |
-| E-invoicing and OCR | Manual Estonian e-invoice XML import exists. | Direct e-invoice operator send/receive and OCR capture are not implemented as production integrations. |
-| Operations, backup, and restore | Backup/offsite/restore-drill scripts, CLI preflight parity, metrics, and host helper templates exist. | Live provider credential provisioning, storage/database connectivity proof, and host timer enablement must still be performed and verified per deployment. |
-| Plugins | Registries, manifests, permissions, webhooks, loopback HTTP runtime, supervised package runtime, runtime status/restart, and allowlisted process environments exist. | OS-level sandboxing, resource isolation, and broader production plugin containment are still incomplete. |
-| Production hardening | CI gates, docs gates, CLI coverage gates, demo E2E shards, and integration shards are strong for a development branch. | A production rollout still needs security review, live deployment hardening, backup drills against real infrastructure, operational runbooks, monitoring/SLOs, and accounting-firm pilot proof. |
+| Core accounting and SMB workflows | ✅ Core ledger, journal templates, recurring journals, reports, invoices, purchases, contacts, quotes, orders, recurring invoices, fixed assets, expenses, inventory, reminders, interest, and auditable payment correction exist with backend, CLI, UI, and workflow evidence where applicable. Payment create/import/allocation/reversal updates are atomic and invoice payment updates are row-locked. | ☐ Accountant-grade report auditability, edge-case validation, and deeper workflow polish remain. |
+| Tenant administration and settings | ✅ Multi-tenant auth, RBAC, API tokens, sessions, invitations, tenant administration, organization settings, and the Company Settings API/UI route are implemented. The tenant detail GET/PUT route regression is covered so the old 404 failure cannot silently return. | ☐ Broader authentication hardening and administration polish remain before enterprise production readiness. |
+| Banking and payments | ✅ Manual CSV and camt.053 imports, matching, persisted auto-match rules, reconciliation, evidence-required blockers, remediation queues, and SEPA pain.001 payment-file export exist. | ☐ Direct bank feeds, direct SEPA initiation, and partner-managed payment submission remain external tracks. |
+| Payroll, tax, and compliance exports | ✅ Payroll runs, leave records, payslips, payroll/TSD history import, TSD XML/CSV export, KMD generation/export/history import, KMD INF, EU VAT OSS, local submitted/accepted status tracking, and approved evidence gates exist. | ☐ Automatic e-MTA submission is blocked by external certification/integration work. Leave/document/payroll archive remediation and local filing workflow depth can still improve. |
+| Historical migration and cutover | ✅ CSV/XML imports, generic/Merit/SmartAccounts/Directo provider aliases, cross-file validation, migration remediation, dependency-aware execution plans, guarded API/CLI execution, saved runs, progress/events, resume-by-ID, and dashboard workbench flows exist. | ☐ Deeper provider-specific mapping, broader cross-file validation outside the current coverage, and additional dashboard-side mutating cutover controls are still needed. |
+| Accountant workspace execution | ✅ Review queues, cross-tenant portfolio rollups, and direct dashboard actions cover overdue invoices, banking follow-up, evidence/document remediation, payroll/TSD, KMD/tax reports, expenses, fiscal-year close, carry-forward, and confirmation-ready migration runs. | ☐ It is not yet a complete accountant cockpit; remaining payroll/document/evidence-policy edges and some close/migration follow-ups need direct execution and stronger end-to-end proof. |
+| Documents and evidence policy | ✅ Document review, retention, replacement, archive/disposal, legal hold, purge guards, evidence-policy checks, remediation assignments, and evidence blockers cover many high-risk workflows. | ☐ Policy enforcement is not universal. Broader workflow-level controls, richer follow-up, and remaining edge-case remediation still need implementation and tests. |
+| E-invoicing and OCR | ✅ Manual Estonian e-invoice XML import and related validation/evidence workflows exist. | 🚫 Direct e-invoice operator send/receive and OCR capture require external integrations or additional production infrastructure. |
+| Operations, backup, and restore | ✅ Backup, offsite-sync, restore-drill, health metrics, CLI preflight, systemd templates, provider examples, and host preflight/install helpers exist. | ☐ Live provider credentials, storage/database connectivity, timer enablement, real-infrastructure backup drills, monitoring/SLOs, and operational runbooks must still be verified per deployment. |
+| Plugins and integrations | ✅ Registries, manifests, permissions, webhooks, signed delivery, loopback HTTP runtime, supervised package runtime, runtime status/restart, frontend slots, and secret-safe allowlisted process environments exist. | ☐ OS-level sandboxing, resource isolation, and broader production plugin containment remain incomplete. |
+| Production readiness | ✅ CI, backend/frontend coverage, docs gates, CLI coverage, integration shards, smoke E2E, seeded demo E2E, and Docker image validation are active. | ☐ A production rollout still needs security review, deployment hardening, real-infrastructure drills, monitoring/SLOs, support runbooks, and accounting-firm pilot proof. |
 
 ## Documentation Source Of Truth
 
@@ -46,4 +70,6 @@ for the current branch.
 ## Update Rule
 
 When a stage changes what the product can honestly claim, update this file in
-the same commit as `DEVELOPMENT_STATUS.md` and `USE_CASE_COVERAGE.md`. Do not move an item out of the gaps table until there is authoritative code, test, and documentation evidence for the full workflow being claimed.
+the same commit as `DEVELOPMENT_STATUS.md` and `USE_CASE_COVERAGE.md`. Keep the
+✅ column limited to claims backed by authoritative code, test, and
+documentation evidence. Do not move an item out of the gaps table until there is authoritative code, test, and documentation evidence for the full workflow being claimed. The ☐ column is the concise view of that remaining work.
