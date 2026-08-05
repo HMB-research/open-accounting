@@ -186,6 +186,18 @@ Each tenant gets a dedicated PostgreSQL schema (e.g., `tenant_acme`) containing:
         └───────────────┘
 ```
 
+## Cross-Domain Accounting Transactions
+
+Payment creation, CSV import, invoice allocation, and payment reversal are
+cross-domain workflows: they write payment rows or allocations and update the
+related invoice's paid amount and status. The payment repository opens one
+transaction and binds both the payment and invoicing repositories to it, so
+those writes commit or roll back together. Invoice payment updates lock the
+invoice row before deriving the new paid amount and status, preventing
+concurrent payment operations from losing updates. Reversal remains
+auditable: the original payment is preserved and linked to its offsetting
+payment rather than being overwritten or deleted.
+
 ## Database Migrations
 
 Migrations are managed using golang-migrate:

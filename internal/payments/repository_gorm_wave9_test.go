@@ -35,3 +35,9 @@ func TestGORMRepositoryWave9CreateReversalPaymentInsertError(t *testing.T) {
 	require.ErrorContains(t, err, "create reversal payment")
 	assert.ErrorIs(t, err, expectedErr)
 }
+
+func TestGORMRepositoryCreateReversalRequiresConfiguredDatabase(t *testing.T) {
+	repo := NewGORMRepository(nil)
+	err := repo.createReversal(context.Background(), "tenant_payments", "payment-original", nil, nil, time.Time{}, "user-1", "reason")
+	assert.ErrorIs(t, err, errRepositoryDatabaseNotConfigured)
+}

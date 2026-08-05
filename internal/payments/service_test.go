@@ -989,6 +989,18 @@ func TestService_Create_CallsInvoicing(t *testing.T) {
 	assert.True(t, invoiceSvc.recordPaymentCalls[1].amount.Equal(decimal.NewFromFloat(30)))
 }
 
+func TestService_CreateRequiresInvoicingForAllocations(t *testing.T) {
+	service := NewServiceWithRepository(NewMockRepository(), nil)
+
+	_, err := service.Create(context.Background(), "tenant-1", "test_schema", &CreatePaymentRequest{
+		PaymentType: PaymentTypeReceived,
+		Amount:      decimal.NewFromInt(100),
+		Allocations: []AllocationRequest{{InvoiceID: "inv-1", Amount: decimal.NewFromInt(50)}},
+	})
+
+	assert.ErrorContains(t, err, "invoicing service is required for payment allocations")
+}
+
 func TestService_Reverse(t *testing.T) {
 	repo := NewMockRepository()
 	invoiceSvc := &MockInvoiceService{}
@@ -1104,6 +1116,29 @@ func TestService_ReverseRejectsInvalidRequests(t *testing.T) {
 		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-1", &ReversePaymentRequest{Reason: "Duplicate"})
 
 		require.ErrorContains(t, err, "get payment: lookup failed")
+	})
+
+	t.Run("allocated payment requires invoicing service", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.payments["pay-allocated"] = &Payment{
+			ID:            "pay-allocated",
+			TenantID:      "tenant-1",
+			PaymentNumber: "PMT-00001",
+			PaymentType:   PaymentTypeReceived,
+			Amount:        decimal.NewFromInt(10),
+		}
+		repo.allocations["pay-allocated"] = []PaymentAllocation{{
+			ID:        "alloc-1",
+			TenantID:  "tenant-1",
+			PaymentID: "pay-allocated",
+			InvoiceID: "inv-1",
+			Amount:    decimal.NewFromInt(10),
+		}}
+		service := NewServiceWithRepository(repo, nil)
+
+		_, err := service.Reverse(ctx, "tenant-1", "test_schema", "pay-allocated", &ReversePaymentRequest{Reason: "Duplicate"})
+
+		assert.ErrorContains(t, err, "invoicing service is required for payment reversals with allocations")
 	})
 
 	t.Run("sequence generation fails", func(t *testing.T) {
@@ -1336,7 +1371,7 @@ func TestService_AllocateToInvoice_ExceedsBalance(t *testing.T) {
 
 func TestService_AllocateToInvoice_PaymentNotFound(t *testing.T) {
 	repo := NewMockRepository()
-	service := NewServiceWithRepository(repo, nil)
+	service := NewServiceWithRepository(repo, &MockInvoiceService{})
 	ctx := context.Background()
 
 	err := service.AllocateToInvoice(ctx, "tenant-1", "test_schema", "nonexistent", "inv-1", decimal.NewFromFloat(50))
@@ -1484,7 +1519,7 @@ func TestService_Create_GenerateNumberError(t *testing.T) {
 func TestService_Create_AllocationError(t *testing.T) {
 	repo := NewMockRepository()
 	repo.createAllocErr = errors.New("allocation db error")
-	service := NewServiceWithRepository(repo, nil)
+	service := NewServiceWithRepository(repo, &MockInvoiceService{})
 	ctx := context.Background()
 	contactID := "contact-1"
 
@@ -1510,7 +1545,6 @@ func TestService_Create_InvoicingError(t *testing.T) {
 	ctx := context.Background()
 	contactID := "contact-1"
 
-	// This should succeed even though invoicing fails (it's logged but not fatal)
 	result, err := service.Create(ctx, "tenant-1", "test_schema", &CreatePaymentRequest{
 		PaymentType: PaymentTypeReceived,
 		ContactID:   &contactID,
@@ -1520,6 +1554,6 @@ func TestService_Create_InvoicingError(t *testing.T) {
 		},
 	})
 
-	require.NoError(t, err)
-	assert.NotNil(t, result)
+	require.ErrorContains(t, err, "update invoice inv-1 payment: invoicing error")
+	assert.Nil(t, result)
 }
