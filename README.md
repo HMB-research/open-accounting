@@ -7,7 +7,7 @@
 [![CLI coverage](https://img.shields.io/badge/CLI%20coverage-100%25-brightgreen)](docs/USE_CASE_COVERAGE.md#current-evidence-baseline)
 [![Docs gate](https://img.shields.io/badge/docs%20gate-passing-brightgreen)](docs/DEVELOPMENT_STATUS.md#verified-engineering-baseline)
 [![Demo E2E](https://img.shields.io/badge/demo%20E2E-blocking%20CI-brightgreen)](docs/demo-e2e-testing.md)
-[![Go Report Card](https://goreportcard.com/badge/github.com/HMB-research/open-accounting)](https://goreportcard.com/report/github.com/HMB-research/open-accounting)
+[![golangci-lint](https://img.shields.io/badge/golangci--lint-website-00ADD8?logo=go)](https://golangci-lint.run/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://go.dev/)
 
