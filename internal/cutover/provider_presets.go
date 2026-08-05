@@ -1680,7 +1680,7 @@ func smartAccountsCommercialDocumentAliases(numberField, dateField string) map[s
 
 func smartAccountsGridInvoiceAliases() map[string]string {
 	return map[string]string{
-		"nr":       "number",
+		"nr":       "invoice_number",
 		"klient":   "contact_name",
 		"hankija":  "contact_name",
 		"arve":     "invoice_number",

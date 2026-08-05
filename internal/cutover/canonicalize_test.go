@@ -1,6 +1,7 @@
 package cutover
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -84,4 +85,18 @@ func TestCanonicalizeBundleFileCSVSmartAccountsKeepsGroupedPaymentDuplicates(t *
 	assert.Contains(t, got.CSVContent, "PAY-7,RECEIVED,2026-06-01,150,EUR,REF-A,INV-1,100\n")
 	assert.Contains(t, got.CSVContent, "PAY-7,RECEIVED,2026-06-01,150,EUR,REF-A,INV-2,50\n")
 	assert.NotContains(t, got.CSVContent, "PAY-7~SA")
+}
+
+func TestCanonicalizeBundleFileCSVSmartAccountsMapsGridInvoiceNumber(t *testing.T) {
+	file := BundleFile{
+		Kind:       KindInvoices,
+		FileName:   "smartaccounts-invoices.csv",
+		CSVContent: "nr,kp,tahtaeg\nINV-1,2026-06-01,2026-06-15\n",
+	}
+
+	got, err := CanonicalizeBundleFileCSV(file, MigrationProviderPresetSmartAccounts)
+	require.NoError(t, err)
+
+	header, _, _ := strings.Cut(got.CSVContent, "\n")
+	assert.Equal(t, "invoice_number,issue_date,due_date", header)
 }
