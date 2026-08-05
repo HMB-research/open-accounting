@@ -257,7 +257,9 @@ func (r *GORMRepository) applyPayment(ctx context.Context, schemaName, tenantID,
 	}
 
 	newAmountPaid, newStatus := calculatePaymentUpdate(invoice, amount, time.Now())
-	result := invoicesDB.
+	qualifiedInvoicesTable, _ := database.QualifiedTable(schemaName, "invoices")
+	result := invoicesDB.Session(&gorm.Session{NewDB: true}).
+		Table(qualifiedInvoicesTable).
 		Where("id = ? AND tenant_id = ?", invoiceID, tenantID).
 		Updates(map[string]interface{}{
 			"amount_paid": newAmountPaid.String(),
