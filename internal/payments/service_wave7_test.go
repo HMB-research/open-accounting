@@ -9,7 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func TestPaymentsWave7CreateKeepsPaymentWhenInvoiceUpdateWarns(t *testing.T) {
+func TestPaymentsWave7CreateFailsWhenInvoiceUpdateFails(t *testing.T) {
 	repo := NewMockRepository()
 	invoiceSvc := &MockInvoiceService{recordPaymentErr: assertablePaymentErr("invoice update failed")}
 	service := NewServiceWithRepository(repo, invoiceSvc)
@@ -27,11 +27,11 @@ func TestPaymentsWave7CreateKeepsPaymentWhenInvoiceUpdateWarns(t *testing.T) {
 			Amount:    decimal.NewFromInt(100),
 		}},
 	})
-	if err != nil {
-		t.Fatalf("Create() error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "invoice update failed") {
+		t.Fatalf("Create() error = %v, want invoice update failure", err)
 	}
-	if payment.ID == "" || len(payment.Allocations) != 1 {
-		t.Fatalf("Create() payment = %#v, want persisted payment with allocation despite invoice warning", payment)
+	if payment != nil {
+		t.Fatalf("Create() payment = %#v, want nil on invoice update failure", payment)
 	}
 	if len(invoiceSvc.recordPaymentCalls) != 1 || invoiceSvc.recordPaymentCalls[0].invoiceID != invoiceID {
 		t.Fatalf("RecordPayment calls = %#v", invoiceSvc.recordPaymentCalls)

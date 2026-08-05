@@ -45,6 +45,12 @@ func NewServiceWithRepository(repo Repository, accountingService *accounting.Ser
 	}
 }
 
+// WithRepository returns a service that keeps this service's domain
+// dependencies while using a repository bound to another transaction.
+func (s *Service) WithRepository(repo Repository) *Service {
+	return NewServiceWithRepository(repo, s.accounting)
+}
+
 // Create creates a new invoice
 func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *CreateInvoiceRequest) (*Invoice, error) {
 	invoice := &Invoice{
@@ -190,6 +196,20 @@ func (s *Service) Send(ctx context.Context, tenantID, schemaName, invoiceID stri
 
 // RecordPayment records a payment against an invoice
 func (s *Service) RecordPayment(ctx context.Context, tenantID, schemaName, invoiceID string, amount decimal.Decimal) error {
+	if applicator, ok := s.repo.(transactionPaymentApplicator); ok {
+		if err := applicator.applyPayment(ctx, schemaName, tenantID, invoiceID, amount); err != nil {
+			return fmt.Errorf("record payment: %w", err)
+		}
+		return nil
+	}
+
+	if applicator, ok := s.repo.(paymentApplicator); ok {
+		if err := applicator.ApplyPayment(ctx, schemaName, tenantID, invoiceID, amount); err != nil {
+			return fmt.Errorf("record payment: %w", err)
+		}
+		return nil
+	}
+
 	invoice, err := s.repo.GetByID(ctx, schemaName, tenantID, invoiceID)
 	if err != nil {
 		return fmt.Errorf("get invoice: %w", err)
@@ -199,6 +219,24 @@ func (s *Service) RecordPayment(ctx context.Context, tenantID, schemaName, invoi
 		return fmt.Errorf("cannot record payment on voided invoice")
 	}
 
+	newAmountPaid, newStatus := calculatePaymentUpdate(invoice, amount, time.Now())
+
+	if err := s.repo.UpdatePayment(ctx, schemaName, tenantID, invoiceID, newAmountPaid, newStatus); err != nil {
+		return fmt.Errorf("record payment: %w", err)
+	}
+
+	return nil
+}
+
+type paymentApplicator interface {
+	ApplyPayment(ctx context.Context, schemaName, tenantID, invoiceID string, amount decimal.Decimal) error
+}
+
+type transactionPaymentApplicator interface {
+	applyPayment(ctx context.Context, schemaName, tenantID, invoiceID string, amount decimal.Decimal) error
+}
+
+func calculatePaymentUpdate(invoice *Invoice, amount decimal.Decimal, now time.Time) (decimal.Decimal, InvoiceStatus) {
 	newAmountPaid := invoice.AmountPaid.Add(amount)
 	var newStatus InvoiceStatus
 
@@ -209,21 +247,21 @@ func (s *Service) RecordPayment(ctx context.Context, tenantID, schemaName, invoi
 		newStatus = StatusPartiallyPaid
 	} else {
 		newAmountPaid = decimal.Zero
-		newStatus = unpaidInvoiceStatus(invoice)
+		newStatus = unpaidInvoiceStatusAt(invoice, now)
 	}
 
-	if err := s.repo.UpdatePayment(ctx, schemaName, tenantID, invoiceID, newAmountPaid, newStatus); err != nil {
-		return fmt.Errorf("record payment: %w", err)
-	}
-
-	return nil
+	return newAmountPaid, newStatus
 }
 
 func unpaidInvoiceStatus(invoice *Invoice) InvoiceStatus {
+	return unpaidInvoiceStatusAt(invoice, time.Now())
+}
+
+func unpaidInvoiceStatusAt(invoice *Invoice, now time.Time) InvoiceStatus {
 	if invoice.Status == StatusDraft || invoice.Status == StatusVoided {
 		return invoice.Status
 	}
-	if time.Now().After(invoice.DueDate) {
+	if now.After(invoice.DueDate) {
 		return StatusOverdue
 	}
 	return StatusSent
@@ -231,6 +269,10 @@ func unpaidInvoiceStatus(invoice *Invoice) InvoiceStatus {
 
 // Void voids an invoice
 func (s *Service) Void(ctx context.Context, tenantID, schemaName, invoiceID string) error {
+	if voider, ok := s.repo.(invoiceVoider); ok {
+		return voider.VoidInvoice(ctx, schemaName, tenantID, invoiceID)
+	}
+
 	invoice, err := s.repo.GetByID(ctx, schemaName, tenantID, invoiceID)
 	if err != nil {
 		return fmt.Errorf("get invoice: %w", err)
@@ -249,6 +291,10 @@ func (s *Service) Void(ctx context.Context, tenantID, schemaName, invoiceID stri
 	}
 
 	return nil
+}
+
+type invoiceVoider interface {
+	VoidInvoice(ctx context.Context, schemaName, tenantID, invoiceID string) error
 }
 
 // UpdateOverdueStatus updates status of overdue invoices

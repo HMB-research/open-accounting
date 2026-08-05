@@ -115,23 +115,29 @@ func (s *Service) ImportPaymentsCSV(ctx context.Context, tenantID, schemaName st
 			continue
 		}
 
-		if err := s.repo.Create(ctx, schemaName, payment); err != nil {
-			appendPaymentImportRowError(result, row, err)
-			continue
-		}
+		if err := s.withAtomicRepositories(ctx, func(repo Repository, invoiceService InvoiceService) error {
+			if allocation != nil && invoiceService == nil {
+				return fmt.Errorf("invoicing service is required for payment allocations")
+			}
+			if err := repo.Create(ctx, schemaName, payment); err != nil {
+				return err
+			}
 
-		if allocation != nil {
+			if allocation == nil {
+				return nil
+			}
 			allocation.PaymentID = payment.ID
-			if err := s.repo.CreateAllocation(ctx, schemaName, allocation); err != nil {
-				appendPaymentImportRowError(result, row, fmt.Errorf("insert allocation: %w", err))
-				continue
+			if err := repo.CreateAllocation(ctx, schemaName, allocation); err != nil {
+				return fmt.Errorf("insert allocation: %w", err)
 			}
 			payment.Allocations = append(payment.Allocations, *allocation)
-			if s.invoicing != nil {
-				if err := s.invoicing.RecordPayment(ctx, tenantID, schemaName, allocation.InvoiceID, allocation.Amount); err != nil {
-					fmt.Printf("warning: failed to update invoice %s payment amount: %v\n", allocation.InvoiceID, err)
-				}
+			if err := invoiceService.RecordPayment(ctx, tenantID, schemaName, allocation.InvoiceID, allocation.Amount); err != nil {
+				return fmt.Errorf("update invoice %s payment: %w", allocation.InvoiceID, err)
 			}
+			return nil
+		}); err != nil {
+			appendPaymentImportRowError(result, row, err)
+			continue
 		}
 
 		usedNumbers[numberKey] = payment.ID

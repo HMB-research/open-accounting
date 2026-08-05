@@ -9,6 +9,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/database"
 	"github.com/HMB-research/open-accounting/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // GORMRepository implements Repository using GORM
@@ -43,10 +44,6 @@ func qualifiedTableAfterSchemaValidated(schemaName, tableName string) string {
 	return qualifiedTable
 }
 
-func tenantTableAfterSchemaValidated(db *gorm.DB, schemaName, tableName string) *gorm.DB {
-	return db.Session(&gorm.Session{NewDB: true}).Table(qualifiedTableAfterSchemaValidated(schemaName, tableName))
-}
-
 // Create inserts a new payment
 func (r *GORMRepository) Create(ctx context.Context, schemaName string, payment *Payment) error {
 	db, err := r.tenantTable(ctx, schemaName, "payments")
@@ -69,50 +66,73 @@ func (r *GORMRepository) CreateReversal(ctx context.Context, schemaName string, 
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		tx = tx.WithContext(ctx)
-		paymentsDB := tenantTableAfterSchemaValidated(tx, schemaName, "payments")
-		allocationsDB := tenantTableAfterSchemaValidated(tx, schemaName, "payment_allocations")
-
-		if err := paymentsDB.Create(paymentToModel(reversal)).Error; err != nil {
-			return fmt.Errorf("create reversal payment: %w", err)
-		}
-
-		for i := range allocations {
-			if err := allocationsDB.Create(allocationToModel(&allocations[i])).Error; err != nil {
-				return fmt.Errorf("create reversal allocation: %w", err)
-			}
-		}
-
-		paymentsUpdateDB := tenantTableAfterSchemaValidated(tx, schemaName, "payments")
-		result := paymentsUpdateDB.
-			Model(&models.Payment{}).
-			Where("id = ? AND tenant_id = ? AND reversed_by_payment_id IS NULL", originalPaymentID, reversal.TenantID).
-			Updates(map[string]interface{}{
-				"reversed_by_payment_id": reversal.ID,
-				"reversed_at":            reversedAt,
-				"reversed_by":            reversedBy,
-				"reversal_reason":        reason,
-			})
-		if result.Error != nil {
-			return fmt.Errorf("mark original payment reversed: %w", result.Error)
-		}
-		if result.RowsAffected == 0 {
-			return ErrPaymentAlreadyReversed
-		}
-
-		return nil
+		return NewGORMRepository(tx).createReversal(ctx, schemaName, originalPaymentID, reversal, allocations, reversedAt, reversedBy, reason)
 	})
+}
+
+func (r *GORMRepository) createReversal(ctx context.Context, schemaName string, originalPaymentID string, reversal *Payment, allocations []PaymentAllocation, reversedAt time.Time, reversedBy string, reason string) error {
+	paymentsDB, err := r.tenantTable(ctx, schemaName, "payments")
+	if err != nil {
+		return err
+	}
+	// The schema and table identifiers were validated by the payments lookup
+	// above, so the remaining handles can be derived without repeating the
+	// validation or introducing a second failure point in the same transaction.
+	allocationsDB := paymentsDB.Session(&gorm.Session{NewDB: true}).Table(
+		qualifiedTableAfterSchemaValidated(schemaName, "payment_allocations"),
+	)
+
+	if err := paymentsDB.Create(paymentToModel(reversal)).Error; err != nil {
+		return fmt.Errorf("create reversal payment: %w", err)
+	}
+
+	for i := range allocations {
+		if err := allocationsDB.Create(allocationToModel(&allocations[i])).Error; err != nil {
+			return fmt.Errorf("create reversal allocation: %w", err)
+		}
+	}
+
+	result := paymentsDB.Session(&gorm.Session{NewDB: true}).
+		Table(qualifiedTableAfterSchemaValidated(schemaName, "payments")).
+		Model(&models.Payment{}).
+		Where("id = ? AND tenant_id = ? AND reversed_by_payment_id IS NULL", originalPaymentID, reversal.TenantID).
+		Updates(map[string]interface{}{
+			"reversed_by_payment_id": reversal.ID,
+			"reversed_at":            reversedAt,
+			"reversed_by":            reversedBy,
+			"reversal_reason":        reason,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("mark original payment reversed: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrPaymentAlreadyReversed
+	}
+
+	return nil
 }
 
 // GetByID retrieves a payment by ID
 func (r *GORMRepository) GetByID(ctx context.Context, schemaName, tenantID, paymentID string) (*Payment, error) {
+	return r.getByID(ctx, schemaName, tenantID, paymentID, false)
+}
+
+func (r *GORMRepository) GetByIDForUpdate(ctx context.Context, schemaName, tenantID, paymentID string) (*Payment, error) {
+	return r.getByID(ctx, schemaName, tenantID, paymentID, true)
+}
+
+func (r *GORMRepository) getByID(ctx context.Context, schemaName, tenantID, paymentID string, forUpdate bool) (*Payment, error) {
 	db, err := r.tenantTable(ctx, schemaName, "payments")
 	if err != nil {
 		return nil, err
 	}
 
 	var paymentModel models.Payment
-	err = db.Where("id = ? AND tenant_id = ?", paymentID, tenantID).First(&paymentModel).Error
+	query := db.Where("id = ? AND tenant_id = ?", paymentID, tenantID)
+	if forUpdate {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	err = query.First(&paymentModel).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPaymentNotFound
 	}

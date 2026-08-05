@@ -10,6 +10,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/models"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // GORMRepository implements Repository using GORM
@@ -162,6 +163,41 @@ func (r *GORMRepository) UpdateStatus(ctx context.Context, schemaName, tenantID,
 	return nil
 }
 
+// VoidInvoice atomically voids an unpaid invoice. The payment and status
+// predicates are part of the update so a concurrent payment cannot be
+// followed by a stale void operation.
+func (r *GORMRepository) VoidInvoice(ctx context.Context, schemaName, tenantID, invoiceID string) error {
+	db, err := r.tenantTable(ctx, schemaName, "invoices")
+	if err != nil {
+		return err
+	}
+
+	result := db.
+		Where("id = ? AND tenant_id = ? AND status <> ? AND amount_paid = ?", invoiceID, tenantID, StatusVoided, decimal.Zero.String()).
+		Updates(map[string]interface{}{
+			"status":     StatusVoided,
+			"updated_at": time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("void invoice: %w", result.Error)
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+
+	invoice, err := r.GetByID(ctx, schemaName, tenantID, invoiceID)
+	if err != nil {
+		return err
+	}
+	if invoice.Status == StatusVoided {
+		return fmt.Errorf("invoice already voided")
+	}
+	if !invoice.AmountPaid.IsZero() {
+		return fmt.Errorf("cannot void invoice with payments")
+	}
+	return ErrInvoiceNotFound
+}
+
 // UpdatePayment updates the amount paid and status of an invoice
 func (r *GORMRepository) UpdatePayment(ctx context.Context, schemaName, tenantID, invoiceID string, amountPaid decimal.Decimal, status InvoiceStatus) error {
 	db, err := r.tenantTable(ctx, schemaName, "invoices")
@@ -181,6 +217,62 @@ func (r *GORMRepository) UpdatePayment(ctx context.Context, schemaName, tenantID
 	if result.RowsAffected == 0 {
 		return ErrInvoiceNotFound
 	}
+	return nil
+}
+
+// ApplyPayment atomically applies a payment delta while holding the invoice
+// row lock. This prevents concurrent allocations or reversals from losing a
+// previously recorded payment amount.
+func (r *GORMRepository) ApplyPayment(ctx context.Context, schemaName, tenantID, invoiceID string, amount decimal.Decimal) error {
+	db, err := r.tenantTable(ctx, schemaName, "invoices")
+	if err != nil {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		return NewGORMRepository(tx).applyPayment(ctx, schemaName, tenantID, invoiceID, amount)
+	})
+}
+
+func (r *GORMRepository) applyPayment(ctx context.Context, schemaName, tenantID, invoiceID string, amount decimal.Decimal) error {
+	invoicesDB, err := database.TenantTable(r.db.WithContext(ctx), schemaName, "invoices")
+	if err != nil {
+		return err
+	}
+
+	var invoiceModel models.Invoice
+	if err := invoicesDB.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND tenant_id = ?", invoiceID, tenantID).
+		First(&invoiceModel).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrInvoiceNotFound
+		}
+		return fmt.Errorf("get invoice: %w", err)
+	}
+
+	invoice := modelToInvoice(&invoiceModel)
+	if invoice.Status == StatusVoided {
+		return fmt.Errorf("cannot record payment on voided invoice")
+	}
+
+	newAmountPaid, newStatus := calculatePaymentUpdate(invoice, amount, time.Now())
+	qualifiedInvoicesTable, _ := database.QualifiedTable(schemaName, "invoices")
+	result := invoicesDB.Session(&gorm.Session{NewDB: true}).
+		Table(qualifiedInvoicesTable).
+		Where("id = ? AND tenant_id = ?", invoiceID, tenantID).
+		Updates(map[string]interface{}{
+			"amount_paid": newAmountPaid.String(),
+			"status":      newStatus,
+			"updated_at":  time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("update payment: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrInvoiceNotFound
+	}
+
 	return nil
 }
 

@@ -26,9 +26,10 @@ type contactLister interface {
 
 // Service provides payment operations
 type Service struct {
-	repo      Repository
-	invoicing InvoiceService
-	contacts  contactLister
+	repo              Repository
+	invoicing         InvoiceService
+	contacts          contactLister
+	transactionRunner paymentTransactionRunner
 }
 
 var (
@@ -48,9 +49,10 @@ func NewService(db *pgxpool.Pool, invoicingService *invoicing.Service) *Service 
 		panic(fmt.Errorf("create payments GORM repository: %w", err))
 	}
 	return &Service{
-		repo:      NewGORMRepository(gormDB),
-		invoicing: invoicingService,
-		contacts:  newPaymentsContactService(db),
+		repo:              NewGORMRepository(gormDB),
+		invoicing:         invoicingService,
+		contacts:          newPaymentsContactService(db),
+		transactionRunner: &gormPaymentTransactionRunner{db: gormDB, invoicing: invoicingService},
 	}
 }
 
@@ -108,46 +110,50 @@ func (s *Service) Create(ctx context.Context, tenantID, schemaName string, req *
 	if totalAllocated.GreaterThan(payment.Amount) {
 		return nil, fmt.Errorf("total allocations exceed payment amount")
 	}
-
-	// Generate payment number
-	seq, err := s.repo.GetNextPaymentNumber(ctx, schemaName, tenantID, payment.PaymentType)
-	if err != nil {
-		return nil, fmt.Errorf("generate payment number: %w", err)
+	if len(req.Allocations) > 0 && s.invoicing == nil {
+		return nil, fmt.Errorf("invoicing service is required for payment allocations")
 	}
 
-	payment.PaymentNumber = FormatPaymentNumber(payment.PaymentType, seq)
+	err := s.withAtomicRepositories(ctx, func(repo Repository, invoiceService InvoiceService) error {
+		seq, err := repo.GetNextPaymentNumber(ctx, schemaName, tenantID, payment.PaymentType)
+		if err != nil {
+			return fmt.Errorf("generate payment number: %w", err)
+		}
+		payment.PaymentNumber = FormatPaymentNumber(payment.PaymentType, seq)
 
-	// Insert payment
-	if err := s.repo.Create(ctx, schemaName, payment); err != nil {
-		return nil, fmt.Errorf("insert payment: %w", err)
-	}
-
-	// Create allocations
-	for _, allocReq := range req.Allocations {
-		allocation := PaymentAllocation{
-			ID:        uuid.New().String(),
-			TenantID:  tenantID,
-			PaymentID: payment.ID,
-			InvoiceID: allocReq.InvoiceID,
-			Amount:    allocReq.Amount,
-			CreatedAt: time.Now(),
+		if err := repo.Create(ctx, schemaName, payment); err != nil {
+			return fmt.Errorf("insert payment: %w", err)
 		}
 
-		if err := s.repo.CreateAllocation(ctx, schemaName, &allocation); err != nil {
-			return nil, fmt.Errorf("insert allocation: %w", err)
+		for _, allocReq := range req.Allocations {
+			allocation := PaymentAllocation{
+				ID:        uuid.New().String(),
+				TenantID:  tenantID,
+				PaymentID: payment.ID,
+				InvoiceID: allocReq.InvoiceID,
+				Amount:    allocReq.Amount,
+				CreatedAt: time.Now(),
+			}
+
+			if err := repo.CreateAllocation(ctx, schemaName, &allocation); err != nil {
+				return fmt.Errorf("insert allocation: %w", err)
+			}
+			payment.Allocations = append(payment.Allocations, allocation)
 		}
 
-		payment.Allocations = append(payment.Allocations, allocation)
-	}
-
-	// Update invoice payment amounts
-	for _, alloc := range payment.Allocations {
-		if s.invoicing != nil {
-			if err := s.invoicing.RecordPayment(ctx, tenantID, schemaName, alloc.InvoiceID, alloc.Amount); err != nil {
-				// Log error but don't fail - payment is recorded
-				fmt.Printf("warning: failed to update invoice %s payment amount: %v\n", alloc.InvoiceID, err)
+		for _, alloc := range payment.Allocations {
+			if invoiceService == nil {
+				continue
+			}
+			if err := invoiceService.RecordPayment(ctx, tenantID, schemaName, alloc.InvoiceID, alloc.Amount); err != nil {
+				return fmt.Errorf("update invoice %s payment: %w", alloc.InvoiceID, err)
 			}
 		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return payment, nil
@@ -163,105 +169,148 @@ func (s *Service) Reverse(ctx context.Context, tenantID, schemaName, paymentID s
 		return nil, fmt.Errorf("reversal reason is required")
 	}
 
-	original, err := s.GetByID(ctx, tenantID, schemaName, paymentID)
+	var result *PaymentReversalResult
+	err := s.withAtomicRepositories(ctx, func(repo Repository, invoiceService InvoiceService) error {
+		original, err := getPaymentForUpdate(ctx, repo, tenantID, schemaName, paymentID)
+		if err != nil {
+			return err
+		}
+		if len(original.Allocations) > 0 && invoiceService == nil {
+			return fmt.Errorf("invoicing service is required for payment reversals with allocations")
+		}
+		if original.ReversalOfPaymentID != nil {
+			return fmt.Errorf("%w: reversal payments cannot be reversed", ErrPaymentReversalNotAllowed)
+		}
+		if original.ReversedByPaymentID != nil {
+			return ErrPaymentAlreadyReversed
+		}
+
+		reversalDate := req.PaymentDate
+		if reversalDate.IsZero() {
+			reversalDate = time.Now()
+		}
+
+		reversalPaymentID := uuid.New().String()
+		reversalType := reversePaymentType(original.PaymentType)
+		seq, err := repo.GetNextPaymentNumber(ctx, schemaName, tenantID, reversalType)
+		if err != nil {
+			return fmt.Errorf("generate reversal payment number: %w", err)
+		}
+
+		reference := strings.TrimSpace(req.Reference)
+		if reference == "" {
+			reference = fmt.Sprintf("REVERSAL-%s", original.PaymentNumber)
+		}
+		notes := strings.TrimSpace(req.Notes)
+		if notes == "" {
+			notes = fmt.Sprintf("Reversal of %s: %s", original.PaymentNumber, reason)
+		}
+		reversalOfPaymentID := original.ID
+		now := time.Now()
+		reversal := &Payment{
+			ID:                  reversalPaymentID,
+			TenantID:            tenantID,
+			PaymentNumber:       FormatPaymentNumber(reversalType, seq),
+			PaymentType:         reversalType,
+			ContactID:           original.ContactID,
+			PaymentDate:         reversalDate,
+			Amount:              original.Amount,
+			Currency:            original.Currency,
+			ExchangeRate:        original.ExchangeRate,
+			BaseAmount:          original.BaseAmount,
+			PaymentMethod:       original.PaymentMethod,
+			BankAccount:         original.BankAccount,
+			Reference:           reference,
+			Notes:               notes,
+			ReversalOfPaymentID: &reversalOfPaymentID,
+			ReversalReason:      reason,
+			CreatedAt:           now,
+			CreatedBy:           req.UserID,
+		}
+
+		reversalAllocations := make([]PaymentAllocation, 0, len(original.Allocations))
+		for _, originalAllocation := range original.Allocations {
+			reversalAllocations = append(reversalAllocations, PaymentAllocation{
+				ID:        uuid.New().String(),
+				TenantID:  tenantID,
+				PaymentID: reversal.ID,
+				InvoiceID: originalAllocation.InvoiceID,
+				Amount:    originalAllocation.Amount,
+				CreatedAt: now,
+			})
+		}
+
+		if err := createReversal(ctx, repo, schemaName, original.ID, reversal, reversalAllocations, now, req.UserID, reason); err != nil {
+			return fmt.Errorf("create payment reversal: %w", err)
+		}
+
+		for _, allocation := range original.Allocations {
+			if err := invoiceService.RecordPayment(ctx, tenantID, schemaName, allocation.InvoiceID, allocation.Amount.Neg()); err != nil {
+				return fmt.Errorf("reverse invoice allocation %s: %w", allocation.InvoiceID, err)
+			}
+		}
+
+		original.ReversedByPaymentID = &reversal.ID
+		original.ReversedAt = &now
+		original.ReversedBy = &req.UserID
+		original.ReversalReason = reason
+		reversal.Allocations = reversalAllocations
+		result = &PaymentReversalResult{OriginalPayment: original, ReversalPayment: reversal}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if original.ReversalOfPaymentID != nil {
-		return nil, fmt.Errorf("%w: reversal payments cannot be reversed", ErrPaymentReversalNotAllowed)
-	}
-	if original.ReversedByPaymentID != nil {
-		return nil, ErrPaymentAlreadyReversed
-	}
 
-	reversalDate := req.PaymentDate
-	if reversalDate.IsZero() {
-		reversalDate = time.Now()
-	}
-
-	reversalPaymentID := uuid.New().String()
-	reversalType := reversePaymentType(original.PaymentType)
-	seq, err := s.repo.GetNextPaymentNumber(ctx, schemaName, tenantID, reversalType)
-	if err != nil {
-		return nil, fmt.Errorf("generate reversal payment number: %w", err)
-	}
-
-	reference := strings.TrimSpace(req.Reference)
-	if reference == "" {
-		reference = fmt.Sprintf("REVERSAL-%s", original.PaymentNumber)
-	}
-	notes := strings.TrimSpace(req.Notes)
-	if notes == "" {
-		notes = fmt.Sprintf("Reversal of %s: %s", original.PaymentNumber, reason)
-	}
-	reversalOfPaymentID := original.ID
-	now := time.Now()
-	reversal := &Payment{
-		ID:                  reversalPaymentID,
-		TenantID:            tenantID,
-		PaymentNumber:       FormatPaymentNumber(reversalType, seq),
-		PaymentType:         reversalType,
-		ContactID:           original.ContactID,
-		PaymentDate:         reversalDate,
-		Amount:              original.Amount,
-		Currency:            original.Currency,
-		ExchangeRate:        original.ExchangeRate,
-		BaseAmount:          original.BaseAmount,
-		PaymentMethod:       original.PaymentMethod,
-		BankAccount:         original.BankAccount,
-		Reference:           reference,
-		Notes:               notes,
-		ReversalOfPaymentID: &reversalOfPaymentID,
-		ReversalReason:      reason,
-		CreatedAt:           now,
-		CreatedBy:           req.UserID,
-	}
-
-	reversalAllocations := make([]PaymentAllocation, 0, len(original.Allocations))
-	for _, originalAllocation := range original.Allocations {
-		reversalAllocations = append(reversalAllocations, PaymentAllocation{
-			ID:        uuid.New().String(),
-			TenantID:  tenantID,
-			PaymentID: reversal.ID,
-			InvoiceID: originalAllocation.InvoiceID,
-			Amount:    originalAllocation.Amount,
-			CreatedAt: now,
-		})
-	}
-
-	if err := s.repo.CreateReversal(ctx, schemaName, original.ID, reversal, reversalAllocations, now, req.UserID, reason); err != nil {
-		return nil, fmt.Errorf("create payment reversal: %w", err)
-	}
-
-	for _, allocation := range original.Allocations {
-		if s.invoicing != nil {
-			if err := s.invoicing.RecordPayment(ctx, tenantID, schemaName, allocation.InvoiceID, allocation.Amount.Neg()); err != nil {
-				return nil, fmt.Errorf("reverse invoice allocation %s: %w", allocation.InvoiceID, err)
-			}
-		}
-	}
-
-	original.ReversedByPaymentID = &reversal.ID
-	original.ReversedAt = &now
-	original.ReversedBy = &req.UserID
-	original.ReversalReason = reason
-	reversal.Allocations = reversalAllocations
-
-	return &PaymentReversalResult{
-		OriginalPayment: original,
-		ReversalPayment: reversal,
-	}, nil
+	return result, nil
 }
 
 // GetByID retrieves a payment by ID
 func (s *Service) GetByID(ctx context.Context, tenantID, schemaName, paymentID string) (*Payment, error) {
-	payment, err := s.repo.GetByID(ctx, schemaName, tenantID, paymentID)
+	return getPayment(ctx, s.repo, tenantID, schemaName, paymentID)
+}
+
+type paymentLocker interface {
+	GetByIDForUpdate(ctx context.Context, schemaName, tenantID, paymentID string) (*Payment, error)
+}
+
+type transactionReversalCreator interface {
+	createReversal(ctx context.Context, schemaName string, originalPaymentID string, reversal *Payment, allocations []PaymentAllocation, reversedAt time.Time, reversedBy string, reason string) error
+}
+
+func createReversal(ctx context.Context, repo Repository, schemaName, originalPaymentID string, reversal *Payment, allocations []PaymentAllocation, reversedAt time.Time, reversedBy, reason string) error {
+	if creator, ok := repo.(transactionReversalCreator); ok {
+		return creator.createReversal(ctx, schemaName, originalPaymentID, reversal, allocations, reversedAt, reversedBy, reason)
+	}
+	return repo.CreateReversal(ctx, schemaName, originalPaymentID, reversal, allocations, reversedAt, reversedBy, reason)
+}
+
+func getPayment(ctx context.Context, repo Repository, tenantID, schemaName, paymentID string) (*Payment, error) {
+	return getPaymentWithLock(ctx, repo, tenantID, schemaName, paymentID, false)
+}
+
+func getPaymentForUpdate(ctx context.Context, repo Repository, tenantID, schemaName, paymentID string) (*Payment, error) {
+	return getPaymentWithLock(ctx, repo, tenantID, schemaName, paymentID, true)
+}
+
+func getPaymentWithLock(ctx context.Context, repo Repository, tenantID, schemaName, paymentID string, forUpdate bool) (*Payment, error) {
+	var payment *Payment
+	var err error
+	if forUpdate {
+		if locker, ok := repo.(paymentLocker); ok {
+			payment, err = locker.GetByIDForUpdate(ctx, schemaName, tenantID, paymentID)
+		} else {
+			payment, err = repo.GetByID(ctx, schemaName, tenantID, paymentID)
+		}
+	} else {
+		payment, err = repo.GetByID(ctx, schemaName, tenantID, paymentID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get payment: %w", err)
 	}
 
 	// Load allocations
-	allocations, err := s.repo.GetAllocations(ctx, schemaName, tenantID, paymentID)
+	allocations, err := repo.GetAllocations(ctx, schemaName, tenantID, paymentID)
 	if err != nil {
 		return nil, fmt.Errorf("get allocations: %w", err)
 	}
@@ -281,37 +330,53 @@ func (s *Service) List(ctx context.Context, tenantID, schemaName string, filter 
 
 // AllocateToInvoice allocates part of an existing payment to an invoice
 func (s *Service) AllocateToInvoice(ctx context.Context, tenantID, schemaName, paymentID, invoiceID string, amount decimal.Decimal) error {
-	payment, err := s.GetByID(ctx, tenantID, schemaName, paymentID)
-	if err != nil {
-		return err
+	if s.invoicing == nil {
+		return fmt.Errorf("invoicing service is required for payment allocations")
 	}
+	return s.withAtomicRepositories(ctx, func(repo Repository, invoiceService InvoiceService) error {
+		payment, err := getPaymentForUpdate(ctx, repo, tenantID, schemaName, paymentID)
+		if err != nil {
+			return err
+		}
+		if payment.ReversalOfPaymentID != nil || payment.ReversedByPaymentID != nil {
+			return fmt.Errorf("%w: reversed payments cannot be allocated", ErrPaymentReversalNotAllowed)
+		}
+		if amount.LessThanOrEqual(decimal.Zero) {
+			return fmt.Errorf("allocation amount must be positive")
+		}
 
-	unallocated := payment.UnallocatedAmount()
-	if amount.GreaterThan(unallocated) {
-		return fmt.Errorf("amount exceeds unallocated balance of %s", unallocated.String())
-	}
+		unallocated := payment.UnallocatedAmount()
+		if amount.GreaterThan(unallocated) {
+			return fmt.Errorf("amount exceeds unallocated balance of %s", unallocated.String())
+		}
 
-	allocation := &PaymentAllocation{
-		ID:        uuid.New().String(),
-		TenantID:  tenantID,
-		PaymentID: paymentID,
-		InvoiceID: invoiceID,
-		Amount:    amount,
-		CreatedAt: time.Now(),
-	}
+		allocation := &PaymentAllocation{
+			ID:        uuid.New().String(),
+			TenantID:  tenantID,
+			PaymentID: paymentID,
+			InvoiceID: invoiceID,
+			Amount:    amount,
+			CreatedAt: time.Now(),
+		}
 
-	if err := s.repo.CreateAllocation(ctx, schemaName, allocation); err != nil {
-		return fmt.Errorf("insert allocation: %w", err)
-	}
+		if err := repo.CreateAllocation(ctx, schemaName, allocation); err != nil {
+			return fmt.Errorf("insert allocation: %w", err)
+		}
 
-	// Update invoice
-	if s.invoicing != nil {
-		if err := s.invoicing.RecordPayment(ctx, tenantID, schemaName, invoiceID, amount); err != nil {
+		if err := invoiceService.RecordPayment(ctx, tenantID, schemaName, invoiceID, amount); err != nil {
 			return fmt.Errorf("update invoice payment: %w", err)
 		}
+
+		return nil
+	})
+}
+
+func (s *Service) withAtomicRepositories(ctx context.Context, fn func(Repository, InvoiceService) error) error {
+	if s.transactionRunner != nil {
+		return s.transactionRunner.WithTransaction(ctx, fn)
 	}
 
-	return nil
+	return fn(s.repo, s.invoicing)
 }
 
 // GetUnallocatedPayments returns payments with unallocated amounts

@@ -107,7 +107,7 @@ func TestPaymentImportServiceEdges(t *testing.T) {
 	t.Run("records allocation create errors as skipped rows", func(t *testing.T) {
 		repo := NewMockRepository()
 		repo.createAllocErr = errors.New("allocation insert failed")
-		service := NewServiceWithRepository(repo, nil)
+		service := NewServiceWithRepository(repo, &MockInvoiceService{})
 		invoiceID := "11111111-1111-4111-8111-111111111111"
 
 		result, err := service.ImportPaymentsCSV(context.Background(), "tenant-1", "test_schema", &ImportPaymentsRequest{

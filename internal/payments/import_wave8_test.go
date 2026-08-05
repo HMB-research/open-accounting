@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPaymentImportWave8InvoiceUpdateWarningStillCreatesPayment(t *testing.T) {
+func TestPaymentImportWave8InvoiceUpdateFailureSkipsPayment(t *testing.T) {
 	repo := NewMockRepository()
 	invoices := &MockInvoiceService{recordPaymentErr: errors.New("invoice offline")}
 	service := NewServiceWithRepository(repo, invoices)
@@ -21,12 +21,28 @@ func TestPaymentImportWave8InvoiceUpdateWarningStillCreatesPayment(t *testing.T)
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, 1, result.PaymentsCreated)
-	assert.Zero(t, result.RowsSkipped)
-	assert.Empty(t, result.Errors)
+	assert.Zero(t, result.PaymentsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Message, "invoice offline")
 	require.Len(t, invoices.recordPaymentCalls, 1)
 	assert.Equal(t, invoiceID, invoices.recordPaymentCalls[0].invoiceID)
 	require.Len(t, repo.payments, 1)
+}
+
+func TestPaymentImportWave8AllocationRequiresInvoicingService(t *testing.T) {
+	service := NewServiceWithRepository(NewMockRepository(), nil)
+	invoiceID := "11111111-1111-4111-8111-111111111111"
+
+	result, err := service.ImportPaymentsCSV(context.Background(), "tenant-1", "test_schema", &ImportPaymentsRequest{
+		CSVContent: "payment_number,payment_type,payment_date,amount,invoice_id,allocation_amount\n" +
+			"PAY-ALLOC,RECEIVED,2026-03-01,10," + invoiceID + ",5\n",
+	})
+
+	require.NoError(t, err)
+	assert.Zero(t, result.PaymentsCreated)
+	assert.Equal(t, 1, result.RowsSkipped)
+	assert.Contains(t, result.Errors[0].Message, "invoicing service is required for payment allocations")
 }
 
 func TestPaymentImportWave8ServiceAndParserBranches(t *testing.T) {

@@ -2832,6 +2832,12 @@ Content-Type: application/json
 
 The request may include `allocations` with `invoice_id` and `amount` entries to allocate the payment while creating it.
 
+Payment creation, CSV import rows with allocations, standalone allocation, and
+reversal are atomic across payment, allocation, and invoice paid-state writes:
+if any related invoice update fails, the payment-side writes are rolled back
+and the request or import row reports an error. Concurrent invoice payment
+updates serialize on the invoice row so paid amounts are not lost.
+
 ```http
 POST /tenants/{tenantId}/payments/import
 Authorization: Bearer <token>
@@ -2913,6 +2919,10 @@ Content-Type: application/json
 ```
 
 Creates an auditable offsetting payment instead of deleting the original payment. The original payment is marked with `reversed_by_payment_id`, `reversed_at`, `reversed_by`, and `reversal_reason`; the offsetting payment points back with `reversal_of_payment_id`. Allocated payments mirror the original allocations and reduce the related invoices' paid amounts through the payment workflow.
+
+The original payment, mirrored allocations, reversal metadata, and invoice
+paid-state changes are committed in one transaction. A failed invoice update
+does not leave a partial reversal.
 
 ### Get Unallocated Payments
 
