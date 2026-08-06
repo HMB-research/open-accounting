@@ -544,6 +544,8 @@ curl -X OPTIONS https://api.example.com/api/v1/auth/login \
 - [ ] Use secrets management (Vault, AWS Secrets Manager, etc.)
 - [ ] Enable rate limiting at reverse proxy level
 - [ ] Regular security updates for OS and dependencies
+- [ ] Keep the Docker Engine/runner patched independently from Go module updates; do not expose the Docker API to untrusted users or workloads, use trusted images for Testcontainers, and avoid archive (`docker cp`) operations against untrusted running containers
+- [ ] If Traefik uses the Docker provider, put a least-privilege socket proxy or isolated Docker endpoint between Traefik and the daemon; do not mount the raw Docker socket into application containers
 
 ## Monitoring
 

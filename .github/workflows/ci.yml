@@ -92,7 +92,7 @@ jobs:
             esac
 
             case "$file" in
-              scripts/integration-package-weights.tsv|scripts/select-integration-packages.sh|scripts/verify-cli-coverage.sh|scripts/verify-total-coverage.sh|scripts/run-affected-tests.sh|scripts/parse-go-test-package-times.sh|scripts/parse-playwright-spec-times.mjs|scripts/test-loop.sh|scripts/test-demo-loop.sh)
+              scripts/integration-package-weights.tsv|scripts/select-integration-packages.sh|scripts/verify-cli-coverage.sh|scripts/verify-total-coverage.sh|scripts/verify-security-dependencies.sh|scripts/run-affected-tests.sh|scripts/parse-go-test-package-times.sh|scripts/parse-playwright-spec-times.mjs|scripts/test-loop.sh|scripts/test-demo-loop.sh)
                 ci=true
                 ;;
             esac
