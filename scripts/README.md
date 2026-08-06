@@ -24,6 +24,16 @@ scripts/run-affected-tests.sh --base origin/main
 This is an inner-loop accelerator. Keep using the broader stage gates, such as
 `make test-backend-coverage`, before committing a completed stage.
 
+## Dependency Security Guard
+
+The backend gate runs `scripts/verify-security-dependencies.sh` to prevent
+known-vulnerable minimum versions from being reintroduced. Run it directly
+when changing `go.mod`:
+
+```bash
+make verify-security-dependencies
+```
+
 ## Database Migrations
 
 ### Running Migrations
