@@ -36,6 +36,7 @@ jobs:
         run: make test-backend-coverage
 
       - name: Upload backend coverage profile
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: backend-coverage-profile
