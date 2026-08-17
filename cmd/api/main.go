@@ -534,7 +534,9 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 
 	// Middleware
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// Use the socket peer by default. Trusting forwarding headers without an
+	// explicit trusted-proxy boundary allows callers to spoof their source IP.
+	r.Use(middleware.ClientIPFromRemoteAddr)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
