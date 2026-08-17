@@ -86,7 +86,7 @@ jobs:
             esac
 
             case "$file" in
-              .github/workflows/*)
+              .github/workflows/*|Makefile|deploy/*)
                 ci=true
                 ;;
             esac
@@ -138,6 +138,24 @@ jobs:
 
       - name: Run backend tests and verify coverage
         run: make test-backend-coverage
+
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run security regression and vulnerability gates
+        run: make test-security
 
   lint:
     runs-on: ubuntu-latest

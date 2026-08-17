@@ -25,6 +25,12 @@ USAGE
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo_root"
 
+# This helper is also exercised in a scrubbed environment where Go cannot read
+# repository metadata. Package discovery does not need build provenance, and
+# disabling stamping keeps the selected test list deterministic across local
+# and CI environments.
+export GOFLAGS="${GOFLAGS:+${GOFLAGS} }-buildvcs=false"
+
 base_ref="${AFFECTED_BASE:-}"
 head_ref="${AFFECTED_HEAD:-HEAD}"
 list_only=false
