@@ -51,7 +51,9 @@ func TestWebhooksWave8DispatchPropagatesDeliveryPersistenceErrors(t *testing.T) 
 		IsActive: true,
 	}
 
-	_, err := NewServiceWithRepository(repo, nil).Dispatch(context.Background(), Event{
+	service := NewServiceWithRepository(repo, server.Client())
+	service.validateTarget = func(context.Context, string) error { return nil }
+	_, err := service.Dispatch(context.Background(), Event{
 		Type:     plugin.EventInvoiceCreated,
 		TenantID: "tenant-1",
 	})
@@ -79,7 +81,9 @@ func TestWebhooksWave8DispatchTestPropagatesLastDeliveryError(t *testing.T) {
 		IsActive: true,
 	}
 
-	_, err := NewServiceWithRepository(repo, nil).DispatchTest(context.Background(), "tenant-1", "endpoint-1", &TestDeliveryRequest{
+	service := NewServiceWithRepository(repo, server.Client())
+	service.validateTarget = func(context.Context, string) error { return nil }
+	_, err := service.DispatchTest(context.Background(), "tenant-1", "endpoint-1", &TestDeliveryRequest{
 		EventType: plugin.EventInvoiceCreated,
 	})
 	if err == nil || !strings.Contains(err.Error(), "last delivery failed") {

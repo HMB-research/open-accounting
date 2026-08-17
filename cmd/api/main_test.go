@@ -851,6 +851,48 @@ func TestRequireTenantPermissionUsesCurrentTenantMembership(t *testing.T) {
 	}
 }
 
+func TestRequireTenantWritePermissionAllowsReadOnlyMethods(t *testing.T) {
+	handlers := &Handlers{}
+	handler := handlers.RequireTenantWritePermission(func(tenant.RolePermissions) bool {
+		return false
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodOptions} {
+		t.Run(method, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(method, "/api/v1/tenants/tenant-1/accounts", nil))
+			assert.Equal(t, http.StatusNoContent, recorder.Code)
+		})
+	}
+}
+
+func TestTenantSettingsWritesRejectAccountantMembership(t *testing.T) {
+	cfg := &Config{AllowedOrigins: []string{"http://localhost:5173"}}
+	tokenService := auth.NewTokenService("secret", time.Minute, time.Hour)
+	tenantRepo := newMockTenantRepository()
+	tenantRepo.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+	tenantRepo.tenantUsers["tenant-1"] = []tenant.TenantUser{
+		{TenantID: "tenant-1", UserID: "accountant-1", Role: tenant.RoleAccountant, IsActive: true, CreatedAt: time.Now()},
+	}
+	handlers := &Handlers{tenantService: newTestTenantService(tenantRepo)}
+
+	t.Setenv("DEMO_MODE", "true")
+	t.Setenv("CORS_DEBUG", "")
+	router := setupRouter(cfg, handlers, tokenService)
+	token, err := tokenService.GenerateAccessToken("accountant-1", "accountant@example.com", "tenant-1", tenant.RoleAdmin)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tenants/tenant-1/settings/smtp", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusForbidden, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "Insufficient permissions")
+}
+
 func TestSensitiveTenantRoutesRejectViewerMembership(t *testing.T) {
 	cfg := &Config{AllowedOrigins: []string{"http://localhost:5173"}}
 	tokenService := auth.NewTokenService("secret", time.Minute, time.Hour)
@@ -880,6 +922,13 @@ func TestSensitiveTenantRoutesRejectViewerMembership(t *testing.T) {
 		{name: "leave balance import", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/leave-balances/import"},
 		{name: "TSD history import", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/tsd/import-history"},
 		{name: "KMD history import", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/tax/kmd/import-history"},
+		{name: "account creation", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/accounts"},
+		{name: "account deletion", method: http.MethodDelete, path: "/api/v1/tenants/tenant-1/accounts/account-1"},
+		{name: "journal entry creation", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/journal-entries"},
+		{name: "invoice creation", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/invoices"},
+		{name: "payment creation", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/payments"},
+		{name: "bank transaction matching", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/bank-transactions/transaction-1/match"},
+		{name: "expense posting", method: http.MethodPost, path: "/api/v1/tenants/tenant-1/expenses/expense-1/post"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(tt.method, tt.path, nil)

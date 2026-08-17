@@ -4018,7 +4018,7 @@ Content-Type: application/json
 }
 ```
 
-Endpoint responses include `secret_set` but never return the secret value. Deliveries are signed with `X-Open-Accounting-Signature: sha256=<hmac>` when a secret is configured, and include event, event ID, and tenant ID headers.
+Endpoint responses include `secret_set` but never return the secret value. Webhook delivery connects only to public network addresses, including after DNS resolution; redirects are not followed. Deliveries are signed with `X-Open-Accounting-Signature: sha256=<hmac>` when a secret is configured, and include event, event ID, and tenant ID headers.
 
 ### Manage Webhook Endpoints
 
@@ -4049,7 +4049,7 @@ GET /tenants/{tenantId}/webhooks/{webhookId}/deliveries?limit=50
 Authorization: Bearer <token>
 ```
 
-Delivery history records status, HTTP status code, response body excerpt, error text, event ID/type, and the request body sent.
+Delivery history records status, HTTP status code, error text, event ID/type, and the request body sent. Remote response bodies are never retained or returned.
 
 ---
 

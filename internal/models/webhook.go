@@ -37,7 +37,7 @@ type WebhookDelivery struct {
 	StatusCode    *int            `gorm:"column:status_code" json:"status_code,omitempty"`
 	AttemptNumber int             `gorm:"column:attempt_number;not null;default:1" json:"attempt_number"`
 	RequestBody   json.RawMessage `gorm:"column:request_body;type:jsonb;not null;default:'{}'" json:"request_body,omitempty"`
-	ResponseBody  string          `gorm:"column:response_body;type:text;not null;default:''" json:"response_body,omitempty"`
+	ResponseBody  string          `gorm:"column:response_body;type:text;not null;default:''" json:"-"`
 	Error         string          `gorm:"column:error;type:text;not null;default:''" json:"error,omitempty"`
 	DeliveredAt   time.Time       `gorm:"column:delivered_at;not null;default:now()" json:"delivered_at"`
 	CreatedAt     time.Time       `gorm:"not null;default:now()" json:"created_at"`

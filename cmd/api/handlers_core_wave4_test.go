@@ -465,7 +465,7 @@ func TestCoreWave4APITokenWebhookRecurringAndReminderBranches(t *testing.T) {
 	})
 
 	t.Run("webhook handlers map validation and service errors", func(t *testing.T) {
-		h, _, repo := setupWebhookHandlers("")
+		h, _, repo := setupWebhookHandlers("", nil)
 		h.webhookService = webhooks.NewServiceWithRepository(&erroringWebhookRepository{
 			memoryWebhookRepository: repo,
 			listErr:                 errors.New("list failed"),
@@ -476,7 +476,7 @@ func TestCoreWave4APITokenWebhookRecurringAndReminderBranches(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, resp.Code, resp.Body.String())
 		require.Contains(t, resp.Body.String(), "Failed to list webhook endpoints")
 
-		h, _, repo = setupWebhookHandlers("")
+		h, _, repo = setupWebhookHandlers("", nil)
 		active := true
 		endpoint, err := h.webhookService.CreateEndpoint(context.Background(), "tenant-1", &webhooks.CreateEndpointRequest{
 			Name:     "CRM",

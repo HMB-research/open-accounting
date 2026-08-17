@@ -7697,8 +7697,6 @@ definitions:
         items:
           type: integer
         type: array
-      response_body:
-        type: string
       status:
         type: string
       status_code:

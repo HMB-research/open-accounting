@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -31,32 +32,34 @@ var newGormDBFromPool = database.NewGormDBFromPool
 
 // Service manages outbound webhook endpoints and delivery.
 type Service struct {
-	repo       Repository
-	httpClient *http.Client
-	now        func() time.Time
+	repo           Repository
+	httpClient     *http.Client
+	validateTarget func(context.Context, string) error
+	now            func() time.Time
 }
 
 // NewService creates a webhook service backed by the ORM repository.
 func NewService(pool *pgxpool.Pool) *Service {
 	if pool == nil {
-		return NewServiceWithRepository(nil, &http.Client{Timeout: defaultHTTPTimeout})
+		return NewServiceWithRepository(nil, nil)
 	}
 	gormDB, err := newGormDBFromPool(context.Background(), pool)
 	if err != nil {
 		panic(fmt.Errorf("create webhook GORM repository: %w", err))
 	}
-	return NewServiceWithRepository(NewGORMRepository(gormDB), &http.Client{Timeout: defaultHTTPTimeout})
+	return NewServiceWithRepository(NewGORMRepository(gormDB), nil)
 }
 
 // NewServiceWithRepository creates a webhook service with injected dependencies.
 func NewServiceWithRepository(repo Repository, httpClient *http.Client) *Service {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultHTTPTimeout}
+		httpClient = newWebhookHTTPClient()
 	}
 	return &Service{
-		repo:       repo,
-		httpClient: httpClient,
-		now:        time.Now,
+		repo:           repo,
+		httpClient:     httpClient,
+		validateTarget: validateWebhookTarget,
+		now:            time.Now,
 	}
 }
 
@@ -328,7 +331,14 @@ func (s *Service) deliver(ctx context.Context, endpoint *Endpoint, event Event) 
 		DeliveredAt:   now,
 		CreatedAt:     now,
 	}
-
+	validateTarget := s.validateTarget
+	if validateTarget == nil {
+		validateTarget = validateWebhookTarget
+	}
+	if err := validateTarget(ctx, endpoint.URL); err != nil {
+		delivery.Error = err.Error()
+		return s.recordDelivery(ctx, endpoint, delivery)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.URL, bytes.NewReader(body))
 	if err != nil {
 		delivery.Error = err.Error()
@@ -343,7 +353,9 @@ func (s *Service) deliver(ctx context.Context, endpoint *Endpoint, event Event) 
 		req.Header.Set("X-Open-Accounting-Signature", signPayload(endpoint.Secret, body))
 	}
 
-	resp, err := s.httpClient.Do(req)
+	httpClient := *s.httpClient
+	httpClient.CheckRedirect = rejectWebhookRedirect
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		delivery.Error = err.Error()
 		return s.recordDelivery(ctx, endpoint, delivery)
@@ -353,11 +365,8 @@ func (s *Service) deliver(ctx context.Context, endpoint *Endpoint, event Event) 
 	}()
 
 	delivery.StatusCode = resp.StatusCode
-	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if readErr != nil {
+	if _, readErr := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes)); readErr != nil {
 		delivery.Error = readErr.Error()
-	} else {
-		delivery.ResponseBody = string(respBody)
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 && delivery.Error == "" {
 		delivery.Status = DeliveryStatusSucceeded
@@ -403,21 +412,121 @@ func normalizeEvents(events []string) ([]string, error) {
 }
 
 func validateWebhookURL(rawURL string) error {
+	_, err := parseWebhookURL(rawURL)
+	return err
+}
+
+func parseWebhookURL(rawURL string) (*url.URL, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
-		return fmt.Errorf("url is required")
+		return nil, fmt.Errorf("url is required")
 	}
 	parsed, err := url.ParseRequestURI(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid url: %w", err)
+		return nil, fmt.Errorf("invalid url: %w", err)
 	}
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return fmt.Errorf("url must use http or https")
+		return nil, fmt.Errorf("url must use http or https")
 	}
 	if parsed.Host == "" {
-		return fmt.Errorf("url host is required")
+		return nil, fmt.Errorf("url host is required")
 	}
-	return nil
+	return parsed, nil
+}
+
+func validateWebhookTarget(ctx context.Context, rawURL string) error {
+	parsed, err := parseWebhookURL(rawURL)
+	if err != nil {
+		return err
+	}
+	_, err = resolvePublicWebhookHost(ctx, parsed.Hostname(), net.DefaultResolver.LookupIPAddr)
+	return err
+}
+
+func newWebhookHTTPClient() *http.Client {
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		defaultTransport = &http.Transport{}
+	}
+	transport := defaultTransport.Clone()
+	transport.DialContext = dialPublicWebhookTarget
+
+	return &http.Client{
+		Timeout:       defaultHTTPTimeout,
+		Transport:     transport,
+		CheckRedirect: rejectWebhookRedirect,
+	}
+}
+
+func rejectWebhookRedirect(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
+func dialPublicWebhookTarget(ctx context.Context, network, address string) (net.Conn, error) {
+	dialer := &net.Dialer{}
+	return dialWebhookTarget(ctx, network, address, net.DefaultResolver.LookupIPAddr, dialer.DialContext)
+}
+
+func dialWebhookTarget(
+	ctx context.Context,
+	network string,
+	address string,
+	lookup func(context.Context, string) ([]net.IPAddr, error),
+	dial func(context.Context, string, string) (net.Conn, error),
+) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid webhook dial address: %w", err)
+	}
+	addresses, err := resolvePublicWebhookHost(ctx, host, lookup)
+	if err != nil {
+		return nil, err
+	}
+	var lastErr error
+	for _, addr := range addresses {
+		connection, dialErr := dial(ctx, network, net.JoinHostPort(addr.IP.String(), port))
+		if dialErr == nil {
+			return connection, nil
+		}
+		lastErr = dialErr
+	}
+	return nil, fmt.Errorf("dial webhook host %q: %w", host, lastErr)
+}
+
+func resolvePublicWebhookHost(ctx context.Context, host string, lookup func(context.Context, string) ([]net.IPAddr, error)) ([]net.IPAddr, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return nil, fmt.Errorf("url host is required")
+	}
+
+	addresses, err := lookup(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve webhook host %q: %w", host, err)
+	}
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("webhook host %q did not resolve to an IP address", host)
+	}
+	for _, addr := range addresses {
+		if !isPublicWebhookIP(addr.IP) {
+			return nil, fmt.Errorf("webhook URL must not target private or reserved network addresses")
+		}
+	}
+	return addresses, nil
+}
+
+func isPublicWebhookIP(ip net.IP) bool {
+	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	if ipv4 := ip.To4(); ipv4 != nil {
+		if ipv4[0] == 100 && ipv4[1]&0xc0 == 0x40 { // 100.64.0.0/10 shared address space
+			return false
+		}
+		if ipv4[0] == 198 && (ipv4[1] == 18 || ipv4[1] == 19) { // 198.18.0.0/15 benchmarking space
+			return false
+		}
+	}
+	return true
 }
 
 func subscribesTo(events []string, eventType string) bool {
