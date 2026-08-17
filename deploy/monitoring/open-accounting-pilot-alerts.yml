@@ -1,0 +1,57 @@
+groups:
+  - name: open-accounting-pilot-recovery
+    rules:
+      - alert: OpenAccountingBackupFailed
+        expr: open_accounting_backup_health == 0
+        for: 10m
+        labels:
+          severity: critical
+          service: open-accounting
+        annotations:
+          summary: Open Accounting backup health check failed
+          runbook_url: https://github.com/HMB-research/open-accounting/blob/main/docs/PILOT_OPERATIONS.md#backup-and-restore-response
+      - alert: OpenAccountingBackupStale
+        expr: open_accounting_backup_latest_age_seconds > 93600
+        for: 10m
+        labels:
+          severity: critical
+          service: open-accounting
+        annotations:
+          summary: Open Accounting has no verified backup within the 26-hour RPO window
+          runbook_url: https://github.com/HMB-research/open-accounting/blob/main/docs/PILOT_OPERATIONS.md#backup-and-restore-response
+      - alert: OpenAccountingOffsiteCopyFailed
+        expr: open_accounting_offsite_backup_health == 0
+        for: 10m
+        labels:
+          severity: critical
+          service: open-accounting
+        annotations:
+          summary: Open Accounting offsite backup copy or checksum verification failed
+          runbook_url: https://github.com/HMB-research/open-accounting/blob/main/docs/PILOT_OPERATIONS.md#backup-and-restore-response
+      - alert: OpenAccountingRestoreDrillFailed
+        expr: open_accounting_restore_drill_health == 0
+        for: 10m
+        labels:
+          severity: critical
+          service: open-accounting
+        annotations:
+          summary: Open Accounting restore drill failed
+          runbook_url: https://github.com/HMB-research/open-accounting/blob/main/docs/PILOT_OPERATIONS.md#backup-and-restore-response
+      - alert: OpenAccountingRestoreDrillOverdue
+        expr: time() - open_accounting_restore_drill_last_success_timestamp_seconds > 691200
+        for: 1h
+        labels:
+          severity: warning
+          service: open-accounting
+        annotations:
+          summary: Open Accounting has not completed a restore drill in eight days
+          runbook_url: https://github.com/HMB-research/open-accounting/blob/main/docs/PILOT_OPERATIONS.md#backup-and-restore-response
+      - alert: OpenAccountingBackupTimerFailed
+        expr: node_systemd_unit_state{name=~"open-accounting-(backup|offsite-sync|backup-health|restore-drill)\\.service",state="failed"} == 1
+        for: 5m
+        labels:
+          severity: critical
+          service: open-accounting
+        annotations:
+          summary: Open Accounting backup or restore systemd service is failed
+          runbook_url: https://github.com/HMB-research/open-accounting/blob/main/docs/PILOT_OPERATIONS.md#backup-and-restore-response
