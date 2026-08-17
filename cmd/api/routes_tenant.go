@@ -14,6 +14,7 @@ func registerTenantRoutes(
 ) {
 	r.Route("/tenants/{tenantID}", func(r chi.Router) {
 		r.Use(h.TenantContext)
+		r.Use(h.RequireTenantWritePermission(canCreateEntries))
 
 		// Onboarding
 		r.Post("/complete-onboarding", h.CompleteOnboarding)

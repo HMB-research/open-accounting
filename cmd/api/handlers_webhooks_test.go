@@ -16,9 +16,15 @@ import (
 	"github.com/HMB-research/open-accounting/internal/webhooks"
 )
 
-func setupWebhookHandlers(targetURL string) (*Handlers, *webhooks.Service, *memoryWebhookRepository) {
+type webhookRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f webhookRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func setupWebhookHandlers(targetURL string, httpClient *http.Client) (*Handlers, *webhooks.Service, *memoryWebhookRepository) {
 	repo := newMemoryWebhookRepository()
-	service := webhooks.NewServiceWithRepository(repo, nil)
+	service := webhooks.NewServiceWithRepository(repo, httpClient)
 	h := &Handlers{webhookService: service}
 	if targetURL != "" {
 		active := true
@@ -35,15 +41,13 @@ func setupWebhookHandlers(targetURL string) (*Handlers, *webhooks.Service, *memo
 }
 
 func TestWebhookHandlers(t *testing.T) {
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	targetClient := &http.Client{Transport: webhookRoundTripper(func(r *http.Request) (*http.Response, error) {
 		assert.Equal(t, "webhook.test", r.Header.Get("X-Open-Accounting-Event"))
 		assert.NotEmpty(t, r.Header.Get("X-Open-Accounting-Signature"))
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte("accepted"))
-	}))
-	defer target.Close()
+		return &http.Response{StatusCode: http.StatusAccepted, Header: make(http.Header), Body: http.NoBody, Request: r}, nil
+	})}
 
-	h, _, repo := setupWebhookHandlers(target.URL)
+	h, _, repo := setupWebhookHandlers("https://93.184.216.34/webhook", targetClient)
 
 	t.Run("list event types", func(t *testing.T) {
 		req := withURLParams(makeAuthenticatedRequest(http.MethodGet, "/tenants/tenant-1/webhooks/events", nil, nil), map[string]string{"tenantID": "tenant-1"})
@@ -61,7 +65,7 @@ func TestWebhookHandlers(t *testing.T) {
 	t.Run("create and list endpoint", func(t *testing.T) {
 		req := withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/webhooks", webhooks.CreateEndpointRequest{
 			Name:   "Accounting Bot",
-			URL:    target.URL,
+			URL:    "https://93.184.216.34/webhook",
 			Events: []string{"payment.received"},
 			Secret: "hidden",
 		}, nil), map[string]string{"tenantID": "tenant-1"})

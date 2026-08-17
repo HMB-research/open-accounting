@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -156,6 +157,8 @@ func TestService_DeleteEndpointAndListDeliveries(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
+	service.httpClient = server.Client()
+	service.validateTarget = func(context.Context, string) error { return nil }
 
 	endpoint, err := service.CreateEndpoint(context.Background(), "tenant-1", &CreateEndpointRequest{
 		Name:   "CRM",
@@ -208,6 +211,8 @@ func TestService_DispatchSignedWebhookAndRecordsDelivery(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer server.Close()
+	service.httpClient = server.Client()
+	service.validateTarget = func(context.Context, string) error { return nil }
 
 	endpoint, err := service.CreateEndpoint(context.Background(), "tenant-1", &CreateEndpointRequest{
 		Name:   "CRM",
@@ -235,10 +240,246 @@ func TestService_DispatchSignedWebhookAndRecordsDelivery(t *testing.T) {
 	assert.Equal(t, endpoint.ID, delivery.EndpointID)
 	assert.Equal(t, DeliveryStatusSucceeded, delivery.Status)
 	assert.Equal(t, http.StatusAccepted, delivery.StatusCode)
-	assert.Contains(t, delivery.ResponseBody, "ok")
+	assert.Empty(t, delivery.ResponseBody)
+	encodedDelivery, err := json.Marshal(delivery)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encodedDelivery), "response_body")
 	require.Len(t, repo.deliveries, 1)
 	assert.Equal(t, DeliveryStatusSucceeded, repo.deliveries[0].Status)
+	assert.Empty(t, repo.deliveries[0].ResponseBody)
 	require.NotNil(t, repo.endpoints[endpoint.ID].LastDeliveryAt)
+}
+
+func TestService_DefaultClientBlocksPrivateWebhookTargets(t *testing.T) {
+	received := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		received <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	repo := newMemoryRepository()
+	endpoint := seededEndpoint("endpoint-1", "tenant-1", server.URL)
+	repo.endpoints[endpoint.ID] = endpoint
+	service := NewServiceWithRepository(repo, nil)
+	service.now = fixedWebhookTime
+
+	result, err := service.Dispatch(context.Background(), Event{
+		ID:       "event-1",
+		Type:     plugin.EventInvoiceCreated,
+		TenantID: "tenant-1",
+		Data:     json.RawMessage(`{}`),
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Deliveries, 1)
+	assert.Equal(t, DeliveryStatusFailed, result.Deliveries[0].Status)
+	assert.Contains(t, result.Deliveries[0].Error, "private or reserved")
+
+	select {
+	case <-received:
+		t.Fatal("private webhook target received a request")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestService_DispatchDoesNotFollowRedirects(t *testing.T) {
+	var requests int
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return nil },
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests++
+			return &http.Response{
+				StatusCode: http.StatusFound,
+				Header:     http.Header{"Location": []string{"http://127.0.0.1:8080/internal"}},
+				Body:       io.NopCloser(strings.NewReader("redirect")),
+				Request:    req,
+			}, nil
+		}),
+	}
+
+	repo := newMemoryRepository()
+	endpoint := seededEndpoint("endpoint-1", "tenant-1", "https://93.184.216.34/events")
+	repo.endpoints[endpoint.ID] = endpoint
+	service := NewServiceWithRepository(repo, client)
+	service.now = fixedWebhookTime
+
+	result, err := service.Dispatch(context.Background(), Event{
+		ID:       "event-1",
+		Type:     plugin.EventInvoiceCreated,
+		TenantID: "tenant-1",
+		Data:     json.RawMessage(`{}`),
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Deliveries, 1)
+	assert.Equal(t, DeliveryStatusFailed, result.Deliveries[0].Status)
+	assert.Equal(t, http.StatusFound, result.Deliveries[0].StatusCode)
+	assert.Empty(t, result.Deliveries[0].ResponseBody)
+	assert.Equal(t, 1, requests)
+}
+
+func TestWebhookTargetValidation(t *testing.T) {
+	err := validateWebhookTarget(context.Background(), "http://127.0.0.1/hooks")
+	require.ErrorContains(t, err, "private or reserved")
+
+	require.NoError(t, validateWebhookTarget(context.Background(), "https://93.184.216.34/hooks"))
+}
+
+func TestResolvePublicWebhookHost(t *testing.T) {
+	ctx := context.Background()
+	publicIP := net.ParseIP("93.184.216.34")
+
+	t.Run("rejects an empty host", func(t *testing.T) {
+		_, err := resolvePublicWebhookHost(ctx, " ", func(context.Context, string) ([]net.IPAddr, error) {
+			t.Fatal("lookup must not be called for an empty host")
+			return nil, nil
+		})
+		require.ErrorContains(t, err, "url host is required")
+	})
+
+	t.Run("wraps lookup failures", func(t *testing.T) {
+		_, err := resolvePublicWebhookHost(ctx, "hooks.example", func(context.Context, string) ([]net.IPAddr, error) {
+			return nil, assert.AnError
+		})
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("rejects empty lookup results", func(t *testing.T) {
+		_, err := resolvePublicWebhookHost(ctx, "hooks.example", func(context.Context, string) ([]net.IPAddr, error) {
+			return nil, nil
+		})
+		require.ErrorContains(t, err, "did not resolve")
+	})
+
+	t.Run("rejects private addresses", func(t *testing.T) {
+		_, err := resolvePublicWebhookHost(ctx, "hooks.example", func(context.Context, string) ([]net.IPAddr, error) {
+			return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+		})
+		require.ErrorContains(t, err, "private or reserved")
+	})
+
+	t.Run("returns public addresses", func(t *testing.T) {
+		addresses, err := resolvePublicWebhookHost(ctx, " hooks.example ", func(_ context.Context, host string) ([]net.IPAddr, error) {
+			assert.Equal(t, "hooks.example", host)
+			return []net.IPAddr{{IP: publicIP}}, nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, []net.IPAddr{{IP: publicIP}}, addresses)
+	})
+}
+
+func TestDialWebhookTarget(t *testing.T) {
+	ctx := context.Background()
+	publicIP := net.ParseIP("93.184.216.34")
+
+	t.Run("rejects malformed dial addresses", func(t *testing.T) {
+		_, err := dialWebhookTarget(ctx, "tcp", "malformed", nil, nil)
+		require.ErrorContains(t, err, "invalid webhook dial address")
+	})
+
+	t.Run("returns the final dial error", func(t *testing.T) {
+		_, err := dialWebhookTarget(
+			ctx,
+			"tcp",
+			"hooks.example:443",
+			func(context.Context, string) ([]net.IPAddr, error) { return []net.IPAddr{{IP: publicIP}}, nil },
+			func(_ context.Context, network, address string) (net.Conn, error) {
+				assert.Equal(t, "tcp", network)
+				assert.Equal(t, "93.184.216.34:443", address)
+				return nil, assert.AnError
+			},
+		)
+		require.ErrorIs(t, err, assert.AnError)
+	})
+
+	t.Run("refuses a private address returned at dial time", func(t *testing.T) {
+		_, err := dialWebhookTarget(
+			ctx,
+			"tcp",
+			"hooks.example:443",
+			func(context.Context, string) ([]net.IPAddr, error) {
+				return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+			},
+			func(context.Context, string, string) (net.Conn, error) {
+				t.Fatal("private resolved address must never be dialed")
+				return nil, nil
+			},
+		)
+		require.ErrorContains(t, err, "private or reserved")
+	})
+
+	t.Run("dials only validated resolved addresses", func(t *testing.T) {
+		connection, err := dialWebhookTarget(
+			ctx,
+			"tcp",
+			"hooks.example:443",
+			func(context.Context, string) ([]net.IPAddr, error) { return []net.IPAddr{{IP: publicIP}}, nil },
+			func(context.Context, string, string) (net.Conn, error) {
+				client, server := net.Pipe()
+				_ = server.Close()
+				return client, nil
+			},
+		)
+		require.NoError(t, err)
+		require.NoError(t, connection.Close())
+	})
+
+	t.Run("production dialer rejects private literal targets", func(t *testing.T) {
+		_, err := dialPublicWebhookTarget(ctx, "tcp", "127.0.0.1:443")
+		require.ErrorContains(t, err, "private or reserved")
+	})
+}
+
+func TestRejectWebhookRedirect(t *testing.T) {
+	require.ErrorIs(t, rejectWebhookRedirect(nil, nil), http.ErrUseLastResponse)
+}
+
+func TestNewWebhookHTTPClientFallsBackWhenDefaultTransportIsNotHTTP(t *testing.T) {
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, assert.AnError
+	})
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+
+	client := newWebhookHTTPClient()
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(t, ok)
+	assert.Equal(t, defaultHTTPTimeout, client.Timeout)
+	assert.NotNil(t, transport.DialContext)
+}
+
+func TestIsPublicWebhookIPRejectsSpecialUseRanges(t *testing.T) {
+	assert.True(t, isPublicWebhookIP(net.ParseIP("93.184.216.34")))
+	assert.False(t, isPublicWebhookIP(net.ParseIP("100.64.0.1")))
+	assert.False(t, isPublicWebhookIP(net.ParseIP("198.18.0.1")))
+}
+
+func TestSanitizeEndpoint(t *testing.T) {
+	endpoint := &Endpoint{Secret: "super-secret"}
+	sanitizeEndpoint(endpoint)
+	assert.True(t, endpoint.SecretSet)
+	assert.Empty(t, endpoint.Secret)
+}
+
+func TestService_DeliverUsesDefaultTargetValidation(t *testing.T) {
+	repo := newMemoryRepository()
+	endpoint := seededEndpoint("endpoint-1", "tenant-1", "https://93.184.216.34/hooks")
+	repo.endpoints[endpoint.ID] = endpoint
+	service := NewServiceWithRepository(repo, &http.Client{
+		Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+		}),
+	})
+	service.now = fixedWebhookTime
+	service.validateTarget = nil
+
+	delivery, err := service.deliver(context.Background(), endpoint, Event{
+		ID:       "event-1",
+		Type:     plugin.EventInvoiceCreated,
+		TenantID: "tenant-1",
+		Data:     json.RawMessage(`{}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, DeliveryStatusSucceeded, delivery.Status)
 }
 
 func TestService_DispatchSkipsUnsubscribedAndRecordsFailure(t *testing.T) {
@@ -251,6 +492,8 @@ func TestService_DispatchSkipsUnsubscribedAndRecordsFailure(t *testing.T) {
 		_, _ = w.Write([]byte("failed"))
 	}))
 	defer server.Close()
+	service.httpClient = server.Client()
+	service.validateTarget = func(context.Context, string) error { return nil }
 
 	_, err := service.CreateEndpoint(context.Background(), "tenant-1", &CreateEndpointRequest{
 		Name:   "Contacts",
@@ -289,6 +532,8 @@ func TestService_DispatchTestUsesWebhookTestEvent(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
+	service.httpClient = server.Client()
+	service.validateTarget = func(context.Context, string) error { return nil }
 
 	endpoint, err := service.CreateEndpoint(context.Background(), "tenant-1", &CreateEndpointRequest{
 		Name:   "Any",
@@ -315,6 +560,8 @@ func TestService_DispatchAsyncSendsSubscribedEvent(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
+	service.httpClient = server.Client()
+	service.validateTarget = func(context.Context, string) error { return nil }
 
 	_, err := service.CreateEndpoint(context.Background(), "tenant-1", &CreateEndpointRequest{
 		Name:   "Async",
@@ -350,6 +597,8 @@ func TestService_RegisterPluginHooksDispatchesPluginEvents(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
+	service.httpClient = server.Client()
+	service.validateTarget = func(context.Context, string) error { return nil }
 
 	_, err := service.CreateEndpoint(context.Background(), tenantID.String(), &CreateEndpointRequest{
 		Name:   "Plugin bridge",
@@ -596,6 +845,7 @@ func TestService_DeliveryFailureEdges(t *testing.T) {
 		repo.endpoints[endpoint.ID] = endpoint
 		service := NewServiceWithRepository(repo, nil)
 		service.now = fixedWebhookTime
+		service.validateTarget = func(context.Context, string) error { return nil }
 
 		delivery, err := service.deliver(ctx, endpoint, Event{
 			ID:       "event-1",
@@ -619,6 +869,7 @@ func TestService_DeliveryFailureEdges(t *testing.T) {
 			}),
 		})
 		service.now = fixedWebhookTime
+		service.validateTarget = func(context.Context, string) error { return nil }
 
 		delivery, err := service.deliver(ctx, endpoint, Event{
 			ID:       "event-1",
@@ -644,6 +895,7 @@ func TestService_DeliveryFailureEdges(t *testing.T) {
 			}),
 		})
 		service.now = fixedWebhookTime
+		service.validateTarget = func(context.Context, string) error { return nil }
 
 		delivery, err := service.deliver(ctx, endpoint, Event{
 			ID:       "event-1",
@@ -687,6 +939,7 @@ func TestService_DeliveryFailureEdges(t *testing.T) {
 			}),
 		})
 		service.now = fixedWebhookTime
+		service.validateTarget = func(context.Context, string) error { return nil }
 
 		_, err := service.deliver(ctx, endpoint, Event{
 			ID:       "event-1",

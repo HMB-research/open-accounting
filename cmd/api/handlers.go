@@ -237,6 +237,26 @@ func (h *Handlers) RequireTenantPermission(check func(tenant.RolePermissions) bo
 	}
 }
 
+// RequireTenantWritePermission restricts unsafe tenant-scoped requests using the
+// caller's current tenant membership. Read-only requests retain their existing
+// access rules, while every write must have accounting write permission unless
+// a more specific route middleware applies a stricter permission.
+func (h *Handlers) RequireTenantWritePermission(check func(tenant.RolePermissions) bool) func(http.Handler) http.Handler {
+	requirePermission := h.RequireTenantPermission(check)
+
+	return func(next http.Handler) http.Handler {
+		protected := requirePermission(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				next.ServeHTTP(w, r)
+			default:
+				protected.ServeHTTP(w, r)
+			}
+		})
+	}
+}
+
 // TenantContext middleware ensures user has access to the tenant
 func (h *Handlers) TenantContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

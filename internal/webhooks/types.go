@@ -63,7 +63,7 @@ type Delivery struct {
 	StatusCode    int             `json:"status_code,omitempty"`
 	AttemptNumber int             `json:"attempt_number"`
 	RequestBody   json.RawMessage `json:"request_body,omitempty"`
-	ResponseBody  string          `json:"response_body,omitempty"`
+	ResponseBody  string          `json:"-"`
 	Error         string          `json:"error,omitempty"`
 	DeliveredAt   time.Time       `json:"delivered_at"`
 	CreatedAt     time.Time       `json:"created_at"`

@@ -34708,9 +34708,6 @@ const docTemplate = `{
                         "type": "integer"
                     }
                 },
-                "response_body": {
-                    "type": "string"
-                },
                 "status": {
                     "type": "string"
                 },
