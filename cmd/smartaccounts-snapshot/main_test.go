@@ -38,6 +38,7 @@ func TestRunOutputsJSONManifest(t *testing.T) {
 func TestRunOutputsHumanSummaryWithWarningsAndUnsupportedFiles(t *testing.T) {
 	repoDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
 	sourceDir := filepath.Join(repoDir, "export")
 	outputDir := filepath.Join(repoDir, "prepared")
 	require.NoError(t, os.MkdirAll(sourceDir, 0o755))

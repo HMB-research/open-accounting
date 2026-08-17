@@ -496,20 +496,32 @@ func (h *Handlers) requireApprovedYearEndClosePackEvidence(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	if !isYearEnd {
+	if !isYearEnd && !tenantRecord.Settings.BlocksHighRiskEvidence() {
 		return nil
 	}
 
-	entityID, _ := accounting.YearEndCloseEvidenceEntityID(tenantRecord.ID, rawPeriodEndDate)
+	entityID := ""
+	if isYearEnd {
+		entityID, err = accounting.YearEndCloseEvidenceEntityID(tenantRecord.ID, rawPeriodEndDate)
+	} else {
+		entityID, err = accounting.PeriodCloseEvidenceEntityID(tenantRecord.ID, rawPeriodEndDate)
+	}
+	if err != nil {
+		return err
+	}
+	workflow := "period close"
+	if isYearEnd {
+		workflow = "fiscal-year close"
+	}
 	if h.documentsService == nil {
-		return fmt.Errorf("%w before completing fiscal-year close workflow for %s (entity_id: %s)", errApprovedClosePackEvidenceRequired, rawPeriodEndDate, entityID)
+		return fmt.Errorf("%w before completing %s workflow for %s (entity_id: %s)", errApprovedClosePackEvidenceRequired, workflow, rawPeriodEndDate, entityID)
 	}
 	results, err := h.yearEndClosePackEvidence(ctx, tenantRecord.SchemaName, tenantRecord.ID, entityID)
 	if err != nil {
 		return err
 	}
 	if len(results) == 0 || !results[0].Compliant {
-		return fmt.Errorf("%w before completing fiscal-year close workflow for %s (entity_id: %s)", errApprovedClosePackEvidenceRequired, rawPeriodEndDate, entityID)
+		return fmt.Errorf("%w before completing %s workflow for %s (entity_id: %s)", errApprovedClosePackEvidenceRequired, workflow, rawPeriodEndDate, entityID)
 	}
 
 	return nil

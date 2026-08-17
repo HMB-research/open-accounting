@@ -6,7 +6,7 @@ set -euo pipefail
 # the build gate. A future downgrade should fail before it reaches main even if
 # Dependabot has not opened a new pull request yet.
 minimum_versions=(
-  "github.com/go-chi/chi/v5 v5.2.4"
+  "github.com/go-chi/chi/v5 v5.3.1"
   "github.com/jackc/pgx/v5 v5.9.2"
 )
 

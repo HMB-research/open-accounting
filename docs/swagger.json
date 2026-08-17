@@ -34527,6 +34527,10 @@
                 "email": {
                     "type": "string"
                 },
+                "evidence_policy_mode": {
+                    "description": "EvidencePolicyMode controls tenant-wide enforcement for pilot accounting workflows.\nExisting tenants remain in warn mode unless an owner or admin opts in.",
+                    "type": "string"
+                },
                 "fiscal_year_start_month": {
                     "description": "1-12",
                     "type": "integer"

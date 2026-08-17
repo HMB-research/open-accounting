@@ -178,6 +178,62 @@ func TestExpenseHandlersReject(t *testing.T) {
 	assert.Equal(t, []string{"expense_rejection_review"}, expenseHandlerRemediationCodes(rejected.RemediationActions))
 }
 
+func TestPilotEvidencePolicyBlocksExpenseLedgerPostingWithoutEvidence(t *testing.T) {
+	h, repo, _ := setupExpenseHandlers()
+	tenantRecord, err := h.tenantService.GetTenant(context.Background(), "tenant-1")
+	require.NoError(t, err)
+	tenantRecord.Settings.EvidencePolicyMode = tenant.EvidencePolicyModeBlockHighRisk
+
+	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")
+	createReq := expenses.CreateExpenseRequest{
+		ExpenseDate:      time.Date(2026, 5, 30, 0, 0, 0, 0, time.UTC),
+		Merchant:         "Pilot supplier",
+		ExpenseAccountID: "expense-account",
+		PaymentAccountID: "cash-account",
+		Amount:           decimal.NewFromInt(25),
+		RequiresReceipt:  boolPtr(false),
+	}
+	req := withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/expenses", createReq, claims), map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+	h.CreateExpense(w, req)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	var created expenses.Expense
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&created))
+
+	for _, action := range []func(http.ResponseWriter, *http.Request){h.SubmitExpense, h.ApproveExpense} {
+		req = withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/expenses/"+created.ID, nil, claims), map[string]string{"tenantID": "tenant-1", "expenseID": created.ID})
+		w = httptest.NewRecorder()
+		action(w, req)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	}
+
+	docRepo := installApprovedEvidenceDocuments(t, h)
+	req = withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/expenses/"+created.ID+"/post", nil, claims), map[string]string{"tenantID": "tenant-1", "expenseID": created.ID})
+	docRepo.listDocumentsErr = errors.New("evidence lookup failed")
+	w = httptest.NewRecorder()
+	h.PostExpense(w, req)
+	require.Equal(t, http.StatusInternalServerError, w.Code, w.Body.String())
+	assert.Equal(t, expenses.StatusApproved, repo.expenses[created.ID].Status)
+
+	docRepo.listDocumentsErr = nil
+	w = httptest.NewRecorder()
+	h.PostExpense(w, req)
+	require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "expense ledger-posting evidence")
+	assert.Equal(t, expenses.StatusApproved, repo.expenses[created.ID].Status)
+	assert.Nil(t, repo.expenses[created.ID].JournalEntryID)
+
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		EntityType:   documents.EntityTypeExpense,
+		EntityID:     created.ID,
+		DocumentType: documents.DocumentTypeReceipt,
+	})
+	w = httptest.NewRecorder()
+	h.PostExpense(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, expenses.StatusPosted, repo.expenses[created.ID].Status)
+}
+
 func TestExpenseHandlersImport(t *testing.T) {
 	h, repo, _ := setupExpenseHandlers()
 	claims := createTestClaims("user-1", "user@example.com", "tenant-1", "admin")

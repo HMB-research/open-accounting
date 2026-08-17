@@ -39,6 +39,7 @@
 	let decimalSep = $state('');
 	let thousandsSep = $state('');
 	let fiscalYearStart = $state(1);
+	let evidencePolicyMode = $state<'warn' | 'block_high_risk'>('warn');
 	let closePeriodEndDate = $state('');
 	let closeNote = $state('');
 	let reopenPeriodEndDate = $state('');
@@ -95,6 +96,7 @@
 		decimalSep = t.settings?.decimal_sep || ',';
 		thousandsSep = t.settings?.thousands_sep || ' ';
 		fiscalYearStart = t.settings?.fiscal_year_start_month || 1;
+		evidencePolicyMode = t.settings?.evidence_policy_mode || 'warn';
 	}
 
 	function populatePeriodActions(t: Tenant) {
@@ -127,7 +129,8 @@
 				date_format: dateFormat,
 				decimal_sep: decimalSep,
 				thousands_sep: thousandsSep,
-				fiscal_year_start_month: fiscalYearStart
+				fiscal_year_start_month: fiscalYearStart,
+				evidence_policy_mode: evidencePolicyMode
 			};
 
 			tenant = await api.updateTenant(tenantId, {
@@ -640,6 +643,20 @@
 							bind:value={pdfFooterText}
 							placeholder={m.settings_pdfFooterPlaceholder()}
 						/>
+					</div>
+				</div>
+			</section>
+
+			<section class="card settings-section">
+				<h2>{m.settings_evidencePolicyTitle()}</h2>
+				<div class="form-grid">
+					<div class="form-group full-width">
+						<label class="label" for="evidencePolicyMode">{m.settings_evidencePolicyMode()}</label>
+						<select class="input" id="evidencePolicyMode" bind:value={evidencePolicyMode}>
+							<option value="warn">{m.settings_evidencePolicyWarn()}</option>
+							<option value="block_high_risk">{m.settings_evidencePolicyBlockHighRisk()}</option>
+						</select>
+						<span class="help-text">{m.settings_evidencePolicyHelp()}</span>
 					</div>
 				</div>
 			</section>

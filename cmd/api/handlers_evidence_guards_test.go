@@ -98,6 +98,33 @@ func TestRequiredEvidenceGuardsFailClosedWithoutDocumentService(t *testing.T) {
 	assert.ErrorIs(t, err, errApprovedKMDAcceptanceEvidenceRequired)
 }
 
+func TestPilotEvidencePolicyHelperFailurePaths(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockTenantRepository()
+	tenantRecord := repo.addTestTenant("tenant-1", "Pilot", "pilot")
+	tenantRecord.Settings.EvidencePolicyMode = tenant.EvidencePolicyModeBlockHighRisk
+	h := &Handlers{tenantService: tenant.NewServiceWithRepository(repo)}
+
+	require.NoError(t, h.requireApprovedJournalEntryEvidence(ctx, "tenant_pilot", "tenant-1", nil))
+	repo.getTenantErr = fmt.Errorf("tenant settings unavailable")
+	_, err := h.requiresHighRiskEvidence(ctx, "tenant-1")
+	require.ErrorContains(t, err, "tenant settings unavailable")
+	err = h.requireApprovedJournalEntryEvidence(ctx, "tenant_pilot", "tenant-1", &accounting.JournalEntry{ID: "entry-1"})
+	require.ErrorContains(t, err, "load tenant evidence policy")
+	err = h.requireApprovedExpensePostingEvidence(ctx, "tenant_pilot", "tenant-1", "expense-1")
+	require.ErrorContains(t, err, "load tenant evidence policy")
+	repo.getTenantErr = nil
+
+	err = h.requireApprovedExpensePostingEvidence(ctx, "tenant_pilot", "tenant-1", "expense-1")
+	require.ErrorContains(t, err, "approved expense ledger-posting evidence")
+
+	repo.createAuditEventErr = fmt.Errorf("audit store unavailable")
+	h.recordHighRiskEvidenceBlock(ctx, "tenant-1", "user-1", "journal_post")
+
+	assert.Empty(t, evidencePolicyActorID(ctx))
+	assert.Equal(t, "user-1", evidencePolicyActorID(contextWithClaims(ctx, createTestClaims("user-1", "user@example.com", "tenant-1", tenant.RoleOwner))))
+}
+
 func TestYearEndClosePackEvidenceGuardFailsClosedOnlyForFiscalYearEnd(t *testing.T) {
 	t.Parallel()
 
@@ -116,5 +143,29 @@ func TestYearEndClosePackEvidenceGuardFailsClosedOnlyForFiscalYearEnd(t *testing
 	assert.Contains(t, err.Error(), "2026-12-31")
 
 	err = h.requireApprovedYearEndClosePackEvidence(context.Background(), tenantRecord, "2026-11-30")
+	require.NoError(t, err)
+
+	err = h.requireApprovedYearEndClosePackEvidence(context.Background(), &tenant.Tenant{
+		Settings: tenant.TenantSettings{EvidencePolicyMode: tenant.EvidencePolicyModeBlockHighRisk},
+	}, "2026-11-30")
+	require.ErrorContains(t, err, "tenant id is required")
+}
+
+func TestPilotEvidencePolicyRequiresJournalEvidenceWithoutEntryFlag(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	tenantRecord := repo.addTestTenant("tenant-1", "Pilot", "pilot")
+	tenantRecord.Settings = tenant.DefaultSettings()
+	tenantRecord.Settings.EvidencePolicyMode = tenant.EvidencePolicyModeBlockHighRisk
+
+	entry := &accounting.JournalEntry{ID: "entry-1", TenantID: "tenant-1", RequiresEvidence: false}
+	err := h.requireApprovedJournalEntryEvidence(context.Background(), tenantRecord.SchemaName, tenantRecord.ID, entry)
+	require.ErrorIs(t, err, errApprovedJournalEntryEvidenceRequired)
+
+	installApprovedEvidenceDocuments(t, h, documents.Document{
+		EntityType:   documents.EntityTypeJournalEntry,
+		EntityID:     entry.ID,
+		DocumentType: documents.DocumentTypeSupportingDocument,
+	})
+	err = h.requireApprovedJournalEntryEvidence(context.Background(), tenantRecord.SchemaName, tenantRecord.ID, entry)
 	require.NoError(t, err)
 }

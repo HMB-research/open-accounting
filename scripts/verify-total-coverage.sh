@@ -16,6 +16,8 @@ awk '
 		statements += $2
 		if ($3 > 0) {
 			covered += $2
+		} else {
+			uncovered = uncovered " " $1
 		}
 	}
 	END {
@@ -26,6 +28,7 @@ awk '
 		missed = statements - covered
 		printf("backend coverage: statements=%d missed=%d covered=%d coverage=%.4f%%\n", statements, missed, covered, covered * 100 / statements)
 		if (missed != 0) {
+			print "uncovered coverage blocks:" uncovered > "/dev/stderr"
 			exit 1
 		}
 	}

@@ -549,6 +549,9 @@ curl -X OPTIONS https://api.example.com/api/v1/auth/login \
 
 ## Monitoring
 
+For the production-pilot backup chain, Prometheus rules, Docker egress guard,
+and the monitored restore acceptance record, follow [Production Pilot Operations](./PILOT_OPERATIONS.md).
+
 ### Health Check Endpoint
 
 ```

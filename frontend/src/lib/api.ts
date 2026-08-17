@@ -3028,6 +3028,8 @@ export interface TenantSettings {
   invoice_terms?: string;
   inventory_issue_costing_method?: InventoryIssueCostingMethod;
   inventory_valuation_method?: InventoryValuationMethod;
+  /** Pilot control: require approved evidence before high-risk accounting actions. */
+  evidence_policy_mode?: 'warn' | 'block_high_risk';
 }
 
 export interface PeriodCloseEvent {

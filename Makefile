@@ -1,4 +1,4 @@
-.PHONY: all build run test test-coverage test-affected test-backend-coverage test-integration test-integration-coverage test-cli-coverage verify-cli-coverage verify-total-coverage verify-security-dependencies verify-contributors clean docker-build docker-up docker-down migrate help
+.PHONY: all build run test test-coverage test-affected test-backend-coverage test-integration test-integration-coverage test-cli-coverage test-security verify-cli-coverage verify-total-coverage verify-security-dependencies verify-contributors clean docker-build docker-up docker-down migrate help
 
 # Variables
 BINARY_API=api
@@ -78,6 +78,13 @@ verify-total-coverage:
 
 verify-security-dependencies:
 	scripts/verify-security-dependencies.sh
+
+# Focused authorization/webhook regression coverage plus Go's reachable-vulnerability scan.
+test-security:
+	scripts/verify-security-dependencies.sh
+	$(GO) test -count=1 ./cmd/api -run 'Test(EveryUnsafeTenantRouteRejectsViewerBeforeHandler|RequireTenantWritePermissionAllowsReadOnlyMethods|SensitiveTenantRoutesRejectViewerMembership)$$'
+	$(GO) test -count=1 ./internal/webhooks -run 'Test(IsPublicWebhookIPRejectsSpecialUseRanges|WebhookTargetValidation|WebhookDialTarget|RejectWebhookRedirect|Service_Deliver)$$'
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 
 verify-contributors:
 	scripts/verify-contributor-attribution.sh
@@ -182,6 +189,7 @@ help:
 	@echo "  make test-backend-coverage - Run backend tests and enforce exact backend plus CLI coverage"
 	@echo "  make test-cli-coverage - Enforce 100% cmd/oa coverage"
 	@echo "  make verify-security-dependencies - Enforce minimum patched dependency versions"
+	@echo "  make test-security         - Run focused authorization/webhook regressions and reachable-vulnerability scan"
 	@echo "  make verify-contributors - Verify mailmapped contributor attribution"
 	@echo "  make lint           - Run linter"
 	@echo "  make fmt            - Format code"

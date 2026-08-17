@@ -76,6 +76,9 @@ func (s *Service) CreateTenant(ctx context.Context, req *CreateTenantRequest) (*
 	if err := normalizeInventoryPolicySettings(&settings); err != nil {
 		return nil, err
 	}
+	if err := normalizeEvidencePolicySettings(&settings); err != nil {
+		return nil, err
+	}
 
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
@@ -208,6 +211,13 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 			}
 			current.Settings.InventoryValuationMethod = method
 		}
+		if req.Settings.EvidencePolicyMode != "" {
+			mode, err := NormalizeEvidencePolicyMode(req.Settings.EvidencePolicyMode)
+			if err != nil {
+				return nil, err
+			}
+			current.Settings.EvidencePolicyMode = mode
+		}
 	}
 
 	current.UpdatedAt = time.Now()
@@ -222,6 +232,18 @@ func (s *Service) UpdateTenant(ctx context.Context, tenantID string, req *Update
 	}
 
 	return current, nil
+}
+
+func normalizeEvidencePolicySettings(settings *TenantSettings) error {
+	if settings == nil {
+		return nil
+	}
+	mode, err := NormalizeEvidencePolicyMode(settings.EvidencePolicyMode)
+	if err != nil {
+		return err
+	}
+	settings.EvidencePolicyMode = mode
+	return nil
 }
 
 // UpdateLatePaymentInterestRate updates the tenant's late payment interest rate.

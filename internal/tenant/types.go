@@ -51,6 +51,10 @@ type TenantSettings struct {
 	// Inventory costing policy settings
 	InventoryIssueCostingMethod string `json:"inventory_issue_costing_method,omitempty"`
 	InventoryValuationMethod    string `json:"inventory_valuation_method,omitempty"`
+
+	// EvidencePolicyMode controls tenant-wide enforcement for pilot accounting workflows.
+	// Existing tenants remain in warn mode unless an owner or admin opts in.
+	EvidencePolicyMode string `json:"evidence_policy_mode,omitempty"`
 }
 
 // CashFlowMappingSettings stores tenant-level cash-flow account-code mappings.
@@ -84,15 +88,16 @@ type PeriodCloseEvent struct {
 }
 
 const (
-	AuditActionUserRoleUpdated     = "user_role_updated"
-	AuditActionUserRemoved         = "user_removed"
-	AuditActionInvitationCreated   = "invitation_created"
-	AuditActionInvitationRevoked   = "invitation_revoked"
-	AuditActionTenantUpdated       = "tenant_updated"
-	AuditActionUserSessionRevoked  = "user_session_revoked"
-	AuditActionUserSessionsRevoked = "user_sessions_revoked"
-	AuditActionUserAPITokenRevoked = "user_api_token_revoked" // #nosec G101 -- audit action label, not a credential.
-	AuditActionUserStatusUpdated   = "user_status_updated"
+	AuditActionUserRoleUpdated       = "user_role_updated"
+	AuditActionUserRemoved           = "user_removed"
+	AuditActionInvitationCreated     = "invitation_created"
+	AuditActionInvitationRevoked     = "invitation_revoked"
+	AuditActionTenantUpdated         = "tenant_updated"
+	AuditActionUserSessionRevoked    = "user_session_revoked"
+	AuditActionUserSessionsRevoked   = "user_sessions_revoked"
+	AuditActionUserAPITokenRevoked   = "user_api_token_revoked" // #nosec G101 -- audit action label, not a credential.
+	AuditActionUserStatusUpdated     = "user_status_updated"
+	AuditActionEvidencePolicyBlocked = "evidence_policy_blocked"
 
 	AuditTargetUser       = "user"
 	AuditTargetInvitation = "invitation"
@@ -138,6 +143,7 @@ func DefaultSettings() TenantSettings {
 		FiscalYearStart:             1, // January
 		InventoryIssueCostingMethod: InventoryIssueCostingMethodLot,
 		InventoryValuationMethod:    InventoryValuationMethodStandardCost,
+		EvidencePolicyMode:          EvidencePolicyModeWarn,
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -941,4 +942,60 @@ func TestSensitiveTenantRoutesRejectViewerMembership(t *testing.T) {
 			assert.Contains(t, rr.Body.String(), "Insufficient permissions")
 		})
 	}
+}
+
+func TestEveryUnsafeTenantRouteRejectsViewerBeforeHandler(t *testing.T) {
+	cfg := &Config{AllowedOrigins: []string{"http://localhost:5173"}}
+	tokenService := auth.NewTokenService("secret", time.Minute, time.Hour)
+	tenantRepo := newMockTenantRepository()
+	tenantRepo.addTestTenant("tenant-1", "Tenant One", "tenant-one")
+	tenantRepo.tenantUsers["tenant-1"] = []tenant.TenantUser{{TenantID: "tenant-1", UserID: "viewer-1", Role: tenant.RoleViewer, IsActive: true, CreatedAt: time.Now()}}
+
+	t.Setenv("DEMO_MODE", "true")
+	t.Setenv("CORS_DEBUG", "")
+	router := setupRouter(cfg, &Handlers{tenantService: newTestTenantService(tenantRepo)}, tokenService)
+	token, err := tokenService.GenerateAccessToken("viewer-1", "viewer@example.com", "tenant-1", tenant.RoleAdmin)
+	require.NoError(t, err)
+
+	unsafeRoutes := 0
+	err = chi.Walk(router, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if !strings.HasPrefix(route, "/api/v1/tenants/{tenantID}") {
+			return nil
+		}
+		switch method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			return nil
+		}
+
+		unsafeRoutes++
+		request := httptest.NewRequest(method, materializeTenantRouteForAuthorizationTest(route), nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		assert.Equalf(t, http.StatusForbidden, response.Code, "%s %s should be rejected before its handler: %s", method, route, response.Body.String())
+		assert.Containsf(t, response.Body.String(), "Insufficient permissions", "%s %s", method, route)
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Positive(t, unsafeRoutes)
+}
+
+func materializeTenantRouteForAuthorizationTest(route string) string {
+	for {
+		start := strings.IndexByte(route, '{')
+		if start < 0 {
+			break
+		}
+		end := strings.IndexByte(route[start:], '}')
+		if end < 0 {
+			break
+		}
+		end += start
+		value := "resource-1"
+		if route[start:end+1] == "{tenantID}" {
+			value = "tenant-1"
+		}
+		route = route[:start] + value + route[end+1:]
+	}
+	return strings.ReplaceAll(route, "*", "nested-route")
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1817,6 +1818,33 @@ func TestCompleteReconciliationRequiresApprovedEvidenceForFlaggedTransactions(t 
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, banking.ReconciliationCompleted, repo.reconciliations[reconciliationID].Status)
+}
+
+func TestPilotEvidencePolicyRequiresEvidenceForEveryMatchedReconciliationTransaction(t *testing.T) {
+	h, bankingRepo, tenantRepo := setupBankingTestHandlers()
+	tenantRecord := tenantRepo.addTestTenant("tenant-1", "Pilot", "pilot")
+	tenantRecord.Settings = tenant.DefaultSettings()
+	tenantRecord.Settings.EvidencePolicyMode = tenant.EvidencePolicyModeBlockHighRisk
+	h.documentsService = documents.NewService(newMockDocumentRepository(), nil)
+
+	reconciliationID := "rec-pilot"
+	bankingRepo.transactions["txn-pilot"] = &banking.BankTransaction{ID: "txn-pilot", TenantID: "tenant-1", Status: banking.StatusMatched, FollowUpStatus: banking.FollowUpNone, ReconciliationID: &reconciliationID}
+
+	tenantRepo.getTenantErr = errors.New("tenant settings unavailable")
+	err := h.requireApprovedReconciliationEvidence(context.Background(), tenantRecord.SchemaName, tenantRecord.ID, reconciliationID)
+	require.ErrorContains(t, err, "load tenant evidence policy")
+	tenantRepo.getTenantErr = nil
+
+	err = h.requireApprovedReconciliationEvidence(context.Background(), tenantRecord.SchemaName, tenantRecord.ID, reconciliationID)
+	var conflict *evidencePolicyConflictError
+	require.ErrorAs(t, err, &conflict)
+	require.Len(t, conflict.Results, 1)
+	assert.Equal(t, "txn-pilot", conflict.Results[0].EntityID)
+
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+	docRepo.docs["reconciliation-evidence"] = &documents.Document{ID: "reconciliation-evidence", TenantID: "tenant-1", EntityType: documents.EntityTypeBankTxn, EntityID: "txn-pilot", DocumentType: documents.DocumentTypeReconciliation, FileName: "statement.pdf", ReviewStatus: documents.ReviewStatusApproved, UploadedBy: "owner-1", CreatedAt: time.Now()}
+	require.NoError(t, h.requireApprovedReconciliationEvidence(context.Background(), tenantRecord.SchemaName, tenantRecord.ID, reconciliationID))
 }
 
 func TestGetImportHistory(t *testing.T) {

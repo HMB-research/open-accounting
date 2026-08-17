@@ -1115,7 +1115,7 @@ func nearestGitWorktreeRoot(path string) (string, bool) {
 		absPath = filepath.Dir(absPath)
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(absPath, ".git")); err == nil {
+		if hasGitWorktreeMarker(absPath) {
 			return absPath, true
 		}
 		parent := filepath.Dir(absPath)
@@ -1124,6 +1124,27 @@ func nearestGitWorktreeRoot(path string) (string, bool) {
 		}
 		absPath = parent
 	}
+}
+
+func hasGitWorktreeMarker(root string) bool {
+	gitPath := filepath.Join(root, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		return false
+	}
+	if !info.IsDir() {
+		// Linked worktrees use a .git file pointing to their common Git dir.
+		return true
+	}
+	// A directory named .git alone is not a checkout. Require a standard Git
+	// control file so a parent temporary directory cannot be mistaken for a
+	// worktree and block safe private export paths.
+	for _, name := range []string{"HEAD", "config"} {
+		if _, err := os.Stat(filepath.Join(gitPath, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func shellQuote(value string) string {

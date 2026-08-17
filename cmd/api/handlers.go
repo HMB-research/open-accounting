@@ -1276,12 +1276,16 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusNotFound, "Tenant not found")
 		case strings.Contains(err.Error(), "period lock must be managed through close or reopen actions"):
 			respondError(w, http.StatusBadRequest, err.Error())
-		case strings.Contains(err.Error(), "invalid inventory"):
+		case strings.Contains(err.Error(), "invalid inventory"), strings.Contains(err.Error(), "invalid evidence policy mode"):
 			respondError(w, http.StatusBadRequest, err.Error())
 		default:
 			respondError(w, http.StatusInternalServerError, err.Error())
 		}
 		return
+	}
+	metadata := map[string]string{"role": role}
+	if req.Settings != nil && req.Settings.EvidencePolicyMode != "" {
+		metadata["evidence_policy_mode"] = t.Settings.EvidencePolicyMode
 	}
 	if !h.recordTenantAuditEvent(w, r, &tenant.TenantAuditEvent{
 		TenantID:    tenantID,
@@ -1289,9 +1293,7 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		Action:      tenant.AuditActionTenantUpdated,
 		TargetType:  tenant.AuditTargetTenant,
 		TargetID:    tenantID,
-		Metadata: map[string]string{
-			"role": role,
-		},
+		Metadata:    metadata,
 	}) {
 		return
 	}
@@ -1821,6 +1823,7 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 	if err := h.requireApprovedJournalEntryEvidence(r.Context(), schemaName, tenantID, entry); err != nil {
 		var conflict *evidencePolicyConflictError
 		if errors.As(err, &conflict) {
+			h.recordHighRiskEvidenceBlock(r.Context(), tenantID, evidencePolicyActorID(r.Context()), "journal_post")
 			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
 			return
 		}
@@ -1843,7 +1846,18 @@ func (h *Handlers) PostJournalEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) requireApprovedJournalEntryEvidence(ctx context.Context, schemaName, tenantID string, entry *accounting.JournalEntry) error {
-	if entry == nil || !entry.RequiresEvidence {
+	if entry == nil {
+		return nil
+	}
+	requireEvidence := entry.RequiresEvidence
+	if !requireEvidence {
+		var err error
+		requireEvidence, err = h.requiresHighRiskEvidence(ctx, tenantID)
+		if err != nil {
+			return fmt.Errorf("load tenant evidence policy: %w", err)
+		}
+	}
+	if !requireEvidence {
 		return nil
 	}
 	if h.documentsService == nil {

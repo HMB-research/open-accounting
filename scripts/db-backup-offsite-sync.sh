@@ -6,6 +6,7 @@ set -euo pipefail
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 S3_URI="${BACKUP_OFFSITE_S3_URI:-}"
 RCLONE_REMOTE="${BACKUP_OFFSITE_RCLONE_REMOTE:-}"
+STATUS_FILE="${BACKUP_OFFSITE_STATUS_FILE:-}"
 DRY_RUN=false
 PREFLIGHT=false
 BACKUP_FILES=()
@@ -20,16 +21,40 @@ Options:
   --backup FILE             Exact backup file to sync. Can be repeated. Defaults to all openaccounting_*.dump files in backup dir.
   --s3-uri URI              Destination S3 URI, for example s3://bucket/prefix. Defaults to BACKUP_OFFSITE_S3_URI.
   --rclone-remote REMOTE    Destination rclone remote path, for example remote:bucket/prefix. Defaults to BACKUP_OFFSITE_RCLONE_REMOTE.
+  --status-file FILE        Write Prometheus textfile metrics. Defaults to BACKUP_OFFSITE_STATUS_FILE.
   --preflight               Validate destination and auth environment without scanning backups or calling providers.
   --dry-run                 Validate inputs and print planned uploads without calling aws or rclone.
   -h, --help                Show this help.
 
 Exactly one destination is required. The script never deletes remote objects.
-It syncs each selected .dump file and the matching FILE.sha256 checksum when present.
+It requires, syncs, and verifies each selected .dump file against its matching
+FILE.sha256 checksum before reporting success.
 EOF
 }
 
+write_status() {
+    local healthy="$1"
+
+    if [ -z "$STATUS_FILE" ]; then
+        return
+    fi
+
+    mkdir -p "$(dirname "$STATUS_FILE")"
+    {
+        echo "# HELP open_accounting_offsite_backup_health Latest offsite backup copy health, 1 for healthy and 0 for unhealthy."
+        echo "# TYPE open_accounting_offsite_backup_health gauge"
+        echo "open_accounting_offsite_backup_health $healthy"
+        if [ "$healthy" = "1" ]; then
+            echo "# HELP open_accounting_offsite_backup_last_success_timestamp_seconds Unix timestamp of the last verified offsite copy."
+            echo "# TYPE open_accounting_offsite_backup_last_success_timestamp_seconds gauge"
+            echo "open_accounting_offsite_backup_last_success_timestamp_seconds $(date -u +%s)"
+        fi
+    } > "${STATUS_FILE}.tmp"
+    mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+}
+
 fail() {
+    write_status 0
     echo "ERROR: $*" >&2
     exit 1
 }
@@ -173,11 +198,59 @@ add_backup_and_checksum() {
 
     [ -f "$backup_file" ] || fail "backup file does not exist: $backup_file"
     add_file "$backup_file"
-    if [ -f "$checksum_file" ]; then
-        add_file "$checksum_file"
+    [ -f "$checksum_file" ] || fail "checksum file is missing: $checksum_file"
+    add_file "$checksum_file"
+}
+
+verify_local_checksum() {
+    local file="$1"
+    local checksum_file="${file}.sha256"
+    local dir
+    local base
+
+    dir="$(cd "$(dirname "$file")" && pwd)"
+    base="$(basename "$file")"
+    if command -v sha256sum >/dev/null 2>&1; then
+        (cd "$dir" && sha256sum -c "${base}.sha256")
+    elif command -v shasum >/dev/null 2>&1; then
+        (cd "$dir" && shasum -a 256 -c "${base}.sha256")
     else
-        log "WARN: checksum file is missing and will not be synced: $checksum_file"
+        fail "checksum verification requires sha256sum or shasum"
     fi
+}
+
+verify_s3_backup() {
+    local file="$1"
+    local destination="$2"
+    local verification_file
+    local verification_checksum
+    local dir
+    local base
+
+    verification_file="$(mktemp)"
+    verification_checksum="${verification_file}.sha256"
+    trap 'rm -f "$verification_file" "$verification_checksum"' RETURN
+    aws s3 cp "$destination" "$verification_file" --only-show-errors
+
+    dir="$(dirname "$verification_file")"
+    base="$(basename "$verification_file")"
+    cp "${file}.sha256" "$verification_checksum"
+    sed -i.bak "s|  .*|  ${base}|" "$verification_checksum"
+    rm -f "${verification_checksum}.bak"
+    if command -v sha256sum >/dev/null 2>&1; then
+        (cd "$dir" && sha256sum -c "$(basename "$verification_checksum")")
+    elif command -v shasum >/dev/null 2>&1; then
+        (cd "$dir" && shasum -a 256 -c "$(basename "$verification_checksum")")
+    else
+        fail "checksum verification requires sha256sum or shasum"
+    fi
+}
+
+verify_rclone_backup() {
+    local file="$1"
+    local destination="$2"
+
+    rclone check --one-way --checksum "$file" "$destination"
 }
 
 trim_trailing_slash() {
@@ -220,6 +293,11 @@ while [ "$#" -gt 0 ]; do
         --rclone-remote)
             [ "$#" -ge 2 ] || fail "--rclone-remote requires a value"
             RCLONE_REMOTE="$2"
+            shift 2
+            ;;
+        --status-file)
+            [ "$#" -ge 2 ] || fail "--status-file requires a value"
+            STATUS_FILE="$2"
             shift 2
             ;;
         --preflight)
@@ -274,8 +352,17 @@ if [ "$DRY_RUN" = true ]; then
     for file in "${FILES_TO_SYNC[@]}"; do
         log "$file -> $(destination_for_file "$file")"
     done
+    [ -z "$STATUS_FILE" ] || log "Would write status metrics: $STATUS_FILE"
     exit 0
 fi
+
+for backup_file in "${FILES_TO_SYNC[@]}"; do
+    case "$backup_file" in
+        *.dump)
+            verify_local_checksum "$backup_file"
+            ;;
+    esac
+done
 
 if [ -n "$S3_URI" ]; then
     require_command aws
@@ -289,4 +376,17 @@ else
     done
 fi
 
+for backup_file in "${FILES_TO_SYNC[@]}"; do
+    case "$backup_file" in
+        *.dump)
+            if [ -n "$S3_URI" ]; then
+                verify_s3_backup "$backup_file" "$(destination_for_file "$backup_file")"
+            else
+                verify_rclone_backup "$backup_file" "$(destination_for_file "$backup_file")"
+            fi
+            ;;
+    esac
+done
+
+write_status 1
 log "Offsite backup sync complete"

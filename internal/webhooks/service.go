@@ -519,10 +519,23 @@ func isPublicWebhookIP(ip net.IP) bool {
 		return false
 	}
 	if ipv4 := ip.To4(); ipv4 != nil {
+		if ipv4[0] == 0 || ipv4[0] >= 224 {
+			return false
+		}
 		if ipv4[0] == 100 && ipv4[1]&0xc0 == 0x40 { // 100.64.0.0/10 shared address space
 			return false
 		}
 		if ipv4[0] == 198 && (ipv4[1] == 18 || ipv4[1] == 19) { // 198.18.0.0/15 benchmarking space
+			return false
+		}
+		if (ipv4[0] == 192 && ipv4[1] == 0 && ipv4[2] == 2) ||
+			(ipv4[0] == 198 && ipv4[1] == 51 && ipv4[2] == 100) ||
+			(ipv4[0] == 203 && ipv4[1] == 0 && ipv4[2] == 113) { // TEST-NET documentation ranges
+			return false
+		}
+	}
+	if ipv6 := ip.To16(); ipv6 != nil && ip.To4() == nil {
+		if ipv6[0] == 0x20 && ipv6[1] == 0x01 && ipv6[2] == 0x0d && ipv6[3] == 0xb8 { // 2001:db8::/32 documentation range
 			return false
 		}
 	}

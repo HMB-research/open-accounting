@@ -256,6 +256,16 @@ func (h *Handlers) PostExpense(w http.ResponseWriter, r *http.Request) {
 	if h.rejectLockedPeriod(w, r.Context(), tenantID, expense.ExpenseDate) {
 		return
 	}
+	if err := h.requireApprovedExpensePostingEvidence(r.Context(), schemaName, tenantID, expenseID); err != nil {
+		var conflict *evidencePolicyConflictError
+		if errors.As(err, &conflict) {
+			h.recordHighRiskEvidenceBlock(r.Context(), tenantID, evidencePolicyActorID(r.Context()), "expense_ledger_post")
+			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to verify expense ledger-posting evidence")
+		return
+	}
 
 	expense, err = h.expensesService.PostExpense(r.Context(), schemaName, tenantID, expenseID, &expenses.ExpenseActionRequest{UserID: claims.UserID})
 	if err != nil {

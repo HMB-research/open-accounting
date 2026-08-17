@@ -169,6 +169,7 @@ case "$OFFSITE_PROVIDER" in
 esac
 
 backup_metrics_file="$STATUS_DIR/openaccounting_backup.prom"
+offsite_metrics_file="$STATUS_DIR/openaccounting_offsite_backup.prom"
 restore_metrics_file="$STATUS_DIR/openaccounting_restore_drill.prom"
 install_helper="$OUTPUT_DIR/open-accounting-backup-install.sh"
 preflight_helper="$OUTPUT_DIR/open-accounting-backup-preflight.sh"
@@ -235,7 +236,7 @@ After=network-online.target open-accounting-backup.service
 [Service]
 Type=oneshot
 EnvironmentFile=$ENV_FILE
-ExecStart=$SCRIPTS_DIR/db-backup-offsite-sync.sh --backup-dir $BACKUP_DIR
+ExecStart=$SCRIPTS_DIR/db-backup-offsite-sync.sh --backup-dir $BACKUP_DIR --status-file $offsite_metrics_file
 EOF
 
 write_file "$OUTPUT_DIR/open-accounting-backup-offsite.timer" <<EOF

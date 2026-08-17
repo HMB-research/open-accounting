@@ -448,9 +448,26 @@ func TestNewWebhookHTTPClientFallsBackWhenDefaultTransportIsNotHTTP(t *testing.T
 }
 
 func TestIsPublicWebhookIPRejectsSpecialUseRanges(t *testing.T) {
-	assert.True(t, isPublicWebhookIP(net.ParseIP("93.184.216.34")))
-	assert.False(t, isPublicWebhookIP(net.ParseIP("100.64.0.1")))
-	assert.False(t, isPublicWebhookIP(net.ParseIP("198.18.0.1")))
+	for _, tt := range []struct {
+		ip   string
+		want bool
+	}{
+		{ip: "93.184.216.34", want: true},
+		{ip: "100.64.0.1", want: false},
+		{ip: "198.18.0.1", want: false},
+		{ip: "192.0.2.1", want: false},
+		{ip: "198.51.100.1", want: false},
+		{ip: "203.0.113.1", want: false},
+		{ip: "0.0.0.1", want: false},
+		{ip: "240.0.0.1", want: false},
+		{ip: "fc00::1", want: false},
+		{ip: "fe80::1", want: false},
+		{ip: "2001:db8::1", want: false},
+	} {
+		t.Run(tt.ip, func(t *testing.T) {
+			assert.Equal(t, tt.want, isPublicWebhookIP(net.ParseIP(tt.ip)))
+		})
+	}
 }
 
 func TestSanitizeEndpoint(t *testing.T) {

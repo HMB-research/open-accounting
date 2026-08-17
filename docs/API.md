@@ -332,12 +332,15 @@ Content-Type: application/json
   "settings": {
     "email": "finance@acme.example",
     "inventory_issue_costing_method": "WEIGHTED_AVERAGE",
-    "inventory_valuation_method": "FIFO"
+    "inventory_valuation_method": "FIFO",
+    "evidence_policy_mode": "block_high_risk"
   }
 }
 ```
 
 `period_lock_date` is returned on tenant reads, but it is no longer mutable through the generic tenant settings endpoint. Use the explicit period close/reopen endpoints below so changes are audited. Inventory policy settings are `inventory_issue_costing_method` (`LOT`, `WEIGHTED_AVERAGE`, or `STANDARD_COST`) and `inventory_valuation_method` (`STANDARD_COST`, `WEIGHTED_AVERAGE`, or `FIFO`); friendly aliases such as `lot`, `weighted-average`, `standard-cost`, and `fifo` are accepted and stored canonically.
+
+`evidence_policy_mode` is `warn` by default for compatibility. Set it to `block_high_risk` for a pilot tenant to require approved evidence before high-risk journal posting, bank reconciliation, close, expense/asset posting, and KMD/TSD acceptance. The API returns a remediation response without changing financial state when evidence is missing or rejected; the evidence review workspace supports upload, approval, and retry. Settings changes and policy blocks are retained in tenant audit history.
 
 ### Complete Onboarding
 

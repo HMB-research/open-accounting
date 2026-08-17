@@ -39,6 +39,20 @@ func TestYearEndCloseEvidenceEntityIDRejectsInvalidDate(t *testing.T) {
 	assert.Contains(t, err.Error(), "period end date must be the last day of a month")
 }
 
+func TestPeriodCloseEvidenceEntityID(t *testing.T) {
+	monthEnd, err := PeriodCloseEvidenceEntityID("tenant-1", "2025-11-30")
+	require.NoError(t, err)
+	yearEnd, err := PeriodCloseEvidenceEntityID("tenant-1", "2025-12-31")
+	require.NoError(t, err)
+	assert.NotEmpty(t, monthEnd)
+	assert.NotEqual(t, monthEnd, yearEnd)
+
+	_, err = PeriodCloseEvidenceEntityID("tenant-1", "not-a-date")
+	require.Error(t, err)
+	_, err = PeriodCloseEvidenceEntityID("", "2025-11-30")
+	require.Error(t, err)
+}
+
 func TestIsFiscalYearEndPeriod(t *testing.T) {
 	tests := []struct {
 		name                 string

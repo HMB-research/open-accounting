@@ -34,6 +34,16 @@ when changing `go.mod`:
 make verify-security-dependencies
 ```
 
+## Security Regression Gate
+
+Run the focused tenant-write and webhook SSRF regressions plus Go's reachable
+vulnerability scanner before shipping changes to API authorization, webhook
+delivery, or dependencies:
+
+```bash
+make test-security
+```
+
 ## Database Migrations
 
 ### Running Migrations
