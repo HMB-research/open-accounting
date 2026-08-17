@@ -87,8 +87,17 @@ func (h *Handlers) ClosePeriod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.InventoryValuationMethod = tenantInventoryValuationMethod(tenantRecord, req.InventoryValuationMethod)
-	if req.ReviewerSignOff {
+	requireCloseEvidence := req.ReviewerSignOff
+	if !requireCloseEvidence {
+		requireCloseEvidence, err = h.requiresHighRiskEvidence(r.Context(), tenantID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to load tenant evidence policy")
+			return
+		}
+	}
+	if requireCloseEvidence {
 		if err := h.requireApprovedYearEndClosePackEvidence(r.Context(), tenantRecord, req.PeriodEndDate); err != nil {
+			h.recordHighRiskEvidenceBlock(r.Context(), tenantID, evidencePolicyActorID(r.Context()), "period_close")
 			respondPeriodCloseError(w, err)
 			return
 		}

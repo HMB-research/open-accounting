@@ -167,11 +167,13 @@ go run ./cmd/oa tenant create \
 go run ./cmd/oa tenant update \
   --name "Acme Finance" \
   --settings-json '{"email":"finance@acme.example","timezone":"Europe/Tallinn","inventory_issue_costing_method":"WEIGHTED_AVERAGE","inventory_valuation_method":"FIFO"}'
+go run ./cmd/oa tenant update \
+  --settings-json '{"evidence_policy_mode":"block_high_risk"}'
 go run ./cmd/oa tenant complete-onboarding
 go run ./cmd/oa tenant audit-events --limit 50
 ```
 
-Use `--id <tenant-id>` on `tenant get`, `tenant update`, `tenant complete-onboarding`, and `tenant audit-events` to target a tenant other than the configured one. Use `--settings-file ./tenant-settings.json` instead of `--settings-json` for larger settings payloads. Tenant inventory policy settings are `inventory_issue_costing_method` (`LOT`, `WEIGHTED_AVERAGE`, or `STANDARD_COST`) and `inventory_valuation_method` (`STANDARD_COST`, `WEIGHTED_AVERAGE`, or `FIFO`); friendly aliases such as `lot`, `weighted-average`, `standard-cost`, and `fifo` are accepted and stored canonically. Use `--json` on tenant create/get/update/onboarding/audit commands for automation; tenant IDs and create/update names/slugs are trimmed before API requests.
+Use `--id <tenant-id>` on `tenant get`, `tenant update`, `tenant complete-onboarding`, and `tenant audit-events` to target a tenant other than the configured one. Use `--settings-file ./tenant-settings.json` instead of `--settings-json` for larger settings payloads. Tenant inventory policy settings are `inventory_issue_costing_method` (`LOT`, `WEIGHTED_AVERAGE`, or `STANDARD_COST`) and `inventory_valuation_method` (`STANDARD_COST`, `WEIGHTED_AVERAGE`, or `FIFO`); friendly aliases such as `lot`, `weighted-average`, `standard-cost`, and `fifo` are accepted and stored canonically. `evidence_policy_mode` defaults to `warn`; use `block_high_risk` for pilot tenants after their evidence-review workflow is ready. Use `--json` on tenant create/get/update/onboarding/audit commands for automation; tenant IDs and create/update names/slugs are trimmed before API requests.
 
 ## Tenant users and invitations
 

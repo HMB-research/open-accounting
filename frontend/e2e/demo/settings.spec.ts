@@ -31,6 +31,7 @@ interface TenantResponse {
     timezone?: string;
     date_format?: string;
     fiscal_year_start_month?: number;
+    evidence_policy_mode?: "warn" | "block_high_risk";
   };
 }
 
@@ -158,6 +159,7 @@ test.describe("Demo Settings", () => {
     const pdfFooterText = `Footer ${suffix}`;
     const dateFormat = "YYYY-MM-DD";
     const fiscalYearStartMonth = 4;
+    const evidencePolicyMode = "block_high_risk";
 
     await page.locator("#regCode").fill(regCode);
     await page.locator("#vatNumber").fill(vatNumber);
@@ -171,6 +173,7 @@ test.describe("Demo Settings", () => {
     await page
       .locator("#fiscalYearStart")
       .selectOption(String(fiscalYearStartMonth));
+    await page.locator("#evidencePolicyMode").selectOption(evidencePolicyMode);
 
     const updateResponsePromise = page.waitForResponse(
       updateTenantResponse(tenantId),
@@ -197,6 +200,7 @@ test.describe("Demo Settings", () => {
     expect(updatePayload.settings?.fiscal_year_start_month).toBe(
       fiscalYearStartMonth,
     );
+    expect(updatePayload.settings?.evidence_policy_mode).toBe(evidencePolicyMode);
     expect(updatedTenant.settings?.reg_code).toBe(regCode);
     expect(updatedTenant.settings?.vat_number).toBe(vatNumber);
     expect(updatedTenant.settings?.email).toBe(email);
@@ -209,6 +213,7 @@ test.describe("Demo Settings", () => {
     expect(updatedTenant.settings?.fiscal_year_start_month).toBe(
       fiscalYearStartMonth,
     );
+    expect(updatedTenant.settings?.evidence_policy_mode).toBe(evidencePolicyMode);
     await expect(page.locator(".alert-success")).toContainText(
       /settings saved|seaded salvestatud/i,
     );
@@ -237,6 +242,7 @@ test.describe("Demo Settings", () => {
     expect(reloadedTenant.settings?.fiscal_year_start_month).toBe(
       fiscalYearStartMonth,
     );
+    expect(reloadedTenant.settings?.evidence_policy_mode).toBe(evidencePolicyMode);
     await expect(page.locator("#regCode")).toHaveValue(regCode);
     await expect(page.locator("#vatNumber")).toHaveValue(vatNumber);
     await expect(page.locator("#email")).toHaveValue(email);
@@ -249,5 +255,6 @@ test.describe("Demo Settings", () => {
     await expect(page.locator("#fiscalYearStart")).toHaveValue(
       String(fiscalYearStartMonth),
     );
+    await expect(page.locator("#evidencePolicyMode")).toHaveValue(evidencePolicyMode);
   });
 });

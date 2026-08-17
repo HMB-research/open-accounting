@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -716,6 +717,42 @@ func TestUpdateTenantRecordsAuditEvent(t *testing.T) {
 	assert.Equal(t, tenant.RoleAdmin, event.Metadata["role"])
 }
 
+func TestUpdateTenantEnablesPilotEvidencePolicyAndAuditsMode(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	repo.addTestTenant("tenant-1", "Pilot", "pilot")
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{{TenantID: "tenant-1", UserID: "owner-1", Role: tenant.RoleOwner}}
+
+	req := makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1", map[string]any{
+		"settings": map[string]any{"evidence_policy_mode": tenant.EvidencePolicyModeBlockHighRisk},
+	}, &auth.Claims{UserID: "owner-1", Email: "owner@example.com"})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	response := httptest.NewRecorder()
+
+	h.UpdateTenant(response, req)
+
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Len(t, repo.auditEvents["tenant-1"], 1)
+	assert.Equal(t, tenant.EvidencePolicyModeBlockHighRisk, repo.tenants["tenant-1"].Settings.EvidencePolicyMode)
+	assert.Equal(t, tenant.EvidencePolicyModeBlockHighRisk, repo.auditEvents["tenant-1"][0].Metadata["evidence_policy_mode"])
+}
+
+func TestUpdateTenantRejectsInvalidEvidencePolicyMode(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	repo.addTestTenant("tenant-1", "Pilot", "pilot")
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{{TenantID: "tenant-1", UserID: "owner-1", Role: tenant.RoleOwner}}
+
+	req := makeAuthenticatedRequest(http.MethodPut, "/tenants/tenant-1", map[string]any{
+		"settings": map[string]any{"evidence_policy_mode": "block_everything"},
+	}, &auth.Claims{UserID: "owner-1", Email: "owner@example.com"})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	response := httptest.NewRecorder()
+
+	h.UpdateTenant(response, req)
+
+	assert.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
+	assert.Contains(t, response.Body.String(), "invalid evidence policy mode")
+}
+
 func TestListPeriodCloseEvents(t *testing.T) {
 	h, repo := setupTenantTestHandlers()
 	repo.addTestTenant("tenant-1", "Tenant", "tenant")
@@ -938,6 +975,72 @@ func TestClosePeriodRequiresApprovedClosePackEvidence(t *testing.T) {
 	h.ClosePeriod(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code, "response body: %s", w.Body.String())
+}
+
+func TestClosePeriodPilotEvidencePolicyRequiresApprovedEvidenceWithoutSignOff(t *testing.T) {
+	h, repo := setupTenantTestHandlers()
+	docRepo := newMockDocumentRepository()
+	h.documentsService = documents.NewService(docRepo, nil)
+
+	tenantRecord := repo.addTestTenant("tenant-1", "Pilot", "pilot")
+	tenantRecord.Settings = tenant.DefaultSettings()
+	tenantRecord.Settings.EvidencePolicyMode = tenant.EvidencePolicyModeBlockHighRisk
+	repo.tenantUsers["tenant-1"] = []tenant.TenantUser{{TenantID: "tenant-1", UserID: "owner-1", Role: tenant.RoleOwner}}
+	body := map[string]any{"period_end_date": "2026-11-30", "note": "Month-end close"}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/period-close", body, &auth.Claims{UserID: "owner-1", Email: "owner@example.com"})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	blocked := httptest.NewRecorder()
+	h.ClosePeriod(blocked, req)
+
+	require.Equal(t, http.StatusConflict, blocked.Code, blocked.Body.String())
+	assert.Contains(t, blocked.Body.String(), "approved close-pack evidence is required")
+	require.Len(t, repo.auditEvents["tenant-1"], 1)
+	assert.Equal(t, tenant.AuditActionEvidencePolicyBlocked, repo.auditEvents["tenant-1"][0].Action)
+	assert.Equal(t, "period_close", repo.auditEvents["tenant-1"][0].Metadata["operation"])
+
+	entityID, err := accounting.PeriodCloseEvidenceEntityID("tenant-1", "2026-11-30")
+	require.NoError(t, err)
+	docRepo.docs["close-pack"] = &documents.Document{ID: "close-pack", TenantID: "tenant-1", EntityType: documents.EntityTypeYearEndClose, EntityID: entityID, DocumentType: documents.DocumentTypeClosePack, FileName: "close-pack.pdf", ReviewStatus: documents.ReviewStatusApproved, UploadedBy: "owner-1", CreatedAt: time.Now()}
+
+	req = makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/period-close", body, &auth.Claims{UserID: "owner-1", Email: "owner@example.com"})
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	allowed := httptest.NewRecorder()
+	h.ClosePeriod(allowed, req)
+	require.Equal(t, http.StatusOK, allowed.Code, allowed.Body.String())
+}
+
+type failSecondTenantLookupRepository struct {
+	*mockTenantRepository
+	getTenantCalls int
+}
+
+func (r *failSecondTenantLookupRepository) GetTenant(ctx context.Context, tenantID string) (*tenant.Tenant, error) {
+	r.getTenantCalls++
+	if r.getTenantCalls == 2 {
+		return nil, errors.New("tenant settings unavailable")
+	}
+	return r.mockTenantRepository.GetTenant(ctx, tenantID)
+}
+
+func TestClosePeriodMapsPilotEvidencePolicyLookupFailure(t *testing.T) {
+	base := newMockTenantRepository()
+	base.addTestTenant("tenant-1", "Pilot", "pilot")
+	base.tenantUsers["tenant-1"] = []tenant.TenantUser{{TenantID: "tenant-1", UserID: "owner-1", Role: tenant.RoleOwner}}
+	repo := &failSecondTenantLookupRepository{mockTenantRepository: base}
+	h := &Handlers{tenantService: tenant.NewServiceWithRepository(repo)}
+
+	req := makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/period-close", tenant.ClosePeriodRequest{
+		PeriodEndDate: "2026-11-30",
+		Note:          "Month-end close",
+	}, createTestClaims("owner-1", "owner@example.com", "tenant-1", tenant.RoleOwner))
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	w := httptest.NewRecorder()
+	h.ClosePeriod(w, req)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "Failed to load tenant evidence policy")
+	require.Equal(t, 2, repo.getTenantCalls)
 }
 
 func TestClosePeriodRequiresInventoryCostingReady(t *testing.T) {

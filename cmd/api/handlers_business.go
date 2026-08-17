@@ -2672,6 +2672,7 @@ func (h *Handlers) CompleteReconciliation(w http.ResponseWriter, r *http.Request
 	if err := h.requireApprovedReconciliationEvidence(r.Context(), schemaName, tenantID, reconciliationID); err != nil {
 		var conflict *evidencePolicyConflictError
 		if errors.As(err, &conflict) {
+			h.recordHighRiskEvidenceBlock(r.Context(), tenantID, evidencePolicyActorID(r.Context()), "reconciliation_complete")
 			respondEvidencePolicyConflict(w, conflict.Error(), conflict.Results)
 			return
 		}
@@ -2705,6 +2706,18 @@ func (h *Handlers) requireApprovedReconciliationEvidence(ctx context.Context, sc
 	for _, transaction := range transactions {
 		if transaction.FollowUpStatus == banking.FollowUpEvidenceRequired {
 			transactionIDs = append(transactionIDs, transaction.ID)
+		}
+	}
+	if len(transactionIDs) < len(transactions) {
+		requireAllTransactions, err := h.requiresHighRiskEvidence(ctx, tenantID)
+		if err != nil {
+			return fmt.Errorf("load tenant evidence policy: %w", err)
+		}
+		if requireAllTransactions {
+			transactionIDs = transactionIDs[:0]
+			for _, transaction := range transactions {
+				transactionIDs = append(transactionIDs, transaction.ID)
+			}
 		}
 	}
 	if len(transactionIDs) == 0 {

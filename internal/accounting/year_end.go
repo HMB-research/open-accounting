@@ -769,6 +769,20 @@ func YearEndCloseEvidenceEntityID(tenantID, rawPeriodEndDate string) (string, er
 	return yearEndCloseEvidenceEntityID(tenantID, periodEndDate), nil
 }
 
+// PeriodCloseEvidenceEntityID returns a deterministic document entity UUID for
+// a month-end or year-end close. It reuses the close-pack document family so
+// the existing review workspace can upload, approve, and retry the action.
+func PeriodCloseEvidenceEntityID(tenantID, rawPeriodEndDate string) (string, error) {
+	periodEndDate, err := time.Parse(yearEndDateLayout, strings.TrimSpace(rawPeriodEndDate))
+	if err != nil {
+		return "", fmt.Errorf("period end date must use YYYY-MM-DD: %w", err)
+	}
+	if strings.TrimSpace(tenantID) == "" {
+		return "", fmt.Errorf("tenant id is required")
+	}
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("period-close:%s:%s", tenantID, periodEndDate.Format(yearEndDateLayout)))).String(), nil
+}
+
 // IsFiscalYearEndPeriod reports whether a period end date matches the tenant fiscal year end.
 func IsFiscalYearEndPeriod(rawPeriodEndDate string, fiscalYearStartMonth int) (bool, error) {
 	periodEndDate, err := parseYearEndDate(rawPeriodEndDate)
