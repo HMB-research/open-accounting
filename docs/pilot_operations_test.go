@@ -52,3 +52,25 @@ func TestSmartAccountsPilotRunbookKeepsProofEvidencePrivate(t *testing.T) {
 		require.Contains(t, string(runbook), value)
 	}
 }
+
+func TestPilotReadinessRecordTemplateRequiresPrivateEvidenceForEveryGate(t *testing.T) {
+	template, err := os.ReadFile("PILOT_READINESS_RECORD_TEMPLATE.md")
+	require.NoError(t, err)
+	for _, value := range []string{
+		"Copy this template to the private operations record",
+		"PASS",
+		"BLOCKED",
+		"NOT_RUN",
+		"Backup freshness (<=26 hours)",
+		"Host egress policy applied",
+		"smartaccounts-proof-result --require-ready",
+		"block_high_risk",
+		"READY_FOR_CUTOVER",
+	} {
+		require.Contains(t, string(template), value)
+	}
+
+	operations, err := os.ReadFile("PILOT_OPERATIONS.md")
+	require.NoError(t, err)
+	require.Contains(t, string(operations), "PILOT_READINESS_RECORD_TEMPLATE.md")
+}

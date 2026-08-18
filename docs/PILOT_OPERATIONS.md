@@ -63,3 +63,7 @@ Before enabling evidence blocking or importing pilot data, record privately:
 - Alertmanager receiver and test alert confirmation;
 - firewall dry-run/review and the approved private dependency allowlist;
 - the SmartAccounts proof-result hash, reviewer, and all reconciled report areas.
+
+Use [the private pilot readiness record template](./PILOT_READINESS_RECORD_TEMPLATE.md)
+to record outcomes consistently. A pilot is not ready while any required row is
+`FAIL`, `BLOCKED`, or `NOT_RUN`.
