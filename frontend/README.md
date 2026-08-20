@@ -19,7 +19,7 @@ bun run dev
 
 ## Prerequisites
 
-- Bun 1.0+ (or Node.js 22+)
+- Bun 1.4.0 (or Node.js 22+)
 - Running backend API at http://localhost:8080
 
 ## Available Scripts

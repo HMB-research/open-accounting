@@ -1,5 +1,5 @@
 # Build stage - use Bun for fast dependency installation and build
-FROM oven/bun:1-alpine AS builder
+FROM oven/bun:1.4.0-alpine AS builder
 
 WORKDIR /app
 
@@ -25,7 +25,7 @@ COPY --from=builder /app/build ./build
 COPY --from=builder /app/package.json /app/bun.lock ./
 
 # Install production dependencies only with Bun for speed
-COPY --from=oven/bun:1-alpine /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=oven/bun:1.4.0-alpine /usr/local/bin/bun /usr/local/bin/bun
 RUN bun install --production --frozen-lockfile
 
 # Use the built-in node user (already exists in node:alpine)

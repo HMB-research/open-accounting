@@ -144,7 +144,7 @@ frontend:
 
 ### Prerequisites
 - Go 1.26+
-- Node.js 22+ or Bun 1.0+
+- Node.js 22+ or Bun 1.4.0
 - PostgreSQL 16+
 
 ### Setup
