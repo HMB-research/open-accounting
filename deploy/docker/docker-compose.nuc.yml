@@ -1,0 +1,119 @@
+name: open-accounting
+
+services:
+  api:
+    image: open-accounting-api:nuc
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+    ports:
+      - "${BIND_ADDRESS}:${API_PORT}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - app
+      - database
+
+  frontend:
+    image: open-accounting-frontend:nuc
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PUBLIC_API_URL: http://${PUBLIC_HOSTNAME}:${API_PORT}
+    ports:
+      - "${BIND_ADDRESS}:${FRONTEND_PORT}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    networks:
+      - app
+
+  migrate:
+    image: open-accounting-api:nuc
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command:
+      - /app/migrate
+      - -db
+      - postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+      - -path
+      - /app/migrations
+      - -direction
+      - up
+    environment:
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: [maintenance]
+    restart: "no"
+    networks:
+      - database
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - database
+
+  backup:
+    image: postgres:16-alpine
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        while true; do
+          /scripts/db-backup.sh --backup-dir /backups
+          sleep 86400
+        done
+    environment:
+      DATABASE_URL: postgres://${DB_USER}@db:5432/${DB_NAME}?sslmode=disable
+      PGPASSWORD: ${DB_PASSWORD}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - ./backups:/backups
+      - ../../scripts:/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - database
+
+networks:
+  app:
+  database:
+    internal: true
+
+volumes:
+  postgres_data:

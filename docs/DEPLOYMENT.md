@@ -132,6 +132,32 @@ docker-compose -f docker-compose.prod.yml up -d
 docker-compose -f docker-compose.prod.yml logs -f api
 ```
 
+### Server NUC (Tailscale-only)
+
+`deploy/docker/docker-compose.nuc.yml` is a self-contained Docker Compose
+stack for the `server-nuc` Tailscale host. It deliberately does not modify the
+host reverse proxy or bind public ports. It exposes the frontend on port 3000
+and the API on port 8082 of the configured Tailscale address, while PostgreSQL
+is available only inside the Compose network.
+
+On the server, copy `deploy/docker/.env.nuc.example` to
+`deploy/docker/.env.nuc`, set strong `DB_PASSWORD` and `JWT_SECRET` values,
+and then run the migration before the application services:
+
+```bash
+cd /path/to/open-accounting/deploy/docker
+sudo -n docker compose --env-file .env.nuc -f docker-compose.nuc.yml build api frontend
+sudo -n docker compose --env-file .env.nuc -f docker-compose.nuc.yml up -d db
+sudo -n docker compose --env-file .env.nuc -f docker-compose.nuc.yml run --rm migrate
+sudo -n docker compose --env-file .env.nuc -f docker-compose.nuc.yml up -d api frontend backup
+```
+
+Confirm service health from the server with
+`curl -fsS "http://$(tailscale ip -4):8082/health"`. The default access URL is
+`http://server-nuc:3000` from the same Tailnet. The `backup` service writes a
+custom-format PostgreSQL dump and SHA-256 checksum to `deploy/docker/backups`
+on startup and once every 24 hours; its default local retention is 30 days.
+
 ## Nginx Reverse Proxy
 
 Example Nginx configuration with SSL:

@@ -26,6 +26,7 @@ vendor/
 .env
 .env.local
 .env.*.local
+deploy/docker/.env.nuc
 
 # OS
 .DS_Store
