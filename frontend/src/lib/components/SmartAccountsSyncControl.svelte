@@ -72,6 +72,11 @@
 	const relayCaptureManifestVersion = 'smartaccounts-brave-ui-v2';
 	const relayWorkflowPlanVersion = 'smartaccounts-browser-capture-plan-v1';
 	const relayReadinessTimeoutMs = 3_000;
+	// The relay completes the stable-picker check locally before a single bounded
+	// handoff. A missing response must not leave the metadata-only onboarding
+	// action disabled indefinitely after an extension reload, stale content
+	// script, or worker failure.
+	const catalogRelayTimeoutMs = 5_000;
 	const browserOnboardingMaxSources = 250;
 	const onboardingBatchAutoRefreshDelayMs = 1_000;
 	const onboardingBatchAutoRefreshMaxAttempts = 6;
@@ -143,6 +148,7 @@
 	let onboardingCatalogWorkflowID = '';
 	let onboardingCatalogNonce = '';
 	let onboardingCatalogGeneration = 0;
+	let onboardingCatalogTimer: number | undefined;
 	let onboardingMode = $state<'' | 'selected' | 'all'>('');
 	let onboardingBatchConsent = $state(false);
 	let onboardingBatchID = $state('');
@@ -286,6 +292,7 @@
 		onboardingCatalogWorkflowID = '';
 		onboardingCatalogNonce = '';
 		onboardingCatalogGeneration = 0;
+		clearOnboardingCatalogTimer();
 		onboardingMode = '';
 		onboardingBatchConsent = false;
 		onboardingBatchID = '';
@@ -558,6 +565,13 @@
 		if (onboardingBatchRefreshTimer !== undefined) {
 			window.clearTimeout(onboardingBatchRefreshTimer);
 			onboardingBatchRefreshTimer = undefined;
+		}
+	}
+
+	function clearOnboardingCatalogTimer() {
+		if (onboardingCatalogTimer !== undefined) {
+			window.clearTimeout(onboardingCatalogTimer);
+			onboardingCatalogTimer = undefined;
 		}
 	}
 
@@ -1154,6 +1168,7 @@
 
 	async function requestBrowserSourceDiscovery() {
 		if (!requireReadyBrowserRelay() || sourceDiscoveryPending || onboardingBusy || !onboardingCatalogConsent) return;
+		clearOnboardingCatalogTimer();
 		error = '';
 		onboardingMessage = '';
 		sourceDiscoveryPending = true;
@@ -1176,7 +1191,21 @@
 			// relay memory and must not remain in component state after dispatch.
 			issued.catalog_token = '';
 			onboardingMessage = 'Reading the relay-observed visible company catalog…';
+			onboardingCatalogTimer = window.setTimeout(() => {
+				if (generation !== onboardingCatalogGeneration || !sourceDiscoveryPending) return;
+				// Reject a late relay result against this expired UI action. The
+				// short-lived capability remains server-bound and cannot start a
+				// capture or financial write.
+				onboardingCatalogGeneration += 1;
+				sourceDiscoveryPending = false;
+				onboardingCatalogWorkflowID = '';
+				onboardingCatalogNonce = '';
+				onboardingCatalogTimer = undefined;
+				onboardingMessage = '';
+				error = 'The installed SmartAccounts Browser Relay did not return the visible-company catalog. Reload the unpacked relay and both normal tabs, then try again.';
+			}, catalogRelayTimeoutMs);
 		} catch (caught) {
+			clearOnboardingCatalogTimer();
 			sourceDiscoveryPending = false;
 			error = messageFrom(caught, 'Could not authorize the visible SmartAccounts company catalog.');
 		}
@@ -1634,6 +1663,7 @@
 			}
 			if (data.type === 'smartaccounts-browser-relay.source-catalog-result.v1') {
 				if (!validBrowserCatalogResult(data) || data.catalog_id !== onboardingCatalogReceiptID || data.workflow_id !== onboardingCatalogWorkflowID || data.nonce !== onboardingCatalogNonce) return;
+				clearOnboardingCatalogTimer();
 				const catalog = data;
 				if (catalog.status !== 'accepted' && catalog.status !== 'already_accepted') {
 					if (catalog.status === 'awaiting_browser') {
@@ -1727,6 +1757,7 @@
 		return () => {
 			relayListenerMounted = false;
 			clearRelayReadinessTimer();
+			clearOnboardingCatalogTimer();
 			clearOnboardingBatchRefresh();
 			for (const timer of batchCapturePollTimers.values()) window.clearTimeout(timer);
 			batchCapturePollTimers.clear();

@@ -294,6 +294,17 @@ async function handoffVisibleCompanyCatalog() {
 		expect(apiMock.getSmartAccountsBrowserOnboardingCatalog).toHaveBeenCalledTimes(1);
 	});
 
+	it('releases a nonresponsive catalog action without retaining a relay capability', async () => {
+		vi.useFakeTimers();
+		render(SmartAccountsSyncControl, { tenantId: 'tenant-1' });
+		await fireEvent.click(screen.getByLabelText(/I approve this metadata-only read/));
+		await fireEvent.click(screen.getByRole('button', { name: 'Read visible SmartAccounts company catalog' }));
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(screen.getByText(/did not return the visible-company catalog/)).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Read visible SmartAccounts company catalog' })).toBeEnabled();
+		expect(screen.queryByText('catalog-token-not-rendered-012345678901234567')).not.toBeInTheDocument();
+	});
+
 	it('does not let an older accepted catalog GET overwrite a newer issued catalog', async () => {
 		let resolveFirst: ((value: unknown) => void) | undefined;
 		let resolveSecond: ((value: unknown) => void) | undefined;
