@@ -1567,7 +1567,10 @@ describe("API Client - Core Functionality", () => {
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          json: async () => ({ access_token: "fresh-token" }),
+          json: async () => ({
+            access_token: "fresh-token",
+            refresh_token: "rotated-refresh-token",
+          }),
         })
         .mockResolvedValueOnce({
           ok: true,
@@ -6437,11 +6440,14 @@ describe("API Client - Core Functionality", () => {
         json: async () => ({ error: "Token expired" }),
       });
 
-      // Refresh token call
+      // Refresh rotates both tokens.
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ access_token: "new-token" }),
+        json: async () => ({
+          access_token: "new-token",
+          refresh_token: "rotated-refresh-token",
+        }),
       });
 
       // Retry of original request
@@ -6455,6 +6461,57 @@ describe("API Client - Core Functionality", () => {
 
       expect(result.id).toBe("user-123");
       expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(api.isAuthenticated).toBe(true);
+    });
+
+    it("uses the rotated refresh token for a later renewal", async () => {
+      api.setTokens("old-access", "old-refresh");
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: "Token expired" }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: "first-access",
+          refresh_token: "first-refresh",
+        }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "user-123" }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: "Token expired" }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: "second-access",
+          refresh_token: "second-refresh",
+        }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "user-123" }),
+      });
+
+      await api.getCurrentUser();
+      await api.getCurrentUser();
+
+      const secondRefresh = mockFetch.mock.calls[4] as [string, RequestInit];
+      expect(secondRefresh[0]).toContain("/api/v1/auth/refresh");
+      expect(secondRefresh[1].body).toBe(
+        JSON.stringify({ refresh_token: "first-refresh" }),
+      );
     });
 
     it("should throw error if refresh fails", async () => {

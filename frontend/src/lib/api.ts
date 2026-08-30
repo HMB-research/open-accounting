@@ -339,13 +339,23 @@ class ApiClient {
 
   private async refreshAccessToken(): Promise<boolean> {
     try {
-      const data = await this.request<{ access_token: string }>(
+      const data = await this.request<
+        Pick<TokenResponse, "access_token" | "refresh_token">
+      >(
         "POST",
         "/api/v1/auth/refresh",
         { refresh_token: this.refreshToken },
         true,
       );
-      authStore.updateAccessToken(data.access_token);
+      if (
+        typeof data.access_token !== "string" ||
+        !data.access_token ||
+        typeof data.refresh_token !== "string" ||
+        !data.refresh_token
+      ) {
+        throw new Error("Invalid refresh response");
+      }
+      authStore.updateTokens(data.access_token, data.refresh_token);
       return true;
     } catch {
       this.clearTokens();

@@ -82,26 +82,30 @@ describe('authStore', () => {
 		});
 	});
 
-	describe('updateAccessToken', () => {
-		it('updates access token while preserving other state', async () => {
+	describe('updateTokens', () => {
+		it('rotates the token pair while preserving other state', async () => {
 			const { authStore } = await import('$lib/stores/auth');
 
-			authStore.setTokens('old-access', 'refresh', false);
-			authStore.updateAccessToken('new-access');
+			authStore.setTokens('old-access', 'old-refresh', false);
+			authStore.updateTokens('new-access', 'new-refresh');
 
 			const state = get(authStore);
 			expect(state.accessToken).toBe('new-access');
-			expect(state.refreshToken).toBe('refresh');
+			expect(state.refreshToken).toBe('new-refresh');
+			expect(sessionStorage.setItem).toHaveBeenCalledWith('access_token', 'new-access');
+			expect(sessionStorage.setItem).toHaveBeenCalledWith('refresh_token', 'new-refresh');
 		});
 
-		it('preserves rememberMe setting when updating token', async () => {
+		it('preserves rememberMe setting when rotating tokens', async () => {
 			const { authStore } = await import('$lib/stores/auth');
 
 			authStore.setTokens('access', 'refresh', true);
-			authStore.updateAccessToken('new-access');
+			authStore.updateTokens('new-access', 'new-refresh');
 
 			const state = get(authStore);
 			expect(state.rememberMe).toBe(true);
+			expect(localStorage.setItem).toHaveBeenCalledWith('access_token', 'new-access');
+			expect(localStorage.setItem).toHaveBeenCalledWith('refresh_token', 'new-refresh');
 		});
 	});
 
@@ -157,11 +161,11 @@ describe('authStore', () => {
 			expect(authStore.getAccessToken()).toBe(null);
 		});
 
-		it('returns updated token after update', async () => {
+		it('returns updated token after rotation', async () => {
 			const { authStore } = await import('$lib/stores/auth');
 
 			authStore.setTokens('initial', 'refresh', false);
-			authStore.updateAccessToken('updated');
+			authStore.updateTokens('updated', 'rotated-refresh');
 
 			expect(authStore.getAccessToken()).toBe('updated');
 		});
@@ -228,7 +232,7 @@ describe('authStore', () => {
 		const { authStore } = await import('$lib/stores/auth');
 
 		authStore.setTokens('ssr-access', 'ssr-refresh', true);
-		authStore.updateAccessToken('ssr-updated');
+		authStore.updateTokens('ssr-updated', 'ssr-rotated-refresh');
 		authStore.clearTokens();
 
 		expect(localStorage.setItem).not.toHaveBeenCalled();

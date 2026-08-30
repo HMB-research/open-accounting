@@ -77,15 +77,18 @@ function createAuthStore() {
 		},
 
 		/**
-		 * Update access token after refresh
+		 * Rotate the complete token pair after refresh. The server revokes the
+		 * previous refresh token, so persisting only the new access token would
+		 * cause the following renewal to sign the user out.
 		 */
-		updateAccessToken(accessToken: string) {
+		updateTokens(accessToken: string, refreshToken: string) {
 			update((state) => {
 				if (browser) {
 					const storage = state.rememberMe ? localStorage : sessionStorage;
 					storage.setItem(STORAGE_KEY_ACCESS, accessToken);
+					storage.setItem(STORAGE_KEY_REFRESH, refreshToken);
 				}
-				return { ...state, accessToken };
+				return { ...state, accessToken, refreshToken };
 			});
 		},
 
