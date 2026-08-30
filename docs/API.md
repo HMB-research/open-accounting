@@ -12,12 +12,19 @@ Operational endpoints are mounted outside the versioned `/api/v1` prefix:
 
 ```http
 GET /health
+GET /ready
 GET /api/demo/status?user=1
 POST /api/demo/reset
 POST /api/demo/reset?user=1
 ```
 
-`/health` returns plain text `OK`. The demo endpoints are available only when demo mode is enabled and require the `X-Demo-Secret` header. `GET /api/demo/status` requires a `user` query parameter. `POST /api/demo/reset` resets all demo users unless `user` is set to a specific demo user number.
+`/health` returns plain text `OK` when the API process is accepting requests.
+`/ready` returns a data-free JSON aggregate and succeeds only when the API can
+reach its configured private SmartAccounts bridge and verify its fixed
+capability protocol; it never reads tenant, source, or credential data. The demo endpoints are available only when demo
+mode is enabled and require the `X-Demo-Secret` header. `GET /api/demo/status`
+requires a `user` query parameter. `POST /api/demo/reset` resets all demo users
+unless `user` is set to a specific demo user number.
 
 ## Authentication
 
@@ -593,6 +600,523 @@ Accept: text/event-stream
 ```
 
 Streams saved migration execution run snapshots as Server-Sent Events. Each event payload is a `MigrationExecutionRunEvent` with `type`, `sequence`, and `run`; `type` is `snapshot` while the run is active and `complete` when the saved run reaches `succeeded`, `failed`, `blocked`, or `needs_confirmation`. `interval_ms` accepts values from 1 to 30000 and defaults to 1000. `max_events` accepts values from 1 to 1000 and defaults to 100.
+
+### SmartAccounts sync control v1
+
+This is a preparatory, UI-facing control plane for the private SmartAccounts bridge. The preferred connection is a short-lived, one-time Brave browser pairing: it records only the selected opaque source identifier, not an API key, cookie, browser token, source record, or accounting change. The existing API-key bridge route remains an explicit fallback. There is no default all-company or all-tenant request and no financial write.
+
+```http
+GET /tenants/{tenantId}/smartaccounts-sync/sources
+POST /smartaccounts-sync/browser-onboarding
+GET /smartaccounts-sync/browser-onboarding/{sourceCompanyID}
+POST /smartaccounts-sync/browser-onboarding/catalogs
+GET /smartaccounts-sync/browser-onboarding/catalogs/{catalogID}
+POST /smartaccounts-sync/browser-onboarding/batches
+GET /smartaccounts-sync/browser-onboarding/batches/{batchID}
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/resume
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow
+GET /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/resume
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/advance-safe
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/discovery/acquire
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/sources/{sourceCompanyID}/discovery/reissue
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/sources/{sourceCompanyID}/discovery/complete
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/sources/{sourceCompanyID}/schema/require
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/sources/{sourceCompanyID}/schema/refresh
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/sources/{sourceCompanyID}/schema/confirm
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/transfer/open
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/transfer/confirm
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/capture/acquire
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/sources/{sourceCompanyID}/capture/complete
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow/sources/{sourceCompanyID}/preview
+POST /smartaccounts-sync/browser-onboarding/batches/{batchID}/sources/{sourceCompanyID}/reconciliation
+GET /smartaccounts-sync/browser-onboarding/batches/{batchID}/sources/{sourceCompanyID}/reconciliation
+GET /smartaccounts-sync/browser-onboarding/batches/{batchID}/reconciliation
+GET /smartaccounts-sync/browser-onboarding/batches/{batchID}/full-claim-eligibility
+POST /smartaccounts-browser-onboarding/catalogs/{catalogID}/handoff
+GET /tenants/{tenantId}/smartaccounts-sync/status?source_company_id=<bridge-verified-source-id>
+POST /tenants/{tenantId}/smartaccounts-sync/browser-pairings
+GET /tenants/{tenantId}/smartaccounts-sync/browser-pairings/{pairingId}
+POST /tenants/{tenantId}/smartaccounts-sync/browser-discoveries
+POST /tenants/{tenantId}/smartaccounts-sync/browser-discoveries/{discoveryId}/receipt
+GET /tenants/{tenantId}/smartaccounts-sync/browser-discoveries/{discoveryId}
+POST /tenants/{tenantId}/smartaccounts-sync/browser-discoveries/{discoveryId}/resources/{resourceId}/schemas/{schemaId}/review
+GET /tenants/{tenantId}/smartaccounts-sync/browser-discoveries/{discoveryId}/resources/{resourceId}/schemas/{schemaId}/review
+POST /tenants/{tenantId}/smartaccounts-sync/browser-captures
+GET /tenants/{tenantId}/smartaccounts-sync/browser-captures/{runId}
+POST /tenants/{tenantId}/smartaccounts-sync/browser-captures/{runId}/resume
+POST /tenants/{tenantId}/smartaccounts-sync/browser-master-details
+GET /tenants/{tenantId}/smartaccounts-sync/browser-master-details/{runId}
+POST /tenants/{tenantId}/smartaccounts-sync/browser-master-details/{runId}/resume
+POST /tenants/{tenantId}/smartaccounts-sync/browser-commercial-details
+GET /tenants/{tenantId}/smartaccounts-sync/browser-commercial-details/{runId}
+POST /tenants/{tenantId}/smartaccounts-sync/browser-commercial-details/{runId}/resume
+POST /tenants/{tenantId}/smartaccounts-sync/browser-capture-workflows
+GET /tenants/{tenantId}/smartaccounts-sync/browser-capture-workflows/{workflowId}
+POST /tenants/{tenantId}/smartaccounts-sync/control
+POST /tenants/{tenantId}/smartaccounts-sync/dry-run?source_company_id=<bridge-verified-source-id>
+POST /tenants/{tenantId}/smartaccounts-sync/apply?source_company_id=<bridge-verified-source-id>
+POST /tenants/{tenantId}/smartaccounts-sync/sources/{sourceCompanyId}/tolerance-policy-candidates
+POST /tenants/{tenantId}/smartaccounts-sync/sources/{sourceCompanyId}/tolerance-policies
+POST /tenants/{tenantId}/smartaccounts-sync/sources/{sourceCompanyId}/tolerance-policy-resolutions
+GET /tenants/{tenantId}/smartaccounts-sync/reconciliation/batches/{batchID}/sources/{sourceCompanyID}
+POST /tenants/{tenantId}/smartaccounts-sync/reconciliation/evaluations/{evaluationId}/approval
+Authorization: Bearer <token>
+```
+
+The selected/all flow starts with browser-only owner `POST
+/smartaccounts-sync/browser-onboarding/catalogs` and a fresh
+`visible_company_catalog` consent. It returns a raw 43-character capability
+and nonce once, with `Cache-Control: no-store`; OA stores only their hashes.
+The page immediately passes the exact issue envelope to the locally installed
+relay. The extension worker (never an OA CLI or SmartAccounts page) posts the
+strict metadata-only snapshot to:
+
+```http
+POST /smartaccounts-browser-onboarding/catalogs/{catalogID}/handoff
+Origin: chrome-extension://<extension-id>
+Authorization: Bearer <one-time-catalog-token>
+Content-Type: application/json
+```
+
+The handoff requires a matching catalog/workflow/nonce and canonical SHA-256
+of the sorted visible picker list. It accepts 1–250 opaque
+`sa-browser-v1-*` selectors plus canonical display names, persists only safe
+metadata/digest/count, and is idempotent only for the exact same snapshot. The
+authenticated owner reads accepted picker metadata through `GET
+/smartaccounts-sync/browser-onboarding/catalogs/{catalogID}`; raw capability
+values and hashes never appear there.
+
+`POST /smartaccounts-sync/browser-onboarding/batches` accepts only an accepted
+catalog receipt ID, explicit `mode:"all"|"selected"`, an explicit selected ID
+list, and `owner_confirmed:true`. `all` must equal the relay-observed set;
+`selected` must be a nonempty strict subset. It writes one immutable manifest
+per owner/catalog receipt, binding the relay catalog digest (including display
+names), observed time, chosen membership, and per-source outcomes. Exact retry
+reuses that batch; changed membership or digest conflicts. A fresh receipt may
+create a new batch even when its observed digest is unchanged. `GET` returns
+safe progress; `POST .../resume` requires renewed owner confirmation and may
+return fresh pairing capabilities for the same immutable batch only.
+
+For each selected selector, OA atomically reserves a one-to-one
+source-to-tenant binding, reuses only a verified browser binding or exactly one
+tenant owned by the caller, and creates a source-suffixed tenant only when no
+target exists. Ambiguous, foreign, or failed companies remain independent safe
+`REVIEW_REQUIRED`/`FAILED` outcomes. Pairing capabilities are response-only
+and never persisted. This flow creates neither a capture nor financial record:
+each paired tenant still needs its completed 31-surface discovery receipt and
+reviewed CSV schema before a separately confirmed partial capture; package
+preview and confirmed apply remain separate gates.
+
+The browser-only batch workflow is the owner-safe orchestration layer over
+that sequence. `POST .../workflow` records the immutable historical boundary
+and explicit preparatory consent after all selected sources are paired; GET
+returns only source phase/generation, immutable IDs and digests, lease expiry,
+safe aggregate status, and a closed no-token `next_step` hint. It never
+returns a relay token or its hash. One owner action at a time may acquire
+discovery, then complete the strict redacted receipt; a completed full
+31-resource receipt enters `SCHEMA_REVIEW_REQUIRED` server-side but still must
+pass the separately owner-confirmed reviewed `general_ledger_csv_v1` schema
+gate. The `journal_entries` grid is summary evidence only and cannot pass an
+authoritative schema gate. Once every immutable batch source is approved, the
+server opens `TRANSFER_CONFIRMATION_REQUIRED` idempotently; only the separate
+`transfer/confirm` owner action freezes the source set plus a server-derived
+partial `general_ledger` CSV scope/cutoff. It still does not issue a browser
+capability. `POST .../workflow/advance-safe` is a resumable no-token recovery
+aid for exactly those two non-sensitive transitions. It cannot confirm
+transfer, acquire capture, preview, apply financial data, or approve
+accountant work.
+
+If a page or relay event is lost while a source is `DISCOVERY_RUNNING`, the
+owner may reconsent through `POST .../sources/{sourceCompanyID}/discovery/reissue`.
+It rotates only that exact source's control lease and generation, returns a new
+action-only discovery issue, and makes late old lease/generation completions
+conflict. It does not widen the manifest, source selection, or optional
+header-probe choice, and it contains no source data or capability in GET
+status.
+
+`capture/acquire` requires fresh explicit transfer consent and returns the
+existing short-lived capture capability only in that action response with
+`Cache-Control: no-store`; no workflow GET/status includes it. Its opaque
+non-secret capture run ID remains bound to the exact tenant/source/scope across
+an expired serial lease so an owner can reissue a capability for the same run
+after a restart. `capture/complete` reads only bridge-safe progress: a
+`staging.status:"compiling"` result is pollable `CAPTURE_RUNNING`, while only
+a finalized `staged_review_required` package ID/digest advances to `STAGED`.
+The batch preview action invokes the existing non-financial preview service and
+stores only preview ID/digest/status; review-required previews remain review
+checkpoints. There is no batch apply endpoint—financial apply is still the
+separate exact tenant preview-confirmation operation.
+
+Selected/all reconciliation is a separate, digest-only safety gate. An owner
+may derive `POST .../sources/{sourceCompanyId}/reconciliation` only from the
+immutable selected batch binding; `GET` source and batch roll-up endpoints
+return package/scope/preview/proof handles, state, fixed blocker codes, and
+aggregate counts—never archive rows, amounts, mappings, proof payloads, or
+notes. Reconciliation remains `EVIDENCE_PENDING` unless the staged package,
+scope, exact GL apply and replay receipts, current mapping/identity snapshot,
+coverage claim, reference applicability, variance policy, and unresolved
+revision/tombstone counts all match. A partial browser capture cannot be
+promoted to `READY_FOR_ACCOUNTANT`.
+
+Before financial GL apply, an accountant first requests the only currently
+supported conservative candidate at `POST /tenants/{tenantId}/smartaccounts-
+sync/sources/{sourceCompanyId}/tolerance-policy-candidates` with the existing
+`package_id` and `preview_id`. OA derives the staged scope and currency set and
+returns only:
+
+```json
+{
+  "algorithm_version": "smartaccounts-exact-match-v1",
+  "label": "Exact match — zero variance",
+  "candidate_sha256": "<opaque server-derived digest>"
+}
+```
+
+The accountant explicitly confirms that exact current candidate through `POST
+/tenants/{tenantId}/smartaccounts-sync/sources/{sourceCompanyId}/tolerance-
+policies`:
+
+```json
+{
+  "confirmed": true,
+  "package_id": "<existing package>",
+  "preview_id": "<existing preview UUID>",
+  "expected_candidate_sha256": "<candidate_sha256>"
+}
+```
+
+The service rejects any manual tolerance digest, numeric threshold, rate, or
+stale candidate. The one policy means exact original- and base-currency debit/
+credit equality; no rates or financial values cross either endpoint.
+
+An access-JWT owner or accountant may then resolve the currently approved
+policy for the same package/preview through `POST /tenants/{tenantId}/
+smartaccounts-sync/sources/{sourceCompanyId}/tolerance-policy-resolutions`
+with `{ "package_id": "…", "preview_id": "…" }`. It returns only
+`policy_id`, algorithm version, label, digest, and approval time. The final GL
+apply body uses that opaque `tolerance_policy_id`, never a pasted digest:
+
+```json
+{
+  "confirm": true,
+  "preview_id": "<existing preview UUID>",
+  "preview_sha256": "<exact preview digest>",
+  "tolerance_policy_id": "<resolved policy UUID>"
+}
+```
+
+OA resolves the ID server-side and re-verifies the exact tenant/source/package/
+scope/preview binding and actor separation before posting. The UI must retain
+the ID only for the immediate confirmed action and never render or persist the
+digest. After technical evidence reaches
+`READY_FOR_ACCOUNTANT`, a different accountant must separately confirm the
+exact evidence and tolerance digests at `POST /tenants/{tenantId}/
+smartaccounts-sync/reconciliation/evaluations/{evaluationId}/approval`.
+Before that action, the independent accountant reads the exact current safe
+handoff through `GET /tenants/{tenantId}/smartaccounts-sync/reconciliation/
+batches/{batchID}/sources/{sourceCompanyID}`. The access-JWT-only accountant
+route is bound to all three identifiers and returns only safe evaluation
+handles, dates, count/status fields, and fixed blockers. It never returns a
+batch owner, actor, source record, proof payload, amount, mapping, name, or
+browser capability; stale current evidence is reported as `NOT_EVALUATED`.
+Candidate creation, policy approval, and final evidence attestation require an
+interactive access-JWT accountant session; policy resolution permits an
+access-JWT owner or accountant. API tokens are rejected for all of these
+actions. The policy and attestation endpoints use `Cache-Control: no-store` and
+never post or modify journals themselves. They have no `oa` CLI command.
+
+The two legacy `/smartaccounts-sync/browser-onboarding` routes remain
+browser-only for an already selected individual source. They do not establish
+relay-observed catalog completeness and are not used by the production
+selected/all path; selected/all onboarding must begin with the catalog receipt
+and immutable batch routes above.
+
+`POST /tenants/{tenantId}/smartaccounts-sync/browser-pairings` issues a ten-minute token to the authenticated tenant manager with `Cache-Control: no-store`. The raw token is returned exactly once to the locally installed Brave relay via a same-window browser message and is not persisted, logged, included in status responses, or rendered in the UI. The relay claims it only from its `chrome-extension://` origin:
+
+```http
+POST /smartaccounts-browser-pairings/{pairingId}/claim
+Origin: chrome-extension://<extension-id>
+Authorization: Bearer <one-time-pairing-token>
+Content-Type: application/json
+
+{"source_company_id":"sa-browser-v1-<opaque-ui-id>"}
+```
+
+The claim response is only `{"status":"CLAIMED"}`. It cannot export source data, obtain browser credentials, start capture, or create financial records. The tenant manager polls the pairing-status route to obtain its bound opaque source identifier and then sees `AWAITING_BRAVE_BROWSER_CAPTURE`; a separately reviewed browser-local capture flow is required before staging or applying anything.
+
+`POST /tenants/{tenantId}/smartaccounts-sync/browser-discoveries` is a
+tenant-owner-only, same-window authorization for **metadata-only** Brave
+contract discovery. Its request has only the already paired opaque
+`source_company_id`, `metadata_only_consent_confirmed:true`, and optional
+`response_header_probe_confirmed:true`. OA derives—not the caller—the exact
+31-resource `smartaccounts-brave-ui-v2` manifest, including page-only and
+non-journal surfaces; `journal_entries` by itself is never accepted as full
+discovery. The issue contains that fixed resource list, the tenant/source UUID
+binding, fresh explicit consent, and a bounded ten-minute expiry. It has no
+capability, cookie, API key, source row, export body, header value, or financial
+instruction, and is passed once to the locally installed relay using
+`open-accounting.smartaccounts-browser-discovery-issued.v1`.
+
+The relay returns only the strict same-window
+`smartaccounts-browser-relay.discovery-result.v1` envelope. The owner posts it
+to `POST .../browser-discoveries/{discoveryId}/receipt`; it deliberately omits
+`source_company_id`, which OA resolves from the persisted tenant binding before
+making its server-to-server HMAC call to the private bridge. OA and the bridge
+reject unknown/data-bearing JSON fields, source/tenant/UUID/version mismatch,
+and a completed result missing any of the fixed 31 surfaces. `expired` and
+`discovery_failed` may retain their already inspected unique subset as safe
+partial evidence, but a retry needs a fresh owner consent and discovery UUID.
+The owner-only `GET .../browser-discoveries/{discoveryId}` returns only
+`status`, a binding-sensitive contract digest, and aggregate counts; it never
+returns source selector, resource contract/control IDs, header names/values,
+cookies, source rows, credentials, consent record, or bridge token. Neither
+discovery endpoint starts capture, stages a package, or applies accounting data.
+
+For a resource whose private bridge registry has an explicitly reviewed CSV
+adapter, the tenant owner may call `POST .../browser-discoveries/{discoveryId}/resources/{resourceId}/schemas/{schemaId}/review`
+with exactly `{"review_confirmed":true}`. OA derives the opaque source binding from
+the existing tenant/discovery authorization, creates the review version, audit
+UUID, timestamp, and actor binding server-side, then relays the exact assertion
+over its internal HMAC channel. The public response and paired `GET` contain
+only `resource_id`, `schema_id`, `status`, and immutable `approval_sha256` with
+`Cache-Control: no-store`. They never expose a source selector, header name or
+value, raw CSV, cookie, credential, audit ID, or bridge token. The route cannot
+issue discovery, start or upload capture, stage a package, or apply accounting.
+Unknown request fields and page-only resources fail closed.
+
+The preferred tenant-owner flow is `POST .../browser-capture-workflows` with only `source_company_id`, `from_inclusive`, and action-time `transfer_consent_confirmed`. OA validates the existing Brave pairing and derives the current UTC `to_inclusive` and cutoff. Its only v2 eligible resource is the reviewed `general_ledger` export with schema `general_ledger_csv_v1`; resource selection and cutoff are not browser inputs. The `journal_entries` summary grid may be archived as non-posting evidence but is not adapter-approved and cannot plan or post financial journals. The workflow is idempotent for the same tenant/source/history-start/plan day. A later UTC day creates a new immutable workflow generation rather than broadening an old capture scope. With confirmed consent, the response has `Cache-Control: no-store` and returns the high-entropy scoped capture capability once, together with the immutable tenant/run/source/manifest/scope and `transfer_consent:{"version":1,"confirmed":true,...}`. The UI passes it directly to the locally installed relay in memory using `open-accounting.smartaccounts-browser-workflow-issued.v1`, whose nested plan repeats that exact binding and declares `eligible_resource_ids:["general_ledger"]`. The relay rejects a mismatch and makes extension-origin requests only:
+
+```http
+GET /smartaccounts-browser-captures/tenants/{tenantId}/runs/{runId}
+PUT /smartaccounts-browser-captures/tenants/{tenantId}/runs/{runId}/resources/{resourceId}
+POST /smartaccounts-browser-captures/tenants/{tenantId}/runs/{runId}/finalize
+Origin: chrome-extension://<extension-id>
+Authorization: Bearer <capture-token>
+```
+
+Upload accepts only raw nonempty `text/csv` up to 32 MiB with a lower-case `X-SA-Browser-Resource-SHA256`; the listed resource must be in the owner-approved scope. The capability is reusable only for safe status, retrying an approved resource upload, and finalizing its exact run until expiry. Status and finalization reveal safe coverage state only (`open`, `finalized_partial`/`partial_coverage_recorded`, or `finalized_full_blocked`/`full_coverage_blocked`). These browser relay endpoints cannot post journals or apply a package.
+
+After an extension/browser restart or expiry, a tenant owner can `POST /tenants/{tenantId}/smartaccounts-sync/browser-captures/{runId}/resume` with `{"transfer_consent_confirmed":true}`. OA first checks the existing bridge run then atomically replaces only the stored capability hash. Tenant, opaque source, manifest, dates, cutoff, and resource list remain immutable; the old capability is invalid immediately. The response returns a fresh capability exactly once and never starts a new bridge run.
+
+### SmartAccounts browser master-detail evidence v1
+
+`POST /tenants/{tenantId}/smartaccounts-sync/browser-master-details` is a
+tenant-owner-only, one-confirmation action for the fixed serial
+`clients`, `vendors`, and `articles` master-data snapshot set. The request is
+only `source_company_id`, `transfer_consent_confirmed:true`, and, for an exact
+retry, the returned immutable `batch_id`. It derives one independent run per
+resource from the exact reviewed
+`smartaccounts-browser-master-detail-v1` contract. Each snapshot uses the
+SmartAccounts business day in `Europe/Tallinn` for both `from_inclusive` and
+`to_inclusive`; `cutoff_at` remains server UTC. It therefore means
+`current_snapshot_only`, never ledger history.
+
+```http
+GET /smartaccounts-browser-master-detail-captures/tenants/{tenantId}/runs/{runId}
+PUT /smartaccounts-browser-master-detail-captures/tenants/{tenantId}/runs/{runId}/resource
+POST /smartaccounts-browser-master-detail-captures/tenants/{tenantId}/runs/{runId}/finalize
+GET /smartaccounts-browser-commercial-captures/tenants/{tenantId}/runs/{runId}
+POST /smartaccounts-browser-commercial-captures/tenants/{tenantId}/runs/{runId}
+PUT /smartaccounts-browser-commercial-captures/tenants/{tenantId}/runs/{runId}/resource
+POST /smartaccounts-browser-commercial-captures/tenants/{tenantId}/runs/{runId}/finalize
+Origin: chrome-extension://<extension-id>
+Authorization: Bearer <capture-token>
+```
+
+Only the in-memory extension relay can use those capability-scoped routes.
+Upload accepts nonempty protected `application/x-ndjson` up to 32 MiB with an
+exact lower-case `X-SA-Browser-Resource-SHA256`; the extension finalizer sends
+exactly `{}` and OA sends the documented empty JSON body to the bridge. Owner
+GET/resume never expose the capability or its hash. A same-batch retry rotates
+only short-lived capabilities; a new owner action without `batch_id` creates a
+new immutable generation even on the same Tallinn day.
+
+Bridge finalization initially remains `finalized_archived_evidence`: it is not
+an imported or applied result. When the existing internal tenant-HMAC delivery
+receiver has checksum-finalized the *same* tenant/source/package ID/package
+SHA-256 as `STAGED_REVIEW_REQUIRED`, OA may expose a separate non-financial
+reference preview. Only exact `clients_detail_v1` and `vendors_detail_v1`
+canonical records are eligible, and only when their payload proves an ISO-2
+country from the reviewed visible display field. The preview still creates
+nothing until its own digest is explicitly confirmed. `articles_detail_v1`
+records stay review-only because no owner-reviewed VAT-rate mapping exists; OA
+must not infer or default 22 percent. This path never creates a journal,
+invoice, payment, product, or GL record.
+
+The tenant-owner-only workflow GET is the resumable safe UI status view; it returns its immutable plan and, once issued, safe owner progress for that run. It never returns a capture capability, capability hash, CSV rows/headers, credentials, bridge paths, or raw bridge errors. A `partial_coverage_recorded` receipt is explicitly labeled partial. When status reports checksum-finalized `staged_review_required`, the UI may create the non-mutating preview once automatically; package preview and any financial apply still require their separate explicit review/final-confirmation gates.
+
+### SmartAccounts commercial-detail relay v1
+
+`POST /tenants/{tenantId}/smartaccounts-sync/browser-commercial-details` is
+tenant-owner-only and requires an existing selected/all onboarding batch,
+its paired tenant/source binding, and action-time transfer consent. It issues
+only the immutable ordered pair `client_invoices` then `bank_payments` under
+`smartaccounts-browser-commercial-detail-v1`. The immediate action response
+contains the short-lived relay capability once; it must be forwarded directly
+to the locally installed extension and never stored or rendered by the page.
+The relay is status-first: its first extension `GET` returns `404` until the
+extension makes the exact `POST` start request for sequence 1. Issuing or
+resuming a capability alone never creates a private bridge run. Sequence 2
+remains dormant unless a future reviewed selector contract makes the fixed
+serial workflow safe to advance.
+
+The extension-only `GET`/`POST` relay routes below are `Cache-Control:
+no-store`, require the matching bearer plus the installed extension origin,
+and return only run/resource/status, digest, and count metadata. Source IDs,
+reviewed routes and fields, names, rows, amounts, browser state, credentials,
+and tokens are never returned in safe status.
+
+```http
+GET /smartaccounts-browser-commercial-captures/tenants/{tenantId}/runs/{runId}
+POST /smartaccounts-browser-commercial-captures/tenants/{tenantId}/runs/{runId}
+PUT /smartaccounts-browser-commercial-captures/tenants/{tenantId}/runs/{runId}/resource
+POST /smartaccounts-browser-commercial-captures/tenants/{tenantId}/runs/{runId}/finalize
+Origin: chrome-extension://<extension-id>
+Authorization: Bearer <capture-token>
+```
+
+The current reviewed transport has no approved visible list selector or pager.
+Accordingly every issued/status response is explicitly
+`list_selector_required`, and the resource/finalize routes reject before
+reading request bytes or calling the bridge. It is therefore impossible for
+this version to capture live source data, seal a package, create a preview,
+write a journal, invoice, payment, contact, item, or reach full-claim or
+reconciliation eligibility. A future reviewed selector contract must add that
+separate capability before this archive-only evidence path is opened.
+
+The `control` request contains transient `api_key`, `api_secret`, `smartaccounts_gl_authoritative: true`, and `invoice_payment_mode: "NON_POSTING"`; it has no browser-supplied source ID. The API sends credentials only to the server-only private NUC bridge, performs safe validation, and stores only the returned `secret-ref://sa-bridge/<connection-id>` URI. Credentials, bridge errors, and the reference are never returned in a response/status view. Production uses `SMARTACCOUNTS_BRIDGE_URL` plus `SMARTACCOUNTS_BRIDGE_TOKEN_FILE`; the inline token is development/test fallback. Control, capture, and apply require existing tenant manage-settings/create-entries permissions. The legacy apply endpoint remains blocked without financial writes.
+
+```http
+POST /tenants/{tenantId}/smartaccounts-sync/packages/{packageId}/preview
+POST /tenants/{tenantId}/smartaccounts-sync/packages/apply
+GET /tenants/{tenantId}/smartaccounts-sync/packages/{packageId}/archive-coverage
+POST /tenants/{tenantId}/smartaccounts-sync/packages/{packageId}/reference-preview
+POST /tenants/{tenantId}/smartaccounts-sync/reference-masters/apply
+Authorization: Bearer <token>
+```
+
+`preview` accepts explicit source-account mappings or chart-import decisions and stores a reconciliation plan; raw source records are never returned. A fresh-tenant operator may add `"use_source_chart":true` to request proposed imports from staged `account` records. This is still a review step: only `ASSET`, `LIABILITY`, `INCOME`→`REVENUE`, and `EXPENSE` types are eligible, and missing source fields or code/name collisions return `409 REVIEW_REQUIRED`; the endpoint never creates accounts. `apply` requires `{"confirm":true,"preview_id":"...","preview_sha256":"...","tolerance_policy_id":"..."}` exactly matching a `PREVIEW_READY` receipt and the separately server-resolved accountant policy. It reserves the durable source identity before creating and posting the journal: an exact replay is a no-op while a source revision/tombstone requires an accountant correction. In GL-authoritative mode no invoice, vendor invoice, payment, or other non-GL source record can produce a financial posting.
+
+`reference-preview` and `reference-masters/apply` are a separate confirmed-only path for reviewed non-financial `account`, `customer`, `vendor`, and API `item` canonical records. They return only deterministic action IDs, reconciliation counts, and review issues—not canonical payloads. The stored digest must be explicitly confirmed before native account/contact/product creation. The path has no journal, invoice, payment, or other financial writer. It is tenant/provider/source/entity/external-ID idempotent: exact applied revisions are no-ops, while tombstones, changed revisions, unsupported browser articles, missing mapped fields, or local code/name collisions remain manual review. A pending record may resume only when the deterministic target ID is read back with the exact projected fields.
+
+`GET /tenants/{tenantId}/smartaccounts-sync/packages/{packageId}/archive-coverage`
+is a tenant-settings, read-only count report for a checksum-finalized
+`STAGED_REVIEW_REQUIRED` package. It classifies each canonical record into one
+of `GL_APPLY_GATED`, `REFERENCE_APPLY_GATED`, `ARCHIVE_ONLY`,
+`REVIEW_REQUIRED`, or `UNCONSUMED`, grouped only by fixed domain. It returns no
+canonical record, source identifier, field, attachment, amount, source name,
+or apply result. `UNCONSUMED`, binding mismatch, tombstone, malformed record,
+or package-count mismatch is fail-closed evidence for review; a gated category
+is still not an apply authorization. `ARCHIVE_ONLY` is granted only for an
+exact reviewed `(entity_type, resource, source_schema)` contract; a matching
+entity name with a new resource/schema is `UNCONSUMED`. Declared manifest
+artifacts remain retained independently and do not make an arbitrary
+`attachment` canonical record archive-complete. The report is
+`Cache-Control: no-store` and has no `oa` CLI command.
+
+SmartAccounts is GL-authoritative: the later apply phase must create each verified balanced source journal exactly once using source external-ID/revision idempotency. Sales invoices, purchase/vendor invoices, and payments are non-posting linked records/evidence and must never produce a duplicate GL posting. Capture start/status now proxies only safe bridge progress; the UI must wait for bridge-proven full-history bounds instead of inventing a date range.
+
+### Private SmartAccounts archive receiver v1
+
+`069_external_import_archive_delivery` adds a dedicated, private-network HMAC receiver for a bridge manifest followed by resumable raw record/artifact chunks. It is not a browser route and is not the 2 MiB import-session receiver. The manifest binds the selected tenant, source identity/snapshot, authority, cutoff/scope, counts, and digests. Chunk bytes are capped at 1 MiB, ordered, checksum verified, and idempotent by sequence/digest; finalization checks complete record/artifact digests and only marks the archive `STAGED_REVIEW_REQUIRED`. It cannot create accounting records. Use a separate Docker secret via `SMARTACCOUNTS_PACKAGE_DELIVERY_TOKEN_FILE`; see `SMARTACCOUNTS_SYNC_CONTROL_V1.md` for the exact headers and paths.
+
+### Import-session receiver v1
+
+The import-session receiver is a deliberately receive-only boundary for a canonical package produced by a separate SmartAccounts connector. It is not the legacy migration executor: it does not obtain SmartAccounts credentials, retain raw package payloads, create business records, post journals, alter the chart of accounts, or delete Open Accounting records. A later reviewed import phase must explicitly consume an approved receipt.
+
+Every request is scoped by the required Open Accounting tenant in its URL. There is no bulk or default-tenant route. When a package is received, its `provider` and `source_company_id` are bound in the public registry to that tenant; the same SmartAccounts company cannot subsequently be received by another tenant and returns `409 Conflict`. The receipt lookup is also tenant-scoped. In v1 these endpoints use the existing tenant write permission (`CanCreateEntries`); a dedicated `imports:stage` permission is a follow-up authorization change.
+
+```http
+POST /tenants/{tenantId}/import-sessions/validate
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+This performs read-only validation and always returns a `ValidationReport` with `ready`, record/entity counts, and safe issue metadata. It creates no source-company binding, receipt, or accounting data.
+
+```http
+POST /tenants/{tenantId}/import-sessions
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+This validates the same request and, only when structurally `ready`, persists a metadata-only receipt. A clean verification is `RECEIVED_VALIDATED`; declared source variance or staleness is received as `RECEIVED_REVIEW_REQUIRED`, never an import approval. An initial receipt returns `201 Created`; an identical retry in the same tenant returns `200 OK` with `created: false`. Invalid packages return `422` with the validation report. A source-company binding held by another tenant returns `409`. Raw source JSON, source credentials, and attachments are not persisted in v1.
+
+```http
+GET /tenants/{tenantId}/import-sessions/{sessionId}
+Authorization: Bearer <token>
+```
+
+Returns only the tenant-scoped metadata receipt and its safe validation summary. It returns `404` for a missing session or a session outside the selected tenant.
+
+```http
+POST /tenants/{tenantId}/import-sessions/{sessionId}/plan
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+This is a deterministic, receipt-derived dry run, not an accounting import. It accepts only explicit mappings from each staged SmartAccounts source account to an existing Open Accounting account UUID in the selected tenant. It is available only for a `RECEIVED_VALIDATED` receipt with verified SmartAccounts GL authority and no declared source variance or staleness. It rejects absent/unused mappings, target accounts unavailable in the selected tenant, journals outside a partial receipt boundary, and source journal replay or revision conflict from another receipt with the same tenant/source-company binding. `200` returns planned journal actions and per-journal/per-account reconciliation expectations with `financial_writes_planned: false`; `422` returns plan blockers, while review-required or older receipts without staged metadata return `409`. It never creates, changes, posts, or deletes accounting records.
+
+```json
+{
+  "account_mappings": [
+    {"source_account_external_id": "1000", "target_account_id": "00000000-0000-0000-0000-000000000001"},
+    {"source_account_external_id": "3000", "target_account_id": "00000000-0000-0000-0000-000000000002"}
+  ]
+}
+```
+
+The validation and receive body is a `PackageRequest` wrapping a canonical package:
+
+```json
+{
+  "package": {
+    "schema_version": "v1",
+    "provider": "smartaccounts",
+    "source_company_id": "source-company-example",
+    "ledger_authority": {
+      "general_ledger_authority": "smartaccounts",
+      "smartaccounts_gl_authoritative": true,
+      "source_as_of_date": "2026-08-31",
+      "variance_count": 0,
+      "stale": false
+    },
+    "scope": {
+      "mode": "partial",
+      "resource_types": ["journal_entry"],
+      "period_start": "2026-08-01",
+      "period_end": "2026-08-31"
+    },
+    "package_sha256": "<lowercase SHA-256 of the canonical package metadata>",
+    "records": [
+      {
+        "entity_type": "journal_entry",
+        "external_id": "JE-example-001",
+        "revision": "2026-08-27T10:00:00Z",
+        "operation": "upsert",
+        "payload": {
+          "journal_group_id": "JE-example-001",
+          "period_start": "2026-08-01",
+          "period_end": "2026-08-31",
+          "currency": "EUR",
+          "lines": [
+            {"account_external_id": "1000", "debit": "100.00", "credit": "0.00"},
+            {"account_external_id": "3000", "debit": "0.00", "credit": "100.00"}
+          ]
+        },
+        "payload_sha256": "<lowercase SHA-256 of canonical payload JSON>"
+      }
+    ]
+  }
+}
+```
+
+v1 accepts schema version `v1`, provider `smartaccounts`, and at most 10,000 records in a 2 MiB request. Every package must declare `ledger_authority.general_ledger_authority: "smartaccounts"`, an explicit `smartaccounts_gl_authoritative: true`, a `source_as_of_date` (`YYYY-MM-DD`), and non-negative `variance_count`; the package digest includes those values and the explicit scope. `stale: true` or a nonzero variance produces `ledger_verification.verification_status: "REVIEW_REQUIRED"` and a review-required receipt rather than a verified result. `ready` only means the receipt can be staged without an accounting write; it is not approval to import or post.
+
+Scope is mandatory and makes the connector's company selection explicit. A full package declares `{"mode":"full","resource_types":["all"]}` with no period bounds. A partial package declares exactly `{"mode":"partial","resource_types":["journal_entry"],"period_start":"YYYY-MM-DD","period_end":"YYYY-MM-DD"}`. It may contain only journal entries, and each journal group must lie wholly inside the inclusive range; overlapping/straddling groups and any unsupported resource subset are rejected. Journal entries must be `upsert`s carrying a canonical group with a unique group ID, valid period, three-letter uppercase currency, at least two lines, one positive debit or credit per line, non-negative decimal amounts, and equal debit and credit totals. A group ending after `source_as_of_date` is rejected.
+
+Supported entity types are `account`, `attachment`, `bank_account`, `bank_transaction`, `contact`, `cost_center`, `employee`, `fixed_asset`, `inventory_movement`, `journal_entry`, `order`, `payment`, `payroll_run`, `product`, `purchase_invoice`, `quote`, `recurring_invoice`, `sales_invoice`, `tax_declaration`, `vat_code`, and `warehouse`. Each record has a unique `(entity_type, external_id)` pair, a nonempty revision, and `upsert` or `delete` operation. An `upsert` payload must be a JSON object no larger than 64 KiB whose hash matches `payload_sha256`; a `delete` has no payload. With SmartAccounts declared as GL-authoritative, `sales_invoice`, `purchase_invoice`, and `payment` records are rejected as a duplicate financial-posting plan. Ledger journal receipts may be staged, but `financial_posting_plan_allowed` is always false in v1. The package hash is the lower-case SHA-256 of normalized source identity, authority, scope, and sorted record identity, revision, operation, and payload hashes. Neither the source record payload nor its external IDs are echoed in validation issues.
 
 Account row validation checks required codes/names, optional preserved `id` or `account_id` UUIDs, and importer-supported `account_type` aliases or uppercase enum values before import. Contact row validation checks required names, contact type aliases, payment terms, country-code length, and credit-limit decimal values before import. Employee master row validation checks required first/last names and start dates, importer-supported employment-type and boolean aliases, optional end-date ordering, basic-exemption and funded-pension rates, positive base salaries, and salary effective dates before import. Payroll-history row validation checks period bounds, payroll and payment statuses, payment and paid dates, required positive gross salary, non-negative tax/deduction/employer-cost amounts, duplicate employee rows inside each payroll period, and consistent status, payment date, and notes inside each payroll period before import. Leave-balance row validation checks importer-compatible year bounds, `absence_type_id` UUID syntax, duplicate employee/absence-type rows inside each year, and non-negative entitled, carryover, used, and pending day values before import. TSD-history row validation checks importer-compatible periods, declaration statuses, submitted dates, required positive gross payment, non-negative tax/pension amounts, duplicate employee rows inside each TSD period, and consistent status, submitted date, and EMTA reference inside each TSD period before import. KMD-history row validation checks importer-compatible years, months, declaration statuses, submitted dates, required row codes, duplicate row codes inside each declaration period, tax-base or tax-amount decimals, optional VAT totals, consistent status/submitted date/output VAT/input VAT inside each KMD period, and declared KMD VAT totals against same-bundle invoice, e-invoice, and VAT-rated historical journal support before import. Invoice CSV validation requires `invoice_type` and `due_date` because invoice imports group rows by `invoice_number` plus `invoice_type` and require explicit due dates; grouped invoice, quote, order, and recurring-invoice rows must keep header-level fields such as dates, contacts, currency, status, and template settings consistent across their line rows, and preserved invoice/quote UUIDs must not be reused by another grouped document. Commercial document row validation checks invoice/quote/order/recurring dates, due/valid-until/end-date ordering, quantities, prices, discounts, VAT rates, exchange rates, statuses, invoice VAT treatment, amount paid, recurring frequencies, recurring counters, and recurring boolean settings before import. Product-category, product, warehouse, and cost-center row validation checks category names and importer-compatible parent ordering, product names, types, prices, VAT and stock thresholds, inventory/active flags, statuses, lead times, warehouse codes/names, cost-center codes/names, budgets, budget periods, and warehouse default/active flags before import. Product, warehouse, and cost-center master imports generate new UUIDs and preserve codes, so same-bundle downstream references should use `product_code`, `warehouse_code`, or `cost_center_code`. Stock-adjustment validation checks product and warehouse identifiers, strict decimal quantity, nonzero signed adjustments, non-negative unit costs, and YYYY-MM-DD expiry dates while recognizing optional lot metadata columns including `lot_number`, `serial_number`, and `expiry_date` plus common aliases such as `batch`, `serial`, and `expiration_date`; serialized stock rows require quantity `1` or `-1`, and duplicate serial numbers for the same product are rejected in the same import file. `description` is accepted as a `reason` alias. Fixed-asset row validation checks required names, purchase dates, positive purchase costs, supported statuses, depreciation methods, useful-life months, residual values, accumulated depreciation, book-value consistency, disposal methods, and disposal proceeds before import. Cost-allocation row validation checks cost-center references, journal line UUIDs, positive allocation amounts, allocation percentages, and YYYY-MM-DD allocation dates before import; cost-allocation `cost_center_id` values are existing UUIDs while `cost_center_code` is the same-bundle lookup path, and `description` is accepted as a `notes` alias. Bank-account row validation checks required names/account numbers, optional default/active booleans, and currency code format before import.
 

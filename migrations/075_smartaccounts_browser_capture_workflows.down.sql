@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS public.smartaccounts_browser_capture_workflows;

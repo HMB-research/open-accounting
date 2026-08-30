@@ -145,6 +145,9 @@ func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
 	t.Setenv("PASSWORD_RESET_EXPOSE_TOKEN", "")
 	t.Setenv("PASSWORD_RESET_SMTP_HOST", "")
 	t.Setenv("PASSWORD_RESET_SMTP_FROM_EMAIL", "")
+	t.Setenv("SMARTACCOUNTS_BRIDGE_URL", "")
+	t.Setenv("SMARTACCOUNTS_BRIDGE_TOKEN", "")
+	t.Setenv("SMARTACCOUNTS_BRIDGE_TOKEN_FILE", "")
 
 	cfg := loadConfig()
 
@@ -158,6 +161,7 @@ func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
 	assert.Contains(t, cfg.AllowedOrigins, "https://admin.example.com")
 	assert.False(t, cfg.PasswordReset.ExposeToken)
 	assert.Nil(t, cfg.PasswordReset.SMTPConfig)
+	assert.False(t, cfg.SmartAccountsBridge.hasAnyValue())
 
 	t.Setenv("PORT", "9090")
 	t.Setenv("JWT_SECRET", "secret")
@@ -171,6 +175,8 @@ func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
 	t.Setenv("PASSWORD_RESET_SMTP_FROM_EMAIL", "no-reply@example.com")
 	t.Setenv("PASSWORD_RESET_SMTP_FROM_NAME", "Open Accounting")
 	t.Setenv("PASSWORD_RESET_SMTP_USE_TLS", "true")
+	t.Setenv("SMARTACCOUNTS_BRIDGE_URL", "http://sa-bridge:8084")
+	t.Setenv("SMARTACCOUNTS_BRIDGE_TOKEN", "bridge-token-secret-for-test-123456")
 
 	cfg = loadConfig()
 	assert.Equal(t, "9090", cfg.Port)
@@ -186,6 +192,39 @@ func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
 	assert.Equal(t, "no-reply@example.com", cfg.PasswordReset.SMTPConfig.FromEmail)
 	assert.Equal(t, "Open Accounting", cfg.PasswordReset.SMTPConfig.FromName)
 	assert.True(t, cfg.PasswordReset.SMTPConfig.UseTLS)
+	assert.True(t, cfg.SmartAccountsBridge.configured())
+	assert.Equal(t, "http://sa-bridge:8084", cfg.SmartAccountsBridge.URL)
+}
+
+func TestSmartAccountsBridgeConfigRequiresAllServerOnlyValues(t *testing.T) {
+	assert.False(t, (SmartAccountsBridgeConfig{}).hasAnyValue())
+	assert.False(t, (SmartAccountsBridgeConfig{URL: "http://sa-bridge:8084"}).configured())
+	assert.True(t, (SmartAccountsBridgeConfig{URL: "http://sa-bridge:8084", Token: "bridge-token-secret-for-test-123456"}).configured())
+	assert.True(t, (SmartAccountsBridgeConfig{
+		URL:   "http://sa-bridge:8084",
+		Token: "bridge-token-secret-for-test-123456",
+	}).configured())
+}
+
+func TestResolveSmartAccountsBridgeTokenPrefersSecretFile(t *testing.T) {
+	secretFile := t.TempDir() + "/bridge-token"
+	require.NoError(t, os.WriteFile(secretFile, []byte("  file-token-secret-value  \n"), 0o600))
+
+	resolved, err := resolveSmartAccountsBridgeToken("inline-token-must-not-win", secretFile)
+
+	require.NoError(t, err)
+	assert.Equal(t, "file-token-secret-value", resolved)
+	assert.NotEqual(t, "inline-token-must-not-win", resolved)
+}
+
+func TestResolveSmartAccountsBridgeTokenRejectsUnreadableOrEmptyFile(t *testing.T) {
+	_, err := resolveSmartAccountsBridgeToken("", t.TempDir()+"/missing")
+	require.Error(t, err)
+
+	emptyFile := t.TempDir() + "/empty-token"
+	require.NoError(t, os.WriteFile(emptyFile, []byte(" \n"), 0o600))
+	_, err = resolveSmartAccountsBridgeToken("inline-token-must-not-win", emptyFile)
+	assert.ErrorContains(t, err, "empty")
 }
 
 func TestRunAPIWithInjectedDependencies(t *testing.T) {

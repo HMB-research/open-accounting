@@ -45,6 +45,460 @@ func TestMigrationFileDiscoveryUnit(t *testing.T) {
 	}
 }
 
+func TestImportSessionLedgerVerificationMigrationStaysForwardOnlyUnit(t *testing.T) {
+	readMigration := func(t *testing.T, name string) string {
+		t.Helper()
+		contents, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		return string(contents)
+	}
+
+	initial := readMigration(t, "064_import_sessions.up.sql")
+	if strings.Contains(initial, "ledger_verification") {
+		t.Fatal("deployed migration 064 must retain its original receipt schema")
+	}
+
+	upgrade := readMigration(t, "065_import_session_ledger_verification.up.sql")
+	for _, expected := range []string{
+		"CREATE OR REPLACE FUNCTION add_import_session_ledger_verification",
+		"ADD COLUMN IF NOT EXISTS ledger_verification JSONB NOT NULL DEFAULT ''{}''::JSONB",
+		"PERFORM add_import_session_ledger_verification(tenant_schema)",
+		"PERFORM add_import_session_ledger_verification(schema_name)",
+	} {
+		if !strings.Contains(upgrade, expected) {
+			t.Errorf("065 upgrade must contain %q", expected)
+		}
+	}
+
+	rollback := readMigration(t, "065_import_session_ledger_verification.down.sql")
+	for _, expected := range []string{
+		"DROP COLUMN IF EXISTS ledger_verification",
+		"DROP FUNCTION IF EXISTS add_import_session_ledger_verification(TEXT)",
+		"PERFORM add_import_session_tables(schema_name)",
+	} {
+		if !strings.Contains(rollback, expected) {
+			t.Errorf("065 rollback must contain %q", expected)
+		}
+	}
+	if strings.Contains(rollback, "PERFORM add_import_session_ledger_verification(schema_name)") {
+		t.Fatal("065 rollback must restore the migration-064 tenant bootstrap")
+	}
+
+	planUpgrade := readMigration(t, "066_import_session_ledger_plan_input.up.sql")
+	for _, expected := range []string{
+		"CREATE OR REPLACE FUNCTION add_import_session_ledger_plan_input",
+		"ADD COLUMN IF NOT EXISTS ledger_plan_input JSONB NOT NULL DEFAULT ''[]''::JSONB",
+		"PERFORM add_import_session_ledger_plan_input(tenant_schema)",
+		"PERFORM add_import_session_ledger_plan_input(schema_name)",
+	} {
+		if !strings.Contains(planUpgrade, expected) {
+			t.Errorf("066 upgrade must contain %q", expected)
+		}
+	}
+	if strings.Contains(initial, "ledger_plan_input") || strings.Contains(upgrade, "ledger_plan_input") {
+		t.Fatal("deployed migrations 064 and 065 must not be rewritten with 066 planning metadata")
+	}
+
+	planRollback := readMigration(t, "066_import_session_ledger_plan_input.down.sql")
+	for _, expected := range []string{
+		"DROP COLUMN IF EXISTS ledger_plan_input",
+		"DROP FUNCTION IF EXISTS add_import_session_ledger_plan_input(TEXT)",
+		"CREATE OR REPLACE FUNCTION add_import_session_tables",
+	} {
+		if !strings.Contains(planRollback, expected) {
+			t.Errorf("066 rollback must contain %q", expected)
+		}
+	}
+}
+
+func TestSmartAccountsSyncControlMigrationUsesExplicitTenantSourceBindingsUnit(t *testing.T) {
+	readMigration := func(t *testing.T, name string) string {
+		t.Helper()
+		contents, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		return string(contents)
+	}
+
+	upgrade := readMigration(t, "067_smartaccounts_sync_controls.up.sql")
+	for _, expected := range []string{
+		"CREATE TABLE IF NOT EXISTS public.smartaccounts_sync_controls",
+		"PRIMARY KEY (tenant_id, source_company_id)",
+		"secret_reference TEXT NOT NULL",
+		"secret-ref|vault|op|sops",
+	} {
+		if !strings.Contains(upgrade, expected) {
+			t.Errorf("067 upgrade must contain %q", expected)
+		}
+	}
+	if strings.Contains(strings.ToLower(upgrade), "hold my beer") {
+		t.Fatal("067 must not persist a hard-coded source-company default")
+	}
+
+	rollback := readMigration(t, "067_smartaccounts_sync_controls.down.sql")
+	if !strings.Contains(rollback, "DROP TABLE IF EXISTS public.smartaccounts_sync_controls") {
+		t.Fatal("067 rollback must drop only the SmartAccounts control table")
+	}
+}
+
+func TestExternalImportArchiveDeliveryMigrationIsBoundedAndRestoresBootstrapUnit(t *testing.T) {
+	readMigration := func(t *testing.T, name string) string {
+		t.Helper()
+		contents, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		return string(contents)
+	}
+
+	upgrade := readMigration(t, "069_external_import_archive_delivery.up.sql")
+	for _, expected := range []string{
+		"CREATE TABLE IF NOT EXISTS public.import_delivery_nonces",
+		"CREATE OR REPLACE FUNCTION add_external_import_delivery_tables",
+		"external_import_record_chunks",
+		"external_import_artifact_chunks",
+		"octet_length(data) <= 1048576",
+		"PERFORM add_external_import_delivery_tables(schema_name)",
+	} {
+		if !strings.Contains(upgrade, expected) {
+			t.Errorf("069 upgrade must contain %q", expected)
+		}
+	}
+	if strings.Contains(upgrade, "064_import_sessions") {
+		t.Fatal("069 must not rewrite deployed import-session migration history")
+	}
+	if !strings.Contains(upgrade, "CONSTRAINT external_import_artifact_chunks_sequence_lt_chunk_count_check") {
+		t.Fatal("069 must give its cross-column artifact sequence check a non-default constraint name")
+	}
+	if strings.Contains(upgrade, "CONSTRAINT external_import_artifact_chunks_sequence_check CHECK (sequence < chunk_count)") {
+		t.Fatal("069 must not reuse PostgreSQL's default name for the column-level sequence check")
+	}
+
+	rollback := readMigration(t, "069_external_import_archive_delivery.down.sql")
+	for _, expected := range []string{
+		"CREATE OR REPLACE FUNCTION create_tenant_schema",
+		"DROP TABLE IF EXISTS public.import_delivery_nonces",
+		"DROP FUNCTION IF EXISTS add_external_import_delivery_tables(TEXT)",
+	} {
+		if !strings.Contains(rollback, expected) {
+			t.Errorf("069 rollback must contain %q", expected)
+		}
+	}
+	if strings.Contains(rollback, "PERFORM add_external_import_delivery_tables(schema_name)") {
+		t.Fatal("069 rollback must not leave future tenant bootstrap calling a removed helper")
+	}
+}
+
+func TestReminderRulesBootstrapCompatibilityMigrationUnit(t *testing.T) {
+	readMigration := func(t *testing.T, name string) string {
+		t.Helper()
+		contents, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		return string(contents)
+	}
+
+	upgrade := readMigration(t, "073_reminder_rules_bootstrap_compatibility.up.sql")
+	for _, expected := range []string{
+		"CREATE OR REPLACE FUNCTION add_reminder_rules(schema_name TEXT)",
+		"PERFORM add_reminder_rules_to_schema(schema_name)",
+	} {
+		if !strings.Contains(upgrade, expected) {
+			t.Errorf("073 upgrade must contain %q", expected)
+		}
+	}
+	if strings.Contains(upgrade, "CREATE OR REPLACE FUNCTION create_tenant_schema") {
+		t.Fatal("073 must preserve the existing tenant bootstrap and supply only a compatibility helper")
+	}
+
+	rollback := readMigration(t, "073_reminder_rules_bootstrap_compatibility.down.sql")
+	if !strings.Contains(rollback, "DROP FUNCTION IF EXISTS add_reminder_rules(TEXT)") {
+		t.Fatal("073 rollback must remove the compatibility helper")
+	}
+}
+
+func TestBrowserDiscoveryReceiptMigrationRequiresTheFullServerOwnedManifestUnit(t *testing.T) {
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "migrations", "078_smartaccounts_browser_discovery_receipts.up.sql"))
+	if err != nil {
+		t.Fatalf("read 078 upgrade: %v", err)
+	}
+	contents := string(upgrade)
+	for _, expected := range []string{
+		"CREATE TABLE IF NOT EXISTS public.smartaccounts_browser_discovery_authorizations",
+		"PRIMARY KEY (tenant_id, discovery_id)",
+		"source_company_id ~ '^sa-browser-v1-[0-9]{1,20}$'",
+		"jsonb_array_length(resource_ids) = 31",
+		"manifest_version = 'smartaccounts-brave-ui-v1'",
+		"contract_version = 'smartaccounts-brave-discovery-contract-v1'",
+		"contract_sha256 CHAR(64)",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Errorf("078 upgrade must contain %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"cookie", "credential", "header_name", "control_ids", "source_rows", "export_body"} {
+		if strings.Contains(strings.ToLower(contents), forbidden) {
+			t.Errorf("078 public schema must not persist %q", forbidden)
+		}
+	}
+
+	rollback, err := os.ReadFile(filepath.Join("..", "..", "migrations", "078_smartaccounts_browser_discovery_receipts.down.sql"))
+	if err != nil {
+		t.Fatalf("read 078 rollback: %v", err)
+	}
+	if !strings.Contains(string(rollback), "DROP TABLE IF EXISTS public.smartaccounts_browser_discovery_authorizations") {
+		t.Fatal("078 rollback must remove only the browser discovery receipt table")
+	}
+}
+
+func TestBrowserGeneralLedgerContractV2MigrationPreservesHistoricalEvidenceUnit(t *testing.T) {
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "migrations", "084_smartaccounts_browser_general_ledger_contract_v2.up.sql"))
+	if err != nil {
+		t.Fatalf("read 084 upgrade: %v", err)
+	}
+	contents := string(upgrade)
+	for _, expected := range []string{
+		"DROP CONSTRAINT IF EXISTS smartaccounts_browser_capture_manifest_version",
+		"DROP CONSTRAINT IF EXISTS smartaccounts_browser_discovery_manifest_check",
+		"smartaccounts-brave-ui-v1",
+		"smartaccounts-brave-ui-v2",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Errorf("084 upgrade must contain %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"api_key", "api_secret", "cookie", "credential", "source_rows", "journal_entries_csv_v1"} {
+		if strings.Contains(strings.ToLower(contents), forbidden) {
+			t.Errorf("084 public schema must not persist %q", forbidden)
+		}
+	}
+
+	rollback, err := os.ReadFile(filepath.Join("..", "..", "migrations", "084_smartaccounts_browser_general_ledger_contract_v2.down.sql"))
+	if err != nil {
+		t.Fatalf("read 084 rollback: %v", err)
+	}
+	if !strings.Contains(string(rollback), "SELECT 1") || strings.Contains(string(rollback), "DROP CONSTRAINT") {
+		t.Fatal("084 rollback must remain a forward-only no-op so v2 audit evidence remains readable")
+	}
+}
+
+func TestBrowserMasterDetailAuthorizationMigrationUsesImmutableGenerationsUnit(t *testing.T) {
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "migrations", "085_smartaccounts_browser_master_detail_authorizations.up.sql"))
+	if err != nil {
+		t.Fatalf("read 085 upgrade: %v", err)
+	}
+	contents := string(upgrade)
+	for _, expected := range []string{
+		"CREATE TABLE IF NOT EXISTS public.smartaccounts_browser_master_detail_authorizations",
+		"batch_id UUID NOT NULL",
+		"UNIQUE (tenant_id, batch_id, resource_id)",
+		"manifest_version = 'smartaccounts-browser-master-detail-v1'",
+		"clients_detail_v1",
+		"vendors_detail_v1",
+		"articles_detail_v1",
+		"expires_at > created_at",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Errorf("085 upgrade must contain %q", expected)
+		}
+	}
+	if strings.Contains(contents, "UNIQUE (tenant_id, source_company_id, resource_id, snapshot_date)") {
+		t.Fatal("085 must permit an explicitly owner-confirmed same-day refresh as a new batch generation")
+	}
+	for _, forbidden := range []string{"capture_token", "cookie", "credential", "source_rows", "ndjson"} {
+		if strings.Contains(strings.ToLower(contents), forbidden) {
+			t.Errorf("085 public schema must not persist %q", forbidden)
+		}
+	}
+	rollback, err := os.ReadFile(filepath.Join("..", "..", "migrations", "085_smartaccounts_browser_master_detail_authorizations.down.sql"))
+	if err != nil {
+		t.Fatalf("read 085 rollback: %v", err)
+	}
+	if !strings.Contains(string(rollback), "SELECT 1") {
+		t.Fatal("085 rollback must remain a forward-only no-op for deployed audit metadata")
+	}
+}
+
+func TestBrowserBatchOptionalHeaderProbeConsentMigrationDefaultsSafelyUnit(t *testing.T) {
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "migrations", "086_browser_batch_optional_header_probe_consent.up.sql"))
+	if err != nil {
+		t.Fatalf("read 086 upgrade: %v", err)
+	}
+	contents := string(upgrade)
+	for _, expected := range []string{
+		"ALTER TABLE public.smartaccounts_browser_batch_workflows",
+		"ADD COLUMN IF NOT EXISTS header_probe_consent_confirmed BOOLEAN NOT NULL DEFAULT FALSE",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Errorf("086 upgrade must contain %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"header_value", "cookie", "credential", "capture_token"} {
+		if strings.Contains(strings.ToLower(contents), forbidden) {
+			t.Errorf("086 public schema must not persist %q", forbidden)
+		}
+	}
+	rollback, err := os.ReadFile(filepath.Join("..", "..", "migrations", "086_browser_batch_optional_header_probe_consent.down.sql"))
+	if err != nil {
+		t.Fatalf("read 086 rollback: %v", err)
+	}
+	if !strings.Contains(string(rollback), "SELECT 1") {
+		t.Fatal("086 rollback must remain a forward-only no-op for persisted consent audit metadata")
+	}
+}
+
+func TestSmartAccountsReconciliationMigrationHasCrashResumeIdentityGuardUnit(t *testing.T) {
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "migrations", "087_smartaccounts_reconciliation_receipts.up.sql"))
+	if err != nil {
+		t.Fatalf("read 087 upgrade: %v", err)
+	}
+	contents := string(upgrade)
+	for _, expected := range []string{
+		"smartaccounts_gl_apply_receipts",
+		"reservation_id UUID NOT NULL",
+		"algorithm_version TEXT NOT NULL",
+		"smartaccounts-exact-match-v1",
+		"smartaccounts_gl_tolerance_policies",
+		"preview_sha256 CHAR(64) NOT NULL",
+		"ADD COLUMN IF NOT EXISTS reserved_by TEXT NULL",
+		"smartaccounts_gl_active_source_identity_unique",
+		"WHERE source_type = ''SMARTACCOUNTS_GL'' AND source_id IS NOT NULL AND status <> ''VOIDED''",
+		"PERFORM add_smartaccounts_executor_reconciliation_columns(schema_name)",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Errorf("087 upgrade must contain %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"proof_payload", "source_rows", "monetary_amount", "capture_token", "cookie_value"} {
+		if strings.Contains(strings.ToLower(contents), forbidden) {
+			t.Errorf("087 public schema must not persist %q", forbidden)
+		}
+	}
+	rollback, err := os.ReadFile(filepath.Join("..", "..", "migrations", "087_smartaccounts_reconciliation_receipts.down.sql"))
+	if err != nil {
+		t.Fatalf("read 087 rollback: %v", err)
+	}
+	if !strings.Contains(string(rollback), "SELECT 1") {
+		t.Fatal("087 rollback must remain forward-only for reconciliation audit evidence")
+	}
+}
+
+func TestBrowserCommercialDetailMigrationStoresOnlyRelayControlMetadataUnit(t *testing.T) {
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "migrations", "088_smartaccounts_browser_commercial_detail_authorizations.up.sql"))
+	if err != nil {
+		t.Fatalf("read 088 upgrade: %v", err)
+	}
+	contents := string(upgrade)
+	for _, expected := range []string{
+		"CREATE TABLE IF NOT EXISTS public.smartaccounts_browser_commercial_detail_authorizations",
+		"UNIQUE (tenant_id, batch_id, source_company_id, resource_id)",
+		"manifest_version = 'smartaccounts-browser-commercial-detail-v1'",
+		"client_invoices_detail_v1",
+		"bank_payments_detail_v1",
+		"list_selector_required",
+		"token_sha256 CHAR(64) NOT NULL",
+		"bridge_started_at TIMESTAMPTZ",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Errorf("088 upgrade must contain %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"capture_token", "contract jsonb", "source_rows", "cookie_value", "credential_value", "monetary_amount"} {
+		if strings.Contains(strings.ToLower(contents), forbidden) {
+			t.Errorf("088 public schema must not persist %q", forbidden)
+		}
+	}
+	rollback, err := os.ReadFile(filepath.Join("..", "..", "migrations", "088_smartaccounts_browser_commercial_detail_authorizations.down.sql"))
+	if err != nil {
+		t.Fatalf("read 088 rollback: %v", err)
+	}
+	if !strings.Contains(string(rollback), "DROP TABLE IF EXISTS public.smartaccounts_browser_commercial_detail_authorizations") {
+		t.Fatal("088 rollback must target only the new commercial relay table")
+	}
+}
+
+func TestFullClaimDomainEvidenceMigrationIsBoundedAndForwardOnlyUnit(t *testing.T) {
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "migrations", "089_smartaccounts_full_claim_domain_evidence.up.sql"))
+	if err != nil {
+		t.Fatalf("read 089 upgrade: %v", err)
+	}
+	contents := string(upgrade)
+	for _, expected := range []string{
+		"CREATE TABLE IF NOT EXISTS public.smartaccounts_full_claim_domain_evidence",
+		"batch_id UUID NOT NULL",
+		"tenant_id UUID NOT NULL",
+		"source_company_id TEXT NOT NULL",
+		"package_id TEXT NOT NULL",
+		"scope_sha256 CHAR(64) NOT NULL",
+		"reconciliation_evidence_sha256 CHAR(64) NOT NULL",
+		"plan_version = 'smartaccounts-full-claim-domain-plan-v1'",
+		"live_source_validated AND schema_validated AND completeness_validated",
+		"reconciliation_validated AND tombstones_resolved AND accountant_attested",
+		"UNIQUE (batch_id, tenant_id, source_company_id, package_id, scope_sha256, reconciliation_evidence_sha256, plan_version, domain_id)",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Errorf("089 upgrade must contain %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"source_rows", "monetary_amount", "cookie", "credential", "request_body", "response_body", "free_form_note"} {
+		if strings.Contains(strings.ToLower(contents), forbidden) {
+			t.Errorf("089 public schema must not persist %q", forbidden)
+		}
+	}
+
+	rollback, err := os.ReadFile(filepath.Join("..", "..", "migrations", "089_smartaccounts_full_claim_domain_evidence.down.sql"))
+	if err != nil {
+		t.Fatalf("read 089 rollback: %v", err)
+	}
+	if !strings.Contains(string(rollback), "SELECT 1") {
+		t.Fatal("089 rollback must remain forward-only so historical full-claim evidence remains readable")
+	}
+}
+
+func TestReferenceMasterStateMigrationIsTenantScopedAndBootstrappedUnit(t *testing.T) {
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "migrations", "079_smartaccounts_reference_master_state.up.sql"))
+	if err != nil {
+		t.Fatalf("read 079 upgrade: %v", err)
+	}
+	contents := string(upgrade)
+	for _, expected := range []string{
+		"CREATE OR REPLACE FUNCTION add_smartaccounts_reference_master_tables",
+		"smartaccounts_reference_previews",
+		"smartaccounts_reference_identities",
+		"UNIQUE (tenant_id, package_id, preview_sha256)",
+		"UNIQUE (tenant_id, provider, source_company_id, entity_type, external_id)",
+		"PERFORM add_smartaccounts_reference_master_tables(tenant_schema)",
+		"PERFORM add_smartaccounts_reference_master_tables(schema_name)",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Errorf("079 upgrade must contain %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"journal_entries", "invoices", "payments"} {
+		if strings.Contains(strings.ToLower(contents), forbidden) {
+			t.Errorf("079 must not create financial posting state for %q", forbidden)
+		}
+	}
+
+	rollback, err := os.ReadFile(filepath.Join("..", "..", "migrations", "079_smartaccounts_reference_master_state.down.sql"))
+	if err != nil {
+		t.Fatalf("read 079 rollback: %v", err)
+	}
+	for _, expected := range []string{
+		"DROP TABLE IF EXISTS %I.smartaccounts_reference_identities",
+		"DROP TABLE IF EXISTS %I.smartaccounts_reference_previews",
+		"DROP FUNCTION IF EXISTS add_smartaccounts_reference_master_tables(TEXT)",
+	} {
+		if !strings.Contains(string(rollback), expected) {
+			t.Errorf("079 rollback must contain %q", expected)
+		}
+	}
+}
+
 func TestEnsureAndGetAppliedMigrationsUnit(t *testing.T) {
 	ctx := context.Background()
 	pool := newFakeMigrationPool(map[string]bool{

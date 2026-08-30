@@ -30,6 +30,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/expenses"
+	"github.com/HMB-research/open-accounting/internal/importsession"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -71,6 +72,40 @@ func writeTempCSV(t *testing.T, name, content string) string {
 
 	path := filepath.Join(t.TempDir(), name)
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	return path
+}
+
+func writeCanonicalImportSessionPackage(t *testing.T) string {
+	t.Helper()
+	payload := []byte(`{"code":"1000","name":"Cash"}`)
+	authoritative := true
+	pkg := importsession.CanonicalPackage{
+		SchemaVersion:   importsession.CanonicalSchemaVersionV1,
+		Provider:        importsession.ProviderSmartAccounts,
+		SourceCompanyID: "source-company-test-001",
+		LedgerAuthority: &importsession.LedgerAuthorityDeclaration{
+			GeneralLedgerAuthority:       importsession.ProviderSmartAccounts,
+			SmartAccountsGLAuthoritative: &authoritative,
+			SourceAsOfDate:               "2026-08-31",
+		},
+		Scope: &importsession.ImportScope{Mode: importsession.ScopeModeFull, ResourceTypes: []string{importsession.ScopeResourceAll}},
+		Records: []importsession.CanonicalRecord{{
+			EntityType:    "account",
+			ExternalID:    "1000",
+			Revision:      "2026-08-27T10:00:00Z",
+			Operation:     "upsert",
+			Payload:       payload,
+			PayloadSHA256: sha256HexForMigrationManifest(payload),
+		}},
+	}
+	digest, err := importsession.PackageDigest(pkg)
+	require.NoError(t, err)
+	pkg.PackageSHA256 = digest
+
+	encoded, err := json.Marshal(pkg)
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "canonical-package.json")
+	require.NoError(t, os.WriteFile(path, encoded, 0o600))
 	return path
 }
 
@@ -6453,6 +6488,222 @@ func TestCLIMigrationRunsBranches(t *testing.T) {
 	app, stdout, _ = newTestCLIApp()
 	require.NoError(t, app.runMigrationRuns(ctx, cfg, client, []string{"watch", "--interval-ms", "1", "--max-events", "1", "run-table"}))
 	assert.Contains(t, stdout.String(), "1\tcomplete\trun-table\tsucceeded")
+}
+
+func TestCLIImportSessionCommands(t *testing.T) {
+	configureCLIEnv(t)
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+	packagePath := writeCanonicalImportSessionPackage(t)
+	report := importsession.ValidationReport{
+		Ready:        true,
+		RecordCount:  1,
+		EntityCounts: map[string]int{"account": 1},
+	}
+	createdReceipt := importsession.Receipt{
+		ID:              "import-session-1",
+		TenantID:        "tenant-1",
+		Provider:        importsession.ProviderSmartAccounts,
+		SourceCompanyID: "source-company-test-001",
+		SchemaVersion:   importsession.CanonicalSchemaVersionV1,
+		PackageSHA256:   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Status:          importsession.SessionStatusReceivedValidated,
+		RecordCount:     1,
+		EntityCounts:    map[string]int{"account": 1},
+		Validation:      report,
+		Created:         true,
+	}
+	storedReceipt := createdReceipt
+	storedReceipt.Created = false
+	planResult := importsession.ImportPlanResult{
+		Ready:                  true,
+		FinancialWritesPlanned: false,
+		ImportSessionID:        "import-session-1",
+		JournalActions:         []importsession.PlannedJournalAction{{SourceJournalExternalID: "JE-100"}},
+		AccountReconciliations: []importsession.AccountReconciliationExpectation{{SourceAccountExternalID: "1000"}, {SourceAccountExternalID: "3000"}},
+		PlanSHA256:             "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "Bearer oa_saved_token", r.Header.Get("Authorization"))
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/import-sessions/validate":
+			require.Equal(t, http.MethodPost, r.Method)
+			var req importsession.PackageRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, "source-company-test-001", req.Package.SourceCompanyID)
+			_ = json.NewEncoder(w).Encode(report)
+		case "/api/v1/tenants/tenant-1/import-sessions":
+			require.Equal(t, http.MethodPost, r.Method)
+			var req importsession.PackageRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(t, importsession.ProviderSmartAccounts, req.Package.Provider)
+			_ = json.NewEncoder(w).Encode(createdReceipt)
+		case "/api/v1/tenants/tenant-1/import-sessions/import-session-1":
+			require.Equal(t, http.MethodGet, r.Method)
+			_ = json.NewEncoder(w).Encode(storedReceipt)
+		case "/api/v1/tenants/tenant-1/import-sessions/import-session-1/plan":
+			require.Equal(t, http.MethodPost, r.Method)
+			var req importsession.ImportPlanRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.Equal(t, []importsession.AccountMapping{
+				{SourceAccountExternalID: "1000", TargetAccountID: "00000000-0000-0000-0000-000000000001"},
+				{SourceAccountExternalID: "3000", TargetAccountID: "00000000-0000-0000-0000-000000000002"},
+			}, req.AccountMappings)
+			_ = json.NewEncoder(w).Encode(planResult)
+		default:
+			t.Fatalf("unexpected request: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+
+	app, stdout, _ := newTestCLIApp()
+	require.NoError(t, app.run(context.Background(), []string{"import-sessions", "validate", "--package", packagePath}))
+	assert.Contains(t, stdout.String(), "Import-session validation: ready")
+
+	stdout.Reset()
+	require.NoError(t, app.run(context.Background(), []string{"import-sessions", "validate", "--package", packagePath, "--json"}))
+	assert.Contains(t, stdout.String(), `"ready": true`)
+
+	stdout.Reset()
+	require.NoError(t, app.run(context.Background(), []string{"import-sessions", "receive", "--package", packagePath}))
+	assert.Contains(t, stdout.String(), "Import session import-session-1: received")
+
+	stdout.Reset()
+	require.NoError(t, app.run(context.Background(), []string{"import-sessions", "receive", "--package", packagePath, "--json"}))
+	assert.Contains(t, stdout.String(), `"created": true`)
+
+	stdout.Reset()
+	require.NoError(t, app.run(context.Background(), []string{"import-sessions", "get", "import-session-1"}))
+	assert.Contains(t, stdout.String(), "already received (idempotent no-op)")
+
+	stdout.Reset()
+	require.NoError(t, app.run(context.Background(), []string{"import-sessions", "get", "--id", "import-session-1", "--json"}))
+	assert.Contains(t, stdout.String(), `"id": "import-session-1"`)
+
+	stdout.Reset()
+	require.NoError(t, app.run(context.Background(), []string{"import-sessions", "plan", "--map", "1000=00000000-0000-0000-0000-000000000001", "--map", "3000=00000000-0000-0000-0000-000000000002", "import-session-1"}))
+	assert.Contains(t, stdout.String(), "Import-session plan: ready")
+	assert.Contains(t, stdout.String(), "financial writes planned: false")
+
+	stdout.Reset()
+	require.NoError(t, app.run(context.Background(), []string{"import-sessions", "plan", "--id", "import-session-1", "--map", "1000=00000000-0000-0000-0000-000000000001", "--map", "3000=00000000-0000-0000-0000-000000000002", "--json"}))
+	assert.Contains(t, stdout.String(), `"financial_writes_planned": false`)
+}
+
+func TestCLIImportSessionBranches(t *testing.T) {
+	app, stdout, _ := newTestCLIApp()
+	ctx := context.Background()
+	require.EqualError(t, app.runImportSessions(ctx, nil), "import-sessions subcommand required")
+	configureCLIEnv(t)
+	require.Error(t, app.runImportSessions(ctx, []string{"validate"}))
+
+	require.NoError(t, saveConfig(&cliConfig{
+		BaseURL:    "https://placeholder.example.com",
+		TenantID:   "tenant-1",
+		TenantName: "Alpha",
+		TenantSlug: "alpha",
+		APIToken:   "oa_saved_token",
+	}))
+	packagePath := writeCanonicalImportSessionPackage(t)
+	missingPath := filepath.Join(t.TempDir(), "missing-package.json")
+	badJSONPath := writeTempCSV(t, "bad-package.json", "{")
+	directoryPath := t.TempDir()
+	largePath := filepath.Join(t.TempDir(), "large-package.json")
+	require.NoError(t, os.WriteFile(largePath, make([]byte, maxImportSessionPackageFileBytes+1), 0o600))
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown subcommand", args: []string{"import-sessions", "unknown"}, want: `unknown import-sessions subcommand "unknown"`},
+		{name: "validate bad flag", args: []string{"import-sessions", "validate", "--unknown"}, want: "flag provided but not defined"},
+		{name: "validate unexpected args", args: []string{"import-sessions", "validate", "--package", packagePath, "extra"}, want: "unexpected arguments: extra"},
+		{name: "validate missing package", args: []string{"import-sessions", "validate"}, want: "package is required"},
+		{name: "validate missing package file", args: []string{"import-sessions", "validate", "--package", missingPath}, want: "stat package file"},
+		{name: "validate oversized package", args: []string{"import-sessions", "validate", "--package", largePath}, want: "package file exceeds"},
+		{name: "validate unreadable package", args: []string{"import-sessions", "validate", "--package", directoryPath}, want: "read package file"},
+		{name: "validate malformed package", args: []string{"import-sessions", "validate", "--package", badJSONPath}, want: "parse canonical package JSON"},
+		{name: "receive bad flag", args: []string{"import-sessions", "receive", "--unknown"}, want: "flag provided but not defined"},
+		{name: "receive unexpected args", args: []string{"import-sessions", "receive", "--package", packagePath, "extra"}, want: "unexpected arguments: extra"},
+		{name: "receive malformed package", args: []string{"import-sessions", "receive", "--package", badJSONPath}, want: "parse canonical package JSON"},
+		{name: "get bad flag", args: []string{"import-sessions", "get", "--unknown"}, want: "flag provided but not defined"},
+		{name: "get missing id", args: []string{"import-sessions", "get"}, want: "import session id is required"},
+		{name: "get too many ids", args: []string{"import-sessions", "get", "one", "two"}, want: "only one import session id may be provided"},
+		{name: "get mixed id input", args: []string{"import-sessions", "get", "--id", "one", "two"}, want: "use either --id or a positional import session id, not both"},
+		{name: "plan bad flag", args: []string{"import-sessions", "plan", "--unknown"}, want: "flag provided but not defined"},
+		{name: "plan missing id", args: []string{"import-sessions", "plan"}, want: "import session id is required"},
+		{name: "plan too many ids", args: []string{"import-sessions", "plan", "one", "two"}, want: "only one import session id may be provided"},
+		{name: "plan mixed id input", args: []string{"import-sessions", "plan", "--id", "one", "two"}, want: "use either --id or a positional import session id, not both"},
+		{name: "plan malformed mapping", args: []string{"import-sessions", "plan", "--map", "bad", "one"}, want: "invalid --map"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/tenants/tenant-1/import-sessions/validate":
+			require.Equal(t, http.MethodPost, r.Method)
+			http.Error(w, `{"error":"validation unavailable"}`, http.StatusBadGateway)
+		case "/api/v1/tenants/tenant-1/import-sessions":
+			require.Equal(t, http.MethodPost, r.Method)
+			http.Error(w, `{"error":"receipt unavailable"}`, http.StatusBadGateway)
+		case "/api/v1/tenants/tenant-1/import-sessions/error":
+			require.Equal(t, http.MethodGet, r.Method)
+			http.Error(w, `{"error":"receipt missing"}`, http.StatusNotFound)
+		case "/api/v1/tenants/tenant-1/import-sessions/error/plan":
+			require.Equal(t, http.MethodPost, r.Method)
+			http.Error(w, `{"error":"plan unavailable"}`, http.StatusUnprocessableEntity)
+		default:
+			t.Fatalf("unexpected request: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("OA_BASE_URL", server.URL)
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "validate api error", args: []string{"import-sessions", "validate", "--package", packagePath}, want: "validation unavailable"},
+		{name: "receive api error", args: []string{"import-sessions", "receive", "--package", packagePath}, want: "receipt unavailable"},
+		{name: "get api error", args: []string{"import-sessions", "get", "--id", "error"}, want: "receipt missing"},
+		{name: "plan api error", args: []string{"import-sessions", "plan", "--id", "error"}, want: "plan unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout.Reset()
+			err := app.run(ctx, tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	printImportSessionValidation(stdout, nil)
+	printImportSessionValidation(stdout, &importsession.ValidationReport{Issues: []importsession.ValidationIssue{{Code: "required", Message: "missing field"}}})
+	printImportSessionValidation(stdout, &importsession.ValidationReport{Ready: true, LedgerVerification: &importsession.LedgerVerification{ReviewRequired: true}})
+	printImportSessionReceipt(stdout, nil)
+	printImportSessionReceipt(stdout, &importsession.Receipt{ID: "existing", SourceCompanyID: "source-company-test-001", Status: importsession.SessionStatusReceivedReviewRequired})
+	printImportSessionPlan(stdout, nil)
+	printImportSessionPlan(stdout, &importsession.ImportPlanResult{Issues: []importsession.ImportPlanIssue{{Code: "review_required", Message: "review needed"}}})
+	assert.Contains(t, stdout.String(), "No import-session validation report")
+	assert.Contains(t, stdout.String(), "blocked")
+	assert.Contains(t, stdout.String(), "review required")
+	assert.Contains(t, stdout.String(), "No import-session plan")
+	assert.Contains(t, stdout.String(), "No import-session receipt")
+	assert.Contains(t, stdout.String(), importsession.SessionStatusReceivedReviewRequired)
+	assert.Contains(t, stdout.String(), "already received")
 }
 
 func TestCLIMigrationExecuteSafetyBranches(t *testing.T) {

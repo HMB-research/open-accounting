@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS public.idx_smartaccounts_sync_capture_run_history_updated;
+DROP TABLE IF EXISTS public.smartaccounts_sync_capture_run_history;

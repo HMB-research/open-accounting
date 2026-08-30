@@ -54,6 +54,61 @@ func registerTenantRoutes(
 		r.Get("/migration/execution-runs/{runID}", h.GetMigrationExecutionRun)
 		r.Get("/migration/execution-runs/{runID}/events", h.StreamMigrationExecutionRun)
 
+		// External import sessions are receive-only in v1. They validate and
+		// persist package receipts but never create accounting transactions.
+		r.Post("/import-sessions/validate", h.ValidateImportSessionPackage)
+		r.Post("/import-sessions", h.CreateImportSession)
+		r.Get("/import-sessions/{sessionID}", h.GetImportSession)
+		r.Post("/import-sessions/{sessionID}/plan", h.PlanImportSession)
+
+		// SmartAccounts bridge control is isolated from the legacy migration
+		// executor. The control endpoint proxies transient credentials only to
+		// the private bridge and persists its opaque reference; it makes no
+		// financial write in Open Accounting.
+		r.Get("/smartaccounts-sync/sources", h.DiscoverSmartAccountsSyncSources)
+		r.Get("/smartaccounts-sync/status", h.GetSmartAccountsSyncStatus)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-pairings", h.IssueSmartAccountsBrowserPairing)
+		r.With(h.RequireTenantPermission(canManageSettings)).Get("/smartaccounts-sync/browser-pairings/{pairingID}", h.GetSmartAccountsBrowserPairing)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-discoveries", h.IssueSmartAccountsBrowserDiscovery)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-discoveries/{discoveryID}/receipt", h.ReceiveSmartAccountsBrowserDiscoveryReceipt)
+		r.With(h.RequireTenantPermission(canManageSettings)).Get("/smartaccounts-sync/browser-discoveries/{discoveryID}", h.GetSmartAccountsBrowserDiscoveryReceipt)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-discoveries/{discoveryID}/resources/{resourceID}/schemas/{schemaID}/review", h.ReviewSmartAccountsBrowserCSVSchema)
+		r.With(h.RequireTenantPermission(canManageSettings)).Get("/smartaccounts-sync/browser-discoveries/{discoveryID}/resources/{resourceID}/schemas/{schemaID}/review", h.GetSmartAccountsBrowserCSVSchemaReview)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-captures", h.IssueSmartAccountsBrowserCapture)
+		r.With(h.RequireTenantPermission(canManageSettings)).Get("/smartaccounts-sync/browser-captures/{runID}", h.GetSmartAccountsBrowserCaptureOwnerStatus)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-captures/{runID}/resume", h.ResumeSmartAccountsBrowserCapture)
+		// Master detail is a separate reviewed, current-snapshot relay. It has
+		// no financial apply surface and never shares CSV/GL capture routes.
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-master-details", h.IssueSmartAccountsBrowserMasterDetails)
+		r.With(h.RequireTenantPermission(canManageSettings)).Get("/smartaccounts-sync/browser-master-details/{runID}", h.GetSmartAccountsBrowserMasterDetailOwnerStatus)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-master-details/{runID}/resume", h.ResumeSmartAccountsBrowserMasterDetail)
+		// Commercial detail is review/archive-only. Its relay currently stops at
+		// a reviewed visible-selector blocker and has no apply or preview route.
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-commercial-details", h.IssueSmartAccountsBrowserCommercialDetails)
+		r.With(h.RequireTenantPermission(canManageSettings)).Get("/smartaccounts-sync/browser-commercial-details/{runID}", h.GetSmartAccountsBrowserCommercialDetailOwnerStatus)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-commercial-details/{runID}/resume", h.ResumeSmartAccountsBrowserCommercialDetail)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-capture-workflows", h.StartSmartAccountsBrowserCaptureWorkflow)
+		r.With(h.RequireTenantPermission(canManageSettings)).Get("/smartaccounts-sync/browser-capture-workflows/{workflowID}", h.GetSmartAccountsBrowserCaptureWorkflowStatus)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/control", h.ConfigureSmartAccountsSync)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/dry-run", h.RequestSmartAccountsSyncDryRun)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/apply", h.ConfirmSmartAccountsFinancialApply)
+		// Financial execution is deliberately separate from bridge capture and
+		// requires a stored plan plus an exact explicit confirmation.
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/packages/{packageID}/preview", h.PreviewSmartAccountsPackage)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/packages/apply", h.ApplySmartAccountsPackage)
+		// Reference masters use a separate confirmed-only, non-financial path.
+		r.With(h.RequireTenantPermission(canManageSettings)).Get("/smartaccounts-sync/packages/{packageID}/archive-coverage", h.GetSmartAccountsPackageArchiveCoverage)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/packages/{packageID}/reference-preview", h.PreviewSmartAccountsReferenceMasters)
+		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/reference-masters/apply", h.ApplySmartAccountsReferenceMasters)
+		// Reconciliation policy and approval paths are deliberately stricter than
+		// normal GL confirmation: an active accountant must approve policy and
+		// independently attest the resulting digest-bound evidence.
+		r.Post("/smartaccounts-sync/sources/{sourceCompanyID}/tolerance-policy-candidates", h.GetSmartAccountsTolerancePolicyCandidate)
+		r.Post("/smartaccounts-sync/sources/{sourceCompanyID}/tolerance-policies", h.ApproveSmartAccountsTolerancePolicy)
+		r.Post("/smartaccounts-sync/sources/{sourceCompanyID}/tolerance-policy-resolutions", h.ResolveSmartAccountsTolerancePolicy)
+		r.Get("/smartaccounts-sync/reconciliation/batches/{batchID}/sources/{sourceCompanyID}", h.GetSmartAccountsTenantReconciliation)
+		r.Post("/smartaccounts-sync/reconciliation/evaluations/{evaluationID}/approval", h.ApproveSmartAccountsReconciliation)
+
 		// Accounts
 		r.Get("/accounts", h.ListAccounts)
 		r.Post("/accounts", h.CreateAccount)

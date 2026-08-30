@@ -157,8 +157,15 @@ func (s *Service) CreateProduct(ctx context.Context, tenantID, schemaName string
 		return nil, err
 	}
 
+	productID := req.ID
+	if productID == "" {
+		productID = uuid.New().String()
+	}
+	if _, err := uuid.Parse(productID); err != nil {
+		return nil, fmt.Errorf("id must be a valid UUID")
+	}
 	product := &Product{
-		ID:                 uuid.New().String(),
+		ID:                 productID,
 		TenantID:           tenantID,
 		Code:               code,
 		Name:               req.Name,

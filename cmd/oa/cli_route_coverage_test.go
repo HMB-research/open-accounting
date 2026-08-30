@@ -34,6 +34,12 @@ func TestCLIRouteCoverageAgainstAPISource(t *testing.T) {
 	var undocumented []string
 	seen := make(map[apiRoute]bool, len(routes))
 	for _, route := range routes {
+		// SmartAccounts package and reference-master applies intentionally stay
+		// in the reviewed web UI: confirmation requires inspecting the stored
+		// reconciliation receipt and must not become an unattended OA CLI action.
+		if strings.Contains(route.Path, "/smartaccounts-sync/packages/") || strings.Contains(route.Path, "/smartaccounts-sync/reference-masters/") || strings.Contains(route.Path, "/smartaccounts-sync/browser-master-details") || strings.Contains(route.Path, "/smartaccounts-browser-master-detail-captures/") || strings.Contains(route.Path, "/smartaccounts-sync/browser-commercial-details") || strings.Contains(route.Path, "/smartaccounts-browser-commercial-captures/") {
+			continue
+		}
 		require.Falsef(t, seen[route], "duplicate API route discovered: %s", route.String())
 		seen[route] = true
 
@@ -773,6 +779,10 @@ func cliCommandForRoute(route apiRoute) (string, bool) {
 	switch route {
 	case apiRoute{Method: "GET", Path: "/health"}:
 		return "health", true
+	case apiRoute{Method: "GET", Path: "/ready"}:
+		// `/ready` is a deployment probe. A future migration doctor can use it,
+		// but it deliberately has no user/API-token CLI command today.
+		return "", true
 	case apiRoute{Method: "GET", Path: "/swagger/*"}:
 		return "", true
 	case apiRoute{Method: "GET", Path: "/api/demo/status"}:
@@ -784,6 +794,25 @@ func cliCommandForRoute(route apiRoute) (string, bool) {
 	apiPath, ok := strings.CutPrefix(route.Path, "/api/v1")
 	if !ok {
 		return "", false
+	}
+	// Bridge archive delivery is server-to-server HMAC only. A CLI command
+	// would put its dedicated secret and archive bytes into shell history, so it
+	// is deliberately not part of the user/API-token CLI surface.
+	if strings.HasPrefix(apiPath, "/internal/bridge/") {
+		return "", true
+	}
+	// The 082+ browser batch workflow can return short-lived relay
+	// capabilities from acquire actions. Even its safe status is part of the
+	// same browser-only owner protocol, so no oa CLI command may invoke it.
+	if strings.HasPrefix(apiPath, "/smartaccounts-sync/browser-onboarding/batches/{batchID}/workflow") {
+		return "", true
+	}
+	// Reconciliation is an interactive owner/accountant attestation protocol.
+	// It intentionally has no CLI surface: owner evaluation joins protected
+	// archive and target state, while accountant tolerance/approval must use a
+	// current access-JWT session and explicit action-time confirmation.
+	if apiPath == "/smartaccounts-sync/browser-onboarding/batches/{batchID}/reconciliation" || apiPath == "/smartaccounts-sync/browser-onboarding/batches/{batchID}/full-claim-eligibility" || strings.HasPrefix(apiPath, "/smartaccounts-sync/browser-onboarding/batches/{batchID}/sources/{sourceCompanyID}/reconciliation") || strings.HasPrefix(apiPath, "/tenants/{tenantID}/smartaccounts-sync/reconciliation/") || strings.HasPrefix(apiPath, "/tenants/{tenantID}/smartaccounts-sync/sources/{sourceCompanyID}/tolerance-policy") {
+		return "", true
 	}
 
 	switch {
@@ -821,6 +850,45 @@ func cliCommandForRoute(route apiRoute) (string, bool) {
 		return commandForMethod(route.Method, map[string]string{"GET": "invitations get"})
 	case "/invitations/accept":
 		return commandForMethod(route.Method, map[string]string{"POST": "invitations accept"})
+	// Brave pairing is a browser-relay protocol. It intentionally has no CLI
+	// command because a one-time pairing token must never enter terminal
+	// history, environment, or CLI output.
+	case "/smartaccounts-browser-pairings/{pairingID}/claim":
+		return commandForMethod(route.Method, map[string]string{"POST": ""})
+	// Selected-company onboarding returns short-lived relay pairing tokens on
+	// the action response. It is deliberately page/relay-only so those tokens
+	// cannot enter shell history or terminal output. Its owner-safe status is
+	// kept with the same browser-only protocol until an operator-oriented,
+	// token-free CLI status contract is designed.
+	case "/smartaccounts-sync/browser-onboarding":
+		return commandForMethod(route.Method, map[string]string{"POST": ""})
+	case "/smartaccounts-sync/browser-onboarding/{sourceCompanyID}":
+		return commandForMethod(route.Method, map[string]string{"GET": ""})
+	// The catalog receipt and immutable selected/all batch protocol is carried
+	// only between the owner page and the installed browser relay. Its action
+	// responses can contain one-time relay capabilities, so there is purposely
+	// no oa CLI command for issuing, handoff, status, start, or resume.
+	case "/smartaccounts-sync/browser-onboarding/catalogs":
+		return commandForMethod(route.Method, map[string]string{"POST": ""})
+	case "/smartaccounts-sync/browser-onboarding/catalogs/{catalogID}":
+		return commandForMethod(route.Method, map[string]string{"GET": ""})
+	case "/smartaccounts-sync/browser-onboarding/batches":
+		return commandForMethod(route.Method, map[string]string{"POST": ""})
+	case "/smartaccounts-sync/browser-onboarding/batches/{batchID}":
+		return commandForMethod(route.Method, map[string]string{"GET": ""})
+	case "/smartaccounts-sync/browser-onboarding/batches/{batchID}/resume":
+		return commandForMethod(route.Method, map[string]string{"POST": ""})
+	case "/smartaccounts-browser-onboarding/catalogs/{catalogID}/handoff":
+		return commandForMethod(route.Method, map[string]string{"POST": ""})
+	// Browser CSV capture requires a locally installed extension service worker
+	// so a raw one-time token and source CSV cannot enter terminal history,
+	// environment, or CLI output. It is intentionally browser-only.
+	case "/smartaccounts-browser-captures/tenants/{tenantID}/runs/{runID}":
+		return commandForMethod(route.Method, map[string]string{"GET": ""})
+	case "/smartaccounts-browser-captures/tenants/{tenantID}/runs/{runID}/resources/{resourceID}":
+		return commandForMethod(route.Method, map[string]string{"PUT": ""})
+	case "/smartaccounts-browser-captures/tenants/{tenantID}/runs/{runID}/finalize":
+		return commandForMethod(route.Method, map[string]string{"POST": ""})
 	case "/me":
 		return commandForMethod(route.Method, map[string]string{"GET": "auth status"})
 	case "/me/tenants":
@@ -982,6 +1050,70 @@ func tenantCLICommand(method, path string) (string, bool) {
 		return commandForMethod(method, map[string]string{"GET": "migration runs get"})
 	case "/migration/execution-runs/{runID}/events":
 		return commandForMethod(method, map[string]string{"GET": "migration runs watch"})
+	// UI-facing SmartAccounts control endpoints deliberately have no CLI
+	// command: accepting a secret-manager URI through CLI output/history would
+	// broaden the credential-handling surface. The private bridge owns secrets.
+	case "/smartaccounts-sync/sources":
+		return commandForMethod(method, map[string]string{"GET": ""})
+	case "/smartaccounts-sync/status":
+		return commandForMethod(method, map[string]string{"GET": ""})
+	// Brave pairing is a browser-relay protocol. It intentionally has no CLI
+	// command because a one-time pairing token must never enter terminal
+	// history, environment, or CLI output.
+	case "/smartaccounts-sync/browser-pairings":
+		return commandForMethod(method, map[string]string{"POST": ""})
+	case "/smartaccounts-sync/browser-pairings/{pairingID}":
+		return commandForMethod(method, map[string]string{"GET": ""})
+	// Redacted Brave discovery is browser-only. Its issued same-window event
+	// carries action-time consent and an input-only source binding; a CLI would
+	// broaden that relay protocol into terminal history or automation logs.
+	case "/smartaccounts-sync/browser-discoveries":
+		return commandForMethod(method, map[string]string{"POST": ""})
+	case "/smartaccounts-sync/browser-discoveries/{discoveryID}/receipt":
+		return commandForMethod(method, map[string]string{"POST": ""})
+	case "/smartaccounts-sync/browser-discoveries/{discoveryID}":
+		return commandForMethod(method, map[string]string{"GET": ""})
+	// CSV schema review is a browser-discovery follow-up. It stays owner UI
+	// only: a CLI must not surface its discovery binding or cultivate automated
+	// approval of a browser-observed schema.
+	case "/smartaccounts-sync/browser-discoveries/{discoveryID}/resources/{resourceID}/schemas/{schemaID}/review":
+		return commandForMethod(method, map[string]string{"GET": "", "POST": ""})
+	case "/smartaccounts-sync/browser-captures":
+		return commandForMethod(method, map[string]string{"POST": ""})
+	case "/smartaccounts-sync/browser-captures/{runID}":
+		// This owner UI status is intentionally not a CLI surface. Browser capture
+		// state remains coupled to the locally installed relay and must not
+		// encourage capture-token or raw CSV handling in terminal history.
+		return commandForMethod(method, map[string]string{"GET": ""})
+	case "/smartaccounts-sync/browser-captures/{runID}/resume":
+		return commandForMethod(method, map[string]string{"POST": ""})
+	// The guided workflow only transports a short-lived capability directly
+	// into a local Brave extension. It remains intentionally browser-only so a
+	// token cannot enter terminal output, shell history, or automation logs.
+	case "/smartaccounts-sync/browser-capture-workflows":
+		return commandForMethod(method, map[string]string{"POST": ""})
+	case "/smartaccounts-sync/browser-capture-workflows/{workflowID}":
+		return commandForMethod(method, map[string]string{"GET": ""})
+	case "/smartaccounts-sync/control":
+		return commandForMethod(method, map[string]string{"POST": ""})
+	case "/smartaccounts-sync/dry-run":
+		return commandForMethod(method, map[string]string{"POST": ""})
+	case "/smartaccounts-sync/apply":
+		return commandForMethod(method, map[string]string{"POST": ""})
+	// The exact-match tolerance candidate, approval, and resolution are
+	// interactive accountant/owner actions. They deliberately have no CLI
+	// command: policy confirmation and financial actor separation must not be
+	// automated through an API token or terminal workflow.
+	case "/smartaccounts-sync/sources/{sourceCompanyID}/tolerance-policy-candidates", "/smartaccounts-sync/sources/{sourceCompanyID}/tolerance-policies", "/smartaccounts-sync/sources/{sourceCompanyID}/tolerance-policy-resolutions":
+		return commandForMethod(method, map[string]string{"POST": ""})
+	case "/import-sessions/validate":
+		return commandForMethod(method, map[string]string{"POST": "import-sessions validate"})
+	case "/import-sessions":
+		return commandForMethod(method, map[string]string{"POST": "import-sessions receive"})
+	case "/import-sessions/{sessionID}":
+		return commandForMethod(method, map[string]string{"GET": "import-sessions get"})
+	case "/import-sessions/{sessionID}/plan":
+		return commandForMethod(method, map[string]string{"POST": "import-sessions plan"})
 	case "/accounts":
 		return commandForMethod(method, map[string]string{
 			"GET":  "accounts list",

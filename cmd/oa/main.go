@@ -108,6 +108,8 @@ func (a *cliApp) run(ctx context.Context, args []string) error {
 		return a.runExpenses(ctx, args[1:])
 	case "migration":
 		return a.runMigration(ctx, args[1:])
+	case "import-sessions":
+		return a.runImportSessions(ctx, args[1:])
 	case "admin":
 		return a.runAdmin(ctx, args[1:])
 	case "tokens":
@@ -239,6 +241,10 @@ func (a *cliApp) printUsage() {
 	_, _ = fmt.Fprintln(a.stdout, "  migration runs list       List saved migration execution runs")
 	_, _ = fmt.Fprintln(a.stdout, "  migration runs get        Show a saved migration execution run")
 	_, _ = fmt.Fprintln(a.stdout, "  migration runs watch      Stream saved migration execution run telemetry")
+	_, _ = fmt.Fprintln(a.stdout, "  import-sessions validate  Read-only validate a canonical package file")
+	_, _ = fmt.Fprintln(a.stdout, "  import-sessions receive   Store a validated package receipt only")
+	_, _ = fmt.Fprintln(a.stdout, "  import-sessions get       Show one import-session receipt")
+	_, _ = fmt.Fprintln(a.stdout, "  import-sessions plan      Dry-run a staged ledger receipt with explicit account mappings")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins list        List installed plugins")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins search      Search plugin repositories")
 	_, _ = fmt.Fprintln(a.stdout, "  admin plugins get         Show an installed plugin")

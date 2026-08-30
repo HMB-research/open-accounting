@@ -29,6 +29,7 @@ import (
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/expenses"
+	"github.com/HMB-research/open-accounting/internal/importsession"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -729,6 +730,45 @@ func (c *apiClient) listAPITokens(ctx context.Context, tenantID string) ([]apito
 
 func (c *apiClient) revokeAPIToken(ctx context.Context, tenantID, tokenID string) error {
 	return c.request(ctx, http.MethodDelete, path.Join("/api/v1/tenants", tenantID, "api-tokens", tokenID), nil, c.apiToken, nil)
+}
+
+// validateImportSessionPackage validates a canonical source package without
+// persisting it. The API is tenant-scoped through the explicit tenantID.
+func (c *apiClient) validateImportSessionPackage(ctx context.Context, tenantID string, req *importsession.PackageRequest) (*importsession.ValidationReport, error) {
+	var resp importsession.ValidationReport
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "import-sessions", "validate"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// receiveImportSession persists only an auditable receipt for a package that
+// passed API validation; it does not write accounting entities.
+func (c *apiClient) receiveImportSession(ctx context.Context, tenantID string, req *importsession.PackageRequest) (*importsession.Receipt, error) {
+	var resp importsession.Receipt
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "import-sessions"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *apiClient) getImportSession(ctx context.Context, tenantID, sessionID string) (*importsession.Receipt, error) {
+	var resp importsession.Receipt
+	if err := c.request(ctx, http.MethodGet, path.Join("/api/v1/tenants", tenantID, "import-sessions", sessionID), nil, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// planImportSession produces a receipt-derived, non-mutating journal dry run.
+// Account mappings are explicit and target accounts are verified by the API in
+// the selected tenant. This method cannot post or create financial records.
+func (c *apiClient) planImportSession(ctx context.Context, tenantID, sessionID string, req *importsession.ImportPlanRequest) (*importsession.ImportPlanResult, error) {
+	var resp importsession.ImportPlanResult
+	if err := c.request(ctx, http.MethodPost, path.Join("/api/v1/tenants", tenantID, "import-sessions", sessionID, "plan"), req, c.apiToken, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func (c *apiClient) listMigrationProviderPresets(ctx context.Context, tenantID string) ([]cutover.MigrationProviderPresetInfo, error) {

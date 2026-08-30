@@ -374,9 +374,12 @@
 		<div class="card empty-state">
 			<h2>{m.dashboard_welcome()}</h2>
 			<p>{m.dashboard_createFirst()}</p>
-			<button class="btn btn-primary" onclick={() => (showCreateTenant = true)}>
-				{m.dashboard_createOrganization()}
-			</button>
+			<div class="empty-state-actions">
+				<button class="btn btn-primary" onclick={() => (showCreateTenant = true)}>
+					{m.dashboard_createOrganization()}
+				</button>
+				<a class="btn btn-secondary" href="/migration">Import companies from SmartAccounts</a>
+			</div>
 		</div>
 	{:else}
 		<!-- Tenant Selector -->
@@ -665,6 +668,12 @@
 	.tenant-selector {
 		margin-bottom: 1.5rem;
 		max-width: 300px;
+	}
+
+	.empty-state-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
 	}
 
 	.workspace-hero {

@@ -264,6 +264,12 @@ func apiReferenceRoute(route documentedRoute) (documentedRoute, bool) {
 	if route.Path == "/swagger/*" {
 		return documentedRoute{}, false
 	}
+	// The archive delivery receiver is private bridge-to-OA HMAC traffic, not
+	// a browser/API-token endpoint. Its contract is documented separately and
+	// intentionally omitted from the public Swagger artifact.
+	if strings.HasPrefix(route.Path, "/api/v1/internal/bridge/") {
+		return documentedRoute{}, false
+	}
 
 	path := route.Path
 	if trimmed, ok := strings.CutPrefix(path, "/api/v1"); ok {

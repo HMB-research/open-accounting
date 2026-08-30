@@ -1,5 +1,5 @@
 # Build stage
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.26.6
 FROM golang:${GO_VERSION}-alpine AS builder
 
 WORKDIR /app
@@ -14,9 +14,9 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Generate swagger docs
-RUN go install github.com/swaggo/swag/cmd/swag@latest && \
-    swag init -g cmd/api/main.go -o docs --parseDependency --parseInternal
+# Swagger output is committed and verified by the local docs/tests suite.
+# Regenerating it here would download an unpinned generator during a production
+# build and make the image depend on network/tool drift.
 
 # Build the API server
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /api ./cmd/api

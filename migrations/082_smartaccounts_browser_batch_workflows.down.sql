@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS public.smartaccounts_browser_batch_source_workflows;
+DROP TABLE IF EXISTS public.smartaccounts_browser_batch_workflows;

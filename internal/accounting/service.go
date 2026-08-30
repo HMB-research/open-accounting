@@ -291,6 +291,14 @@ func (s *Service) GetJournalEntry(ctx context.Context, schemaName, tenantID, ent
 	return s.repo.GetJournalEntryByID(ctx, schemaName, tenantID, entryID)
 }
 
+// GetJournalEntryBySource returns the one active journal entry for a durable
+// source identity. Callers that need to resume an interrupted external import
+// must verify the returned entry against their immutable source plan before
+// posting or recording it as applied.
+func (s *Service) GetJournalEntryBySource(ctx context.Context, schemaName, tenantID, sourceType, sourceID string) (*JournalEntry, error) {
+	return s.repo.GetJournalEntryBySource(ctx, schemaName, tenantID, sourceType, sourceID)
+}
+
 // ListJournalEntries retrieves recent journal entries for a tenant.
 func (s *Service) ListJournalEntries(ctx context.Context, schemaName, tenantID string, limit int) ([]JournalEntry, error) {
 	return s.repo.ListJournalEntries(ctx, schemaName, tenantID, limit)

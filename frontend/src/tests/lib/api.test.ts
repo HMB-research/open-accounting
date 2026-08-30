@@ -64,6 +64,337 @@ describe("API Client - Core Functionality", () => {
       expect(buildQuery()).toBe("");
       expect(buildQuery({ status: "", from: null, to: undefined })).toBe("");
     });
+
+    it("scopes an explicit full-history SmartAccounts capture to one bridge source", async () => {
+      mockJsonResponse({});
+
+      await api.requestSmartAccountsSyncDryRun("tenant-1", "sa-company-hmb-9881", {
+        scope_mode: "full_history",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/tenants/tenant-1/smartaccounts-sync/dry-run?source_company_id=sa-company-hmb-9881",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ scope_mode: "full_history" }),
+        }),
+      );
+    });
+
+    it("previews and confirms non-financial SmartAccounts reference masters through separate tenant routes", async () => {
+      mockJsonResponse({ id: "reference-preview-1", status: "PREVIEW_READY" });
+      mockJsonResponse({ id: "reference-preview-1", status: "APPLIED" });
+
+      await api.previewSmartAccountsReferenceMasters("tenant-1", "package-1", { entity_types: ["account", "customer"] });
+      await api.applySmartAccountsReferenceMasters("tenant-1", { confirm: true, preview_id: "reference-preview-1", preview_sha256: "a".repeat(64) });
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/api/v1/tenants/tenant-1/smartaccounts-sync/packages/package-1/reference-preview"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ entity_types: ["account", "customer"] }) }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/api/v1/tenants/tenant-1/smartaccounts-sync/reference-masters/apply"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ confirm: true, preview_id: "reference-preview-1", preview_sha256: "a".repeat(64) }) }),
+      );
+    });
+
+    it("reads only count-safe archive coverage for a tenant-bound staged package", async () => {
+      mockJsonResponse({
+        package_id: "package-1",
+        package_sha256: "a".repeat(64),
+        declared_record_count: 4,
+        observed_record_count: 4,
+        artifact_count: 2,
+        integrity_ok: true,
+        unconsumed_record_count: 3,
+        review_required_record_count: 1,
+        buckets: [],
+      });
+
+      await api.getSmartAccountsPackageArchiveCoverage("tenant-1", "package-1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-1/smartaccounts-sync/packages/package-1/archive-coverage"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(String(mockFetch.mock.calls[0][0])).not.toContain("sha256");
+      expect(String(mockFetch.mock.calls[0][0])).not.toContain("source_company_id");
+    });
+
+    it("uses safe 087 reconciliation routes with server-derived policy candidates and no free-form tolerance rule", async () => {
+      const batchID = "batch-1";
+      const sourceID = "sa-browser-v1-hmb";
+      const evaluationID = "evaluation-1";
+      const candidate = "c".repeat(64);
+      mockJsonResponse({ evaluation_id: evaluationID, status: "EVIDENCE_PENDING" });
+      mockJsonResponse({ evaluation_id: evaluationID, status: "EVIDENCE_PENDING" });
+      mockJsonResponse({ batch_id: batchID, selected_count: 1, pass_count: 0, pending_count: 1, review_count: 0, failure_count: 0 });
+      mockJsonResponse({ algorithm_version: "smartaccounts-exact-match-v1", label: "Exact match — zero variance", candidate_sha256: candidate });
+      mockJsonResponse({ policy_id: "policy-1", tolerance_policy_sha256: candidate });
+      mockJsonResponse({ policy_id: "policy-1", algorithm_version: "smartaccounts-exact-match-v1", label: "Exact match — zero variance", approved_at: "2026-08-28T10:00:00Z" });
+      mockJsonResponse({ id: "preview-1", status: "APPLIED" });
+      mockJsonResponse({ evaluation_id: evaluationID, status: "PASS" });
+
+      await api.evaluateSmartAccountsReconciliation(batchID, sourceID);
+      await api.getSmartAccountsReconciliation(batchID, sourceID);
+      await api.getSmartAccountsReconciliationRollup(batchID);
+      await api.getSmartAccountsTolerancePolicyCandidate("tenant-1", sourceID, { package_id: "package-1", preview_id: "preview-1" });
+      await api.approveSmartAccountsTolerancePolicy("tenant-1", sourceID, {
+        confirmed: true, package_id: "package-1", preview_id: "preview-1", expected_candidate_sha256: candidate,
+      });
+      await api.resolveSmartAccountsTolerancePolicy("tenant-1", sourceID, { package_id: "package-1", preview_id: "preview-1" });
+      await api.applySmartAccountsPackage("tenant-1", {
+        confirm: true, preview_id: "preview-1", preview_sha256: "a".repeat(64), tolerance_policy_id: "policy-1",
+      });
+      await api.approveSmartAccountsReconciliation("tenant-1", evaluationID, {
+        confirmed: true, evidence_sha256: "a".repeat(64), tolerance_sha256: candidate,
+      });
+
+      expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining(`/api/v1/smartaccounts-sync/browser-onboarding/batches/${batchID}/sources/${sourceID}/reconciliation`), expect.objectContaining({ method: "POST", body: "{}" }));
+      expect(mockFetch).toHaveBeenNthCalledWith(2, expect.stringContaining(`/api/v1/smartaccounts-sync/browser-onboarding/batches/${batchID}/sources/${sourceID}/reconciliation`), expect.objectContaining({ method: "GET" }));
+      expect(mockFetch).toHaveBeenNthCalledWith(3, expect.stringContaining(`/api/v1/smartaccounts-sync/browser-onboarding/batches/${batchID}/reconciliation`), expect.objectContaining({ method: "GET" }));
+      expect(mockFetch).toHaveBeenNthCalledWith(4, expect.stringContaining(`/api/v1/tenants/tenant-1/smartaccounts-sync/sources/${sourceID}/tolerance-policy-candidates`), expect.objectContaining({ method: "POST", body: JSON.stringify({ package_id: "package-1", preview_id: "preview-1" }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(5, expect.stringContaining(`/api/v1/tenants/tenant-1/smartaccounts-sync/sources/${sourceID}/tolerance-policies`), expect.objectContaining({ method: "POST", body: JSON.stringify({ confirmed: true, package_id: "package-1", preview_id: "preview-1", expected_candidate_sha256: candidate }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(6, expect.stringContaining(`/api/v1/tenants/tenant-1/smartaccounts-sync/sources/${sourceID}/tolerance-policy-resolutions`), expect.objectContaining({ method: "POST", body: JSON.stringify({ package_id: "package-1", preview_id: "preview-1" }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(7, expect.stringContaining(`/api/v1/tenants/tenant-1/smartaccounts-sync/packages/apply`), expect.objectContaining({ method: "POST", body: JSON.stringify({ confirm: true, preview_id: "preview-1", preview_sha256: "a".repeat(64), tolerance_policy_id: "policy-1" }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(8, expect.stringContaining(`/api/v1/tenants/tenant-1/smartaccounts-sync/reconciliation/evaluations/${evaluationID}/approval`), expect.objectContaining({ method: "POST", body: JSON.stringify({ confirmed: true, evidence_sha256: "a".repeat(64), tolerance_sha256: candidate }) }));
+      expect(String(mockFetch.mock.calls[3][1].body)).not.toContain("amount");
+      expect(String(mockFetch.mock.calls[4][1].body)).not.toContain("tolerance_policy_sha256");
+		expect(String(mockFetch.mock.calls[6][1].body)).not.toContain("tolerance_policy_sha256");
+    });
+
+    it("reads accountant-safe reconciliation only through the tenant, batch, and opaque-source binding", async () => {
+      mockJsonResponse({ evaluation_id: "evaluation-1", status: "READY_FOR_ACCOUNTANT", evidence_sha256: "a".repeat(64), tolerance_sha256: "b".repeat(64) });
+
+      await api.getSmartAccountsTenantReconciliation("tenant-1", "batch-1", "sa-browser-v1-hmb");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/tenant-1/smartaccounts-sync/reconciliation/batches/batch-1/sources/sa-browser-v1-hmb"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(String(mockFetch.mock.calls[0][0])).not.toContain("access_token");
+    });
+
+    it("reads the owner-only full-claim gate as a count/code status without a source selector", async () => {
+      mockJsonResponse({
+        status: "NOT_ELIGIBLE",
+        full_claim_eligible: false,
+        selected_count: 2,
+        current_pass_count: 1,
+        current_pass_gap_count: 1,
+        tombstone_gap_source_count: 0,
+        source_coverage_gap_count: 1,
+        matrix_blocker_count: 31,
+        matrix_filter_contract_gap_count: 22,
+        matrix_page_only_gap_count: 7,
+        matrix_review_required_count: 2,
+        matrix_unconsumed_count: 4,
+        matrix_missing_endpoint_count: 2,
+        matrix_schema_gap_count: 22,
+        matrix_coverage_gap_count: 29,
+        blocking_codes: ["matrix_filter_contract_gap"],
+      });
+
+      await api.getSmartAccountsFullClaimEligibility("batch-1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/smartaccounts-sync/browser-onboarding/batches/batch-1/full-claim-eligibility"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(String(mockFetch.mock.calls[0][0])).not.toContain("source_company_id");
+      expect(String(mockFetch.mock.calls[0][0])).not.toContain("sha256");
+    });
+
+    it("issues and resumes one master-detail set while keeping capabilities out of status URLs", async () => {
+      mockJsonResponse({ batch_id: "batch-1", issues: [{ run_id: "run-1", capture_token: "one-time-capability" }] });
+      mockJsonResponse({ run_id: "run-1", status: "STAGED_REVIEW_REQUIRED", package_id: "package-1" });
+      mockJsonResponse({ run_id: "run-1", capture_token: "rotated-one-time-capability" });
+
+      await api.issueSmartAccountsBrowserMasterDetails("tenant-1", {
+        source_company_id: "sa-browser-v1-123456",
+        transfer_consent_confirmed: true,
+      });
+      await api.getSmartAccountsBrowserMasterDetailStatus("tenant-1", "run-1");
+      await api.resumeSmartAccountsBrowserMasterDetail("tenant-1", "run-1", { transfer_consent_confirmed: true });
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/api/v1/tenants/tenant-1/smartaccounts-sync/browser-master-details"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ source_company_id: "sa-browser-v1-123456", transfer_consent_confirmed: true }) }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/api/v1/tenants/tenant-1/smartaccounts-sync/browser-master-details/run-1"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining("/api/v1/tenants/tenant-1/smartaccounts-sync/browser-master-details/run-1/resume"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ transfer_consent_confirmed: true }) }),
+      );
+      expect(String(mockFetch.mock.calls[1][0])).not.toContain("one-time-capability");
+      expect(String(mockFetch.mock.calls[2][0])).not.toContain("rotated-one-time-capability");
+    });
+
+    it("issues and reads a tenant-scoped Brave pairing without putting a pairing token in the status URL", async () => {
+      mockJsonResponse({ pairing_id: "pairing-1", pairing_token: "one-time-token", expires_at: "2026-08-27T15:10:00Z" });
+      mockJsonResponse({ pairing_id: "pairing-1", status: "CLAIMED" });
+
+      await api.createSmartAccountsBrowserPairing("tenant-1");
+      await api.getSmartAccountsBrowserPairing("tenant-1", "pairing-1");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/api/v1/tenants/tenant-1/smartaccounts-sync/browser-pairings"),
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/api/v1/tenants/tenant-1/smartaccounts-sync/browser-pairings/pairing-1"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(String(mockFetch.mock.calls[1][0])).not.toContain("one-time-token");
+    });
+
+    it("uses owner-scoped redacted browser discovery routes without a source selector in receipt/status URLs", async () => {
+      const discoveryID = "417f6fec-1994-4cfe-8ea6-bb7281d3050f";
+      mockJsonResponse({ discovery_id: discoveryID, tenant_id: "tenant-1", source_company_id: "sa-browser-v1-123456", manifest_version: "smartaccounts-brave-ui-v2", resource_ids: ["general_ledger"], expires_at: "2026-08-28T12:10:00Z", discovery_consent: { version: 1, confirmed: true, confirmed_at: "2026-08-28T12:00:00Z", scope: "metadata_only" } });
+      mockJsonResponse({ discovery_id: discoveryID, status: "completed", manifest_version: "smartaccounts-brave-ui-v2", contract_version: "smartaccounts-brave-discovery-contract-v1", contract_sha256: "a".repeat(64), resource_count: 31, capture_ready_count: 1, filter_contract_required_count: 23, page_only_contract_required_count: 7, private_endpoint_required_count: 0, binding_blocked_count: 0 });
+      mockJsonResponse({ discovery_id: discoveryID, status: "completed", manifest_version: "smartaccounts-brave-ui-v2", contract_version: "smartaccounts-brave-discovery-contract-v1", contract_sha256: "a".repeat(64), resource_count: 31, capture_ready_count: 1, filter_contract_required_count: 23, page_only_contract_required_count: 7, private_endpoint_required_count: 0, binding_blocked_count: 0 });
+      mockJsonResponse({ resource_id: "general_ledger", schema_id: "general_ledger_csv_v1", status: "registered", approval_sha256: "b".repeat(64) });
+
+      await api.createSmartAccountsBrowserDiscovery("tenant-1", {
+        source_company_id: "sa-browser-v1-123456",
+        metadata_only_consent_confirmed: true,
+        response_header_probe_confirmed: false,
+      });
+      await api.submitSmartAccountsBrowserDiscoveryReceipt("tenant-1", discoveryID, {
+        source: "smartaccounts-browser-relay", type: "smartaccounts-browser-relay.discovery-result.v1", version: 1,
+        discovery_id: discoveryID, manifest_version: "smartaccounts-brave-ui-v2", contract_version: "smartaccounts-brave-discovery-contract-v1", status: "completed", resources: [],
+      });
+      await api.getSmartAccountsBrowserDiscoveryReceipt("tenant-1", discoveryID);
+      await api.reviewSmartAccountsBrowserCSVSchema("tenant-1", discoveryID, "general_ledger", "general_ledger_csv_v1");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining("/api/v1/tenants/tenant-1/smartaccounts-sync/browser-discoveries"), expect.objectContaining({
+        method: "POST", body: JSON.stringify({ source_company_id: "sa-browser-v1-123456", metadata_only_consent_confirmed: true, response_header_probe_confirmed: false }),
+      }));
+      expect(mockFetch).toHaveBeenNthCalledWith(2, expect.stringContaining(`/api/v1/tenants/tenant-1/smartaccounts-sync/browser-discoveries/${discoveryID}/receipt`), expect.objectContaining({ method: "POST" }));
+      expect(mockFetch).toHaveBeenNthCalledWith(3, expect.stringContaining(`/api/v1/tenants/tenant-1/smartaccounts-sync/browser-discoveries/${discoveryID}`), expect.objectContaining({ method: "GET" }));
+      expect(mockFetch).toHaveBeenNthCalledWith(4, expect.stringContaining(`/api/v1/tenants/tenant-1/smartaccounts-sync/browser-discoveries/${discoveryID}/resources/general_ledger/schemas/general_ledger_csv_v1/review`), expect.objectContaining({
+        method: "POST", body: JSON.stringify({ review_confirmed: true }),
+      }));
+      expect(String(mockFetch.mock.calls[1][0])).not.toContain("sa-browser-v1-123456");
+      expect(String(mockFetch.mock.calls[2][0])).not.toContain("sa-browser-v1-123456");
+      expect(String(mockFetch.mock.calls[3][0])).not.toContain("sa-browser-v1-123456");
+    });
+
+    it("starts selected-company onboarding through the owner route and keeps pairing tokens out of its status URL", async () => {
+      mockJsonResponse({ bindings: [] });
+      mockJsonResponse({ source_company_id: "sa-browser-v1-123456", status: "PAIRED" });
+
+      await api.startSmartAccountsBrowserOnboarding({
+        sources: [{ source_company_id: "sa-browser-v1-123456", source_company_name: "Hold My Beer OÜ" }],
+        create_missing_tenants_confirmed: true,
+      });
+      await api.getSmartAccountsBrowserOnboarding("sa-browser-v1-123456");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/api/v1/smartaccounts-sync/browser-onboarding"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            sources: [{ source_company_id: "sa-browser-v1-123456", source_company_name: "Hold My Beer OÜ" }],
+            create_missing_tenants_confirmed: true,
+          }),
+        }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/api/v1/smartaccounts-sync/browser-onboarding/sa-browser-v1-123456"),
+        expect.objectContaining({ method: "GET" }),
+      );
+      expect(String(mockFetch.mock.calls[1][0])).not.toContain("one-time-token");
+    });
+
+    it("uses browser-only catalog receipt and immutable batch routes without a source list on catalog issue", async () => {
+      mockJsonResponse({ catalog_id: "catalog-1" });
+      mockJsonResponse({ catalog_id: "catalog-1", catalog_count: 2 });
+      mockJsonResponse({ batch: { batch_id: "batch-1" }, outcomes: [] });
+      mockJsonResponse({ batch: { batch_id: "batch-1" }, outcomes: [] });
+      mockJsonResponse({ batch: { batch_id: "batch-1" }, outcomes: [] });
+
+      await api.issueSmartAccountsBrowserOnboardingCatalog({
+        catalog_consent: { version: 1, confirmed: true, confirmed_at: "2026-08-28T10:00:00Z", scope: "visible_company_catalog" },
+      });
+      await api.getSmartAccountsBrowserOnboardingCatalog("catalog-1");
+      await api.startSmartAccountsBrowserOnboardingBatch({ catalog_receipt_id: "catalog-1", mode: "selected", selected_source_ids: ["sa-browser-v1-123456"], owner_confirmed: true });
+      await api.getSmartAccountsBrowserOnboardingBatch("batch-1");
+      await api.resumeSmartAccountsBrowserOnboardingBatch("batch-1");
+
+      expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining("/api/v1/smartaccounts-sync/browser-onboarding/catalogs"), expect.objectContaining({
+        method: "POST", body: JSON.stringify({ catalog_consent: { version: 1, confirmed: true, confirmed_at: "2026-08-28T10:00:00Z", scope: "visible_company_catalog" } }),
+      }));
+      expect(String(mockFetch.mock.calls[0][1].body)).not.toContain("source_company_id");
+      expect(mockFetch).toHaveBeenNthCalledWith(2, expect.stringContaining("/api/v1/smartaccounts-sync/browser-onboarding/catalogs/catalog-1"), expect.objectContaining({ method: "GET" }));
+      expect(mockFetch).toHaveBeenNthCalledWith(3, expect.stringContaining("/api/v1/smartaccounts-sync/browser-onboarding/batches"), expect.objectContaining({ method: "POST" }));
+      expect(mockFetch).toHaveBeenNthCalledWith(4, expect.stringContaining("/api/v1/smartaccounts-sync/browser-onboarding/batches/batch-1"), expect.objectContaining({ method: "GET" }));
+      expect(mockFetch).toHaveBeenNthCalledWith(5, expect.stringContaining("/api/v1/smartaccounts-sync/browser-onboarding/batches/batch-1/resume"), expect.objectContaining({ method: "POST", body: JSON.stringify({ owner_confirmed: true }) }));
+    });
+
+    it("uses owner-scoped 082 workflow routes with explicit preparation and transfer gates, never a browser capability", async () => {
+      const batchID = "d436c224-5df5-4b4d-a772-1897f9147400";
+      const sourceID = "sa-browser-v1-123456";
+      const discoveryID = "417f6fec-1994-4cfe-8ea6-bb7281d3050f";
+      const leaseID = "317f6fec-1994-4cfe-8ea6-bb7281d3050f";
+      const digest = "a".repeat(64);
+      for (let index = 0; index < 14; index += 1) mockJsonResponse({ workflow: {}, sources: [] });
+
+      await api.prepareSmartAccountsBrowserOnboardingBatchWorkflow(batchID, {
+        history_from: "2024-01-01", owner_confirmed: true, metadata_discovery_consent_confirmed: true, header_probe_consent_confirmed: true,
+      });
+      await api.getSmartAccountsBrowserOnboardingBatchWorkflow(batchID);
+      await api.resumeSmartAccountsBrowserOnboardingBatchWorkflow(batchID);
+      await api.acquireSmartAccountsBrowserOnboardingBatchDiscovery(batchID, {
+        metadata_only_consent_confirmed: true, response_header_probe_confirmed: false,
+      });
+		await api.reissueSmartAccountsBrowserOnboardingBatchDiscovery(batchID, sourceID, {
+			metadata_only_consent_confirmed: true, response_header_probe_confirmed: false,
+		});
+      await api.completeSmartAccountsBrowserOnboardingBatchDiscovery(batchID, sourceID, {
+        lease_id: leaseID, phase_generation: 3, discovery_id: discoveryID,
+        result: { source: "smartaccounts-browser-relay", type: "smartaccounts-browser-relay.discovery-result.v1", version: 1, discovery_id: discoveryID, manifest_version: "smartaccounts-brave-ui-v2", contract_version: "smartaccounts-brave-discovery-contract-v1", status: "completed", resources: [] },
+      });
+      await api.requireSmartAccountsBrowserOnboardingBatchSchema(batchID, sourceID, { phase_generation: 4 });
+      await api.refreshSmartAccountsBrowserOnboardingBatchSchema(batchID, sourceID, { phase_generation: 5 });
+      await api.confirmSmartAccountsBrowserOnboardingBatchSchema(batchID, sourceID, { phase_generation: 6, review_confirmed: true });
+      await api.openSmartAccountsBrowserOnboardingBatchTransfer(batchID);
+      await api.confirmSmartAccountsBrowserOnboardingBatchTransfer(batchID, { owner_confirmed: true, expected_schema_sha256: digest });
+      await api.acquireSmartAccountsBrowserOnboardingBatchCapture(batchID, { transfer_consent_confirmed: true });
+      await api.completeSmartAccountsBrowserOnboardingBatchCapture(batchID, sourceID, { lease_id: leaseID, phase_generation: 8 });
+      await api.previewSmartAccountsBrowserOnboardingBatchSource(batchID, sourceID, { phase_generation: 9, use_source_chart: false });
+
+      const workflowURL = `/api/v1/smartaccounts-sync/browser-onboarding/batches/${batchID}/workflow`;
+      expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining(workflowURL), expect.objectContaining({ method: "POST", body: JSON.stringify({ history_from: "2024-01-01", owner_confirmed: true, metadata_discovery_consent_confirmed: true, header_probe_consent_confirmed: true }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(2, expect.stringContaining(workflowURL), expect.objectContaining({ method: "GET" }));
+      expect(mockFetch).toHaveBeenNthCalledWith(3, expect.stringContaining(`${workflowURL}/resume`), expect.objectContaining({ method: "POST", body: JSON.stringify({}) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(4, expect.stringContaining(`${workflowURL}/discovery/acquire`), expect.objectContaining({ method: "POST", body: JSON.stringify({ metadata_only_consent_confirmed: true, response_header_probe_confirmed: false }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(5, expect.stringContaining(`${workflowURL}/sources/${sourceID}/discovery/reissue`), expect.objectContaining({ method: "POST", body: JSON.stringify({ metadata_only_consent_confirmed: true, response_header_probe_confirmed: false }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(6, expect.stringContaining(`${workflowURL}/sources/${sourceID}/discovery/complete`), expect.objectContaining({ method: "POST" }));
+      expect(mockFetch).toHaveBeenNthCalledWith(7, expect.stringContaining(`${workflowURL}/sources/${sourceID}/schema/require`), expect.objectContaining({ method: "POST", body: JSON.stringify({ phase_generation: 4 }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(8, expect.stringContaining(`${workflowURL}/sources/${sourceID}/schema/refresh`), expect.objectContaining({ method: "POST", body: JSON.stringify({ phase_generation: 5 }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(9, expect.stringContaining(`${workflowURL}/sources/${sourceID}/schema/confirm`), expect.objectContaining({ method: "POST", body: JSON.stringify({ phase_generation: 6, review_confirmed: true }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(10, expect.stringContaining(`${workflowURL}/transfer/open`), expect.objectContaining({ method: "POST", body: JSON.stringify({}) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(11, expect.stringContaining(`${workflowURL}/transfer/confirm`), expect.objectContaining({ method: "POST", body: JSON.stringify({ owner_confirmed: true, expected_schema_sha256: digest }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(12, expect.stringContaining(`${workflowURL}/capture/acquire`), expect.objectContaining({ method: "POST", body: JSON.stringify({ transfer_consent_confirmed: true }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(13, expect.stringContaining(`${workflowURL}/sources/${sourceID}/capture/complete`), expect.objectContaining({ method: "POST", body: JSON.stringify({ lease_id: leaseID, phase_generation: 8 }) }));
+      expect(mockFetch).toHaveBeenNthCalledWith(14, expect.stringContaining(`${workflowURL}/sources/${sourceID}/preview`), expect.objectContaining({ method: "POST", body: JSON.stringify({ phase_generation: 9, use_source_chart: false }) }));
+      for (const [, options] of mockFetch.mock.calls) expect(String((options as RequestInit).body ?? "")).not.toContain("capture_token");
+    });
   });
 
   describe("Authentication Endpoints", () => {

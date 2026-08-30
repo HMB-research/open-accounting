@@ -1084,6 +1084,24 @@ func TestService_CreateProduct_WithCustomCode(t *testing.T) {
 	assert.Equal(t, "CUSTOM-001", product.Code)
 }
 
+func TestService_CreateProduct_UsesValidatedServerSuppliedID(t *testing.T) {
+	ts := newTestService()
+	requestedID := "7c856cea-6b83-4e61-8500-0d05f63855d7"
+
+	product, err := ts.svc.CreateProduct(context.Background(), "tenant-1", "test_schema", &CreateProductRequest{
+		ID:          requestedID,
+		Code:        "SA-ITEM-1",
+		Name:        "Source item",
+		ProductType: "SERVICE",
+		Unit:        "pc",
+		SalesPrice:  "12.50",
+		VATRate:     "24",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, requestedID, product.ID)
+}
+
 func TestService_CreateProduct_Defaults(t *testing.T) {
 	ts := newTestService()
 	ctx := context.Background()

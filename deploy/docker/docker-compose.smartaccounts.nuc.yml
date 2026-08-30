@@ -1,0 +1,31 @@
+# Internal-only SmartAccounts bridge wiring for server-nuc.
+#
+# Merge this after the private bridge compose fragment. The bridge fragment
+# declares the two Docker secrets; this file only grants the OA API read access
+# so it can mint tenant-scoped bridge tokens and verify staged package delivery.
+# No secret value is present in this file or the repository.
+services:
+  api:
+    # Docker Compose mounts file-backed secrets as host bind mounts. Keep the
+    # image's unprivileged app user and add only clawdy's private numeric group
+    # so it can read the group-restricted secret files without widening access.
+    group_add:
+      - "1001"
+    environment:
+      SMARTACCOUNTS_BRIDGE_URL: http://sa-bridge:8084
+      SMARTACCOUNTS_BRIDGE_TOKEN_FILE: /run/secrets/sa_bridge_token
+      SMARTACCOUNTS_PACKAGE_DELIVERY_TOKEN_FILE: /run/secrets/sa_bridge_oa_staging
+    secrets:
+      - sa_bridge_token
+      - sa_bridge_oa_staging
+    depends_on:
+      sa-bridge:
+        condition: service_healthy
+    # In the SmartAccounts deployment profile, process liveness alone is not
+    # sufficient: keep the API unhealthy until its internal bridge responds.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s

@@ -292,6 +292,25 @@ go run ./cmd/oa tokens revoke --id <token-id>
 
 `tokens create` returns the raw token once. Store it immediately if you need to use it outside the CLI config flow. Creating or revoking a token records an auth security event for the user.
 
+## Import-session receiver v1
+
+The `import-sessions` commands are a narrow Open Accounting receiver for a canonical package produced by a separate SmartAccounts connector. Select the target tenant explicitly through the authenticated CLI configuration (`OA_TENANT_ID` or `oa auth init`); there is no default or all-tenant operation. The receiver only validates a package or stores an idempotent metadata receipt. It never contacts SmartAccounts, stores source credentials or raw package payloads, creates financial records, changes the chart of accounts, or applies source deletions.
+
+```bash
+go run ./cmd/oa import-sessions validate --package /path/to/private/canonical-package.json
+go run ./cmd/oa import-sessions receive --package /path/to/private/canonical-package.json
+go run ./cmd/oa import-sessions get --id <import-session-id>
+go run ./cmd/oa import-sessions plan --id <import-session-id> \
+  --map 1000=<open-accounting-account-uuid> \
+  --map 3000=<open-accounting-account-uuid>
+```
+
+Use `validate` first. It is read-only and returns a safe validation report. The canonical package must explicitly declare SmartAccounts as GL authority with `smartaccounts_gl_authoritative: true`, a `source_as_of_date`, `variance_count`, `stale`, and a scope. Use `{"mode":"full","resource_types":["all"]}` for a full package, or an explicitly selected journal-only partial period: `{"mode":"partial","resource_types":["journal_entry"],"period_start":"YYYY-MM-DD","period_end":"YYYY-MM-DD"}`. Partial packages reject any non-journal record or journal group that straddles their range. Each journal group must balance in its stated three-letter currency and cannot end after the source as-of date.
+
+Use `receive` only after the result is structurally ready. A clean verification creates `RECEIVED_VALIDATED`; nonzero `variance_count` or `stale: true` creates `RECEIVED_REVIEW_REQUIRED`, which is a review gate rather than import approval. Repeating the identical package for the same tenant is an idempotent no-op. A receipt can stage verified journal metadata only: v1 never creates accounting records, and its `financial_posting_plan_allowed` remains false. When SmartAccounts is GL-authoritative, packages containing `sales_invoice`, `purchase_invoice`, or `payment` are blocked to prevent a duplicate financial-posting plan. The first successful receipt binds the SmartAccounts `source_company_id` to the selected Open Accounting tenant, so a package for that company cannot be received by another tenant. Keep canonical package files outside this public repository because they can contain source data. Use `--json` for machine-readable safe reports and receipts. Current v1 routes require the existing tenant `CanCreateEntries` permission; a dedicated staging-only scope is planned.
+
+`plan` is a deterministic dry run over a `RECEIVED_VALIDATED` receipt whose ledger verification is `VERIFIED`. Pass every staged SmartAccounts source account explicitly with `--map source_account_external_id=<existing Open Accounting account UUID>`. The API checks that every mapped account exists in the selected tenant, refuses unused or missing mappings, source revision replays/conflicts, invalid partial-range boundaries, and review-required receipts. Default output is a compact review summary; `--json` includes planned journal lines and journal/account reconciliation expectations. Every successful plan reports `financial_writes_planned: false`: it neither posts nor creates journals or any other financial record.
+
 ## Migration validation
 
 ```bash

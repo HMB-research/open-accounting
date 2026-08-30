@@ -281,6 +281,9 @@ type InventoryLotReport struct {
 
 // CreateProductRequest represents a request to create a product
 type CreateProductRequest struct {
+	// ID is server-only. It lets a bounded trusted reference-master importer
+	// reserve a deterministic target identity; browser/API callers cannot set it.
+	ID                 string `json:"-"`
 	Code               string `json:"code,omitempty"`
 	Name               string `json:"name"`
 	Description        string `json:"description,omitempty"`

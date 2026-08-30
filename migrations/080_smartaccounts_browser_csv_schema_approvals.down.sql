@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS public.idx_smartaccounts_browser_csv_schema_review_audit;
+DROP TABLE IF EXISTS public.smartaccounts_browser_csv_schema_approvals;

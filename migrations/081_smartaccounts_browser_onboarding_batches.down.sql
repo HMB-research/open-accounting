@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS public.smartaccounts_browser_onboarding_batch_outcomes;
+DROP TABLE IF EXISTS public.smartaccounts_browser_onboarding_batches;
+DROP INDEX IF EXISTS public.uq_smartaccounts_browser_onboarding_catalog_owner_id;
+DROP INDEX IF EXISTS public.uq_smartaccounts_browser_onboarding_catalog_workflow;
+DROP TABLE IF EXISTS public.smartaccounts_browser_onboarding_catalog_receipts;

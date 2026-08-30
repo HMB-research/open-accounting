@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS public.smartaccounts_browser_commercial_detail_authorizations;

@@ -29,6 +29,8 @@ import (
 	"github.com/HMB-research/open-accounting/internal/documents"
 	"github.com/HMB-research/open-accounting/internal/email"
 	"github.com/HMB-research/open-accounting/internal/expenses"
+	"github.com/HMB-research/open-accounting/internal/importdelivery"
+	"github.com/HMB-research/open-accounting/internal/importsession"
 	"github.com/HMB-research/open-accounting/internal/inventory"
 	"github.com/HMB-research/open-accounting/internal/invoicing"
 	"github.com/HMB-research/open-accounting/internal/orders"
@@ -39,6 +41,10 @@ import (
 	"github.com/HMB-research/open-accounting/internal/quotes"
 	"github.com/HMB-research/open-accounting/internal/recurring"
 	"github.com/HMB-research/open-accounting/internal/reports"
+	"github.com/HMB-research/open-accounting/internal/smartaccountsexecutor"
+	"github.com/HMB-research/open-accounting/internal/smartaccountsreconciliation"
+	"github.com/HMB-research/open-accounting/internal/smartaccountsreferences"
+	"github.com/HMB-research/open-accounting/internal/smartaccountssync"
 	"github.com/HMB-research/open-accounting/internal/tax"
 	"github.com/HMB-research/open-accounting/internal/tenant"
 	"github.com/HMB-research/open-accounting/internal/webhooks"
@@ -50,46 +56,86 @@ var sendBulkRemindersWithService = func(ctx context.Context, service *invoicing.
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	tokenService             *auth.TokenService
-	refreshSessionService    refreshSessionManager
-	passwordResetService     passwordResetManager
-	passwordResetExposeToken bool
-	passwordResetBaseURL     string
-	passwordResetSMTPConfig  *email.SMTPConfig
-	passwordResetMailer      email.MailSender
-	loginAttemptLimiter      *auth.LoginAttemptLimiter
-	securityAuditService     securityAuditManager
-	apiTokenService          *apitoken.Service
-	tenantService            *tenant.Service
-	accountingService        *accounting.Service
-	contactsService          *contacts.Service
-	documentsService         *documents.Service
-	invoicingService         *invoicing.Service
-	paymentsService          *payments.Service
-	pdfService               *pdf.Service
-	analyticsService         *analytics.Service
-	recurringService         *recurring.Service
-	emailService             *email.Service
-	bankingService           *banking.Service
-	taxService               *tax.Service
-	payrollService           *payroll.Service
-	absenceService           *payroll.AbsenceService
-	pluginService            *plugin.Service
-	quotesService            *quotes.Service
-	ordersService            *orders.Service
-	assetsService            *assets.Service
-	inventoryService         *inventory.Service
-	reportsService           *reports.Service
-	reminderService          *invoicing.ReminderService
-	automatedReminderService *invoicing.AutomatedReminderService
-	costCenterService        *accounting.CostCenterService
-	interestService          interestManager
-	webhookService           *webhooks.Service
-	expensesService          *expenses.Service
-	migrationExecutor        migrationStepExecutor
-	migrationRunStore        cutover.MigrationExecutionRunStore
-	demoResetService         demoResetter
-	demoStatusReader         demo.StatusReader
+	tokenService                                 *auth.TokenService
+	refreshSessionService                        refreshSessionManager
+	passwordResetService                         passwordResetManager
+	passwordResetExposeToken                     bool
+	passwordResetBaseURL                         string
+	passwordResetSMTPConfig                      *email.SMTPConfig
+	passwordResetMailer                          email.MailSender
+	loginAttemptLimiter                          *auth.LoginAttemptLimiter
+	securityAuditService                         securityAuditManager
+	apiTokenService                              *apitoken.Service
+	tenantService                                *tenant.Service
+	accountingService                            *accounting.Service
+	contactsService                              *contacts.Service
+	documentsService                             *documents.Service
+	invoicingService                             *invoicing.Service
+	paymentsService                              *payments.Service
+	pdfService                                   *pdf.Service
+	analyticsService                             *analytics.Service
+	recurringService                             *recurring.Service
+	emailService                                 *email.Service
+	bankingService                               *banking.Service
+	taxService                                   *tax.Service
+	payrollService                               *payroll.Service
+	absenceService                               *payroll.AbsenceService
+	pluginService                                *plugin.Service
+	quotesService                                *quotes.Service
+	ordersService                                *orders.Service
+	assetsService                                *assets.Service
+	inventoryService                             *inventory.Service
+	reportsService                               *reports.Service
+	reminderService                              *invoicing.ReminderService
+	automatedReminderService                     *invoicing.AutomatedReminderService
+	costCenterService                            *accounting.CostCenterService
+	interestService                              interestManager
+	webhookService                               *webhooks.Service
+	expensesService                              *expenses.Service
+	migrationExecutor                            migrationStepExecutor
+	migrationRunStore                            cutover.MigrationExecutionRunStore
+	importSessionService                         *importsession.Service
+	importDeliveryService                        *importdelivery.Service
+	importDeliveryAuthenticator                  importdelivery.Authenticator
+	smartAccountsSyncService                     *smartaccountssync.Service
+	smartAccountsBrowserPairingService           *smartaccountssync.BrowserPairingService
+	smartAccountsBrowserOnboardingService        *smartaccountssync.BrowserOnboardingService
+	smartAccountsBrowserOnboardingCatalogService *smartaccountssync.BrowserOnboardingCatalogService
+	smartAccountsBrowserOnboardingBatchService   *smartaccountssync.BrowserOnboardingBatchService
+	smartAccountsBrowserDiscoveryService         *smartaccountssync.BrowserDiscoveryService
+	smartAccountsBrowserCSVSchemaApprovalService *smartaccountssync.BrowserCSVSchemaApprovalService
+	smartAccountsBrowserCaptureService           *smartaccountssync.BrowserCaptureService
+	smartAccountsBrowserMasterDetailService      *smartaccountssync.BrowserMasterDetailService
+	smartAccountsBrowserCommercialDetailService  *smartaccountssync.BrowserCommercialDetailService
+	smartAccountsBrowserCaptureWorkflowService   *smartaccountssync.BrowserCaptureWorkflowService
+	smartAccountsBrowserBatchWorkflowActions     *smartaccountssync.BrowserBatchWorkflowActionsService
+	smartAccountsBridgeClient                    smartaccountssync.BridgeClient
+	smartAccountsExecutor                        *smartaccountsexecutor.Service
+	smartAccountsReferenceService                *smartaccountsreferences.Service
+	smartAccountsReconciliationService           smartAccountsReconciliationService
+	smartAccountsTolerancePolicyService          smartAccountsTolerancePolicyService
+	readinessDatabase                            readinessPinger
+	demoResetService                             demoResetter
+	demoStatusReader                             demo.StatusReader
+}
+
+// smartAccountsReconciliationService is kept narrow so owner/accountant
+// handlers can be tested without a database or archive content. All methods
+// deal solely in safe IDs, digests, counts and state labels.
+type smartAccountsReconciliationService interface {
+	Evaluate(context.Context, string, string, string) (*smartaccountsreconciliation.Evaluation, bool, error)
+	GetForOwner(context.Context, string, string, string) (*smartaccountsreconciliation.Evaluation, error)
+	GetForTenant(context.Context, string, string, string) (*smartaccountsreconciliation.Evaluation, error)
+	Rollup(context.Context, string, string) (*smartaccountsreconciliation.Rollup, error)
+	FullClaimStatus(context.Context, string, string) (*smartaccountsreconciliation.FullClaimStatus, error)
+	Get(context.Context, string, string, string) (*smartaccountsreconciliation.Evaluation, error)
+	Approve(context.Context, string, string, string, string, smartaccountsreconciliation.ApprovalRequest) (*smartaccountsreconciliation.Evaluation, bool, error)
+}
+
+type smartAccountsTolerancePolicyService interface {
+	Candidate(context.Context, string, string, string, smartaccountsreconciliation.TolerancePolicyCandidateRequest) (*smartaccountsreconciliation.TolerancePolicyCandidate, error)
+	Approve(context.Context, string, string, string, string, smartaccountsreconciliation.TolerancePolicyApprovalRequest) (*smartaccountsreconciliation.TolerancePolicy, bool, error)
+	Resolve(context.Context, string, string, smartaccountsreconciliation.TolerancePolicyCandidateRequest) (*smartaccountsreconciliation.ResolvedTolerancePolicy, error)
 }
 
 type refreshSessionManager interface {

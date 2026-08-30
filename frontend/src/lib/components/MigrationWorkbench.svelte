@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import SmartAccountsSyncControl from '$lib/components/SmartAccountsSyncControl.svelte';
 	import {
 		api,
 		type BundleFile,
@@ -25,7 +26,21 @@
 		content: string;
 	};
 
-	let { tenantId, runId = '' }: { tenantId: string; runId?: string } = $props();
+	let {
+		tenantId,
+		runId = '',
+		accountantReviewBatchId = '',
+		accountantReviewSourceCompanyId = '',
+		ownerContinuationBatchId = '',
+		ownerContinuationSourceCompanyId = ''
+	}: {
+		tenantId: string;
+		runId?: string;
+		accountantReviewBatchId?: string;
+		accountantReviewSourceCompanyId?: string;
+		ownerContinuationBatchId?: string;
+		ownerContinuationSourceCompanyId?: string;
+	} = $props();
 
 	const fileKinds: Array<{ kind: MigrationFileKind; label: string }> = [
 		{ kind: 'accounts', label: 'Accounts' },
@@ -602,10 +617,18 @@
 
 {#if !tenantId.trim()}
 	<div class="container">
-		<div class="alert alert-error">Select a tenant before opening migration cutover controls.</div>
+		<header class="page-header">
+			<div>
+				<p class="eyebrow">SmartAccounts onboarding</p>
+				<h1>Create or reuse companies from SmartAccounts</h1>
+				<p class="muted">Use the signed-in Brave relay to read the visible company catalog and explicitly choose selected companies or all relay-observed companies. Tenant-specific capture and financial apply remain unavailable until a tenant is created or reused.</p>
+			</div>
+		</header>
+		<SmartAccountsSyncControl tenantId="" {accountantReviewBatchId} {accountantReviewSourceCompanyId} {ownerContinuationBatchId} {ownerContinuationSourceCompanyId} />
 	</div>
 {:else}
 	<div class="migration-workbench container">
+		<SmartAccountsSyncControl {tenantId} {accountantReviewBatchId} {accountantReviewSourceCompanyId} {ownerContinuationBatchId} {ownerContinuationSourceCompanyId} />
 		<header class="page-header">
 			<div>
 				<p class="eyebrow">Historical cutover</p>

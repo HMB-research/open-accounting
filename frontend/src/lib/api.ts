@@ -715,6 +715,498 @@ class ApiClient {
     );
   }
 
+  async discoverSmartAccountsSyncSources(tenantId: string) {
+    return this.request<SmartAccountsSourceDiscovery>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/sources`,
+    );
+  }
+
+  async getSmartAccountsSyncStatus(tenantId: string, sourceCompanyId: string) {
+    return this.request<SmartAccountsSyncStatus>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/status?source_company_id=${encodeURIComponent(sourceCompanyId)}`,
+    );
+  }
+
+  async createSmartAccountsBrowserPairing(tenantId: string) {
+    return this.request<SmartAccountsBrowserPairingIssue>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-pairings`,
+    );
+  }
+
+  async getSmartAccountsBrowserPairing(tenantId: string, pairingId: string) {
+    return this.request<SmartAccountsBrowserPairingStatus>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-pairings/${encodeURIComponent(pairingId)}`,
+    );
+  }
+
+  // Browser discovery is a same-window metadata relay only. The result is
+  // sent to OA under the normal owner session; its opaque source binding is
+  // resolved server-side and never supplied by this request.
+  async createSmartAccountsBrowserDiscovery(tenantId: string, data: SmartAccountsBrowserDiscoveryStartRequest) {
+    return this.request<SmartAccountsBrowserDiscoveryIssue>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-discoveries`,
+      data,
+    );
+  }
+
+  async submitSmartAccountsBrowserDiscoveryReceipt(tenantId: string, discoveryId: string, data: SmartAccountsBrowserDiscoveryRelayResult) {
+    return this.request<SmartAccountsBrowserDiscoveryReceipt>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-discoveries/${encodeURIComponent(discoveryId)}/receipt`,
+      data,
+    );
+  }
+
+  async getSmartAccountsBrowserDiscoveryReceipt(tenantId: string, discoveryId: string) {
+    return this.request<SmartAccountsBrowserDiscoveryReceipt>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-discoveries/${encodeURIComponent(discoveryId)}`,
+    );
+  }
+
+  // The reviewed schema assertion contains only owner confirmation. OA resolves
+  // the paired opaque source internally and returns only binding-safe status and
+  // a digest; no header, CSV, cookie, credential, or bridge data crosses this
+  // browser-facing boundary.
+  async reviewSmartAccountsBrowserCSVSchema(tenantId: string, discoveryId: string, resourceId: string, schemaId: string) {
+    return this.request<SmartAccountsBrowserCSVSchemaApprovalResponse>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-discoveries/${encodeURIComponent(discoveryId)}/resources/${encodeURIComponent(resourceId)}/schemas/${encodeURIComponent(schemaId)}/review`,
+      { review_confirmed: true },
+    );
+  }
+
+  async startSmartAccountsBrowserOnboarding(data: SmartAccountsBrowserOnboardingRequest) {
+    return this.request<SmartAccountsBrowserOnboardingResponse>(
+      "POST",
+      "/api/v1/smartaccounts-sync/browser-onboarding",
+      data,
+    );
+  }
+
+  async getSmartAccountsBrowserOnboarding(sourceCompanyId: string) {
+    return this.request<SmartAccountsBrowserOnboardingResult>(
+      "GET",
+      `/api/v1/smartaccounts-sync/browser-onboarding/${encodeURIComponent(sourceCompanyId)}`,
+    );
+  }
+
+  async issueSmartAccountsBrowserOnboardingCatalog(data: SmartAccountsBrowserOnboardingCatalogIssueRequest) {
+    return this.request<SmartAccountsBrowserOnboardingCatalogIssue>(
+      "POST",
+      "/api/v1/smartaccounts-sync/browser-onboarding/catalogs",
+      data,
+    );
+  }
+
+  async getSmartAccountsBrowserOnboardingCatalog(catalogId: string) {
+    return this.request<SmartAccountsBrowserOnboardingCatalogStatus>(
+      "GET",
+      `/api/v1/smartaccounts-sync/browser-onboarding/catalogs/${encodeURIComponent(catalogId)}`,
+    );
+  }
+
+  async startSmartAccountsBrowserOnboardingBatch(data: SmartAccountsBrowserOnboardingBatchRequest) {
+    return this.request<SmartAccountsBrowserOnboardingBatchResponse>(
+      "POST",
+      "/api/v1/smartaccounts-sync/browser-onboarding/batches",
+      data,
+    );
+  }
+
+  async getSmartAccountsBrowserOnboardingBatch(batchId: string) {
+    return this.request<SmartAccountsBrowserOnboardingBatchResponse>(
+      "GET",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}`,
+    );
+  }
+
+  async resumeSmartAccountsBrowserOnboardingBatch(batchId: string) {
+    return this.request<SmartAccountsBrowserOnboardingBatchResponse>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/resume`,
+      { owner_confirmed: true },
+    );
+  }
+
+  async prepareSmartAccountsBrowserOnboardingBatchWorkflow(
+    batchId: string,
+    data: SmartAccountsBrowserBatchWorkflowPreparationRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowStatus>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow`,
+      data,
+    );
+  }
+
+  async getSmartAccountsBrowserOnboardingBatchWorkflow(batchId: string) {
+    return this.request<SmartAccountsBrowserBatchWorkflowStatus>(
+      "GET",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow`,
+    );
+  }
+
+  async resumeSmartAccountsBrowserOnboardingBatchWorkflow(batchId: string) {
+    return this.request<SmartAccountsBrowserBatchWorkflowStatus>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/resume`,
+      {},
+    );
+  }
+
+  async acquireSmartAccountsBrowserOnboardingBatchDiscovery(
+    batchId: string,
+    data: SmartAccountsBrowserBatchWorkflowDiscoveryAcquireRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowDiscoveryAcquireResponse>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/discovery/acquire`,
+      data,
+    );
+  }
+
+  async reissueSmartAccountsBrowserOnboardingBatchDiscovery(
+    batchId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsBrowserBatchWorkflowDiscoveryAcquireRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowDiscoveryAcquireResponse>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/sources/${encodeURIComponent(sourceCompanyId)}/discovery/reissue`,
+      data,
+    );
+  }
+
+  async completeSmartAccountsBrowserOnboardingBatchDiscovery(
+    batchId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsBrowserBatchWorkflowDiscoveryCompleteRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowSource>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/sources/${encodeURIComponent(sourceCompanyId)}/discovery/complete`,
+      data,
+    );
+  }
+
+  async requireSmartAccountsBrowserOnboardingBatchSchema(
+    batchId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsBrowserBatchWorkflowPhaseRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowSource>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/sources/${encodeURIComponent(sourceCompanyId)}/schema/require`,
+      data,
+    );
+  }
+
+  async refreshSmartAccountsBrowserOnboardingBatchSchema(
+    batchId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsBrowserBatchWorkflowPhaseRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowSource>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/sources/${encodeURIComponent(sourceCompanyId)}/schema/refresh`,
+      data,
+    );
+  }
+
+  async confirmSmartAccountsBrowserOnboardingBatchSchema(
+    batchId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsBrowserBatchWorkflowSchemaConfirmationRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowSource>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/sources/${encodeURIComponent(sourceCompanyId)}/schema/confirm`,
+      data,
+    );
+  }
+
+  async openSmartAccountsBrowserOnboardingBatchTransfer(batchId: string) {
+    return this.request<SmartAccountsBrowserBatchWorkflowStatus>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/transfer/open`,
+      {},
+    );
+  }
+
+  async confirmSmartAccountsBrowserOnboardingBatchTransfer(
+    batchId: string,
+    data: SmartAccountsBrowserBatchWorkflowTransferConfirmationRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowStatus>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/transfer/confirm`,
+      data,
+    );
+  }
+
+  async acquireSmartAccountsBrowserOnboardingBatchCapture(
+    batchId: string,
+    data: SmartAccountsBrowserBatchWorkflowCaptureAcquireRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowCaptureAcquireResponse>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/capture/acquire`,
+      data,
+    );
+  }
+
+  async completeSmartAccountsBrowserOnboardingBatchCapture(
+    batchId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsBrowserBatchWorkflowCaptureCompleteRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowCaptureCompleteResponse>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/sources/${encodeURIComponent(sourceCompanyId)}/capture/complete`,
+      data,
+    );
+  }
+
+  async previewSmartAccountsBrowserOnboardingBatchSource(
+    batchId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsBrowserBatchWorkflowPreviewRequest,
+  ) {
+    return this.request<SmartAccountsBrowserBatchWorkflowSource>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/workflow/sources/${encodeURIComponent(sourceCompanyId)}/preview`,
+      data,
+    );
+  }
+
+  async createSmartAccountsBrowserCapture(tenantId: string, data: SmartAccountsBrowserCaptureStartRequest) {
+    return this.request<SmartAccountsBrowserCaptureIssue>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-captures`,
+      data,
+    );
+  }
+
+  async resumeSmartAccountsBrowserCapture(tenantId: string, runId: string, data: SmartAccountsBrowserCaptureResumeRequest) {
+    return this.request<SmartAccountsBrowserCaptureIssue>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-captures/${encodeURIComponent(runId)}/resume`,
+      data,
+    );
+  }
+
+  async getSmartAccountsBrowserCaptureStatus(tenantId: string, runId: string) {
+    return this.request<SmartAccountsBrowserCaptureStatus>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-captures/${encodeURIComponent(runId)}`,
+    );
+  }
+
+  async startSmartAccountsBrowserCaptureWorkflow(tenantId: string, data: SmartAccountsBrowserCaptureWorkflowRequest) {
+    return this.request<SmartAccountsBrowserCaptureWorkflowStatus>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-capture-workflows`,
+      data,
+    );
+  }
+
+  async getSmartAccountsBrowserCaptureWorkflowStatus(tenantId: string, workflowId: string) {
+    return this.request<SmartAccountsBrowserCaptureWorkflowStatus>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-capture-workflows/${encodeURIComponent(workflowId)}`,
+    );
+  }
+
+  // Master detail has its own current-snapshot relay. The issue response is
+  // forwarded directly to extension memory; status never returns a token.
+  async issueSmartAccountsBrowserMasterDetails(tenantId: string, data: SmartAccountsBrowserMasterDetailAuthorizeRequest) {
+    return this.request<SmartAccountsBrowserMasterDetailIssueSet>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-master-details`,
+      data,
+    );
+  }
+
+  async getSmartAccountsBrowserMasterDetailStatus(tenantId: string, runId: string) {
+    return this.request<SmartAccountsBrowserMasterDetailStatus>(
+      "GET",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-master-details/${encodeURIComponent(runId)}`,
+    );
+  }
+
+  async resumeSmartAccountsBrowserMasterDetail(tenantId: string, runId: string, data: SmartAccountsBrowserMasterDetailResumeRequest) {
+    return this.request<SmartAccountsBrowserMasterDetailIssue>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/browser-master-details/${encodeURIComponent(runId)}/resume`,
+      data,
+    );
+  }
+
+  async configureSmartAccountsSync(
+    tenantId: string,
+    data: ConfigureSmartAccountsSyncRequest,
+  ) {
+    return this.request<SmartAccountsSyncStatus>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/control`,
+      data,
+    );
+  }
+
+  async requestSmartAccountsSyncDryRun(
+    tenantId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsCaptureRequest,
+  ) {
+    return this.request<SmartAccountsSyncStatus>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/dry-run?source_company_id=${encodeURIComponent(sourceCompanyId)}`,
+      data,
+    );
+  }
+
+  async confirmSmartAccountsFinancialApply(
+    tenantId: string,
+    sourceCompanyId: string,
+    confirm: boolean,
+  ) {
+    return this.request<SmartAccountsSyncStatus>(
+      "POST",
+      `/api/v1/tenants/${tenantId}/smartaccounts-sync/apply?source_company_id=${encodeURIComponent(sourceCompanyId)}`,
+      { confirm },
+    );
+  }
+
+  async previewSmartAccountsPackage(tenantId: string, packageId: string, data: SmartAccountsPackagePreviewRequest) {
+    return this.request<SmartAccountsPackagePreview>("POST", `/api/v1/tenants/${tenantId}/smartaccounts-sync/packages/${encodeURIComponent(packageId)}/preview`, data);
+  }
+
+  async applySmartAccountsPackage(tenantId: string, data: SmartAccountsPackageApplyRequest) {
+    return this.request<SmartAccountsPackagePreview>("POST", `/api/v1/tenants/${tenantId}/smartaccounts-sync/packages/apply`, data);
+  }
+
+  // Count-only, tenant-scoped evidence coverage for an already checksum-finalized
+  // package. It is not a preview, apply authorization, or full-sync claim.
+  async getSmartAccountsPackageArchiveCoverage(tenantId: string, packageId: string) {
+    return this.request<SmartAccountsArchiveCoverageReport>(
+      "GET",
+      `/api/v1/tenants/${encodeURIComponent(tenantId)}/smartaccounts-sync/packages/${encodeURIComponent(packageId)}/archive-coverage`,
+    );
+  }
+
+  // Reconciliation is deliberately split between owner-safe technical evidence
+  // and tenant-scoped interactive accountant attestations. These endpoints
+  // expose only fixed status, count, and digest handles; never source rows,
+  // proof payloads, monetary values, or browser capabilities.
+  async evaluateSmartAccountsReconciliation(batchId: string, sourceCompanyId: string) {
+    return this.request<SmartAccountsReconciliationEvaluationResponse>(
+      "POST",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/sources/${encodeURIComponent(sourceCompanyId)}/reconciliation`,
+      {},
+    );
+  }
+
+  async getSmartAccountsReconciliation(batchId: string, sourceCompanyId: string) {
+    return this.request<SmartAccountsReconciliationEvaluation>(
+      "GET",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/sources/${encodeURIComponent(sourceCompanyId)}/reconciliation`,
+    );
+  }
+
+  // Accountant-only, no-store view of one tenant/batch/source binding. It is
+  // intentionally separate from the owner-only evaluation and selected/all
+  // roll-up routes, and returns the same digest-only evaluation handle.
+  async getSmartAccountsTenantReconciliation(tenantId: string, batchId: string, sourceCompanyId: string) {
+    return this.request<SmartAccountsReconciliationEvaluation>(
+      "GET",
+      `/api/v1/tenants/${encodeURIComponent(tenantId)}/smartaccounts-sync/reconciliation/batches/${encodeURIComponent(batchId)}/sources/${encodeURIComponent(sourceCompanyId)}`,
+    );
+  }
+
+  async getSmartAccountsReconciliationRollup(batchId: string) {
+    return this.request<SmartAccountsReconciliationRollup>(
+      "GET",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/reconciliation`,
+    );
+  }
+
+  // This is an owner-only, count/code-only product-coverage gate. It is not a
+  // reconciliation approval and cannot start or apply a sync.
+  async getSmartAccountsFullClaimEligibility(batchId: string) {
+    return this.request<SmartAccountsFullClaimEligibility>(
+      "GET",
+      `/api/v1/smartaccounts-sync/browser-onboarding/batches/${encodeURIComponent(batchId)}/full-claim-eligibility`,
+    );
+  }
+
+  async approveSmartAccountsTolerancePolicy(
+    tenantId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsTolerancePolicyApprovalRequest,
+  ) {
+    return this.request<SmartAccountsTolerancePolicy>(
+      "POST",
+      `/api/v1/tenants/${encodeURIComponent(tenantId)}/smartaccounts-sync/sources/${encodeURIComponent(sourceCompanyId)}/tolerance-policies`,
+      data,
+    );
+  }
+
+  async getSmartAccountsTolerancePolicyCandidate(
+    tenantId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsTolerancePolicyCandidateRequest,
+  ) {
+    return this.request<SmartAccountsTolerancePolicyCandidate>(
+      "POST",
+      `/api/v1/tenants/${encodeURIComponent(tenantId)}/smartaccounts-sync/sources/${encodeURIComponent(sourceCompanyId)}/tolerance-policy-candidates`,
+      data,
+    );
+  }
+
+  // An owner or accountant can resolve the current approved policy only for
+  // this exact staged package/preview. The UI keeps the opaque policy ID only
+  // long enough to submit the separately confirmed financial apply; the
+  // server revalidates the binding and does not trust a supplied digest.
+  async resolveSmartAccountsTolerancePolicy(
+    tenantId: string,
+    sourceCompanyId: string,
+    data: SmartAccountsTolerancePolicyResolutionRequest,
+  ) {
+    return this.request<SmartAccountsTolerancePolicyResolution>(
+      "POST",
+      `/api/v1/tenants/${encodeURIComponent(tenantId)}/smartaccounts-sync/sources/${encodeURIComponent(sourceCompanyId)}/tolerance-policy-resolutions`,
+      data,
+    );
+  }
+
+  async approveSmartAccountsReconciliation(
+    tenantId: string,
+    evaluationId: string,
+    data: SmartAccountsReconciliationApprovalRequest,
+  ) {
+    return this.request<SmartAccountsReconciliationEvaluation>(
+      "POST",
+      `/api/v1/tenants/${encodeURIComponent(tenantId)}/smartaccounts-sync/reconciliation/evaluations/${encodeURIComponent(evaluationId)}/approval`,
+      data,
+    );
+  }
+
+  // Reference masters are deliberately separate from the GL executor. The
+  // corresponding API never receives raw canonical payloads or posts money.
+  async previewSmartAccountsReferenceMasters(tenantId: string, packageId: string, data: SmartAccountsReferencePreviewRequest = {}) {
+    return this.request<SmartAccountsReferencePreview>("POST", `/api/v1/tenants/${tenantId}/smartaccounts-sync/packages/${encodeURIComponent(packageId)}/reference-preview`, data);
+  }
+
+  async applySmartAccountsReferenceMasters(tenantId: string, data: SmartAccountsReferenceApplyRequest) {
+    return this.request<SmartAccountsReferencePreview>("POST", `/api/v1/tenants/${tenantId}/smartaccounts-sync/reference-masters/apply`, data);
+  }
+
   async listMigrationExecutionRuns(
     tenantId: string,
     filter: MigrationExecutionRunFilter = {},
@@ -3762,6 +4254,748 @@ export interface TenantMembership {
   tenant: Tenant;
   role: string;
   is_default: boolean;
+}
+
+export interface SmartAccountsSyncSource {
+  provider: "smartaccounts";
+  source_company_id: string;
+  source_company_name: string;
+  default: boolean;
+  bridge_verified: boolean;
+  general_ledger_authoritative: boolean;
+  invoice_payment_mode: "NON_POSTING";
+}
+
+export interface SmartAccountsSourceDiscovery {
+  bridge_available: boolean;
+  live_data_contacted: boolean;
+  sources: SmartAccountsSyncSource[];
+}
+
+export interface SmartAccountsBrowserPairingIssue {
+  pairing_id: string;
+  pairing_token: string;
+  expires_at: string;
+}
+
+export interface SmartAccountsBrowserPairingStatus {
+  pairing_id: string;
+  status: "ISSUED" | "CLAIMED";
+  expires_at: string;
+  claimed_at?: string;
+  source_company_id?: string;
+}
+
+export interface SmartAccountsBrowserDiscoveryStartRequest {
+  source_company_id: string;
+  metadata_only_consent_confirmed: boolean;
+  response_header_probe_confirmed: boolean;
+}
+
+export interface SmartAccountsBrowserDiscoveryConsent {
+  version: 1;
+  confirmed: true;
+  confirmed_at: string;
+  scope: "metadata_only" | "metadata_and_header_probe";
+  response_header_probe_confirmed?: true;
+}
+
+// This issue contains a tenant/source binding and consent only. It is posted
+// directly to extension memory, not persisted in UI storage, and has no
+// capability, credentials, cookies, source rows, export bytes, or accounting
+// instruction.
+export interface SmartAccountsBrowserDiscoveryIssue {
+  discovery_id: string;
+  tenant_id: string;
+  source_company_id: string;
+  manifest_version: "smartaccounts-brave-ui-v2";
+  resource_ids: string[];
+  expires_at: string;
+  discovery_consent: SmartAccountsBrowserDiscoveryConsent;
+}
+
+export interface SmartAccountsBrowserDiscoveryRelayResult {
+  source: "smartaccounts-browser-relay";
+  type: "smartaccounts-browser-relay.discovery-result.v1";
+  version: 1;
+  discovery_id: string;
+  manifest_version: "smartaccounts-brave-ui-v2";
+  contract_version: "smartaccounts-brave-discovery-contract-v1";
+  status: "completed" | "awaiting_browser" | "company_binding_blocked" | "expired" | "discovery_failed";
+  resources: SmartAccountsBrowserDiscoveryResource[];
+}
+
+export interface SmartAccountsBrowserDiscoveryResource {
+  resource_id: string;
+  capture_status: "capture_ready" | "filter_contract_required" | "page_only_contract_required" | "private_endpoint_required" | "session_blocked" | "company_binding_blocked" | "page_binding_blocked";
+  binding: { session: "verified" | "blocked"; company: "verified" | "blocked"; page: "verified" | "blocked" };
+  contract: {
+    version: "smartaccounts-brave-discovery-contract-v1";
+    page_path: string;
+    request?: { method: "GET"; path: string } | null;
+    filter?: { method: "POST"; path: string; control_ids: string[] } | null;
+    pagination: { kind: "unobserved" | "visible_control_ids"; control_ids: string[] };
+    response: { observation: "unobserved" | "head" | "range_header"; content_type: "unobserved" | "text/csv"; header_names: string[] };
+  };
+}
+
+// This is the only OA browser-discovery state rendered or persisted: a digest
+// and aggregate counts. It intentionally omits source selector, resource
+// contract/control IDs, header names, cookies, source values, and tokens.
+export interface SmartAccountsBrowserDiscoveryReceipt {
+  discovery_id: string;
+  status: "completed" | "awaiting_browser" | "company_binding_blocked" | "expired" | "discovery_failed";
+  manifest_version: "smartaccounts-brave-ui-v2";
+  contract_version: "smartaccounts-brave-discovery-contract-v1";
+  contract_sha256: string;
+  resource_count: number;
+  capture_ready_count: number;
+  filter_contract_required_count: number;
+  page_only_contract_required_count: number;
+  private_endpoint_required_count: number;
+  binding_blocked_count: number;
+}
+
+// This public result is deliberately aggregate-only. OA keeps the audit
+// assertion private and the source/header evidence remains bridge-owned.
+export interface SmartAccountsBrowserCSVSchemaApprovalResponse {
+  resource_id: string;
+  schema_id: string;
+  status: "registered";
+  approval_sha256: string;
+}
+
+export interface SmartAccountsBrowserOnboardingSource {
+  source_company_id: string;
+  source_company_name: string;
+}
+
+export interface SmartAccountsBrowserOnboardingRequest {
+  sources: SmartAccountsBrowserOnboardingSource[];
+  create_missing_tenants_confirmed: boolean;
+}
+
+export type SmartAccountsBrowserOnboardingStatus =
+  | "TARGET_READY"
+  | "PAIRING_ISSUED"
+  | "PAIRED"
+  | "REVIEW_REQUIRED"
+  | "FAILED";
+
+export interface SmartAccountsBrowserOnboardingResult {
+  source_company_id: string;
+  source_company_name: string;
+  tenant_id?: string;
+  tenant_name?: string;
+  pairing_id?: string;
+  status: SmartAccountsBrowserOnboardingStatus;
+  tenant_created: boolean;
+  tenant_reused: boolean;
+  reason_code?: string;
+  pairing?: SmartAccountsBrowserPairingIssue;
+}
+
+export interface SmartAccountsBrowserOnboardingResponse {
+  bindings: SmartAccountsBrowserOnboardingResult[];
+}
+
+export interface SmartAccountsBrowserOnboardingCatalogConsent {
+  version: 1;
+  confirmed: boolean;
+  confirmed_at: string;
+  scope: "visible_company_catalog";
+}
+
+export interface SmartAccountsBrowserOnboardingCatalogIssueRequest {
+  catalog_consent: SmartAccountsBrowserOnboardingCatalogConsent;
+}
+
+export interface SmartAccountsBrowserOnboardingCatalogDigestIntent {
+  version: "smartaccounts-browser-source-catalog-intent-v1";
+  catalog_schema_version: "smartaccounts-browser-source-catalog-v1";
+  source_id_version: "sa-browser-v1";
+  digest_algorithm: "sha256";
+}
+
+export interface SmartAccountsBrowserOnboardingCatalogIssue {
+  catalog_id: string;
+  workflow_id: string;
+  catalog_token: string;
+  nonce: string;
+  issued_at: string;
+  expires_at: string;
+  catalog_digest_intent: SmartAccountsBrowserOnboardingCatalogDigestIntent;
+  catalog_consent: SmartAccountsBrowserOnboardingCatalogConsent;
+}
+
+export interface SmartAccountsBrowserOnboardingCatalogCompany {
+  source_company_id: string;
+  display_name: string;
+}
+
+export interface SmartAccountsBrowserOnboardingCatalogStatus {
+  catalog_id: string;
+  workflow_id: string;
+  status: "ACCEPTED";
+  catalog_sha256: string;
+  catalog_count: number;
+  observed_at: string;
+  expires_at: string;
+  companies: SmartAccountsBrowserOnboardingCatalogCompany[];
+}
+
+export type SmartAccountsBrowserOnboardingBatchMode = "selected" | "all";
+
+export interface SmartAccountsBrowserOnboardingBatchRequest {
+  catalog_receipt_id: string;
+  mode: SmartAccountsBrowserOnboardingBatchMode;
+  selected_source_ids: string[];
+  owner_confirmed: boolean;
+}
+
+export interface SmartAccountsBrowserOnboardingBatch {
+  batch_id: string;
+  catalog_receipt_id: string;
+  relay_observed_at: string;
+  mode: SmartAccountsBrowserOnboardingBatchMode;
+  selected_sources: SmartAccountsBrowserOnboardingSource[];
+  observed_source_ids: string[];
+  observed_sources_sha256: string;
+  manifest_sha256: string;
+  status: "PENDING" | "REVIEW_REQUIRED" | "READY" | "COMPLETE";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SmartAccountsBrowserOnboardingBatchOutcome extends SmartAccountsBrowserOnboardingResult {}
+
+export interface SmartAccountsBrowserOnboardingBatchPairingIssue {
+  batch_id: string;
+  source_company_id: string;
+  tenant_id: string;
+  pairing: SmartAccountsBrowserPairingIssue;
+}
+
+export interface SmartAccountsBrowserOnboardingBatchResponse {
+  batch: SmartAccountsBrowserOnboardingBatch;
+  outcomes: SmartAccountsBrowserOnboardingBatchOutcome[];
+  pairing_issues?: SmartAccountsBrowserOnboardingBatchPairingIssue[];
+  reused: boolean;
+}
+
+// Safe 082 control-plane state. These fields deliberately exclude browser
+// capabilities, credentials, raw exports, header values, and accounting-write
+// instructions. The UI must obtain each next action from the owner API rather
+// than infer a source transfer locally.
+export type SmartAccountsBrowserBatchWorkflowPhase =
+  | "PAIRED"
+  | "DISCOVERY_REQUIRED"
+  | "DISCOVERY_RUNNING"
+  | "DISCOVERY_COMPLETE"
+  | "SCHEMA_REVIEW_REQUIRED"
+  | "SCHEMA_APPROVED"
+  | "TRANSFER_CONFIRMATION_REQUIRED"
+  | "CAPTURE_RUNNING"
+  | "STAGED"
+  | "PREVIEW_READY"
+  | "REVIEW_REQUIRED"
+  | "FAILED_RETRYABLE"
+  | "BLOCKED";
+
+export interface SmartAccountsBrowserBatchWorkflowTransferScope {
+  mode: "partial";
+  from_inclusive: string;
+  to_inclusive: string;
+  cutoff_at: string;
+  resource_ids: ["general_ledger"];
+}
+
+export interface SmartAccountsBrowserBatchWorkflow {
+  batch_id: string;
+  schema_version: "smartaccounts-browser-batch-workflow-v1";
+  history_from: string;
+	// A bounded CSV header probe is optional and frozen at preparation. False
+	// means metadata discovery uses no Range/header extraction.
+	header_probe_consent_confirmed: boolean;
+  preparatory_manifest_sha256: string;
+  preparatory_consented_at: string;
+  transfer_manifest_sha256?: string;
+  transfer_scope?: SmartAccountsBrowserBatchWorkflowTransferScope;
+  transfer_confirmed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowSource {
+  batch_id: string;
+  source_company_id: string;
+  tenant_id: string;
+  ordinal: number;
+  phase: SmartAccountsBrowserBatchWorkflowPhase;
+  phase_generation: number;
+  attempt_count: number;
+  // A lease is an opaque concurrency handle, never a browser credential. It
+  // is used only in memory to complete the exact server-issued action.
+  lease_id?: string;
+  lease_expires_at?: string;
+  discovery_id?: string;
+  discovery_contract_sha256?: string;
+  discovery_receipt_sha256?: string;
+  schema_id?: string;
+  schema_approval_sha256?: string;
+  package_id?: string;
+  package_sha256?: string;
+  capture_run_id?: string;
+  preview_id?: string;
+  preview_sha256?: string;
+  reason_code?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowStatus {
+  workflow: SmartAccountsBrowserBatchWorkflow;
+  status: string;
+  schema_readiness_sha256?: string;
+  sources: SmartAccountsBrowserBatchWorkflowSource[];
+}
+
+export interface SmartAccountsBrowserBatchWorkflowPreparationRequest {
+  history_from: string;
+  owner_confirmed: boolean;
+  metadata_discovery_consent_confirmed: boolean;
+  header_probe_consent_confirmed: boolean;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowTransferConfirmationRequest {
+  owner_confirmed: boolean;
+  expected_schema_sha256: string;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowDiscoveryAcquireRequest {
+  metadata_only_consent_confirmed: boolean;
+  response_header_probe_confirmed: boolean;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowDiscoveryAcquireResponse {
+  source: SmartAccountsBrowserBatchWorkflowSource;
+  // Forward directly to the Brave relay and discard after the in-memory
+  // postMessage handoff. It contains no relay token, but is still action-only
+  // control data rather than page state.
+  discovery: SmartAccountsBrowserDiscoveryIssue;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowDiscoveryCompleteRequest {
+  lease_id: string;
+  phase_generation: number;
+  discovery_id: string;
+  result: SmartAccountsBrowserDiscoveryRelayResult;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowPhaseRequest {
+  phase_generation: number;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowSchemaConfirmationRequest extends SmartAccountsBrowserBatchWorkflowPhaseRequest {
+  review_confirmed: true;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowCaptureAcquireRequest {
+  transfer_consent_confirmed: boolean;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowCaptureAcquireResponse {
+  source: SmartAccountsBrowserBatchWorkflowSource;
+  // Forward directly to the relay and discard after the in-memory handoff.
+  // The short-lived capture token must never be rendered or stored by the UI.
+  capture: SmartAccountsBrowserCaptureIssue;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowCaptureCompleteRequest {
+  lease_id: string;
+  phase_generation: number;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowCaptureCompleteResponse {
+  source: SmartAccountsBrowserBatchWorkflowSource;
+  progress: SmartAccountsBrowserCaptureStatus;
+}
+
+export interface SmartAccountsBrowserBatchWorkflowPreviewRequest extends SmartAccountsBrowserBatchWorkflowPhaseRequest {
+  use_source_chart: boolean;
+}
+
+export interface SmartAccountsBrowserCaptureScope {
+  mode: "partial" | "full";
+  from_inclusive?: string;
+  to_inclusive?: string;
+  cutoff_at: string;
+  resource_ids: string[];
+}
+
+export interface SmartAccountsBrowserCaptureStartRequest {
+  source_company_id: string;
+  manifest_version: "smartaccounts-brave-ui-v2";
+  scope: SmartAccountsBrowserCaptureScope;
+}
+
+export interface SmartAccountsBrowserCaptureIssue {
+  run_id: string;
+  tenant_id: string;
+  capture_token: string;
+  expires_at: string;
+  source_company_id: string;
+  manifest_version: "smartaccounts-brave-ui-v2";
+  scope: SmartAccountsBrowserCaptureScope;
+  status: "open";
+  transfer_consent: { version: 1; confirmed: true; confirmed_at: string };
+}
+
+// The server derives the destination date/cutoff and the sole reviewed v2
+// General Ledger CSV resource. journal_entries is summary evidence only.
+// The owner supplies only a history-start policy and exact action-time
+// transfer consent. Raw relay capability exists only in the response's
+// `capture` field and must be passed directly to extension memory.
+export interface SmartAccountsBrowserCaptureWorkflowRequest {
+  source_company_id: string;
+  from_inclusive: string;
+  transfer_consent_confirmed: boolean;
+}
+
+export interface SmartAccountsBrowserCapturePlan {
+  version: "smartaccounts-browser-capture-plan-v1";
+  from_date_policy: "OWNER_EXPLICIT_FROM_DATE";
+  run_id?: string;
+  tenant_id: string;
+  source_company_id: string;
+  manifest_version: "smartaccounts-brave-ui-v2";
+  scope: SmartAccountsBrowserCaptureScope;
+  eligible_resource_ids: ["general_ledger"];
+}
+
+export interface SmartAccountsBrowserCaptureWorkflowStatus {
+  workflow_id: string;
+  status: "READY_FOR_CONSENT" | "CAPTURE_ISSUED";
+  plan: SmartAccountsBrowserCapturePlan;
+  capture?: SmartAccountsBrowserCaptureIssue;
+  progress?: SmartAccountsBrowserCaptureStatus;
+}
+
+export interface SmartAccountsBrowserCaptureResumeRequest {
+  transfer_consent_confirmed: boolean;
+}
+
+export interface SmartAccountsBrowserCaptureResourceStatus {
+  resource_id: string;
+  coverage: "export_csv" | "page_only";
+  status: "pending" | "completed" | "blocked";
+}
+
+export interface SmartAccountsBrowserCaptureCoverageReceipt {
+  status: "partial_coverage_recorded" | "full_coverage_blocked";
+  ready: boolean;
+  completed_export_count: number;
+  required_export_count: number;
+  blocked_page_only_count: number;
+  issues?: Array<{ resource_id?: string; code: string }>;
+  finalized_at: string;
+}
+
+export interface SmartAccountsBrowserCaptureStaging {
+  package_id: string;
+  package_sha256: string;
+  status: "compiling" | "compiled_private" | "pending_receiver_configuration" | "staging" | "staging_retry_required" | "staged_review_required" | "review_required";
+  issue_code?: "browser_csv_schema_or_journal_review_required";
+  record_chunks_acknowledged: number;
+  artifact_chunks_acknowledged: number;
+  finalized: boolean;
+}
+
+// This authenticated owner view deliberately excludes the short-lived relay
+// capability, its hash, raw CSV, credentials, and bridge paths.
+export interface SmartAccountsBrowserCaptureStatus {
+  run_id: string;
+  tenant_id: string;
+  source_company_id: string;
+  status: "open" | "finalized_partial" | "finalized_full_blocked";
+  manifest_version: "smartaccounts-brave-ui-v2";
+  scope: SmartAccountsBrowserCaptureScope;
+  resources: SmartAccountsBrowserCaptureResourceStatus[];
+  receipt?: SmartAccountsBrowserCaptureCoverageReceipt;
+  staging?: SmartAccountsBrowserCaptureStaging;
+}
+
+export type SmartAccountsBrowserMasterDetailResource = "clients" | "vendors" | "articles";
+export interface SmartAccountsBrowserMasterDetailScope { from_inclusive: string; to_inclusive: string; cutoff_at: string; }
+export interface SmartAccountsBrowserMasterDetailContract { version: "smartaccounts-browser-master-detail-v1"; resource: SmartAccountsBrowserMasterDetailResource; origin: "https://sa.smartaccounts.eu"; list_page_path: string; detail_path_prefix: string; detail_result_page_path: string; fields: Array<{ name: string; kind: string; required?: boolean; enums?: string[] }>; }
+export interface SmartAccountsBrowserMasterDetailTransferConsent { version: "smartaccounts-browser-master-detail-transfer-consent-v1"; confirmed: true; confirmed_at: string; }
+export interface SmartAccountsBrowserMasterDetailAuthorizeRequest { source_company_id: string; transfer_consent_confirmed: true; batch_id?: string; refresh?: boolean; }
+export interface SmartAccountsBrowserMasterDetailResumeRequest { transfer_consent_confirmed: true; }
+export interface SmartAccountsBrowserMasterDetailIssue {
+  run_id: string;
+  tenant_id: string;
+  source_company_id: string;
+  manifest_version: "smartaccounts-browser-master-detail-v1";
+  resource_id: SmartAccountsBrowserMasterDetailResource;
+  schema_id: "clients_detail_v1" | "vendors_detail_v1" | "articles_detail_v1";
+  source_schema: "smartaccounts-browser-master-detail-v1/clients_detail_v1" | "smartaccounts-browser-master-detail-v1/vendors_detail_v1" | "smartaccounts-browser-master-detail-v1/articles_detail_v1";
+  contract: SmartAccountsBrowserMasterDetailContract;
+  contract_sha256: string;
+  approval_sha256: string;
+  scope: SmartAccountsBrowserMasterDetailScope;
+  snapshot_policy: "current_snapshot_only";
+  snapshot_date: string;
+  expires_at: string;
+  transfer_consent: SmartAccountsBrowserMasterDetailTransferConsent;
+  capture_token: string;
+  sequence: 1 | 2 | 3;
+}
+export interface SmartAccountsBrowserMasterDetailIssueSet { batch_id: string; issues: SmartAccountsBrowserMasterDetailIssue[]; }
+export interface SmartAccountsBrowserMasterDetailStatus {
+  run_id: string;
+  tenant_id: string;
+  source_company_id: string;
+  manifest_version: "smartaccounts-browser-master-detail-v1";
+  resource_id: SmartAccountsBrowserMasterDetailResource;
+  schema_id: string;
+  source_schema: string;
+  contract_sha256: string;
+  approval_sha256: string;
+  scope: SmartAccountsBrowserMasterDetailScope;
+  snapshot_policy: "current_snapshot_only";
+  snapshot_date: string;
+  status: "open" | "finalized_archived_evidence" | "STAGED_REVIEW_REQUIRED";
+  ndjson_sha256?: string;
+  record_count?: number;
+  package_id?: string;
+  package_sha256?: string;
+}
+
+export interface ConfigureSmartAccountsSyncRequest {
+  api_key: string;
+  api_secret: string;
+  smartaccounts_gl_authoritative: boolean;
+  invoice_payment_mode: "NON_POSTING";
+}
+
+export interface SmartAccountsCaptureRequest {
+  scope_mode?: "full_history" | "window";
+  date_from?: string;
+  date_to?: string;
+	resource_ids?: string[];
+  max_pages?: number;
+  rate_budget?: number;
+  resume_run_id?: string;
+}
+
+export interface SmartAccountsCaptureResourceStatus {
+  resource_id: string;
+  endpoint_status: string;
+  status: string;
+  reason_code?: string;
+  page_count?: number;
+  deleted_count?: number;
+  byte_count?: number;
+  sha256?: string;
+  scope_sha256?: string;
+  next_eligible_at?: string;
+}
+
+export interface SmartAccountsCaptureProgress {
+  run_id: string;
+  status: string;
+  scope_mode: "full_history" | "window";
+  date_from?: string;
+  date_to?: string;
+	resource_ids?: string[];
+  source_as_of_date: string;
+  cutoff_at: string;
+  resources: SmartAccountsCaptureResourceStatus[];
+  summary: {
+    total: number;
+    completed: number;
+    running: number;
+    interrupted: number;
+    rate_limited: number;
+    review_required: number;
+    dependency_required: number;
+    brave_discovery_required: number;
+  };
+  staging?: SmartAccountsCaptureStaging;
+}
+export interface SmartAccountsCaptureStaging { package_id: string; package_sha256: string; status: string; record_chunks_acknowledged: number; artifact_chunks_acknowledged: number; finalized: boolean; }
+export interface SmartAccountsPackagePreviewRequest { use_source_chart?: boolean; account_mappings?: Array<{source_account_external_id:string;target_account_id:string}>; account_imports?: Array<{source_account_external_id:string;code:string;name:string;account_type:string}>; }
+export interface SmartAccountsPackageApplyRequest { confirm: boolean; preview_id: string; preview_sha256: string; tolerance_policy_id: string; }
+export interface SmartAccountsPackagePreview { id:string; tenant_id:string; package_id:string; source_company_id:string; scope_sha256?: string; status:string; preview_sha256:string; financial_writes_planned:boolean; financial_writes_applied:boolean; journals?: unknown[]; account_imports?: Array<{source_account_external_id:string;code:string;name:string;account_type:string}>; account_reconciliation?: unknown[]; non_posting_record_count:number; issues?: Array<{code:string;message:string}>; }
+export interface SmartAccountsArchiveCoverageBucket { domain: string; disposition: 'GL_APPLY_GATED' | 'REFERENCE_APPLY_GATED' | 'ARCHIVE_ONLY' | 'REVIEW_REQUIRED' | 'UNCONSUMED'; record_count: number; }
+export interface SmartAccountsArchiveCoverageReport {
+	package_id: string;
+	package_sha256: string;
+	manifest_sha256: string;
+	scope_mode: string;
+	declared_record_count: number;
+	observed_record_count: number;
+	artifact_count: number;
+	integrity_ok: boolean;
+	unconsumed_record_count: number;
+	review_required_record_count: number;
+	buckets: SmartAccountsArchiveCoverageBucket[];
+}
+export type SmartAccountsReconciliationStatus =
+	| 'NOT_EVALUATED'
+	| 'EVIDENCE_PENDING'
+	| 'READY_FOR_ACCOUNTANT'
+	| 'PASS'
+	| 'PARTIAL_FAILURE';
+
+export interface SmartAccountsReconciliationEvaluation {
+	evaluation_id: string;
+	batch_id: string;
+	source_company_id: string;
+	tenant_id: string;
+	package_id?: string;
+	gl_preview_id?: string;
+	gl_preview_sha256?: string;
+	gl_state: 'EVIDENCE_PENDING' | 'APPLIED' | 'APPLIED_REPLAY_VERIFIED';
+	reference_state: 'NOT_APPLICABLE' | 'EVIDENCE_PENDING' | 'APPLIED';
+	claim_kind?: 'full' | 'partial';
+	expected_coverage_state?: 'full' | 'partial' | 'unknown';
+	variance_within_policy: boolean;
+	gl_revision_unresolved: number;
+	gl_tombstone_unresolved: number;
+	reference_revision_unresolved: number;
+	reference_tombstone_unresolved: number;
+	blockers?: string[];
+	evidence_sha256?: string;
+	tolerance_sha256?: string;
+	status: SmartAccountsReconciliationStatus;
+	created_at: string;
+	updated_at: string;
+	accountant_approved_at?: string;
+}
+
+export interface SmartAccountsReconciliationEvaluationResponse {
+	evaluation: SmartAccountsReconciliationEvaluation;
+	reused: boolean;
+}
+
+export interface SmartAccountsReconciliationRollup {
+	batch_id: string;
+	status: 'IN_PROGRESS' | 'ACCOUNTANT_REVIEW_REQUIRED' | 'PASS' | 'PARTIAL_FAILURE';
+	selected_count: number;
+	pass_count: number;
+	pending_count: number;
+	review_count: number;
+	failure_count: number;
+}
+
+export interface SmartAccountsFullClaimEligibility {
+	status: 'ELIGIBLE' | 'NOT_ELIGIBLE';
+	full_claim_eligible: boolean;
+	selected_count: number;
+	current_pass_count: number;
+	current_pass_gap_count: number;
+	tombstone_gap_source_count: number;
+	source_coverage_gap_count: number;
+	domain_evidence_gap_source_count: number;
+	matrix_blocker_count: number;
+	matrix_filter_contract_gap_count: number;
+	matrix_page_only_gap_count: number;
+	matrix_review_required_count: number;
+	matrix_unconsumed_count: number;
+	matrix_missing_endpoint_count: number;
+	matrix_schema_gap_count: number;
+	matrix_coverage_gap_count: number;
+	blocking_codes?: string[];
+}
+
+// Candidate values are derived only by OA from the exact staged package,
+// scope, preview and currency set. The browser never submits a policy rule,
+// variance, total, source row, or free-form digest.
+export interface SmartAccountsTolerancePolicyCandidateRequest {
+	package_id: string;
+	preview_id: string;
+}
+
+export interface SmartAccountsTolerancePolicyCandidate {
+	algorithm_version: 'smartaccounts-exact-match-v1';
+	label: string;
+	candidate_sha256: string;
+}
+
+export interface SmartAccountsTolerancePolicyApprovalRequest {
+	confirmed: true;
+	package_id: string;
+	preview_id: string;
+	expected_candidate_sha256: string;
+}
+
+export interface SmartAccountsTolerancePolicyResolutionRequest {
+	package_id: string;
+	preview_id: string;
+}
+
+// Deliberately omit the server's derived tolerance digest from the UI type.
+// It is neither displayed nor retained; the following financial action takes
+// only this opaque policy identifier and the server re-checks its binding.
+export interface SmartAccountsTolerancePolicyResolution {
+	policy_id: string;
+	algorithm_version: 'smartaccounts-exact-match-v1';
+	label: string;
+	approved_at: string;
+}
+
+export interface SmartAccountsTolerancePolicy {
+	policy_id: string;
+	algorithm_version: 'smartaccounts-exact-match-v1';
+	tenant_id: string;
+	source_company_id: string;
+	package_id: string;
+	scope_sha256: string;
+	preview_sha256: string;
+	tolerance_policy_sha256: string;
+	approved_at: string;
+}
+
+export interface SmartAccountsReconciliationApprovalRequest {
+	confirmed: true;
+	evidence_sha256: string;
+	tolerance_sha256: string;
+}
+export interface SmartAccountsReferencePreviewRequest { entity_types?: Array<"account" | "customer" | "vendor" | "item">; }
+export interface SmartAccountsReferenceApplyRequest { confirm: boolean; preview_id: string; preview_sha256: string; }
+export interface SmartAccountsReferencePreview {
+	id: string;
+	tenant_id: string;
+	package_id: string;
+	source_company_id: string;
+	status: "PREVIEW_READY" | "REVIEW_REQUIRED" | "APPLIED";
+	preview_sha256: string;
+	actions?: Array<{ entity_type: string; external_id: string; target_id: string; revision: string; action: "CREATE" | "RESUME" | "ALREADY_APPLIED" }>;
+	reconciliation: Array<{ entity_type: string; source_records: number; create_planned: number; already_applied: number; review_required: number; tombstones: number }>;
+	issues?: Array<{ code: string; entity_type?: string; external_id?: string; message: string }>;
+	applied_at?: string;
+}
+
+export interface SmartAccountsSyncStatus {
+  provider: "smartaccounts";
+  source_company_id?: string;
+  source_company_name?: string;
+  configured: boolean;
+  secret_reference_configured: boolean;
+  smartaccounts_gl_authoritative: boolean;
+  invoice_payment_mode: "NON_POSTING";
+  capture_status: string;
+  plan_status: string;
+  reconciliation_status: string;
+  financial_apply_eligible: boolean;
+  explicit_confirmation_required: boolean;
+  financial_writes_started: boolean;
+  dry_run_requested_at?: string;
+  capture_run_id?: string;
+  capture_progress?: SmartAccountsCaptureProgress;
+	capture_progresses?: SmartAccountsCaptureProgress[];
+  next_action: string;
 }
 
 export interface Account {
