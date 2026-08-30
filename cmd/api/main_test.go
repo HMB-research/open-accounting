@@ -155,7 +155,7 @@ func TestLoadConfigUsesDefaultsAndEnvOverrides(t *testing.T) {
 	assert.Equal(t, "postgres://db", cfg.DatabaseURL)
 	assert.Equal(t, developmentJWTSecret, cfg.JWTSecret)
 	assert.Equal(t, 15*time.Minute, cfg.AccessExpiry)
-	assert.Equal(t, 7*24*time.Hour, cfg.RefreshExpiry)
+	assert.Equal(t, 30*24*time.Hour, cfg.RefreshExpiry)
 	assert.Contains(t, cfg.AllowedOrigins, "http://localhost:5173")
 	assert.Contains(t, cfg.AllowedOrigins, "https://app.example.com")
 	assert.Contains(t, cfg.AllowedOrigins, "https://admin.example.com")

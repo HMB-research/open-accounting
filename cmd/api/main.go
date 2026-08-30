@@ -577,11 +577,15 @@ func loadConfig() *Config {
 	}
 
 	return &Config{
-		Port:           port,
-		DatabaseURL:    dbURL,
-		JWTSecret:      resolvedJWTSecret,
-		AccessExpiry:   15 * time.Minute,
-		RefreshExpiry:  7 * 24 * time.Hour,
+		Port:         port,
+		DatabaseURL:  dbURL,
+		JWTSecret:    resolvedJWTSecret,
+		AccessExpiry: 15 * time.Minute,
+		// Browser sessions are still revocable and rotate their single-use refresh
+		// token on every renewal. A 30-day lifetime makes the explicit
+		// "Remember me" choice useful across normal periods of inactivity; users
+		// who do not opt in keep their token pair in session storage only.
+		RefreshExpiry:  30 * 24 * time.Hour,
 		AllowedOrigins: allowedOrigins,
 		DocumentsDir:   documentsDir,
 		PasswordReset: PasswordResetConfig{
