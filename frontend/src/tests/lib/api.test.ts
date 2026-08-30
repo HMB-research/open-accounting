@@ -6795,6 +6795,58 @@ describe("API Client - Core Functionality", () => {
       expect(api.isAuthenticated).toBe(true);
     });
 
+    it("coalesces concurrent 401 renewals into one refresh rotation", async () => {
+      api.setTokens("old-access", "old-refresh");
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: "Token expired" }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: "Token expired" }),
+      });
+
+      let resolveRefresh: ((value: unknown) => void) | undefined;
+      const refreshResponse = new Promise((resolve) => {
+        resolveRefresh = resolve;
+      });
+      mockFetch.mockReturnValueOnce(refreshResponse);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "user-123" }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "user-123" }),
+      });
+
+      const requests = Promise.all([api.getCurrentUser(), api.getCurrentUser()]);
+      await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(3));
+
+      resolveRefresh?.({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: "new-access",
+          refresh_token: "new-refresh",
+        }),
+      });
+
+      await expect(requests).resolves.toEqual([
+        { id: "user-123" },
+        { id: "user-123" },
+      ]);
+      expect(mockFetch).toHaveBeenCalledTimes(5);
+      expect(mockFetch.mock.calls.filter(([url]) => String(url).includes("/auth/refresh"))).toHaveLength(1);
+      expect(api.isAuthenticated).toBe(true);
+    });
+
     it("uses the rotated refresh token for a later renewal", async () => {
       api.setTokens("old-access", "old-refresh");
 

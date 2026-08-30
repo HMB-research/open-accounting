@@ -109,6 +109,10 @@ interface ApiError {
 
 class ApiClient {
   private readonly transport: ApiTransport;
+  // A page commonly starts several authenticated requests in parallel. Refresh
+  // tokens are intentionally single-use, so those requests must share one
+  // rotation rather than competing to revoke the same token.
+  private refreshInFlight: Promise<boolean> | null = null;
 
   constructor() {
     this.transport = createApiTransport({
@@ -338,6 +342,19 @@ class ApiClient {
   }
 
   private async refreshAccessToken(): Promise<boolean> {
+    if (this.refreshInFlight) {
+      return this.refreshInFlight;
+    }
+
+    this.refreshInFlight = this.performRefreshAccessToken();
+    try {
+      return await this.refreshInFlight;
+    } finally {
+      this.refreshInFlight = null;
+    }
+  }
+
+  private async performRefreshAccessToken(): Promise<boolean> {
     try {
       const data = await this.request<
         Pick<TokenResponse, "access_token" | "refresh_token">
