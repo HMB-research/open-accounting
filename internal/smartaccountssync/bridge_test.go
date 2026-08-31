@@ -20,14 +20,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHTTPBridgeClientConnectsAndValidatesWithTenantScopedToken(t *testing.T) {
+func TestHTTPBridgeClientConnectsAndValidatesWithOpaqueCredentialReference(t *testing.T) {
 	const (
-		tenantID  = "tenant-alpha"
-		token     = "bridge-token-secret-for-test-123456"
-		apiKey    = "test-api-public"
-		apiSecret = "test-api-secret"
+		tenantID                  = "tenant-alpha"
+		token                     = "bridge-token-secret-for-test-123456"
+		sourceCredentialReference = "secret-ref://file/connection-alpha"
+		connectionID              = "connection-alpha"
 	)
-	connectionID := ConnectionIDForCredentials(tenantID, apiKey, []byte(token))
 	fixedNow := time.Date(2026, 8, 27, 15, 0, 0, 0, time.UTC)
 	var requests []string
 
@@ -38,7 +37,7 @@ func TestHTTPBridgeClientConnectsAndValidatesWithTenantScopedToken(t *testing.T)
 		case http.MethodPut + " /v1/connections/" + connectionID:
 			var input map[string]string
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&input))
-			assert.Equal(t, map[string]string{"api_public_key": apiKey, "api_secret": apiSecret}, input)
+			assert.Equal(t, map[string]string{"source_credential_reference": sourceCredentialReference}, input)
 			assert.Empty(t, r.Header.Get("X-SmartAccounts-Source"))
 			writeBridgeJSON(w, bridgeConnectionResponse{
 				ConnectionID:        connectionID,
@@ -61,7 +60,7 @@ func TestHTTPBridgeClientConnectsAndValidatesWithTenantScopedToken(t *testing.T)
 	client.httpClient = bridge.Client()
 	client.now = func() time.Time { return fixedNow }
 
-	connection, err := client.ConnectAndValidate(context.Background(), tenantID, BridgeCredentials{APIKey: apiKey, APISecret: apiSecret})
+	connection, err := client.ConnectAndValidate(context.Background(), tenantID, sourceCredentialReference)
 
 	require.NoError(t, err)
 	assert.Equal(t, connectionID, connection.ConnectionID)
@@ -170,11 +169,11 @@ func TestHTTPBridgeClientForwardsExplicitWindowResourceSelection(t *testing.T) {
 }
 
 func TestHTTPBridgeClientRedactsBridgeFailuresAndDoesNotValidateAfterFailedConnect(t *testing.T) {
-	const sourceSecret = "test-api-secret-that-must-not-leak"
+	const sourceCredentialReference = "secret-ref://file/connection-alpha"
 	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			w.WriteHeader(http.StatusBadGateway)
-			_, _ = w.Write([]byte("upstream rejected " + sourceSecret))
+			_, _ = w.Write([]byte("upstream rejected source credential reference"))
 			return
 		}
 		t.Fatal("validate must not run after a failed credential PUT")
@@ -184,10 +183,10 @@ func TestHTTPBridgeClientRedactsBridgeFailuresAndDoesNotValidateAfterFailedConne
 	client, err := NewHTTPBridgeClient(bridge.URL, "bridge-token-secret-for-test-123456")
 	require.NoError(t, err)
 	client.httpClient = bridge.Client()
-	_, err = client.ConnectAndValidate(context.Background(), "tenant-alpha", BridgeCredentials{APIKey: "test-api-public", APISecret: sourceSecret})
+	_, err = client.ConnectAndValidate(context.Background(), "tenant-alpha", sourceCredentialReference)
 
 	assert.ErrorIs(t, err, ErrBridgeRequestFailed)
-	assert.NotContains(t, err.Error(), sourceSecret)
+	assert.NotContains(t, err.Error(), sourceCredentialReference)
 }
 
 func TestHTTPBridgeClientHealthVerifiesDataFreeBridgeCapabilities(t *testing.T) {
@@ -396,12 +395,18 @@ func sortedJSONKeys(values map[string]json.RawMessage) []string {
 	return keys
 }
 
-func TestConnectionIDForCredentialsIsStableAndTenantIsolated(t *testing.T) {
-	secret := []byte("bridge-token-secret-for-test-123456")
-	assert.Equal(t, ConnectionIDForCredentials("tenant-a", "public-key-a", secret), ConnectionIDForCredentials("tenant-a", "public-key-a", secret))
-	assert.NotEqual(t, ConnectionIDForCredentials("tenant-a", "public-key-a", secret), ConnectionIDForCredentials("tenant-b", "public-key-a", secret))
-	assert.NotEqual(t, ConnectionIDForCredentials("tenant-a", "public-key-a", secret), ConnectionIDForCredentials("tenant-a", "public-key-b", secret))
-	assert.True(t, safeBridgeID(ConnectionIDForCredentials("tenant-a", "public-key-a", secret)))
+func TestNormalizeSourceCredentialReferenceUsesOnlyItsOpaqueIdentifier(t *testing.T) {
+	reference, connectionID, err := normalizeSourceCredentialReference(" secret-ref://file/connection-alpha ")
+	require.NoError(t, err)
+	assert.Equal(t, "secret-ref://file/connection-alpha", reference)
+	assert.Equal(t, "connection-alpha", connectionID)
+
+	for _, value := range []string{
+		"", "raw-api-key", "vault://secret/connection-alpha", "secret-ref://vault/connection-alpha", "secret-ref://file/connection-alpha?query=not-allowed", "secret-ref://file/connection-alpha?", "secret-ref://file/connection%2Dalpha", "secret-ref://file/connection alpha", "secret-ref://file/connection-alpha/extra",
+	} {
+		_, _, err := normalizeSourceCredentialReference(value)
+		assert.Error(t, err, value)
+	}
 }
 
 func TestConfiguredBridgeCatalogDoesNotGuessSourceIdentity(t *testing.T) {

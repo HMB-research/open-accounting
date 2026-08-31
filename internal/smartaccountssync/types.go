@@ -46,12 +46,14 @@ type ConfigureRequest struct {
 	InvoicePaymentMode           string `json:"invoice_payment_mode"`
 }
 
-// ConnectRequest is accepted by the OA connection endpoint. APIKey and
-// APISecret are transient: handlers pass them only to the private bridge and
-// must not store, log, return, or retain them after the request completes.
+// ConnectRequest is accepted by the OA connection endpoint for the opt-in
+// documented API fallback. SourceCredentialReference identifies a credential
+// already provisioned in the bridge's tenant-bound external provider. It is
+// sent once to the private bridge and must not be persisted, logged, or
+// returned by Open Accounting. Raw SmartAccounts API material is never
+// accepted by this API.
 type ConnectRequest struct {
-	APIKey                       string `json:"api_key"`
-	APISecret                    string `json:"api_secret"`
+	SourceCredentialReference    string `json:"source_credential_reference"`
 	SmartAccountsGLAuthoritative bool   `json:"smartaccounts_gl_authoritative"`
 	InvoicePaymentMode           string `json:"invoice_payment_mode"`
 }

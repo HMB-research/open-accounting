@@ -23,17 +23,16 @@ var (
 )
 
 const (
-	bridgeTokenLifetime      = 5 * time.Minute
-	maxBridgeResponseBytes   = 64 << 10
-	maxBridgeAPIKeyLength    = 512
-	maxBridgeAPISecretLength = 4096
+	bridgeTokenLifetime                = 5 * time.Minute
+	maxBridgeResponseBytes             = 64 << 10
+	maxSourceCredentialReferenceLength = 512
 )
 
 // BridgeClient is the narrow server-only integration to the private NUC
 // bridge. It does not expose a source-data, package, planning, or financial
 // apply operation.
 type BridgeClient interface {
-	ConnectAndValidate(ctx context.Context, tenantID string, credentials BridgeCredentials) (BridgeConnection, error)
+	ConnectAndValidate(ctx context.Context, tenantID, sourceCredentialReference string) (BridgeConnection, error)
 	StartCapture(ctx context.Context, tenantID, connectionID string, request CaptureRequest) (CaptureProgress, error)
 	GetCapture(ctx context.Context, tenantID, connectionID, runID string) (CaptureProgress, error)
 }
@@ -44,13 +43,6 @@ type BridgeClient interface {
 // SmartAccounts.
 type BridgeHealthChecker interface {
 	Health(context.Context) error
-}
-
-// BridgeCredentials exist only for the duration of one handler request.
-// They must never be added to a persistence type, response type, or log.
-type BridgeCredentials struct {
-	APIKey    string
-	APISecret string
 }
 
 // BridgeConnection contains safe connection metadata returned by the bridge.
@@ -71,7 +63,7 @@ type UnavailableBridgeClient struct{}
 
 func (UnavailableBridgeClient) Health(_ context.Context) error { return ErrBridgeClientUnavailable }
 
-func (UnavailableBridgeClient) ConnectAndValidate(_ context.Context, _ string, _ BridgeCredentials) (BridgeConnection, error) {
+func (UnavailableBridgeClient) ConnectAndValidate(_ context.Context, _ string, _ string) (BridgeConnection, error) {
 	return BridgeConnection{}, ErrBridgeClientUnavailable
 }
 
@@ -290,38 +282,26 @@ func cacheControlNoStore(value string) bool {
 	return false
 }
 
-// ConnectionIDForCredentials identifies one tenant-scoped connection without
-// putting a raw source API key, source-company ID, or display name in the
-// bridge path. The HMAC key is server-only and cannot be reversed into the
-// source public key.
-func ConnectionIDForCredentials(tenantID, apiKey string, tokenSecret []byte) string {
-	signature := hmac.New(sha256.New, tokenSecret)
-	_, _ = signature.Write([]byte(strings.TrimSpace(tenantID) + "\x00" + strings.TrimSpace(apiKey)))
-	digest := signature.Sum(nil)
-	return "oa-sa-" + hex.EncodeToString(digest[:16])
-}
-
-// ConnectAndValidate sends credentials only to the bridge PUT endpoint and
-// performs exactly one bridge validation request before returning its opaque
-// reference. It never includes a bridge response body in an error.
-func (c *HTTPBridgeClient) ConnectAndValidate(ctx context.Context, tenantID string, credentials BridgeCredentials) (BridgeConnection, error) {
+// ConnectAndValidate submits only the opaque external source credential
+// reference to the bridge PUT endpoint and performs exactly one bridge
+// validation request before returning the bridge-owned opaque reference. It
+// never receives, sends, or includes raw source API material in an error.
+func (c *HTTPBridgeClient) ConnectAndValidate(ctx context.Context, tenantID, sourceCredentialReference string) (BridgeConnection, error) {
 	if c == nil || c.baseURL == nil || c.httpClient == nil || len(c.tokenSecret) < 16 {
 		return BridgeConnection{}, ErrBridgeClientUnavailable
 	}
 	if !safeBridgeID(tenantID) {
 		return BridgeConnection{}, ErrBridgeRequestFailed
 	}
-	if strings.TrimSpace(credentials.APIKey) == "" || strings.TrimSpace(credentials.APISecret) == "" || len(credentials.APIKey) > maxBridgeAPIKeyLength || len(credentials.APISecret) > maxBridgeAPISecretLength {
+	credentialReference, connectionID, err := normalizeSourceCredentialReference(sourceCredentialReference)
+	if err != nil {
 		return BridgeConnection{}, ErrBridgeRequestFailed
 	}
-	connectionID := ConnectionIDForCredentials(tenantID, credentials.APIKey, c.tokenSecret)
 
 	payload, err := json.Marshal(struct {
-		APIPublicKey string `json:"api_public_key"`
-		APISecret    string `json:"api_secret"`
+		SourceCredentialReference string `json:"source_credential_reference"`
 	}{
-		APIPublicKey: strings.TrimSpace(credentials.APIKey),
-		APISecret:    strings.TrimSpace(credentials.APISecret),
+		SourceCredentialReference: credentialReference,
 	})
 	if err != nil {
 		return BridgeConnection{}, ErrBridgeRequestFailed
@@ -353,6 +333,28 @@ func (c *HTTPBridgeClient) ConnectAndValidate(ctx context.Context, tenantID stri
 		SourceBindingStatus:   validation.SourceBindingStatus,
 		AccountSnapshotSHA256: validation.AccountSnapshotSHA256,
 	}, nil
+}
+
+// normalizeSourceCredentialReference accepts exactly the opaque reference
+// grammar implemented by bridge 5a39445's production provider:
+// secret-ref://file/<connection-id>. The connection ID deliberately comes from
+// the opaque reference identifier; the bridge's file provider requires the
+// same identifier to select the tenant-bound external mount. It is never an
+// API key, source company ID, or source display name.
+func normalizeSourceCredentialReference(value string) (reference, connectionID string, err error) {
+	reference = strings.TrimSpace(value)
+	if reference == "" || len(reference) > maxSourceCredentialReferenceLength || strings.ContainsAny(reference, "\r\n\t ?#@") {
+		return "", "", errors.New("source credential reference is invalid")
+	}
+	parsed, parseErr := url.ParseRequestURI(reference)
+	if parseErr != nil || parsed.Scheme != "secret-ref" || parsed.Host != "file" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", "", errors.New("source credential reference is invalid")
+	}
+	connectionID = strings.TrimPrefix(parsed.Path, "/")
+	if parsed.Path != "/"+connectionID || !safeBridgeID(connectionID) || reference != "secret-ref://file/"+connectionID {
+		return "", "", errors.New("source credential reference is invalid")
+	}
+	return reference, connectionID, nil
 }
 
 type bridgeConnectionResponse struct {
@@ -1229,8 +1231,9 @@ func (ConfiguredBridgeCatalog) Discover(_ context.Context, _ string) (SourceDisc
 }
 
 // ValidateConnectionRequest checks only request policy before a handler sends
-// transient credentials to the bridge. Source identity cannot be supplied by
-// the browser: the bridge derives it from the validated API key.
+// the opaque external credential reference to the bridge. Source identity
+// cannot be supplied by the browser: the bridge derives it from the provider
+// credential during validation.
 func (s *Service) ValidateConnectionRequest(_ context.Context, tenantID string, req ConnectRequest) error {
 	if s == nil || s.store == nil {
 		return errors.New("SmartAccounts sync storage is not configured")
@@ -1238,8 +1241,8 @@ func (s *Service) ValidateConnectionRequest(_ context.Context, tenantID string, 
 	if err := validateConnectionPolicy(tenantID, req); err != nil {
 		return err
 	}
-	if strings.TrimSpace(req.APIKey) == "" || strings.TrimSpace(req.APISecret) == "" {
-		return errors.New("SmartAccounts credentials are required")
+	if _, _, err := normalizeSourceCredentialReference(req.SourceCredentialReference); err != nil {
+		return errors.New("SmartAccounts source credential reference is required")
 	}
 	return nil
 }

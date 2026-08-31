@@ -877,48 +877,40 @@ async function handoffVisibleCompanyCatalog() {
 		expect(apiMock.createSmartAccountsBrowserPairing).not.toHaveBeenCalled();
 	});
 
-	it('lets the bridge derive the source identity and clears transient credentials after connection', async () => {
+	it('lets the bridge derive the source identity and clears the opaque credential reference after connection', async () => {
 		render(SmartAccountsSyncControl, { tenantId: 'tenant-1' });
 
 		expect(screen.getByText('Derived from the signed-in Brave session')).toBeInTheDocument();
-		const apiKeyInput = screen.getByLabelText('SmartAccounts API key') as HTMLInputElement;
-		const apiSecretInput = screen.getByLabelText('SmartAccounts API secret') as HTMLInputElement;
-		await fireEvent.input(apiKeyInput, { target: { value: 'test-api-public' } });
-		await fireEvent.input(apiSecretInput, { target: { value: 'test-api-secret' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Connect, validate & start full-history capture' }));
+		const sourceCredentialReferenceInput = screen.getByLabelText('External credential reference') as HTMLInputElement;
+		await fireEvent.input(sourceCredentialReferenceInput, { target: { value: 'secret-ref://file/connection-test' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Connect external reference & start full-history capture' }));
 
 		await waitFor(() => {
 			expect(apiMock.configureSmartAccountsSync).toHaveBeenCalledWith('tenant-1', {
-				api_key: 'test-api-public',
-				api_secret: 'test-api-secret',
+				source_credential_reference: 'secret-ref://file/connection-test',
 				smartaccounts_gl_authoritative: true,
 				invoice_payment_mode: 'NON_POSTING'
 			});
 		});
 		await waitFor(() => expect(apiMock.requestSmartAccountsSyncDryRun).toHaveBeenCalledWith('tenant-1', 'sa-company-hmb-9881', { scope_mode: 'full_history' }));
-		expect(apiKeyInput.value).toBe('');
-		expect(apiSecretInput.value).toBe('');
+		expect(sourceCredentialReferenceInput.value).toBe('');
 		expect(screen.getByText('Hold My Beer OÜ')).toBeInTheDocument();
 	});
 
-	it('clears submitted credentials and redacts them from a failed bridge response', async () => {
+	it('clears submitted external credential references and redacts them from a failed bridge response', async () => {
 		apiMock.configureSmartAccountsSync.mockRejectedValue(
 			new Error('SmartAccounts bridge connection or validation failed')
 		);
 		render(SmartAccountsSyncControl, { tenantId: 'tenant-1' });
 
-		await waitFor(() => expect(screen.getByLabelText('SmartAccounts API key')).toBeInTheDocument());
-		const apiKeyInput = screen.getByLabelText('SmartAccounts API key') as HTMLInputElement;
-		const apiSecretInput = screen.getByLabelText('SmartAccounts API secret') as HTMLInputElement;
-		await fireEvent.input(apiKeyInput, { target: { value: 'do-not-echo-public' } });
-		await fireEvent.input(apiSecretInput, { target: { value: 'do-not-echo-secret' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Connect, validate & start full-history capture' }));
+		await waitFor(() => expect(screen.getByLabelText('External credential reference')).toBeInTheDocument());
+		const sourceCredentialReferenceInput = screen.getByLabelText('External credential reference') as HTMLInputElement;
+		await fireEvent.input(sourceCredentialReferenceInput, { target: { value: 'secret-ref://file/do-not-echo' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Connect external reference & start full-history capture' }));
 
 		await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('connection or validation failed'));
-		expect(apiKeyInput.value).toBe('');
-		expect(apiSecretInput.value).toBe('');
-		expect(screen.getByRole('alert')).not.toHaveTextContent('do-not-echo-public');
-		expect(screen.getByRole('alert')).not.toHaveTextContent('do-not-echo-secret');
+		expect(sourceCredentialReferenceInput.value).toBe('');
+		expect(screen.getByRole('alert')).not.toHaveTextContent('secret-ref://file/do-not-echo');
 	});
 
 	it('shows only safe capture progress returned from the control plane', async () => {
@@ -940,9 +932,8 @@ async function handoffVisibleCompanyCatalog() {
 			})
 		);
 		render(SmartAccountsSyncControl, { tenantId: 'tenant-1' });
-		await fireEvent.input(screen.getByLabelText('SmartAccounts API key'), { target: { value: 'test-api-public' } });
-		await fireEvent.input(screen.getByLabelText('SmartAccounts API secret'), { target: { value: 'test-api-secret' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Connect, validate & start full-history capture' }));
+		await fireEvent.input(screen.getByLabelText('External credential reference'), { target: { value: 'secret-ref://file/connection-test' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Connect external reference & start full-history capture' }));
 
 		await waitFor(() => expect(screen.getByText('Capture run capture-test-1: 1/2 resources complete (full history through 2026-08-27).')).toBeInTheDocument());
 		expect(screen.getByText('accounts: completed')).toBeInTheDocument();
@@ -971,9 +962,8 @@ async function handoffVisibleCompanyCatalog() {
 			.mockResolvedValueOnce(syncStatus({ configured: true, secret_reference_configured: true, capture_progress: fullHistory, capture_progresses: [fullHistory] }))
 			.mockResolvedValueOnce(syncStatus({ configured: true, secret_reference_configured: true, capture_progress: dateWindow, capture_progresses: [dateWindow, fullHistory] }));
 		render(SmartAccountsSyncControl, { tenantId: 'tenant-1' });
-		await fireEvent.input(screen.getByLabelText('SmartAccounts API key'), { target: { value: 'test-api-public' } });
-		await fireEvent.input(screen.getByLabelText('SmartAccounts API secret'), { target: { value: 'test-api-secret' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Connect, validate & start full-history capture' }));
+		await fireEvent.input(screen.getByLabelText('External credential reference'), { target: { value: 'secret-ref://file/connection-test' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Connect external reference & start full-history capture' }));
 		await screen.findByText(/SmartAccounts requires a date range/);
 		await fireEvent.input(screen.getByLabelText('From'), { target: { value: '2020-01-01' } });
 		await fireEvent.input(screen.getByLabelText('To'), { target: { value: '2026-08-27' } });
@@ -1061,9 +1051,8 @@ async function handoffVisibleCompanyCatalog() {
 	it('previews a finalized safe package and resolves an independently approved policy only at the separate financial apply action', async () => {
 		apiMock.requestSmartAccountsSyncDryRun.mockResolvedValue(syncStatus({ source_company_id: 'sa-browser-v1-123456', configured: true, secret_reference_configured: true, capture_progress: { run_id: 'capture-1', status: 'complete', scope_mode: 'full_history', source_as_of_date: '2026-08-27', cutoff_at: '2026-08-27T12:00:00Z', resources: [], summary: { total: 1, completed: 1, running: 0, interrupted: 0, rate_limited: 0, review_required: 0, dependency_required: 0, brave_discovery_required: 0 }, staging: { package_id: 'package-1', package_sha256: 'a'.repeat(64), status: 'staged_review_required', record_chunks_acknowledged: 2, artifact_chunks_acknowledged: 1, finalized: true } } }));
 		render(SmartAccountsSyncControl, { tenantId: 'tenant-1' });
-		await fireEvent.input(screen.getByLabelText('SmartAccounts API key'), { target: { value: 'test-api-public' } });
-		await fireEvent.input(screen.getByLabelText('SmartAccounts API secret'), { target: { value: 'test-api-secret' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Connect, validate & start full-history capture' }));
+		await fireEvent.input(screen.getByLabelText('External credential reference'), { target: { value: 'secret-ref://file/connection-test' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Connect external reference & start full-history capture' }));
 		await fireEvent.click(await screen.findByRole('button', { name: 'Prepare chart and GL preview' }));
 		await waitFor(() => expect(apiMock.previewSmartAccountsPackage).toHaveBeenCalledWith('tenant-1', 'package-1', { use_source_chart: true }));
 		const apply = await screen.findByRole('button', { name: 'Confirm and apply GL plan' });

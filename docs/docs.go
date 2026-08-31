@@ -24603,7 +24603,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Send transient API credentials only to the private bridge for the selected source, validate a safe source account request, and persist only its opaque secret reference. Credentials are never echoed or stored in Open Accounting. GL authority must be SmartAccounts and invoice/payment records remain non-posting.",
+                "description": "Send only an opaque source credential reference to the private bridge for the selected source, validate a safe source account request, and persist only its separate opaque bridge reference. Open Accounting never accepts, stores, or returns a SmartAccounts API key or secret. GL authority must be SmartAccounts and invoice/payment records remain non-posting.",
                 "consumes": [
                     "application/json"
                 ],
@@ -24623,7 +24623,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Transient bridge connection credentials",
+                        "description": "Opaque external source credential reference",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -42699,17 +42699,14 @@ const docTemplate = `{
         "github_com_HMB-research_open-accounting_internal_smartaccountssync.ConnectRequest": {
             "type": "object",
             "properties": {
-                "api_key": {
-                    "type": "string"
-                },
-                "api_secret": {
-                    "type": "string"
-                },
                 "invoice_payment_mode": {
                     "type": "string"
                 },
                 "smartaccounts_gl_authoritative": {
                     "type": "boolean"
+                },
+                "source_credential_reference": {
+                    "type": "string"
                 }
             }
         },

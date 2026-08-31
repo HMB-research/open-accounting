@@ -62,9 +62,9 @@ func registerTenantRoutes(
 		r.Post("/import-sessions/{sessionID}/plan", h.PlanImportSession)
 
 		// SmartAccounts bridge control is isolated from the legacy migration
-		// executor. The control endpoint proxies transient credentials only to
-		// the private bridge and persists its opaque reference; it makes no
-		// financial write in Open Accounting.
+		// executor. The control endpoint proxies only an opaque external
+		// credential reference to the private bridge and persists its separate
+		// opaque bridge reference; it makes no financial write in Open Accounting.
 		r.Get("/smartaccounts-sync/sources", h.DiscoverSmartAccountsSyncSources)
 		r.Get("/smartaccounts-sync/status", h.GetSmartAccountsSyncStatus)
 		r.With(h.RequireTenantPermission(canManageSettings)).Post("/smartaccounts-sync/browser-pairings", h.IssueSmartAccountsBrowserPairing)

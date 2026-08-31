@@ -22,8 +22,8 @@ type fakeSmartAccountsSyncStore struct {
 }
 
 type bridgeConnectionCall struct {
-	tenantID    string
-	credentials smartaccountssync.BridgeCredentials
+	tenantID                  string
+	sourceCredentialReference string
 }
 
 type fakeSmartAccountsBridgeClient struct {
@@ -32,8 +32,8 @@ type fakeSmartAccountsBridgeClient struct {
 	captureProgress smartaccountssync.CaptureProgress
 }
 
-func (c *fakeSmartAccountsBridgeClient) ConnectAndValidate(_ context.Context, tenantID string, credentials smartaccountssync.BridgeCredentials) (smartaccountssync.BridgeConnection, error) {
-	c.calls = append(c.calls, bridgeConnectionCall{tenantID: tenantID, credentials: credentials})
+func (c *fakeSmartAccountsBridgeClient) ConnectAndValidate(_ context.Context, tenantID, sourceCredentialReference string) (smartaccountssync.BridgeConnection, error) {
+	c.calls = append(c.calls, bridgeConnectionCall{tenantID: tenantID, sourceCredentialReference: sourceCredentialReference})
 	if c.err != nil {
 		return smartaccountssync.BridgeConnection{}, c.err
 	}
@@ -145,8 +145,7 @@ func newSmartAccountsSyncHandlers(store *fakeSmartAccountsSyncStore) (*Handlers,
 
 func testSmartAccountsControlRequest() smartaccountssync.ConnectRequest {
 	return smartaccountssync.ConnectRequest{
-		APIKey:                       "test-api-public",
-		APISecret:                    "test-api-secret",
+		SourceCredentialReference:    "secret-ref://file/fake-tenant-1",
 		SmartAccountsGLAuthoritative: true,
 		InvoicePaymentMode:           smartaccountssync.InvoicePaymentModeNonPosting,
 	}
@@ -170,21 +169,20 @@ func TestDiscoverSmartAccountsSyncSourcesReturnsBridgeVerifiedHoldMyBeerChoice(t
 	assert.True(t, discovery.Sources[0].BridgeVerified)
 }
 
-func TestConfigureSmartAccountsSyncBridgesTransientCredentialsAndNeverEchoesThem(t *testing.T) {
+func TestConfigureSmartAccountsSyncSendsOnlyOpaqueCredentialReferenceAndNeverPersistsIt(t *testing.T) {
 	store := &fakeSmartAccountsSyncStore{}
 	h, bridgeClient := newSmartAccountsSyncHandlers(store)
-	apiSecret := "test-api-secret"
+	sourceCredentialReference := "secret-ref://file/fake-tenant-1"
 	req := withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/smartaccounts-sync/control", testSmartAccountsControlRequest(), createTestClaims("user-1", "user@example.com", "tenant-1", "owner")), map[string]string{"tenantID": "tenant-1"})
 	w := httptest.NewRecorder()
 
 	h.ConfigureSmartAccountsSync(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	assert.NotContains(t, w.Body.String(), apiSecret)
-	assert.NotContains(t, w.Body.String(), "test-api-public")
+	assert.NotContains(t, w.Body.String(), sourceCredentialReference)
 	require.Len(t, bridgeClient.calls, 1)
 	assert.Equal(t, "tenant-1", bridgeClient.calls[0].tenantID)
-	assert.Equal(t, apiSecret, bridgeClient.calls[0].credentials.APISecret)
+	assert.Equal(t, sourceCredentialReference, bridgeClient.calls[0].sourceCredentialReference)
 	assert.Equal(t, "secret-ref://sa-bridge/fake-tenant-1", store.controls[smartAccountsControlKey("tenant-1", testSmartAccountsSourceID)].SecretReference)
 	assert.Contains(t, w.Body.String(), `"invoice_payment_mode":"NON_POSTING"`)
 }
@@ -205,15 +203,14 @@ func TestConfigureSmartAccountsSyncRejectsUnsafePolicyBeforeBridgeCall(t *testin
 func TestConfigureSmartAccountsSyncBridgeFailureIsAtomicAndRedacted(t *testing.T) {
 	store := &fakeSmartAccountsSyncStore{}
 	h, bridgeClient := newSmartAccountsSyncHandlers(store)
-	bridgeClient.err = errors.New("bridge rejected test-api-secret")
+	bridgeClient.err = errors.New("bridge rejected source credential")
 	req := withURLParams(makeAuthenticatedRequest(http.MethodPost, "/tenants/tenant-1/smartaccounts-sync/control", testSmartAccountsControlRequest(), createTestClaims("user-1", "user@example.com", "tenant-1", "owner")), map[string]string{"tenantID": "tenant-1"})
 	w := httptest.NewRecorder()
 
 	h.ConfigureSmartAccountsSync(w, req)
 
 	assert.Equal(t, http.StatusBadGateway, w.Code)
-	assert.NotContains(t, w.Body.String(), "test-api-secret")
-	assert.NotContains(t, w.Body.String(), "test-api-public")
+	assert.NotContains(t, w.Body.String(), "secret-ref://file/fake-tenant-1")
 	assert.Empty(t, store.controls)
 	require.Len(t, bridgeClient.calls, 1)
 }
@@ -228,8 +225,23 @@ func TestConfigureSmartAccountsSyncRejectsUnavailableBridgeWithoutPersistingCred
 	h.ConfigureSmartAccountsSync(w, req)
 
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-	assert.NotContains(t, w.Body.String(), "test-api-public")
-	assert.NotContains(t, w.Body.String(), "test-api-secret")
+	assert.NotContains(t, w.Body.String(), "secret-ref://file/fake-tenant-1")
+	assert.Empty(t, store.controls)
+}
+
+func TestConfigureSmartAccountsSyncRejectsLegacyRawCredentialFieldsBeforeBridgeCall(t *testing.T) {
+	store := &fakeSmartAccountsSyncStore{}
+	h, bridgeClient := newSmartAccountsSyncHandlers(store)
+	body := strings.NewReader(`{"api_key":"must-not-be-accepted","api_secret":"must-not-be-accepted","smartaccounts_gl_authoritative":true,"invoice_payment_mode":"NON_POSTING"}`)
+	req := withURLParams(httptest.NewRequest(http.MethodPost, "/tenants/tenant-1/smartaccounts-sync/control", body), map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "user@example.com", "tenant-1", "owner")))
+	w := httptest.NewRecorder()
+
+	h.ConfigureSmartAccountsSync(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.NotContains(t, w.Body.String(), "must-not-be-accepted")
+	assert.Empty(t, bridgeClient.calls)
 	assert.Empty(t, store.controls)
 }
 

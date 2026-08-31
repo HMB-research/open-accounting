@@ -198,11 +198,10 @@ func TestConfigureRejectsRawKeyUnsafePolicyAndUnknownSource(t *testing.T) {
 	}
 }
 
-func TestValidateConnectionRequestRejectsUnsafePolicyBeforeCredentialsReachBridge(t *testing.T) {
+func TestValidateConnectionRequestRejectsUnsafePolicyBeforeCredentialReferenceReachesBridge(t *testing.T) {
 	service := newTestService(&memoryStore{})
 	valid := ConnectRequest{
-		APIKey:                       "transient-public-key",
-		APISecret:                    "transient-api-secret",
+		SourceCredentialReference:    "secret-ref://file/connection-1",
 		SmartAccountsGLAuthoritative: true,
 		InvoicePaymentMode:           InvoicePaymentModeNonPosting,
 	}
@@ -213,6 +212,9 @@ func TestValidateConnectionRequestRejectsUnsafePolicyBeforeCredentialsReachBridg
 	valid.SmartAccountsGLAuthoritative = true
 	valid.InvoicePaymentMode = "POSTING"
 	assert.ErrorContains(t, service.ValidateConnectionRequest(context.Background(), "tenant-1", valid), "NON_POSTING")
+	valid.InvoicePaymentMode = InvoicePaymentModeNonPosting
+	valid.SourceCredentialReference = "test-api-secret-must-not-be-accepted"
+	assert.ErrorContains(t, service.ValidateConnectionRequest(context.Background(), "tenant-1", valid), "credential reference")
 }
 
 func TestControlBindingsAreExplicitAndTenantIsolated(t *testing.T) {
@@ -287,7 +289,7 @@ type captureHistoryBridge struct {
 	requests   []CaptureRequest
 }
 
-func (b *captureHistoryBridge) ConnectAndValidate(context.Context, string, BridgeCredentials) (BridgeConnection, error) {
+func (b *captureHistoryBridge) ConnectAndValidate(context.Context, string, string) (BridgeConnection, error) {
 	return BridgeConnection{}, errors.New("not used")
 }
 

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -80,17 +82,18 @@ func (h *Handlers) GetSmartAccountsSyncStatus(w http.ResponseWriter, r *http.Req
 	respondJSON(w, http.StatusOK, status)
 }
 
-// ConfigureSmartAccountsSync sends transient SmartAccounts credentials only to
-// the private bridge, validates one safe account request, and then stores only
-// the returned opaque secret reference through the control service.
+// ConfigureSmartAccountsSync sends only an opaque source credential reference
+// to the private bridge, validates one safe account request, and then stores
+// only the returned bridge-owned opaque secret reference through the control
+// service.
 // @Summary Connect and validate SmartAccounts sync control
-// @Description Send transient API credentials only to the private bridge for the selected source, validate a safe source account request, and persist only its opaque secret reference. Credentials are never echoed or stored in Open Accounting. GL authority must be SmartAccounts and invoice/payment records remain non-posting.
+// @Description Send only an opaque source credential reference to the private bridge for the selected source, validate a safe source account request, and persist only its separate opaque bridge reference. Open Accounting never accepts, stores, or returns a SmartAccounts API key or secret. GL authority must be SmartAccounts and invoice/payment records remain non-posting.
 // @Tags SmartAccounts Sync
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
-// @Param request body smartaccountssync.ConnectRequest true "Transient bridge connection credentials"
+// @Param request body smartaccountssync.ConnectRequest true "Opaque external source credential reference"
 // @Success 200 {object} smartaccountssync.SyncStatus
 // @Failure 400 {object} object{error=string}
 // @Failure 401 {object} object{error=string}
@@ -116,10 +119,10 @@ func (h *Handlers) ConfigureSmartAccountsSync(w http.ResponseWriter, r *http.Req
 	if !decodeSmartAccountsSyncControlRequest(w, r, &req) {
 		return
 	}
-	// Ensure this handler does not retain credential fields after the request.
+	// The reference is not persisted by OA: clear the request-local copy after
+	// the bridge call regardless of outcome.
 	defer func() {
-		req.APIKey = ""
-		req.APISecret = ""
+		req.SourceCredentialReference = ""
 	}()
 	tenantID := strings.TrimSpace(chi.URLParam(r, "tenantID"))
 	if err := h.smartAccountsSyncService.ValidateConnectionRequest(r.Context(), tenantID, req); err != nil {
@@ -130,14 +133,11 @@ func (h *Handlers) ConfigureSmartAccountsSync(w http.ResponseWriter, r *http.Req
 		respondError(w, http.StatusUnprocessableEntity, "Invalid SmartAccounts sync control")
 		return
 	}
-	connection, err := h.smartAccountsBridgeClient.ConnectAndValidate(r.Context(), tenantID, smartaccountssync.BridgeCredentials{
-		APIKey:    req.APIKey,
-		APISecret: req.APISecret,
-	})
-	// The service never needs raw credentials; clear their local copies before
-	// validation of the returned opaque reference and persistence.
-	req.APIKey = ""
-	req.APISecret = ""
+	connection, err := h.smartAccountsBridgeClient.ConnectAndValidate(r.Context(), tenantID, req.SourceCredentialReference)
+	// The service never needs the external reference; clear the request-local
+	// copy before validation of the returned bridge-owned reference and
+	// persistence.
+	req.SourceCredentialReference = ""
 	if errors.Is(err, smartaccountssync.ErrBridgeClientUnavailable) {
 		respondError(w, http.StatusServiceUnavailable, "SmartAccounts bridge is not configured")
 		return
@@ -259,7 +259,13 @@ func (h *Handlers) ConfirmSmartAccountsFinancialApply(w http.ResponseWriter, r *
 
 func decodeSmartAccountsSyncControlRequest(w http.ResponseWriter, r *http.Request, target interface{}) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxSmartAccountsSyncControlRequestBytes)
-	if err := decodeJSON(r, target); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		respondError(w, http.StatusBadRequest, "Invalid request body")
 		return false
 	}

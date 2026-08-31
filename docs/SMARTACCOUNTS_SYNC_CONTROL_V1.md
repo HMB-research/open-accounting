@@ -11,17 +11,17 @@ It is not live sync or financial apply. No endpoint here posts journals, creates
 ## Operator flow
 
 1. Sign in, create/select the target Open Accounting tenant, and open **Migration Workbench**.
-2. Enter the API key and secret once and select **Connect & validate**. They are transient request fields only.
-3. The private bridge derives an opaque source identity from the validated key (`sa-key-v1-...`) and validates an accounts snapshot. OA stores only the returned `secret-ref://sa-bridge/<connection-id>` and safe source identity.
+2. For the opt-in documented API fallback, enter only the pre-provisioned opaque external credential reference (`secret-ref://file/<connection-id>`) and select **Connect external reference**. Never paste an API key or secret into Open Accounting.
+3. The private bridge resolves that tenant-bound reference from its external provider, derives an opaque source identity, and validates an accounts snapshot. OA stores only the returned `secret-ref://sa-bridge/<connection-id>` and safe source identity.
 4. The control remains tenant/source scoped. There is no all-tenant or all-source action. Hold My Beer OÜ is presentation-only after bridge validation; it is never a hard-coded source ID.
 5. The bridge must publish a verified capture policy before OA enables one-click full history. OA must use declared `full_history` bounds or an explicit administrator-provided lower bound for required/windowed resources; it must never silently guess a date. Brave-visible 2017-01-01 evidence for Hold My Beer OÜ is not a universal coded date.
 6. Capture is not archive delivery or accounting apply. A separate private bridge-to-OA handoff stages full source evidence and remains review-required.
 
 ## Credentials and accounting policy
 
-- OA does **not** require `SMARTACCOUNTS_SOURCE_COMPANY_ID` or a SmartAccounts internal company ID. The bridge derives the source identity from the API key after validation.
+- OA does **not** require `SMARTACCOUNTS_SOURCE_COMPANY_ID` or a SmartAccounts internal company ID. The bridge derives the source identity from the credential resolved through its external provider after validation.
 - `SMARTACCOUNTS_BRIDGE_URL` and `SMARTACCOUNTS_BRIDGE_TOKEN_FILE` configure control access. The file is preferred over `SMARTACCOUNTS_BRIDGE_TOKEN`, which is development/test fallback only. Mount it read-only as a Docker secret; do not publish the bridge port.
-- API key and secret are never persisted, echoed, logged, or retained in frontend state. Bridge error bodies are discarded.
+- Open Accounting does not accept API keys or secrets. It passes the supplied opaque external credential reference once to the private bridge, never persists or returns it, and discards bridge error bodies. The bridge resolves raw credential material only through its external provider.
 - SmartAccounts GL is authoritative. A later reviewed executor may post each verified balanced source journal exactly once by external-ID/revision. Sales invoices, purchase/vendor invoices, and payments are non-posting linked records/evidence and cannot create duplicate GL postings.
 - The UI exposes no source records, artifact paths, bridge cursors, raw capture queries, or secret references.
 

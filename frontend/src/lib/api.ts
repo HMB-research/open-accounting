@@ -4789,8 +4789,7 @@ export interface SmartAccountsBrowserMasterDetailStatus {
 }
 
 export interface ConfigureSmartAccountsSyncRequest {
-  api_key: string;
-  api_secret: string;
+  source_credential_reference: string;
   smartaccounts_gl_authoritative: boolean;
   invoice_payment_mode: "NON_POSTING";
 }

@@ -95,8 +95,7 @@
 	];
 
 	let status = $state<SmartAccountsSyncStatus | null>(null);
-	let apiKey = $state('');
-	let apiSecret = $state('');
+	let sourceCredentialReference = $state('');
 	let saving = $state(false);
 	let pairingPending = $state(false);
 	let pairingID = $state('');
@@ -223,7 +222,7 @@
 	);
 	let coverageBlocked = $derived(dateWindowResources.length > 0 || braveDiscoveryResources.length > 0);
 
-	let canConfigure = $derived(Boolean(apiKey.trim() && apiSecret.trim() && !saving));
+	let canConfigure = $derived(Boolean(sourceCredentialReference.trim() && !saving));
 	let browserRelayReady = $derived(relayReadiness === 'ready');
 	let relayReadinessMessage = $derived.by(() => {
 		switch (relayReadiness) {
@@ -247,8 +246,7 @@
 		if (currentTenantID === loadedTenantID) return;
 		loadedTenantID = currentTenantID;
 		status = null;
-		apiKey = '';
-		apiSecret = '';
+		sourceCredentialReference = '';
 		pairingPending = false;
 		pairingID = '';
 		pairingMessage = '';
@@ -784,8 +782,7 @@
 		error = '';
 		try {
 			status = await api.configureSmartAccountsSync(tenantId.trim(), {
-				api_key: apiKey.trim(),
-				api_secret: apiSecret.trim(),
+				source_credential_reference: sourceCredentialReference.trim(),
 				smartaccounts_gl_authoritative: true,
 				invoice_payment_mode: 'NON_POSTING'
 			});
@@ -794,10 +791,9 @@
 		} catch (caught) {
 			error = messageFrom(caught, 'Could not save SmartAccounts sync control.');
 		} finally {
-			// Never retain either raw credential after a bridge response, whether
-			// configuration succeeded or failed.
-			apiKey = '';
-			apiSecret = '';
+			// This opaque external-provider reference is never persisted in the
+			// browser. Clear it after every bridge response.
+			sourceCredentialReference = '';
 			saving = false;
 		}
 	}
@@ -2300,25 +2296,20 @@
 	{/if}
 
 	{#if hasTenant}
-	<details class="api-fallback">
-		<summary>Use API-key connection instead</summary>
-		<p class="help">Use this fallback only when the signed-in Brave relay is unavailable.</p>
-		<div class="form-grid">
-			<div class="form-group">
-				<label class="label" for="smartaccounts-api-key">SmartAccounts API key</label>
-				<input id="smartaccounts-api-key" class="input" type="password" autocomplete="off" bind:value={apiKey} />
-				<p class="help">Sent only to the private NUC bridge; Open Accounting never stores or returns it.</p>
+		<details class="api-fallback">
+			<summary>Use documented API fallback instead</summary>
+			<p class="help">Use this only when the signed-in Brave relay is unavailable and a least-privilege credential is already in the private bridge’s external secret mount.</p>
+			<div class="form-grid">
+				<div class="form-group">
+					<label class="label" for="smartaccounts-source-credential-reference">External credential reference</label>
+					<input id="smartaccounts-source-credential-reference" class="input" type="password" autocomplete="off" bind:value={sourceCredentialReference} />
+					<p class="help">Enter the pre-provisioned opaque reference exactly as <code>secret-ref://file/&lt;connection-id&gt;</code>. Do not paste an API key or secret. Open Accounting sends this reference once to the private bridge, then retains only the bridge-owned connection reference.</p>
+				</div>
 			</div>
-			<div class="form-group">
-				<label class="label" for="smartaccounts-api-secret">SmartAccounts API secret</label>
-				<input id="smartaccounts-api-secret" class="input" type="password" autocomplete="off" bind:value={apiSecret} />
-				<p class="help">The bridge validates one safe accounts request before Open Accounting saves an opaque reference.</p>
-			</div>
-		</div>
-		<div class="actions">
-			<button class="btn btn-secondary" type="button" disabled={!canConfigure} onclick={() => void configure()}>
-				{saving ? 'Connecting…' : 'Connect, validate & start full-history capture'}
-			</button>
+			<div class="actions">
+				<button class="btn btn-secondary" type="button" disabled={!canConfigure} onclick={() => void configure()}>
+					{saving ? 'Connecting…' : 'Connect external reference & start full-history capture'}
+				</button>
 		</div>
 	</details>
 	{/if}

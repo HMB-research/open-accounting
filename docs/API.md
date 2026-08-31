@@ -603,7 +603,7 @@ Streams saved migration execution run snapshots as Server-Sent Events. Each even
 
 ### SmartAccounts sync control v1
 
-This is a preparatory, UI-facing control plane for the private SmartAccounts bridge. The preferred connection is a short-lived, one-time Brave browser pairing: it records only the selected opaque source identifier, not an API key, cookie, browser token, source record, or accounting change. The existing API-key bridge route remains an explicit fallback. There is no default all-company or all-tenant request and no financial write.
+This is a preparatory, UI-facing control plane for the private SmartAccounts bridge. The preferred connection is a short-lived, one-time Brave browser pairing: it records only the selected opaque source identifier, not an API key, cookie, browser token, source record, or accounting change. The documented API fallback accepts only an opaque external credential reference; it never accepts a SmartAccounts API key or secret. There is no default all-company or all-tenant request and no financial write.
 
 ```http
 GET /tenants/{tenantId}/smartaccounts-sync/sources
@@ -985,7 +985,7 @@ write a journal, invoice, payment, contact, item, or reach full-claim or
 reconciliation eligibility. A future reviewed selector contract must add that
 separate capability before this archive-only evidence path is opened.
 
-The `control` request contains transient `api_key`, `api_secret`, `smartaccounts_gl_authoritative: true`, and `invoice_payment_mode: "NON_POSTING"`; it has no browser-supplied source ID. The API sends credentials only to the server-only private NUC bridge, performs safe validation, and stores only the returned `secret-ref://sa-bridge/<connection-id>` URI. Credentials, bridge errors, and the reference are never returned in a response/status view. Production uses `SMARTACCOUNTS_BRIDGE_URL` plus `SMARTACCOUNTS_BRIDGE_TOKEN_FILE`; the inline token is development/test fallback. Control, capture, and apply require existing tenant manage-settings/create-entries permissions. The legacy apply endpoint remains blocked without financial writes.
+The `control` request contains `source_credential_reference`, `smartaccounts_gl_authoritative: true`, and `invoice_payment_mode: "NON_POSTING"`; it has no browser-supplied source ID. With the current bridge revision, the reference must be `secret-ref://file/<connection-id>` and names a least-privilege credential already provisioned in the bridge's tenant-bound external secret mount. OA sends that opaque reference once to the server-only private NUC bridge, performs safe validation, and stores only the returned `secret-ref://sa-bridge/<connection-id>` URI. Raw API keys and secrets are rejected before any bridge call. Credentials, bridge errors, both references, and source data are never returned in a response/status view. Production uses `SMARTACCOUNTS_BRIDGE_URL` plus `SMARTACCOUNTS_BRIDGE_TOKEN_FILE`; the inline token is development/test fallback. Control, capture, and apply require existing tenant manage-settings/create-entries permissions. The legacy apply endpoint remains blocked without financial writes.
 
 ```http
 POST /tenants/{tenantId}/smartaccounts-sync/packages/{packageId}/preview

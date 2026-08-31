@@ -29,14 +29,17 @@ posting.
    `AWAITING_BRAVE_BROWSER_CAPTURE`; it cannot read or transfer source data.
    Do not install the relay or start capture until the owner has separately
    approved those actions.
-3. API fallback: enter the API key and secret and choose **Connect, validate
-   & start full-history capture** only if Brave pairing is unavailable.
-   - The bridge performs one signed account preflight, derives an opaque
-     source identity, stores credentials only in its private `0600` store,
-     then starts the read-only capture.
+3. API fallback: only if Brave pairing is unavailable, provision a
+   least-privilege read-only credential in the bridge's external secret mount,
+   enter its opaque `secret-ref://file/<connection-id>` reference, and
+   choose **Connect external reference & start full-history capture**.
+   - The bridge resolves that reference from the tenant-bound external provider,
+     performs one signed account preflight, derives an opaque source identity,
+     stores no raw credential in its private state, then starts the read-only
+     capture.
    - Open Accounting retains only the opaque binding and safe progress
      metadata. Refreshing the page preserves that opaque binding, not either
-     credential.
+     credential reference.
    - The intended replacement is **Connect with Brave session**. The owner
      signs in once in Brave and approves a short-lived, revocable handoff. It
      must never copy an API key, a cookie, or a browser token into Open
