@@ -40,6 +40,15 @@
 		ownerContinuationSourceCompanyId?: string;
 	} = $props();
 	type BrowserSourceCompany = { source_company_id: string; source_company_name: string };
+	type OnboardingCatalogReceiptState = 'idle' | 'loading' | 'accepted' | 'unavailable';
+	type AcceptedOnboardingCatalogExpectation = {
+		catalogID: string;
+		workflowID?: string;
+		catalogCount?: number;
+		catalogSHA256?: string;
+		generation: number;
+		message: string;
+	};
 	type BrowserOnboardingBinding = {
 		sourceCompanyID: string;
 		sourceCompanyName: string;
@@ -149,6 +158,9 @@
 	let onboardingCatalogNonce = '';
 	let onboardingCatalogGeneration = 0;
 	let onboardingCatalogTimer: number | undefined;
+	// This state deliberately retains no catalog contents. It only represents the
+	// owner page's progress while it asks OA for the current accepted receipt.
+	let onboardingCatalogReceiptState = $state<OnboardingCatalogReceiptState>('idle');
 	let onboardingMode = $state<'' | 'selected' | 'all'>('');
 	let onboardingBatchConsent = $state(false);
 	let onboardingBatchID = $state('');
@@ -293,6 +305,7 @@
 		onboardingCatalogNonce = '';
 		onboardingCatalogGeneration = 0;
 		clearOnboardingCatalogTimer();
+		onboardingCatalogReceiptState = 'idle';
 		onboardingMode = '';
 		onboardingBatchConsent = false;
 		onboardingBatchID = '';
@@ -323,7 +336,22 @@
 			}
 		} else {
 			const savedBatchID = sessionStorage.getItem(onboardingBatchStorageKey());
-			if (isSafeWorkflowID(savedBatchID)) void loadSavedOnboardingBatch(savedBatchID);
+			if (isSafeWorkflowID(savedBatchID)) {
+				void loadSavedOnboardingBatch(savedBatchID);
+			} else {
+				// A catalog is accepted before tenant creation, so it needs its own
+				// short-lived checkpoint. Its opaque ID is re-authorized by the owner
+				// status endpoint; no relay capability or picker metadata is stored.
+				const savedCatalogReceiptID = sessionStorage.getItem(onboardingCatalogReceiptStorageKey());
+				if (isSafeWorkflowID(savedCatalogReceiptID)) {
+					onboardingCatalogReceiptID = savedCatalogReceiptID;
+					void loadAcceptedOnboardingCatalogReceipt({
+						catalogID: savedCatalogReceiptID,
+						generation: onboardingCatalogGeneration,
+						message: 'Restored the current accepted metadata-only company catalog. Choose All or a strict subset; nothing is selected implicitly.'
+					});
+				}
+			}
 		}
 	});
 
@@ -340,6 +368,13 @@
 		// onboarding begins before any tenant exists. The value is only a UUID;
 		// owner-authenticated server reads re-check every binding on restore.
 		return 'open-accounting:smartaccounts-browser-onboarding-batch:v1';
+	}
+
+	function onboardingCatalogReceiptStorageKey(): string {
+		// Catalog selection occurs before an OA tenant exists. The only persisted
+		// value is a UUID-like receipt ID; the accepted picker is always reloaded
+		// from the owner-authenticated no-store status endpoint.
+		return 'open-accounting:smartaccounts-browser-onboarding-catalog-receipt:v1';
 	}
 
 	function isSafeSourceCompanyId(value: string | null | undefined): value is string {
@@ -503,6 +538,75 @@
 
 	function persistOnboardingBatch(batchID: string) {
 		if (isSafeWorkflowID(batchID)) sessionStorage.setItem(onboardingBatchStorageKey(), batchID);
+	}
+
+	function persistOnboardingCatalogReceipt(catalogID: string) {
+		if (isSafeWorkflowID(catalogID)) sessionStorage.setItem(onboardingCatalogReceiptStorageKey(), catalogID);
+	}
+
+	function clearPersistedOnboardingCatalogReceipt(catalogID = onboardingCatalogReceiptID) {
+		const persisted = sessionStorage.getItem(onboardingCatalogReceiptStorageKey());
+		if (!catalogID || persisted === catalogID) sessionStorage.removeItem(onboardingCatalogReceiptStorageKey());
+	}
+
+	function currentAcceptedOnboardingCatalogReceipt(
+		receipt: Awaited<ReturnType<typeof api.getSmartAccountsBrowserOnboardingCatalog>>,
+		expectation: AcceptedOnboardingCatalogExpectation
+	): BrowserSourceCompany[] | null {
+		if (
+			receipt.status !== 'ACCEPTED' ||
+			receipt.catalog_id !== expectation.catalogID ||
+			!isSafeWorkflowID(receipt.catalog_id) ||
+			!isSafeWorkflowID(receipt.workflow_id) ||
+			!isSafeSHA256(receipt.catalog_sha256) ||
+			!Number.isInteger(receipt.catalog_count) ||
+			receipt.catalog_count < 1 ||
+			receipt.catalog_count > browserOnboardingMaxSources ||
+			(typeof receipt.observed_at !== 'string' || !Number.isFinite(Date.parse(receipt.observed_at))) ||
+			(typeof receipt.expires_at !== 'string' || !Number.isFinite(Date.parse(receipt.expires_at))) ||
+			(expectation.workflowID !== undefined && receipt.workflow_id !== expectation.workflowID) ||
+			(expectation.catalogCount !== undefined && receipt.catalog_count !== expectation.catalogCount) ||
+			(expectation.catalogSHA256 !== undefined && receipt.catalog_sha256 !== expectation.catalogSHA256)
+		) return null;
+		const companies = sourceCompaniesFromBrowserMessage(receipt.companies.map((company) => ({
+			source_company_id: company.source_company_id,
+			source_company_name: company.display_name
+		})));
+		return companies.length === receipt.catalog_count ? companies : null;
+	}
+
+	async function loadAcceptedOnboardingCatalogReceipt(expectation: AcceptedOnboardingCatalogExpectation): Promise<boolean> {
+		if (!isSafeWorkflowID(expectation.catalogID)) return false;
+		onboardingCatalogReceiptState = 'loading';
+		try {
+			const receipt = await api.getSmartAccountsBrowserOnboardingCatalog(expectation.catalogID);
+			if (onboardingCatalogGeneration !== expectation.generation || onboardingCatalogReceiptID !== expectation.catalogID) return false;
+			const companies = currentAcceptedOnboardingCatalogReceipt(receipt, expectation);
+			if (!companies) throw new Error('catalog receipt mismatch');
+			discoveredSourceCompanies = companies;
+			selectedSourceCompanyIDs = [];
+			onboardingMode = '';
+			onboardingBatchConsent = false;
+			onboardingCatalogReceiptState = 'accepted';
+			persistOnboardingCatalogReceipt(expectation.catalogID);
+			onboardingMessage = expectation.message;
+			return true;
+		} catch {
+			if (onboardingCatalogGeneration !== expectation.generation || onboardingCatalogReceiptID !== expectation.catalogID) return false;
+			// The endpoint intentionally exposes only accepted, currently usable
+			// receipts. A failed read therefore must not leave an old catalog as
+			// selectable or imply that a lost relay capability can be resumed.
+			discoveredSourceCompanies = [];
+			selectedSourceCompanyIDs = [];
+			onboardingMode = '';
+			onboardingBatchConsent = false;
+			onboardingCatalogWorkflowID = '';
+			onboardingCatalogNonce = '';
+			onboardingCatalogReceiptState = 'unavailable';
+			clearPersistedOnboardingCatalogReceipt(expectation.catalogID);
+			error = 'The current accepted company catalog receipt is no longer available. Confirm a fresh metadata-only read to continue.';
+			return false;
+		}
 	}
 
 	async function loadOnboardingBatchWorkflowIfReady(batchID: string, batchStatus: 'PENDING' | 'REVIEW_REQUIRED' | 'READY' | 'COMPLETE'): Promise<boolean> {
@@ -1186,6 +1290,12 @@
 			onboardingCatalogReceiptID = issued.catalog_id;
 			onboardingCatalogWorkflowID = issued.workflow_id;
 			onboardingCatalogNonce = issued.nonce;
+			// Persist only the opaque receipt ID before dispatch. If the relay has
+			// already handed the catalog to OA when this page reloads, the next page
+			// can restore it through the safe owner status endpoint. The token and
+			// nonce remain memory-only and are never written to browser storage.
+			persistOnboardingCatalogReceipt(issued.catalog_id);
+			onboardingCatalogReceiptState = 'loading';
 			window.postMessage(browserCatalogIssueEvent(issued), window.location.origin);
 			// The raw capability is action-response-only: it crosses straight into
 			// relay memory and must not remain in component state after dispatch.
@@ -1201,12 +1311,14 @@
 				onboardingCatalogWorkflowID = '';
 				onboardingCatalogNonce = '';
 				onboardingCatalogTimer = undefined;
+				onboardingCatalogReceiptState = 'unavailable';
 				onboardingMessage = '';
 				error = 'The installed SmartAccounts Browser Relay did not return the visible-company catalog. Reload the unpacked relay and both normal tabs, then try again.';
 			}, catalogRelayTimeoutMs);
 		} catch (caught) {
 			clearOnboardingCatalogTimer();
 			sourceDiscoveryPending = false;
+			onboardingCatalogReceiptState = 'unavailable';
 			error = messageFrom(caught, 'Could not authorize the visible SmartAccounts company catalog.');
 		}
 	}
@@ -1343,6 +1455,9 @@
 			}
 			onboardingBatchID = response.batch.batch_id;
 			persistOnboardingBatch(response.batch.batch_id);
+			// The immutable batch now owns the accepted catalog binding. Its durable
+			// checkpoint supersedes the short-lived pre-tenant receipt checkpoint.
+			clearPersistedOnboardingCatalogReceipt();
 			onboardingBatchStatus = response.batch.status;
 			onboardingBindings = pendingBindings;
 			onboardingBatchRefreshAttempts = 0;
@@ -1695,6 +1810,7 @@
 					sourceDiscoveryPending = false;
 					onboardingCatalogWorkflowID = '';
 					onboardingCatalogNonce = '';
+					onboardingCatalogReceiptState = 'unavailable';
 					error = catalog.status === 'expired'
 						? 'The visible-company catalog capability expired. Confirm again to issue a new, bounded catalog handoff.'
 						: catalogFailureMessage(catalog.failure_stage);
@@ -1706,23 +1822,16 @@
 				const acceptedWorkflowID = catalog.workflow_id;
 				onboardingCatalogWorkflowID = '';
 				onboardingCatalogNonce = '';
-				void (async () => {
-					try {
-						const receipt = await api.getSmartAccountsBrowserOnboardingCatalog(onboardingCatalogReceiptID);
-						if (onboardingCatalogGeneration !== acceptedGeneration || onboardingCatalogReceiptID !== acceptedCatalogID) return;
-						if (receipt.catalog_id !== acceptedCatalogID || receipt.workflow_id !== acceptedWorkflowID || receipt.catalog_count !== catalog.catalog_count || receipt.catalog_sha256 !== catalog.catalog_sha256) throw new Error('catalog receipt mismatch');
-						const companies = sourceCompaniesFromBrowserMessage(receipt.companies.map((company) => ({ source_company_id: company.source_company_id, source_company_name: company.display_name })));
-						if (companies.length !== receipt.catalog_count) throw new Error('invalid receipt');
-						if (onboardingCatalogGeneration !== acceptedGeneration || onboardingCatalogReceiptID !== acceptedCatalogID) return;
-						discoveredSourceCompanies = companies;
-						selectedSourceCompanyIDs = [];
-						onboardingMode = '';
-						onboardingBatchConsent = false;
-						onboardingMessage = `The relay-observed catalog has ${companies.length} company option${companies.length === 1 ? '' : 's'}. Choose All or a strict subset; nothing is selected implicitly.`;
-					} catch (caught) {
-						error = messageFrom(caught, 'The visible-company catalog was accepted but could not be loaded for selection.');
-					}
-				})();
+				onboardingCatalogReceiptState = 'loading';
+				onboardingMessage = 'The metadata-only catalog was accepted. Loading the current server-owned selection receipt…';
+				void loadAcceptedOnboardingCatalogReceipt({
+					catalogID: acceptedCatalogID,
+					workflowID: acceptedWorkflowID,
+					catalogCount: catalog.catalog_count,
+					catalogSHA256: catalog.catalog_sha256,
+					generation: acceptedGeneration,
+					message: `The relay-observed catalog has ${catalog.catalog_count} company option${catalog.catalog_count === 1 ? '' : 's'}. Choose All or a strict subset; nothing is selected implicitly.`
+				});
 				return;
 			}
 			if (data.type === 'smartaccounts-browser-relay.discovery-result.v1') {
@@ -1985,7 +2094,11 @@
 			</button>
 		{/if}
 		<button class="btn btn-secondary" type="button" disabled={!browserRelayReady || sourceDiscoveryPending || onboardingBusy || !onboardingCatalogConsent} onclick={() => void requestBrowserSourceDiscovery()}>
-			{sourceDiscoveryPending ? 'Reading visible company catalog…' : 'Read visible SmartAccounts company catalog'}
+			{sourceDiscoveryPending
+				? 'Reading visible company catalog…'
+				: onboardingCatalogReceiptState === 'loading'
+					? 'Loading accepted company catalog…'
+					: 'Read visible SmartAccounts company catalog'}
 		</button>
 	</div>
 	<label class="company-choice"><input type="checkbox" bind:checked={onboardingCatalogConsent} /> I approve this metadata-only read of the visible SmartAccounts company picker. It transfers no records, cookies, credentials, or financial data.</label>

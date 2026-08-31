@@ -276,6 +276,9 @@ async function handoffVisibleCompanyCatalog() {
 		await fireEvent.click(screen.getByLabelText(/I approve this metadata-only read/));
 		await fireEvent.click(screen.getByRole('button', { name: 'Read visible SmartAccounts company catalog' }));
 		await waitFor(() => expect(apiMock.issueSmartAccountsBrowserOnboardingCatalog).toHaveBeenCalledTimes(1));
+		// The reload checkpoint contains only the opaque receipt ID, never the
+		// one-time relay capability or the picker contents.
+		expect(window.sessionStorage.getItem('open-accounting:smartaccounts-browser-onboarding-catalog-receipt:v1')).toBe('b436c224-5df5-4b4d-a772-1897f9147400');
 		const base = {
 			source: 'smartaccounts-browser-relay', type: 'smartaccounts-browser-relay.source-catalog-result.v1', version: 1,
 			catalog_id: 'b436c224-5df5-4b4d-a772-1897f9147400', workflow_id: 'c436c224-5df5-4b4d-a772-1897f9147400', nonce: 'N'.repeat(43),
@@ -346,6 +349,34 @@ async function handoffVisibleCompanyCatalog() {
 		expect(screen.queryByText('Old Company')).not.toBeInTheDocument();
 		resolveSecond?.({ catalog_id: '31111111-1111-4111-8111-111111111111', workflow_id: '41111111-1111-4111-8111-111111111111', status: 'ACCEPTED', catalog_sha256: '2'.repeat(64), catalog_count: 1, observed_at: '2026-08-28T10:00:02Z', expires_at: '2026-08-28T10:10:02Z', companies: [{ source_company_id: 'sa-browser-v1-2', display_name: 'New Company' }] });
 		await screen.findByLabelText('All 1 relay-observed companies');
+	});
+
+	it('restores a current accepted catalog receipt through the owner status endpoint after a page reload', async () => {
+		const catalogID = 'b436c224-5df5-4b4d-a772-1897f9147400';
+		window.sessionStorage.setItem('open-accounting:smartaccounts-browser-onboarding-catalog-receipt:v1', catalogID);
+
+		render(SmartAccountsSyncControl, { tenantId: '' });
+
+		await waitFor(() => expect(apiMock.getSmartAccountsBrowserOnboardingCatalog).toHaveBeenCalledWith(catalogID));
+		expect(await screen.findByRole('heading', { name: 'Create or reuse isolated company tenants' })).toBeInTheDocument();
+		expect(screen.getByText(/Restored the current accepted metadata-only company catalog/)).toBeInTheDocument();
+		expect(screen.getByLabelText('All 2 relay-observed companies')).toBeInTheDocument();
+		expect(window.sessionStorage.getItem('open-accounting:smartaccounts-browser-onboarding-catalog-receipt:v1')).toBe(catalogID);
+		expect(screen.queryByText('catalog-token-not-rendered-012345678901234567')).not.toBeInTheDocument();
+	});
+
+	it('clears an unavailable catalog checkpoint instead of leaving the page reading indefinitely', async () => {
+		const catalogID = 'b436c224-5df5-4b4d-a772-1897f9147400';
+		apiMock.getSmartAccountsBrowserOnboardingCatalog.mockRejectedValueOnce(new Error('not found'));
+		window.sessionStorage.setItem('open-accounting:smartaccounts-browser-onboarding-catalog-receipt:v1', catalogID);
+
+		render(SmartAccountsSyncControl, { tenantId: '' });
+
+		await screen.findByText(/current accepted company catalog receipt is no longer available/);
+		expect(window.sessionStorage.getItem('open-accounting:smartaccounts-browser-onboarding-catalog-receipt:v1')).toBeNull();
+		expect(screen.queryByRole('heading', { name: 'Create or reuse isolated company tenants' })).not.toBeInTheDocument();
+		await fireEvent.click(screen.getByLabelText(/I approve this metadata-only read/));
+		expect(screen.getByRole('button', { name: 'Read visible SmartAccounts company catalog' })).toBeEnabled();
 	});
 
 	it('ignores a readiness reply bound to another nonce before accepting the current response', async () => {
