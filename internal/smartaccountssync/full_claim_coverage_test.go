@@ -70,6 +70,16 @@ func TestCurrentFullClaimCoverageMatrixCoversEveryV2BrowserAndAPIv17Surface(t *t
 
 	assert.Len(t, bySource[fullClaimSourceBraveMasterDetail], 3)
 	assert.Len(t, bySource[fullClaimSourceBraveCommercial], 2)
+
+	nonAPI := bySource[fullClaimSourceVendorExport]
+	require.Len(t, nonAPI, 10, "every known non-API/incomplete business domain must have an explicit selected path")
+	for _, row := range nonAPI {
+		assert.Equal(t, fullClaimVendorExportVersion, row.ContractVersion)
+		assert.Equal(t, FullClaimDispositionExportContractRequired, row.Disposition)
+		assert.NotEmpty(t, row.BlockReason)
+		_, classified := fullClaimDomainForRoute(row)
+		assert.True(t, classified, "non-API obligation %q must be assigned to a full-claim domain", row.ResourceID)
+	}
 }
 
 func TestAssessFullClaimEligibilityFailsClosedForEveryKnownGap(t *testing.T) {
@@ -82,6 +92,7 @@ func TestAssessFullClaimEligibilityFailsClosedForEveryKnownGap(t *testing.T) {
 		FullClaimDispositionReviewRequired,
 		FullClaimDispositionUnconsumed,
 		FullClaimDispositionMissingAPIEndpoint,
+		FullClaimDispositionExportContractRequired,
 	} {
 		result := AssessFullClaimEligibility([]FullClaimCoverageRow{{Source: "synthetic", ResourceID: "resource", ContractVersion: "v1", Disposition: disposition}}, 0)
 		assert.False(t, result.FullClaimEligible, disposition)
@@ -105,6 +116,7 @@ func TestCurrentFullClaimCoverageMatrixIsNotAFullSyncClaim(t *testing.T) {
 	assert.Contains(t, result.BlockingResources, fullClaimSourceBraveV2+":warehouse_inventory")
 	assert.Contains(t, result.BlockingResources, fullClaimSourceAPIv17+":general.account_balances.get")
 	assert.Contains(t, result.BlockingResources, fullClaimSourceBraveCommercial+":client_invoices")
+	assert.Contains(t, result.BlockingResources, fullClaimSourceVendorExport+":purchase_order_receipt_lifecycle")
 }
 
 func TestCurrentFullClaimDomainPlanSelectsOneRouteAndRetainsEveryAlternative(t *testing.T) {
@@ -173,6 +185,12 @@ func TestFullClaimDomainPlanFailsClosedForUnprovenAndHardBlockedSelections(t *te
 	assert.Equal(t, []string{"domain:warehouses"}, hardBlocked.BlockingResources)
 
 	assert.False(t, AssessFullClaimDomainPlanEligibility([]FullClaimDomainPlanEntry{clients}, []FullClaimDomainEvidence{completeDomainEvidence(clients)}, 1).FullClaimEligible, "a selected route cannot bypass unresolved tombstones")
+
+	nonAPI := fullClaimPlanEntry(t, "bank_import_export_statement_matching")
+	require.Equal(t, FullClaimDispositionExportContractRequired, nonAPI.Selected.Disposition)
+	result := AssessFullClaimDomainPlanEligibility([]FullClaimDomainPlanEntry{nonAPI}, []FullClaimDomainEvidence{completeDomainEvidence(nonAPI)}, 0)
+	assert.False(t, result.FullClaimEligible, "a complete-looking caller assertion cannot clear an uncontracted non-API domain")
+	assert.Equal(t, []string{"domain:bank_import_export_statement_matching"}, result.BlockingResources)
 }
 
 func fullClaimPlanEntry(t *testing.T, domainID string) FullClaimDomainPlanEntry {

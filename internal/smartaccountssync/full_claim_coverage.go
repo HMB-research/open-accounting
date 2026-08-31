@@ -14,7 +14,13 @@ const (
 	FullClaimDispositionReviewRequired      = "REVIEW_REQUIRED"
 	FullClaimDispositionUnconsumed          = "UNCONSUMED"
 	FullClaimDispositionMissingAPIEndpoint  = "MISSING_API_ENDPOINT"
-	FullClaimDispositionResolved            = "RESOLVED"
+	// FullClaimDispositionExportContractRequired is a deliberate source-path
+	// obligation for a business domain the documented API does not fully cover.
+	// It cannot be cleared by a generic archive or a nearby API resource: the
+	// selected vendor export, reviewed browser read contract, or later signed
+	// API replacement must be recorded explicitly in a new plan version.
+	FullClaimDispositionExportContractRequired = "EXPORT_CONTRACT_REQUIRED"
+	FullClaimDispositionResolved               = "RESOLVED"
 )
 
 const (
@@ -22,9 +28,11 @@ const (
 	fullClaimSourceBraveMasterDetail = "brave_master_detail"
 	fullClaimSourceBraveCommercial   = "brave_commercial_detail"
 	fullClaimSourceAPIv17            = "api_v1_7"
+	fullClaimSourceVendorExport      = "vendor_immutable_export"
 
 	fullClaimAPIContractVersion        = "smartaccounts-api-v1.7"
 	fullClaimCommercialContractVersion = "smartaccounts-browser-commercial-detail-v1"
+	fullClaimVendorExportVersion       = "smartaccounts-vendor-export-coverage-v1"
 )
 
 // FullClaimCoverageRow contains fixed contract metadata only. It contains no
@@ -50,7 +58,7 @@ type FullClaimEligibility struct {
 // FullClaimCoveragePlanVersion is included in each immutable domain choice so
 // future live-evidence storage cannot accidentally satisfy a changed source
 // selection. Bump it when a reviewed source choice changes.
-const FullClaimCoveragePlanVersion = "smartaccounts-full-claim-domain-plan-v1"
+const FullClaimCoveragePlanVersion = "smartaccounts-full-claim-domain-plan-v2"
 
 // FullClaimDomainPlanEntry chooses exactly one source route for one business
 // domain. Alternatives remain in the immutable plan for audit, but they do
@@ -87,7 +95,7 @@ type FullClaimDomainEvidence struct {
 // every API and Brave pathway distinct for audit; it is deliberately not the
 // full-claim selection because several routes represent the same domain.
 func CurrentFullClaimCoverageMatrix() []FullClaimCoverageRow {
-	rows := make([]FullClaimCoverageRow, 0, len(browserDiscoveryProtocolResources)+45)
+	rows := make([]FullClaimCoverageRow, 0, len(browserDiscoveryProtocolResources)+55)
 	for _, resource := range browserDiscoveryProtocolResources {
 		row := FullClaimCoverageRow{
 			Source:          fullClaimSourceBraveV2,
@@ -124,6 +132,14 @@ func CurrentFullClaimCoverageMatrix() []FullClaimCoverageRow {
 	for _, resourceID := range fullClaimAPIResourceIDs {
 		rows = append(rows, currentFullClaimAPIRow(resourceID))
 	}
+	// These are not undocumented endpoints and not exclusions. They are the
+	// explicit, selected source-path obligations for business capabilities that
+	// the documented API does not cover completely. The default is an immutable
+	// vendor export because no reviewed signed API or authenticated browser
+	// export contract exists yet. Replacing one must bump the plan version and
+	// bind fresh per-domain evidence; it cannot silently inherit an unrelated
+	// API, UI grid, package, or archive result.
+	rows = append(rows, currentFullClaimNonAPIObligations()...)
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].Source != rows[j].Source {
 			return rows[i].Source < rows[j].Source
@@ -191,6 +207,8 @@ func fullClaimSourcePriority(source string) int {
 		return 3
 	case fullClaimSourceBraveV2:
 		return 4
+	case fullClaimSourceVendorExport:
+		return 5
 	default:
 		return 99
 	}
@@ -201,6 +219,30 @@ func fullClaimSourcePriority(source string) int {
 // evidence (for example an invoice PDF); this prevents a successful invoice
 // list capture from silently satisfying document-retention coverage.
 func fullClaimDomainForRoute(row FullClaimCoverageRow) (string, bool) {
+	if row.Source == fullClaimSourceVendorExport {
+		switch row.ResourceID {
+		case "recurring_invoices_templates_reminders":
+			return "recurring_invoices_templates_reminders", true
+		case "purchase_order_receipt_lifecycle":
+			return "purchase_order_receipt_lifecycle", true
+		case "e_invoice_inbox_pending_documents":
+			return "e_invoice_inbox_pending_documents", true
+		case "bank_import_export_statement_matching":
+			return "bank_import_export_statement_matching", true
+		case "vat_tsd_declarations_filing_receipts":
+			return "vat_tsd_declarations_filing_receipts", true
+		case "inventory_count_valuation_multi_warehouse":
+			return "inventory_count_valuation_multi_warehouse", true
+		case "fixed_assets_depreciation_schedules":
+			return "fixed_assets_depreciation_schedules", true
+		case "salary_sheets_payroll_calculations":
+			return "salary_sheets_payroll_calculations", true
+		case "annual_and_other_report_outputs":
+			return "annual_and_other_report_outputs", true
+		case "company_financial_year_defaults_audit_metadata":
+			return "company_financial_year_defaults_audit_metadata", true
+		}
+	}
 	if row.Source == fullClaimSourceBraveMasterDetail {
 		switch row.ResourceID {
 		case BrowserMasterDetailClientsResource:
@@ -344,6 +386,26 @@ func currentFullClaimAPIRow(resourceID string) FullClaimCoverageRow {
 	return row
 }
 
+// currentFullClaimNonAPIObligations is intentionally small, fixed metadata.
+// It records no source route, selector, URL, record, company, credential, or
+// payload. A concrete source may be added only by replacing the selected row
+// with a vendor-confirmed signed API contract, independently reviewed
+// authenticated browser/export contract, or immutable vendor export contract.
+func currentFullClaimNonAPIObligations() []FullClaimCoverageRow {
+	return []FullClaimCoverageRow{
+		{fullClaimSourceVendorExport, "recurring_invoices_templates_reminders", fullClaimVendorExportVersion, FullClaimDispositionExportContractRequired, "immutable_recurring_workflow_export_and_cutover_rule_required"},
+		{fullClaimSourceVendorExport, "purchase_order_receipt_lifecycle", fullClaimVendorExportVersion, FullClaimDispositionExportContractRequired, "immutable_purchase_order_receipt_lifecycle_export_and_target_adapter_required"},
+		{fullClaimSourceVendorExport, "e_invoice_inbox_pending_documents", fullClaimVendorExportVersion, FullClaimDispositionExportContractRequired, "immutable_einvoice_queue_state_export_and_parent_closure_required"},
+		{fullClaimSourceVendorExport, "bank_import_export_statement_matching", fullClaimVendorExportVersion, FullClaimDispositionExportContractRequired, "signed_bank_statement_matching_export_and_reconciliation_mapping_required"},
+		{fullClaimSourceVendorExport, "vat_tsd_declarations_filing_receipts", fullClaimVendorExportVersion, FullClaimDispositionExportContractRequired, "immutable_period_versioned_declaration_filing_receipt_export_required"},
+		{fullClaimSourceVendorExport, "inventory_count_valuation_multi_warehouse", fullClaimVendorExportVersion, FullClaimDispositionExportContractRequired, "timestamped_inventory_valuation_export_and_target_disposition_required"},
+		{fullClaimSourceVendorExport, "fixed_assets_depreciation_schedules", fullClaimVendorExportVersion, FullClaimDispositionExportContractRequired, "immutable_asset_register_depreciation_schedule_export_and_target_adapter_required"},
+		{fullClaimSourceVendorExport, "salary_sheets_payroll_calculations", fullClaimVendorExportVersion, FullClaimDispositionExportContractRequired, "redacted_payroll_run_export_and_accountant_cutover_rule_required"},
+		{fullClaimSourceVendorExport, "annual_and_other_report_outputs", fullClaimVendorExportVersion, FullClaimDispositionExportContractRequired, "immutable_parameterized_report_export_and_gl_control_linkage_required"},
+		{fullClaimSourceVendorExport, "company_financial_year_defaults_audit_metadata", fullClaimVendorExportVersion, FullClaimDispositionExportContractRequired, "allowlisted_nonsecret_company_metadata_export_and_cutover_evidence_required"},
+	}
+}
+
 // AssessFullClaimEligibility is intentionally pure. It is used to prevent a
 // capability catalog or package with unresolved coverage from being labelled a
 // full claim. Actual GL replay, current evidence, actor separation, and
@@ -482,7 +544,7 @@ func fullClaimDispositionBlocks(disposition string) bool {
 	switch disposition {
 	case FullClaimDispositionGLApplyGated, FullClaimDispositionReferenceApplyGated, FullClaimDispositionArchiveOnly, FullClaimDispositionResolved:
 		return false
-	case FullClaimDispositionFilterRequired, FullClaimDispositionPageOnlyRequired, FullClaimDispositionReviewRequired, FullClaimDispositionUnconsumed, FullClaimDispositionMissingAPIEndpoint:
+	case FullClaimDispositionFilterRequired, FullClaimDispositionPageOnlyRequired, FullClaimDispositionReviewRequired, FullClaimDispositionUnconsumed, FullClaimDispositionMissingAPIEndpoint, FullClaimDispositionExportContractRequired:
 		return true
 	default:
 		return true

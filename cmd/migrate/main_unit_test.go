@@ -459,6 +459,38 @@ func TestFullClaimDomainEvidenceMigrationIsBoundedAndForwardOnlyUnit(t *testing.
 	}
 }
 
+func TestFullClaimDomainPlanV2MigrationRetainsHistoricalEvidenceUnit(t *testing.T) {
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "migrations", "090_smartaccounts_full_claim_domain_plan_v2.up.sql"))
+	if err != nil {
+		t.Fatalf("read 090 upgrade: %v", err)
+	}
+	contents := string(upgrade)
+	for _, expected := range []string{
+		"ALTER TABLE public.smartaccounts_full_claim_domain_evidence",
+		"DROP CONSTRAINT IF EXISTS smartaccounts_full_claim_domain_evidence_plan_check",
+		"plan_version IN (",
+		"smartaccounts-full-claim-domain-plan-v1",
+		"smartaccounts-full-claim-domain-plan-v2",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Errorf("090 upgrade must contain %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"source_rows", "monetary_amount", "cookie", "credential", "request_body", "response_body", "free_form_note"} {
+		if strings.Contains(strings.ToLower(contents), forbidden) {
+			t.Errorf("090 public schema must not persist %q", forbidden)
+		}
+	}
+
+	rollback, err := os.ReadFile(filepath.Join("..", "..", "migrations", "090_smartaccounts_full_claim_domain_plan_v2.down.sql"))
+	if err != nil {
+		t.Fatalf("read 090 rollback: %v", err)
+	}
+	if !strings.Contains(string(rollback), "SELECT 1") {
+		t.Fatal("090 rollback must remain forward-only so v1 and v2 evidence remain readable")
+	}
+}
+
 func TestReferenceMasterStateMigrationIsTenantScopedAndBootstrappedUnit(t *testing.T) {
 	upgrade, err := os.ReadFile(filepath.Join("..", "..", "migrations", "079_smartaccounts_reference_master_state.up.sql"))
 	if err != nil {

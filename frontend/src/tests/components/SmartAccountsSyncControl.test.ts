@@ -305,6 +305,24 @@ async function handoffVisibleCompanyCatalog() {
 		expect(screen.queryByText('catalog-token-not-rendered-012345678901234567')).not.toBeInTheDocument();
 	});
 
+	it('renders only a fixed catalog-failure stage and rejects data-bearing catalog results', async () => {
+		render(SmartAccountsSyncControl, { tenantId: 'tenant-1' });
+		await fireEvent.click(screen.getByLabelText(/I approve this metadata-only read/));
+		await fireEvent.click(screen.getByRole('button', { name: 'Read visible SmartAccounts company catalog' }));
+		await waitFor(() => expect(apiMock.issueSmartAccountsBrowserOnboardingCatalog).toHaveBeenCalledTimes(1));
+		const base = {
+			source: 'smartaccounts-browser-relay', type: 'smartaccounts-browser-relay.source-catalog-result.v1', version: 1,
+			catalog_id: 'b436c224-5df5-4b4d-a772-1897f9147400', workflow_id: 'c436c224-5df5-4b4d-a772-1897f9147400', nonce: 'N'.repeat(43),
+			status: 'catalog_blocked'
+		};
+		window.dispatchEvent(new MessageEvent('message', { source: window, origin: window.location.origin, data: { ...base, failure_stage: 'picker_unstable', source_html: 'never-rendered-source-html' } }));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(screen.queryByText(/did not settle to one complete list/)).not.toBeInTheDocument();
+		window.dispatchEvent(new MessageEvent('message', { source: window, origin: window.location.origin, data: { ...base, failure_stage: 'picker_unstable' } }));
+		await screen.findByText(/did not settle to one complete list/);
+		expect(screen.queryByText('never-rendered-source-html')).not.toBeInTheDocument();
+	});
+
 	it('does not let an older accepted catalog GET overwrite a newer issued catalog', async () => {
 		let resolveFirst: ((value: unknown) => void) | undefined;
 		let resolveSecond: ((value: unknown) => void) | undefined;

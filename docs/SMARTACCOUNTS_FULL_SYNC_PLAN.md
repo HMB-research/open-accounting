@@ -60,15 +60,26 @@ routes, and all 40 documented API v1.7 GET methods. Each row records only its
 source surface, resource ID, contract version, disposition, and fixed
 blocker—never a company, source record, row, amount, credential, or URL.
 
-The immutable `smartaccounts-full-claim-domain-plan-v1` groups those routes by
+The immutable `smartaccounts-full-claim-domain-plan-v2` groups those routes by
 business domain and selects exactly one primary source route. API routes are
 preferred where they cover the same domain; Brave/export routes remain auditable
 alternatives and cannot create duplicate blockers for an API-primary domain.
 This is not a relaxation: a selected route stays blocking until its live source
 access, schema, completeness, reconciliation, tombstone handling, and
 independent accountant attestation have all been bound to that exact plan.
-Filter/page-only, unconsumed, review-required, and missing-endpoint selections
-remain hard product blockers. Migration `089` supplies an append-only,
+Filter/page-only, unconsumed, review-required, missing-endpoint, and explicit
+export-contract selections remain hard product blockers. The v2 plan also
+contains ten mandatory source-path obligations for material capability gaps in
+the documented API: recurring workflows, purchase-order/receipt lifecycle,
+e-invoice queues, bank import/statement matching, VAT/TSD filing receipts,
+inventory valuation/count sheets, fixed assets/depreciation, payroll runs,
+report outputs, and allowlisted company financial-year/default/audit metadata.
+Each begins as a blocked `vendor_immutable_export` selection; it can be
+replaced only in a newer reviewed plan by a vendor-confirmed signed API route,
+an independently reviewed authenticated Brave read/export contract, or a
+versioned immutable vendor export. No neighbouring API endpoint, generic
+archive, browser grid, or caller-supplied evidence can satisfy it. Migration
+`089` supplies an append-only,
 digest-only per-domain evidence ledger. Each row is bound to exactly one
 `(batch, tenant, source company, package, scope digest, reconciliation evidence digest, plan version, domain)`
 and can contain only reviewed route metadata, six required boolean proof gates,
@@ -77,6 +88,11 @@ amounts, URLs, request/response payloads, browser state, credentials, cookies,
 or free-form notes. A changed package, scope, reconciliation generation,
 source, tenant, or plan requires a distinct receipt; the existing receipt
 cannot be overwritten.
+
+Migration `090` retains historical v1 receipts for audit but only permits the
+current v2 plan to participate in a new full-claim decision. Consequently the
+product remains `NOT_ELIGIBLE` until every selected source has current proof
+for all API and non-API obligations.
 
 The ledger is server-internal and intentionally has no HTTP write endpoint.
 `ELIGIBLE` additionally requires the exact selected route for every domain and

@@ -1219,17 +1219,39 @@
 		workflow_id: string;
 		nonce: string;
 		status: 'accepted' | 'already_accepted' | 'awaiting_browser' | 'catalog_blocked' | 'expired';
+		failure_stage?: 'picker_unavailable' | 'picker_unstable' | 'source_tab_delivery_failed' | 'oa_transport_failed' | 'oa_transport_rejected';
 		catalog_count?: number;
 		catalog_sha256?: string;
 	} {
 		if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
 		const record = value as Record<string, unknown>;
-		const allowed = new Set(['source', 'type', 'version', 'catalog_id', 'workflow_id', 'nonce', 'status', 'catalog_count', 'catalog_sha256']);
+		const allowed = new Set(['source', 'type', 'version', 'catalog_id', 'workflow_id', 'nonce', 'status', 'failure_stage', 'catalog_count', 'catalog_sha256']);
 		if (Object.keys(record).some((key) => !allowed.has(key))) return false;
 		if (record.source !== 'smartaccounts-browser-relay' || record.type !== 'smartaccounts-browser-relay.source-catalog-result.v1' || record.version !== 1 || typeof record.catalog_id !== 'string' || typeof record.workflow_id !== 'string' || typeof record.nonce !== 'string' || !['accepted', 'already_accepted', 'awaiting_browser', 'catalog_blocked', 'expired'].includes(String(record.status))) return false;
 		const hasDigest = typeof record.catalog_sha256 === 'string' && /^[0-9a-f]{64}$/.test(record.catalog_sha256);
 		const hasCount = Number.isInteger(record.catalog_count) && Number(record.catalog_count) >= 1 && Number(record.catalog_count) <= browserOnboardingMaxSources;
-		return (record.status === 'accepted' || record.status === 'already_accepted') ? hasDigest && hasCount : record.catalog_sha256 === undefined && record.catalog_count === undefined;
+		const failureStage = record.failure_stage;
+		const validFailureStage = typeof failureStage === 'string' && ['picker_unavailable', 'picker_unstable', 'source_tab_delivery_failed', 'oa_transport_failed', 'oa_transport_rejected'].includes(failureStage);
+		if (record.status === 'accepted' || record.status === 'already_accepted') return hasDigest && hasCount && failureStage === undefined;
+		if (record.catalog_sha256 !== undefined || record.catalog_count !== undefined) return false;
+		return record.status !== 'catalog_blocked' ? failureStage === undefined : failureStage === undefined || validFailureStage;
+	}
+
+	function catalogFailureMessage(stage: unknown) {
+		switch (stage) {
+			case 'picker_unavailable':
+				return 'The relay could not find the exact visible SmartAccounts company picker. Open the company picker in the signed-in SmartAccounts tab, then try again.';
+			case 'picker_unstable':
+				return 'The visible SmartAccounts company picker did not settle to one complete list. Leave it open and try again.';
+			case 'source_tab_delivery_failed':
+				return 'The relay could not deliver the metadata request to the signed-in SmartAccounts tab. Reload that tab and try again.';
+			case 'oa_transport_failed':
+				return 'The relay could not reach Open Accounting for the metadata-only catalog handoff. Check the local service connection, then try again.';
+			case 'oa_transport_rejected':
+				return 'Open Accounting rejected the metadata-only catalog handoff. Issue a fresh catalog request and try again.';
+			default:
+				return 'The Brave relay could not hand off the visible SmartAccounts company catalog.';
+		}
 	}
 
 	function toggleSourceCompany(sourceCompanyID: string, checked: boolean) {
@@ -1675,7 +1697,7 @@
 					onboardingCatalogNonce = '';
 					error = catalog.status === 'expired'
 						? 'The visible-company catalog capability expired. Confirm again to issue a new, bounded catalog handoff.'
-						: 'The Brave relay could not hand off the visible SmartAccounts company catalog.';
+						: catalogFailureMessage(catalog.failure_stage);
 					return;
 				}
 				sourceDiscoveryPending = false;

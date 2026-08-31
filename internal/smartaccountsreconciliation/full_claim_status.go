@@ -18,6 +18,7 @@ const (
 	fullClaimBlockerMatrixReview     = "matrix_review_required"
 	fullClaimBlockerMatrixUnconsumed = "matrix_unconsumed"
 	fullClaimBlockerMatrixMissingAPI = "matrix_missing_api_endpoint"
+	fullClaimBlockerMatrixExport     = "matrix_export_contract_gap"
 	fullClaimBlockerMatrixUnknown    = "matrix_unknown_contract_gap"
 	fullClaimBlockerMatrixSchema     = "matrix_schema_gap"
 	fullClaimBlockerMatrixCoverage   = "matrix_coverage_gap"
@@ -87,7 +88,7 @@ func (s *Service) FullClaimStatus(ctx context.Context, ownerID, batchID string) 
 
 	matrix := summarizeFullClaimDomainPlan(plan)
 	matrix.review += status.DomainEvidenceGapSourceCount
-	matrix.blockers = matrix.filter + matrix.pageOnly + matrix.review + matrix.unconsumed + matrix.missingEndpoint + matrix.unknown
+	matrix.blockers = matrix.filter + matrix.pageOnly + matrix.review + matrix.unconsumed + matrix.missingEndpoint + matrix.exportContract + matrix.unknown
 	status.MatrixBlockerCount = matrix.blockers
 	status.MatrixFilterContractGapCount = matrix.filter
 	status.MatrixPageOnlyGapCount = matrix.pageOnly
@@ -95,7 +96,7 @@ func (s *Service) FullClaimStatus(ctx context.Context, ownerID, batchID string) 
 	status.MatrixUnconsumedCount = matrix.unconsumed
 	status.MatrixMissingEndpointCount = matrix.missingEndpoint
 	status.MatrixSchemaGapCount = matrix.filter
-	status.MatrixCoverageGapCount = matrix.filter + matrix.pageOnly
+	status.MatrixCoverageGapCount = matrix.filter + matrix.pageOnly + matrix.exportContract
 	status.BlockingCodes = fullClaimBlockingCodes(*status, matrix.unknown)
 	status.FullClaimEligible = len(status.BlockingCodes) == 0 && status.CurrentPassCount == status.SelectedCount
 	if status.FullClaimEligible {
@@ -111,6 +112,7 @@ type fullClaimMatrixSummary struct {
 	review          int
 	unconsumed      int
 	missingEndpoint int
+	exportContract  int
 	unknown         int
 }
 
@@ -133,6 +135,8 @@ func summarizeFullClaimDomainPlan(plan []smartaccountssync.FullClaimDomainPlanEn
 			summary.unconsumed++
 		case smartaccountssync.FullClaimDispositionMissingAPIEndpoint:
 			summary.missingEndpoint++
+		case smartaccountssync.FullClaimDispositionExportContractRequired:
+			summary.exportContract++
 		case smartaccountssync.FullClaimDispositionGLApplyGated,
 			smartaccountssync.FullClaimDispositionReferenceApplyGated,
 			smartaccountssync.FullClaimDispositionArchiveOnly,
@@ -142,12 +146,12 @@ func summarizeFullClaimDomainPlan(plan []smartaccountssync.FullClaimDomainPlanEn
 			summary.unknown++
 		}
 	}
-	summary.blockers = summary.filter + summary.pageOnly + summary.review + summary.unconsumed + summary.missingEndpoint + summary.unknown
+	summary.blockers = summary.filter + summary.pageOnly + summary.review + summary.unconsumed + summary.missingEndpoint + summary.exportContract + summary.unknown
 	return summary
 }
 
 func fullClaimBlockingCodes(status FullClaimStatus, unknownMatrixRows int) []string {
-	codes := make([]string, 0, 11)
+	codes := make([]string, 0, 12)
 	if status.CurrentPassGapCount > 0 {
 		codes = append(codes, fullClaimBlockerCurrentPass)
 	}
@@ -174,6 +178,9 @@ func fullClaimBlockingCodes(status FullClaimStatus, unknownMatrixRows int) []str
 	}
 	if status.MatrixMissingEndpointCount > 0 {
 		codes = append(codes, fullClaimBlockerMatrixMissingAPI)
+	}
+	if status.MatrixCoverageGapCount > status.MatrixFilterContractGapCount+status.MatrixPageOnlyGapCount {
+		codes = append(codes, fullClaimBlockerMatrixExport)
 	}
 	if unknownMatrixRows > 0 {
 		codes = append(codes, fullClaimBlockerMatrixUnknown)

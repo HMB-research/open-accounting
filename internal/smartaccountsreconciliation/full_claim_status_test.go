@@ -82,7 +82,7 @@ func TestFullClaimStatusBlocksPartialGLAndDoesNotSerializeSourceEvidence(t *test
 	if status.Status != FullClaimStatusNotEligible || status.FullClaimEligible || status.SelectedCount != 1 || status.CurrentPassCount != 0 || status.CurrentPassGapCount != 1 || status.SourceCoverageGapCount != 1 {
 		t.Fatalf("partial GL full-claim status = %#v", status)
 	}
-	if !contains(status.BlockingCodes, fullClaimBlockerCurrentPass) || !contains(status.BlockingCodes, fullClaimBlockerSourceCoverage) || !contains(status.BlockingCodes, fullClaimBlockerMatrixFilter) || !contains(status.BlockingCodes, fullClaimBlockerMatrixPageOnly) || !contains(status.BlockingCodes, fullClaimBlockerMatrixUnconsumed) || !contains(status.BlockingCodes, fullClaimBlockerMatrixMissingAPI) {
+	if !contains(status.BlockingCodes, fullClaimBlockerCurrentPass) || !contains(status.BlockingCodes, fullClaimBlockerSourceCoverage) || !contains(status.BlockingCodes, fullClaimBlockerMatrixFilter) || !contains(status.BlockingCodes, fullClaimBlockerMatrixPageOnly) || !contains(status.BlockingCodes, fullClaimBlockerMatrixUnconsumed) || !contains(status.BlockingCodes, fullClaimBlockerMatrixMissingAPI) || !contains(status.BlockingCodes, fullClaimBlockerMatrixExport) {
 		t.Fatalf("partial GL fixed blockers = %#v", status.BlockingCodes)
 	}
 	encoded, err := json.Marshal(status)
