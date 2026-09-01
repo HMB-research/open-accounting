@@ -981,10 +981,8 @@ func inferSmartAccountsAccountTypeFromCode(code, fallback string) string {
 	case '2':
 		return "LIABILITY"
 	case '3':
-		return "EQUITY"
-	case '4':
 		return "REVENUE"
-	case '5', '6', '7', '8', '9':
+	case '4', '5', '6', '7', '8', '9':
 		return "EXPENSE"
 	default:
 		return fallback

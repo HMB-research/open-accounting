@@ -32,8 +32,14 @@ func (s *Service) GetDashboardSummary(ctx context.Context, tenantID, schemaName 
 	now := time.Now()
 	periodEnd := now
 	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	prevPeriodStart := periodStart.AddDate(0, -1, 0)
-	prevPeriodEnd := periodStart.Add(-time.Second)
+	return s.GetDashboardSummaryForPeriod(ctx, tenantID, schemaName, periodStart, periodEnd)
+}
+
+// GetDashboardSummaryForPeriod returns dashboard metrics for an explicit date range.
+func (s *Service) GetDashboardSummaryForPeriod(ctx context.Context, tenantID, schemaName string, periodStart, periodEnd time.Time) (*DashboardSummary, error) {
+	periodDuration := periodEnd.Sub(periodStart)
+	prevPeriodEnd := periodStart.Add(-time.Nanosecond)
+	prevPeriodStart := prevPeriodEnd.Add(-periodDuration)
 
 	summary := &DashboardSummary{
 		PeriodStart: periodStart,

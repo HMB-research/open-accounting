@@ -143,6 +143,19 @@ func TestNewServiceWithRepository(t *testing.T) {
 func TestService_GetDashboardSummary(t *testing.T) {
 	ctx := context.Background()
 
+	t.Run("uses explicit dashboard period", func(t *testing.T) {
+		repo := &MockRepository{}
+		svc := NewServiceWithRepository(repo)
+		start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+		end := time.Date(2026, time.August, 31, 23, 59, 59, 0, time.UTC)
+
+		summary, err := svc.GetDashboardSummaryForPeriod(ctx, "tenant-1", "test_schema", start, end)
+
+		require.NoError(t, err)
+		assert.Equal(t, start, summary.PeriodStart)
+		assert.Equal(t, end, summary.PeriodEnd)
+	})
+
 	t.Run("success with all data", func(t *testing.T) {
 		repo := &MockRepository{
 			RevenueExpensesRevenue:  decimal.NewFromInt(10000),

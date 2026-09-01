@@ -186,6 +186,29 @@ func TestGetDashboardSummary(t *testing.T) {
 	assert.True(t, result.TotalRevenue.GreaterThan(decimal.Zero))
 	assert.Equal(t, 5, result.DraftInvoices)
 	assert.Equal(t, 10, result.PendingInvoices)
+
+	periodReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/analytics/dashboard?start_date=2026-01-01&end_date=2026-08-31", nil)
+	periodReq = withURLParams(periodReq, map[string]string{"tenantID": "tenant-1"})
+	periodReq = periodReq.WithContext(contextWithClaims(periodReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+	periodResponse := httptest.NewRecorder()
+	h.GetDashboardSummary(periodResponse, periodReq)
+	require.Equal(t, http.StatusOK, periodResponse.Code)
+	require.NoError(t, json.Unmarshal(periodResponse.Body.Bytes(), &result))
+	assert.Equal(t, "2026-01-01", result.PeriodStart.Format("2006-01-02"))
+	assert.Equal(t, "2026-08-31", result.PeriodEnd.Format("2006-01-02"))
+
+	for _, query := range []string{
+		"?start_date=2026-01-01",
+		"?start_date=bad&end_date=2026-08-31",
+		"?start_date=2026-09-01&end_date=2026-08-31",
+	} {
+		badReq := httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/analytics/dashboard"+query, nil)
+		badReq = withURLParams(badReq, map[string]string{"tenantID": "tenant-1"})
+		badReq = badReq.WithContext(contextWithClaims(badReq.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+		badResponse := httptest.NewRecorder()
+		h.GetDashboardSummary(badResponse, badReq)
+		assert.Equal(t, http.StatusBadRequest, badResponse.Code)
+	}
 }
 
 func TestGetRevenueExpenseChart(t *testing.T) {

@@ -20,6 +20,7 @@
 	import AccountantReviewPanel from '$lib/components/AccountantReviewPanel.svelte';
 	import DashboardFinancialSignals from '$lib/components/DashboardFinancialSignals.svelte';
 	import SetupCenter from '$lib/components/SetupCenter.svelte';
+	import { calculateDateRange } from '$lib/utils/dates';
 	import * as m from '$lib/paraglide/messages.js';
 
 	Chart.register(...registerables);
@@ -46,7 +47,7 @@
 	let cashFlowChartInstance: Chart | null = null;
 
 	// Period selector state
-	let selectedPeriod = $state<Period>('THIS_MONTH');
+	let selectedPeriod = $state<Period>('THIS_YEAR');
 	let startDate = $state('');
 	let endDate = $state('');
 
@@ -129,10 +130,12 @@
 		isLoadingAnalytics = true;
 		isLoadingActivity = true;
 		try {
+			const range = dashboardDateRange();
+			const months = monthsInRange(range.start, range.end);
 			// Load summary and chart data (required)
 			const [summaryData, chartResponse] = await Promise.all([
-				api.getDashboardSummary(tenantId),
-				api.getRevenueExpenseChart(tenantId, 6)
+				api.getDashboardSummary(tenantId, range.start, range.end),
+				api.getRevenueExpenseChart(tenantId, months)
 			]);
 			summary = summaryData;
 			chartData = chartResponse;
@@ -146,7 +149,7 @@
 			}
 
 			// Load cash flow with current period
-			await loadCashFlow(tenantId);
+			await loadCashFlow(tenantId, range.start, range.end);
 		} catch (err) {
 			console.error('Failed to load analytics:', err);
 		} finally {
@@ -155,44 +158,27 @@
 		}
 	}
 
-	async function loadCashFlow(tenantId: string) {
+	function dashboardDateRange(): { start: string; end: string } {
+		if (selectedPeriod === 'CUSTOM') {
+			if (startDate && endDate) return { start: startDate, end: endDate };
+			const fallback = calculateDateRange('THIS_MONTH');
+			return { start: fallback.from, end: fallback.to };
+		}
+		const range = calculateDateRange(selectedPeriod);
+		const today = new Date().toISOString().split('T')[0];
+		return { start: range.from, end: selectedPeriod === 'THIS_YEAR' ? today : range.to };
+	}
+
+	function monthsInRange(start: string, end: string): number {
+		const startValue = new Date(`${start}T00:00:00Z`);
+		const endValue = new Date(`${end}T00:00:00Z`);
+		return Math.max(1, (endValue.getUTCFullYear() - startValue.getUTCFullYear()) * 12 + endValue.getUTCMonth() - startValue.getUTCMonth() + 1);
+	}
+
+	async function loadCashFlow(tenantId: string, rangeStart?: string, rangeEnd?: string) {
 		try {
-			// Calculate dates based on selected period
-			const now = new Date();
-			let start: Date;
-			let end: Date = new Date(now.getFullYear(), now.getMonth() + 1, 0); // End of current month
-
-			switch (selectedPeriod) {
-				case 'THIS_MONTH':
-					start = new Date(now.getFullYear(), now.getMonth(), 1);
-					break;
-				case 'LAST_MONTH':
-					start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-					end = new Date(now.getFullYear(), now.getMonth(), 0);
-					break;
-				case 'THIS_QUARTER':
-					const quarter = Math.floor(now.getMonth() / 3);
-					start = new Date(now.getFullYear(), quarter * 3, 1);
-					break;
-				case 'THIS_YEAR':
-					start = new Date(now.getFullYear(), 0, 1);
-					break;
-				case 'CUSTOM':
-					if (startDate && endDate) {
-						start = new Date(startDate);
-						end = new Date(endDate);
-					} else {
-						start = new Date(now.getFullYear(), now.getMonth(), 1);
-					}
-					break;
-				default:
-					start = new Date(now.getFullYear(), now.getMonth(), 1);
-			}
-
-			const startStr = start.toISOString().split('T')[0];
-			const endStr = end.toISOString().split('T')[0];
-
-			cashFlowData = await api.getCashFlowAnalytics(tenantId, startStr, endStr);
+			const range = rangeStart && rangeEnd ? { start: rangeStart, end: rangeEnd } : dashboardDateRange();
+			cashFlowData = await api.getCashFlowAnalytics(tenantId, range.start, range.end);
 		} catch (err) {
 			console.error('Failed to load cash flow:', err);
 		}
@@ -203,7 +189,7 @@
 		startDate = start;
 		endDate = end;
 		if (selectedTenant) {
-			loadCashFlow(selectedTenant.id);
+			loadAnalytics(selectedTenant.id);
 		}
 	}
 
@@ -473,14 +459,14 @@
 						<div class="summary-label">{m.dashboard_revenue()}</div>
 						<div class="summary-value positive">{formatCurrency(summary.total_revenue)}</div>
 						<div class="summary-change" class:positive={Number(summary.revenue_change) >= 0} class:negative={Number(summary.revenue_change) < 0}>
-							{formatPercent(summary.revenue_change)} {m.dashboard_vsLastMonth()}
+							{formatPercent(summary.revenue_change)} {m.dashboard_vsPreviousPeriod()}
 						</div>
 					</div>
 					<div class="summary-card">
 						<div class="summary-label">{m.dashboard_expenses()}</div>
 						<div class="summary-value negative">{formatCurrency(summary.total_expenses)}</div>
 						<div class="summary-change" class:positive={Number(summary.expenses_change) < 0} class:negative={Number(summary.expenses_change) >= 0}>
-							{formatPercent(summary.expenses_change)} {m.dashboard_vsLastMonth()}
+							{formatPercent(summary.expenses_change)} {m.dashboard_vsPreviousPeriod()}
 						</div>
 					</div>
 					<div class="summary-card">
