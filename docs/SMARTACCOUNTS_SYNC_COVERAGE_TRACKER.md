@@ -27,6 +27,16 @@ This is the canonical checklist for the three-source SmartAccounts → Open Acco
 | `177750` | 10 | 14 | 33 | `VERIFIED_IMPORTED` | `VERIFIED_IMPORTED` |
 | **Total** | **146** | **9,401** | **23,449** | **0 mismatches** | **0 drafts, imbalances, or duplicate source identities** |
 
+## Sync control-plane status
+
+| Checkpoint | Status | Evidence / remaining gate |
+|---|---|---|
+| One-action all-company setup | `IMPLEMENTED` | **Start all-company safe sync** covers only the visible-company catalog, isolated tenant create/reuse, and expected-source pairing. It cannot authorize capture or accounting apply. |
+| Deployed OA runtime | `VERIFIED` | The running NUC frontend bundle contains the one-action control, the API contains the bounded metadata compatibility route, and `/health` returns `200`. |
+| Exact-period dashboard and cash flow | `VERIFIED` | The deployed runtime contains exact `start_date`/`end_date` queries and the applied-batch dashboard parity checks pass. |
+| Mac mini relay readiness | `REVERIFY_REQUIRED` | Confirm relay 0.2.7 or later and the zero-data `ready`/signed-in handshake in the identified Mac mini browser session before issuing a fresh catalog action. |
+| Non-GL record sync | `INCOMPLETE` | The tables below remain authoritative. One-click setup does not promote any `NOT_CAPTURED` or `EMPTY_TARGET` record type. |
+
 ## Browser/export resource checklist
 
 | SmartAccounts resource | Source shape | OA destination | 1:1 support | Capture status | Import status | Reconciliation / missing coverage |
