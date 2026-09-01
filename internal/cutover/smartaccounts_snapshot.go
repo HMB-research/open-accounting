@@ -10,13 +10,19 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
-const SmartAccountsSnapshotAdapterVersion = "smartaccounts-snapshot-v1"
+const SmartAccountsSnapshotAdapterVersion = "smartaccounts-snapshot-v2"
+
+var smartAccountsGeneralLedgerSourceNamespace = uuid.MustParse("4274fdcb-50ca-56d9-80f3-4cb25bf2aa4a")
 
 type SmartAccountsSnapshotOptions struct {
 	SourceDir         string
@@ -74,6 +80,7 @@ type smartAccountsCSVSource struct {
 	rows            [][]string
 	classification  string
 	transformations []string
+	derivedSources  []smartAccountsCSVSource
 }
 
 type smartAccountsXMLSource struct {
@@ -159,6 +166,7 @@ func PrepareSmartAccountsSnapshot(opts SmartAccountsSnapshotOptions) (*SmartAcco
 				return nil
 			}
 			csvSources = append(csvSources, source)
+			csvSources = append(csvSources, source.derivedSources...)
 		case ".xml":
 			source, reason := classifySmartAccountsXML(path, relPath, sourceHash, string(content))
 			if reason != "" {
@@ -219,6 +227,32 @@ func (r *SmartAccountsSnapshotReport) BundleFiles() []BundleFile {
 
 func classifySmartAccountsCSV(path, relPath, sourceHash, content string) (smartAccountsCSVSource, string, error) {
 	hintedKind, hasHint := smartAccountsFilenameKind(path)
+	if !hasHint || hintedKind == KindJournalEntries {
+		journalHeaders, journalRows, accountRows, ok, err := parseSmartAccountsGeneralLedgerGrid(content)
+		if err != nil {
+			return smartAccountsCSVSource{}, "", fmt.Errorf("parse %s: %w", relPath, err)
+		}
+		if ok {
+			return smartAccountsCSVSource{
+				kind:            KindJournalEntries,
+				relSourcePath:   relPath,
+				sourceHash:      sourceHash,
+				headers:         journalHeaders,
+				rows:            journalRows,
+				classification:  "smartaccounts-general-ledger-grid",
+				transformations: []string{"expanded grouped SmartAccounts general ledger CSV into canonical journal lines", "removed zero-value ledger display rows", "split combined debit and credit display rows"},
+				derivedSources: []smartAccountsCSVSource{{
+					kind:            KindAccounts,
+					relSourcePath:   relPath,
+					sourceHash:      sourceHash,
+					headers:         []string{"code", "name", "account_type"},
+					rows:            accountRows,
+					classification:  "derived-from-smartaccounts-general-ledger-grid",
+					transformations: []string{"derived chart of accounts from SmartAccounts general ledger account sections"},
+				}},
+			}, "", nil
+		}
+	}
 	headers, rows, err := readSmartAccountsCSVWithHint(content, hintedKind, hasHint)
 	if err != nil {
 		return smartAccountsCSVSource{}, "", fmt.Errorf("parse %s: %w", relPath, err)
@@ -284,24 +318,9 @@ func readSmartAccountsCSV(content string) ([]string, [][]string, error) {
 }
 
 func readSmartAccountsCSVWithHint(content string, hintedKind FileKind, hasHint bool) ([]string, [][]string, error) {
-	trimmed := strings.TrimPrefix(strings.TrimSpace(content), "\ufeff")
-	if trimmed == "" {
-		return nil, nil, fmt.Errorf("csv content is empty")
-	}
-	reader := csv.NewReader(strings.NewReader(trimmed))
-	reader.Comma = detectDelimiter(trimmed)
-	reader.FieldsPerRecord = -1
-	reader.TrimLeadingSpace = true
-	records := make([][]string, 0)
-	for {
-		record, err := reader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, nil, fmt.Errorf("read row: %w", err)
-		}
-		records = append(records, trimSmartAccountsCSVRecord(record))
+	records, err := readSmartAccountsCSVRecords(content)
+	if err != nil {
+		return nil, nil, err
 	}
 	headerIndex := smartAccountsCSVHeaderIndex(records, hintedKind, hasHint)
 	if headerIndex < 0 {
@@ -316,6 +335,197 @@ func readSmartAccountsCSVWithHint(content string, hintedKind FileKind, hasHint b
 		rows = append(rows, record)
 	}
 	return headers, rows, nil
+}
+
+func readSmartAccountsCSVRecords(content string) ([][]string, error) {
+	trimmed := strings.TrimPrefix(strings.TrimSpace(content), "\ufeff")
+	if trimmed == "" {
+		return nil, fmt.Errorf("csv content is empty")
+	}
+	reader := csv.NewReader(strings.NewReader(trimmed))
+	reader.Comma = detectDelimiter(trimmed)
+	reader.FieldsPerRecord = -1
+	reader.TrimLeadingSpace = true
+	records := make([][]string, 0)
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("read row: %w", err)
+		}
+		records = append(records, trimSmartAccountsCSVRecord(record))
+	}
+	return records, nil
+}
+
+var smartAccountsLedgerAccountPattern = regexp.MustCompile(`^\s*([0-9]+)\s*-\s*(.+?)\s*$`)
+
+type smartAccountsLedgerGridColumns struct {
+	date        int
+	reference   int
+	description int
+	document    int
+	debit       int
+	credit      int
+}
+
+func parseSmartAccountsGeneralLedgerGrid(content string) ([]string, [][]string, [][]string, bool, error) {
+	records, err := readSmartAccountsCSVRecords(content)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	columns := smartAccountsLedgerGridColumns{date: -1, reference: -1, description: -1, document: -1, debit: -1, credit: -1}
+	currentAccount := ""
+	accountNames := make(map[string]string)
+	accountOrder := make([]string, 0)
+	journalRows := make([][]string, 0)
+	foundGrid := false
+
+	for _, record := range records {
+		if len(record) == 0 {
+			continue
+		}
+		if next, ok := smartAccountsLedgerGridHeader(record); ok {
+			columns = next
+			foundGrid = true
+			continue
+		}
+		if match := smartAccountsLedgerAccountPattern.FindStringSubmatch(strings.TrimSpace(record[0])); len(match) == 3 {
+			currentAccount = strings.TrimSpace(match[1])
+			if _, exists := accountNames[currentAccount]; !exists {
+				accountOrder = append(accountOrder, currentAccount)
+			}
+			accountNames[currentAccount] = strings.TrimSpace(match[2])
+			continue
+		}
+		if !foundGrid || currentAccount == "" || columns.date >= len(record) {
+			continue
+		}
+		entryDate, err := time.Parse("02.01.2006", strings.TrimSpace(record[columns.date]))
+		if err != nil {
+			continue
+		}
+		reference := valueAtIndex(record, columns.reference)
+		if reference == "" {
+			reference = valueAtIndex(record, columns.document)
+		}
+		if reference == "" {
+			reference = "ledger"
+		}
+		entryReference := entryDate.Format("2006-01-02") + " " + reference
+		sourceID := uuid.NewSHA1(smartAccountsGeneralLedgerSourceNamespace, []byte(entryReference)).String()
+		description := valueAtIndex(record, columns.description)
+		if description == "" {
+			description = valueAtIndex(record, columns.document)
+		}
+		debit, credit, err := smartAccountsLedgerDebitCredit(valueAtIndex(record, columns.debit), valueAtIndex(record, columns.credit))
+		if err != nil {
+			return nil, nil, nil, false, err
+		}
+		if debit.IsZero() && credit.IsZero() {
+			continue
+		}
+		appendRow := func(debitValue, creditValue decimal.Decimal) {
+			journalRows = append(journalRows, []string{
+				entryReference,
+				entryDate.Format("2006-01-02"),
+				currentAccount,
+				description,
+				decimalCSVValue(debitValue),
+				decimalCSVValue(creditValue),
+				"SMARTACCOUNTS_GL",
+				sourceID,
+			})
+		}
+		if debit.IsPositive() && credit.IsPositive() {
+			appendRow(debit, decimal.Zero)
+			appendRow(decimal.Zero, credit)
+			continue
+		}
+		appendRow(debit, credit)
+	}
+
+	if !foundGrid {
+		return nil, nil, nil, false, nil
+	}
+	if len(journalRows) == 0 || len(accountOrder) == 0 {
+		return nil, nil, nil, false, fmt.Errorf("SmartAccounts general ledger grid contains no journal rows or account sections")
+	}
+	accountRows := make([][]string, 0, len(accountOrder))
+	for _, code := range accountOrder {
+		accountRows = append(accountRows, []string{code, accountNames[code], inferSmartAccountsAccountTypeFromCode(code, "")})
+	}
+	return []string{"entry_reference", "entry_date", "account_code", "line_description", "debit", "credit", "source_type", "source_id"}, journalRows, accountRows, true, nil
+}
+
+func smartAccountsLedgerGridHeader(record []string) (smartAccountsLedgerGridColumns, bool) {
+	columns := smartAccountsLedgerGridColumns{date: -1, reference: -1, description: -1, document: -1, debit: -1, credit: -1}
+	for i, header := range record {
+		switch normalizedHeader(header) {
+		case "kuupaev", "kuupäev":
+			columns.date = i
+		case "alus":
+			if columns.reference == -1 {
+				columns.reference = i
+			}
+		case "kande_kirjeldus":
+			columns.description = i
+		case "alusdokument":
+			columns.document = i
+		case "deebet":
+			columns.debit = i
+		case "kreedit":
+			columns.credit = i
+		}
+	}
+	return columns, columns.date >= 0 && columns.reference >= 0 && columns.debit >= 0 && columns.credit >= 0
+}
+
+func smartAccountsLedgerDebitCredit(debitValue, creditValue string) (decimal.Decimal, decimal.Decimal, error) {
+	parse := func(value string) (decimal.Decimal, error) {
+		normalized := normalizeSmartAccountsDecimalValue(value)
+		if normalized == "" {
+			return decimal.Zero, nil
+		}
+		parsed, err := decimal.NewFromString(normalized)
+		if err != nil {
+			return decimal.Zero, fmt.Errorf("parse SmartAccounts ledger amount %q: %w", value, err)
+		}
+		return parsed, nil
+	}
+	debit, err := parse(debitValue)
+	if err != nil {
+		return decimal.Zero, decimal.Zero, err
+	}
+	credit, err := parse(creditValue)
+	if err != nil {
+		return decimal.Zero, decimal.Zero, err
+	}
+	if debit.IsNegative() {
+		credit = credit.Add(debit.Abs())
+		debit = decimal.Zero
+	}
+	if credit.IsNegative() {
+		debit = debit.Add(credit.Abs())
+		credit = decimal.Zero
+	}
+	return debit, credit, nil
+}
+
+func decimalCSVValue(value decimal.Decimal) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.String()
+}
+
+func valueAtIndex(row []string, index int) string {
+	if index < 0 || index >= len(row) {
+		return ""
+	}
+	return strings.TrimSpace(row[index])
 }
 
 func trimSmartAccountsCSVRecord(record []string) []string {

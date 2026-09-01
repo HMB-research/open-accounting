@@ -1,7 +1,10 @@
 package cutover
 
 import (
+	"encoding/csv"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,6 +96,86 @@ func TestSmartAccountsSnapshotSkipsGridPreambleAndCanonicalizesEstonianHeaders(t
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(canonical.CSVContent, "code,name,account_type"))
 	require.Contains(t, canonical.CSVContent, "1000,Cash,ASSET")
+}
+
+func TestPrepareSmartAccountsSnapshotExpandsNativeGeneralLedgerGrid(t *testing.T) {
+	sourceDir := t.TempDir()
+	outputDir := filepath.Join(t.TempDir(), "prepared")
+	content := strings.Join([]string{
+		"Pearaamat: Example Export OU,,,,,,,,",
+		"Periood: 01.01.2024 - 31.12.2024,,,,,,,,",
+		"1000 - Cash,,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit,Saldo",
+		"01.01.2024,JV-1,,Opening line,,,100.00,,100.00",
+		"02.01.2024,JV-2,,Combined display line,,,5.00,5.00,100.00",
+		"03.01.2024,JV-3,,Zero display line,,,0.00,0.00,100.00",
+		"2000 - Equity,,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit,Saldo",
+		"01.01.2024,JV-1,,Opening line,,,,100.00,100.00",
+	}, "\n")
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "general_ledger.csv"), []byte(content), 0o600))
+
+	report, err := PrepareSmartAccountsSnapshot(SmartAccountsSnapshotOptions{
+		SourceDir:   sourceDir,
+		OutputDir:   outputDir,
+		CutoverDate: "2024-01-01",
+		GeneratedAt: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+	require.Len(t, report.PreparedFiles, 2)
+	require.FileExists(t, filepath.Join(outputDir, "bundle", "accounts.csv"))
+	require.FileExists(t, filepath.Join(outputDir, "bundle", "journal_entries.csv"))
+
+	accountsContent, err := os.ReadFile(filepath.Join(outputDir, "bundle", "accounts.csv"))
+	require.NoError(t, err)
+	require.Contains(t, string(accountsContent), "1000,Cash,ASSET")
+	require.Contains(t, string(accountsContent), "2000,Equity,LIABILITY")
+
+	journalContent, err := os.ReadFile(filepath.Join(outputDir, "bundle", "journal_entries.csv"))
+	require.NoError(t, err)
+	require.Contains(t, string(journalContent), "2024-01-01 JV-1,2024-01-01,1000")
+	require.Contains(t, string(journalContent), "SMARTACCOUNTS_GL")
+	require.NotContains(t, string(journalContent), "JV-3")
+
+	journalRows, err := parseJournalImportRowsForSnapshotTest(string(journalContent))
+	require.NoError(t, err)
+	require.Len(t, journalRows, 4)
+	require.NotEmpty(t, journalRows[0]["source_id"])
+	require.Equal(t, journalRows[0]["source_id"], journalRows[3]["source_id"])
+	require.Equal(t, journalRows[1]["source_id"], journalRows[2]["source_id"])
+	require.NotEqual(t, journalRows[0]["source_id"], journalRows[1]["source_id"])
+	_, err = uuid.Parse(journalRows[0]["source_id"])
+	require.NoError(t, err)
+
+	validation, err := ValidateBundle(&ValidateBundleRequest{
+		Files:          report.BundleFiles(),
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+	})
+	require.NoError(t, err)
+	require.True(t, validation.Summary.Ready, "issues: %#v", validation.Issues)
+}
+
+func parseJournalImportRowsForSnapshotTest(content string) ([]map[string]string, error) {
+	reader := csv.NewReader(strings.NewReader(content))
+	headers, err := reader.Read()
+	if err != nil {
+		return nil, err
+	}
+	var result []map[string]string
+	for {
+		row, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			return result, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		values := make(map[string]string, len(headers))
+		for index, header := range headers {
+			values[header] = row[index]
+		}
+		result = append(result, values)
+	}
 }
 
 func TestPrepareSmartAccountsSnapshotInputAndWalkErrors(t *testing.T) {
