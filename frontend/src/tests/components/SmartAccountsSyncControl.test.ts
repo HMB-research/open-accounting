@@ -100,6 +100,7 @@ function relayReadinessReply(
     capture_manifest_version: "smartaccounts-brave-ui-v2",
     workflow_plan_version: "smartaccounts-browser-capture-plan-v1",
     smartaccounts_session_state: "signed_in" as const,
+    relay_build_version: "0.2.7",
     ...overrides,
   };
 }
@@ -642,14 +643,23 @@ describe("SmartAccountsSyncControl", () => {
     ).toEqual([]);
   });
 
-  it("shows an exact safe relay build version while accepting legacy versionless readiness", async () => {
-    automaticRelayReadinessReply = (nonce) =>
-      relayReadinessReply(nonce, { relay_build_version: "0.2.7" });
+  it("shows the exact reviewed relay build version", async () => {
     render(SmartAccountsSyncControl, { tenantId: "tenant-1" });
     expect(await screen.findByText("Installed relay build: 0.2.7")).toBeInTheDocument();
     expect(
       screen.getByText("Relay ready — SmartAccounts is signed in."),
     ).toBeInTheDocument();
+  });
+
+  it("classifies a legacy versionless readiness reply as stale", async () => {
+    automaticRelayReadinessReply = (nonce) =>
+      relayReadinessReply(nonce, { relay_build_version: undefined });
+    render(SmartAccountsSyncControl, { tenantId: "tenant-1" });
+
+    await screen.findByText(/Relay needs reload or update to build 0\.2\.7/);
+    expect(
+      screen.getByRole("button", { name: "Start all-company safe sync" }),
+    ).toBeDisabled();
   });
 
   it("reissues an expired master-detail capability only after renewed per-run consent", async () => {

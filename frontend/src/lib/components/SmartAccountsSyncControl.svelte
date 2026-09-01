@@ -114,6 +114,7 @@
   const relayReadinessProtocolVersion = "smartaccounts-browser-relay-v1";
   const relayCaptureManifestVersion = "smartaccounts-brave-ui-v2";
   const relayWorkflowPlanVersion = "smartaccounts-browser-capture-plan-v1";
+  const relayExpectedBuildVersion = "0.2.7";
   const relayReadinessTimeoutMs = 3_000;
   // The relay completes the stable-picker check locally before a single bounded
   // handoff. A missing response must not leave the metadata-only onboarding
@@ -345,7 +346,7 @@
       case "unknown":
         return "Relay is reachable, but SmartAccounts sign-in could not be confirmed. Reload the signed-in SmartAccounts tab, then check again.";
       case "stale":
-        return "Relay needs reload or update. Reload the Open Accounting page after updating the Browser Relay, then check again.";
+        return `Relay needs reload or update to build ${relayExpectedBuildVersion}. Reload the Open Accounting page after updating the Browser Relay, then check again.`;
       case "missing":
         return "Relay was not detected. Enable or reload the Browser Relay, then check again.";
       default:
@@ -1042,30 +1043,23 @@
     )
       return;
     clearRelayReadinessTimer();
-    const hasBuildVersion = Object.hasOwn(
-      response,
-      relayReadinessBuildField,
-    );
     if (
       Object.keys(response).length !==
-        relayReadinessResponseFields.length + (hasBuildVersion ? 1 : 0) ||
+        relayReadinessResponseFields.length + 1 ||
       !relayReadinessResponseFields.every((field) =>
         Object.hasOwn(response, field),
       ) ||
-      (hasBuildVersion &&
-        !/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(
-          String(response.relay_build_version ?? ""),
-        )) ||
+      !Object.hasOwn(response, relayReadinessBuildField) ||
+      response.relay_build_version !== relayExpectedBuildVersion ||
       response.relay_protocol_version !== relayReadinessProtocolVersion ||
       response.capture_manifest_version !== relayCaptureManifestVersion ||
       response.workflow_plan_version !== relayWorkflowPlanVersion
     ) {
+      relayBuildVersion = "";
       relayReadiness = "stale";
       return;
     }
-    relayBuildVersion = hasBuildVersion
-      ? String(response.relay_build_version)
-      : "";
+    relayBuildVersion = relayExpectedBuildVersion;
     switch (response.smartaccounts_session_state) {
       case "signed_in":
         relayReadiness = "ready";

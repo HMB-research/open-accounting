@@ -400,6 +400,7 @@ describe("MigrationWorkbench", () => {
               capture_manifest_version: "smartaccounts-brave-ui-v2",
               workflow_plan_version: "smartaccounts-browser-capture-plan-v1",
               smartaccounts_session_state: "signed_in",
+              relay_build_version: "0.2.7",
             },
           }),
         );
