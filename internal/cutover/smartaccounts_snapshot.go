@@ -384,9 +384,6 @@ func parseSmartAccountsGeneralLedgerGrid(content string) ([]string, [][]string, 
 	foundGrid := false
 
 	for _, record := range records {
-		if len(record) == 0 {
-			continue
-		}
 		if next, ok := smartAccountsLedgerGridHeader(record); ok {
 			columns = next
 			foundGrid = true

@@ -155,6 +155,75 @@ func TestPrepareSmartAccountsSnapshotExpandsNativeGeneralLedgerGrid(t *testing.T
 	require.True(t, validation.Summary.Ready, "issues: %#v", validation.Issues)
 }
 
+func TestSmartAccountsGeneralLedgerGridValidationEdges(t *testing.T) {
+	malformed := "\"unterminated"
+	_, _, _, ok, err := parseSmartAccountsGeneralLedgerGrid(malformed)
+	require.Error(t, err)
+	require.False(t, ok)
+
+	_, _, err = classifySmartAccountsCSV("unknown.csv", "unknown.csv", "hash", malformed)
+	require.ErrorContains(t, err, "parse unknown.csv")
+
+	gridWithoutRows := strings.Join([]string{
+		"1000 - Cash,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit",
+		"not-a-date,REF-1,,Ignored,,,,",
+	}, "\n")
+	_, _, _, ok, err = parseSmartAccountsGeneralLedgerGrid(gridWithoutRows)
+	require.ErrorContains(t, err, "contains no journal rows")
+	require.False(t, ok)
+
+	invalidDebit := strings.Join([]string{
+		"1000 - Cash,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit",
+		"01.01.2026,REF-1,,Line,,,invalid,",
+	}, "\n")
+	_, _, _, _, err = parseSmartAccountsGeneralLedgerGrid(invalidDebit)
+	require.ErrorContains(t, err, "parse SmartAccounts ledger amount")
+
+	invalidCredit := strings.Join([]string{
+		"1000 - Cash,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit",
+		"01.01.2026,REF-1,,Line,,,,invalid",
+	}, "\n")
+	_, _, _, _, err = parseSmartAccountsGeneralLedgerGrid(invalidCredit)
+	require.ErrorContains(t, err, "parse SmartAccounts ledger amount")
+
+	debit, credit, err := smartAccountsLedgerDebitCredit("-2.50", "")
+	require.NoError(t, err)
+	require.True(t, debit.IsZero())
+	require.Equal(t, "2.5", credit.String())
+
+	debit, credit, err = smartAccountsLedgerDebitCredit("", "-3.75")
+	require.NoError(t, err)
+	require.Equal(t, "3.75", debit.String())
+	require.True(t, credit.IsZero())
+
+	require.Empty(t, valueAtIndex([]string{"value"}, -1))
+	require.Empty(t, valueAtIndex([]string{"value"}, 1))
+}
+
+func TestSmartAccountsGeneralLedgerGridFallbackFieldsAndRepeatedAccounts(t *testing.T) {
+	content := strings.Join([]string{
+		"1000 - Cash,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit",
+		"01.01.2026,,,,DOC-1,,10,",
+		"1000 - Cash updated,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit",
+		"02.01.2026,,,,,,5,",
+	}, "\n")
+
+	_, rows, accounts, ok, err := parseSmartAccountsGeneralLedgerGrid(content)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Len(t, rows, 2)
+	require.Equal(t, "2026-01-01 DOC-1", rows[0][0])
+	require.Equal(t, "DOC-1", rows[0][3])
+	require.Equal(t, "2026-01-02 ledger", rows[1][0])
+	require.Len(t, accounts, 1)
+	require.Equal(t, "Cash updated", accounts[0][1])
+}
+
 func parseJournalImportRowsForSnapshotTest(content string) ([]map[string]string, error) {
 	reader := csv.NewReader(strings.NewReader(content))
 	headers, err := reader.Read()

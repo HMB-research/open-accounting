@@ -189,6 +189,59 @@ func TestGORMRepositoryScansMonthlyQueries(t *testing.T) {
 	})
 }
 
+func TestGORMRepositoryExactCashFlowPeriodAndLedgerErrors(t *testing.T) {
+	ctx := context.Background()
+	schema := "tenant_schema"
+	start := time.Date(2026, time.January, 15, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
+
+	t.Run("fills exact period with zero months", func(t *testing.T) {
+		repo, stub := newAnalyticsStubRepository(t,
+			analyticsStubQuery{contains: []string{`FROM "tenant_schema"."bank_transactions" AS bt`}, columns: []string{"month", "inflows", "outflows"}},
+			analyticsStubQuery{contains: []string{`FROM "tenant_schema"."payments" AS p`}, columns: []string{"month", "inflows", "outflows"}},
+			analyticsStubQuery{contains: []string{"WITH cash_entry_movements"}, columns: []string{"month", "inflows", "outflows"}},
+		)
+
+		data, err := repo.GetMonthlyCashFlowForPeriod(ctx, schema, start, end)
+
+		require.NoError(t, err)
+		require.Len(t, data, 2)
+		assert.Equal(t, "Jan 2026", data[0].Label)
+		assert.True(t, data[0].Inflows.IsZero())
+		assert.True(t, data[0].Outflows.IsZero())
+		assert.Equal(t, "Feb 2026", data[1].Label)
+		stub.requireExhausted(t)
+	})
+
+	t.Run("rejects reversed period without querying", func(t *testing.T) {
+		repo := NewGORMRepository(nil)
+		data, err := repo.GetMonthlyCashFlowForPeriod(ctx, schema, end, start)
+		require.NoError(t, err)
+		assert.Empty(t, data)
+	})
+
+	t.Run("empty internal month selection does not query", func(t *testing.T) {
+		repo := NewGORMRepository(nil)
+		data, err := repo.getMonthlyCashFlow(ctx, schema, nil, start, end)
+		require.NoError(t, err)
+		assert.Empty(t, data)
+	})
+
+	t.Run("propagates ledger query errors", func(t *testing.T) {
+		repo, stub := newAnalyticsStubRepository(t,
+			analyticsStubQuery{contains: []string{`FROM "tenant_schema"."bank_transactions" AS bt`}, columns: []string{"month", "inflows", "outflows"}},
+			analyticsStubQuery{contains: []string{`FROM "tenant_schema"."payments" AS p`}, columns: []string{"month", "inflows", "outflows"}},
+			analyticsStubQuery{contains: []string{"WITH cash_entry_movements"}, err: errors.New("ledger query failed")},
+		)
+
+		data, err := repo.GetMonthlyCashFlowForPeriod(ctx, schema, start, end)
+
+		require.ErrorContains(t, err, "get monthly ledger cash flow")
+		assert.Nil(t, data)
+		stub.requireExhausted(t)
+	})
+}
+
 func TestIsMigrationSettlementPaymentMethod(t *testing.T) {
 	assert.True(t, IsMigrationSettlementPaymentMethod("CUTOVER_SETTLEMENT"))
 	assert.True(t, IsMigrationSettlementPaymentMethod(" migration_settlement "))

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,15 +34,16 @@ type mockAnalyticsRepository struct {
 	topCustomers       []analytics.TopItem
 	activityItems      []analytics.ActivityItem
 
-	revenueErr     error
-	receivablesErr error
-	payablesErr    error
-	countsErr      error
-	monthlyErr     error
-	cashFlowErr    error
-	agingErr       error
-	topErr         error
-	activityErr    error
+	revenueErr        error
+	receivablesErr    error
+	payablesErr       error
+	countsErr         error
+	monthlyErr        error
+	cashFlowErr       error
+	periodCashFlowErr error
+	agingErr          error
+	topErr            error
+	activityErr       error
 }
 
 func newMockAnalyticsRepository() *mockAnalyticsRepository {
@@ -110,6 +112,13 @@ func (m *mockAnalyticsRepository) GetMonthlyCashFlow(ctx context.Context, schema
 		}, nil
 	}
 	return m.cashFlowData, nil
+}
+
+func (m *mockAnalyticsRepository) GetMonthlyCashFlowForPeriod(ctx context.Context, schemaName string, start, end time.Time) ([]analytics.MonthlyCashFlowData, error) {
+	if m.periodCashFlowErr != nil {
+		return nil, m.periodCashFlowErr
+	}
+	return m.GetMonthlyCashFlow(ctx, schemaName, 0)
 }
 
 func (m *mockAnalyticsRepository) GetAgingByContact(ctx context.Context, schemaName, invoiceType string) ([]analytics.ContactAging, error) {
@@ -258,7 +267,7 @@ func TestGetRevenueExpenseChart(t *testing.T) {
 }
 
 func TestGetCashFlowChart(t *testing.T) {
-	h, _, tenantRepo := setupAnalyticsTestHandlers()
+	h, analyticsRepo, tenantRepo := setupAnalyticsTestHandlers()
 
 	tenantRepo.tenants["tenant-1"] = &tenant.Tenant{
 		ID:         "tenant-1",
@@ -295,6 +304,14 @@ func TestGetCashFlowChart(t *testing.T) {
 		h.GetCashFlowChart(rr, req)
 		assert.Equal(t, testCase.wantStatus, rr.Code, testCase.query)
 	}
+
+	analyticsRepo.periodCashFlowErr = errors.New("period query failed")
+	req = httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/analytics/cash-flow?start_date=2026-01-01&end_date=2026-03-31", nil)
+	req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+	req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+	rr = httptest.NewRecorder()
+	h.GetCashFlowChart(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
 }
 
 func TestGetReceivablesAging(t *testing.T) {

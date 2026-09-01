@@ -63,6 +63,21 @@ type MockRepository struct {
 	LastLimit       int
 }
 
+type periodMockRepository struct {
+	*MockRepository
+	data  []MonthlyCashFlowData
+	err   error
+	start time.Time
+	end   time.Time
+}
+
+func (m *periodMockRepository) GetMonthlyCashFlowForPeriod(_ context.Context, schemaName string, start, end time.Time) ([]MonthlyCashFlowData, error) {
+	m.LastSchemaName = schemaName
+	m.start = start
+	m.end = end
+	return m.data, m.err
+}
+
 func (m *MockRepository) GetRevenueExpenses(ctx context.Context, schemaName string, start, end time.Time) (revenue, expenses decimal.Decimal, err error) {
 	m.LastSchemaName = schemaName
 	m.LastStart = start
@@ -138,6 +153,36 @@ func TestNewServiceWithRepository(t *testing.T) {
 	svc := NewServiceWithRepository(repo)
 	assert.NotNil(t, svc)
 	assert.Equal(t, repo, svc.repo)
+}
+
+func TestServiceGetCashFlowChartForPeriod(t *testing.T) {
+	ctx := context.Background()
+	start := time.Date(2026, time.January, 15, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+
+	t.Run("falls back to month count", func(t *testing.T) {
+		repo := &MockRepository{MonthlyCashFlowData: []MonthlyCashFlowData{{Label: "Jan 2026", Inflows: decimal.NewFromInt(4), Outflows: decimal.NewFromInt(1)}}}
+		chart, err := NewServiceWithRepository(repo).GetCashFlowChartForPeriod(ctx, "tenant-1", "tenant_schema", start, end)
+		require.NoError(t, err)
+		assert.Equal(t, 3, repo.LastMonths)
+		assert.Equal(t, []string{"Jan 2026"}, chart.Labels)
+	})
+
+	t.Run("uses exact period repository", func(t *testing.T) {
+		repo := &periodMockRepository{MockRepository: &MockRepository{}, data: []MonthlyCashFlowData{{Label: "Feb 2026", Inflows: decimal.NewFromInt(7), Outflows: decimal.NewFromInt(2)}}}
+		chart, err := NewServiceWithRepository(repo).GetCashFlowChartForPeriod(ctx, "tenant-1", "tenant_schema", start, end)
+		require.NoError(t, err)
+		assert.Equal(t, start, repo.start)
+		assert.Equal(t, end, repo.end)
+		assert.Equal(t, []decimal.Decimal{decimal.NewFromInt(5)}, chart.Net)
+	})
+
+	t.Run("returns exact period errors", func(t *testing.T) {
+		repo := &periodMockRepository{MockRepository: &MockRepository{}, err: errors.New("period failed")}
+		chart, err := NewServiceWithRepository(repo).GetCashFlowChartForPeriod(ctx, "tenant-1", "tenant_schema", start, end)
+		require.ErrorContains(t, err, "period failed")
+		assert.Nil(t, chart)
+	})
 }
 
 func TestService_GetDashboardSummary(t *testing.T) {
