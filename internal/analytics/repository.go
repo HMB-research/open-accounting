@@ -306,7 +306,7 @@ func (r *GORMRepository) GetMonthlyCashFlow(ctx context.Context, schemaName stri
 				AND je.entry_date >= ? AND je.entry_date < ?
 				AND a.account_type = ?
 				AND (
-					a.code ~ '^10[0-9]{2}$'
+					a.code ~ '^10[0-9]+$'
 					OR LOWER(a.name) ~ '(bank|pank|cash|kassa|paypal|wise|revolut)'
 				)
 			GROUP BY date_trunc('month', je.entry_date), je.id

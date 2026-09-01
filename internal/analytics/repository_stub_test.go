@@ -146,7 +146,7 @@ func TestGORMRepositoryScansMonthlyQueries(t *testing.T) {
 				rows:     [][]driver.Value{{monthStarts[1], "50.00", "10.00"}, {monthStarts[2], "999.00", "999.00"}},
 			},
 			analyticsStubQuery{
-				contains: []string{"WITH cash_entry_movements", `FROM "tenant_schema"."journal_entries" AS je`, "movement > 0", "movement < 0"},
+				contains: []string{"WITH cash_entry_movements", `FROM "tenant_schema"."journal_entries" AS je`, "a.code ~ '^10[0-9]+$'", "movement > 0", "movement < 0"},
 				columns:  []string{"month", "inflows", "outflows"},
 				rows:     [][]driver.Value{{monthStarts[0], "75.00", "25.00"}, {monthStarts[1], "999.00", "999.00"}},
 			},
