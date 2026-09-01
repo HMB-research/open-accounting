@@ -210,7 +210,7 @@ func (c *HTTPBridgeClient) Health(ctx context.Context) error {
 	if err != nil {
 		return ErrBridgeRequestFailed
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		return ErrBridgeRequestFailed
 	}
@@ -237,7 +237,7 @@ func (c *HTTPBridgeClient) verifyCapabilities(ctx context.Context) error {
 	if err != nil {
 		return ErrBridgeRequestFailed
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		return ErrBridgeRequestFailed
 	}
@@ -394,7 +394,7 @@ func (c *HTTPBridgeClient) requestJSON(ctx context.Context, tenantID, method, pa
 	if err != nil {
 		return ErrBridgeRequestFailed
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return ErrBridgeRequestFailed
 	}
@@ -446,7 +446,7 @@ func (c *HTTPBridgeClient) browserDiscoveryReceiptRequest(ctx context.Context, t
 	if err != nil {
 		return BrowserDiscoveryReceipt{}, ErrBridgeRequestFailed
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	switch response.StatusCode {
 	case http.StatusOK, http.StatusCreated:
 		// Both the first accepted receipt and an exact replay use the same
@@ -508,7 +508,7 @@ func (c *HTTPBridgeClient) browserCSVSchemaApprovalRequest(ctx context.Context, 
 	if err != nil {
 		return BrowserCSVSchemaApprovalResponse{}, ErrBridgeRequestFailed
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	switch response.StatusCode {
 	case http.StatusOK, http.StatusCreated:
 	case http.StatusNotFound:
@@ -601,7 +601,7 @@ func (c *HTTPBridgeClient) FinalizeBrowserCapture(ctx context.Context, tenantID,
 	if err != nil {
 		return BrowserCaptureStatus{}, ErrBridgeRequestFailed
 	}
-	defer httpResponse.Body.Close()
+	defer func() { _ = httpResponse.Body.Close() }()
 	if httpResponse.StatusCode < http.StatusOK || httpResponse.StatusCode >= http.StatusMultipleChoices {
 		return BrowserCaptureStatus{}, ErrBridgeRequestFailed
 	}
@@ -631,7 +631,7 @@ func (c *HTTPBridgeClient) UploadBrowserCaptureResource(ctx context.Context, ten
 	if err != nil {
 		return BrowserCaptureResourceStatus{}, ErrBridgeRequestFailed
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return BrowserCaptureResourceStatus{}, ErrBridgeRequestFailed
 	}
@@ -685,7 +685,7 @@ func (c *HTTPBridgeClient) UploadBrowserMasterDetail(ctx context.Context, tenant
 	if err != nil {
 		return BrowserMasterDetailUploadResult{}, ErrBridgeRequestFailed
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
 		return BrowserMasterDetailUploadResult{}, ErrBridgeRequestFailed
 	}
@@ -727,7 +727,7 @@ func (c *HTTPBridgeClient) browserMasterDetailRequest(ctx context.Context, tenan
 	if err != nil {
 		return BrowserMasterDetailStatus{}, ErrBridgeRequestFailed
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices || !cacheControlNoStore(response.Header.Get("Cache-Control")) {
 		return BrowserMasterDetailStatus{}, ErrBridgeRequestFailed
 	}
@@ -816,7 +816,7 @@ func (c *HTTPBridgeClient) browserCommercialDetailRequest(ctx context.Context, t
 	if err != nil {
 		return BrowserCommercialDetailStatus{}, ErrBridgeRequestFailed
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices || !cacheControlNoStore(response.Header.Get("Cache-Control")) {
 		return BrowserCommercialDetailStatus{}, ErrBridgeRequestFailed
 	}
@@ -853,15 +853,16 @@ func (value bridgeBrowserCommercialDetailResponse) toBrowserCommercialDetailStat
 	if value.RunID != runID || value.ManifestVersion != BrowserCommercialDetailManifestVersion || !validBrowserCommercialDetailResourceSchema(value.ResourceID, value.SchemaID, value.SourceSchema) || !validSHA256(value.RouteSHA256) || !validSHA256(value.ContractSHA256) || !validSHA256(value.ConsentSHA256) || value.RecordCount < 0 || value.ReviewRequired < 0 || value.ReviewRequired > value.RecordCount {
 		return BrowserCommercialDetailStatus{}, ErrBridgeRequestFailed
 	}
-	if value.Status == "open" {
+	switch value.Status {
+	case "open":
 		if value.NDJSONSHA256 != "" || value.RecordCount != 0 || value.ReviewRequired != 0 || value.PackageID != "" || value.PackageSHA256 != "" {
 			return BrowserCommercialDetailStatus{}, ErrBridgeRequestFailed
 		}
-	} else if value.Status == "finalized" {
+	case "finalized":
 		if !validSHA256(value.NDJSONSHA256) || value.RecordCount < 1 || value.ReviewRequired != value.RecordCount || !safeBridgeID(value.PackageID) || !validSHA256(value.PackageSHA256) {
 			return BrowserCommercialDetailStatus{}, ErrBridgeRequestFailed
 		}
-	} else {
+	default:
 		return BrowserCommercialDetailStatus{}, ErrBridgeRequestFailed
 	}
 	return BrowserCommercialDetailStatus{RunID: value.RunID, Status: value.Status, ManifestVersion: value.ManifestVersion, ResourceID: value.ResourceID, SchemaID: value.SchemaID, SourceSchema: value.SourceSchema, RouteSHA256: value.RouteSHA256, ContractSHA256: value.ContractSHA256, ConsentSHA256: value.ConsentSHA256, NDJSONSHA256: value.NDJSONSHA256, RecordCount: value.RecordCount, ReviewRequired: value.ReviewRequired, PackageID: value.PackageID, PackageSHA256: value.PackageSHA256}, nil
@@ -1065,18 +1066,7 @@ func (response bridgeCaptureResponse) toCaptureProgress(connectionID string) (Ca
 		if strings.TrimSpace(resource.ResourceID) == "" || strings.TrimSpace(resource.EndpointStatus) == "" || strings.TrimSpace(resource.Status) == "" || resource.PageCount < 0 || resource.DeletedCount < 0 || resource.ByteCount < 0 || (resource.SHA256 != "" && !validSHA256(resource.SHA256)) || (resource.ScopeSHA256 != "" && !validSHA256(resource.ScopeSHA256)) || (resource.NextEligibleAt != "" && !validRFC3339(resource.NextEligibleAt)) {
 			return CaptureProgress{}, ErrBridgeRequestFailed
 		}
-		resources = append(resources, CaptureResourceStatus{
-			ResourceID:     resource.ResourceID,
-			EndpointStatus: resource.EndpointStatus,
-			Status:         resource.Status,
-			ReasonCode:     resource.ReasonCode,
-			PageCount:      resource.PageCount,
-			DeletedCount:   resource.DeletedCount,
-			ByteCount:      resource.ByteCount,
-			SHA256:         resource.SHA256,
-			ScopeSHA256:    resource.ScopeSHA256,
-			NextEligibleAt: resource.NextEligibleAt,
-		})
+		resources = append(resources, CaptureResourceStatus(resource))
 	}
 	resourceIDs := append([]string(nil), response.Scope.ResourceIDs...)
 	if len(resourceIDs) == 0 {

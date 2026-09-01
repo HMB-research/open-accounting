@@ -211,7 +211,8 @@ func validBrowserPairingToken(value string) bool {
 		return false
 	}
 	for _, character := range trimmed {
-		if !(character >= 'a' && character <= 'z') && !(character >= 'A' && character <= 'Z') && !(character >= '0' && character <= '9') && character != '_' && character != '-' {
+		alphaNumeric := character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9'
+		if !alphaNumeric && character != '_' && character != '-' {
 			return false
 		}
 	}

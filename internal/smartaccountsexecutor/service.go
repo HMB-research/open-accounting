@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/HMB-research/open-accounting/internal/accounting"
-	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/HMB-research/open-accounting/internal/accounting"
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 var ErrPreviewNotFound = errors.New("SmartAccounts executor preview not found")

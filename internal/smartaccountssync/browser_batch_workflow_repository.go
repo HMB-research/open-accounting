@@ -185,14 +185,15 @@ func (r *GORMRepository) AcquireNextBrowserBatchLease(ctx context.Context, owner
 				continue
 			}
 			next := *source
-			if requiredPhase == BrowserBatchPhaseDiscoveryRequired {
+			switch requiredPhase {
+			case BrowserBatchPhaseDiscoveryRequired:
 				next.Phase = BrowserBatchPhaseDiscoveryRunning
-			} else if requiredPhase == BrowserBatchPhaseTransferConfirmationRequired {
+			case BrowserBatchPhaseTransferConfirmationRequired:
 				next.Phase = BrowserBatchPhaseCaptureRunning
 				if next.CaptureRunID == "" {
 					next.CaptureRunID = leaseID
 				}
-			} else {
+			default:
 				return ErrBrowserBatchWorkflowInvalid
 			}
 			next.PhaseGeneration++

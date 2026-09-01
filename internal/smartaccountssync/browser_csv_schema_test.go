@@ -178,7 +178,7 @@ func TestBrowserCSVSchemaApprovalKeepsBridgeErrorsAndNoSourceInPublicResponse(t 
 	require.Error(t, err)
 	assert.Equal(t, 1, bridge.registerCalls)
 
-	encoded := string(mustJSON(t, browserCSVSchemaApprovalResponse()))
+	encoded := mustJSON(t, browserCSVSchemaApprovalResponse())
 	assert.NotContains(t, encoded, testBrowserDiscoverySourceID)
 	assert.NotContains(t, encoded, "header")
 	assert.NotContains(t, encoded, "cookie")

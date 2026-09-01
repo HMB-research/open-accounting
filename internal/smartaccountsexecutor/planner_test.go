@@ -72,7 +72,7 @@ func authoritativeRecord(t *testing.T, source string) json.RawMessage {
 	payload, digest := canonicalDigest(t, map[string]any{"id": "journal-1", "rows": []any{"source"}})
 	record := map[string]any{
 		"entity_type": ResourceGeneralLedger, "external_id": "journal-1", "revision": digest,
-		"operation": OperationUpsert, "payload": json.RawMessage(payload), "payload_sha256": digest,
+		"operation": OperationUpsert, "payload": payload, "payload_sha256": digest,
 		"source_company_id": source, "gl_posting_mode": PostingModeAuthoritativeOnce,
 		"journal": map[string]any{"posting_date": "2026-01-31", "currency": "EUR", "rows": []any{
 			map[string]any{"source_account_external_id": "1000", "debit": "10", "credit": "0"},

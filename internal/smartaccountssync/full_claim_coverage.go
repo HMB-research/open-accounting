@@ -407,7 +407,7 @@ func currentFullClaimNonAPIObligations() []FullClaimCoverageRow {
 }
 
 // AssessFullClaimEligibility is intentionally pure. It is used to prevent a
-// capability catalog or package with unresolved coverage from being labelled a
+// capability catalog or package with unresolved coverage from being labeled a
 // full claim. Actual GL replay, current evidence, actor separation, and
 // accountant attestation remain separate reconciliation requirements.
 func AssessFullClaimEligibility(rows []FullClaimCoverageRow, unresolvedTombstones int) FullClaimEligibility {

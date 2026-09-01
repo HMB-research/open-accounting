@@ -354,7 +354,8 @@ func safeID(value string) bool {
 		return false
 	}
 	for _, r := range value {
-		if !(r == '-' || r == '_' || r == '.' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+		alphaNumeric := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
+		if !alphaNumeric && r != '-' && r != '_' && r != '.' {
 			return false
 		}
 	}

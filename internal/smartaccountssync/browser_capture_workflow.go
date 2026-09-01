@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	BrowserCaptureWorkflowVersion  = "smartaccounts-browser-workflow-v1"
-	BrowserCapturePlanVersion      = "smartaccounts-browser-capture-plan-v1"
-	BrowserCaptureFromDatePolicy   = "OWNER_EXPLICIT_FROM_DATE"
-	BrowserCaptureWorkflowReady    = "READY_FOR_CONSENT"
-	BrowserCaptureWorkflowIssued   = "CAPTURE_ISSUED"
+	BrowserCaptureWorkflowVersion = "smartaccounts-browser-workflow-v1"
+	BrowserCapturePlanVersion     = "smartaccounts-browser-capture-plan-v1"
+	BrowserCaptureFromDatePolicy  = "OWNER_EXPLICIT_FROM_DATE"
+	BrowserCaptureWorkflowReady   = "READY_FOR_CONSENT"
+	BrowserCaptureWorkflowIssued  = "CAPTURE_ISSUED"
 	// BrowserCaptureProvenGeneralLedgerCSV is the only browser resource that
 	// can enter the GL-authoritative canonical path. The similarly named
 	// journal_entries grid is summary-only evidence and is never capture/plan

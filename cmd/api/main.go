@@ -615,6 +615,8 @@ func resolveSecretFile(name, inlineValue, filePath string) (string, error) {
 	if filePath == "" {
 		return strings.TrimSpace(inlineValue), nil
 	}
+	// #nosec G703 -- the deployment operator supplies this Docker-secret path;
+	// file contents are never used to construct or widen the path.
 	contents, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("read %s_FILE: %w", name, err)

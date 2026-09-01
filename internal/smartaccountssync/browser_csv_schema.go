@@ -243,7 +243,8 @@ func validBrowserCSVSchemaID(value string) bool {
 		return false
 	}
 	for _, character := range value {
-		if !(character >= 'a' && character <= 'z') && !(character >= '0' && character <= '9') && character != '_' {
+		lowercaseOrDigit := character >= 'a' && character <= 'z' || character >= '0' && character <= '9'
+		if !lowercaseOrDigit && character != '_' {
 			return false
 		}
 	}

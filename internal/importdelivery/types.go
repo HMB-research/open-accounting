@@ -26,15 +26,15 @@ type Authority struct {
 // Scope carries only selection metadata. It deliberately contains no source
 // query parameters. Dates are supplied by the bridge's proven capture policy.
 type Scope struct {
-	Mode           string `json:"mode"`
-	DateFrom       string `json:"date_from,omitempty"`
-	DateTo         string `json:"date_to,omitempty"`
+	Mode     string `json:"mode"`
+	DateFrom string `json:"date_from,omitempty"`
+	DateTo   string `json:"date_to,omitempty"`
 	// ResourceIDs binds a package to the exact documented source services
 	// selected for this run. It is selection metadata only, never a source
 	// query or identifier.
 	ResourceIDs    []string `json:"resource_ids,omitempty"`
-	SourceAsOfDate string `json:"source_as_of_date,omitempty"`
-	CutoffAt       string `json:"cutoff_at"`
+	SourceAsOfDate string   `json:"source_as_of_date,omitempty"`
+	CutoffAt       string   `json:"cutoff_at"`
 }
 
 type ResourceSummary struct {
