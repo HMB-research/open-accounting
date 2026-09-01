@@ -3504,7 +3504,7 @@ describe("API Client - Core Functionality", () => {
       expect(result).toHaveLength(1);
     });
 
-    it("should calculate cash-flow analytics months from the date range", async () => {
+    it("should send the exact cash-flow analytics date range", async () => {
       mockJsonResponse({ labels: ["Jan", "Feb", "Mar"], inflows: ["100"] });
 
       await api.getCashFlowAnalytics(
@@ -3515,7 +3515,7 @@ describe("API Client - Core Functionality", () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining(
-          "/api/v1/tenants/tenant-123/analytics/cash-flow?months=3",
+          "/api/v1/tenants/tenant-123/analytics/cash-flow?start_date=2026-01-01&end_date=2026-03-17",
         ),
         expect.objectContaining({ method: "GET" }),
       );

@@ -13,6 +13,10 @@ type Service struct {
 	repo Repository
 }
 
+type periodCashFlowRepository interface {
+	GetMonthlyCashFlowForPeriod(ctx context.Context, schemaName string, periodStart, periodEnd time.Time) ([]MonthlyCashFlowData, error)
+}
+
 // NewService creates a new analytics service with an ORM-backed repository.
 func NewService(pool *pgxpool.Pool) *Service {
 	return &Service{
@@ -123,6 +127,24 @@ func (s *Service) GetCashFlowChart(ctx context.Context, tenantID, schemaName str
 		return nil, err
 	}
 
+	return cashFlowChartFromData(data), nil
+}
+
+// GetCashFlowChartForPeriod returns monthly cash flow for an exact inclusive date range.
+func (s *Service) GetCashFlowChartForPeriod(ctx context.Context, tenantID, schemaName string, periodStart, periodEnd time.Time) (*CashFlowChart, error) {
+	periodRepo, ok := s.repo.(periodCashFlowRepository)
+	if !ok {
+		months := (periodEnd.Year()-periodStart.Year())*12 + int(periodEnd.Month()-periodStart.Month()) + 1
+		return s.GetCashFlowChart(ctx, tenantID, schemaName, months)
+	}
+	data, err := periodRepo.GetMonthlyCashFlowForPeriod(ctx, schemaName, periodStart, periodEnd)
+	if err != nil {
+		return nil, err
+	}
+	return cashFlowChartFromData(data), nil
+}
+
+func cashFlowChartFromData(data []MonthlyCashFlowData) *CashFlowChart {
 	chart := &CashFlowChart{
 		Labels:   make([]string, 0, len(data)),
 		Inflows:  make([]decimal.Decimal, 0, len(data)),
@@ -137,7 +159,7 @@ func (s *Service) GetCashFlowChart(ctx context.Context, tenantID, schemaName str
 		chart.Net = append(chart.Net, d.Inflows.Sub(d.Outflows))
 	}
 
-	return chart, nil
+	return chart
 }
 
 // GetReceivablesAging returns aging report for receivables

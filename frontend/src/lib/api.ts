@@ -1860,16 +1860,10 @@ class ApiClient {
     startDate: string,
     endDate: string,
   ) {
-    // Backend expects months parameter, calculate months from date range
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const months = Math.max(
-      1,
-      Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30)),
-    );
+    const query = buildQuery({ start_date: startDate, end_date: endDate });
     return this.request<CashFlowChart>(
       "GET",
-      `/api/v1/tenants/${tenantId}/analytics/cash-flow?months=${months}`,
+      `/api/v1/tenants/${tenantId}/analytics/cash-flow${query}`,
     );
   }
 

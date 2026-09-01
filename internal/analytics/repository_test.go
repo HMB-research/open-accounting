@@ -211,6 +211,21 @@ func TestRecentMonthStarts(t *testing.T) {
 	}
 }
 
+func TestMonthStartsForPeriod(t *testing.T) {
+	location := time.FixedZone("test", 2*60*60)
+	months := monthStartsForPeriod(
+		time.Date(2023, time.November, 17, 12, 0, 0, 0, location),
+		time.Date(2024, time.February, 2, 12, 0, 0, 0, location),
+	)
+	require.Len(t, months, 4)
+	assert.Equal(t, "2023-11-01", months[0].Format("2006-01-02"))
+	assert.Equal(t, "2024-02-01", months[3].Format("2006-01-02"))
+	assert.Empty(t, monthStartsForPeriod(
+		time.Date(2024, time.February, 2, 0, 0, 0, 0, location),
+		time.Date(2024, time.February, 1, 0, 0, 0, 0, location),
+	))
+}
+
 func TestMonthFormattingHelpers(t *testing.T) {
 	month := time.Date(2026, time.March, 15, 14, 30, 0, 0, time.UTC)
 
