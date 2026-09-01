@@ -247,6 +247,22 @@ func (r *GORMRepository) GetMonthlyCashFlow(ctx context.Context, schemaName stri
 	if len(monthStarts) == 0 {
 		return []MonthlyCashFlowData{}, nil
 	}
+	return r.getMonthlyCashFlow(ctx, schemaName, monthStarts, monthStarts[0], monthStarts[len(monthStarts)-1].AddDate(0, 1, 0))
+}
+
+// GetMonthlyCashFlowForPeriod retrieves monthly cash flow for the exact inclusive date range.
+func (r *GORMRepository) GetMonthlyCashFlowForPeriod(ctx context.Context, schemaName string, periodStart, periodEnd time.Time) ([]MonthlyCashFlowData, error) {
+	monthStarts := monthStartsForPeriod(periodStart, periodEnd)
+	if len(monthStarts) == 0 {
+		return []MonthlyCashFlowData{}, nil
+	}
+	return r.getMonthlyCashFlow(ctx, schemaName, monthStarts, periodStart, periodEnd.AddDate(0, 0, 1))
+}
+
+func (r *GORMRepository) getMonthlyCashFlow(ctx context.Context, schemaName string, monthStarts []time.Time, rangeStart, rangeEndExclusive time.Time) ([]MonthlyCashFlowData, error) {
+	if len(monthStarts) == 0 {
+		return []MonthlyCashFlowData{}, nil
+	}
 
 	bankDB, err := r.tenantTable(ctx, schemaName, "bank_transactions", "bt")
 	if err != nil {
@@ -265,7 +281,7 @@ func (r *GORMRepository) GetMonthlyCashFlow(ctx context.Context, schemaName stri
 			COALESCE(SUM(CASE WHEN bt.amount > 0 THEN bt.amount ELSE 0 END), 0) AS inflows,
 			COALESCE(SUM(CASE WHEN bt.amount < 0 THEN -bt.amount ELSE 0 END), 0) AS outflows
 		`).
-		Where("bt.transaction_date >= ? AND bt.transaction_date < ?", monthStarts[0], monthStarts[len(monthStarts)-1].AddDate(0, 1, 0)).
+		Where("bt.transaction_date >= ? AND bt.transaction_date < ?", rangeStart, rangeEndExclusive).
 		Group("date_trunc('month', bt.transaction_date)").
 		Order("month ASC").
 		Scan(&bankRows).Error; err != nil {
@@ -281,7 +297,7 @@ func (r *GORMRepository) GetMonthlyCashFlow(ctx context.Context, schemaName stri
 			COALESCE(SUM(CASE WHEN p.payment_type = ? THEN p.base_amount ELSE 0 END), 0) AS inflows,
 			COALESCE(SUM(CASE WHEN p.payment_type = ? THEN p.base_amount ELSE 0 END), 0) AS outflows
 		`, models.PaymentTypeReceived, models.PaymentTypeMade).
-		Where("p.payment_date >= ? AND p.payment_date < ?", monthStarts[0], monthStarts[len(monthStarts)-1].AddDate(0, 1, 0)).
+		Where("p.payment_date >= ? AND p.payment_date < ?", rangeStart, rangeEndExclusive).
 		Where("COALESCE(NULLIF(UPPER(TRIM(p.payment_method)), ''), '') NOT IN ?", migrationSettlementPaymentMethods).
 		Group("date_trunc('month', p.payment_date)").
 		Order("month ASC").
@@ -322,8 +338,8 @@ func (r *GORMRepository) GetMonthlyCashFlow(ctx context.Context, schemaName stri
 	if err := r.db.WithContext(ctx).Raw(
 		ledgerCashFlowQuery,
 		models.JournalStatusPosted,
-		monthStarts[0],
-		monthStarts[len(monthStarts)-1].AddDate(0, 1, 0),
+		rangeStart,
+		rangeEndExclusive,
 		models.AccountTypeAsset,
 	).Scan(&ledgerRows).Error; err != nil {
 		return nil, fmt.Errorf("get monthly ledger cash flow: %w", err)
@@ -700,6 +716,20 @@ func recentMonthStarts(months int) []time.Time {
 	result := make([]time.Time, 0, months)
 	for i := 0; i < months; i++ {
 		result = append(result, firstMonth.AddDate(0, i, 0))
+	}
+	return result
+}
+
+func monthStartsForPeriod(periodStart, periodEnd time.Time) []time.Time {
+	if periodEnd.Before(periodStart) {
+		return []time.Time{}
+	}
+	firstMonth := time.Date(periodStart.Year(), periodStart.Month(), 1, 0, 0, 0, 0, periodStart.Location())
+	lastMonth := time.Date(periodEnd.Year(), periodEnd.Month(), 1, 0, 0, 0, 0, periodStart.Location())
+	months := (lastMonth.Year()-firstMonth.Year())*12 + int(lastMonth.Month()-firstMonth.Month()) + 1
+	result := make([]time.Time, 0, months)
+	for index := 0; index < months; index++ {
+		result = append(result, firstMonth.AddDate(0, index, 0))
 	}
 	return result
 }

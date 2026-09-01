@@ -278,6 +278,23 @@ func TestGetCashFlowChart(t *testing.T) {
 	err := json.Unmarshal(rr.Body.Bytes(), &result)
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.Labels)
+
+	for _, testCase := range []struct {
+		query      string
+		wantStatus int
+	}{
+		{query: "?start_date=2026-01-01&end_date=2026-03-31", wantStatus: http.StatusOK},
+		{query: "?start_date=2026-01-01", wantStatus: http.StatusBadRequest},
+		{query: "?start_date=bad&end_date=2026-03-31", wantStatus: http.StatusBadRequest},
+		{query: "?start_date=2026-04-01&end_date=2026-03-31", wantStatus: http.StatusBadRequest},
+	} {
+		req = httptest.NewRequest(http.MethodGet, "/tenants/tenant-1/analytics/cash-flow"+testCase.query, nil)
+		req = withURLParams(req, map[string]string{"tenantID": "tenant-1"})
+		req = req.WithContext(contextWithClaims(req.Context(), createTestClaims("user-1", "test@example.com", "tenant-1", "owner")))
+		rr = httptest.NewRecorder()
+		h.GetCashFlowChart(rr, req)
+		assert.Equal(t, testCase.wantStatus, rr.Code, testCase.query)
+	}
 }
 
 func TestGetReceivablesAging(t *testing.T) {
