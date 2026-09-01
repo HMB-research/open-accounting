@@ -32,7 +32,7 @@ import (
 
 	// Blank imports for swagger annotations
 	_ "github.com/HMB-research/open-accounting/internal/accounting"
-	_ "github.com/HMB-research/open-accounting/internal/analytics"
+	"github.com/HMB-research/open-accounting/internal/analytics"
 	_ "github.com/HMB-research/open-accounting/internal/tax"
 )
 
@@ -78,6 +78,8 @@ var (
 // @Produce json
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
+// @Param start_date query string false "Period start date (YYYY-MM-DD; requires end_date)"
+// @Param end_date query string false "Period end date (YYYY-MM-DD; requires start_date)"
 // @Success 200 {object} analytics.DashboardSummary
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/analytics/dashboard [get]
@@ -85,7 +87,31 @@ func (h *Handlers) GetDashboardSummary(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
 
-	summary, err := h.analyticsService.GetDashboardSummary(r.Context(), tenantID, schemaName)
+	startValue := strings.TrimSpace(r.URL.Query().Get("start_date"))
+	endValue := strings.TrimSpace(r.URL.Query().Get("end_date"))
+	if (startValue == "") != (endValue == "") {
+		respondError(w, http.StatusBadRequest, "start_date and end_date must be provided together")
+		return
+	}
+
+	var summary *analytics.DashboardSummary
+	var err error
+	if startValue == "" {
+		summary, err = h.analyticsService.GetDashboardSummary(r.Context(), tenantID, schemaName)
+	} else {
+		startDate, startErr := time.Parse("2006-01-02", startValue)
+		endDate, endErr := time.Parse("2006-01-02", endValue)
+		if startErr != nil || endErr != nil {
+			respondError(w, http.StatusBadRequest, "start_date and end_date must use YYYY-MM-DD")
+			return
+		}
+		if endDate.Before(startDate) {
+			respondError(w, http.StatusBadRequest, "end_date must be on or after start_date")
+			return
+		}
+		periodEnd := endDate.AddDate(0, 0, 1).Add(-time.Nanosecond)
+		summary, err = h.analyticsService.GetDashboardSummaryForPeriod(r.Context(), tenantID, schemaName, startDate, periodEnd)
+	}
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to get dashboard summary")
 		return
@@ -133,12 +159,39 @@ func (h *Handlers) GetRevenueExpenseChart(w http.ResponseWriter, r *http.Request
 // @Security BearerAuth
 // @Param tenantID path string true "Tenant ID"
 // @Param months query int false "Number of months (default 12)"
+// @Param start_date query string false "Exact period start date (YYYY-MM-DD; requires end_date)"
+// @Param end_date query string false "Exact period end date (YYYY-MM-DD; requires start_date)"
 // @Success 200 {object} analytics.CashFlowChart
 // @Failure 500 {object} object{error=string}
 // @Router /tenants/{tenantID}/analytics/cash-flow [get]
 func (h *Handlers) GetCashFlowChart(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	schemaName := h.getSchemaName(r.Context(), tenantID)
+	startValue := strings.TrimSpace(r.URL.Query().Get("start_date"))
+	endValue := strings.TrimSpace(r.URL.Query().Get("end_date"))
+	if (startValue == "") != (endValue == "") {
+		respondError(w, http.StatusBadRequest, "start_date and end_date must be provided together")
+		return
+	}
+	if startValue != "" {
+		startDate, startErr := time.Parse("2006-01-02", startValue)
+		endDate, endErr := time.Parse("2006-01-02", endValue)
+		if startErr != nil || endErr != nil {
+			respondError(w, http.StatusBadRequest, "start_date and end_date must use YYYY-MM-DD")
+			return
+		}
+		if endDate.Before(startDate) {
+			respondError(w, http.StatusBadRequest, "end_date must be on or after start_date")
+			return
+		}
+		chart, err := h.analyticsService.GetCashFlowChartForPeriod(r.Context(), tenantID, schemaName, startDate, endDate)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to get chart data")
+			return
+		}
+		respondJSON(w, http.StatusOK, chart)
+		return
+	}
 
 	months := 12
 	if m := r.URL.Query().Get("months"); m != "" {

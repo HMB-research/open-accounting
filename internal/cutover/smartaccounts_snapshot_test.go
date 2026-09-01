@@ -1,7 +1,10 @@
 package cutover
 
 import (
+	"encoding/csv"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,6 +96,155 @@ func TestSmartAccountsSnapshotSkipsGridPreambleAndCanonicalizesEstonianHeaders(t
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(canonical.CSVContent, "code,name,account_type"))
 	require.Contains(t, canonical.CSVContent, "1000,Cash,ASSET")
+}
+
+func TestPrepareSmartAccountsSnapshotExpandsNativeGeneralLedgerGrid(t *testing.T) {
+	sourceDir := t.TempDir()
+	outputDir := filepath.Join(t.TempDir(), "prepared")
+	content := strings.Join([]string{
+		"Pearaamat: Example Export OU,,,,,,,,",
+		"Periood: 01.01.2024 - 31.12.2024,,,,,,,,",
+		"1000 - Cash,,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit,Saldo",
+		"01.01.2024,JV-1,,Opening line,,,100.00,,100.00",
+		"02.01.2024,JV-2,,Combined display line,,,5.00,5.00,100.00",
+		"03.01.2024,JV-3,,Zero display line,,,0.00,0.00,100.00",
+		"2000 - Equity,,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit,Saldo",
+		"01.01.2024,JV-1,,Opening line,,,,100.00,100.00",
+	}, "\n")
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "general_ledger.csv"), []byte(content), 0o600))
+
+	report, err := PrepareSmartAccountsSnapshot(SmartAccountsSnapshotOptions{
+		SourceDir:   sourceDir,
+		OutputDir:   outputDir,
+		CutoverDate: "2024-01-01",
+		GeneratedAt: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+	require.Len(t, report.PreparedFiles, 2)
+	require.FileExists(t, filepath.Join(outputDir, "bundle", "accounts.csv"))
+	require.FileExists(t, filepath.Join(outputDir, "bundle", "journal_entries.csv"))
+
+	accountsContent, err := os.ReadFile(filepath.Join(outputDir, "bundle", "accounts.csv"))
+	require.NoError(t, err)
+	require.Contains(t, string(accountsContent), "1000,Cash,ASSET")
+	require.Contains(t, string(accountsContent), "2000,Equity,LIABILITY")
+
+	journalContent, err := os.ReadFile(filepath.Join(outputDir, "bundle", "journal_entries.csv"))
+	require.NoError(t, err)
+	require.Contains(t, string(journalContent), "2024-01-01 JV-1,2024-01-01,1000")
+	require.Contains(t, string(journalContent), "SMARTACCOUNTS_GL")
+	require.NotContains(t, string(journalContent), "JV-3")
+
+	journalRows, err := parseJournalImportRowsForSnapshotTest(string(journalContent))
+	require.NoError(t, err)
+	require.Len(t, journalRows, 4)
+	require.NotEmpty(t, journalRows[0]["source_id"])
+	require.Equal(t, journalRows[0]["source_id"], journalRows[3]["source_id"])
+	require.Equal(t, journalRows[1]["source_id"], journalRows[2]["source_id"])
+	require.NotEqual(t, journalRows[0]["source_id"], journalRows[1]["source_id"])
+	_, err = uuid.Parse(journalRows[0]["source_id"])
+	require.NoError(t, err)
+
+	validation, err := ValidateBundle(&ValidateBundleRequest{
+		Files:          report.BundleFiles(),
+		ProviderPreset: MigrationProviderPresetSmartAccounts,
+	})
+	require.NoError(t, err)
+	require.True(t, validation.Summary.Ready, "issues: %#v", validation.Issues)
+}
+
+func TestSmartAccountsGeneralLedgerGridValidationEdges(t *testing.T) {
+	malformed := "\"unterminated"
+	_, _, _, ok, err := parseSmartAccountsGeneralLedgerGrid(malformed)
+	require.Error(t, err)
+	require.False(t, ok)
+
+	_, _, err = classifySmartAccountsCSV("unknown.csv", "unknown.csv", "hash", malformed)
+	require.ErrorContains(t, err, "parse unknown.csv")
+
+	gridWithoutRows := strings.Join([]string{
+		"1000 - Cash,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit",
+		"not-a-date,REF-1,,Ignored,,,,",
+	}, "\n")
+	_, _, _, ok, err = parseSmartAccountsGeneralLedgerGrid(gridWithoutRows)
+	require.ErrorContains(t, err, "contains no journal rows")
+	require.False(t, ok)
+
+	invalidDebit := strings.Join([]string{
+		"1000 - Cash,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit",
+		"01.01.2026,REF-1,,Line,,,invalid,",
+	}, "\n")
+	_, _, _, _, err = parseSmartAccountsGeneralLedgerGrid(invalidDebit)
+	require.ErrorContains(t, err, "parse SmartAccounts ledger amount")
+
+	invalidCredit := strings.Join([]string{
+		"1000 - Cash,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit",
+		"01.01.2026,REF-1,,Line,,,,invalid",
+	}, "\n")
+	_, _, _, _, err = parseSmartAccountsGeneralLedgerGrid(invalidCredit)
+	require.ErrorContains(t, err, "parse SmartAccounts ledger amount")
+
+	debit, credit, err := smartAccountsLedgerDebitCredit("-2.50", "")
+	require.NoError(t, err)
+	require.True(t, debit.IsZero())
+	require.Equal(t, "2.5", credit.String())
+
+	debit, credit, err = smartAccountsLedgerDebitCredit("", "-3.75")
+	require.NoError(t, err)
+	require.Equal(t, "3.75", debit.String())
+	require.True(t, credit.IsZero())
+
+	require.Empty(t, valueAtIndex([]string{"value"}, -1))
+	require.Empty(t, valueAtIndex([]string{"value"}, 1))
+}
+
+func TestSmartAccountsGeneralLedgerGridFallbackFieldsAndRepeatedAccounts(t *testing.T) {
+	content := strings.Join([]string{
+		"1000 - Cash,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit",
+		"01.01.2026,,,,DOC-1,,10,",
+		"1000 - Cash updated,,,,,,,",
+		"Kuupäev,Alus,,Kande kirjeldus,Alusdokument,Objekt,Deebet,Kreedit",
+		"02.01.2026,,,,,,5,",
+	}, "\n")
+
+	_, rows, accounts, ok, err := parseSmartAccountsGeneralLedgerGrid(content)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Len(t, rows, 2)
+	require.Equal(t, "2026-01-01 DOC-1", rows[0][0])
+	require.Equal(t, "DOC-1", rows[0][3])
+	require.Equal(t, "2026-01-02 ledger", rows[1][0])
+	require.Len(t, accounts, 1)
+	require.Equal(t, "Cash updated", accounts[0][1])
+}
+
+func parseJournalImportRowsForSnapshotTest(content string) ([]map[string]string, error) {
+	reader := csv.NewReader(strings.NewReader(content))
+	headers, err := reader.Read()
+	if err != nil {
+		return nil, err
+	}
+	var result []map[string]string
+	for {
+		row, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			return result, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		values := make(map[string]string, len(headers))
+		for index, header := range headers {
+			values[header] = row[index]
+		}
+		result = append(result, values)
+	}
 }
 
 func TestPrepareSmartAccountsSnapshotInputAndWalkErrors(t *testing.T) {
@@ -393,12 +546,12 @@ func TestSmartAccountsSnapshotNormalizesLocalizedValuesAndDerivedTypes(t *testin
 	require.Equal(t, "EQUITY", normalizeSmartAccountsAccountType("Omakapital", ""))
 	require.Equal(t, "REVENUE", normalizeSmartAccountsAccountType("Tulu", ""))
 	require.Equal(t, "EXPENSE", normalizeSmartAccountsAccountType("Kulu", ""))
-	require.Equal(t, "REVENUE", normalizeSmartAccountsAccountType("", "4000"))
+	require.Equal(t, "EXPENSE", normalizeSmartAccountsAccountType("", "4000"))
 	require.Equal(t, "fallback", normalizeSmartAccountsAccountType("fallback", ""))
 	require.Equal(t, "ASSET", inferSmartAccountsAccountTypeFromCode("1000", "fallback"))
 	require.Equal(t, "LIABILITY", inferSmartAccountsAccountTypeFromCode("2000", "fallback"))
-	require.Equal(t, "EQUITY", inferSmartAccountsAccountTypeFromCode("3000", "fallback"))
-	require.Equal(t, "REVENUE", inferSmartAccountsAccountTypeFromCode("4000", "fallback"))
+	require.Equal(t, "REVENUE", inferSmartAccountsAccountTypeFromCode("3000", "fallback"))
+	require.Equal(t, "EXPENSE", inferSmartAccountsAccountTypeFromCode("4000", "fallback"))
 	require.Equal(t, "EXPENSE", inferSmartAccountsAccountTypeFromCode("5000", "fallback"))
 	require.Equal(t, "fallback", inferSmartAccountsAccountTypeFromCode("0000", "fallback"))
 

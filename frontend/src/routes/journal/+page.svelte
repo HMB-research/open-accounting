@@ -50,6 +50,8 @@
   let accounts = $state<Account[]>([]);
   let tenant = $state<Tenant | null>(null);
   let isLoading = $state(true);
+  let isLoadingMore = $state(false);
+  let entriesLimit = $state(50);
   let error = $state("");
 
   let showCreate = $state(false);
@@ -103,6 +105,20 @@
       tenant = await api.getTenant(tenantId);
     } catch {
       tenant = null;
+    }
+  }
+
+  async function loadMoreEntries() {
+    isLoadingMore = true;
+    error = "";
+    try {
+      entriesLimit += 50;
+      entries = await api.listJournalEntries(tenantId, entriesLimit);
+    } catch (err) {
+      entriesLimit -= 50;
+      error = err instanceof Error ? err.message : m.journal_failedToLoadAccounts();
+    } finally {
+      isLoadingMore = false;
     }
   }
 
@@ -557,6 +573,11 @@
           {/if}
         </div>
       {/each}
+      {#if entries.length === entriesLimit}
+        <button class="btn btn-secondary load-more" onclick={loadMoreEntries} disabled={isLoadingMore}>
+          {isLoadingMore ? m.common_loading() : m.journal_loadMoreEntries()}
+        </button>
+      {/if}
     </div>
   {/if}
 </div>
