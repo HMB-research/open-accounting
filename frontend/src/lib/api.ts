@@ -2327,10 +2327,15 @@ class ApiClient {
   }
 
   // Analytics endpoints
-  async getDashboardSummary(tenantId: string) {
+  async getDashboardSummary(
+    tenantId: string,
+    startDate?: string,
+    endDate?: string,
+  ) {
+    const query = buildQuery({ start_date: startDate, end_date: endDate });
     return this.request<DashboardSummary>(
       "GET",
-      `/api/v1/tenants/${tenantId}/analytics/dashboard`,
+      `/api/v1/tenants/${tenantId}/analytics/dashboard${query}`,
     );
   }
 

@@ -289,7 +289,54 @@ func (r *GORMRepository) GetMonthlyCashFlow(ctx context.Context, schemaName stri
 		return nil, fmt.Errorf("get monthly cash flow: %w", err)
 	}
 
-	byMonth := make(map[string]MonthlyCashFlowData, len(bankRows)+len(paymentRows))
+	journalEntriesTable := qualifiedTenantTable(schemaName, "journal_entries")
+	journalLinesTable := qualifiedTenantTable(schemaName, "journal_entry_lines")
+	accountsTable := qualifiedTenantTable(schemaName, "accounts")
+	var ledgerRows []monthlyCashFlowRow
+	ledgerCashFlowQuery := `
+		WITH cash_entry_movements AS (
+			SELECT
+				date_trunc('month', je.entry_date)::date AS month,
+				je.id AS journal_entry_id,
+				SUM(jel.base_debit - jel.base_credit) AS movement
+			FROM ` + journalEntriesTable + ` AS je
+			JOIN ` + journalLinesTable + ` AS jel ON jel.journal_entry_id = je.id
+			JOIN ` + accountsTable + ` AS a ON a.id = jel.account_id
+			WHERE je.status = ?
+				AND je.entry_date >= ? AND je.entry_date < ?
+				AND a.account_type = ?
+				AND (
+					a.code ~ '^10[0-9]{2}$'
+					OR LOWER(a.name) ~ '(bank|pank|cash|kassa|paypal|wise|revolut)'
+				)
+			GROUP BY date_trunc('month', je.entry_date), je.id
+		)
+		SELECT
+			month,
+			COALESCE(SUM(CASE WHEN movement > 0 THEN movement ELSE 0 END), 0) AS inflows,
+			COALESCE(SUM(CASE WHEN movement < 0 THEN -movement ELSE 0 END), 0) AS outflows
+		FROM cash_entry_movements
+		WHERE movement <> 0
+		GROUP BY month
+		ORDER BY month ASC`
+	if err := r.db.WithContext(ctx).Raw(
+		ledgerCashFlowQuery,
+		models.JournalStatusPosted,
+		monthStarts[0],
+		monthStarts[len(monthStarts)-1].AddDate(0, 1, 0),
+		models.AccountTypeAsset,
+	).Scan(&ledgerRows).Error; err != nil {
+		return nil, fmt.Errorf("get monthly ledger cash flow: %w", err)
+	}
+
+	byMonth := make(map[string]MonthlyCashFlowData, len(bankRows)+len(paymentRows)+len(ledgerRows))
+	for _, row := range ledgerRows {
+		byMonth[monthKey(row.Month)] = MonthlyCashFlowData{
+			Label:    monthLabel(row.Month),
+			Inflows:  row.Inflows,
+			Outflows: row.Outflows,
+		}
+	}
 	for _, row := range paymentRows {
 		byMonth[monthKey(row.Month)] = MonthlyCashFlowData{
 			Label:    monthLabel(row.Month),
