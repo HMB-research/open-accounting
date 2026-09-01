@@ -187,6 +187,39 @@ func TestSmartAccountsBrowserOnboardingCatalogHandoffRouterCORS(t *testing.T) {
 	router.ServeHTTP(preflightRecorder, preflight)
 	require.Equal(t, http.StatusOK, preflightRecorder.Code)
 	assert.Equal(t, testBraveExtensionOrigin, preflightRecorder.Header().Get("Access-Control-Allow-Origin"))
+
+	webOrigin := "http://server-nuc:3000"
+	webPreflight := httptest.NewRequest(http.MethodOptions, path, nil)
+	webPreflight.Header.Set("Origin", webOrigin)
+	webPreflight.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	webPreflightRecorder := httptest.NewRecorder()
+	router.ServeHTTP(webPreflightRecorder, webPreflight)
+	require.Equal(t, http.StatusOK, webPreflightRecorder.Code)
+	assert.Equal(t, webOrigin, webPreflightRecorder.Header().Get("Access-Control-Allow-Origin"))
+}
+
+func TestSmartAccountsBrowserOnboardingCatalogAllowsBoundedFirstPartyFallback(t *testing.T) {
+	h, _ := newSmartAccountsBrowserOnboardingCatalogHandlers()
+	issue := issueBrowserOnboardingCatalogForHandler(t, h)
+	handoff := testCatalogHandoff(t, issue, []smartaccountssync.BrowserOnboardingCatalogCompany{{SourceCompanyID: testBrowserSourceID, DisplayName: "Hold My Beer OÜ"}})
+	body, err := json.Marshal(handoff)
+	require.NoError(t, err)
+	request := withURLParams(httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body)), map[string]string{"catalogID": issue.CatalogID})
+	request.Header.Set("Origin", "http://server-nuc:3000")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+issue.CatalogToken)
+	recorder := httptest.NewRecorder()
+	h.HandoffSmartAccountsBrowserOnboardingCatalog(recorder, request)
+	require.Equal(t, http.StatusCreated, recorder.Code, recorder.Body.String())
+	assert.Equal(t, "http://server-nuc:3000", recorder.Header().Get("Access-Control-Allow-Origin"))
+
+	badOrigin := withURLParams(httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body)), map[string]string{"catalogID": issue.CatalogID})
+	badOrigin.Header.Set("Origin", "http://server-nuc.example:3000")
+	badOrigin.Header.Set("Content-Type", "application/json")
+	badOrigin.Header.Set("Authorization", "Bearer "+issue.CatalogToken)
+	badRecorder := httptest.NewRecorder()
+	h.HandoffSmartAccountsBrowserOnboardingCatalog(badRecorder, badOrigin)
+	assert.Equal(t, http.StatusForbidden, badRecorder.Code)
 }
 
 func issueBrowserOnboardingCatalogForHandler(t *testing.T, h *Handlers) smartaccountssync.BrowserOnboardingCatalogIssue {

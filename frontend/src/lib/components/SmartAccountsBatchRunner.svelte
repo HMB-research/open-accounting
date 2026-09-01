@@ -250,7 +250,7 @@
 	{:else}
 		<div class="workflow-summary" aria-live="polite">
 			<p><strong>{completeCount}/{sourceCount}</strong> companies have reached a terminal review state{activeSource ? `; ${sourceName(activeSource.source_company_id, activeSource.ordinal)} is ${phaseLabel(activeSource.phase)}` : ''}.</p>
-			{#if workflow.workflow.transfer_scope}
+			{#if transferHasBeenConfirmed && workflow.workflow.transfer_scope?.resource_ids}
 				<p class="help">Frozen scope: {workflow.workflow.transfer_scope.from_inclusive}–{workflow.workflow.transfer_scope.to_inclusive}, <code>{workflow.workflow.transfer_scope.resource_ids.join(', ')}</code>. This is a partial browser transfer, never a full-sync claim.</p>
 			{/if}
 		</div>

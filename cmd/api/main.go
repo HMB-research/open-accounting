@@ -748,7 +748,8 @@ func setupRouter(cfg *Config, h *Handlers, tokenService *auth.TokenService) *chi
 		// routes; every other endpoint retains configured web origins.
 		AllowOriginFunc: func(request *http.Request, origin string) bool {
 			return configuredCORSOriginAllowed(origin, cfg.AllowedOrigins) ||
-				(isSmartAccountsBrowserExtensionRelayPath(request.URL.Path) && braveExtensionOriginPattern.MatchString(strings.TrimSpace(origin)))
+				(isSmartAccountsBrowserExtensionRelayPath(request.URL.Path) && braveExtensionOriginPattern.MatchString(strings.TrimSpace(origin))) ||
+				(isSmartAccountsBrowserMetadataCompatibilityPath(request.URL.Path) && openAccountingMetadataCompatibilityOriginPattern.MatchString(strings.TrimSpace(origin)))
 		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Tenant-ID", "X-SA-Browser-Resource-SHA256", "X-SA-Browser-Commercial-SHA256"},
@@ -797,6 +798,15 @@ func isSmartAccountsBrowserExtensionRelayPath(path string) bool {
 		}
 	}
 	return false
+}
+
+func isSmartAccountsBrowserMetadataCompatibilityPath(path string) bool {
+	const pairingPrefix = "/api/v1/smartaccounts-browser-pairings/"
+	if strings.HasPrefix(path, pairingPrefix) && strings.HasSuffix(path, "/claim") && len(strings.TrimSuffix(strings.TrimPrefix(path, pairingPrefix), "/claim")) == 36 {
+		return true
+	}
+	const catalogPrefix = "/api/v1/smartaccounts-browser-onboarding/catalogs/"
+	return strings.HasPrefix(path, catalogPrefix) && strings.HasSuffix(path, "/handoff") && len(strings.TrimSuffix(strings.TrimPrefix(path, catalogPrefix), "/handoff")) == 36
 }
 
 // configuredCORSOriginAllowed preserves the existing exact and single-star

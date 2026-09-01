@@ -58,6 +58,59 @@ func cloneBrowserBatchSourceWorkflow(source BrowserBatchSourceWorkflow) BrowserB
 	return source
 }
 
+func TestBrowserBatchWorkflowRecordKeepsUnconfirmedTransferColumnsNull(t *testing.T) {
+	now := time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC)
+	workflow := BrowserBatchWorkflow{
+		BatchID:                   batchWorkflowID,
+		OwnerID:                   "owner-1",
+		SchemaVersion:             BrowserBatchWorkflowSchemaVersion,
+		HistoryFrom:               "1900-01-01",
+		PreparatoryManifestSHA256: strings.Repeat("a", 64),
+		PreparatoryConsentedAt:    now,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+	}
+
+	record, err := browserBatchWorkflowToRecord(workflow)
+	require.NoError(t, err)
+	require.Nil(t, record.TransferManifestSHA256)
+	require.Nil(t, record.TransferScope)
+	require.Nil(t, record.TransferConfirmedAt)
+
+	restored, err := browserBatchWorkflowFromRecord(record)
+	require.NoError(t, err)
+	require.Empty(t, restored.TransferManifestSHA256)
+}
+
+func TestBrowserBatchSourceRecordKeepsUnavailableProofColumnsNull(t *testing.T) {
+	now := time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC)
+	source := BrowserBatchSourceWorkflow{
+		BatchID:         batchWorkflowID,
+		SourceCompanyID: "sa-browser-v1-123",
+		TenantID:        "1d16e71f-3f79-432e-a3a3-069f461dce2e",
+		Phase:           BrowserBatchPhasePaired,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	record, err := browserBatchSourceWorkflowToRecord(source)
+	require.NoError(t, err)
+	require.Nil(t, record.DiscoveryContractSHA256)
+	require.Nil(t, record.DiscoveryReceiptSHA256)
+	require.Nil(t, record.SchemaID)
+	require.Nil(t, record.SchemaApprovalSHA256)
+	require.Nil(t, record.PackageID)
+	require.Nil(t, record.PackageSHA256)
+	require.Nil(t, record.PreviewSHA256)
+
+	restored, err := browserBatchSourceWorkflowFromRecord(record)
+	require.NoError(t, err)
+	require.Empty(t, restored.DiscoveryContractSHA256)
+	require.Empty(t, restored.SchemaID)
+	require.Empty(t, restored.PackageID)
+	require.Empty(t, restored.PreviewSHA256)
+}
+
 func (s *browserBatchWorkflowMemoryStore) CreateBrowserBatchWorkflow(_ context.Context, workflow BrowserBatchWorkflow, sources []BrowserBatchSourceWorkflow) (*BrowserBatchWorkflow, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

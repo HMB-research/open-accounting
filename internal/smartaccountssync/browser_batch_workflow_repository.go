@@ -416,6 +416,10 @@ func browserBatchWorkflowToRecord(workflow BrowserBatchWorkflow) (models.SmartAc
 	if !validBrowserBatchWorkflow(workflow) {
 		return models.SmartAccountsBrowserBatchWorkflowRecord{}, ErrBrowserBatchWorkflowInvalid
 	}
+	historyFrom, err := time.Parse(time.DateOnly, workflow.HistoryFrom)
+	if err != nil {
+		return models.SmartAccountsBrowserBatchWorkflowRecord{}, ErrBrowserBatchWorkflowInvalid
+	}
 	var scope json.RawMessage
 	if workflow.TransferManifestSHA256 != "" {
 		encoded, err := json.Marshal(workflow.TransferScope)
@@ -424,11 +428,11 @@ func browserBatchWorkflowToRecord(workflow BrowserBatchWorkflow) (models.SmartAc
 		}
 		scope = encoded
 	}
-	return models.SmartAccountsBrowserBatchWorkflowRecord{BatchID: workflow.BatchID, OwnerID: workflow.OwnerID, SchemaVersion: workflow.SchemaVersion, HistoryFrom: workflow.HistoryFrom, HeaderProbeConsentConfirmed: workflow.HeaderProbeConsentConfirmed, PreparatoryManifestSHA256: workflow.PreparatoryManifestSHA256, PreparatoryConsentedAt: workflow.PreparatoryConsentedAt.UTC(), TransferManifestSHA256: workflow.TransferManifestSHA256, TransferScope: scope, TransferConfirmedAt: copyTime(workflow.TransferConfirmedAt), CreatedAt: workflow.CreatedAt.UTC(), UpdatedAt: workflow.UpdatedAt.UTC()}, nil
+	return models.SmartAccountsBrowserBatchWorkflowRecord{BatchID: workflow.BatchID, OwnerID: workflow.OwnerID, SchemaVersion: workflow.SchemaVersion, HistoryFrom: historyFrom, HeaderProbeConsentConfirmed: workflow.HeaderProbeConsentConfirmed, PreparatoryManifestSHA256: workflow.PreparatoryManifestSHA256, PreparatoryConsentedAt: workflow.PreparatoryConsentedAt.UTC(), TransferManifestSHA256: stringPointer(workflow.TransferManifestSHA256), TransferScope: scope, TransferConfirmedAt: copyTime(workflow.TransferConfirmedAt), CreatedAt: workflow.CreatedAt.UTC(), UpdatedAt: workflow.UpdatedAt.UTC()}, nil
 }
 
 func browserBatchWorkflowFromRecord(record models.SmartAccountsBrowserBatchWorkflowRecord) (*BrowserBatchWorkflow, error) {
-	workflow := BrowserBatchWorkflow{BatchID: record.BatchID, OwnerID: record.OwnerID, SchemaVersion: record.SchemaVersion, HistoryFrom: record.HistoryFrom, HeaderProbeConsentConfirmed: record.HeaderProbeConsentConfirmed, PreparatoryManifestSHA256: record.PreparatoryManifestSHA256, PreparatoryConsentedAt: record.PreparatoryConsentedAt.UTC(), TransferManifestSHA256: record.TransferManifestSHA256, TransferConfirmedAt: copyTime(record.TransferConfirmedAt), CreatedAt: record.CreatedAt.UTC(), UpdatedAt: record.UpdatedAt.UTC()}
+	workflow := BrowserBatchWorkflow{BatchID: record.BatchID, OwnerID: record.OwnerID, SchemaVersion: record.SchemaVersion, HistoryFrom: record.HistoryFrom.UTC().Format(time.DateOnly), HeaderProbeConsentConfirmed: record.HeaderProbeConsentConfirmed, PreparatoryManifestSHA256: record.PreparatoryManifestSHA256, PreparatoryConsentedAt: record.PreparatoryConsentedAt.UTC(), TransferManifestSHA256: browserBatchStringValue(record.TransferManifestSHA256), TransferConfirmedAt: copyTime(record.TransferConfirmedAt), CreatedAt: record.CreatedAt.UTC(), UpdatedAt: record.UpdatedAt.UTC()}
 	if len(record.TransferScope) != 0 {
 		if err := json.Unmarshal(record.TransferScope, &workflow.TransferScope); err != nil {
 			return nil, ErrBrowserBatchWorkflowUnavailable
@@ -444,11 +448,11 @@ func browserBatchSourceWorkflowToRecord(source BrowserBatchSourceWorkflow) (mode
 	if !validBrowserBatchSourceWorkflow(source) {
 		return models.SmartAccountsBrowserBatchSourceWorkflowRecord{}, ErrBrowserBatchWorkflowInvalid
 	}
-	return models.SmartAccountsBrowserBatchSourceWorkflowRecord{BatchID: source.BatchID, SourceCompanyID: source.SourceCompanyID, TenantID: source.TenantID, Ordinal: source.Ordinal, Phase: source.Phase, PhaseGeneration: source.PhaseGeneration, AttemptCount: source.AttemptCount, LeaseID: stringPointer(source.LeaseID), LeaseExpiresAt: copyTime(source.LeaseExpiresAt), CaptureRunID: stringPointer(source.CaptureRunID), DiscoveryID: stringPointer(source.DiscoveryID), DiscoveryContractSHA256: source.DiscoveryContractSHA256, DiscoveryReceiptSHA256: source.DiscoveryReceiptSHA256, SchemaID: source.SchemaID, SchemaApprovalSHA256: source.SchemaApprovalSHA256, PackageID: source.PackageID, PackageSHA256: source.PackageSHA256, PreviewID: stringPointer(source.PreviewID), PreviewSHA256: source.PreviewSHA256, ReasonCode: source.ReasonCode, CreatedAt: source.CreatedAt.UTC(), UpdatedAt: source.UpdatedAt.UTC()}, nil
+	return models.SmartAccountsBrowserBatchSourceWorkflowRecord{BatchID: source.BatchID, SourceCompanyID: source.SourceCompanyID, TenantID: source.TenantID, Ordinal: source.Ordinal, Phase: source.Phase, PhaseGeneration: source.PhaseGeneration, AttemptCount: source.AttemptCount, LeaseID: stringPointer(source.LeaseID), LeaseExpiresAt: copyTime(source.LeaseExpiresAt), CaptureRunID: stringPointer(source.CaptureRunID), DiscoveryID: stringPointer(source.DiscoveryID), DiscoveryContractSHA256: stringPointer(source.DiscoveryContractSHA256), DiscoveryReceiptSHA256: stringPointer(source.DiscoveryReceiptSHA256), SchemaID: stringPointer(source.SchemaID), SchemaApprovalSHA256: stringPointer(source.SchemaApprovalSHA256), PackageID: stringPointer(source.PackageID), PackageSHA256: stringPointer(source.PackageSHA256), PreviewID: stringPointer(source.PreviewID), PreviewSHA256: stringPointer(source.PreviewSHA256), ReasonCode: source.ReasonCode, CreatedAt: source.CreatedAt.UTC(), UpdatedAt: source.UpdatedAt.UTC()}, nil
 }
 
 func browserBatchSourceWorkflowFromRecord(record models.SmartAccountsBrowserBatchSourceWorkflowRecord) (*BrowserBatchSourceWorkflow, error) {
-	source := BrowserBatchSourceWorkflow{BatchID: record.BatchID, SourceCompanyID: record.SourceCompanyID, TenantID: record.TenantID, Ordinal: record.Ordinal, Phase: record.Phase, PhaseGeneration: record.PhaseGeneration, AttemptCount: record.AttemptCount, LeaseID: browserBatchStringValue(record.LeaseID), LeaseExpiresAt: copyTime(record.LeaseExpiresAt), CaptureRunID: browserBatchStringValue(record.CaptureRunID), DiscoveryID: browserBatchStringValue(record.DiscoveryID), DiscoveryContractSHA256: record.DiscoveryContractSHA256, DiscoveryReceiptSHA256: record.DiscoveryReceiptSHA256, SchemaID: record.SchemaID, SchemaApprovalSHA256: record.SchemaApprovalSHA256, PackageID: record.PackageID, PackageSHA256: record.PackageSHA256, PreviewID: browserBatchStringValue(record.PreviewID), PreviewSHA256: record.PreviewSHA256, ReasonCode: record.ReasonCode, CreatedAt: record.CreatedAt.UTC(), UpdatedAt: record.UpdatedAt.UTC()}
+	source := BrowserBatchSourceWorkflow{BatchID: record.BatchID, SourceCompanyID: record.SourceCompanyID, TenantID: record.TenantID, Ordinal: record.Ordinal, Phase: record.Phase, PhaseGeneration: record.PhaseGeneration, AttemptCount: record.AttemptCount, LeaseID: browserBatchStringValue(record.LeaseID), LeaseExpiresAt: copyTime(record.LeaseExpiresAt), CaptureRunID: browserBatchStringValue(record.CaptureRunID), DiscoveryID: browserBatchStringValue(record.DiscoveryID), DiscoveryContractSHA256: browserBatchStringValue(record.DiscoveryContractSHA256), DiscoveryReceiptSHA256: browserBatchStringValue(record.DiscoveryReceiptSHA256), SchemaID: browserBatchStringValue(record.SchemaID), SchemaApprovalSHA256: browserBatchStringValue(record.SchemaApprovalSHA256), PackageID: browserBatchStringValue(record.PackageID), PackageSHA256: browserBatchStringValue(record.PackageSHA256), PreviewID: browserBatchStringValue(record.PreviewID), PreviewSHA256: browserBatchStringValue(record.PreviewSHA256), ReasonCode: record.ReasonCode, CreatedAt: record.CreatedAt.UTC(), UpdatedAt: record.UpdatedAt.UTC()}
 	if !validBrowserBatchSourceWorkflow(source) {
 		return nil, ErrBrowserBatchWorkflowUnavailable
 	}

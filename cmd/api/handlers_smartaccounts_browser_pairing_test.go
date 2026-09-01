@@ -108,7 +108,7 @@ func TestSmartAccountsBrowserPairingIssueClaimAndOwnerStatusAreMinimalAndRedacte
 	assert.NotContains(t, statusRecorder.Body.String(), stored.TokenSHA256)
 }
 
-func TestSmartAccountsBrowserPairingClaimRejectsNonExtensionWrongAndReplayTokens(t *testing.T) {
+func TestSmartAccountsBrowserPairingClaimRejectsUntrustedOriginWrongAndReplayTokens(t *testing.T) {
 	h, _ := newSmartAccountsBrowserPairingHandlers()
 	issueRequest := withURLParams(makeAuthenticatedRequest(http.MethodPost, "/", nil, createTestClaims("owner-1", "owner@example.com", testBrowserPairingTenantID, "owner")), map[string]string{"tenantID": testBrowserPairingTenantID})
 	issueRecorder := httptest.NewRecorder()
@@ -135,21 +135,45 @@ func TestSmartAccountsBrowserPairingClaimRejectsNonExtensionWrongAndReplayTokens
 	assert.NotContains(t, replay.Body.String(), issue.PairingToken)
 }
 
-func TestSmartAccountsBrowserPairingOptionsAllowsOnlyBraveExtensionOrigin(t *testing.T) {
+func TestSmartAccountsBrowserPairingClaimAllowsExactFirstPartyMetadataFallback(t *testing.T) {
 	h, _ := newSmartAccountsBrowserPairingHandlers()
-	allowed := httptest.NewRecorder()
-	allowedRequest := httptest.NewRequest(http.MethodOptions, "/", nil)
-	allowedRequest.Header.Set("Origin", testBraveExtensionOrigin)
-	h.OptionsSmartAccountsBrowserPairingClaim(allowed, allowedRequest)
-	assert.Equal(t, http.StatusNoContent, allowed.Code)
-	assert.Equal(t, testBraveExtensionOrigin, allowed.Header().Get("Access-Control-Allow-Origin"))
-	assert.Contains(t, allowed.Header().Get("Access-Control-Allow-Headers"), "Authorization")
+	issueRequest := withURLParams(makeAuthenticatedRequest(http.MethodPost, "/", nil, createTestClaims("owner-1", "owner@example.com", testBrowserPairingTenantID, "owner")), map[string]string{"tenantID": testBrowserPairingTenantID})
+	issueRecorder := httptest.NewRecorder()
+	h.IssueSmartAccountsBrowserPairing(issueRecorder, issueRequest)
+	require.Equal(t, http.StatusCreated, issueRecorder.Code)
+	var issue smartaccountssync.BrowserPairingIssue
+	require.NoError(t, json.NewDecoder(issueRecorder.Body).Decode(&issue))
 
-	denied := httptest.NewRecorder()
-	deniedRequest := httptest.NewRequest(http.MethodOptions, "/", nil)
-	deniedRequest.Header.Set("Origin", "https://sa.smartaccounts.eu")
-	h.OptionsSmartAccountsBrowserPairingClaim(denied, deniedRequest)
-	assert.Equal(t, http.StatusForbidden, denied.Code)
+	claim := withURLParams(httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"source_company_id":"`+testBrowserSourceID+`"}`)), map[string]string{"pairingID": issue.PairingID})
+	claim.Header.Set("Origin", "http://server-nuc:3000")
+	claim.Header.Set("Content-Type", "application/json")
+	claim.Header.Set("Authorization", "Bearer "+issue.PairingToken)
+	claimRecorder := httptest.NewRecorder()
+	h.ClaimSmartAccountsBrowserPairing(claimRecorder, claim)
+	require.Equal(t, http.StatusOK, claimRecorder.Code, claimRecorder.Body.String())
+	assert.Equal(t, "http://server-nuc:3000", claimRecorder.Header().Get("Access-Control-Allow-Origin"))
+	assert.JSONEq(t, `{"status":"CLAIMED"}`, claimRecorder.Body.String())
+}
+
+func TestSmartAccountsBrowserPairingOptionsAllowsRelayAndExactFirstPartyMetadataOrigins(t *testing.T) {
+	h, _ := newSmartAccountsBrowserPairingHandlers()
+	for _, origin := range []string{testBraveExtensionOrigin, "http://server-nuc:3000", "http://100.127.112.124:3000"} {
+		allowed := httptest.NewRecorder()
+		allowedRequest := httptest.NewRequest(http.MethodOptions, "/", nil)
+		allowedRequest.Header.Set("Origin", origin)
+		h.OptionsSmartAccountsBrowserPairingClaim(allowed, allowedRequest)
+		assert.Equal(t, http.StatusNoContent, allowed.Code)
+		assert.Equal(t, origin, allowed.Header().Get("Access-Control-Allow-Origin"))
+		assert.Contains(t, allowed.Header().Get("Access-Control-Allow-Headers"), "Authorization")
+	}
+
+	for _, origin := range []string{"https://sa.smartaccounts.eu", "http://server-nuc", "http://server-nuc:3001", "http://server-nuc.example:3000"} {
+		denied := httptest.NewRecorder()
+		deniedRequest := httptest.NewRequest(http.MethodOptions, "/", nil)
+		deniedRequest.Header.Set("Origin", origin)
+		h.OptionsSmartAccountsBrowserPairingClaim(denied, deniedRequest)
+		assert.Equal(t, http.StatusForbidden, denied.Code)
+	}
 }
 
 func TestSmartAccountsBrowserPairingClaimIsReachableThroughRouterCORS(t *testing.T) {
@@ -163,21 +187,21 @@ func TestSmartAccountsBrowserPairingClaimIsReachableThroughRouterCORS(t *testing
 
 	router := setupRouter(&Config{}, h, nil)
 	preflight := httptest.NewRequest(http.MethodOptions, "/api/v1/smartaccounts-browser-pairings/"+issue.PairingID+"/claim", nil)
-	preflight.Header.Set("Origin", testBraveExtensionOrigin)
+	preflight.Header.Set("Origin", "http://server-nuc:3000")
 	preflight.Header.Set("Access-Control-Request-Method", http.MethodPost)
 	preflightRecorder := httptest.NewRecorder()
 	router.ServeHTTP(preflightRecorder, preflight)
 	require.Equal(t, http.StatusOK, preflightRecorder.Code)
-	assert.Equal(t, testBraveExtensionOrigin, preflightRecorder.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "http://server-nuc:3000", preflightRecorder.Header().Get("Access-Control-Allow-Origin"))
 
 	claim := httptest.NewRequest(http.MethodPost, "/api/v1/smartaccounts-browser-pairings/"+issue.PairingID+"/claim", strings.NewReader(`{"source_company_id":"`+testBrowserSourceID+`"}`))
-	claim.Header.Set("Origin", testBraveExtensionOrigin)
+	claim.Header.Set("Origin", "http://server-nuc:3000")
 	claim.Header.Set("Content-Type", "application/json")
 	claim.Header.Set("Authorization", "Bearer "+issue.PairingToken)
 	claimRecorder := httptest.NewRecorder()
 	router.ServeHTTP(claimRecorder, claim)
 	assert.Equal(t, http.StatusOK, claimRecorder.Code)
-	assert.Equal(t, testBraveExtensionOrigin, claimRecorder.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "http://server-nuc:3000", claimRecorder.Header().Get("Access-Control-Allow-Origin"))
 }
 
 func mustMarshalJSON(t *testing.T, value any) string {

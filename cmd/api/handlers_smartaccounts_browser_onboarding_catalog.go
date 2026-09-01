@@ -106,8 +106,8 @@ func (h *Handlers) GetSmartAccountsBrowserOnboardingCatalog(w http.ResponseWrite
 // OptionsSmartAccountsBrowserOnboardingCatalogHandoff supports the extension
 // worker's direct, no-cookie catalog handoff.
 func (h *Handlers) OptionsSmartAccountsBrowserOnboardingCatalogHandoff(w http.ResponseWriter, r *http.Request) {
-	if !allowBraveExtensionOrigin(w, r) {
-		respondError(w, http.StatusForbidden, "Brave extension origin required")
+	if !allowSmartAccountsMetadataRelayOrigin(w, r) {
+		respondError(w, http.StatusForbidden, "SmartAccounts catalog relay origin required")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -133,8 +133,8 @@ func (h *Handlers) OptionsSmartAccountsBrowserOnboardingCatalogHandoff(w http.Re
 // @Failure 503 {object} object{error=string}
 // @Router /smartaccounts-browser-onboarding/catalogs/{catalogID}/handoff [post]
 func (h *Handlers) HandoffSmartAccountsBrowserOnboardingCatalog(w http.ResponseWriter, r *http.Request) {
-	if !allowBraveExtensionOrigin(w, r) {
-		respondError(w, http.StatusForbidden, "Brave extension origin required")
+	if !allowSmartAccountsMetadataRelayOrigin(w, r) {
+		respondError(w, http.StatusForbidden, "SmartAccounts catalog relay origin required")
 		return
 	}
 	if h.smartAccountsBrowserOnboardingCatalogService == nil {

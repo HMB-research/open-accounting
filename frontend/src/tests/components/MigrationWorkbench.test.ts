@@ -23,11 +23,11 @@ const { apiMock } = vi.hoisted(() => ({
     listMigrationExecutionRuns: vi.fn(),
     getMigrationExecutionRun: vi.fn(),
     watchMigrationExecutionRun: vi.fn(),
-		issueSmartAccountsBrowserOnboardingCatalog: vi.fn(),
-		getSmartAccountsBrowserOnboardingCatalog: vi.fn(),
-		getSmartAccountsSyncStatus: vi.fn(),
-		getSmartAccountsBrowserCaptureStatus: vi.fn(),
-		getSmartAccountsBrowserCaptureWorkflowStatus: vi.fn(),
+    issueSmartAccountsBrowserOnboardingCatalog: vi.fn(),
+    getSmartAccountsBrowserOnboardingCatalog: vi.fn(),
+    getSmartAccountsSyncStatus: vi.fn(),
+    getSmartAccountsBrowserCaptureStatus: vi.fn(),
+    getSmartAccountsBrowserCaptureWorkflowStatus: vi.fn(),
   },
 }));
 
@@ -339,91 +339,115 @@ describe("MigrationWorkbench", () => {
     ).toBeInTheDocument();
   });
 
-	it("exposes the pre-tenant relay catalog flow without tenant-scoped status or capture calls", async () => {
-		apiMock.issueSmartAccountsBrowserOnboardingCatalog.mockResolvedValue({
-			catalog_id: "b436c224-5df5-4b4d-a772-1897f9147400",
-			workflow_id: "c436c224-5df5-4b4d-a772-1897f9147400",
-			catalog_token: "T".repeat(43),
-			nonce: "N".repeat(43),
-			issued_at: "2026-08-28T10:00:00Z",
-			expires_at: "2026-08-28T10:02:00Z",
-			catalog_digest_intent: {
-				version: "smartaccounts-browser-source-catalog-intent-v1",
-				catalog_schema_version: "smartaccounts-browser-source-catalog-v1",
-				source_id_version: "sa-browser-v1",
-				digest_algorithm: "sha256",
-			},
-			catalog_consent: {
-				version: 1,
-				confirmed: true,
-				confirmed_at: "2026-08-28T10:00:00Z",
-				scope: "visible_company_catalog",
-			},
-		});
-		apiMock.getSmartAccountsBrowserOnboardingCatalog.mockResolvedValue({
-			catalog_id: "b436c224-5df5-4b4d-a772-1897f9147400",
-			workflow_id: "c436c224-5df5-4b4d-a772-1897f9147400",
-			status: "ACCEPTED",
-			catalog_sha256: "c".repeat(64),
-			catalog_count: 1,
-			observed_at: "2026-08-28T10:00:01Z",
-			expires_at: "2026-08-28T10:10:01Z",
-			companies: [{ source_company_id: "sa-browser-v1-1234", display_name: "Hold My Beer OÜ" }],
-		});
+  it("exposes the pre-tenant relay catalog flow without tenant-scoped status or capture calls", async () => {
+    apiMock.issueSmartAccountsBrowserOnboardingCatalog.mockResolvedValue({
+      catalog_id: "b436c224-5df5-4b4d-a772-1897f9147400",
+      workflow_id: "c436c224-5df5-4b4d-a772-1897f9147400",
+      catalog_token: "T".repeat(43),
+      nonce: "N".repeat(43),
+      issued_at: "2026-08-28T10:00:00Z",
+      expires_at: "2026-08-28T10:02:00Z",
+      catalog_digest_intent: {
+        version: "smartaccounts-browser-source-catalog-intent-v1",
+        catalog_schema_version: "smartaccounts-browser-source-catalog-v1",
+        source_id_version: "sa-browser-v1",
+        digest_algorithm: "sha256",
+      },
+      catalog_consent: {
+        version: 1,
+        confirmed: true,
+        confirmed_at: "2026-08-28T10:00:00Z",
+        scope: "visible_company_catalog",
+      },
+    });
+    apiMock.getSmartAccountsBrowserOnboardingCatalog.mockResolvedValue({
+      catalog_id: "b436c224-5df5-4b4d-a772-1897f9147400",
+      workflow_id: "c436c224-5df5-4b4d-a772-1897f9147400",
+      status: "ACCEPTED",
+      catalog_sha256: "c".repeat(64),
+      catalog_count: 1,
+      observed_at: "2026-08-28T10:00:01Z",
+      expires_at: "2026-08-28T10:10:01Z",
+      companies: [
+        {
+          source_company_id: "sa-browser-v1-1234",
+          display_name: "Hold My Beer OÜ",
+        },
+      ],
+    });
 
-		const originalPostMessage = window.postMessage.bind(window);
-		vi.spyOn(window, "postMessage").mockImplementation((message, targetOrigin) => {
-			originalPostMessage(message, targetOrigin);
-			if (!message || typeof message !== "object") return;
-			const ping = message as Record<string, unknown>;
-			if (ping.type !== "open-accounting.smartaccounts-browser-readiness-ping.v1") return;
-			window.dispatchEvent(new MessageEvent("message", {
-				source: window,
-				origin: window.location.origin,
-				data: {
-					source: "smartaccounts-browser-relay",
-					type: "smartaccounts-browser-relay.readiness.v1",
-					version: 1,
-					nonce: ping.nonce,
-					relay_protocol_version: "smartaccounts-browser-relay-v1",
-					capture_manifest_version: "smartaccounts-brave-ui-v2",
-					workflow_plan_version: "smartaccounts-browser-capture-plan-v1",
-					smartaccounts_session_state: "signed_in",
-				},
-			}));
-		});
+    const originalPostMessage = window.postMessage.bind(window);
+    vi.spyOn(window, "postMessage").mockImplementation(
+      (message, targetOrigin) => {
+        originalPostMessage(message, targetOrigin);
+        if (!message || typeof message !== "object") return;
+        const ping = message as Record<string, unknown>;
+        if (
+          ping.type !==
+          "open-accounting.smartaccounts-browser-readiness-ping.v1"
+        )
+          return;
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: window,
+            origin: window.location.origin,
+            data: {
+              source: "smartaccounts-browser-relay",
+              type: "smartaccounts-browser-relay.readiness.v1",
+              version: 1,
+              nonce: ping.nonce,
+              relay_protocol_version: "smartaccounts-browser-relay-v1",
+              capture_manifest_version: "smartaccounts-brave-ui-v2",
+              workflow_plan_version: "smartaccounts-browser-capture-plan-v1",
+              smartaccounts_session_state: "signed_in",
+            },
+          }),
+        );
+      },
+    );
 
-		render(MigrationWorkbench, { tenantId: "" });
-		await screen.findByText("Create or reuse companies from SmartAccounts");
-		await screen.findByText("Relay ready — SmartAccounts is signed in.");
-		expect(screen.queryByRole("button", { name: "Connect with Brave (no API key)" })).not.toBeInTheDocument();
-		expect(apiMock.listMigrationExecutionRuns).not.toHaveBeenCalled();
-		expect(apiMock.listMigrationProviderPresets).not.toHaveBeenCalled();
-		expect(apiMock.getSmartAccountsSyncStatus).not.toHaveBeenCalled();
-		expect(apiMock.getSmartAccountsBrowserCaptureStatus).not.toHaveBeenCalled();
+    render(MigrationWorkbench, { tenantId: "" });
+    await screen.findByText("Create or reuse companies from SmartAccounts");
+    await screen.findByText("Relay ready — SmartAccounts is signed in.");
+    expect(
+      screen.queryByRole("button", { name: "Connect with Brave (no API key)" }),
+    ).not.toBeInTheDocument();
+    expect(apiMock.listMigrationExecutionRuns).not.toHaveBeenCalled();
+    expect(apiMock.listMigrationProviderPresets).not.toHaveBeenCalled();
+    expect(apiMock.getSmartAccountsSyncStatus).not.toHaveBeenCalled();
+    expect(apiMock.getSmartAccountsBrowserCaptureStatus).not.toHaveBeenCalled();
 
-		await fireEvent.click(screen.getByLabelText(/I approve this metadata-only read/));
-		await fireEvent.click(screen.getByRole("button", { name: "Read visible SmartAccounts company catalog" }));
-		await waitFor(() => expect(apiMock.issueSmartAccountsBrowserOnboardingCatalog).toHaveBeenCalledTimes(1));
-		window.dispatchEvent(new MessageEvent("message", {
-			source: window,
-			origin: window.location.origin,
-			data: {
-				source: "smartaccounts-browser-relay",
-				type: "smartaccounts-browser-relay.source-catalog-result.v1",
-				version: 1,
-				catalog_id: "b436c224-5df5-4b4d-a772-1897f9147400",
-				workflow_id: "c436c224-5df5-4b4d-a772-1897f9147400",
-				nonce: "N".repeat(43),
-				status: "accepted",
-				catalog_count: 1,
-				catalog_sha256: "c".repeat(64),
-			},
-		}));
-		await screen.findByLabelText("All 1 relay-observed companies");
-		expect(apiMock.getSmartAccountsSyncStatus).not.toHaveBeenCalled();
-		expect(apiMock.getSmartAccountsBrowserCaptureWorkflowStatus).not.toHaveBeenCalled();
-	});
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Choose companies manually" }),
+    );
+    await waitFor(() =>
+      expect(
+        apiMock.issueSmartAccountsBrowserOnboardingCatalog,
+      ).toHaveBeenCalledTimes(1),
+    );
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        source: window,
+        origin: window.location.origin,
+        data: {
+          source: "smartaccounts-browser-relay",
+          type: "smartaccounts-browser-relay.source-catalog-result.v1",
+          version: 1,
+          catalog_id: "b436c224-5df5-4b4d-a772-1897f9147400",
+          workflow_id: "c436c224-5df5-4b4d-a772-1897f9147400",
+          nonce: "N".repeat(43),
+          status: "accepted",
+          catalog_count: 1,
+          catalog_sha256: "c".repeat(64),
+        },
+      }),
+    );
+    await screen.findByLabelText("All 1 relay-observed companies");
+    expect(apiMock.getSmartAccountsSyncStatus).not.toHaveBeenCalled();
+    expect(
+      apiMock.getSmartAccountsBrowserCaptureWorkflowStatus,
+    ).not.toHaveBeenCalled();
+  });
 
   it("loads provider preset metadata into the bundle controls", async () => {
     render(MigrationWorkbench, { tenantId: "tenant-1" });

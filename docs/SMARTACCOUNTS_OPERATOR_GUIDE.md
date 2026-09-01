@@ -56,22 +56,44 @@ posting.
 
 ## Selected/all company onboarding
 
-Choose **Read visible SmartAccounts company catalog** and confirm the
-metadata-only picker read. The local relay owns the visible picker snapshot;
-it sends no rows, cookies, credentials, or financial data. OA issues a
-two-minute extension-only capability and persists only its hash. Once the
-relay has handed off the exact canonical catalog, the accepted owner receipt
-remains selectable for ten minutes.
+Choose **Start all-company safe sync**. This single, explicit owner action
+authorizes the metadata-only visible-picker catalog, the exact all-company
+tenant create/reuse, and expected-source pairing. The local relay owns the
+visible picker snapshot; it sends no rows, cookies, credentials, or financial
+data. OA issues a two-minute catalog capability and persists only its hash.
+The normal path hands it to the extension worker. If an older relay reports
+`picker_unstable` solely because visible labels contain HTML formatting tabs or
+newlines, the first-party OA page may use the relay's metadata-only discovery
+response and the same memory-only capability. That compatibility path is
+accepted only from the reviewed local OA origins and must still match the exact
+workflow, nonce, canonical SHA-256 digest, source-ID/name limits, and server
+receipt. It cannot carry source rows, credentials, cookies, capture data, or an
+accounting instruction. Relay 0.2.7 normalizes the formatting whitespace in
+the worker, so the compatibility path is normally unnecessary. After either
+handoff accepts the exact canonical catalog, OA immediately
+uses the accepted owner receipt to create the immutable `all` batch and issue
+each expected-source pairing. The accepted receipt remains selectable for ten
+minutes only when the owner instead chooses the manual subset path.
 
-The panel then requires an explicit choice: **All relay-observed companies**
-or **Choose a strict subset**. Nothing is preselected. `All` must include every
-company in that durable relay-observed receipt; `Choose` must include at least
+An older relay may also traverse every expected company selector but return
+`awaiting_browser` when its extension worker cannot finish the cross-origin
+pairing claim. OA then uses the same short-lived, source-bound, one-time bearer
+from page memory through an exact-origin metadata compatibility route. Only
+`http://server-nuc:3000` and `http://100.127.112.124:3000` are accepted, the
+request omits credentials, and the bearer is deleted before the request. This
+fallback can bind the already approved company metadata to isolated tenants;
+it cannot authorize discovery rows, capture, transfer, schema confirmation,
+reconciliation, or accounting apply.
+
+Use **Customize company selection instead** only when a strict subset is
+required. That path presents **All relay-observed companies** or **Choose a
+strict subset** after the same metadata-only handoff. `All` must include every
+company in the durable relay-observed receipt; `Choose` must include at least
 one but not every company. This is relay-observed completeness, not a
 SmartAccounts API-certified company catalog.
 
-In the separately confirmed create/reuse-and-pair action, Open Accounting's
-server—not the browser—does the following independently for each selected
-source:
+For either path, Open Accounting's server—not the browser—does the following
+independently for each selected source:
 
 1. Reserves the opaque selector in durable onboarding state. A selector can
    point to only one Open Accounting tenant, and a selected target cannot be
@@ -95,8 +117,8 @@ new batch even if its company digest is unchanged.
 
 Only an issued pairing capability is returned once to relay memory; it is not
 stored by the page or Open Accounting. Tenant creation and pairing are
-non-financial. They do **not** start capture. Every paired target must first
- complete its 31-surface discovery receipt and the required `general_ledger`
+non-financial. The one-click action does **not** start capture. Every paired
+target must first complete its 31-surface discovery receipt and the required `general_ledger`
 (`general_ledger_csv_v1`) schema review. The visible `journal_entries` grid is
 summary-only evidence, not an approved CSV posting schema. The partial capture transfer then requires its own later
 owner consent. The existing package preview and final **Confirm and apply**
@@ -115,8 +137,9 @@ partial and review-only in this release.
    company, credential, cookie, source row, or session value. Brave pairing,
    discovery, selected-company onboarding, and CSV capture remain disabled
    until the panel says **Relay ready — SmartAccounts is signed in**. If it is
-   missing or stale, reload or update the relay; if it is signed out or unknown,
-   sign in (or reload the signed-in SmartAccounts tab) and check again. The
+   missing or stale, reload or update the relay. If it is signed out, sign in;
+   if it is unknown, check the visible signed-in marker before reloading because
+   a SmartAccounts page reload can expire the source session. The
    nonce and readiness state exist only in the mounted page memory.
 2. After the Brave session is paired to the selected tenant, enter only the
    historical **History starts** date and confirm the transfer in the same

@@ -52,6 +52,22 @@ function actions() {
 describe('SmartAccountsBatchRunner', () => {
 	afterEach(cleanup);
 
+	it('does not render or dereference an unfrozen transfer scope', () => {
+		const status = workflowStatus('PAIRED');
+		status.workflow.transfer_scope = {
+			mode: '',
+			from_inclusive: '',
+			to_inclusive: '',
+			cutoff_at: '',
+			resource_ids: null
+		} as unknown as NonNullable<typeof status.workflow.transfer_scope>;
+
+		render(SmartAccountsBatchRunner, { batchId: status.workflow.batch_id, workflow: status, ...actions() });
+
+		expect(screen.queryByText(/Frozen scope:/)).not.toBeInTheDocument();
+		expect(screen.getByText('PAIRED')).toBeInTheDocument();
+	});
+
 	it('prepares once with the three explicit non-destructive consents, then lets the server advance one safe step', async () => {
 		const runner = actions();
 		render(SmartAccountsBatchRunner, {

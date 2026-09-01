@@ -18,6 +18,12 @@ const maxSmartAccountsBrowserPairingClaimBytes = 1024
 
 var braveExtensionOriginPattern = regexp.MustCompile(`^chrome-extension://[a-p]{32}$`)
 
+// The metadata compatibility path is deliberately limited to the two exact
+// first-party OA UI origins used on the private NUC. It cannot be used by a
+// lookalike host, another local port, SmartAccounts itself, or any capture/apply
+// route.
+var openAccountingMetadataCompatibilityOriginPattern = regexp.MustCompile(`^http://(?:server-nuc|100\.127\.112\.124):3000$`)
+
 type smartAccountsBrowserPairingClaimRequest struct {
 	SourceCompanyID string `json:"source_company_id"`
 }
@@ -94,8 +100,8 @@ func (h *Handlers) GetSmartAccountsBrowserPairing(w http.ResponseWriter, r *http
 // OptionsSmartAccountsBrowserPairingClaim explicitly supports the Brave
 // extension preflight. Browser origins and ordinary web origins are rejected.
 func (h *Handlers) OptionsSmartAccountsBrowserPairingClaim(w http.ResponseWriter, r *http.Request) {
-	if !allowBraveExtensionOrigin(w, r) {
-		respondError(w, http.StatusForbidden, "Brave extension origin required")
+	if !allowSmartAccountsMetadataRelayOrigin(w, r) {
+		respondError(w, http.StatusForbidden, "SmartAccounts pairing origin required")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -117,8 +123,8 @@ func (h *Handlers) OptionsSmartAccountsBrowserPairingClaim(w http.ResponseWriter
 // @Failure 403 {object} object{error=string}
 // @Router /smartaccounts-browser-pairings/{pairingID}/claim [post]
 func (h *Handlers) ClaimSmartAccountsBrowserPairing(w http.ResponseWriter, r *http.Request) {
-	if !allowBraveExtensionOrigin(w, r) {
-		respondError(w, http.StatusForbidden, "Brave extension origin required")
+	if !allowSmartAccountsMetadataRelayOrigin(w, r) {
+		respondError(w, http.StatusForbidden, "SmartAccounts pairing origin required")
 		return
 	}
 	if h.smartAccountsBrowserPairingService == nil {
@@ -151,6 +157,24 @@ func (h *Handlers) ClaimSmartAccountsBrowserPairing(w http.ResponseWriter, r *ht
 func allowBraveExtensionOrigin(w http.ResponseWriter, r *http.Request) bool {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if !braveExtensionOriginPattern.MatchString(origin) {
+		return false
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Access-Control-Allow-Methods", http.MethodPost+", "+http.MethodOptions)
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+	w.Header().Set("Access-Control-Max-Age", "600")
+	w.Header().Set("Vary", "Origin")
+	return true
+}
+
+// Metadata normally transfers directly from the extension worker. An older
+// installed relay can instead ask the exact first-party OA UI to consume the
+// same short-lived catalog or pairing bearer after its direct fetch fails. Only
+// the two metadata routes call this helper; discovery, capture, transfer, and
+// accounting apply remain extension-only or owner-authenticated.
+func allowSmartAccountsMetadataRelayOrigin(w http.ResponseWriter, r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if !braveExtensionOriginPattern.MatchString(origin) && !openAccountingMetadataCompatibilityOriginPattern.MatchString(origin) {
 		return false
 	}
 	w.Header().Set("Access-Control-Allow-Origin", origin)
