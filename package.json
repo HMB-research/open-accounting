@@ -1,0 +1,13 @@
+{
+  "name": "open-accounting",
+  "private": true,
+  "packageManager": "bun@1.4.0",
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.4"
+  }
+}

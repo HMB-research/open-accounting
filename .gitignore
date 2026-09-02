@@ -82,3 +82,6 @@ private/
 migration-private/
 smartaccounts-export*/
 smartaccounts-prepared*/
+# VitePress
+docs/.vitepress/cache/
+docs/.vitepress/dist/
