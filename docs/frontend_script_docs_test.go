@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-func TestDocumentedFrontendScriptsExist(t *testing.T) {
-	scripts := readFrontendScripts(t)
+func TestDocumentedBunScriptsExist(t *testing.T) {
+	scripts := readPackageScripts(t, filepath.Join("..", "package.json"), filepath.Join("..", "frontend", "package.json"))
 	checkedFiles := []string{
 		filepath.Join("..", "README.md"),
 		filepath.Join("..", "CONTRIBUTING.md"),
@@ -49,28 +49,30 @@ func TestDocumentedFrontendScriptsExist(t *testing.T) {
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		t.Fatalf("documented frontend scripts missing from frontend/package.json:\n%s", strings.Join(missing, "\n"))
+		t.Fatalf("documented Bun scripts missing from root or frontend package.json:\n%s", strings.Join(missing, "\n"))
 	}
 }
 
-func readFrontendScripts(t *testing.T) map[string]bool {
+func readPackageScripts(t *testing.T, paths ...string) map[string]bool {
 	t.Helper()
 
-	payload, err := os.ReadFile(filepath.Join("..", "frontend", "package.json"))
-	if err != nil {
-		t.Fatalf("read frontend package.json: %v", err)
-	}
+	scripts := make(map[string]bool)
+	for _, path := range paths {
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
 
-	var packageJSON struct {
-		Scripts map[string]string `json:"scripts"`
-	}
-	if err := json.Unmarshal(payload, &packageJSON); err != nil {
-		t.Fatalf("parse frontend package.json: %v", err)
-	}
+		var packageJSON struct {
+			Scripts map[string]string `json:"scripts"`
+		}
+		if err := json.Unmarshal(payload, &packageJSON); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
 
-	scripts := make(map[string]bool, len(packageJSON.Scripts))
-	for name := range packageJSON.Scripts {
-		scripts[name] = true
+		for name := range packageJSON.Scripts {
+			scripts[name] = true
+		}
 	}
 	return scripts
 }

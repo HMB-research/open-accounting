@@ -5,7 +5,8 @@
 [![CI](https://github.com/HMB-research/open-accounting/actions/workflows/ci.yml/badge.svg)](https://github.com/HMB-research/open-accounting/actions/workflows/ci.yml)
 [![Coverage](https://github.com/HMB-research/open-accounting/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/HMB-research/open-accounting/actions/workflows/coverage.yml)
 [![CLI coverage](https://img.shields.io/badge/CLI%20coverage-100%25-brightgreen)](docs/USE_CASE_COVERAGE.md#current-evidence-baseline)
-[![Docs gate](https://img.shields.io/badge/docs%20gate-passing-brightgreen)](docs/DEVELOPMENT_STATUS.md#verified-engineering-baseline)
+[![Docs](https://img.shields.io/badge/docs-VitePress-646CFF?logo=vitepress)](https://hmb-research.github.io/open-accounting/)
+[![Docs deployment](https://github.com/HMB-research/open-accounting/actions/workflows/docs.yml/badge.svg)](https://github.com/HMB-research/open-accounting/actions/workflows/docs.yml)
 [![Demo E2E](https://img.shields.io/badge/demo%20E2E-blocking%20CI-brightgreen)](docs/demo-e2e-testing.md)
 [![golangci-lint](https://img.shields.io/badge/golangci--lint-website-00ADD8?logo=go)](https://golangci-lint.run/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -21,7 +22,7 @@
 > **⚠️ Development Status**
 > This project is under active development and not yet production-ready. APIs may change, and features may be incomplete. Contributions and feedback welcome!
 >
-> Start with the [documentation index](docs/README.md). Current caps and gaps live in [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md), detailed status and gate evidence live in [Development Status](docs/DEVELOPMENT_STATUS.md), and workflow-level proof lives in [Use Case Coverage](docs/USE_CASE_COVERAGE.md).
+> Start with the [documentation site](https://hmb-research.github.io/open-accounting/). Current caps and gaps live in [Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md), detailed status and gate evidence live in [Development Status](docs/DEVELOPMENT_STATUS.md), and workflow-level proof lives in [Use Case Coverage](docs/USE_CASE_COVERAGE.md).
 
 CLI access is available via `go run ./cmd/oa`. It bootstraps a tenant-scoped API token once and then uses that token for subsequent reads and mutations.
 

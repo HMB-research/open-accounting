@@ -38,7 +38,7 @@ func TestStatusDocumentationTracksCurrentGates(t *testing.T) {
 		filepath.Join("..", "README.md"): {
 			"This project is under active development and not yet production-ready.",
 			"actions/workflows/coverage.yml/badge.svg?branch=main",
-			"[documentation index](docs/README.md)",
+			"[documentation site](https://hmb-research.github.io/open-accounting/)",
 			"[Current Product Limits](docs/CURRENT_PRODUCT_LIMITS.md)",
 			"[Development Status](docs/DEVELOPMENT_STATUS.md)",
 			"[Use Case Coverage](docs/USE_CASE_COVERAGE.md)",

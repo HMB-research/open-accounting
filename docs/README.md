@@ -4,6 +4,29 @@ This directory keeps active product, developer, and operator documentation. Do
 not add historical implementation plans or agent-loop notes here; promote
 current facts into one of the canonical documents below instead.
 
+The published VitePress site is available at
+[hmb-research.github.io/open-accounting](https://hmb-research.github.io/open-accounting/).
+
+## Documentation Site Development
+
+Run the documentation site from the repository root with Bun 1.4.0:
+
+```bash
+bun install --frozen-lockfile
+bun run docs:dev
+```
+
+Before submitting documentation changes, build the production site and run the
+documentation contract tests:
+
+```bash
+bun run docs:build
+go test -timeout=3m ./docs -count=1
+```
+
+Merges to `main` that touch the documentation site trigger the GitHub Pages
+deployment workflow in `.github/workflows/docs.yml`.
+
 ## Current State
 
 - [Current Product Limits](./CURRENT_PRODUCT_LIMITS.md) is the concise cap and
@@ -35,7 +58,7 @@ current facts into one of the canonical documents below instead.
 
 ## Reference
 
-- [SmartAccounts API PDF](./reference/vendor/smartaccounts/SmartAccounts_API_2026-06-12.pdf)
+- [SmartAccounts API PDF](https://hmb-research.github.io/open-accounting/reference/vendor/smartaccounts/SmartAccounts_API_2026-06-12.pdf)
   is a dated vendor reference captured for migration research.
 
 ## Generated Files
